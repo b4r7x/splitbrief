@@ -1,4 +1,3 @@
-import { runBaseOf } from '../isolation/base-tree.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -8,7 +7,6 @@ import type { TriageInput } from '../../../core/schemas/review.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { recordCheckRuns } from '../evidence/record-checks.js';
 import { publishError } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { recordTaskCheckRuns } from '../task/task-checks.js';
@@ -18,22 +16,14 @@ import {
 } from '../recovery/builders/checks.js';
 import type { EventBus } from '../../events/types.js';
 import type { WorkflowContext } from '../types.js';
-import {
-  buildFullSuiteInputs,
-  failingFilesFromOutput,
-  lastTaskChangingFile,
-} from '../task/file-owner.js';
+import { failingFilesFromOutput, lastTaskChangingFile } from '../task/file-owner.js';
 import {
   checkRegistry,
   planApprovesNpmScripts,
   runChecks,
   type CheckRunResult,
 } from '../validation/run-checks.js';
-import type {
-  RunFullSuiteResult,
-  ValidationCommandRunner,
-  Validator,
-} from '../validation/types.js';
+import type { ValidationCommandRunner } from '../validation/types.js';
 
 /** A required check that did not pass: `fail` is a defect, everything else cannot run. */
 export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
@@ -50,22 +40,17 @@ export function classifyRequiredChecks(runs: readonly CheckRunResult[]): {
 }
 
 /**
- * The failures the pre-review hands the reviewer: every new full-suite failure, then every required check that ran and failed. Each carries
- * the path into the run registry so the fix task knows the file it owns.
+ * The failures the pre-review hands the reviewer: every required check that ran and failed. Each
+ * carries the path into the run registry so the fix task knows the file it owns.
  */
 export function buildPreReviewInputs(input: {
-  suite: RunFullSuiteResult;
   failed: readonly CheckRunResult[];
   registry: ReadonlyMap<string, Check>;
   tasks: readonly Task[];
   ledger: EvidenceLedger | null;
   workspaceDir: string;
 }): TriageInput[] {
-  const inputs = buildFullSuiteInputs({
-    suite: input.suite,
-    tasks: input.tasks,
-    ledger: input.ledger,
-  });
+  const inputs: TriageInput[] = [];
   for (const run of input.failed) {
     const check = input.registry.get(run.checkId);
     const named = failingFilesFromOutput(run.output, input.workspaceDir);
@@ -87,6 +72,7 @@ export function buildPreReviewInputs(input: {
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
         checkIds: [run.checkId],
+        ...(run.command !== undefined && { command: run.command }),
         output: run.output,
       });
     }
@@ -102,7 +88,6 @@ export type RunPreReviewChecksOptions = {
   config: Config;
   bus: EventBus;
   phase: Phase;
-  validator: Pick<Validator, 'runFullSuite'>;
   npmScriptsApproved: boolean;
   signal?: AbortSignal | undefined;
   runCommand?: ValidationCommandRunner | undefined;
@@ -110,7 +95,6 @@ export type RunPreReviewChecksOptions = {
 
 export type PreReviewChecks = Readonly<{
   state: WorkflowState;
-  suite: RunFullSuiteResult;
   runs: CheckRunResult[];
   /** The required checks that ran and failed. */
   failed: CheckRunResult[];
@@ -119,28 +103,17 @@ export type PreReviewChecks = Readonly<{
 }>;
 
 /**
- * The candidate verification the final review runs first: the full suite and every
- * check of the combined task and run registry. A red stage is re-run at the run
- * base; only new failures become defects. Checks are recorded on their declaring
- * task (plan checks on the last task). Only required checks decide check defects
- * and unrunnable halts.
+ * The candidate verification the final review runs first: every check of the combined task and
+ * run registry. Checks are recorded on their declaring task (plan checks on the last task). Only
+ * required checks decide check defects and unrunnable halts.
  */
 export async function runPreReviewChecks(
   opts: RunPreReviewChecksOptions,
 ): Promise<PreReviewChecks> {
   const registry = checkRegistry({ plan: opts.state.plan, tasks: opts.state.tasks });
   const ids = [...registry.keys()];
-  const suite = await opts.validator.runFullSuite({
-    projectDir: opts.workspaceDir,
-    config: opts.config,
-    bus: opts.bus,
-    phase: opts.phase,
-    discoveredValidation: opts.state.discoveredValidation,
-    signal: opts.signal,
-    base: runBaseOf(opts, opts.state),
-  });
   const runs =
-    ids.length === 0 || Object.values(suite.newFailures).some((keys) => keys.length > 0)
+    ids.length === 0
       ? []
       : await runChecks(ids, {
           plan: opts.state.plan,
@@ -162,7 +135,6 @@ export async function runPreReviewChecks(
     runs.filter((run) => registry.get(run.checkId)?.required === true),
   );
   const defects = buildPreReviewInputs({
-    suite,
     failed,
     registry,
     tasks: opts.state.tasks,
@@ -181,7 +153,7 @@ export async function runPreReviewChecks(
     if (owned.length === 0) continue;
     state = await recordTaskCheckRuns({ wctx: opts, state, task, runs: owned });
   }
-  return { state, suite, runs, failed, defects, unrunnable };
+  return { state, runs, failed, defects, unrunnable };
 }
 
 export type PreReviewResult = Readonly<{
@@ -215,30 +187,6 @@ export function haltRequiredChecksUnrunnable(args: {
   );
 }
 
-/**
- * The last completed brief is the ledger entry the pre-review checks attach to.
- */
-async function recordPreReviewChecks(args: {
-  wctx: WorkflowContext;
-  state: WorkflowState;
-  checks: PreReviewChecks;
-}): Promise<void> {
-  const { wctx, state, checks } = args;
-  const task = state.tasks.at(-1);
-  if (task === undefined) return;
-  // A pre-review that neither ran a stage nor a check has nothing to log; creating
-  // the ledger for it would otherwise invent evidence.json for a run that had none.
-  if (checks.runs.length === 0 && checks.suite.results.length === 0) return;
-  await recordCheckRuns({
-    projectDir: wctx.projectDir,
-    sessionId: wctx.sessionId,
-    workspaceDir: wctx.workspaceDir,
-    state,
-    task,
-    validation: checks.suite.results,
-  });
-}
-
 export async function runPreReview(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -255,13 +203,11 @@ export async function runPreReview(args: {
     config: wctx.config,
     bus: wctx.bus,
     phase: state.phase,
-    validator: wctx.validator,
     npmScriptsApproved: planApprovesNpmScripts({ config: wctx.config, state }),
     ...(wctx.signal !== undefined && { signal: wctx.signal }),
   });
   state = checks.state;
   setTrackedState(state);
-  await recordPreReviewChecks({ wctx, state, checks });
 
   if (checks.unrunnable.length > 0) {
     state = haltRequiredChecksUnrunnable({

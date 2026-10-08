@@ -110,7 +110,7 @@ splitbrief start [feature] \
 | `--allow-repo-runners` | boolean | `false` | Grant this run every `shell`/`agent` runner command the project config declares, including profile runners, package-manager script indirection, and project-local PATH resolution. Headless runs have no other way past the trust prompt; the grant is not persisted. Command strings containing `{prompt}` are rejected by config validation; pass prompts through stdin or args. |
 | `--allow-unverified-auth` | boolean | `false` | Let a headless run proceed when a compatible CLI runner's authentication could not be verified. Only affects headless runs (`--json` or `--plain`); interactive runs disclose the unverified state and prompt instead. |
 | `--json` | boolean | `false` | Headless: emit public NDJSON records to stdout, skip TUI. Workflow events are wrapped as `{ "type": "event", "data": <EngineEvent> }`. Requires a `feature`. |
-| `--plain` | boolean | `false` | Headless: emit one plain line per phase, task, review and completion instead of NDJSON. Requires a `feature`. Mutually exclusive with `--json`. |
+| `--plain` | boolean | `false` | Headless: emit one plain line per phase, task, reviewer check, review and completion instead of NDJSON (see [Plain output stream](#plain-output-stream---plain)). Requires a `feature`. Mutually exclusive with `--json`. |
 | `--on-seat-down <policy>` | enum | unset | Headless: `halt` stops on a seat-down halt; `switch` applies the seat's declared `fallback` at once. Unset applies a declared fallback too. `switch` with no declared fallback exits `2`. The swap goes through the TUI's own path, and a swap that leaves the halt pending exits `1` with `recovery_required`. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down). |
 
 ### Examples
@@ -131,7 +131,7 @@ splitbrief start "extract auth into module"
 # Headless / CI: stream NDJSON events
 splitbrief start --json "fix flaky test in user.test.ts"
 
-# Headless / CI: four line shapes a shell script can read
+# Headless / CI: line shapes a shell script can read
 splitbrief start --plain "fix flaky test in user.test.ts"
 
 ```
@@ -158,7 +158,7 @@ splitbrief start --plain "fix flaky test in user.test.ts"
 - `--json` requires a feature where it starts a new workflow.
 - `--plain` and `--json` are two renderings of one headless stream and cannot share stdout; passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
 - Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.splitbrief/sessions/<id>/readiness.json`. Stable `stateId` values and copyable remediations for missing-binary, untrusted-path, version, authentication, endpoint, credential-family, protocol, quota/rate, and conflicting-argument conditions are documented under `splitbrief doctor --json`.
-- Readiness inspects validation configuration and package-script posture only. It does not run `typecheck`, lint, tests, model calls, or network probes.
+- Readiness inspects validation configuration and package-script posture only. It runs no validation command, model call or network probe.
 - With `--json`, the first readiness line is `{ "type": "readiness_report", "report": ... }` before model-backed workflow events.
 - `clearStaleSession()` runs before a new session begins. It blocks only a genuinely live active session; if the active session's lockfile has exited or the PID is gone, the stale `.splitbrief/active` pointer is cleared and start continues.
 - The `setupWorkflow()` step may show an interactive setup screen if config is incomplete; pass `--allow-hooks` in CI to skip the hook-trust prompt.
@@ -304,15 +304,15 @@ splitbrief review --project ../service-a
 **Synopsis**
 
 ```
-splitbrief doctor [--project <dir>] [--json] [--probe-validation] [--probe-seat <plan|build|review>]
+splitbrief doctor [--project <dir>] [--json] [--probe-seat <plan|build|review>]
 ```
 
-Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, planner calls, or implementer calls. It probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocesses unless `--probe-validation` is given.
+Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, planner calls, or implementer calls. It probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocess.
 
 ### Usage
 
 ```
-splitbrief doctor [--project <dir>] [--json] [--probe-validation] [--probe-seat <plan|build|review>]
+splitbrief doctor [--project <dir>] [--json] [--probe-seat <plan|build|review>]
 ```
 
 ### Options
@@ -321,7 +321,6 @@ splitbrief doctor [--project <dir>] [--json] [--probe-validation] [--probe-seat 
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
 | `--json` | boolean | `false` | Emit one stable JSON readiness object to stdout for automation (`doctor --json`). |
-| `--probe-validation` | boolean | `false` | Run the configured validation commands against the working tree and report a `validation.already-failing` warning naming every stage that is already red before any task. It runs real commands (`validation.timeoutMs` per stage) and can take minutes. The resolved commands are listed in the check details, and the check notes that during a run SPLITBRIEF may resolve different commands from planner discovery. |
 | `--probe-seat <seat>` | string | — | Make one paid call through the `plan`, `build` or `review` seat's CLI adapter, read its terminal result, and print `Seat probe <seat>: <class>`: `passed` for a completed call, else the failure class. CLI seats only: an `api`, `shell` or `agent` seat exits `1`. Runs only the probe: the readiness report and the preparation preflights do not run. The record is appended to `.splitbrief/probes/<tool>-<date>.jsonl`. |
 
 ### Examples
@@ -332,9 +331,6 @@ splitbrief doctor --project ../service-a
 
 # Automation: stable stateId + remediation per check
 splitbrief doctor --json
-
-# Pre-run diagnostic: which validation stages are already red?
-splitbrief doctor --probe-validation
 
 # One paid call through the build seat: is its sign-in and quota working?
 splitbrief doctor --probe-seat build
@@ -416,8 +412,8 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 ### Behavior notes
 
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
-- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `workflow.plan-approval` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
-- Validation readiness is posture only. It reports disabled checks or missing npm scripts without running validation commands; the exception is `--probe-validation`, which runs the configured commands.
+- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`, `validation.typecheck|lint|test|typecheck_command|lint_command`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `workflow.plan-approval` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
+- Validation readiness is posture only. It reports whether End-of-run checks are on (`validation.configured`; `validation.end-checks-off` is a warning when they are off), the command a planner `test` check resolves, and a missing npm script. It runs no command. The `--probe-validation` flag was removed: the reviewer chooses the end-of-run commands during the run, so no fixed command set exists to probe before it.
 - Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase runs before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
 - The arg-vector preflight runs here too, so a blocker `start` would raise can be inspected without starting a run: a flag the installed binary's help does not advertise is a blocker (`runners.cli.<tool>.arg-vector.<role>`), a flag it marks deprecated is a warning, and a help text that cannot be read reports ok. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md).
 - A `shell` or `agent` runner reaches execution only through an owner-only trust receipt, so `doctor` replays that admission read-only (`runners.consent.planner`, `runners.consent.implementer.<profile>`, and `runners.consent.reviewer` when a `reviewer` block is configured) instead of only warning that the runner can execute commands. The verdict is reported for a run started the way `doctor` was started: on a TTY it is a warning naming the one-time confirmation `start` would prompt for, and with `--json` or a non-TTY stdin it is the blocker a non-interactive run receives. Nothing is written and no receipt is granted — `doctor` takes no `--allow-repo-runners`, so a run that passes that flag can be admitted where `doctor` reports a blocker, and the check's remediation names the flag.
@@ -725,7 +721,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `--allow-hooks` | `start`, `resume`, `continue`, `spec` | `false` | Skip the hook-trust prompt. CI flag. |
 | `--allow-repo-runners` | `start`, `resume`, `continue`, `spec`, `review` | `false` | Trust repo-local shell/agent runner execution from project config. Separate from hook trust. |
 | `--allow-unverified-auth` | `start`, `resume`, `continue`, `review` | `false` | Let a headless run proceed with unverified CLI authentication. No effect on interactive runs, which disclose and prompt. |
-| `--plain` | `start`, `resume`, `continue` | `false` | Plain-line headless stream — `phase:`, `task:`, `review:` and `done:` lines. Refuses to run alongside `--json` (exit `2`). |
+| `--plain` | `start`, `resume`, `continue` | `false` | Plain-line headless stream — `phase:`, `task:`, `reviewer checks:`, `reviewer check …:`, `review:` and `done:` lines. Refuses to run alongside `--json` (exit `2`). |
 | `--json` | `start`, `resume`, `continue`, `doctor` | `false` | Public NDJSON record stream for workflow commands; a single JSON object for `doctor`. Workflow events are wrapped as `{ "type": "event", "data": ... }`. For `continue`, applies only when the target run is open; a closed run is refused before anything streams. |
 
 ### Where state lives
@@ -752,24 +748,34 @@ The `recovery_required` record carries `reason`, `status` (`awaiting-user` | `ap
 
 ### Plain output stream (`--plain`)
 
-`--plain` renders the same headless run as four line shapes and nothing else, so a shell script can read a run without a JSON parser:
+`--plain` renders the same headless run as a small set of line shapes and nothing else, so a shell script can read a run without a JSON parser:
 
 ```
 phase: planning
 phase: reviewing-plan
 phase: implementing
-task T001: done (typecheck lint test)
-task T002: done (typecheck lint test)
-task T003: done (typecheck lint test)
+task T001: done (2 of 2 checks passed)
+task T002: done (no checks)
+task T003: done (1 of 1 checks passed)
 phase: final-review
+reviewer check declined: src/legacy/old.test.ts (the run did not touch the legacy module)
+reviewer check V1: passed (npm test)
+reviewer check V2: failed (npm run lint)
+reviewer check V2 at base: fails
 phase: complete
 review: passed
 done: 3 tasks
 ```
 
 - `phase: <name>` — written once each time the run enters a new phase.
-- `task <id>: done|failed (<gates>)` — the gates are the validation stages that passed for that task, or `no gates` when validation was skipped and `skipped` for a task a recovery skipped. A task that wrote outside its declared files reads `task <id>: failed (effect-invalid: <paths>)`.
-- `gates: NONE — review-only` — written once, in place of per-task gate names, when the project's stack is unrecognised and no stage could resolve a command. The run still implements and still reviews; nothing was verified by a gate.
+- `task <id>: done|failed (<checks>)` — `<passed> of <total> checks passed` for the checks that task ran, `no checks` when it ran none, and `skipped` for a task a recovery skipped. A task that wrote outside its declared files reads `task <id>: failed (effect-invalid: <paths>)`.
+- `reviewer checks: off` — End-of-run checks are off (`validation.end_checks: false`), so no reviewer check ran before the review. Plan and task checks still ran.
+- `reviewer checks: none (<reason>)` — the reviewer chose no reviewer check, with the reason it gave.
+- `reviewer check declined: <target> (<reason>)` — one line for each related test the reviewer chose not to run, with its reason.
+- `reviewer check <id>: passed (<command>)` or `reviewer check <id>: failed (<command>)` — the result of one reviewer check (`V1`, `V2`, …) in the run workspace.
+- `reviewer check <id>: refused (<detail>)` — the command policy refused the reviewer check, for example a script this run changed.
+- `reviewer check <id>: not run (<detail>)` — the reviewer check did not run. An earlier reviewer check with new failures stops the later ones: `not run (V1 failed)`.
+- `reviewer check <id> at base: passes|fails` — the re-run of a red reviewer check at the run base, with the same command text. `fails` marks the failures that also occur at the run base as pre-existing. A re-run that is refused or does not run reads `reviewer check <id> at base: refused (<detail>)` or `reviewer check <id> at base: not run (<detail>)`.
 - `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count. Without an Accept as is override, the command exits `1` even though every task reached `done`. A checkout run accepted as is exits `0` and keeps the failed verdict.
 - `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
 

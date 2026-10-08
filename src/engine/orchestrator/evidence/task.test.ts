@@ -17,11 +17,20 @@ import {
 } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { skippedStage } from '../validation/stage.js';
 import type { ValidationResult } from '../validation/result.js';
 
 function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {
   return { passed: true, stage };
+}
+// A skipped stage as an older run recorded it.
+function skipped(stage: 'typecheck' | 'lint' | 'test', reason: string): ValidationResult {
+  return {
+    passed: true,
+    stage,
+    skipped: true,
+    skippedReason: reason,
+    output: `skipped ${stage}: ${reason}`,
+  };
 }
 function failing(stage: 'typecheck' | 'lint' | 'test', error: string): ValidationResult {
   return { passed: false, stage, error };
@@ -70,23 +79,32 @@ describe('recordLocalTaskEvidence', () => {
     ]);
   });
 
-  it('records the failures a stage also showed at the run base as pre-existing', () => {
+  it('records the failures a reviewer check also showed at the run base as pre-existing', () => {
     const entries = checkEntries({
-      validation: [
+      runs: [
         {
-          passed: false,
-          stage: 'test',
+          checkId: 'V1',
+          status: 'fail',
           command: 'npm test',
           exitCode: 1,
-          error: 'FAIL src/legacy.test.ts > adds\n  ❯ src/legacy.test.ts:5:20',
-          preExisting: ['src/legacy.test.ts:5'],
+          output: 'FAIL src/legacy.test.ts > adds\n  ❯ src/legacy.test.ts:5:20',
+          preExisting: ['src/legacy.test.ts > adds'],
         },
-        failing('typecheck', 'src/fresh.ts(1,1): error TS2304'),
+        { checkId: 'V2', status: 'fail', command: 'cargo test', exitCode: 101, output: 'boom' },
+        {
+          checkId: 'V3',
+          status: 'fail',
+          command: 'pytest',
+          exitCode: 1,
+          output: 'x',
+          preExisting: [],
+        },
       ],
     });
 
-    expect(entries[0]).toMatchObject({ id: 'test', preExisting: ['src/legacy.test.ts:5'] });
+    expect(entries[0]).toMatchObject({ id: 'V1', preExisting: ['src/legacy.test.ts > adds'] });
     expect(entries[1]).not.toHaveProperty('preExisting');
+    expect(entries[2]).not.toHaveProperty('preExisting');
   });
 
   it('keeps the validation command and recorded output so the review can quote them', () => {
@@ -142,7 +160,7 @@ describe('recordLocalTaskEvidence', () => {
       ledger,
       task,
       status: 'done',
-      validation: [skippedStage('test', 'no affected test file found')],
+      validation: [skipped('test', 'no affected test file found')],
     });
 
     expect(updated.tasks[0]?.validation[0]).toMatchObject({
@@ -151,11 +169,6 @@ describe('recordLocalTaskEvidence', () => {
       skippedReason: 'no affected test file found',
     });
     expect(updated.tasks[0]?.checks).toEqual([]);
-    expect(
-      checkEntries({ validation: [skippedStage('test', 'no affected test file found')] }),
-    ).toEqual([
-      { id: 'test', output: 'skipped test: no affected test file found', ts: expect.any(String) },
-    ]);
   });
 
   it('appends a fix task the ledger does not yet know instead of dropping it', () => {
@@ -227,54 +240,6 @@ describe('recordLocalTaskEvidence', () => {
       passed: false,
       errorSummary: 'error',
     });
-  });
-});
-
-describe('checks log failed-stage diagnostics', () => {
-  it('records the command, exit code and stderr tail of a stderr-only failed stage', () => {
-    const entries = checkEntries({
-      validation: [
-        {
-          passed: false,
-          stage: 'typecheck',
-          command: 'npm run typecheck',
-          exitCode: 2,
-          output: '',
-          error: "src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
-        },
-      ],
-    });
-
-    expect(entries).toEqual([
-      {
-        id: 'typecheck',
-        command: 'npm run typecheck',
-        exitCode: 2,
-        output: "src/a.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.",
-        ts: expect.any(String),
-      },
-    ]);
-  });
-
-  it('keeps the end of a long failed-stage diagnostic, not its beginning', () => {
-    const tail = 'src/a.ts(9,9): error TS1005: expected a semicolon';
-    const entries = checkEntries({
-      validation: [
-        {
-          passed: false,
-          stage: 'lint',
-          command: 'npm run lint',
-          exitCode: 1,
-          output: '',
-          error: `${'x'.repeat(9000)}${tail}`,
-        },
-      ],
-    });
-
-    const output = entries[0]?.output ?? '';
-    expect(output.length).toBeLessThanOrEqual(4096);
-    expect(output.endsWith(tail)).toBe(true);
-    expect(output.startsWith('x')).toBe(true);
   });
 });
 

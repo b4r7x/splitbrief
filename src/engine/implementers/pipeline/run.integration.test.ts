@@ -260,13 +260,15 @@ describe('createImplementerBase — prompt write contracts', () => {
     });
 
     expect(seenPrompt).toContain(
-      `Edit ${task.suggestedFiles[0]} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run no test or other gate command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
+      `Edit ${task.suggestedFiles[0]} directly in the isolation directory. SPLITBRIEF runs the checks after you hand back, so run no test, typecheck, lint or other check command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
     );
     expect(seenPrompt).not.toContain('Output ONLY the complete file contents');
     expect(seenPrompt).not.toContain('Output the complete file contents');
     expect(seenPrompt).not.toContain('markdown code fences');
     // The whole prompt, preamble through footer, gives the gates to SPLITBRIEF and fences nothing.
-    expect(seenPrompt).toContain("SPLITBRIEF runs the project's typecheck, lint and test gates");
+    expect(seenPrompt).toContain(
+      'SPLITBRIEF runs the checks after you hand back, and its verdict is the authority.',
+    );
     expect(seenPrompt).not.toMatch(/run the brief's typecheck|Run the validation commands/);
     expect(seenPrompt).not.toMatch(/Edit ONLY|out of bounds\.|outside scope/);
   });

@@ -115,9 +115,6 @@ function validConfigYaml(): string {
     '  model: qwen2.5-coder:7b',
     '  contextLength: 32768',
     'validation:',
-    '  typecheck: true',
-    '  lint: false',
-    '  test: true',
     '  testCommand: npm test',
     'workflow:',
     '  approve: plan',
@@ -327,7 +324,7 @@ describe('doctor command', () => {
     expect(toErrorMessage(failure)).toContain('runners.availability.implementer.default');
   });
 
-  it('runs no validation command without --probe-validation', async () => {
+  it('runs no validation command', async () => {
     initGitRepo(tmp);
     writeConfig(
       tmp,
@@ -348,29 +345,7 @@ describe('doctor command', () => {
     );
   });
 
-  it('--probe-validation reports a stage that already fails and names the command it ran', async () => {
-    initGitRepo(tmp);
-    writeConfig(
-      tmp,
-      validConfigYaml().replace(
-        '  testCommand: npm test',
-        '  testCommand: node -e "process.exit(1)"',
-      ),
-    );
-    const writes = captureStdout();
-
-    await runDoctor(['--project', tmp, '--json', '--probe-validation']);
-
-    const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: { checks?: Array<{ id: string; summary: string; details?: string[] }> };
-    };
-    const probe = parsed.report?.checks?.find((check) => check.id === 'validation.already-failing');
-    expect(probe?.summary).toContain('test');
-    expect(probe?.details?.[0]).toContain("test: node -e 'process.exit(1)'");
-    expect(probe?.details?.[1]).toContain('pre-run commands');
-  });
-
-  it('lists --probe-validation in help', async () => {
+  it('offers no --probe-validation in help', async () => {
     const program = new Command();
     program.exitOverride();
     registerDoctorCommand(program);
@@ -378,7 +353,7 @@ describe('doctor command', () => {
 
     await program.parseAsync(['node', 'splitbrief', 'doctor', '--help']).catch(() => undefined);
 
-    expect(writes.join('')).toContain('--probe-validation');
+    expect(writes.join('')).not.toContain('--probe-validation');
   });
 
   it('reports automatic CLI model selection as auto, not as an unset model', async () => {

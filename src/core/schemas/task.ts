@@ -17,7 +17,7 @@
  * @see docs/TASK-CONTRACT.md
  */
 import { z } from 'zod';
-import { FileActionSchema, TaskStatusSchema, ValidationStageSchema } from './enums.js';
+import { FileActionSchema, TaskStatusSchema } from './enums.js';
 
 export const TaskIdSchema = z
   .string()
@@ -147,8 +147,8 @@ export const TaskSchema = z.preprocess(
             acceptance: z.string().nullable(),
             /** The red this finding answers; the fix task's brief gate runs it again. */
             file: z.string().optional(),
-            stage: ValidationStageSchema.optional(),
             checkIds: z.array(z.string()).optional(),
+            command: z.string().optional(),
             output: z.string().optional(),
           }),
         ),

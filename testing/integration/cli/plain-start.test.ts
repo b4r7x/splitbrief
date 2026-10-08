@@ -46,7 +46,8 @@ vi.mock('../../../src/engine/orchestrator/run/workflow.js', async (importOrigina
 const TARGET_FILE = 'src/loop.ts';
 
 /** The four line shapes `createStdoutTextSink` writes, and nothing else. */
-const PLAIN_LINE = /^(?:phase|review|done): \S|^task \S+: (?:done|failed) \(/;
+const PLAIN_LINE =
+  /^(?:phase|review|done|reviewer checks): \S|^task \S+: (?:done|failed) \(|^reviewer check \S+/;
 
 function isNdjsonRecord(line: string): boolean {
   try {

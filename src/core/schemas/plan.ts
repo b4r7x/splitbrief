@@ -61,8 +61,6 @@ const CriterionSchema = z.object({
 
 const PlanValidationSchema = z.object({
   language: z.string().nullable(),
-  typecheck: z.string().nullable(),
-  lint: z.string().nullable(),
   test: z.string().nullable(),
   testPattern: z.string().nullable(),
 });

@@ -99,7 +99,7 @@ describe('start preparation', () => {
   it('uses one fresh evidence set for readiness and CLI admission', async () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'codex' },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
     });
     const projectDir = projectWithConfig(config);
     const report = readyReport(projectDir);

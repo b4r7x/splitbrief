@@ -73,7 +73,7 @@ function effectConfig(timeoutMs: number | undefined): Config {
       tool: EFFECT_CANDIDATE_ID,
       ...(timeoutMs !== undefined && { timeout: timeoutMs }),
     },
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    validation: { endChecks: false, testCommand: 'noop' },
     workflow: {
       maxRetries: 0,
       compactionFormat: 'auto',

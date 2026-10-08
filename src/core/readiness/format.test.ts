@@ -28,7 +28,7 @@ describe('readiness formatting', () => {
     const report = buildReadinessReport({
       projectDir: '/tmp/project',
       config: makeConfig({
-        validation: { typecheck: false },
+        validation: { endChecks: false },
       }),
       configLoad: {
         state: 'loaded',
@@ -55,7 +55,7 @@ describe('readiness formatting', () => {
     expect(human).not.toContain('Advisory:');
     expect(human).not.toContain('Next action:');
     expect(human).toContain('runners.cli.claude-code.readiness');
-    expect(human).toContain('validation.disabled');
+    expect(human).toContain('validation.end-checks-off');
     expect(human).not.toContain('apiKey');
     expect(record).toMatchObject({
       type: 'start-readiness',
@@ -67,7 +67,7 @@ describe('readiness formatting', () => {
     expect(record.checks.some((check) => check.id === 'runners.cli.claude-code.readiness')).toBe(
       true,
     );
-    expect(record.checks.some((check) => check.id === 'validation.disabled')).toBe(true);
+    expect(record.checks.some((check) => check.id === 'validation.end-checks-off')).toBe(true);
   });
 
   it('does not publish trusted executable paths in human or JSON diagnostics', () => {

@@ -50,9 +50,7 @@ implementer_profiles:
       tool: codex
       model: dormant-model
 validation:
-  typecheck: true
-  lint: true
-  test: true
+  end_checks: true
 workflow:
   max_retries: 3
   compaction_format: auto

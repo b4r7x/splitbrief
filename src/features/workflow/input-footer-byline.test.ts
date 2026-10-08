@@ -30,6 +30,31 @@ describe('buildInputFooterByline', () => {
     expect(fullByline(byline)).toBe('⠋ Researching… 2:24');
   });
 
+  it('cuts a long reviewer check command, never its label or its clock', () => {
+    const lead =
+      '⠋ Reviewer check V1 · npx vitest run src/features/workflow/display/build-progress.test.ts';
+    for (const cols of [60, 80]) {
+      const line = fullByline(
+        buildInputFooterByline({ cols, lead, leadClock: '0:42', queuedText: '2 queued' }),
+      );
+
+      expect(line.startsWith('⠋ Reviewer check V1 · npx vitest')).toBe(true);
+      expect(line.endsWith('… 0:42')).toBe(true);
+      expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(getChromeContentWidth(cols));
+    }
+  });
+
+  it('keeps the clock after the lead when the whole line fits', () => {
+    const byline = buildInputFooterByline({
+      cols: 120,
+      lead: '⠋ Reviewer check V1 · npm test',
+      leadClock: '0:42',
+      queuedText: null,
+    });
+
+    expect(fullByline(byline)).toBe('⠋ Reviewer check V1 · npm test 0:42');
+  });
+
   it('never includes the resting Ctrl+C control cluster', () => {
     const byline = buildInputFooterByline({
       cols: 120,
@@ -191,6 +216,7 @@ describe('the stop byline through the footer', () => {
       buildInputFooterByline({
         cols: 120,
         lead: stopped.lead,
+        leadClock: stopped.clock,
         hintText: stopped.hint,
         queuedText: null,
       }),
@@ -225,6 +251,33 @@ describe('the stop byline through the footer', () => {
     expect(stopLine({ ...running, intent: 'end-run' })).toContain(
       'Ending run · Waiting for processes to exit · 0:04',
     );
+  });
+
+  it('keeps the clock of the reviewer check a pause waits on when its command is long', () => {
+    const stopped = stopByline({
+      ...running,
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      suite: {
+        id: 'V1',
+        moment: 'pre-review',
+        command: 'npx vitest run src/features/workflow/display/build-progress.test.ts',
+        elapsedMs: 42_000,
+      },
+    });
+    if (stopped === null) throw new Error('expected a stop byline');
+    const line = fullByline(
+      buildInputFooterByline({
+        cols: 60,
+        lead: stopped.lead,
+        leadClock: stopped.clock,
+        hintText: stopped.hint,
+        queuedText: null,
+      }),
+    );
+
+    expect(line.startsWith('Reviewer check V1 · npx vitest')).toBe(true);
+    expect(line.endsWith('… 0:42')).toBe(true);
   });
 
   it('says the session is being saved on the way out', () => {

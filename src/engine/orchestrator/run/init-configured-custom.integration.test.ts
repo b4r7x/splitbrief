@@ -213,7 +213,7 @@ describe('configured custom workflow runtime', () => {
           const baseConfig = ConfigSchema.parse(
             makeConfig({
               implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
-              validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+              validation: { endChecks: false, testCommand: 'noop' },
               workflow: {},
               approval: { feedRejectionsToPlanner: true },
               codebase: { enabled: false, tokenBudget: 4000 },
@@ -337,7 +337,7 @@ describe('configured custom workflow runtime', () => {
       const config = ConfigSchema.parse({
         ...makeConfig({
           implementer: { kind: 'agent', command: 'cat', outputFormat: 'text', model: 'legacy' },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
           workflow: {},
           approval: { feedRejectionsToPlanner: true },
         }),

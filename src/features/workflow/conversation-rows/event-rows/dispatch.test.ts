@@ -1533,3 +1533,57 @@ describe('consult answer rows', () => {
     }
   });
 });
+
+describe('review_checks rows', () => {
+  function reviewChecks(): EngineEventOf<'review_checks'> {
+    return {
+      type: 'review_checks',
+      ts: 0,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+      commands: [{ id: 'V1', command: 'npm test', reason: 'The unit tests cover the change.' }],
+      declined: [
+        {
+          target: 'npm run test:e2e',
+          reason: 'It needs a browser, and the change touches no screen at all.',
+        },
+      ],
+      reason: null,
+    };
+  }
+
+  it('heads the declined tests, each indented under the headline and wrapped inside the width', () => {
+    const rows = eventRows({
+      event: reviewChecks(),
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 60, viewportRows: 20, streaming },
+    });
+    const texts = rows.map(rowText).filter((text) => text.trim() !== '');
+
+    expect(texts[0]?.trim()).toBe('Reviewer checks · chose 1 · declined 1');
+    const headIndent = (texts[0] ?? '').search(/\S/);
+    const declined = texts.slice(1);
+    expect(declined.length).toBeGreaterThan(1);
+    expect(declined[0]?.trim().startsWith('declined · npm run test:e2e ·')).toBe(true);
+    for (const text of declined) {
+      expect(text.search(/\S/)).toBe(headIndent + 2);
+      expect(getTerminalCellWidth(text)).toBeLessThanOrEqual(60);
+    }
+  });
+
+  it('paints one off row when End-of-run checks are off', () => {
+    const rows = eventRows({
+      event: { type: 'review_checks', ts: 0, phase: 'final-review', scope: 'final', status: 'off' },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const texts = rows.map(rowText).filter((text) => text.trim() !== '');
+
+    expect(texts.map((text) => text.trim())).toEqual([
+      'End-of-run checks · off · no reviewer check ran',
+    ]);
+  });
+});

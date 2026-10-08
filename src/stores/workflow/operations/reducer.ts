@@ -7,11 +7,12 @@ import {
   updateKnownOperation,
 } from './runner.js';
 import { closePlannerStatusFallbacks, updatePlannerStatusFallback } from './planner-status.js';
-import type {
-  OpenTool,
-  OperationsState,
-  RunningSuiteStage,
-  RunningValidationStage,
+import {
+  suiteCommandKey,
+  type OpenTool,
+  type OperationsState,
+  type RunningSuiteStage,
+  type RunningValidationStage,
 } from './state.js';
 import { appendWarning, showsWarningOnPrimarySurface } from './warnings.js';
 
@@ -41,7 +42,8 @@ function applyValidationStage(state: OperationsState, event: ValidationEvent): O
 function runningSuiteStage(event: SuiteEvent): RunningSuiteStage | null {
   if (event.status !== 'running') return null;
   return {
-    stage: event.stage,
+    ...(event.id !== undefined && { id: event.id }),
+    ...(event.stage !== undefined && { stage: event.stage }),
     command: event.command,
     moment: event.moment,
     stageStartedTs: event.ts,
@@ -51,7 +53,9 @@ function runningSuiteStage(event: SuiteEvent): RunningSuiteStage | null {
 function applySuiteStage(state: OperationsState, event: SuiteEvent): OperationsState {
   const next = runningSuiteStage(event);
   const current = state.suiteStage ?? null;
-  if (next !== null && current?.stage === next.stage) return state;
+  if (next !== null && current !== null && suiteCommandKey(current) === suiteCommandKey(next)) {
+    return state;
+  }
   if (next === null && current === null) return state;
   return { ...state, suiteStage: next };
 }

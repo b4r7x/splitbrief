@@ -55,11 +55,11 @@ describe('recordCheckRuns', () => {
       workspaceDir: projectDir,
       state: { ...state, tasks: [task, fix] },
       task: fix,
-      validation: [{ stage: 'test', passed: false, error: 'red' }],
+      runs: [{ checkId: 'V1', status: 'fail', command: 'npm test', exitCode: 1, output: 'red' }],
     });
 
     const entry = readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T002');
-    expect(entry?.checks?.map((check) => check.id)).toEqual(['test']);
+    expect(entry?.checks?.map((check) => check.id)).toEqual(['V1']);
   });
 
   it('appends checks without changing terminal status, files or legacy validation', async () => {
@@ -83,8 +83,8 @@ describe('recordCheckRuns', () => {
       workspaceDir: projectDir,
       state,
       task,
-      validation: [{ stage: 'lint', passed: false, error: 'red' }],
       runs: [
+        { checkId: 'V1', status: 'fail', output: 'red', preExisting: ['src/old.test.ts > adds'] },
         {
           checkId: 'K1',
           status: 'pass',
@@ -101,8 +101,9 @@ describe('recordCheckRuns', () => {
     expect(checks).toEqual([
       ...(ledger.tasks[0]?.checks ?? []),
       {
-        id: 'lint',
+        id: 'V1',
         output: 'red',
+        preExisting: ['src/old.test.ts > adds'],
         workspaceSnapshotId: expect.any(String),
         ts: expect.any(String),
       },
@@ -129,7 +130,7 @@ describe('recordCheckRuns', () => {
       workspaceDir: projectDir,
       state,
       task,
-      validation: [{ stage: 'typecheck', passed: true }],
+      runs: [{ checkId: 'K1', status: 'pass', output: 'ok' }],
     });
     const first = recordedChecks(projectDir, sessionId).at(-1)?.workspaceSnapshotId;
 
@@ -140,7 +141,7 @@ describe('recordCheckRuns', () => {
       workspaceDir: projectDir,
       state,
       task,
-      validation: [{ stage: 'lint', passed: true }],
+      runs: [{ checkId: 'K1', status: 'pass', output: 'ok' }],
     });
     const second = recordedChecks(projectDir, sessionId).at(-1)?.workspaceSnapshotId;
 
@@ -149,22 +150,25 @@ describe('recordCheckRuns', () => {
     expect(second).not.toBe(first);
   });
 
-  it('logs the run baseline suite on the first task when no task is named', async () => {
-    const { projectDir, sessionId, state } = await setup('record-checks-baseline');
+  it('logs the runs on the first task when no task is named, and writes nothing for no run', async () => {
+    const { projectDir, sessionId, state } = await setup('record-checks-first-task');
+
+    await recordCheckRuns({ projectDir, sessionId, workspaceDir: projectDir, state, runs: [] });
+    expect(readEvidenceLedger({ projectDir, sessionId })).toBeNull();
 
     await recordCheckRuns({
       projectDir,
       sessionId,
       workspaceDir: projectDir,
       state,
-      validation: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'test', passed: false, error: 'boom' },
+      runs: [
+        { checkId: 'V1', status: 'pass', output: 'ok', command: 'npm test', exitCode: 0 },
+        { checkId: 'V2', status: 'refused', output: 'names no program' },
       ],
     });
 
     const checks = recordedChecks(projectDir, sessionId);
-    expect(checks.map((entry) => entry.id)).toEqual(['typecheck', 'test']);
+    expect(checks.map((entry) => entry.id)).toEqual(['V1', 'V2']);
     expect(checks[1]?.exitCode).toBeUndefined();
   });
 });

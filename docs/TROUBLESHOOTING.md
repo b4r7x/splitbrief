@@ -174,11 +174,11 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Run Readiness warns about validation, but tests were not run
 
-**Likely cause:** Readiness is a pre-run posture check, not CI. It inspects `validation.typecheck`, `validation.lint`, `validation.test`, `validation.testCommand`, and obvious package-script availability without executing validation commands.
+**Likely cause:** Readiness is a pre-run posture check, not CI. It inspects `validation.end_checks`, the command a planner `test` check resolves (`validation.test_command` first), and obvious package-script availability without executing validation commands.
 
 **Fix:**
-1. If checks are disabled intentionally, continue and run your validation manually.
-2. If `testCommand` references a missing npm script, add the script or update `.splitbrief/config.yaml`.
+1. If End-of-run checks are off intentionally (`validation.end_checks: false`), continue and run your validation manually.
+2. If `test_command` references a missing npm script, add the script or update `.splitbrief/config.yaml`.
 3. To verify the project now, run your real commands directly, such as `npm run typecheck`, `npm run lint`, and `npm test`.
 
 **Prevention:** Keep validation commands cheap and reliable so warnings remain rare.
@@ -641,17 +641,17 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ---
 
-### Symptom: Code does not typecheck after a task; workflow blocked
+### Symptom: A check fails after a task or before the review; workflow blocked
 
-**Likely cause:** The validation step (typecheck / lint / test) ran against the implementer's output and failed. The orchestrator refuses to advance the task until validation passes. SPLITBRIEF never stages or commits the result.
+**Likely cause:** A brief's check or a reviewer check ran against the implementer's output and failed. A failed brief check retries the brief. A reviewer check with new failures stops the list and reaches the reviewer as a pending input, and the reviewer returns the fix work. SPLITBRIEF never stages or commits the result.
 
 **Fix:**
-1. Open `evidence.json` for the task; the `validation` section lists the exact failing command and stderr.
-2. If the failure is a real implementation bug, retry the task — the implementer sees the previous failure as feedback.
-3. If validation is misconfigured (wrong command, missing dependency), fix the `validation` block in `.splitbrief/config.yaml` (`validation.typecheck`, `validation.lint`, `validation.test`, `validation.testCommand`) and re-run.
-4. As a last resort, set `validation.typecheck: false` / `validation.lint: false` / `validation.test: false` in config to disable the failing check while you debug — you are then responsible for running the check manually.
+1. Open `evidence.json` for the run; the checks log lists the exact failing command, its exit code and its output.
+2. If the failure is a real implementation bug, let the retry or the review fix cycle run — the implementer sees the previous failure as feedback.
+3. If a plan check is misconfigured (wrong command, missing dependency), request changes on the plan card or fix `validation.test_command` in `.splitbrief/config.yaml`. A reviewer check comes from the reviewer: correct it with a note on the review.
+4. As a last resort, set `validation.end_checks: false` to run no reviewer check while you debug — you are then responsible for running the checks manually.
 
-**Prevention:** Keep `validation.testCommand` minimal but reliable: at least `npm run typecheck`. Slow test suites should not block per-task validation; move them to CI.
+**Prevention:** Keep `validation.test_command` minimal but reliable. Keep the project's own scripts and CI configuration current: the reviewer reads them to choose its commands.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/DEBUGGING.md](./DEBUGGING.md).
 
@@ -659,16 +659,16 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A validation stage has a failure the run started with. SPLITBRIEF checks this only after a gate is red. It re-runs failing test files or the failing command on a disposable run base copy outside the checkout.
+**Likely cause:** A command has a failure the run started with. SPLITBRIEF checks this only after a command is red. It re-runs the same command text on a disposable run base copy outside the checkout.
 
 **Fix:**
 
 1. Read the `Base re-run` rows. They name the command and say whether it fails at the run base too.
 2. Read the Checks Log's `pre-existing (also red at the run base)` line for the matching keys.
-3. A task accepts a red only when every failure key is pre-existing and its evidence names no changed file. Otherwise the red blocks.
+3. Only new failures reach the reviewer as pending inputs. A pre-existing failure starts no fix.
 4. Fix the pre-existing failure separately to turn the whole tree green. SPLITBRIEF reports it without reopening, retrying or creating a brief for it.
 
-`splitbrief doctor --probe-validation` remains an explicit way to measure the suite before starting a run. It runs the configured commands and reports each stage's result and command.
+To measure the project before a run, run its own commands directly. `doctor` runs no validation command.
 
 **Prevention:** Maintain passing validation commands. The base comparison excludes pre-existing failures from fixes and still blocks failures the run causes.
 
@@ -676,31 +676,31 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ---
 
-### Symptom: the run printed `gates: NONE — review-only` and validated nothing
+### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack`
 
-**Likely cause:** No validation stage could resolve a command, so every enabled stage was recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.*Command`, no matching `package.json` script / `Makefile` / `justfile` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` or `npx tsc --noEmit` at that point — a fabricated gate that passes is worse than a stated absence. The run still implements and still reviews; nothing was verified by a gate.
+**Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A required `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the command policy runs only programs on its allowlist.
 
 **Fix:**
 1. If the repo does have a stack SPLITBRIEF knows, pin it: `validation.stack: python` (or `go`, `rust`, `typescript`, `javascript`). Detection order is rust → go → python → typescript → javascript, so a pin is also the fix when the wrong marker wins in a polyglot repo.
-2. If the stack is one SPLITBRIEF does not model, name the commands yourself — `validation.typecheckCommand`, `validation.lintCommand`, `validation.testCommand`. They run as written, take the top rung of the ladder, and turn the gates back on.
-3. A named `typecheck` / `lint` / `test` script in `package.json`, or a target of that name in a `Makefile` or `justfile`, is picked up automatically — adding one is often the smallest fix.
-4. Check what actually ran: `evidence.json` records each stage as `<stage> skipped (<reason>)` rather than passed, and a skipped test stage shows up as missing evidence in `drift-report.json`.
+2. If the stack is one SPLITBRIEF does not model, set `validation.test_command`. It runs as written and takes the top rung of the ladder.
+3. A `test` script in `package.json`, or a `test` target in a `Makefile` or `justfile`, is picked up automatically — adding one is often the smallest fix.
+4. Check what actually ran: `evidence.json` records the check as `not-runnable` with its reason, never as passed.
 
-**Prevention:** Run `splitbrief doctor` before the first run in a new repo — the validation checks report the resolved command per stage, so an unrecognised stack is visible before a run spends tokens on it.
+**Prevention:** Run `splitbrief doctor` before the first run in a new repo — the validation check reports the resolved test check command, so an unrecognised stack is visible before a run spends tokens on it.
 
 **See also:** [docs/FEATURES.md](./FEATURES.md#validation-pipeline--checkpoints) (the per-stack table), [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`).
 
 ---
 
-### Symptom: A pre-review suite or base re-run takes a long time
+### Symptom: A reviewer check or base re-run takes a long time
 
-**Likely cause:** A validation command is slow. Each enabled stage has its own `validation.timeoutMs`, which defaults to one hour. The pre-review suite runs every enabled stage. A red then re-runs failing tests or the command at the run base.
+**Likely cause:** A reviewer check is slow. Each reviewer check has its own `validation.timeout_ms`, which defaults to one hour. A red reviewer check then re-runs with the same command text at the run base.
 
 **Fix:**
 
-1. Read the byline and transcript for `Pre-review suite · <command>` or `Base re-run · <command>` and the elapsed time.
-2. Set `validation.timeoutMs` to the time the command needs, with a minimum of 1000 ms. A review timeout is pre-existing only if the base re-run also times out.
-3. Use `splitbrief doctor --probe-validation` when you want to measure the suite explicitly. No gate runs before a run's first task.
+1. Read the byline and transcript for `Reviewer check V1 · <command>` or `Base re-run V1 · <command>` and the elapsed time.
+2. Set `validation.timeout_ms` to the time the command needs, with a minimum of 1000 ms. A timeout is pre-existing only if the base re-run also times out.
+3. Correct the review with a note that names a faster command, or set `validation.end_checks: false` and run the commands yourself. No check runs before a run's first task.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -1213,9 +1213,9 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 **Likely cause:** Per-task validation is mandatory by design — it is the contract that makes briefs trustworthy. Skipping it weakens the entire workflow.
 
 **Fix:**
-1. The closest escape hatch is to set specific validation toggles to `false` in `.splitbrief/config.yaml` — e.g. `validation.test: false` to drop slow tests, or `validation.lint: false` to skip the linter. There is no `--no-validate` CLI flag.
+1. The nearest option is `validation.end_checks: false` in `.splitbrief/config.yaml` (Settings: End-of-run checks). It turns off the reviewer checks; plan and task checks still run. There is no `--no-validate` CLI flag.
 2. Better: fix the underlying validation failure rather than bypassing it.
-3. Better still: relax `validation.testCommand` (e.g. drop slow tests from the per-task check, leave them for CI).
+3. Better still: relax `validation.test_command` (e.g. drop slow tests from the planner's `test` checks, leave them for CI).
 
 **Prevention:** Treat validation toggles as a temporary debugging tool, not a permanent workflow option. If you find yourself disabling checks routinely, your validation config is wrong.
 

@@ -84,7 +84,7 @@ function fixtureConfig(seats: FixtureRowSeats): Config {
     planner: { kind: 'cli', tool: catalogTool(seats.plan.tool), model: seats.plan.model },
     implementer: { kind: 'cli', tool: catalogTool(seats.build.tool), model: seats.build.model },
     reviewer: { kind: 'cli', tool: catalogTool(seats.review.tool), model: seats.review.model },
-    validation: { typecheck: true, lint: false, test: true, testCommand: 'npm test' },
+    validation: { endChecks: true, testCommand: 'npm test' },
     workflow: {
       approve: 'none',
       maxRetries: 1,

@@ -425,7 +425,7 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retry, the consult, and the evidence between them. It composes two roles around a strict workflow:
 
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
-2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the typecheck / lint / test gates that judge the result are SPLITBRIEF's, resolved from config, planner-discovered validation, heuristic fallback, or defaults.
+2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the checks that judge the result are SPLITBRIEF's: the plan's checks, and the reviewer checks that the review seat chooses from the project and SPLITBRIEF runs under its command policy.
 
 The repository layers many supporting subsystems on top of that core loop:
 
@@ -540,7 +540,7 @@ src/
 │   ├── types/                     config-options, state-actions (branded),
 │   │                              summary
 │   ├── validation/stacks/         typescript, javascript, python, go, rust +
-│   │                              registry, on-path, types
+│   │                              registry, types
 │   └── validation/test-discovery  Test-command auto-detection
 │
 ├── engine/                        Workflow logic — zero React imports
@@ -596,6 +596,8 @@ src/
 │   │   ├── evidence/              ledger, persistence, reporting,
 │   │   │                          task/approval evidence, review packets
 │   │   ├── final-review.ts        Final-review phase
+│   │   ├── review-checks.ts       Reviewer checks: the plan call,
+│   │   │                          the run, the base re-run and the stop rule
 │   │   ├── queue/                 Message queue (submit, drain, clear, prompt, native-injection)
 │   │   ├── planning/              run, session (planning session, plan
 │   │   │                          card), plan-session, plan-context-fit,
@@ -615,8 +617,9 @@ src/
 │   │   │                          without native session resume
 │   │   ├── types.ts               WorkflowContext, OrchestratorCallbacks,
 │   │   │                          WorkflowSinks
-│   │   └── validation/            Validator pipeline (typecheck / lint / test),
-│   │                              run-checks (a consult's verify selection)
+│   │   └── validation/            run-checks (plan, task and reviewer checks),
+│   │                              changed-script (refuses a script the run changed),
+│   │                              formatter pass, planner `test` check command
 │   ├── parsers/                   code-detection, code-patterns,
 │   │                              question, response-extractor,
 │   │                              scope-extractor
@@ -892,8 +895,8 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 **Implementer (3):**
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
-**Validation / escalation / git (7):**
-`validate`, `full_suite` (a running and a done event for every full-suite stage the run runs: its `stage`, `command` and `moment` — `pre-review` | `base` — with pass/fail and duration on done), `checks_run` (a consult `verify` answer's per-check results), `git_branch_created`. Replay only: `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
+**Validation / escalation / git (8):**
+`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` — the chosen `commands`, the `declined` tests and the `reason`), `full_suite` (one event per reviewer check state: its `id`, `command`, `moment` — `pre-review` | `base` — and `status` `running` | `done` | `not-run` | `refused`, with pass/fail and duration on done and a `detail` on not-run and refused; an event without `id` is an older session's full-suite `stage`), `checks_run` (a brief's or a consult `verify` answer's per-check results; it fires `post_validation`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
 
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`
@@ -911,7 +914,7 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 `replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
 **Generic (2):**
-`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `planner` / `planner_returned_zero_tasks` (the `tasks` call returned no parsable Task Brief) · `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `no_gates_unknown_stack` (the project matches no validation stack, so the run is review-only) · `validation_format_failed` (the pre-lint formatting of the brief's changed files failed; the lint stage ran anyway) · `validation_formatted` (the pre-lint formatting rewrote files of the brief; the message names them). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
+`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `planner` / `planner_returned_zero_tasks` (the `tasks` call returned no parsable Task Brief) · `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `validation_format_failed` (the formatting of the brief's changed files failed; the checks ran anyway) · `validation_formatted` (the pre-lint formatting rewrote files of the brief; the message names them). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
 
 ### Exhaustive switch in conversation row rendering
 

@@ -595,6 +595,29 @@ describe('groupEventsIntoSections', () => {
       });
     });
 
+    it('counts a red reviewer check as a failed command, not its refused, skipped or base rows', () => {
+      const check = (ts: number, id: string, fields: Record<string, unknown>) =>
+        at('full_suite', 'final-review', ts, { id, moment: 'pre-review', ...fields });
+      const sections = groupEventsIntoSections([
+        start('T001', 0),
+        complete('T001'),
+        at('review_checks', 'final-review', 19_000, { scope: 'final', status: 'planned' }),
+        check(19_500, 'V1', { status: 'refused', command: 'npm run lint', detail: 'changed' }),
+        check(20_000, 'V2', { status: 'done', command: 'npm run typecheck', passed: true }),
+        check(20_500, 'V3', { status: 'done', command: 'npm test', passed: false }),
+        check(21_000, 'V3', { status: 'done', command: 'npm test', moment: 'base', passed: false }),
+        check(21_500, 'V4', { status: 'not-run', command: 'make test', detail: 'V3 failed' }),
+        at('review_fix_started', 'implementing', 22_000, { taskIds: ['T002'] }),
+        start('T002', 1),
+      ]);
+
+      expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
+        stage: 'review',
+        failedCommands: ['npm test'],
+        fixes: ['T002'],
+      });
+    });
+
     it('ignores untimed rows and uses zero duration when a stage has only one timestamp', () => {
       const sections = groupEventsIntoSections([
         { type: 'planner_text', phase: 'planning' } as const,

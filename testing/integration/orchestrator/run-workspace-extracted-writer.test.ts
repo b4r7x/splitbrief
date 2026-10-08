@@ -58,7 +58,7 @@ describe('an extracted-code writer in the run workspace', { timeout: 90_000 }, (
       evidence: ['src/value.ts exports value 2'],
     });
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { approve: 'none', maxRetries: 2 },
     });
     const planner = makePlanner({ typedCall: typedCallFromTasks([task]) });

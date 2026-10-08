@@ -4,6 +4,7 @@ import {
   sanitizeTerminalDiagnosticText,
   sanitizeTerminalDisplayText,
 } from '../../utils/display-text.js';
+import { suiteCommandKey } from './operations/state.js';
 
 export interface EventsState {
   events: EngineEvent[];
@@ -102,7 +103,7 @@ function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailM
     event.type === 'full_suite' &&
     last?.type === 'full_suite' &&
     last.status === 'running' &&
-    last.stage === event.stage
+    suiteCommandKey(last) === suiteCommandKey(event)
   ) {
     return { kind: 'replace', event };
   }

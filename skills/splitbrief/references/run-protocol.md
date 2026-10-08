@@ -78,9 +78,9 @@ For each selected pending task whose dependencies are done:
 5. Spawn with references/tool-recipes.md and wait using the protocol below.
 6. Read the terminal result and advisory completion report.
 7. Route blocked reports, proposed decisions, and failures through references/recovery.md.
-8. Record touched files and reasons, then run the cadence gate for the task with references/gates.md.
-9. Mark the task done only after that gate passes. Update and print progress.
-10. At task cadence, enter review for completed work before dispatching another task. That review runs no full suite.
+8. Record touched files and reasons. At task cadence, run the task's checks and the due checks with references/gates.md. At end cadence, run none.
+9. At task cadence, mark the task done only after those checks pass. Update and print progress.
+10. At task cadence, enter review for completed work before dispatching another task. That review runs the related tests the reviewer chooses.
 
 Take an attempt-start snapshot of candidate bytes for recovery; preserve accepted earlier task changes.
 Record command, exit, terminal result, report, changed paths, check results, and outcome in the evidence trail.
@@ -92,7 +92,7 @@ At `cadence=task`, also review after every completed task, scoped to completed t
 A criterion is due when all current tasks serving it are done. Keep pending criteria listed separately.
 For a one-task selection, review only the selected task, its appended fixes, and criteria due within that selection.
 Criteria shared with unfinished tasks remain pending. Never claim the whole plan passed for one selected brief.
-There is no batch review cadence. The final review runs the full gates first under references/gates.md.
+There is no batch review cadence. The final review runs every registered check and its reviewer checks first under references/gates.md.
 
 Prepare the current packet and derive the verdict using references/review-format.md.
 Send unresolved findings to planner triage in references/recovery.md.

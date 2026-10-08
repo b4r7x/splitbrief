@@ -36,7 +36,7 @@ Write review-packet.md with this shape:
     <per-task changed paths and touchedNotSuggested entries with reasons>
 
     ## Recorded Validation Output
-    <current full-suite output and required checks by id, with commands, exits and artifact paths>
+    <reviewer check output and required checks by id, with commands, exits and artifact paths>
 
     ## Consults and user answers
     <consult log, triage log, rejected findings with reasons, and user answers>
@@ -64,7 +64,7 @@ Write review-packet.md with this shape:
 Include approved plan.json, all confirmed decisions, criterion text, relevant briefs and the current run diff.
 Group changes by task. Include touchedNotSuggested paths and their reasons, check results, consults, triage and user answers.
 Use baseline bytes and hashes for the run diff. Exclude unchanged pre-existing edits and run artifacts.
-Save the current full-suite and required-check output with commands, exits, ids and artifact paths.
+Save the current reviewer-check and required-check output with commands, exits, ids and artifact paths.
 Reject an oversized packet rather than silently dropping files or evidence.
 For a malformed answer, attach the invalid answer and parser errors to the permitted fresh repair call.
 

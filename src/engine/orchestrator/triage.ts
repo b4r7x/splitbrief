@@ -7,6 +7,7 @@ import type { SpecMetadata } from '../../core/paths-io.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
 import {
   fixCyclesOf,
+  type ReviewChecksRecord,
   type ReviewRecord,
   type TriageRecord,
   type WorkflowState,
@@ -21,11 +22,13 @@ import { transitionAndSave } from './state-ops.js';
 import type { WorkflowContext } from './types.js';
 import {
   checkRegistry,
+  enabledReviewChecks,
   planApprovesNpmScripts,
   runChecks,
   type CheckRunResult,
 } from './validation/run-checks.js';
 import { recordCheckRuns } from './evidence/record-checks.js';
+import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
 
 export function checkVerificationStatus(
@@ -61,6 +64,7 @@ export function triageContractErrors(
   findings: readonly Finding[],
   inputs: readonly TriageInput[],
   tasks: readonly Task[] = [],
+  reviewChecks?: ReviewChecksRecord | undefined,
 ): string[] {
   const errors: string[] = [];
   const blocking = findings.filter(
@@ -130,7 +134,7 @@ export function triageContractErrors(
       }
     }
   }
-  const checks = checkRegistry({ plan, tasks });
+  const checks = checkRegistry({ plan, tasks, reviewChecks });
   for (const entry of result.verify) {
     for (const checkId of entry.checkIds) {
       if (!checks.has(checkId)) {
@@ -152,6 +156,8 @@ export async function runTriageVerification(
     const runs = await runChecks(entry.checkIds, {
       plan: state.plan,
       tasks: state.tasks,
+      reviewChecks: enabledReviewChecks(ctx.config, state.reviewChecks),
+      base: runBaseOf({ projectDir: ctx.projectDir, sessionId: ctx.sessionId }, state),
       projectDir: ctx.workspaceDir,
       sessionId: ctx.sessionId,
       checkoutDir: ctx.projectDir,
@@ -203,8 +209,8 @@ function findingFor(
     text: input.text,
     acceptance: null,
     ...(input.file !== null && { file: input.file }),
-    ...(input.stage !== undefined && { stage: input.stage }),
     ...(input.checkIds !== undefined && { checkIds: input.checkIds }),
+    ...(input.command !== undefined && { command: input.command }),
     ...(input.output !== undefined && { output: input.output }),
   };
 }

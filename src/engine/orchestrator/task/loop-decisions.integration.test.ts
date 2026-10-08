@@ -24,9 +24,9 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { LineageRecord, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
-import type { RunValidationOptions, Validator } from '../validation/types.js';
-import type { ValidationResult } from '../validation/result.js';
-import { createValidator } from '../validation/run.js';
+import type { Validator } from '../validation/types.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { runTaskLoop } from './loop.js';
 import { ABSENT_INPUT_HASH } from './stale-inputs.js';
@@ -50,6 +50,7 @@ const LINT_ERROR = 'prior-run.test.ts:224 Formatter would have printed different
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -77,8 +78,13 @@ function lineage(overrides: Partial<LineageRecord>): LineageRecord {
   };
 }
 
+/** Each brief carries one required check, `K-<task id>`, so the brief gate runs it. */
 function stateWithPlan(tasks: Task[], overrides?: Partial<WorkflowState>): WorkflowState {
-  return makeImplState(tasks, {
+  const checked = tasks.map((task) => ({
+    ...task,
+    checks: [{ id: `K-${task.id}`, kind: 'cmd' as const, value: 'tsc --noEmit', required: true }],
+  }));
+  return makeImplState(checked, {
     plan: {
       summary: 'Finish the review pipeline.',
       decisions: [],
@@ -128,16 +134,23 @@ function decidingImplementer(decisionsPerCall: readonly (readonly Decision[])[])
   });
 }
 
-/** A validator whose calls answer from a script per task; past the script every call passes. */
-function scriptedValidator(script: Record<string, readonly (string | null)[]>): Validator {
+/**
+ * Each brief check answers from a script per task; past the script every run passes. `checkRuns`
+ * records the task of every check run.
+ */
+function scriptedValidator(
+  script: Record<string, readonly (string | null)[]>,
+): Validator & { checkRuns: ReturnType<typeof vi.fn> } {
   const queues = new Map(Object.entries(script).map(([id, answers]) => [id, [...answers]]));
-  const runValidation = vi.fn(async (opts: RunValidationOptions): Promise<ValidationResult[]> => {
-    const error = queues.get(opts.task.id)?.shift() ?? null;
-    return error === null
-      ? [{ stage: 'typecheck', passed: true }]
-      : [{ stage: 'typecheck', passed: false, error }];
+  const checkRuns = vi.fn();
+  vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (_cmd, _args, options) => {
+    const id = (options?.label ?? '').replace(/^check K-/, '');
+    checkRuns(id);
+    const error = queues.get(id)?.shift() ?? null;
+    if (error === null) return { stdout: '', stderr: '', code: 0 };
+    throw processError.exitCode({ command: 'tsc', code: 2, stderr: error, output: '' });
   });
-  return { ...createValidator(), runValidation };
+  return { formatChangedFiles: vi.fn().mockResolvedValue(undefined), checkRuns };
 }
 
 function confirm(decisions: readonly Decision[]): ConsultAnswer {
@@ -216,7 +229,7 @@ async function runLoop(opts: {
     makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,
-      config: makeNoValidationConfig({ workflow: { review: 'task' }, validation: { test: true } }),
+      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
       callbacks: opts.callbacks ?? makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
       planner: opts.planner,
       implementer: opts.implementer,
@@ -575,7 +588,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(result.status).toBe('complete');
     expect(onPlannerReply).toHaveBeenCalledTimes(1);
     // The attempt that reported the change of what was not validated.
-    expect(validator.runValidation).toHaveBeenCalledTimes(2);
+    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
     expect(retries).toHaveLength(2);
     expect(retries[1]?.error).toContain(ANSWER);
@@ -614,7 +627,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.status).toBe('complete');
-    expect(validator.runValidation).toHaveBeenCalledTimes(1);
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
     expect(result.state.plan?.decisions).toEqual([]);
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
     expect(events).toContainEqual(
@@ -649,7 +662,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     });
 
     expect(result.state.pendingRecovery).toMatchObject({ taskId: 'T001' });
-    expect(validator.runValidation).not.toHaveBeenCalled();
+    expect(validator.checkRuns).not.toHaveBeenCalled();
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeDefined();
     // The implementer attempt behind the failed confirmation still counts on the lineage.
     expect(result.state.lineages?.T001?.attempts).toBe(1);
@@ -682,7 +695,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.status).not.toBe('complete');
     expect(result.state.pendingRecovery).toBeUndefined();
-    expect(validator.runValidation).not.toHaveBeenCalled();
+    expect(validator.checkRuns).not.toHaveBeenCalled();
     expect(result.state.plan?.decisions).toEqual([]);
     expect(result.state.tasks[0]?.status).not.toBe('done');
   });
@@ -779,10 +792,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({
-          workflow: { review: 'task' },
-          validation: { test: true },
-        }),
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
         callbacks: makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
         isolation: makeWorktreeIsolation({ projectDir, sessionId }),
         planner,
@@ -822,7 +832,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
     expect(eventTypes(events).filter((type) => type.startsWith('consult:'))).toEqual([]);
     // Its validation reads every file the brief changed since it first started.
-    const replayValidation = vi.mocked(validator.runValidation).mock.calls.at(-1)?.[0];
+    const replayValidation = vi.mocked(validator.formatChangedFiles).mock.calls.at(-1)?.[0];
     expect(replayValidation?.changedFiles).toEqual(
       expect.arrayContaining(['src/a.ts', 'src/b.ts']),
     );

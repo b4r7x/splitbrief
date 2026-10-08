@@ -102,13 +102,13 @@ describe('SettingsOverlay', () => {
   });
 
   it('renders the Workflow section above the Validation section', async () => {
-    overlayStore.open('settings', 'validation.lint');
+    overlayStore.open('settings', 'validation.endChecks');
     const ui = renderAt(120, 40);
     await flushEffects();
     const lines = frameLines(ui);
 
     const workflowRowIndex = indexOfLine(lines, 'Create branch');
-    const validationRowIndex = indexOfLine(lines, 'Lint');
+    const validationRowIndex = indexOfLine(lines, 'End-of-run checks');
 
     expect(workflowRowIndex).toBeGreaterThan(-1);
     expect(validationRowIndex).toBeGreaterThan(-1);
@@ -245,12 +245,12 @@ describe('SettingsOverlay', () => {
   // the spacer above its rule, so a description that wraps must not grow the panel by a row.
   it('keeps the frame height identical between a 1-line and a 2-line description row', async () => {
     // Inner width at 70 cols / roomy density is 60 cells (70 - 4 - OVERLAY_FRAME_COLS).
-    const shortDef = SETTINGS_DEFS.find((def) => def.id === 'validation.lint');
+    const shortDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.git.createBranch');
     const longDef = SETTINGS_DEFS.find((def) => def.id === 'workflow.approve');
     expect(shortDef?.description.length).toBeLessThanOrEqual(60);
     expect(longDef?.description.length).toBeGreaterThan(60);
 
-    overlayStore.open('settings', 'validation.lint');
+    overlayStore.open('settings', 'workflow.git.createBranch');
     const shortUi = renderAt(70, 40);
     await flushEffects();
     const shortFrame = stripAnsiStyles(shortUi.lastFrame()).split('\n');
@@ -262,7 +262,9 @@ describe('SettingsOverlay', () => {
     const longFrame = stripAnsiStyles(longUi.lastFrame()).split('\n');
     longUi.unmount();
 
-    expect(shortFrame.some((line) => line.includes('Run linter'))).toBe(true);
+    expect(shortFrame.some((line) => line.includes('Auto-create a splitbrief/<slug> branch'))).toBe(
+      true,
+    );
     const wrapStart = longFrame.findIndex((line) => line.includes('Whether the plan waits'));
     expect(wrapStart).toBeGreaterThan(-1);
     expect(longFrame[wrapStart]).not.toContain('starts');
@@ -309,8 +311,9 @@ describe('SettingsOverlay', () => {
   });
 
   it('does not toggle a setting with Space when no setting row is visible', async () => {
-    overlayStore.open('settings', 'validation.typecheck');
-    expect(configStore.get().config?.validation.typecheck).toBe(true);
+    seed({ validation: { endChecks: true } });
+    overlayStore.open('settings', 'validation.endChecks');
+    expect(configStore.get().config?.validation.endChecks).toBe(true);
 
     const ui = renderAt(100, 8);
     await flushEffects();
@@ -318,7 +321,7 @@ describe('SettingsOverlay', () => {
     ui.stdin.write(' ');
     await tick(20);
 
-    expect(configStore.get().config?.validation.typecheck).toBe(true);
+    expect(configStore.get().config?.validation.endChecks).toBe(true);
     ui.unmount();
   });
 
@@ -403,7 +406,7 @@ describe('SettingsOverlay', () => {
 
   it.each([
     ['workflow.approve', 'space cycle'],
-    ['validation.lint', 'space toggle'],
+    ['validation.endChecks', 'space toggle'],
     ['validation.testCommand', '⏎ edit'],
   ])('advertises %s as %s in the legend', async (focus, hint) => {
     overlayStore.open('settings', focus);
@@ -479,12 +482,12 @@ describe('SettingsOverlay', () => {
 
   it('keeps the list rows clickable', async () => {
     _resetMouseZones();
-    overlayStore.open('settings', 'validation.typecheck');
+    overlayStore.open('settings', 'validation.endChecks');
     const ui = renderAt(120, 40);
     await flushEffects();
 
     expect([...collectClickableZones({ cols: 120, rows: 40 }).keys()]).toContain(
-      'list-row:validation.typecheck',
+      'list-row:validation.endChecks',
     );
 
     ui.unmount();

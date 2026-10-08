@@ -1,19 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { VALIDATION_STAGES } from '../schemas/enums.js';
 import { NARROWING_KINDS } from '../validation/stacks/types.js';
-import {
-  CAPTURE_LIMITS,
-  GATE_ORDER,
-  NARROWING_RULE,
-  NO_GATES_WARNING,
-  STAGE_TIMEOUT_MS,
-} from './gates.js';
-
-describe('GATE_ORDER', () => {
-  it('matches the validation stage order', () => {
-    expect(GATE_ORDER).toEqual([...VALIDATION_STAGES]);
-  });
-});
+import { CAPTURE_LIMITS, NARROWING_RULE, STAGE_TIMEOUT_MS } from './gates.js';
 
 describe('CAPTURE_LIMITS', () => {
   it('caps captured output and the test tail', () => {
@@ -27,15 +14,10 @@ describe('STAGE_TIMEOUT_MS', () => {
   });
 });
 
-describe('NO_GATES_WARNING', () => {
-  it('carries the code the validator publishes for an unrecognised stack', () => {
-    expect(NO_GATES_WARNING).toEqual({ category: 'validation', code: 'no_gates_unknown_stack' });
-  });
-});
-
 describe('NARROWING_RULE', () => {
   it('names every narrowing kind', () => {
     expect(NARROWING_RULE.kinds).toEqual(NARROWING_KINDS);
     expect(NARROWING_RULE.text).toContain('stack default');
+    expect(NARROWING_RULE.text).toContain('`test` check');
   });
 });

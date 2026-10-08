@@ -2,7 +2,6 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import type { ValidationResult } from '../validation/result.js';
 import type { CheckRunResult } from '../validation/run-checks.js';
-import { boundedOutputTail } from '../validation/stage.js';
 import type {
   EvidenceApiApply,
   EvidenceCheckEntry,
@@ -28,32 +27,14 @@ type CheckEntryMeta = {
   workspaceSnapshotId?: string | undefined;
 };
 
-function stageCheckEntry(
-  result: ValidationResult,
-  meta: CheckEntryMeta,
-  ts: string,
-): EvidenceCheckEntry {
-  const entry: EvidenceCheckEntry = { id: result.stage, ts };
-  if (result.command !== undefined) entry.command = result.command;
-  if (result.exitCode !== undefined) entry.exitCode = result.exitCode;
-  const diagnostics = result.passed
-    ? result.output
-    : [result.output, result.error].filter((part) => (part ?? '').trim() !== '').join('\n');
-  if (diagnostics !== undefined && diagnostics.trim() !== '') {
-    entry.output = boundedOutputTail(diagnostics);
-  }
-  if (result.preExisting !== undefined && result.preExisting.length > 0) {
-    entry.preExisting = [...result.preExisting];
-  }
-  if (meta.workspaceSnapshotId !== undefined) entry.workspaceSnapshotId = meta.workspaceSnapshotId;
-  return entry;
-}
-
 function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): EvidenceCheckEntry {
   const entry: EvidenceCheckEntry = { id: run.checkId, ts };
   if (run.command !== undefined) entry.command = run.command;
   if (run.exitCode !== undefined) entry.exitCode = run.exitCode;
   if (run.output.trim() !== '') entry.output = run.output;
+  if (run.preExisting !== undefined && run.preExisting.length > 0) {
+    entry.preExisting = [...run.preExisting];
+  }
   if (run.artifacts !== undefined && run.artifacts.length > 0) {
     entry.artifacts = run.artifacts.map((artifact) => ({
       path: artifact.path,
@@ -65,17 +46,13 @@ function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): E
 }
 
 export function checkEntries(input: {
-  validation?: readonly ValidationResult[] | undefined;
   runs?: readonly CheckRunResult[] | undefined;
   workspaceSnapshotId?: string | undefined;
   ts?: string | undefined;
 }): EvidenceCheckEntry[] {
   const ts = input.ts ?? nowIso();
   const meta: CheckEntryMeta = { workspaceSnapshotId: input.workspaceSnapshotId };
-  return [
-    ...(input.validation ?? []).map((result) => stageCheckEntry(result, meta, ts)),
-    ...(input.runs ?? []).map((run) => runCheckEntry(run, meta, ts)),
-  ];
+  return (input.runs ?? []).map((run) => runCheckEntry(run, meta, ts));
 }
 
 /**

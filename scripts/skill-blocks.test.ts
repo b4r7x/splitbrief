@@ -12,7 +12,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
-import { GATE_ORDER } from '../src/core/pipeline-spec/gates.js';
 import { GENERATED_BLOCK_IDS, renderBlock } from './skill-blocks.js';
 import { runSyncCli } from './sync-skills.js';
 
@@ -24,7 +23,7 @@ const SENTINELS: Record<string, string> = {
   'seat-recovery': 'retries with backoff',
   'halt-signatures': '`credit balance is too low`',
   'halt-signatures-sh': "*'sandbox required but unavailable'*) halt=spawn ;;",
-  'gate-rules': 'typecheck → lint → test',
+  'gate-rules': 'Stop at the first reviewer check with new failures',
   gates: 'uv run pytest',
   'brief-grouping': 'no file-count or line-count threshold decides a boundary',
   'body-order': '`### Current Code` is never sent to a direct writer',
@@ -83,18 +82,18 @@ describe('skill-blocks', () => {
     expect(preamble).not.toContain('promoted');
     expect(preamble).not.toContain('SPLITBRIEF');
     expect(preamble).toContain(
-      "The orchestrator runs the project's typecheck, lint and test gates after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.",
+      'The orchestrator runs the checks after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names.',
     );
     expect(preamble).not.toMatch(/run at most/i);
     expect(preamble).toContain('never run a package-manager install');
   });
 
-  it('gives the gates to the orchestrator in the closing line', () => {
+  it('gives the checks to the orchestrator in the closing line', () => {
     const closing = renderBlock('closing-line') ?? '';
     expect(closing).not.toContain('SPLITBRIEF');
     for (const line of closing.split('\n')) {
       expect(line).toContain(
-        `The orchestrator runs the ${GATE_ORDER.join(', ')} gates after you hand back, so run no test or other gate command.`,
+        'The orchestrator runs the checks after you hand back, so run no test, typecheck, lint or other check command.',
       );
       expect(line).not.toContain('format');
     }
@@ -258,6 +257,17 @@ describe('skill-blocks', () => {
     expect(preamble).toContain('"decisions":[{"what":"<proposed deviation>","why":"<reason>"}]');
     expect(preamble).toContain('advisory');
     expect(preamble).toContain('render checks are unavailable');
+  });
+
+  it('states the reviewer-check rules: plan call, stop rule, base re-run and refusal scope', () => {
+    const rules = renderBlock('gate-rules') ?? '';
+    expect(rules).toContain('A failed plan call halts the review');
+    expect(rules).toContain('a plan or task check is never refused for that');
+    expect(rules).toContain(
+      'Plan checks, task checks and the Apply re-check never re-run at the run base',
+    );
+    expect(rules).toContain('With End-of-run checks off, no reviewer check runs');
+    expect(rules).not.toMatch(/typecheck → lint|full suite|verification plan/iu);
   });
 
   it('renders typed review coverage and appends fixes instead of reopening completed tasks', () => {

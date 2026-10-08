@@ -16,11 +16,16 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import type { Check } from '../../../core/schemas/task.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+
+// The pre_validation hook gates the brief checks: a brief with no check runs no hook.
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
 
 let trustHome: ReturnType<typeof useTrustHome>;
 
@@ -29,6 +34,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   cleanupTaskProjects();
   trustHome.restore();
 });
@@ -41,6 +47,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       action: 'create',
       suggestedFiles: ['src/hello.ts'],
       scope: { inBounds: ['src/hello.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
 
@@ -56,7 +63,9 @@ describe('runSingleTask — pre_validation hooks', () => {
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
-    const runValidation = vi.fn().mockResolvedValue([]);
+    const runCommand = vi
+      .spyOn(commandRunner, 'runCommand')
+      .mockResolvedValue({ stdout: '', stderr: '', code: 0 });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const hooks: HooksConfig = {
@@ -83,9 +92,7 @@ describe('runSingleTask — pre_validation hooks', () => {
           workflow: { review: 'task' },
 
           hooks,
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
     const result = await runSingleTask({
@@ -99,7 +106,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       setCurrentTask: vi.fn(),
     });
 
-    expect(runValidation).not.toHaveBeenCalled();
+    expect(runCommand).not.toHaveBeenCalled();
     expect(result.tasks[0]?.status).toBe('skipped');
     expect(result.currentTaskIndex).toBe(1);
     expect(result.pendingRecovery).toBeUndefined();
@@ -132,6 +139,7 @@ describe('runSingleTask — pre_validation hooks', () => {
       action: 'create',
       suggestedFiles: ['src/hello.ts'],
       scope: { inBounds: ['src/hello.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const second = makeTask({ id: 'T002', suggestedFiles: ['src/other.ts'] });
     const state = implementingState([first, second]);
@@ -158,9 +166,14 @@ describe('runSingleTask — pre_validation hooks', () => {
       implement: vi.fn().mockImplementation(write('export const hello = 1;\n')),
       retry: vi.fn().mockImplementation(write('export const hello = 2;\n')),
     });
-    const runValidation = vi
-      .fn()
-      .mockResolvedValue([{ stage: 'test', passed: false, output: 'FAIL src/hello.test.ts' }]);
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({
+        command: 'tsc',
+        code: 2,
+        stderr: 'src/hello.ts(1,1): error TS2322',
+        output: '',
+      }),
+    );
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const hooks: HooksConfig = {
@@ -186,9 +199,7 @@ describe('runSingleTask — pre_validation hooks', () => {
         config: makeConfig({
           workflow: { review: 'task' },
           hooks,
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
     const result = await runSingleTask({
@@ -203,7 +214,7 @@ describe('runSingleTask — pre_validation hooks', () => {
     });
 
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(runValidation).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledTimes(1);
     expect(result.tasks.map((task) => task.status)).toEqual(['skipped', 'pending']);
     expect(result.currentTaskIndex).toBe(1);
     expect(result.pendingRecovery).toBeUndefined();

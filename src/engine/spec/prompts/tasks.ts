@@ -4,12 +4,12 @@ import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../headings.js';
 
 const H = TASK_BRIEF_HEADINGS;
 
-/** The gates are SPLITBRIEF's, so a brief never orders the implementer to run them. */
+/** The checks are SPLITBRIEF's, so a brief never orders the implementer to run them. */
 export const GATES_ARE_SPLITBRIEFS =
-  "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs typecheck, lint and the tests itself, all of them before the final review. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.";
+  "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs the checks itself, and before each review the reviewer chooses the commands that verify the change. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.";
 
 const EVIDENCE_PROOF =
-  "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and gate runs are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.";
+  "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and check runs are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.";
 
 const SCOPE_MEANING =
   '`files` are the suggested files; **Out of bounds** lists the explicit exclusions the reviewer checks.';
@@ -27,7 +27,7 @@ export function briefContract(ctx: LanguageContext): string {
 8. **Escalation** — \`${H.escalation.heading}\`: bullets describing when the implementer must stop and ask instead of guessing. Required whenever the brief contains plausible ambiguity.
 9. **Evidence** — \`${H.evidence.heading}\`: the task's checks and the criteria they prove, REQUIRED bullets describing the reviewable proof that should exist when the brief is done ${EVIDENCE_PROOF}
 
-Every brief must also leave typecheck, lint and tests green on its own. Never plan for a failing gate: when a change would break a sibling file, widen the brief's \`files\` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its \`files\` name every consumer found by searching the whole repository — \`src/\` and \`testing/\` alike, colocated and sibling tests included.`;
+Every brief must also leave the project's checks (its type checks, linters and tests) green on its own. Never plan for a failing check: when a change would break a sibling file, widen the brief's \`files\` to include it, keep the change backward compatible with an optional property and a default, or split the work so each brief lands whole. Before a brief deletes or renames an export, its \`files\` name every consumer found by searching the whole repository — \`src/\` and \`testing/\` alike, colocated and sibling tests included.`;
 }
 
 export function criticalRules(ctx: LanguageContext): string {

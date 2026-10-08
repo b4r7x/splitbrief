@@ -63,4 +63,13 @@ describe('suiteStageText', () => {
       'Pre-review suite · npm test',
     );
   });
+
+  it('names a reviewer check and its re-run at the run base by the check id', () => {
+    expect(suiteStageText({ id: 'V2', moment: 'pre-review', command: 'npm test' })).toBe(
+      'Reviewer check V2 · npm test',
+    );
+    expect(suiteStageText({ id: 'V2', moment: 'base', command: 'npm test' })).toBe(
+      'Base re-run V2 · npm test',
+    );
+  });
 });

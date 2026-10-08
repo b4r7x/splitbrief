@@ -26,7 +26,8 @@ import {
   getChangedFilesSnapshot,
 } from '../approval/file-snapshots/capture.js';
 import { createRunIsolation } from '../isolation/create.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { gateAttemptChanges } from './attempt-gate.js';
 import { runSingleTask } from './step.js';
 
@@ -40,13 +41,14 @@ const EARLIER_TEXT = 'export const earlier = true;\n';
 
 const BASE_CONFIG = {
   approval: { feedRejectionsToPlanner: true },
-  validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+  validation: { endChecks: false, testCommand: 'noop' },
   workflow: { review: 'task', maxRetries: 2 },
 } as const;
 
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   for (const dispose of disposers.splice(0)) await dispose();
   cleanupTaskProjects();
 });
@@ -168,9 +170,18 @@ async function runInWorkspace(opts: {
   task: Task;
   config: Config;
   implementer: Implementer;
-  runValidation: ReturnType<typeof createValidator>['runValidation'];
+  /** The brief check: it reads the workspace it runs in and passes or fails. */
+  check: (projectDir: string) => boolean;
   approve?: boolean;
 }) {
+  const task: Task = {
+    ...opts.task,
+    checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+  };
+  vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (_cmd, _args, options) => {
+    if (opts.check(options?.cwd ?? '')) return { stdout: '', stderr: '', code: 0 };
+    throw processError.exitCode({ command: 'tsc', code: 2, stderr: 'hello is 0', output: '' });
+  });
   const { projectDir, sessionId } = setupTaskProject({ [SECRET]: ORIGINAL });
   const isolation = createRunIsolation({
     projectDir,
@@ -202,12 +213,11 @@ async function runInWorkspace(opts: {
       implementer: opts.implementer,
       config: opts.config,
       isolation,
-      validator: { ...createValidator(), runValidation: opts.runValidation },
     }),
-    task: opts.task,
+    task,
     index: 0,
     totalTasks: 1,
-    state: implementingState([opts.task]),
+    state: implementingState([task]),
     taskBreakdowns: [],
     setTrackedState: vi.fn(),
     setCurrentTask: vi.fn(),
@@ -225,17 +235,17 @@ describe('gateAttemptChanges', () => {
     { timeout: 60_000 },
     async (transport) => {
       const seen: Array<{ secret: string; earlier: string }> = [];
-      const runValidation = vi.fn().mockImplementation(async ({ projectDir }) => {
+      const check = (projectDir: string) => {
         seen.push({ secret: read(projectDir, SECRET), earlier: read(projectDir, EARLIER) });
-        return [];
-      });
+        return true;
+      };
       const { config, implementer } = transport.build();
 
       const run = await runInWorkspace({
         task: transport.task,
         config,
         implementer,
-        runValidation,
+        check,
       });
 
       expect(run.onTieredApproval).toHaveBeenCalledTimes(1);
@@ -299,14 +309,12 @@ describe('gateAttemptChanges', () => {
         });
       }
       const seen: string[] = [];
-      const runValidation = vi.fn().mockImplementation(async ({ projectDir }) => {
+      const check = (projectDir: string) => {
         seen.push(read(projectDir, SECRET));
-        return seen.length === 1
-          ? [{ stage: 'test' as const, passed: false, error: 'hello is 0' }]
-          : [];
-      });
+        return seen.length > 1;
+      };
 
-      const run = await runInWorkspace({ task: helloTask, config, implementer, runValidation });
+      const run = await runInWorkspace({ task: helloTask, config, implementer, check });
 
       expect(run.onTieredApproval).toHaveBeenCalledTimes(1);
       expect(seen).toEqual([ORIGINAL, ORIGINAL]);
@@ -343,7 +351,7 @@ describe('gateAttemptChanges', () => {
       task,
       config,
       implementer: createApiImplementer(config),
-      runValidation: vi.fn().mockResolvedValue([]),
+      check: () => true,
       approve: true,
     });
 

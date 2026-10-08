@@ -20,7 +20,6 @@ import {
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
-import { createValidator } from '../validation/run.js';
 import { runSingleTask } from './step.js';
 
 afterEach(cleanupTaskProjects);
@@ -67,7 +66,7 @@ describe('runSingleTask — user edits', () => {
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
       task,
@@ -128,7 +127,7 @@ describe('runSingleTask — user edits', () => {
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
       task,
@@ -169,7 +168,7 @@ describe('runSingleTask — user edits', () => {
         return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
       }),
     };
-    const runValidation = vi.fn().mockResolvedValue([]);
+    const formatChangedFiles = vi.fn().mockResolvedValue(undefined);
     const { bus } = makeBusRecorder();
 
     const wctx = await openRunWorkspace(
@@ -186,9 +185,9 @@ describe('runSingleTask — user edits', () => {
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
+        validator: { formatChangedFiles },
       }),
     );
     const result = await runSingleTask({
@@ -206,7 +205,7 @@ describe('runSingleTask — user edits', () => {
     expect(readFileSync(join(wctx.workspaceDir, '.env.local'), 'utf-8')).toBe(
       'export const v = 99; // implementer\n',
     );
-    expect(runValidation).toHaveBeenCalledTimes(1);
+    expect(formatChangedFiles).toHaveBeenCalledTimes(1);
     expect(result.tasks[0]?.status).toBe('done');
     expect(result.pendingRecovery).toBeUndefined();
   });
@@ -247,7 +246,7 @@ describe('runSingleTask — user edits', () => {
         return { decision: 'confirm', phrase: CONFIRM_PHRASE, reason: 'ok' };
       }),
     };
-    const runValidation = vi.fn().mockResolvedValue([]);
+    const formatChangedFiles = vi.fn().mockResolvedValue(undefined);
     const { bus } = makeBusRecorder();
 
     const wctx = await openRunWorkspace(
@@ -264,9 +263,9 @@ describe('runSingleTask — user edits', () => {
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
+        validator: { formatChangedFiles },
       }),
     );
     const result = await runSingleTask({
@@ -284,7 +283,7 @@ describe('runSingleTask — user edits', () => {
     expect(readFileSync(join(wctx.workspaceDir, 'package.json'), 'utf-8')).toBe(
       'export const value = "implementer";',
     );
-    expect(runValidation).toHaveBeenCalledTimes(1);
+    expect(formatChangedFiles).toHaveBeenCalledTimes(1);
     expect(result.tasks[0]?.status).toBe('done');
     expect(result.pendingRecovery).toBeUndefined();
   });

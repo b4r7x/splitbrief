@@ -31,7 +31,7 @@ function writeConfigYaml(extras: Record<string, unknown> = {}) {
       context_length: 8192,
       temperature: 0.3,
     },
-    validation: { typecheck: true, lint: true, test: true, test_command: 'npm test' },
+    validation: { end_checks: true, test_command: 'npm test' },
     workflow: {
       max_retries: 3,
     },

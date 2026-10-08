@@ -90,7 +90,7 @@ function configuredDirectPlannerConfig(markerEnv: string): Config {
         idleKillMs: command.idleKillMs,
         env: command.env,
       },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
     }),
     customCommands: { 'standalone-configured-direct': command },
   });

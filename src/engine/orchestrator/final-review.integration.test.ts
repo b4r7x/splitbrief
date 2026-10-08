@@ -2,7 +2,7 @@ import { runPlanningPhase } from './planning/run.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
 import { TEST_SINKS } from '#testing/helpers/orchestrator-factories.js';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -427,6 +427,138 @@ describe('runFinalReviewPhase', () => {
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_JSON_FILE))).toBe(false);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
+
+  it('fails the review, never passes it, when the plan call fails', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const verdicts: string[] = [];
+    const checks = vi.fn(() => ({ commands: [], declined: [], reason: null }));
+    const reviewer = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt) => {
+          verdicts.push(prompt);
+          return passingReviewVerdict(prompt);
+        },
+        undefined,
+        checks,
+      ),
+    });
+
+    const { bus, events } = makeBusRecorder();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+      reviewChecks: true,
+    });
+
+    // The plan names no command and no reason, so the plan call fails its contract.
+    expect(verdicts).toEqual([]);
+    expect(result.reviewStatus).toBe('failed');
+    expect(result.verdict).toBeNull();
+    expect(result.failure).toMatchObject({ kind: 'seat-protocol-error' });
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
+
+  it('makes no plan call when the review takes no reviewer checks', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'not asked' }));
+    const reviewer = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt) => passingReviewVerdict(prompt),
+        undefined,
+        checks,
+      ),
+    });
+
+    const { bus, events } = makeBusRecorder();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+      reviewChecks: false,
+    });
+
+    expect(checks).not.toHaveBeenCalled();
+    expect(events.filter((event) => event.type === 'review_checks')).toEqual([]);
+    expect(result.reviewStatus).toBe('written');
+  });
+
+  it('lets a verify name a reviewer check only while End-of-run checks are on', async () => {
+    const verifyV1 = async (endChecks: boolean) => {
+      const { projectDir, sessionId, runStartHead } = setupProject();
+      const { reviewer, prompts } = makeReviewer((prompt) => ({
+        ...passingReviewVerdict(prompt),
+        findings: [
+          {
+            id: 'F1',
+            kind: 'defect',
+            severity: 'blocking',
+            taskId: 'T001',
+            file: null,
+            line: null,
+            text: 'the greeting drops the name',
+            acceptance: 'The greeting names the person',
+            checkIds: null,
+            criterionId: null,
+          },
+        ],
+        verify: [{ findingId: 'F1', checkIds: ['V1'] }],
+      }));
+      const result = await runFinalReviewPhase({
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        config: makeNoValidationConfig({ validation: { endChecks } }),
+        callbacks: makeCallbacks().callbacks,
+        bus: makeBusRecorder().bus,
+        state: {
+          ...allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+          reviewChecks: {
+            scope: 'final',
+            cycle: 0,
+            plan: {
+              commands: [{ id: 'V1', command: 'node --version', reason: 'the runtime answers' }],
+              declined: [],
+              reason: null,
+            },
+            at: '2026-10-08T00:00:00.000Z',
+          },
+        },
+        reviewer,
+        metadata: TEST_METADATA,
+        summaryBase: SUMMARY_BASE,
+        taskBreakdowns: [],
+        reviewChecks: false,
+      });
+      return { result, prompts: prompts.join('\n') };
+    };
+
+    const on = await verifyV1(true);
+    expect(on.prompts).not.toContain('names unknown check V1');
+    expect(on.result.failure).toBeUndefined();
+
+    const off = await verifyV1(false);
+    expect(off.prompts).toContain('Verify for F1 names unknown check V1.');
+    expect(off.result.failure).toMatchObject({ kind: 'seat-protocol-error' });
   });
 
   it('uses the repaired verdict when the one repair completes the coverage', async () => {

@@ -22,8 +22,9 @@ export interface StopBylineInput {
   /** Since the stop was asked for, so the wait is reported rather than guessed at. */
   readonly elapsedMs: number;
   readonly questionPending: boolean;
-  /** The full-suite stage running now, which a pause armed between briefs waits on. */
+  /** The command run before a review now, which a pause armed between briefs waits on. */
   readonly suite: {
+    readonly id?: string | undefined;
     readonly moment: RunningSuiteStage['moment'];
     readonly command: string;
     readonly elapsedMs: number;
@@ -35,6 +36,8 @@ export interface StopBylineInput {
 
 export interface StopByline {
   readonly lead: string;
+  /** The lead's clock, kept whole when the byline cuts the lead to its width. */
+  readonly clock?: string | undefined;
   readonly hint: string;
 }
 
@@ -126,11 +129,13 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     if (input.questionPending) {
       return { lead: `Answer needed to finish ${name}`, hint: 'Pause requested' };
     }
-    const lead =
-      input.suite === null
-        ? `Finishing ${name}`
-        : `${suiteStageText(input.suite)} ${formatStageElapsed(input.suite.elapsedMs)}`;
-    return { lead, hint: 'Pause requested; no next brief will start' };
+    const hint = 'Pause requested; no next brief will start';
+    if (input.suite === null) return { lead: `Finishing ${name}`, hint };
+    return {
+      lead: suiteStageText(input.suite),
+      clock: formatStageElapsed(input.suite.elapsedMs),
+      hint,
+    };
   }
 
   const lead = input.intent === 'end-run' ? 'Ending run' : `Stopping ${name}`;

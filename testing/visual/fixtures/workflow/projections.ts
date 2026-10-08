@@ -517,7 +517,8 @@ const implementationProjection: WorkflowFixtureProjection = {
   },
 };
 
-// A brief gate whose red stages are also red at the run base accepts them as pre-existing failures.
+// A session from before reviewer checks: a brief gate whose red stages are also red at the run base
+// accepts them as pre-existing failures. The rows stay for replaying such a session.
 const validationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_VALIDATION_ID,
   feature: WORKFLOW_FEATURE,
@@ -563,7 +564,7 @@ const validationProjection: WorkflowFixtureProjection = {
   ],
 };
 
-// A run where a brief also changed files its brief did not suggest: the gates pass, the
+// A run where a brief also changed files its brief did not suggest: its checks pass, the
 // brief completes, and one dim row names the extra files for the reviewer.
 const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-touched-not-suggested'),
@@ -587,20 +588,14 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
       model: FIXED_RUNNER_MODEL,
     },
     {
-      type: 'validate',
+      type: 'checks_run',
       ts: FIXED_TS + 400,
       phase: 'validating-task',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
-      status: 'done',
-      passed: true,
-      stages: { typecheck: true, lint: true, test: true },
-      attempted: { typecheck: true, lint: true, test: true },
-      commands: {
-        typecheck: 'npm run typecheck',
-        lint: 'npm run lint',
-        test: 'npm test -- src/shared/format.test.ts',
-      },
-      duration: 1_800,
+      results: [
+        { id: 'C1', passed: true },
+        { id: 'C2', passed: true },
+      ],
     },
     {
       type: 'task_completed',
@@ -633,24 +628,19 @@ function publishedEvents(ts: number, publish: (bus: EventBus) => void): EngineEv
   return events.map((event, index) => ({ ...event, ts: ts + index }));
 }
 
-// Research suggested a package script for two stages. The production sanitizer refuses both on a
-// bus of its own, so the transcript carries the words a real run records, one warning per stage.
+// Research suggested a package script as the test command. The production sanitizer refuses it on a
+// bus of its own, so the transcript carries the words a real run records.
 function plannerCommandRefusals(ts: number): EngineEvent[] {
   return publishedEvents(ts, (bus) =>
     sanitizeDiscoveredValidation(
-      {
-        language: 'typescript',
-        typecheckCommand: 'npm run typecheck',
-        lintCommand: 'npm run lint',
-        testCommand: 'npm test',
-      },
+      { language: 'typescript', testCommand: 'npm run test:unit' },
       { bus, phase: 'planning' },
     ),
   );
 }
 
-// The plan's validation block named a package script for two stages: compiling the plan writes its
-// two cards, and the sanitizer then refuses both scripts, one warning per stage.
+// The plan's validation block named a package script as the test command: compiling the plan writes
+// its two cards, and the sanitizer then refuses the script.
 const plannerCommandsRefusedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-planner-commands-refused'),
   feature: WORKFLOW_FEATURE,
@@ -850,6 +840,56 @@ const reviewFixProjection: WorkflowFixtureProjection = {
   },
 };
 
+const REVIEW_CHECK_TYPECHECK = {
+  id: 'V1',
+  command: 'npm run typecheck',
+  reason: 'The change edits exported types in src/shared.',
+} as const;
+const REVIEW_CHECK_TEST = {
+  id: 'V2',
+  command: 'npm test',
+  reason: 'The unit tests cover the formatter the change edits.',
+} as const;
+const REVIEW_CHECK_DECLINED = {
+  target: 'npm run test:e2e',
+  reason: 'It needs a browser, and the change touches no screen.',
+} as const;
+
+/** The reviewer chose two commands and declined one test before the final review. */
+function reviewChecksPlanned(ts: number): EngineEvent {
+  return {
+    type: 'review_checks',
+    ts,
+    phase: 'final-review',
+    scope: 'final',
+    status: 'planned',
+    commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
+    declined: [{ ...REVIEW_CHECK_DECLINED }],
+    reason: null,
+  };
+}
+
+/** One reviewer check before the final review, or its re-run at the run base. */
+function reviewCheck(
+  ts: number,
+  check: { readonly id: string; readonly command: string },
+  result:
+    | { status: 'running' | 'not-run' | 'refused'; moment?: 'base'; detail?: string }
+    | { status: 'done'; moment?: 'base'; passed: boolean; duration?: number },
+): EngineEvent {
+  const { moment = 'pre-review', ...rest } = result;
+  return {
+    type: 'full_suite',
+    ts,
+    phase: 'final-review',
+    id: check.id,
+    command: check.command,
+    moment,
+    ...(rest.status === 'done' && { duration: 1_000 }),
+    ...rest,
+  };
+}
+
 const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-fix-cycles'),
   feature: WORKFLOW_FEATURE,
@@ -884,39 +924,15 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
       fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
     ]),
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 1_000,
-      phase: 'final-review',
+    reviewChecksPlanned(FIXED_TS + 900),
+    reviewCheck(FIXED_TS + 1_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
+    reviewCheck(FIXED_TS + 2_000, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
+    reviewCheck(FIXED_TS + 3_000, REVIEW_CHECK_TEST, {
       status: 'done',
-      stage: 'typecheck',
-      command: 'npm run typecheck',
-      moment: 'pre-review',
+      moment: 'base',
       passed: true,
-      duration: 100,
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 2_000,
-      phase: 'final-review',
-      status: 'done',
-      stage: 'lint',
-      command: 'npm run lint',
-      moment: 'pre-review',
-      passed: true,
-      duration: 100,
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 3_000,
-      phase: 'final-review',
-      status: 'done',
-      stage: 'test',
-      command: 'npm test',
-      moment: 'pre-review',
-      passed: false,
-      duration: 1_000,
-    },
+      duration: 9_000,
+    }),
     {
       type: 'runner_call_activity',
       ts: FIXED_TS + 3_500,
@@ -966,37 +982,9 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       tool: 'ollama',
       model: FIXED_RUNNER_MODEL,
     },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 5_000,
-      phase: 'final-review',
-      status: 'done',
-      stage: 'typecheck',
-      command: 'npm run typecheck',
-      moment: 'pre-review',
-      passed: true,
-      duration: 100,
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 6_000,
-      phase: 'final-review',
-      status: 'done',
-      stage: 'lint',
-      command: 'npm run lint',
-      moment: 'pre-review',
-      passed: true,
-      duration: 100,
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 7_000,
-      phase: 'final-review',
-      status: 'running',
-      stage: 'test',
-      command: 'npm test',
-      moment: 'pre-review',
-    },
+    reviewChecksPlanned(FIXED_TS + 4_900),
+    reviewCheck(FIXED_TS + 5_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
+    reviewCheck(FIXED_TS + 7_000, REVIEW_CHECK_TEST, { status: 'running' }),
   ],
 };
 
@@ -1093,6 +1081,16 @@ const finalReviewProjection: WorkflowFixtureProjection = {
     return [
       ...everyBriefPassed(),
       {
+        type: 'review_checks',
+        ts: FIXED_TS + 450,
+        phase: 'final-review',
+        scope: 'final',
+        status: 'planned',
+        commands: [],
+        declined: [],
+        reason: 'The project has no test, build or lint command, and no CI config names one.',
+      },
+      {
         type: 'planner_status',
         ts: FIXED_TS + 500,
         phase: 'final-review',
@@ -1119,6 +1117,26 @@ const finalReviewProjection: WorkflowFixtureProjection = {
         text: 'Reading the run diff against the spec before the verdict.',
       },
     ];
+  },
+};
+
+// With End-of-run checks off nothing runs before the review, and one row says so.
+const reviewChecksOffProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-review-checks-off'),
+  get events(): EngineEvent[] {
+    return finalReviewProjection.events.map(
+      (event): EngineEvent =>
+        event.type === 'review_checks'
+          ? {
+              type: 'review_checks',
+              ts: event.ts,
+              phase: event.phase,
+              scope: 'final',
+              status: 'off',
+            }
+          : event,
+    );
   },
 };
 
@@ -2968,7 +2986,6 @@ const implementationToolRunningProjection: WorkflowFixtureProjection = {
 // Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
 // call: the suite is the whole of what the run is doing.
 const PRE_REVIEW_TEST_STARTED_TS = FIXED_TS + 42_000 - 602_000;
-const PRE_REVIEW_SUITE = { phase: 'implementing', moment: 'pre-review' } as const;
 const LAST_BRIEF_PASSED_TS = PRE_REVIEW_TEST_STARTED_TS - 240_000;
 const LAST_BRIEF_CALL = {
   phase: 'implementing',
@@ -2981,8 +2998,8 @@ const LAST_BRIEF_CALL = {
   attempt: 1,
 } as const;
 
-const implementationFullSuiteProjection: WorkflowFixtureProjection = {
-  scenarioId: scenarioId('workflow-implementation-full-suite'),
+const reviewCheckRunningProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-check-running'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
@@ -3018,15 +3035,91 @@ const implementationFullSuiteProjection: WorkflowFixtureProjection = {
       nativeSessionId: null,
     },
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], LAST_BRIEF_PASSED_TS),
-    {
-      type: 'full_suite',
-      ts: PRE_REVIEW_TEST_STARTED_TS,
-      ...PRE_REVIEW_SUITE,
-      status: 'running',
-      stage: 'test',
-      command: 'npm test',
-    },
+    reviewChecksPlanned(PRE_REVIEW_TEST_STARTED_TS - 30_000),
+    reviewCheck(PRE_REVIEW_TEST_STARTED_TS - 20_000, REVIEW_CHECK_TYPECHECK, {
+      status: 'done',
+      passed: true,
+      duration: 18_000,
+    }),
+    reviewCheck(PRE_REVIEW_TEST_STARTED_TS, REVIEW_CHECK_TEST, { status: 'running' }),
   ],
+};
+
+const LONG_REVIEW_CHECK_TEST = {
+  id: 'V2',
+  command: 'npx vitest run src/features/workflow/display/build-progress.test.ts',
+  reason: 'This test file covers the build block the change edits.',
+} as const;
+
+// The same check ten minutes in, with a command longer than the byline at 80 columns: the label and
+// the clock stay whole and the command alone gives way.
+const reviewCheckLongCommandProjection: WorkflowFixtureProjection = {
+  ...reviewCheckRunningProjection,
+  scenarioId: scenarioId('workflow-review-check-long-command'),
+  events: reviewCheckRunningProjection.events.map(
+    (event): EngineEvent =>
+      event.type === 'full_suite' && event.id === LONG_REVIEW_CHECK_TEST.id
+        ? { ...event, command: LONG_REVIEW_CHECK_TEST.command }
+        : event.type === 'review_checks' && event.status === 'planned'
+          ? {
+              ...event,
+              commands: (event.commands ?? []).map((command) =>
+                command.id === LONG_REVIEW_CHECK_TEST.id ? { ...LONG_REVIEW_CHECK_TEST } : command,
+              ),
+            }
+          : event,
+  ),
+};
+
+/** One full-suite stage as a session from before reviewer checks wrote it: a stage, no check id. */
+function legacySuiteStage(
+  ts: number,
+  stage: 'typecheck' | 'test',
+  command: string,
+  result:
+    | { status: 'running'; moment?: 'base' }
+    | { status: 'done'; moment?: 'base'; passed: boolean; duration: number },
+): EngineEvent {
+  const { moment = 'pre-review', ...rest } = result;
+  return { type: 'full_suite', ts, phase: 'final-review', stage, command, moment, ...rest };
+}
+
+// An older session replays its full-suite stages in the words they had: no check id, no plan row.
+const reviewLegacySuiteProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-legacy-suite'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...everyBriefPassed(),
+    legacySuiteStage(FIXED_TS + 1_000, 'typecheck', 'npx tsc --noEmit', {
+      status: 'done',
+      passed: true,
+      duration: 14_000,
+    }),
+    legacySuiteStage(FIXED_TS + 1_500, 'test', 'npm test', {
+      status: 'done',
+      passed: false,
+      duration: 21_000,
+    }),
+    legacySuiteStage(FIXED_TS + 2_000, 'test', 'npm test', { status: 'running', moment: 'base' }),
+  ],
+};
+
+const RED_GATE_LINT = {
+  id: 'V1',
+  command: 'npm run lint',
+  reason: 'The project lints every source file.',
+};
+const RED_GATE_TYPECHECK = {
+  id: 'V2',
+  command: 'npx tsc --noEmit',
+  reason: 'The change edits exported types.',
+};
+const RED_GATE_TEST = {
+  id: 'V3',
+  command: 'npm test',
+  reason: 'The unit tests cover the changed module.',
 };
 
 const reviewRedGateProjection: WorkflowFixtureProjection = {
@@ -3041,27 +3134,31 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
       { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
       fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 300),
       {
-        type: 'full_suite',
-        ts: FIXED_TS + 400,
+        type: 'review_checks',
+        ts: FIXED_TS + 390,
         phase: 'final-review',
-        moment: 'pre-review',
+        scope: 'final',
+        status: 'planned',
+        commands: [RED_GATE_LINT, RED_GATE_TYPECHECK, RED_GATE_TEST],
+        declined: [],
+        reason: null,
+      },
+      reviewCheck(FIXED_TS + 395, RED_GATE_LINT, {
+        status: 'refused',
+        detail: 'runs the package script lint, and this run changed package.json',
+      }),
+      reviewCheck(FIXED_TS + 400, RED_GATE_TYPECHECK, {
         status: 'done',
-        stage: 'typecheck',
-        command: 'npx tsc --noEmit',
         passed: false,
         duration: 16_000,
-      },
-      ...(['lint', 'test'] as const).map(
-        (stage): EngineEvent => ({
-          type: 'full_suite',
-          ts: FIXED_TS + 401,
-          phase: 'final-review',
-          moment: 'pre-review',
-          status: 'not-run',
-          stage,
-          command: stage === 'lint' ? 'npm run lint' : 'npm test',
-        }),
-      ),
+      }),
+      reviewCheck(FIXED_TS + 401, RED_GATE_TYPECHECK, {
+        status: 'done',
+        moment: 'base',
+        passed: true,
+        duration: 15_000,
+      }),
+      reviewCheck(FIXED_TS + 402, RED_GATE_TEST, { status: 'not-run', detail: 'V2 failed' }),
       ...finalReviewProjection.events.filter((event) => event.type === 'runner_call_started'),
       ...['Reading the typecheck failure and the pending input'].map(
         (label, index): EngineEvent => ({
@@ -3087,6 +3184,17 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
   },
 };
 
+const BASE_RERUN_TYPECHECK = {
+  id: 'V1',
+  command: 'npx tsc --noEmit',
+  reason: 'The change edits exported types.',
+};
+const BASE_RERUN_TEST = {
+  id: 'V2',
+  command: 'npm test -- src/legacy.test.ts',
+  reason: 'This test file covers the changed module.',
+};
+
 const reviewBaseRerunProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-base-rerun'),
   feature: WORKFLOW_FEATURE,
@@ -3095,36 +3203,32 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
   events: [
     ...everyBriefPassed(),
     {
-      type: 'full_suite',
-      ts: FIXED_TS + 1_000,
+      type: 'review_checks',
+      ts: FIXED_TS + 900,
       phase: 'final-review',
-      moment: 'pre-review',
+      scope: 'final',
+      status: 'planned',
+      commands: [BASE_RERUN_TYPECHECK, BASE_RERUN_TEST],
+      declined: [],
+      reason: null,
+    },
+    reviewCheck(FIXED_TS + 1_000, BASE_RERUN_TYPECHECK, {
       status: 'done',
-      stage: 'test',
-      command: 'npm test',
+      passed: false,
+      duration: 14_000,
+    }),
+    reviewCheck(FIXED_TS + 1_200, BASE_RERUN_TYPECHECK, {
+      status: 'done',
+      moment: 'base',
+      passed: false,
+      duration: 13_000,
+    }),
+    reviewCheck(FIXED_TS + 1_500, BASE_RERUN_TEST, {
+      status: 'done',
       passed: false,
       duration: 12_000,
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 1_500,
-      phase: 'final-review',
-      moment: 'base',
-      status: 'done',
-      stage: 'typecheck',
-      command: 'npx tsc --noEmit',
-      passed: false,
-      duration: 1_000,
-    },
-    {
-      type: 'full_suite',
-      ts: FIXED_TS + 2_000,
-      phase: 'final-review',
-      moment: 'base',
-      status: 'running',
-      stage: 'test',
-      command: 'npm test -- src/legacy.test.ts',
-    },
+    }),
+    reviewCheck(FIXED_TS + 2_000, BASE_RERUN_TEST, { status: 'running', moment: 'base' }),
   ],
 };
 
@@ -3140,6 +3244,7 @@ const projections = [
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,
+  reviewChecksOffProjection,
   implementationEscalatedProjection,
   implementationNarrationProjection,
   implementationAdjacentNarrationProjection,
@@ -3191,7 +3296,9 @@ const projections = [
   planningClaudeFramesProjection,
   implementationSilentProjection,
   implementationToolRunningProjection,
-  implementationFullSuiteProjection,
+  reviewCheckRunningProjection,
+  reviewCheckLongCommandProjection,
+  reviewLegacySuiteProjection,
   reviewBaseRerunProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,

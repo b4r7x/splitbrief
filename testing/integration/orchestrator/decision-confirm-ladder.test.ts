@@ -4,11 +4,6 @@ import { join } from 'node:path';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../../src/engine/implementers/types.js';
 import type { Task } from '../../../src/core/schemas/task.js';
-import type {
-  RunValidationOptions,
-  Validator,
-} from '../../../src/engine/orchestrator/validation/types.js';
-import { createValidator } from '../../../src/engine/orchestrator/validation/run.js';
 import { runTaskLoop } from '../../../src/engine/orchestrator/task/loop.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -37,14 +32,33 @@ const DECISION = {
 };
 
 describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
-  it('confirms every hand-back, retries a red validation with its errors, and lands with no halt', async () => {
+  it('confirms every hand-back, retries a red check with its errors, and lands with no halt', async () => {
+    // T002's test check fails until its file carries the retry, printing the compiler line.
+    const failure = 'src/t002.ts(3,1): error TS2304: Cannot find name ReviewRecord.';
     const { projectDir, sessionId } = setupGitSessionProject({
       prefix: 'int-decision-confirm',
       sessionId: 'sess-decision-confirm',
+      files: {
+        'validate.mjs': [
+          "import { readFileSync } from 'node:fs';",
+          "if (!readFileSync('src/t002.ts', 'utf-8').includes('retry')) {",
+          `  console.error(${JSON.stringify(failure)});`,
+          '  process.exit(1);',
+          '}',
+          '',
+        ].join('\n'),
+      },
     });
     dirs.push(projectDir);
     const tasks = ['T001', 'T002'].map((id) =>
-      makeTask({ id, suggestedFiles: [`src/${id.toLowerCase()}.ts`] }),
+      makeTask({
+        id,
+        suggestedFiles: [`src/${id.toLowerCase()}.ts`],
+        checks:
+          id === 'T002'
+            ? [{ id: 'K-T002', kind: 'test', value: 'src/t002.ts', required: true }]
+            : [],
+      }),
     );
 
     // Every hand-back carries the same decision, as DeepSeek's did on every brief of S6.
@@ -69,19 +83,6 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
       retry: vi.fn(async (opts: RetryOptions) => handBack(opts, 'retry')),
     });
 
-    // T002's first validation fails once; everything else passes.
-    const failure = 'src/t002.ts(3,1): error TS2304: Cannot find name ReviewRecord.';
-    let t002Validations = 0;
-    const validator: Validator = {
-      ...createValidator(),
-      runValidation: vi.fn(async (opts: RunValidationOptions) => {
-        if (opts.task.id === 'T002' && t002Validations++ === 0) {
-          return [{ stage: 'typecheck' as const, passed: false, error: failure }];
-        }
-        return [{ stage: 'typecheck' as const, passed: true }];
-      }),
-    };
-
     const prompts: string[] = [];
     const planner = makePlanner({
       typedCall: consultCallAnswering((prompt) => {
@@ -105,12 +106,11 @@ describe('decision-confirm on the S6 shape', { timeout: 90_000 }, () => {
         sessionId,
         config: makeNoValidationConfig({
           workflow: { review: 'task' },
-          validation: { test: true },
+          validation: { testCommand: 'node validate.mjs' },
         }),
         callbacks: makeCallbacks({ onPlannerReply: vi.fn() }).callbacks,
         planner,
         implementer,
-        validator,
         bus,
       }),
     );

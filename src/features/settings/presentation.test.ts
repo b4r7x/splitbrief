@@ -28,7 +28,7 @@ describe('displayValue', () => {
   });
 
   it('shows ✓ for true and off for false booleans', () => {
-    const def = getDef('validation.typecheck');
+    const def = getDef('validation.endChecks');
     expect(displayValue(def, true)).toBe(glyph('check'));
     expect(displayValue(def, false)).toBe('off');
   });

@@ -106,8 +106,8 @@ function eventToHookKey(e: EngineEvent): HookEvent | null {
   switch (e.type) {
     case 'task_completed':
       return 'post_task';
-    case 'validate':
-      return e.status === 'done' ? 'post_validation' : null;
+    case 'checks_run':
+      return 'post_validation';
     case 'recovery_prompted':
       return 'on_halt';
     case 'workflow_complete':

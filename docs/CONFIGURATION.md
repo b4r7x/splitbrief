@@ -29,7 +29,7 @@ reviewer:       { kind: cli|api|shell|agent, ... }   # optional; planner reviews
 implementerProfiles:
   default: local-qwen
   profiles: { local-qwen: { kind: api, ... }, cheap-cloud: { kind: api, ... } }
-validation:     { typecheck, lint, test, testCommand }
+validation:     { end_checks, test_command, render, ... }
 workflow:       { approve, git, isolation, ... }
 sessions:       { scope: project }
 # escalation:   retired; loads with one notice and is ignored (§16)
@@ -40,7 +40,7 @@ approval:       { feedRejectionsToPlanner, allowedPaths }
 customCommands: { <id>: { label, contract, executable, argv, ... } }
 ```
 
-Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review`, `workflow.max_retries` and the `escalation` block, and `approval.tiers` still load, with one notice each, and are ignored (§16).
+Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review`, `workflow.max_retries`, the `escalation` block, `approval.tiers` and `validation.typecheck`, `lint`, `test`, `typecheck_command`, `lint_command` still load, with one notice each, and are ignored (§16).
 
 ---
 
@@ -471,22 +471,25 @@ Task-start rows name the selected worker (`worker default`) and, when the brief 
 
 ## 4. `validation`
 
-What runs after every implementer task. The three master switches (`typecheck`, `lint`, `test`) are **required** in the schema; the loader fills them from `createDefaultConfig()` if absent. The command overrides are all optional and let you pin exact validation commands per project. When the lint stage is on, the brief's own changed files are formatted first with the project's own formatter — `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is, and nothing when neither is; a formatter that exits non-zero is one warning (`validation_format_failed`) and the lint stage runs regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files records one `validation_formatted` warning that names them.
+What SPLITBRIEF runs to verify the change. One switch, `end_checks` (Settings label **End-of-run checks**), turns the reviewer checks on or off. It defaults to `true`. With it on, before each review the reviewer reads the project and chooses the reviewer checks that verify the change. The reviewer reads the manifests and scripts, a `Makefile` or `justfile`, the CI configuration and the README. SPLITBRIEF runs the reviewer checks in the run workspace under the command policy (see [Reviewer checks](#reviewer-checks)). The other fields are optional and feed the planner's `test` and `render` checks; `timeout_ms` bounds every command. After each hand-back, SPLITBRIEF formats the brief's own changed files with the project's own formatter. It uses `npx biome format --write` when a Biome config file is present, `npx prettier --write` when a Prettier config is present, and nothing when neither is present. A formatter that exits non-zero gives one warning (`validation_format_failed`), and the checks run regardless. The brief's changed files are every file it changed since its task-start snapshot, across its attempts; a pass that rewrote files records one `validation_formatted` warning that names them.
 
 ### Schema
 
 ```ts
 validation: {
-  typecheck:    boolean;
-  lint:         boolean;
-  test:         boolean;
+  endChecks?:        boolean; // optional, default true
   testCommand?:      string; // optional, non-empty
-  typecheckCommand?: string; // optional, non-empty
-  lintCommand?:      string; // optional, non-empty
   testPattern?:      string; // optional, non-empty
   timeoutMs?:        number; // optional, int >= 1000, milliseconds
   stack?: 'typescript' | 'javascript' | 'python' | 'go' | 'rust'; // optional
   render?:           string; // optional, non-empty
+
+  // Retired: each loads with one notice and is ignored (§16)
+  typecheck?:        unknown;
+  lint?:             unknown;
+  test?:             unknown;
+  typecheckCommand?: unknown;
+  lintCommand?:      unknown;
 }
 ```
 
@@ -494,76 +497,74 @@ validation: {
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `typecheck` | boolean | `true` | Master switch for the type-checking stage |
-| `lint` | boolean | `true` | Master switch for the linting stage |
-| `test` | boolean | `true` | Master switch for the test stage |
-| `testCommand` | string | — | The escape hatch for the test stage: an argv-style command that runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. An ordinary brief gate skips this command because it cannot select related tests. The gate of a fix task that answers a test red runs it on the full suite. When omitted, the brief gate selects related tests through the stack. |
-| `typecheckCommand` | string | — | The escape hatch for the type-checking stage (e.g. `cargo check`, `go vet ./...`, `mypy src/`). Same as-is semantics as `testCommand`. |
-| `lintCommand` | string | — | The escape hatch for the linting stage (e.g. `cargo clippy --no-deps`, `ruff check`). Same as-is semantics as `testCommand`. |
-| `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Overrides the stack's own patterns. |
-| `timeoutMs` | number | `3600000` | Milliseconds allowed per validation stage (minimum `1000`), including brief gates, pre-review gates, base re-runs and the explicit `doctor --probe-validation` diagnostic. The default is one hour. A typecheck or lint timeout is pre-existing only if the base command also times out. An unparsed test failure stays new. |
-| `stack` | enum | detected | Pin the validation stack instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
+| `endChecks` (`end_checks`) | boolean | `true` | **End-of-run checks.** `true`: before the final review, the reviewer chooses the reviewer checks that verify the change, and SPLITBRIEF runs them. With `workflow.review: task`, the same happens before each task review. `false`: no reviewer check runs, and one row reads `End-of-run checks · off · no reviewer check ran`. Plan and task checks still run in both cases. `resolveEndChecks()` (`src/core/config/runtime/resolve.ts`) reads it. |
+| `testCommand` (`test_command`) | string | — | The command a planner `test` check runs: an argv-style command that runs **as-is** — shell operators and environment expansion are not interpreted, and no test-file argument is appended. When omitted, the check resolves its command through the ladder below and narrows it to the tests its file affects. |
+| `testPattern` (`test_pattern`) | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Overrides the stack's own patterns when a `test` check narrows to its affected tests. |
+| `timeoutMs` (`timeout_ms`) | number | `3600000` | Milliseconds allowed per command (minimum `1000`): every plan check, every reviewer check and every base re-run. The default is one hour. A timeout is pre-existing only if the same command also times out at the run base. |
+| `stack` | enum | detected | Pin the stack a `test` check resolves and narrows through instead of detecting it: `typescript`, `javascript`, `python`, `go`, or `rust`. Use it when a repo carries more than one marker file and the detection order picks the wrong one, or when the markers are missing entirely. |
 | `render` | string | — | The command a `render` check runs. `{id}` (the check value, one argv element) is substituted into the parsed argv, and `{out}` becomes a fresh directory under `<workspace>/.test-artifacts/ui/`; the command runs with cwd = the workspace and is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. A `render` check whose value is not a `[a-z0-9-]` slug is refused; with no `render` command the check is `not-runnable`. |
+| `typecheck`, `lint`, `test`, `typecheckCommand` (`typecheck_command`), `lintCommand` (`lint_command`) | retired | absent | Each loads with one notice and changes nothing: `validation.<key> was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.<key>.` |
 
-YAML — TypeScript project (default):
+YAML — the defaults (reviewer checks on):
 
 ```yaml
 validation:
-  typecheck: true
-  lint: true
-  test: true
-  testCommand: npm test -- --run --reporter=dot
+  end_checks: true
 ```
 
-YAML — Rust project:
+YAML — Rust project with a pinned test command for the planner's `test` checks:
 
 ```yaml
 validation:
-  typecheck: true
-  lint: true
-  test: true
-  typecheckCommand: cargo check
-  lintCommand: cargo clippy --no-deps
-  testCommand: cargo test
-  testPattern: "*_test.rs"
+  test_command: cargo test
+  test_pattern: "*_test.rs"
 ```
 
 YAML — a `render` check with `{id}` and `{out}` placeholders:
 
 ```yaml
 validation:
-  typecheck: true
-  lint: true
-  test: true
   render: npm run tui-shots -- --scenario {id} --output {out}
 ```
 
-### How commands are resolved
+YAML — no reviewer check before a review:
 
-SPLITBRIEF resolves each validation stage through one ladder — `config → manifest → discovered → stack default → none` — and takes the first rung that yields a command:
+```yaml
+validation:
+  end_checks: false
+```
 
-1. **Project config** — `typecheckCommand`, `lintCommand`, `testCommand` override everything.
-2. **Manifest** — a `package.json` script named `typecheck` / `lint` / `test`, a `Makefile` or `justfile` target of that name, or the matching `pyproject.toml` section (`[tool.mypy]` → `mypy .`, `[tool.ruff]` → `ruff check .`, `[tool.pytest.ini_options]` → `pytest`). Deterministic, and read before any model output.
-3. **Planner-discovered** — in the planning session, the planner reports the project's validation toolchain in the `validation` block of `plan.json` (`language`, `typecheck`, `lint`, `test`, `testPattern`). `sanitizeDiscoveredValidation` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) checks it, and the result is persisted to `WorkflowState.discoveredValidation`. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> <stage>`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a warning (code `discovered_validation_refused`) that names the reason; the transcript shows it as one dim `Validation` row, a note on the plan rather than a fault. The stage uses config, the manifest or the stack default.
-4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
-5. **None** — the stage is recorded as `skipped` with the reason `no <stage> command for an unrecognised stack`, never as passed. A run where every enabled stage is skipped that way emits a warning and prints `gates: NONE — review-only`; it still implements and still reviews, but nothing was verified by a gate. SPLITBRIEF never guesses `npm test` or `npx tsc --noEmit` on a project that is neither JavaScript nor TypeScript.
+### Reviewer checks
 
-A command from rung 4, or from rung 2 on a recognised stack, is narrowed to the brief's affected test files (`npm test -- <file>`, `pytest <file>`, `go test ./<pkg>/`, `cargo test -- <name>`). When `npm test` is that command and every affected test file sits inside the `include` (and outside the `exclude`) of a vitest config that a `test:<name>` package script passes with `--config`, the stage runs `npm run test:<name> -- <file>` instead. An explicit `*Command` from rung 1 and a discovered command from rung 3 run as written.
+With `end_checks: true`, the review starts with one read-only call to the review seat: the plan call. Every reviewer kind except `api` reads the run workspace itself. An `api` reviewer gets trimmed copies of the root manifests, task files, CI files and README. Each copy holds at most 8,000 characters, and all copies together hold at most 40,000. The CI files are the YAML files in `.github/workflows` and `.gitlab-ci.yml`. The reviewer answers `commands` (at most 6, ids `V1`, `V2`, … in run order, each with its reason), `declined` (each related test or check it does not run, with the reason) and `reason` (required when it chose no command). SPLITBRIEF records the answer in `state.json` (`reviewChecks`) and on the transcript, then runs each command as a `cmd` check in the run workspace:
 
-Master switches (`typecheck`, `lint`, `test`) still gate each stage: setting `lint: false` skips lint regardless of whether a command is available.
+- **Policy.** A reviewer check passes the same command policy as a plan `cmd` check (`checkCommandRefusal`, `src/engine/orchestrator/planning/sanitize-discovered-validation.ts`). A command is one program and its arguments: no shell operator, no environment prefix, no `cd`. The program must be on the allowlist (`CHECK_PROGRAMS`: the package managers, `make`, `just` and every stack's `allowedCommands`). The command policy refuses a program run by path, inline code and an interpreter script. A package manager runs only its bare `test`, and `npx` runs only `npx --no-install <tool>`. `make` or `just` runs only a bare `typecheck`, `lint` or `test` target. A package script (`npm run <script>`) needs an approved plan and a script that the project defines. The command policy gives every refused command a `refused` row with the reason.
+- **Changed scripts.** The command policy also refuses a reviewer check whose script or task file this run changed. For `npm run <script>` and a bare `<pm> test`, it compares the script text in `package.json` with the run base. For `npm`, it also compares the `pre` and `post` scripts. It refuses a `make` or `just` target when this run changed the `Makefile` or `justfile`. This refusal applies only to reviewer checks. A plan check or a task check may run a script that the plan itself adds.
+- **Base re-run.** A red reviewer check runs again at the run base with the same command text. A failure key red there too is pre-existing. When both runs time out, every key is pre-existing; when only one times out, none is. An older run without a workspace record has no run base, so every failure is new.
+- **Stop rule.** The first reviewer check with new failures stops the list. Each later one gets a `not run · <id> failed` row.
+- **Verdict.** Every result goes to the reviewer's verdict call in a `## Reviewer checks` section, and each new failure becomes a pending input (`V1.1`, …). A failed plan call (a transport error or a protocol error) halts the review the same way a failed verdict call does; it is never a pass.
 
-**When to use the toggles:**
-- Disable `test` for repos with no test suite.
-- Disable `lint` if your linter is enforced only at PR time (CI) and you want faster local iteration.
-- Leave `typecheck: true` for typed languages — it's the fastest signal that the implementer wrote compilable code.
+With `workflow.review: task`, the same plan call is scoped to the task's changed files: the reviewer chooses the reviewer checks that run the related tests, not the whole suite, and names each related test it does not run in `declined`.
+
+### How a `test` check resolves its command
+
+A planner `test` check resolves its command through one ladder — `config → manifest → discovered → stack default → none` — and takes the first rung that yields a command:
+
+1. **Project config** — `test_command` overrides everything.
+2. **Manifest** — a `package.json` `test` script (`npm test`), a `Makefile` or `justfile` `test` target, or the `[tool.pytest.ini_options]` section of `pyproject.toml` (`pytest`). Deterministic, and read before any model output.
+3. **Planner-discovered** — in the planning session, the planner reports the project's test toolchain in the `validation` block of `plan.json` (`language`, `test`, `testPattern`). `sanitizeDiscoveredValidation` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) checks it, and the result is persisted to `WorkflowState.discoveredValidation`. A discovered command passes a safety check first. Among its rules, a package manager passes only as `<manager> test` with no path after it, `make` and `just` only as `<runner> test`, `uv run` and `poetry run` only before a Python stack tool, and `node` or `python` only without a script, a module other than a Python stack tool, or inline code. A refused command becomes a warning (code `discovered_validation_refused`) that names the reason; the transcript shows it as one dim `Validation` row, a note on the plan rather than a fault. The check uses config, the manifest or the stack default.
+4. **Stack default** — the row `detectStack` picked from `src/core/validation/stacks/` (`validation.stack` pins it): rust, go, python, typescript or javascript, in that marker order. Per-stack test commands are tabulated in [FEATURES.md §Validation pipeline](./FEATURES.md#validation-pipeline--checkpoints).
+5. **None** — SPLITBRIEF records the check as `not-runnable` with the reason `no test command for an unrecognised stack`, never as passed. A required check that is `not-runnable` halts the run with `required-checks-unrunnable`. SPLITBRIEF never guesses `npm test` on a project that is neither JavaScript nor TypeScript. The reviewer checks do not use this ladder. They use only the programs on the allowlist of the command policy.
+
+A command from rung 4, or from rung 2 on a recognised stack, is narrowed to the tests the check's file affects (`npm test -- <file>`, `pytest <file>`, `go test ./<pkg>/`, `cargo test -- <name>`). An explicit `test_command` from rung 1 and a discovered command from rung 3 run as written. To run a test through another script, name it as a `cmd` check (`npm run test:integration -- <file>`).
 
 ### Pre-existing failures
 
-No gate runs before the first task. A red at review, a task gate or the Apply re-check asks the run base about that failure. SPLITBRIEF materialises the recorded snapshot outside the checkout, including the uncommitted files the run started with. It adds no Git ref and removes the copy after the re-run. Tests narrow to failing test files that exist at the base; commands that cannot narrow run whole. Typecheck and lint run whole and compare failure keys. A test stage without parsed failures stays new and runs no base check. A typecheck or lint timeout needs a matching base timeout.
+No check runs before the first task. Only a red reviewer check asks the run base about its failure. Plan checks, task checks and the Apply re-check do not re-run at the run base. SPLITBRIEF materialises the recorded snapshot outside the checkout, including the uncommitted files the run started with. It adds no Git ref and removes the copy after the re-run. A reviewer check re-runs with the same command text and compares failure keys: the failing test names it parses, else its diagnostic lines. A timeout needs a matching base timeout.
 
-The result carries its matching keys in `preExisting`. A task gate exempts a red only when every failure key is pre-existing and its evidence names no changed file. Missing file evidence blocks acceptance. A red naming a changed file blocks without a base re-run. Skipped stages neither block nor qualify for exemption. The pipeline continues after an exempt red so later stages still get a verdict. Only new failures become review defects. The Checks Log names the pre-existing keys, and the reviewer reports them without raising a finding against the run.
+The result carries its matching keys in `preExisting`. Only new failures become review defects. The Checks Log names the pre-existing keys, and the reviewer reports them without raising a finding against the run.
 
-**See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/validation/run.ts`.
+**See also:** [WORKFLOW.md](./WORKFLOW.md) (where validation sits in the loop), `src/engine/orchestrator/review-checks.ts`, `src/engine/orchestrator/validation/run-checks.ts`.
 
 ---
 
@@ -614,7 +615,7 @@ workflow: {
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
-| `review` | `end` \| `task` | `end` | `end` accepts each brief without stack gates. The final review runs all gates. The suite stops at its first new red and hands it to the reviewer for fix work. `task` runs related tests and due checks after each task, then reviews it. Its final review also runs all gates. |
+| `review` | `end` \| `task` | `end` | `end`: an ordinary brief runs no check. It runs only the checks a caller names, such as a consult `verify`. The final review runs the reviewer checks (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. That review runs the reviewer checks scoped to the related tests of the task's changed files. The final review then runs the reviewer checks for the whole run. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
 | `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
@@ -663,8 +664,7 @@ workflow:
   approve: plan
 ```
 
-Run related tests and due checks after each task, then review that task. The final review runs all gates.
-A test command that cannot select related tests is skipped at an ordinary brief gate. The gate of a fix task that answers a test red runs it on the full suite. The final review always runs that command on the full suite:
+Run due checks after each task, then review that task. The task review runs the reviewer checks for the related tests of its changed files. The final review runs the reviewer checks for the whole run:
 
 ```yaml
 workflow:
@@ -1041,7 +1041,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--allow-repo-runners` | Trust repo-local shell/agent runner execution from project config, including profiles and project-local PATH/script resolution | start, resume, continue, spec |
 | `--allow-unverified-auth` | Let a headless run proceed with unverified CLI authentication (no effect interactively) | start, resume, continue |
 | `--json` | Headless: NDJSON `EngineEvent`s to stdout, no TUI | start, resume, continue |
-| `--plain` | Headless: one plain line per phase, task, review and completion (`phase:`, `task T00N: done\|failed (<gates>)`, `review:`, `done:`), no TUI. Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
+| `--plain` | Headless: plain lines instead of NDJSON, no TUI; the line shapes are in [CLI-REFERENCE.md §Plain output stream](./CLI-REFERENCE.md#plain-output-stream---plain). Refuses to run alongside `--json` (exit `2`) | start, resume, continue |
 | `--yolo` | Removed; passing it fails with a removed-flag error | none |
 | `--skills <ids>` | Comma-separated skill ids to attach to every seat (unknown id → exit `2`); on resume and continue, for that continue only | start (headless), resume, continue |
 | `--action <action>` | Apply an action to the pending recovery before continuing: `skip`, `retry`, or `switch-seat:<tool>[:<model>][@<word>]`, where `@<word>` is the variant on opencode or kilo-code and the effort on other tools | continue |
@@ -1073,7 +1073,7 @@ Fields that older shapes used are gone rather than aliased — `workflow.autoApp
 
 ### Retired keys that still load
 
-The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
+The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. The reviewer-checks release retired the five validation stage keys. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
 
 | You had | Notice | What to do |
 |---|---|---|
@@ -1087,6 +1087,8 @@ The one-planning-session release retired the workflow modes, the extra gates and
 | `workflow.drift_chain_threshold` (`driftChainThreshold`) | `workflow.drift_chain_threshold was retired and is ignored: SPLITBRIEF no longer scores drift chains; the reviewer reads the files a brief touched but did not suggest. Delete workflow.drift_chain_threshold.` | Delete the key. |
 | `workflow.max_retries` (`maxRetries`) | `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` | Delete the key. The ladder is one local retry then the planner's consult, bounded per lineage. |
 | `escalation` (the whole block, any key) | `escalation was retired and is ignored: the planner's consult replaces the intermediate tier. Delete escalation.` | Delete the block. |
+| `validation.typecheck`, `validation.lint`, `validation.test` (any value) | `validation.<key> was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.<key>.` | Delete the keys. Set `validation.end_checks: false` to run no command before a review. |
+| `validation.typecheck_command`, `validation.lint_command` (`typecheckCommand`, `lintCommand`) | `validation.<key> was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.<key>.` | Delete the keys. The reviewer chooses the type check and the linter from the project's own scripts and CI. |
 
 The readiness report shows the plan approval level in its **Workflow** section, as the check `workflow.plan-approval` (`Plan approval: plan.`). Readiness checks one context floor for every run: 32,000 tokens.
 
@@ -1171,12 +1173,10 @@ implementer:
   temperature: 0.3
   timeout: 240000
 
-# ---------- Validation: every gate the cadence runs ----------
+# ---------- Validation: reviewer checks on, pinned test command ----------
 validation:
-  typecheck: true
-  lint: true
-  test: true
-  testCommand: npm test -- --run --reporter=dot
+  end_checks: true
+  test_command: npm test -- --run --reporter=dot
 
 # ---------- Workflow: plan approval, manual commits ----------
 workflow:

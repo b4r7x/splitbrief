@@ -645,6 +645,62 @@ describe('operationsStore', () => {
     expect(operationsStore.get().suiteStage).toBeNull();
   });
 
+  it('keys a reviewer check by its id: the next check restarts the clock, its own settle clears it', () => {
+    const check = (ts: number, id: string, status: 'running' | 'done') =>
+      addEvent({
+        type: 'full_suite',
+        ts,
+        phase: 'final-review',
+        status,
+        id,
+        command: id === 'V1' ? 'npm run typecheck' : 'npm test',
+        moment: 'pre-review',
+        ...(status === 'done' && { passed: true, duration: 1_000 }),
+      });
+
+    check(5_000, 'V1', 'running');
+    check(6_000, 'V1', 'running');
+    expect(operationsStore.get().suiteStage).toEqual({
+      id: 'V1',
+      command: 'npm run typecheck',
+      moment: 'pre-review',
+      stageStartedTs: 5_000,
+    });
+
+    check(7_000, 'V2', 'running');
+    expect(operationsStore.get().suiteStage).toEqual({
+      id: 'V2',
+      command: 'npm test',
+      moment: 'pre-review',
+      stageStartedTs: 7_000,
+    });
+
+    check(9_000, 'V2', 'done');
+    expect(operationsStore.get().suiteStage).toBeNull();
+  });
+
+  it('keys a reviewer check by its moment too: its base re-run restarts the clock', () => {
+    const check = (ts: number, moment: 'pre-review' | 'base') =>
+      addEvent({
+        type: 'full_suite',
+        ts,
+        phase: 'final-review',
+        status: 'running',
+        id: 'V1',
+        command: 'npm test',
+        moment,
+      });
+
+    check(5_000, 'pre-review');
+    check(9_000, 'base');
+    expect(operationsStore.get().suiteStage).toEqual({
+      id: 'V1',
+      command: 'npm test',
+      moment: 'base',
+      stageStartedTs: 9_000,
+    });
+  });
+
   it('restarts the stage clocks when a stopped run runs the same stage again', () => {
     const suiteRunning = (ts: number) =>
       addEvent({

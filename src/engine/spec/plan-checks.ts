@@ -13,6 +13,7 @@ export type PlanCheckCode =
   | 'empty-plan'
   | 'duplicate-task-id'
   | 'duplicate-check-id'
+  | 'reserved-check-id'
   | 'duplicate-criterion-id'
   | 'criterion-without-check'
   | 'unknown-check'
@@ -42,6 +43,9 @@ export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | und
 export type PlanCheckError = Readonly<{ code: PlanCheckCode; message: string }>;
 
 const isCycle = matches('topo-circular-dependency');
+
+/** The ids the reviewer gives the commands it chooses before a review. */
+const REVIEW_CHECK_ID = /^V\d+$/;
 
 function duplicates(ids: readonly string[]): string[] {
   return [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];
@@ -214,6 +218,9 @@ export function checkPlan(
   errors.push(...checkTaskIdentities(plan.tasks));
   for (const id of duplicates(checkIds))
     fail('duplicate-check-id', `Check id ${id} is used twice.`);
+  for (const id of new Set(checkIds.filter((checkId) => REVIEW_CHECK_ID.test(checkId)))) {
+    fail('reserved-check-id', `Check id ${id} is reserved for the reviewer's checks (V1, V2, …).`);
+  }
   for (const id of duplicates(plan.criteria.map((criterion) => criterion.id)))
     fail('duplicate-criterion-id', `Criterion id ${id} is used twice.`);
 

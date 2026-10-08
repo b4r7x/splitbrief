@@ -127,16 +127,11 @@ export function InputFooter({
       : '';
   const liveLead =
     liveStatus !== null
-      ? [
-          `${frame} ${
-            operations.active?.apiRuntimeStatus?.phase === 'waiting-first-response'
-              ? 'Waiting for response'
-              : liveStatus.verb
-          }`,
-          elapsed,
-        ]
-          .filter((part) => part.length > 0)
-          .join(' ')
+      ? `${frame} ${
+          operations.active?.apiRuntimeStatus?.phase === 'waiting-first-response'
+            ? 'Waiting for response'
+            : liveStatus.verb
+        }`
       : '';
 
   const interrupted = lifecycle.status === 'interrupted';
@@ -167,10 +162,16 @@ export function InputFooter({
   // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
   // state its words at 80 columns and print half a key at 60.
-  const { lead, leadColor, hintText } = recoveryWaiting
+  // A lead's clock is kept apart from its words, so a byline too narrow for both cuts the words.
+  const { lead, leadClock, leadColor, hintText } = recoveryWaiting
     ? { lead: `${glyph('statusPending')} Choose how to continue`, leadColor: null, hintText: null }
     : stopped
-      ? { lead: `${glyph('statusPending')} ${stopped.lead}`, leadColor: t.warning, hintText: null }
+      ? {
+          lead: `${glyph('statusPending')} ${stopped.lead}`,
+          leadClock: stopped.clock,
+          leadColor: t.warning,
+          hintText: null,
+        }
       : recoveryStopped
         ? { lead: recoveryStoppedLead, leadColor: t.error, hintText: null }
         : waiting || approval.status === 'pending'
@@ -190,6 +191,7 @@ export function InputFooter({
                   : liveStatus !== null
                     ? {
                         lead: liveLead,
+                        leadClock: elapsed,
                         leadColor: colorForTone(liveStatus.tone, t),
                         hintText: null,
                       }
@@ -211,6 +213,7 @@ export function InputFooter({
     // Raw width in; the builder owns the framed text measure.
     cols: Math.max(1, width ?? cols),
     lead,
+    leadClock,
     hintText,
     queuedText,
     worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,

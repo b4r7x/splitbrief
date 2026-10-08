@@ -18,7 +18,7 @@ This block reuses the engine's workspace rules and the current report schema, wi
     Use ESM imports with .js extensions. Follow the project's instruction files.
     Read the suggested files and the attached context before editing.
     Treat steps as guidance. Keep the accepted criteria and explicit exclusions.
-    The orchestrator runs the project's typecheck, lint and test gates after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.
+    The orchestrator runs the checks after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names.
     In these skills, render checks are unavailable. Do not claim render evidence.
     The report is advisory. Recorded checks decide whether the task passes.
     End with one JSON object and nothing after it. Use decisions: [] when you propose no deviation.
@@ -61,8 +61,8 @@ Keep the final report contract after Constraints. Send raw context sections even
 ## 3. Closing line
 
 <!-- generated: closing-line -->
-- one file: `Edit <file> directly in the working directory. The orchestrator runs the typecheck, lint, test gates after you hand back, so run no test or other gate command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
-- more than one file: `Edit <file>, <second file> directly in the working directory. The orchestrator runs the typecheck, lint, test gates after you hand back, so run no test or other gate command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
+- one file: `Edit <file> directly in the working directory. The orchestrator runs the checks after you hand back, so run no test, typecheck, lint or other check command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
+- more than one file: `Edit <file>, <second file> directly in the working directory. The orchestrator runs the checks after you hand back, so run no test, typecheck, lint or other check command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
 <!-- /generated -->
 
 ## Completion report

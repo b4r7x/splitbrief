@@ -6,6 +6,11 @@ export function resolveApproveLevel(config: Config): ApproveLevel {
   return config.workflow.approve ?? 'plan';
 }
 
+/** The end-of-run checks run unless the config turns them off. */
+export function resolveEndChecks(config: Config): boolean {
+  return config.validation.endChecks ?? true;
+}
+
 export function resolveEffortLevel(opts: {
   config: Config;
   cliOverride?: EffortLevel | undefined;

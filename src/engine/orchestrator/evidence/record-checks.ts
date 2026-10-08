@@ -17,7 +17,6 @@ import {
 } from '../changed-files-baseline.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { checkEntries } from './task.js';
-import type { ValidationResult } from '../validation/result.js';
 import type { CheckRunResult } from '../validation/run-checks.js';
 
 export async function currentCandidateId(
@@ -39,15 +38,13 @@ export type RecordCheckRunsInput = {
   state: WorkflowState;
   workspaceDir: string;
   task?: Task | undefined;
-  validation?: readonly ValidationResult[] | undefined;
   runs?: readonly CheckRunResult[] | undefined;
 };
 
 export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void> {
   const task = input.task ?? input.state.tasks[0];
-  const validation = [...(input.validation ?? [])];
   const runs = [...(input.runs ?? [])];
-  if (task === undefined || (validation.length === 0 && runs.length === 0)) return;
+  if (task === undefined || runs.length === 0) return;
 
   const ts = nowIso();
   let workspaceSnapshotId: string | undefined;
@@ -79,10 +76,7 @@ export async function recordCheckRuns(input: RecordCheckRunsInput): Promise<void
         const seeded = findOrSeed(ledger, task);
         return upsertEvidenceTask(ledger, {
           ...seeded,
-          checks: [
-            ...(seeded.checks ?? []),
-            ...checkEntries({ validation, runs, workspaceSnapshotId, ts }),
-          ],
+          checks: [...(seeded.checks ?? []), ...checkEntries({ runs, workspaceSnapshotId, ts })],
         });
       },
     );

@@ -11,33 +11,27 @@ const MAX_VALIDATION_COMMAND_CHARS = 240;
 
 type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: string };
 
-export type TestTargetMode = 'related' | 'check' | 'full';
-
-/** The tests of the brief's declared files and of every file the attempt changed. */
+/**
+ * The test files a planner `test` check runs. A command the stack can narrow takes the files it
+ * affects; any other command runs as written.
+ */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
-  task: { suggestedFiles: readonly string[] };
-  changedFiles: readonly string[];
+  files: readonly string[];
   projectDir: string;
   config: Config;
   discovered: DiscoveredValidation | undefined;
   stack: Stack | null;
-  mode?: TestTargetMode | undefined;
 }): TestTarget {
-  const { resolved, task, projectDir, config, discovered, stack } = opts;
-  if (opts.mode === 'full') return { run: true, targets: [] };
+  const { resolved, projectDir, config, discovered, stack } = opts;
   const narrows =
     resolved.source === 'default' || (resolved.source === 'manifest' && stack !== null);
   if (!narrows || stack === null || stack.narrowing.kind === 'none') {
-    if (opts.mode === 'check') return { run: true, targets: [] };
-    return {
-      run: false,
-      skipReason: 'the test command cannot select related tests; the pre-review full suite runs it',
-    };
+    return { run: true, targets: [] };
   }
   const testPattern = config.validation.testPattern ?? discovered?.testPattern;
   const targets: string[] = [];
-  for (const file of new Set([...task.suggestedFiles, ...opts.changedFiles])) {
+  for (const file of new Set(opts.files)) {
     for (const found of findAffectedTestFiles(file, projectDir, stack, testPattern)) {
       const target = relative(projectDir, found);
       if (!targets.includes(target)) targets.push(target);

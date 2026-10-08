@@ -1,6 +1,4 @@
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import type { ValidationResult } from './result.js';
-import { failingTestKey } from './test-failures.js';
 
 const TOKEN_PATTERNS = [
   /[\w./\\-]+\.\w+::[\w.:[\]-]+/,
@@ -27,18 +25,4 @@ export function extractFailureKeys(rawOutput: string): string[] {
     if (token !== undefined) tokens.push(token);
   }
   return [...new Set(tokens.length > 0 ? tokens : lines)];
-}
-
-export function stageFailureKeys(result: ValidationResult): string[] {
-  if (result.timedOut === true) return [`${result.stage} timed out`];
-  const keys =
-    result.stage === 'test'
-      ? (result.failingTests ?? []).map(failingTestKey)
-      : extractFailureKeys(result.error ?? result.output ?? '');
-  if (keys.length > 0) return keys;
-  return [
-    result.exitCode === undefined
-      ? `${result.stage} failed without diagnostics`
-      : `${result.stage} exited with code ${result.exitCode}`,
-  ];
 }

@@ -252,14 +252,9 @@ describe('readiness checks', () => {
     });
   });
 
-  it('warns when validation is disabled and the npm test script is missing', () => {
+  it('warns when End-of-run checks are off and the npm test script is missing', () => {
     const config = makeConfig({
-      validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
-        testCommand: 'npm run verify',
-      },
+      validation: { endChecks: false, testCommand: 'npm run verify' },
     });
 
     const input = baseInput({
@@ -273,7 +268,7 @@ describe('readiness checks', () => {
 
     expect(report.status).toBe('ready-with-warnings');
     expect(allCheckIds(input)).toEqual(
-      expect.arrayContaining(['validation.disabled', 'validation.test-script-missing']),
+      expect.arrayContaining(['validation.end-checks-off', 'validation.test-script-missing']),
     );
   });
 

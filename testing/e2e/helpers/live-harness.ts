@@ -246,9 +246,7 @@ export async function runLiveScenario(
         contextLength: scenario.implementerContextLength,
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {
@@ -496,9 +494,7 @@ export function releaseMatrixConfig(run: ReleaseMatrixRun, tier: LiveMatrixTier)
       ? {}
       : { reviewer: { kind: 'cli', tool: catalogTool(run.review.tool), model: run.review.model } }),
     validation: {
-      typecheck: false,
-      lint: false,
-      test: true,
+      endChecks: true,
       testCommand: 'node validate.mjs',
     },
     workflow: {

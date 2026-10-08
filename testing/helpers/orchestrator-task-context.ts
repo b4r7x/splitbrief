@@ -43,7 +43,7 @@ export function makeTaskWorkflowContext(overrides?: Partial<WorkflowContext>): W
     workspaceDir: proj.projectDir,
     sessionId: proj.sessionId,
     config: makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { maxRetries: 2 },
     }),
     callbacks,

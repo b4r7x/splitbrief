@@ -86,6 +86,16 @@ function planAnswer(): string {
   });
 }
 
+/** The reviewer checks the fake reviewer chooses in the plan call: one the command policy runs. */
+const REVIEW_CHECK_COMMAND = 'node --version';
+const REVIEW_CHECKS_ANSWER = JSON.stringify({
+  commands: [
+    { id: 'V1', command: REVIEW_CHECK_COMMAND, reason: 'The runtime the module needs is present.' },
+  ],
+  declined: [],
+  reason: null,
+});
+
 function installFakeCodexPlanner(binDir: string): string {
   const runLogPath = join(binDir, 'codex-runs.jsonl');
   const executablePath = join(binDir, 'codex');
@@ -101,6 +111,12 @@ function installFakeCodexPlanner(binDir: string): string {
     '}',
     'const prompt = process.argv[process.argv.length - 1] === "-" ? readFileSync(0, "utf-8") : "";',
     'const threadId = process.argv[process.argv.length - 2] ?? "fake-codex-thread";',
+    'if (prompt.includes("# Choose the checks for this review")) {',
+    '  appendFileSync(runLogPath, JSON.stringify({ cwd: process.cwd(), args: [], reviewChecks: true }) + "\\n");',
+    `  console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: ${JSON.stringify(REVIEW_CHECKS_ANSWER)} } }));`,
+    '  console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 13, output_tokens: 7 } }));',
+    '  process.exit(0);',
+    '}',
     'if (prompt.includes("Final Implementation Review")) {',
     '  const ids = (label) => {',
     "    const match = prompt.match(new RegExp('^' + label + ' (.+)$', 'm'));",
@@ -150,96 +166,98 @@ function installFakeOpencodeImplementer(binDir: string, marker: string): string 
   return runLogPath;
 }
 
+/** One workflow run with the fake Codex planner and reviewer and the fake OpenCode implementer. */
+async function runCliWorkflow(endChecks: boolean) {
+  const marker = 'from-cli-planner-to-cli-implementer';
+  const projectDir = setupProject(marker);
+  const binDir = createTempDir('fake-cli-planner-implementer-bin');
+  dirs.push(binDir);
+  const codexRunLogPath = installFakeCodexPlanner(binDir);
+  const opencodeRunLogPath = installFakeOpencodeImplementer(binDir, marker);
+  process.env.PATH = `${binDir}:${originalPath ?? ''}`;
+  const events: EngineEvent[] = [];
+  const feature = 'prove a Codex CLI planner can hand work to an OpenCode CLI implementer';
+  const config = parsePreparedConfig(
+    makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5-codex-test',
+      },
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'opencode/test-cheap-model',
+        contextLength: 4096,
+      },
+      validation: { endChecks, testCommand: 'node validate.mjs' },
+      workflow: {
+        approve: 'none',
+        maxRetries: 1,
+      },
+    }),
+  );
+  const preparationId = 'cli-planner-cli-implementer-preparation';
+  const sessionId = 'sess-cli-planner-cli-implementer';
+  const plannerResolution = await resolveCustomExecutable({ command: 'codex', projectDir });
+  const implementerResolution = await resolveCustomExecutable({
+    command: 'opencode',
+    projectDir,
+  });
+  if (plannerResolution.kind !== 'resolved' || implementerResolution.kind !== 'resolved') {
+    throw new Error('CLI fixture executables did not resolve.');
+  }
+  const active = {
+    version: 1 as const,
+    sessionId,
+    generation: '1a111111-1111-4111-8111-111111111111',
+  };
+  const prepared: PreparedExecution = {
+    purpose: 'new-workflow',
+    config,
+    preparationId,
+    report: {
+      generatedAt: '2026-08-04T00:00:00.000Z',
+      projectDir,
+      status: 'ready',
+      counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
+      nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
+      sections: [],
+      metadata: {},
+    },
+    gates: [
+      {
+        kind: 'cli',
+        slot: { role: 'planner' },
+        preparationId,
+        tool: 'codex',
+        executable: plannerResolution.executable,
+      },
+      {
+        kind: 'cli',
+        slot: { role: 'implementer', profile: 'default' },
+        preparationId,
+        tool: 'opencode',
+        executable: implementerResolution.executable,
+      },
+    ],
+    session: { kind: 'existing', ref: { projectDir, sessionId }, active },
+    runtime: { feature, allowRepoRunners: false, allowHooks: false },
+  };
+
+  const summary = await runWorkflow({
+    prepared,
+    callbacks: makeCallbacks().callbacks,
+    sinks: TEST_WORKFLOW_SINKS,
+    _eventSink: (event) => events.push(event),
+  });
+  return { marker, projectDir, sessionId, events, summary, codexRunLogPath, opencodeRunLogPath };
+}
+
 describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
   it('runs a Codex-style planner subprocess and a separate OpenCode-style implementer subprocess', async () => {
-    const marker = 'from-cli-planner-to-cli-implementer';
-    const projectDir = setupProject(marker);
-    const binDir = createTempDir('fake-cli-planner-implementer-bin');
-    dirs.push(binDir);
-    const codexRunLogPath = installFakeCodexPlanner(binDir);
-    const opencodeRunLogPath = installFakeOpencodeImplementer(binDir, marker);
-    process.env.PATH = `${binDir}:${originalPath ?? ''}`;
-    const events: EngineEvent[] = [];
-    const feature = 'prove a Codex CLI planner can hand work to an OpenCode CLI implementer';
-    const config = parsePreparedConfig(
-      makeConfig({
-        planner: {
-          kind: 'cli',
-          tool: 'codex',
-          model: 'gpt-5-codex-test',
-        },
-        implementer: {
-          kind: 'cli',
-          tool: 'opencode',
-          model: 'opencode/test-cheap-model',
-          contextLength: 4096,
-        },
-        validation: {
-          typecheck: false,
-          lint: false,
-          test: true,
-          testCommand: 'node validate.mjs',
-        },
-        workflow: {
-          approve: 'none',
-          maxRetries: 1,
-        },
-      }),
-    );
-    const preparationId = 'cli-planner-cli-implementer-preparation';
-    const sessionId = 'sess-cli-planner-cli-implementer';
-    const plannerResolution = await resolveCustomExecutable({ command: 'codex', projectDir });
-    const implementerResolution = await resolveCustomExecutable({
-      command: 'opencode',
-      projectDir,
-    });
-    if (plannerResolution.kind !== 'resolved' || implementerResolution.kind !== 'resolved') {
-      throw new Error('CLI fixture executables did not resolve.');
-    }
-    const active = {
-      version: 1 as const,
-      sessionId,
-      generation: '1a111111-1111-4111-8111-111111111111',
-    };
-    const prepared: PreparedExecution = {
-      purpose: 'new-workflow',
-      config,
-      preparationId,
-      report: {
-        generatedAt: '2026-08-04T00:00:00.000Z',
-        projectDir,
-        status: 'ready',
-        counts: { ok: 2, info: 0, warning: 0, blocker: 0 },
-        nextAction: { kind: 'continue', label: 'Continue', reason: 'Ready' },
-        sections: [],
-        metadata: {},
-      },
-      gates: [
-        {
-          kind: 'cli',
-          slot: { role: 'planner' },
-          preparationId,
-          tool: 'codex',
-          executable: plannerResolution.executable,
-        },
-        {
-          kind: 'cli',
-          slot: { role: 'implementer', profile: 'default' },
-          preparationId,
-          tool: 'opencode',
-          executable: implementerResolution.executable,
-        },
-      ],
-      session: { kind: 'existing', ref: { projectDir, sessionId }, active },
-      runtime: { feature, allowRepoRunners: false, allowHooks: false },
-    };
-
-    const summary = await runWorkflow({
-      prepared,
-      callbacks: makeCallbacks().callbacks,
-      sinks: TEST_WORKFLOW_SINKS,
-      _eventSink: (event) => events.push(event),
-    });
+    const { marker, projectDir, sessionId, events, summary, codexRunLogPath, opencodeRunLogPath } =
+      await runCliWorkflow(true);
 
     const codexRuns = readFileSync(codexRunLogPath, 'utf-8')
       .trim()
@@ -249,6 +267,7 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     expect(codexRuns.some((run) => run.args.includes('exec') && run.args.includes('--json'))).toBe(
       true,
     );
+    expect(readFileSync(codexRunLogPath, 'utf-8').match(/"reviewChecks":true/g)).toHaveLength(1);
 
     const opencodeRun = JSON.parse(readFileSync(opencodeRunLogPath, 'utf-8')) as {
       cwd: string;
@@ -301,26 +320,66 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
         'workflow_complete',
       ]),
     );
+    expect(events.find((event) => event.type === 'validate')).toBeUndefined();
+    // The reviewer chose one command; SPLITBRIEF ran it before the verdict, and it passed.
+    expect(events.filter((event) => event.type === 'review_checks')).toEqual([
+      expect.objectContaining({
+        status: 'planned',
+        scope: 'final',
+        commands: [expect.objectContaining({ id: 'V1', command: REVIEW_CHECK_COMMAND })],
+        declined: [],
+        reason: null,
+      }),
+    ]);
     expect(
-      events.find((event) => event.type === 'validate' && event.status === 'done'),
-    ).toBeUndefined();
-    expect(
-      events.find(
-        (event) =>
-          event.type === 'full_suite' && event.status === 'done' && event.moment === 'pre-review',
-      ),
-    ).toMatchObject({
-      type: 'full_suite',
-      status: 'done',
-      moment: 'pre-review',
-      stage: 'test',
-      passed: true,
-    });
+      events
+        .filter((event) => event.type === 'full_suite')
+        .map((event) => ({
+          id: event.id,
+          status: event.status,
+          moment: event.moment,
+          command: event.command,
+          passed: event.passed,
+        })),
+    ).toEqual([
+      {
+        id: 'V1',
+        status: 'running',
+        moment: 'pre-review',
+        command: REVIEW_CHECK_COMMAND,
+        passed: undefined,
+      },
+      {
+        id: 'V1',
+        status: 'done',
+        moment: 'pre-review',
+        command: REVIEW_CHECK_COMMAND,
+        passed: true,
+      },
+    ]);
+    const types = events.map((event) => event.type);
+    expect(types.indexOf('review_checks')).toBeLessThan(types.lastIndexOf('full_suite'));
+    expect(types.lastIndexOf('full_suite')).toBeLessThan(types.indexOf('workflow_complete'));
     expect(
       readFileSync(
         join(sessionDir(projectDir, 'sess-cli-planner-cli-implementer'), REVIEW_FILE),
         'utf-8',
       ),
     ).toContain('### Verdict\n\npass');
+  }, 90_000);
+
+  it('runs no command before the review when End-of-run checks are off, and says so once', async () => {
+    const { projectDir, sessionId, events, summary, codexRunLogPath } = await runCliWorkflow(false);
+
+    expect(summary).toMatchObject({ totalTasks: 1, completedByLocal: 1, failed: 0 });
+    expect(events.filter((event) => event.type === 'review_checks')).toEqual([
+      expect.objectContaining({ type: 'review_checks', status: 'off', scope: 'final' }),
+    ]);
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
+    // The reviewer was never asked to choose a command.
+    expect(readFileSync(codexRunLogPath, 'utf-8')).not.toContain('reviewChecks');
+    expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(
+      '### Verdict\n\npass',
+    );
   }, 90_000);
 });

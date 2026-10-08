@@ -27,12 +27,14 @@ import { processError } from '../../../lib/process/errors.js';
 import { createEventBus } from '../../events/bus.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
-import { createValidator } from '../validation/run.js';
-import type { ValidationCommandRunner } from '../validation/types.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import type { ReviewChecksPlan } from '../../../core/schemas/review.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { runTasksAndReview } from './task-execution.js';
 
 const dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -81,14 +83,15 @@ function alphaIsBroken(cwd: string | undefined): boolean {
 }
 
 /**
- * One ordered log of what the run did: every gate command, every suite and
- * validate event, every implementer call and every review call.
+ * One ordered log of what the run did: every check command, every reviewer-check row, every
+ * implementer call and every review call. The reviewer chooses `checks` before each review.
  */
 function runHarness(opts: {
   projectDir: string;
   sessionId: string;
   state: WorkflowState;
   config: Config;
+  checks: ReviewChecksPlan;
   runCommand: (line: string, cwd: string | undefined) => void;
 }) {
   const log: string[] = [];
@@ -96,11 +99,12 @@ function runHarness(opts: {
   const bus = createEventBus();
   bus.subscribe((event) => {
     events.push(event);
-    if (event.type === 'full_suite') log.push(`suite:${event.moment}:${event.status}`);
-    if (event.type === 'validate') log.push(`validate:${event.taskId}:${event.status}`);
+    if (event.type === 'review_checks') log.push(`checks:${event.scope}:${event.status}`);
+    if (event.type === 'full_suite') log.push(`check:${event.id}:${event.moment}:${event.status}`);
   });
   const reviewPrompts: string[] = [];
   const triagePrompts: string[] = [];
+  const checksPrompts: string[] = [];
   const reviewer = makePlanner({
     typedCall: typedCallPlanAndReview(
       () => planFromTasks(opts.state.tasks),
@@ -128,6 +132,11 @@ function runHarness(opts: {
             },
           ],
         };
+      },
+      undefined,
+      (prompt) => {
+        checksPrompts.push(prompt);
+        return opts.checks;
       },
     ),
   });
@@ -157,12 +166,12 @@ function runHarness(opts: {
       return { success: true, output: 'fixed', usage: { inputTokens: 10, outputTokens: 5 } };
     }),
   });
-  const runCommand: ValidationCommandRunner = async (cmd, args, options) => {
+  vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args, options) => {
     const line = [cmd, ...args].join(' ');
     log.push(`cmd:${line}`);
     opts.runCommand(line, options?.cwd);
     return { stdout: '', stderr: '', code: 0 };
-  };
+  });
   const wctx = makeWctx({
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
@@ -173,13 +182,13 @@ function runHarness(opts: {
     planner: reviewer,
     reviewer,
     implementer,
-    validator: createValidator({ runCommand }),
   });
   return {
     log,
     events,
     reviewPrompts,
     triagePrompts,
+    checksPrompts,
     implemented,
     retries,
     options: {
@@ -203,8 +212,19 @@ function runHarness(opts: {
   };
 }
 
-describe("gates with workflow.review 'end'", { timeout: 120_000 }, () => {
-  it('runs the gates at final review and lets the reviewer append a fix task for a red owned by one brief', async () => {
+/** The `## Reviewer checks` section the verdict call carries. */
+function reviewerChecksSection(prompt: string | undefined): string {
+  return prompt?.split('## Reviewer checks\n')[1]?.split('\n## ')[0] ?? '';
+}
+
+const TYPECHECK: ReviewChecksPlan = {
+  commands: [{ id: 'V1', command: 'tsc --noEmit', reason: 'the project type checks' }],
+  declined: [],
+  reason: null,
+};
+
+describe("reviewer checks with workflow.review 'end'", { timeout: 120_000 }, () => {
+  it('runs no check before the final review, then lets the reviewer append a fix task for a red one brief owns', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
@@ -214,17 +234,10 @@ describe("gates with workflow.review 'end'", { timeout: 120_000 }, () => {
       projectDir,
       sessionId,
       state: gateState(tasks, head),
-      config: makeConfig({
-        validation: {
-          typecheck: true,
-          lint: false,
-          test: false,
-          typecheckCommand: 'npx tsc --noEmit',
-        },
-        workflow: {},
-      }),
+      config: makeConfig({ workflow: {} }),
+      checks: TYPECHECK,
       runCommand: (line, cwd) => {
-        if (line === 'npx tsc --noEmit' && alphaIsBroken(cwd)) {
+        if (line === 'tsc --noEmit' && alphaIsBroken(cwd)) {
           throw processError.exitCode({ command: line, code: 2, stderr: TYPE_ERROR });
         }
       },
@@ -233,30 +246,38 @@ describe("gates with workflow.review 'end'", { timeout: 120_000 }, () => {
     const result = await runTasksAndReview(harness.options);
 
     expect(result.completed).toBe(true);
-    // No gate after either brief: the first pre-review suite is the first gate after the baseline.
-    const firstPreReview = harness.log.indexOf('suite:pre-review:running');
-    expect(firstPreReview).toBeGreaterThan(-1);
-    const beforePreReview = harness.log.slice(0, firstPreReview);
-    expect(beforePreReview.filter((entry) => entry.startsWith('validate:'))).toEqual([]);
-    expect(beforePreReview.filter((entry) => entry.startsWith('retry:'))).toEqual([]);
+    // No command after either brief: the reviewer's plan is the first thing that runs one.
+    const firstPlan = harness.log.indexOf('checks:final:planned');
+    expect(firstPlan).toBeGreaterThan(-1);
+    const beforePlan = harness.log.slice(0, firstPlan);
+    expect(beforePlan.filter((entry) => entry.startsWith('cmd:'))).toEqual([]);
+    expect(beforePlan.filter((entry) => entry.startsWith('retry:'))).toEqual([]);
     expect(harness.implemented).toEqual(['T001', 'T002', 'T003']);
     expect(harness.retries).toEqual([]);
     expect(harness.triagePrompts[0]).toContain('TS2304');
+    expect(harness.triagePrompts[0]).toContain('V1.1');
     expect(result.state.fixCycles?.used).toBe(1);
-    // The gates run again before the review: the second pre-review suite is green.
-    const preReviewVerdicts = harness.events.flatMap((event) =>
+    // The reviewer's check runs again before the second review, and passes.
+    const verdicts = harness.events.flatMap((event) =>
       event.type === 'full_suite' && event.moment === 'pre-review' && event.status === 'done'
         ? [event.passed]
         : [],
     );
-    expect(preReviewVerdicts).toEqual([false, true]);
+    expect(verdicts).toEqual([false, true]);
     expect(harness.reviewPrompts).toHaveLength(2);
+    expect(reviewerChecksSection(harness.reviewPrompts[0])).toContain(
+      `- V1 \`tsc --noEmit\`: failed, 1 new failure(s): ${TYPE_ERROR.split(':')[0]}`,
+    );
+    expect(reviewerChecksSection(harness.reviewPrompts[1])).toContain(
+      '- V1 `tsc --noEmit`: passed',
+    );
+    expect(reviewerChecksSection(harness.reviewPrompts[1])).not.toContain('failed');
     expect(harness.log.indexOf('review')).toBeLessThan(harness.log.indexOf('implement:T003'));
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done', 'done']);
   });
 });
 
-describe("gates with workflow.review 'task'", { timeout: 120_000 }, () => {
+describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, () => {
   const TS_PROJECT = {
     'package.json': JSON.stringify({
       name: 'gate-cadence',
@@ -267,65 +288,73 @@ describe("gates with workflow.review 'task'", { timeout: 120_000 }, () => {
     'src/alpha.test.ts': "import { alpha } from './alpha.js';\n",
     'src/beta.test.ts': "import { beta } from './beta.js';\n",
   };
-
-  // No configured test command: the test stage resolves from the manifest, which narrows to
-  // the task's related test files.
-  function taskConfig(): Config {
-    const config = makeConfig({
-      validation: {
-        typecheck: true,
-        lint: true,
-        test: true,
-        typecheckCommand: 'npx tsc --noEmit',
-        lintCommand: 'npx biome check .',
+  const RELATED: ReviewChecksPlan = {
+    commands: [
+      {
+        id: 'V1',
+        command: 'npx --no-install vitest run src/alpha.test.ts',
+        reason: 'the test of the changed file',
       },
-      workflow: { review: 'task' },
-    });
-    const { testCommand: _configured, ...validation } = config.validation;
-    return { ...config, validation };
-  }
+    ],
+    declined: [{ target: 'src/beta.test.ts', reason: 'the task did not touch beta' }],
+    reason: null,
+  };
 
-  it("runs only the task's related tests after the task, then its scheduled review", async () => {
+  it("runs the related test the reviewer chose before the task's scheduled review, and names the one it declined", async () => {
     const { projectDir, sessionId, head } = setupProject(TS_PROJECT);
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] })];
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], criteria: ['C2'] }),
+    ];
     const harness = runHarness({
       projectDir,
       sessionId,
       state: gateState(tasks, head),
-      config: taskConfig(),
+      config: makeConfig({ workflow: { review: 'task' } }),
+      checks: RELATED,
       runCommand: () => {},
     });
 
     const result = await runTasksAndReview(harness.options);
 
     expect(result.completed).toBe(true);
-    const afterBaseline = harness.log.slice(harness.log.lastIndexOf('suite:baseline:done') + 1);
-    const scheduledReview = afterBaseline.indexOf('review');
+    const scheduledReview = harness.log.indexOf('review');
     expect(scheduledReview).toBeGreaterThan(-1);
-    const taskGate = afterBaseline.slice(0, scheduledReview);
-    const commands = taskGate.filter((entry) => entry.startsWith('cmd:'));
-    expect(commands).toHaveLength(1);
-    expect(commands[0]).toContain('src/alpha.test.ts');
-    expect(commands[0]).not.toContain('src/beta.test.ts');
-    expect(taskGate).not.toContain('suite:pre-review:running');
-    expect(taskGate).toContain('validate:T001:done');
-    // The final review still runs the full gates once.
-    expect(
-      harness.log.filter((entry) => entry === 'suite:pre-review:running').length,
-    ).toBeGreaterThan(0);
-    expect(harness.log.indexOf('suite:pre-review:running')).toBeGreaterThan(
-      harness.log.indexOf('review'),
+    const beforeReview = harness.log.slice(0, scheduledReview);
+    expect(beforeReview.indexOf('implement:T001')).toBeLessThan(
+      beforeReview.indexOf('checks:task:planned'),
     );
+    expect(beforeReview.filter((entry) => entry.startsWith('cmd:'))).toEqual([
+      'cmd:npx --no-install vitest run src/alpha.test.ts',
+    ]);
+    expect(beforeReview).toContain('check:V1:pre-review:done');
+    expect(
+      harness.events.find((event) => event.type === 'review_checks' && event.scope === 'task'),
+    ).toMatchObject({
+      status: 'planned',
+      declined: [{ target: 'src/beta.test.ts', reason: 'the task did not touch beta' }],
+    });
+    // The first task review covers T001: its plan call lists only the files T001 changed, and its
+    // reviewer check lands on T001's ledger entry, not on the last task of the run.
+    const firstChecks = harness.checksPrompts[0] ?? '';
+    expect(firstChecks).toContain('The review covers the changes of T001.');
+    expect(firstChecks).toContain('## Changed files\n\n- src/alpha.ts');
+    expect(firstChecks).not.toContain('src/beta.ts');
+    const ledger = readEvidenceLedger({ projectDir, sessionId });
+    expect(
+      ledger?.tasks.find((entry) => entry.id === 'T001')?.checks?.map((check) => check.id),
+    ).toContain('V1');
   });
 
-  it("sends a red related test straight to the task's retry ladder before its review", async () => {
+  it("hands a red related test to the task's review as a pending input", async () => {
     const { projectDir, sessionId, head } = setupProject(TS_PROJECT);
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], criteria: ['C1'] })];
     const harness = runHarness({
       projectDir,
       sessionId,
       state: gateState(tasks, head),
-      config: taskConfig(),
+      config: makeConfig({ workflow: { review: 'task' } }),
+      checks: RELATED,
       runCommand: (line, cwd) => {
         if (line.includes('src/alpha.test.ts') && alphaIsBroken(cwd)) {
           throw processError.exitCode({ command: line, code: 1, stderr: TEST_FAILURE });
@@ -336,14 +365,11 @@ describe("gates with workflow.review 'task'", { timeout: 120_000 }, () => {
     const result = await runTasksAndReview(harness.options);
 
     expect(result.completed).toBe(true);
-    expect(harness.retries).toHaveLength(1);
-    expect(harness.retries[0]?.error).toContain('src/alpha.test.ts');
-    const firstReview = harness.log.indexOf('review');
-    expect(harness.log.indexOf('retry:T001')).toBeGreaterThan(-1);
-    expect(harness.log.indexOf('retry:T001')).toBeLessThan(firstReview);
-    expect(harness.log.slice(0, firstReview)).not.toContain('suite:pre-review:running');
-    expect(harness.triagePrompts).toEqual([]);
-    expect(result.state.fixCycles?.used ?? 0).toBe(0);
-    expect(result.state.tasks.map((task) => task.status)).toEqual(['done']);
+    expect(harness.retries).toEqual([]);
+    expect(harness.triagePrompts[0]).toContain('V1.1');
+    expect(harness.triagePrompts[0]).toContain('src/alpha.test.ts');
+    expect(harness.implemented).toEqual(['T001', 'T002']);
+    expect(result.state.fixCycles?.used).toBe(1);
+    expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
   });
 });

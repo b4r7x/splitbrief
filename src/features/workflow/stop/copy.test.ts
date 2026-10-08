@@ -127,8 +127,24 @@ describe('stopByline', () => {
     });
 
     expect(stopByline(paused)).toEqual({
-      lead: 'Pre-review suite · npm test 10:02',
+      lead: 'Pre-review suite · npm test',
+      clock: '10:02',
       hint: 'Pause requested; no next brief will start',
+    });
+  });
+
+  it('names the reviewer check a pause waits on by its id', () => {
+    const paused = input({
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      currentTaskId: null,
+      finishedTaskId: 'T003',
+      suite: { id: 'V2', moment: 'pre-review', command: 'npm test', elapsedMs: 42_000 },
+    });
+
+    expect(stopByline(paused)).toMatchObject({
+      lead: 'Reviewer check V2 · npm test',
+      clock: '0:42',
     });
   });
 

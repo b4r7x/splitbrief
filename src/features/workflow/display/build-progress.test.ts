@@ -18,6 +18,7 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 
 const NOW = 1_000_000;
 
@@ -369,12 +370,12 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toContain('npm test');
-    expect(progress.activity).toContain('running 1m 30s');
+    expect(progress.activity).toBe('npm test');
+    expect(progress.freshness).toBe('running 1m 30s');
   });
 
-  // No seat is on a call while a gate command runs, so a long command is no one's silence: its row
-  // says how long it has run, and freshness how long ago a seat last spoke, once.
+  // No seat is on a call while a gate command runs, so a long command is no one's silence: its own
+  // clock is the block's proof of life, said once.
   it('keeps a long gate command out of the silence warning', () => {
     const progress = deriveBuildProgress(
       input({
@@ -385,9 +386,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(buildProgressLines(progress, 120)[1]).toBe(
-      'npm test · running 1m 30s · last event 1m 30s ago',
-    );
+    expect(buildProgressLines(progress, 120)[1]).toBe('npm test · running 1m 30s');
     expect(progress.silent).toBe(false);
   });
 
@@ -407,7 +406,73 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Pre-review suite · npm test · running 10m 2s');
+    expect(progress.activity).toBe('Pre-review suite · npm test');
+    expect(progress.freshness).toBe('running 10m 2s');
+  });
+
+  // Render of workflow-review-check-running: `last event 14m 7s ago` sat under `running 10m 2s`,
+  // the age of the last seat word beside a command that had spoken for ten minutes.
+  it('lets the running check clock stand as freshness, never the age of the last seat word', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review', lastRunnerEventTs: NOW - 847_000 }),
+        operations: operationsState({
+          suiteStage: {
+            id: 'V2',
+            command: 'npm test',
+            moment: 'pre-review',
+            stageStartedTs: NOW - 602_000,
+          },
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Reviewer check V2 · npm test');
+    expect(progress.freshness).toBe('running 10m 2s');
+    expect(progress.silent).toBe(false);
+    for (const width of [160, 120, 80, 60]) {
+      expect(buildProgressLines(progress, width).join('\n')).not.toContain('last event');
+    }
+  });
+
+  // Render of workflow-review-base-rerun at 60 columns: `… legacy.test.ts · running…` lost its clock.
+  it('cuts a long command, never the clock that follows it, where they share a row', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          suiteStage: {
+            id: 'V2',
+            command: `npm test -- ${[
+              'legacy',
+              'modern',
+              'format',
+              'parse',
+              'render',
+              'store',
+              'theme',
+            ]
+              .map((name) => `src/${name}/${name}.test.ts`)
+              .join(' ')}`,
+            moment: 'base',
+            stageStartedTs: NOW - 40_000,
+          },
+        }),
+      }),
+    );
+
+    for (const width of [120, 140]) {
+      const line = buildProgressLines(progress, width)[1] ?? '';
+      expect(line.endsWith(' · running 40s')).toBe(true);
+      expect(line.startsWith('Base re-run V2 · npm test -- ')).toBe(true);
+      expect(line).toContain('…');
+      expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
+    }
+    for (const width of [60, 80]) {
+      const lines = buildProgressLines(progress, width);
+      expect(lines).toHaveLength(buildProgressRowCount(width));
+      expect(lines[2]).toBe('running 40s');
+    }
   });
 
   it('spells a long silence the way every other elapsed span in the block reads', () => {

@@ -168,6 +168,18 @@ const RETIRED_CONFIG_VALUES: readonly {
     notice:
       'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
   },
+  ...(
+    [
+      ['typecheck', 'typecheck'],
+      ['lint', 'lint'],
+      ['test', 'test'],
+      ['typecheckCommand', 'typecheck_command'],
+      ['lintCommand', 'lint_command'],
+    ] as const
+  ).map(([key, name]) => ({
+    path: ['validation', key] as const,
+    notice: `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,
+  })),
   {
     path: ['escalation'],
     notice:

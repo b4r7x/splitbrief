@@ -124,9 +124,9 @@ describe('TROUBLESHOOTING diagnostic parity', () => {
     expect(troubleshootingDoc).toContain('review: failed');
   });
 
-  it('documents the unrecognised-stack outcome as the run prints it', () => {
+  it('documents the unrecognised-stack outcome as the run records it', () => {
     expect(troubleshootingDoc).toContain(
-      '### Symptom: the run printed `gates: NONE — review-only` and validated nothing',
+      '### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack`',
     );
   });
 });

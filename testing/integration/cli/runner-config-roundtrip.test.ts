@@ -298,7 +298,7 @@ function writeRunnerConfigYaml(
     version: 3,
     planner: args.planner ?? { kind: 'cli', tool: 'claude-code' },
     implementer: args.implementer ?? { kind: 'cli', tool: 'codex', model: 'legacy-model' },
-    validation: { typecheck: true, lint: true, test: true },
+    validation: { end_checks: true },
     workflow: { max_retries: 3, compaction_format: 'auto' },
     ...optionalSectionsYaml(),
     ...args.extra,

@@ -944,7 +944,8 @@ describe('runRetryStep — gate denial', () => {
     const { bus, events } = makeBusRecorder();
     const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
     const retryWorkspaceDirs: string[] = [];
-    const runValidation = vi.fn().mockResolvedValue([]);
+    // The brief gate formats the changed files first: an attempt that never reaches the gate formats nothing.
+    const formatChangedFiles = vi.fn().mockResolvedValue(undefined);
 
     const outcome = await runRetryStep({
       ctx: {
@@ -964,7 +965,7 @@ describe('runRetryStep — gate denial', () => {
         implementer: makeImplementer(),
         metadata: TEST_METADATA,
         sinks: TEST_SINKS,
-        validator: { ...createValidator(), runValidation },
+        validator: { formatChangedFiles },
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
         taskStartSnapshot,
         dependsOnFiles: [],
@@ -992,7 +993,7 @@ describe('runRetryStep — gate denial', () => {
         "Retry changed files blocked by approval gate: package change denied. SPLITBRIEF discarded this attempt's writes to package.json. Retry from the current files; do not try to recover the rejected writes.",
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
-    expect(runValidation).not.toHaveBeenCalled();
+    expect(formatChangedFiles).not.toHaveBeenCalled();
     expect(retryWorkspaceDirs.map((dir) => existsSync(join(dir, 'package.json')))).toEqual([false]);
     expect(existsSync(join(projectDir, 'package.json'))).toBe(false);
     expect(

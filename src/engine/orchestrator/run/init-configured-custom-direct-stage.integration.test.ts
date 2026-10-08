@@ -86,7 +86,7 @@ function directConfig(runners: readonly ReturnType<typeof makeDirectRunner>[]): 
   return ConfigSchema.parse({
     ...makeConfig({
       implementer: { kind: 'cli', tool: 'codex', authChannel: 'session' },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {},
       approval: { feedRejectionsToPlanner: true },
     }),

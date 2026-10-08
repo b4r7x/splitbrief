@@ -1,4 +1,4 @@
-import { createValidator } from '../validation/run.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -109,16 +109,16 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
     expect(implemented).toEqual(['T001']);
   });
 
-  it('runs no full suite before the first brief', async () => {
+  it('runs no check command before the first brief', async () => {
     const { projectDir, sessionId } = setupGitSessionProject({
       prefix: 'task-loop-no-run-start-suite',
       sessionId: 'sess-no-run-start-suite',
     });
     dirs.push(projectDir);
-    const runFullSuite = vi.fn();
+    const runCommand = vi.spyOn(commandRunner, 'runCommand');
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (opts) => {
-        expect(runFullSuite).not.toHaveBeenCalled();
+        expect(runCommand).not.toHaveBeenCalled();
         mkdirSync(join(projectDir, 'src'), { recursive: true });
         writeFileSync(join(projectDir, opts.task.file), 'implementation\n');
         return { success: true, output: 'code', usage: { inputTokens: 10, outputTokens: 5 } };
@@ -129,12 +129,8 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig({
-          validation: { typecheck: true, lint: true, test: true },
-          workflow: {},
-        }),
+        config: makeNoValidationConfig({ workflow: {} }),
         implementer,
-        validator: { ...createValidator(), runFullSuite },
       }),
       initialState: makeImplState([makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })]),
       setTrackedState: vi.fn(),
@@ -143,7 +139,8 @@ describe('runTaskLoop', { timeout: 120_000 }, () => {
 
     expect(result.status).toBe('complete');
     expect(implementer.implement).toHaveBeenCalledTimes(1);
-    expect(runFullSuite).not.toHaveBeenCalled();
+    expect(runCommand).not.toHaveBeenCalled();
+    runCommand.mockRestore();
   });
 
   it('has the task-start snapshot on disk before the brief runs', async () => {

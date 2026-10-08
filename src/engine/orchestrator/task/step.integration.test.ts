@@ -19,14 +19,21 @@ import {
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import type { Check } from '../../../core/schemas/task.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createContinuationHolder } from '../continuation.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 
-afterEach(cleanupTaskProjects);
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanupTaskProjects();
+});
+
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
 
 // Every case here drives a real git fixture repo and real snapshot/drift git
 // subprocesses, so the body is a second of work in isolation and several under
@@ -144,6 +151,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       action: 'create',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
 
@@ -155,9 +163,9 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       }),
       retry: vi.fn(),
     });
-    const runValidation = vi.fn().mockImplementation(async () => {
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
       controller.abort();
-      return [{ stage: 'test' as const, passed: false, error: 'test failed' }];
+      throw processError.exitCode({ command: 'tsc', code: 2, stderr: 'test failed', output: '' });
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -173,9 +181,8 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         config: makeConfig({
           workflow: { review: 'task' },
 
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
       task,
       index: 0,
@@ -201,6 +208,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       action: 'create',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
 
@@ -212,9 +220,9 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       }),
       retry: vi.fn(),
     });
-    const runValidation = vi.fn().mockImplementation(async () => {
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
       controller.abort();
-      return [{ stage: 'test' as const, passed: true }];
+      return { stdout: '', stderr: '', code: 0 };
     });
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
@@ -230,9 +238,8 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
         config: makeConfig({
           workflow: { review: 'task' },
 
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
       task,
       index: 0,
@@ -243,7 +250,9 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
       setCurrentTask: vi.fn(),
     });
 
-    expect(runValidation).toHaveBeenCalledWith(
+    expect(runCommand).toHaveBeenCalledWith(
+      'tsc',
+      ['--noEmit'],
       expect.objectContaining({ signal: controller.signal }),
     );
     expect(implementer.retry).not.toHaveBeenCalled();
@@ -290,7 +299,7 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
           approval: {
             feedRejectionsToPlanner: false,
           },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
       task,
@@ -323,6 +332,7 @@ describe('runSingleTask — checks log per validation attempt', { timeout: 60_00
       action: 'create',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = {
       ...implementingState([task]),
@@ -345,25 +355,27 @@ describe('runSingleTask — checks log per validation attempt', { timeout: 60_00
       }),
     });
     let validations = 0;
-    const runValidation = vi.fn().mockImplementation(async () => {
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
       validations += 1;
-      return validations < 3
-        ? [{ stage: 'test' as const, passed: false, error: `red ${validations}` }]
-        : [{ stage: 'test' as const, passed: true }];
+      if (validations < 3) {
+        throw processError.exitCode({
+          command: 'tsc',
+          code: 2,
+          stderr: `red ${validations}`,
+          output: '',
+        });
+      }
+      return { stdout: '', stderr: '', code: 0 };
     });
 
     const result = await runSingleTask({
       wctx: makeWorkflowContext({
-        config: makeConfig({
-          workflow: { review: 'task' },
-          validation: { typecheck: false, lint: false, test: true },
-        }),
+        config: makeConfig({ workflow: { review: 'task' } }),
 
         projectDir,
         sessionId,
         implementer,
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-        validator: { ...createValidator(), runValidation },
       }),
       task,
       index: 0,
@@ -375,9 +387,9 @@ describe('runSingleTask — checks log per validation attempt', { timeout: 60_00
     });
 
     expect(result.tasks[0]?.status).toBe('done');
-    expect(runValidation).toHaveBeenCalledTimes(3);
+    expect(runCommand).toHaveBeenCalledTimes(3);
     const logged = (readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.checks ?? []).filter(
-      (entry) => entry.id === 'test',
+      (entry) => entry.id === 'K1',
     );
     // One record per execution, each stamped with the candidate that execution judged.
     expect(logged.map((entry) => entry.output)).toEqual(['red 1', 'red 2', undefined]);

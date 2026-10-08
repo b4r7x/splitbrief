@@ -19,7 +19,7 @@ import { seedValidationProject } from '#testing/helpers/validation-project.js';
 import { executableReceipt } from '#testing/helpers/custom-command-based.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli-executable.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { NO_REVIEW_CHECKS, typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 let originalPath: string | undefined;
@@ -159,9 +159,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
         },
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {
@@ -267,21 +265,16 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       tool: 'opencode',
       model: 'opencode/test-cheap-model',
     });
-    expect(
-      events.find((event) => event.type === 'validate' && event.status === 'done'),
-    ).toBeUndefined();
-    expect(
-      events.find(
-        (event) =>
-          event.type === 'full_suite' && event.status === 'done' && event.moment === 'pre-review',
-      ),
-    ).toMatchObject({
-      type: 'full_suite',
-      status: 'done',
-      moment: 'pre-review',
-      stage: 'test',
-      passed: true,
-    });
+    expect(events.find((event) => event.type === 'validate')).toBeUndefined();
+    // The fake reviewer chooses no command, so the review names its reason and nothing runs.
+    expect(events.filter((event) => event.type === 'review_checks')).toEqual([
+      expect.objectContaining({
+        status: 'planned',
+        commands: [],
+        reason: NO_REVIEW_CHECKS.reason,
+      }),
+    ]);
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'implementer_generate_running',

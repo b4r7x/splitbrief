@@ -23,12 +23,26 @@ import type { ImplementerOptions } from '../../implementers/types.js';
 import type { EngineEvent, EngineEventOf } from '../../events/types.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import type { Check } from '../../../core/schemas/task.js';
 import { createValidator } from '../validation/run.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { runSingleTask } from './step.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 
-afterEach(cleanupTaskProjects);
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanupTaskProjects();
+});
+
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+
+/** Every brief check command fails, so the brief gate rejects every attempt. */
+function failBriefChecks(): void {
+  vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+    processError.exitCode({ command: 'tsc', code: 2, stderr: 'test failed', output: '' }),
+  );
+}
 
 describe('runSingleTask — recovery', () => {
   it("keeps the brief's files in place when the ladder halts on its consult bound", {
@@ -40,6 +54,7 @@ describe('runSingleTask — recovery', () => {
       action: 'modify',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
 
@@ -54,9 +69,7 @@ describe('runSingleTask — recovery', () => {
         usage: { inputTokens: 5, outputTokens: 2 },
       }),
     });
-    const runValidation = vi
-      .fn()
-      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    failBriefChecks();
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
 
@@ -71,10 +84,9 @@ describe('runSingleTask — recovery', () => {
         config: makeConfig({
           workflow: { review: 'task' },
 
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
     const result = await runSingleTask({
@@ -104,6 +116,7 @@ describe('runSingleTask — recovery', () => {
       action: 'modify',
       suggestedFiles: ['src/main.ts', 'src/extra.ts'],
       scope: { inBounds: ['src/main.ts', 'src/extra.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
@@ -118,9 +131,7 @@ describe('runSingleTask — recovery', () => {
         usage: { inputTokens: 2, outputTokens: 0 },
       }),
     });
-    const runValidation = vi
-      .fn()
-      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    failBriefChecks();
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
         projectDir,
@@ -131,9 +142,8 @@ describe('runSingleTask — recovery', () => {
           workflow: { review: 'task' },
 
           implementer: { kind: 'cli', tool: 'codex' },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
     const result = await runSingleTask({
@@ -167,12 +177,14 @@ describe('runSingleTask — recovery', () => {
       action: 'modify',
       suggestedFiles: ['src/one.ts'],
       scope: { inBounds: ['src/one.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const taskTwo = makeTask({
       id: 'T002',
       action: 'modify',
       suggestedFiles: ['src/two.ts'],
       scope: { inBounds: ['src/two.ts'] },
+      checks: [{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }],
     });
     const state = implementingState([taskOne, taskTwo]);
 
@@ -194,15 +206,16 @@ describe('runSingleTask — recovery', () => {
       }),
     });
 
-    // The whole-tree validator observes src/one.ts every time it runs; task 1 fails
+    // The whole-tree check observes src/one.ts every time it runs; task 1 fails
     // forever, task 2 passes. Each call records what src/one.ts looks like on disk.
     const oneSeenByValidation: string[] = [];
-    const runValidation = vi.fn().mockImplementation(async ({ projectDir: dir }) => {
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (_cmd, _args, options) => {
+      const dir = options?.cwd ?? projectDir;
       oneSeenByValidation.push(readFileSync(join(dir, 'src/one.ts'), 'utf-8'));
       if (readFileSync(join(dir, 'src/two.ts'), 'utf-8') === 'export const two = 1;\n') {
-        return [{ stage: 'test' as const, passed: true }];
+        return { stdout: '', stderr: '', code: 0 };
       }
-      return [{ stage: 'test' as const, passed: false, error: 'test failed' }];
+      throw processError.exitCode({ command: 'tsc', code: 2, stderr: 'test failed', output: '' });
     });
     const { callbacks } = makeCallbacks();
     const { bus } = makeBusRecorder();
@@ -218,10 +231,9 @@ describe('runSingleTask — recovery', () => {
         config: makeConfig({
           workflow: { review: 'task' },
 
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
 
@@ -315,7 +327,7 @@ const BIOME_NOTICE_THEN_FORMAT = [
 ].join('\n');
 
 describe('runSingleTask — the consult-bound halt names the last failure', () => {
-  it("quotes the failing stage's first error line, not the notice before it", {
+  it('names the failing check as the last diagnosis', {
     timeout: 90_000,
   }, async () => {
     const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
@@ -324,6 +336,7 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
       action: 'modify',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     let writes = 0;
     const write = (runDir: string) => {
@@ -340,15 +353,14 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
-    const runValidation = vi.fn().mockResolvedValue([
-      { stage: 'typecheck' as const, passed: true },
-      {
-        stage: 'lint' as const,
-        passed: false,
-        error: BIOME_NOTICE_THEN_FORMAT,
-        failureFiles: ['src/main.ts'],
-      },
-    ]);
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({
+        command: 'biome',
+        code: 1,
+        stderr: BIOME_NOTICE_THEN_FORMAT,
+        output: '',
+      }),
+    );
     const { bus } = makeBusRecorder();
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
@@ -360,11 +372,8 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
         bus,
         config: makeConfig({
           workflow: { review: 'task' },
-
-          validation: { typecheck: true, lint: true, test: true, lintCommand: 'noop' },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
 
@@ -380,8 +389,10 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
     });
 
     expect(result.pendingRecovery?.reason).toBe('consult-bound-spent');
-    expect(result.pendingRecovery?.details[0]).toBe(
-      'Last diagnosis: lint failed: src/main.ts format',
+    expect(result.pendingRecovery?.details[0]).toBe('Last diagnosis: check K1 failed');
+    // The config notice that opens the output does not crowd out the brief's own diagnostic.
+    expect(String(result.pendingRecovery?.facts?.['failingOutput'])).toContain(
+      'src/main.ts format',
     );
   });
 });
@@ -401,6 +412,10 @@ describe('runSingleTask — a layout-only lint failure', () => {
       action: 'modify',
       suggestedFiles: ['src/a.ts', 'src/a.test.ts', 'src/b.ts'],
       scope: { inBounds: ['src/a.ts', 'src/a.test.ts', 'src/b.ts'] },
+      checks: [
+        { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
+        { id: 'K2', kind: 'cmd', value: 'biome check .', required: true },
+      ],
     });
     // Attempt 1 writes an unformatted test and leaves a type error in src/b.ts; the
     // local retry fixes src/b.ts only, as T008's attempts 8 to 10 did in the S11 run.
@@ -421,7 +436,7 @@ describe('runSingleTask — a layout-only lint failure', () => {
       commands.push(line);
       const dir = options?.cwd ?? projectDir;
       const read = (file: string) => readFileSync(join(dir, file), 'utf-8');
-      if (line === 'npx tsc --noEmit' && read('src/b.ts') !== 'export const b = 1;\n') {
+      if (line === 'tsc --noEmit' && read('src/b.ts') !== 'export const b = 1;\n') {
         throw processError.exitCode({
           command: line,
           code: 2,
@@ -434,7 +449,7 @@ describe('runSingleTask — a layout-only lint failure', () => {
           if (read(file) === 'UNFORMATTED\n') writeFileSync(join(dir, file), 'export {};\n');
         }
       }
-      if (line === 'npx biome check .' && read('src/a.test.ts') === 'UNFORMATTED\n') {
+      if (line === 'biome check .' && read('src/a.test.ts') === 'UNFORMATTED\n') {
         throw processError.exitCode({
           command: line,
           code: 1,
@@ -457,19 +472,12 @@ describe('runSingleTask — a layout-only lint failure', () => {
         bus,
         config: makeConfig({
           workflow: { review: 'task' },
-
-          validation: {
-            typecheck: true,
-            lint: true,
-            test: false,
-            typecheckCommand: 'npx tsc --noEmit',
-            lintCommand: 'npx biome check .',
-          },
         }),
         planner: makePlanner({ typedCall: consultCallAnswering(consult) }),
         validator: createValidator({ runCommand }),
       }),
     );
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(runCommand);
 
     const result = await runSingleTask({
       wctx,
@@ -527,7 +535,7 @@ describe('runSingleTask — signed-out runner', () => {
           workflow: { review: 'task' },
 
           implementer: { kind: 'cli', tool: 'codex' },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
       task,
@@ -582,6 +590,7 @@ describe('runSingleTask — signed-out runner', () => {
       action: 'modify',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
 
@@ -599,9 +608,7 @@ describe('runSingleTask — signed-out runner', () => {
       }),
     });
     const planner = makePlanner();
-    const runValidation = vi
-      .fn()
-      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    failBriefChecks();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
@@ -617,9 +624,8 @@ describe('runSingleTask — signed-out runner', () => {
           workflow: { review: 'task' },
 
           implementer: { kind: 'cli', tool: 'codex' },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
       task,
       index: 0,
@@ -698,7 +704,7 @@ describe('runSingleTask — usage-limited runner', () => {
           workflow: { review: 'task' },
 
           implementer: { kind: 'cli', tool: 'codex' },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
       task,
@@ -755,6 +761,7 @@ describe('runSingleTask — usage-limited runner', () => {
       action: 'modify',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
     });
     const state = implementingState([task]);
 
@@ -772,9 +779,7 @@ describe('runSingleTask — usage-limited runner', () => {
       }),
     });
     const planner = makePlanner();
-    const runValidation = vi
-      .fn()
-      .mockResolvedValue([{ stage: 'test' as const, passed: false, error: 'test failed' }]);
+    failBriefChecks();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
@@ -790,9 +795,8 @@ describe('runSingleTask — usage-limited runner', () => {
           workflow: { review: 'task' },
 
           implementer: { kind: 'cli', tool: 'codex' },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
       }),
       task,
       index: 0,

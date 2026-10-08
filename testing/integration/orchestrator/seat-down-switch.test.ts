@@ -169,7 +169,7 @@ async function runToFirstSeatDown(opencode: 'success' | 'fail'): Promise<SeatDow
       contextLength: 4096,
       fallback: { tool: 'opencode', model: FALLBACK_MODEL },
     },
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    validation: { endChecks: false, testCommand: 'noop' },
     workflow: { approve: 'none', maxRetries: 1 },
   });
   writeConfigYamlText(projectDir, YAML.stringify(config));

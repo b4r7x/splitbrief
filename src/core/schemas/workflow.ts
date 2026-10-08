@@ -10,7 +10,12 @@ import {
 } from './enums.js';
 import { TaskSchema, TaskIdSchema, type Task } from './task.js';
 import { PlanSchema } from './plan.js';
-import { ReviewVerdictSchema, TriageInputSchema, TriageResultSchema } from './review.js';
+import {
+  ReviewChecksPlanObjectSchema,
+  ReviewVerdictSchema,
+  TriageInputSchema,
+  TriageResultSchema,
+} from './review.js';
 import { REVIEW_CYCLE_CAP } from '../pipeline-spec/review.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { CONSULT_REASONS, ConsultAnswerSchema } from './consult.js';
@@ -39,8 +44,6 @@ export const WORKFLOW_STATE_VERSION = 4;
 const nonnegativeInteger = z.number().int().nonnegative();
 
 export const DiscoveredValidationSchema = z.object({
-  typecheckCommand: z.string().optional(),
-  lintCommand: z.string().optional(),
   testCommand: z.string().optional(),
   testPattern: z.string().optional(),
   language: z.string().optional(),
@@ -182,6 +185,15 @@ export const ReviewRecordSchema = z.object({
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 
+/** The commands the reviewer chose for one review: they are checks `V1…` until the next review chooses again. */
+export const ReviewChecksRecordSchema = z.object({
+  scope: z.enum(['task', 'final']),
+  cycle: z.number().int(),
+  plan: ReviewChecksPlanObjectSchema,
+  at: z.string(),
+});
+export type ReviewChecksRecord = z.infer<typeof ReviewChecksRecordSchema>;
+
 export const TriageRecordSchema = z.object({
   reviewAt: z.string().optional(),
   cycle: z.number().int(),
@@ -280,6 +292,7 @@ const WorkflowStateFields = {
     .optional(),
   fixCycles: FixCyclesSchema.optional(),
   review: ReviewRecordSchema.optional(),
+  reviewChecks: ReviewChecksRecordSchema.optional(),
   triage: z.array(TriageRecordSchema).optional(),
   pendingTriage: PendingTriageSchema.optional(),
   pendingScheduledReview: z.object({ afterTaskId: TaskIdSchema }).optional(),

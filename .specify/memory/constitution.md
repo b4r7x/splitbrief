@@ -1,10 +1,10 @@
 <!--
 Sync Impact Report
-- Version change: 4.0.0 → 4.1.0. MINOR: Principle V expands. A fix task carries the red it answers, and its brief gate runs that stage and those checks again before the next review.
+- Version change: 4.0.0 → 4.1.0. MINOR: Principle V expands. The reviewer chooses the reviewer checks from the project, and SPLITBRIEF runs them under its command policy. Only reviewer checks re-run at the run base. The stack gates and their typecheck, lint and test settings are retired. A failed plan call halts the review the same way a failed verdict call does. A fix task carries the red check it answers, and its brief gate runs that check again before the next review.
 - Modified principles: V.
-- Updated sections: Governance (version line).
-- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible.
-- Docs and skills: workflow, task contract, recovery, configuration, features, how-it-works and the generated gates references updated.
+- Updated sections: Technical Constraints (Project languages), Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They name no stack gate.
+- Docs and skills: configuration, workflow, features, how-it-works, task contract, recovery, testing and CLI skill references updated, the generated gates references included.
 - Follow-up TODOs: none.
 -->
 
@@ -299,30 +299,37 @@ ability to run anything itself is a bonus that improves first-pass rate,
 never a substitute for either. A task MUST NOT be accepted because the
 implementer reports success.
 
-Task completion MUST follow `workflow.review`. With `end`, ordinary briefs
-complete without stack gates. With `task`, each task MUST pass its related
-tests and required due checks before its scheduled review. The final review
-MUST run the enabled stack gates in order. Each red typecheck or lint stage MUST be checked at the run base.
-A red test stage with parsed failures MUST check them at that base.
-The base check MUST precede the next stage. A stage with only
-pre-existing failures permits the next stage. The suite MUST stop at its
-first stage with a new failure. No plan or task check runs after it. With a
-green or all-pre-existing suite, every registered check runs, including
-renders. Every new red MUST reach the reviewer as a pending input. The same
+Task completion MUST follow `workflow.review`. With `end`, an ordinary brief
+runs no check; it runs only the checks a caller names, such as a consult
+`verify`. With `task`, each task MUST pass its own checks and its required
+due checks before its scheduled review. Before the final review every
+registered check runs, including renders. With `validation.end_checks` on,
+the reviewer MUST choose the reviewer checks from the project itself,
+and SPLITBRIEF MUST run them under its command policy. A task review chooses
+only the reviewer checks that run the related tests. With
+`validation.end_checks` off, no reviewer check runs; plan and task checks
+still run. Only a red reviewer check MUST be re-run at the run base, with
+the same command text. Plan checks, task checks and the Apply re-check
+MUST NOT run at the run base. SPLITBRIEF MUST refuse a reviewer check whose
+package script or task file this run changed. The run MUST stop at the first
+reviewer check with new failures. A failed plan call (a transport error or a
+protocol error) halts the review the same way a failed verdict call does; it
+is never a pass. Every new red MUST reach the reviewer as a pending input. The same
 review answer returns the verdict and the fix tasks. Fix work MUST spend
-one fix cycle. A fix task MUST carry the red it answers, and its brief gate
-MUST run that stage and those checks again, so the task's retry ladder sees
-the red before the next review. Completed briefs MUST stay done. The final
-review MUST rerun the gates after fixes.
+one fix cycle. A fix task MUST carry the red check it answers: its id, its
+command, its output and its file. Its brief gate MUST run that check again
+through the same check runner and command policy, so the task's retry ladder
+sees a still-red check before the next review. A red reviewer check there is
+compared with the run base as at review. Completed briefs MUST stay done. The
+final review MUST rerun the reviewer checks after fixes.
 
 Worktree and staged-copy runs validate in the run workspace. The pipeline
 writes the reviewed result to the user's project only at Apply. Checkout runs
 and older runs without a workspace validate in the user's project.
-A red stage MUST be compared with the same command at the run base. Test
-stages MUST compare parsed failing test names. A test red with no parsed
-failure stays new and does not run at the base. A brief gate MUST stop at
-the first non-exempt failing stage. Retry prompts MUST carry the exact gate errors.
-When lint is enabled, the project formatter MUST run on each brief's changed files.
+A red reviewer check MUST be compared with the same command at the run base,
+by its parsed failing test names or its diagnostic lines. Retry prompts MUST carry
+the exact check errors.
+The project formatter MUST run on each brief's changed files.
 A formatter failure MUST record a warning and MUST NOT reject the brief.
 
 Product-level git commit strategies are optional run-safety and review
@@ -385,7 +392,7 @@ Explicit anti-goals that MUST NOT be implemented:
 **Permitted exceptions**:
 1. Delegating file writes to the implementer (`writesFiles: direct`) is a
    first-class path, not a concession, as long as SPLITBRIEF retains
-   ownership of validation (tsc/lint/test), retry, escalation,
+   ownership of validation (plan checks and reviewer checks), retry, escalation,
    checkpoints, and the overall workflow.
 2. Rich visualization of the two-role orchestration (structured event
    cards, diff views, pipeline progress, token telemetry) is encouraged
@@ -418,8 +425,12 @@ Explicit anti-goals that MUST NOT be implemented:
 - **Language**: TypeScript 6.x, ESM only (`"type": "module"`)
 - **TUI**: Ink 6.x (React 19 for CLI), conversation flow layout with structured event cards
 - **Target**: macOS (primary), Linux (secondary)
-- **Project languages**: TypeScript and JavaScript are the primary stack; command-based
-  validation is also resolved for configured or detected Python, Go, and Rust pipelines
+- **Project languages**: TypeScript and JavaScript are the primary stack. The reviewer
+  chooses the reviewer checks from the project itself, but the command policy runs only
+  programs on its allowlist: the package managers, `make` and `just` on a bare
+  `typecheck`, `lint` or `test` target, and the tools of the five registry stacks.
+  SPLITBRIEF records every refused command as a named row. A planner `test` check
+  also resolves for Python, Go, and Rust
 - **Planner**: Pluggable runner kinds via config: `cli`, `api`, `shell`, and `agent`
 - **Implementer**: The same four runner kinds as planner. Runners that write files themselves (`cli`, `agent` — for example a CLI tool driving a smaller model) and runners that return file contents as text for SPLITBRIEF to write (`api`, `shell` — for example an API model) are equally supported; the user picks, and the write mode follows from the kind
 - **Edit format**: Whole-file replacement for files under 200 lines,
@@ -458,11 +469,12 @@ the SPLITBRIEF project. All implementation decisions, code reviews,
 and architectural choices MUST be evaluated against these principles.
 
 The 4.0.0 amendment redefines Principle V. The review seat owns every new red and returns the fix work in the same answer.
-This rule puts the gates at the review that owns their result. Regression tests
+The 4.1.0 amendment expands Principle V. The reviewer chooses the reviewer checks,
+and SPLITBRIEF runs them under its command policy and re-runs only them at the run base.
+These rules put the reviewer checks at the review that owns their result. Regression tests
 verify both cadences and failure routing. The configuration, workflow, engine and
-generated skill references carry the same rule.
-The 4.1.0 amendment expands Principle V. A fix task's brief gate runs the red
-it answers again before the next review.
+generated skill references carry the same rule. A fix task's brief gate runs the
+red check it answers again before the next review.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale

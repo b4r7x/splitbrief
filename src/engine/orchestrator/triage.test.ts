@@ -11,8 +11,13 @@ import type { ReviewVerdict, TriageResult } from '../../core/schemas/review.js';
 import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
-import type { ReviewRecord, WorkflowState } from '../../core/schemas/workflow.js';
+import type {
+  ReviewChecksRecord,
+  ReviewRecord,
+  WorkflowState,
+} from '../../core/schemas/workflow.js';
 import { applyTriage, runTriageVerification, triageContractErrors } from './triage.js';
+import { enabledReviewChecks } from './validation/run-checks.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -67,6 +72,24 @@ function triageState(): WorkflowState {
     review: reviewRecord(),
   };
 }
+
+const REVIEW_CHECKS: ReviewChecksRecord = {
+  scope: 'final',
+  cycle: 0,
+  plan: {
+    commands: [{ id: 'V1', command: 'node --version', reason: 'the runtime answers' }],
+    declined: [],
+    reason: null,
+  },
+  at: '2026-10-04T09:00:00.000Z',
+};
+
+const VERIFY_V1: TriageResult = {
+  fixTasks: [],
+  rejected: [],
+  verify: [{ findingId: 'F1', checkIds: ['V1'] }],
+  ask: null,
+};
 
 function fixTaskSpec(): TriageResult['fixTasks'][number] {
   return {
@@ -149,6 +172,19 @@ describe('triageContractErrors', () => {
     ]);
   });
 
+  it('accepts a verify naming a reviewer check only while End-of-run checks are on', () => {
+    const tasks = triageState().tasks;
+    const on = enabledReviewChecks(makeConfig({}), REVIEW_CHECKS);
+    const off = enabledReviewChecks(makeConfig({ endChecks: false }), REVIEW_CHECKS);
+
+    expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, on)).toEqual([]);
+    for (const reviewChecks of [undefined, off]) {
+      expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, reviewChecks)).toEqual([
+        'Verify for F1 names unknown check V1.',
+      ]);
+    }
+  });
+
   it('refuses an answer that covers a finding twice and an id that names nothing', () => {
     const result: TriageResult = {
       fixTasks: [fixTaskSpec()],
@@ -197,6 +233,35 @@ describe('review fix work', () => {
     expect(verification).toEqual([{ id: 'finding:F1', status: 'pass', output: 'K1: pass — ok' }]);
   });
 
+  it('runs a reviewer check a verify names only while End-of-run checks are on', async () => {
+    const ref = setupProject(dirs);
+    const state = { ...triageState(), reviewChecks: REVIEW_CHECKS };
+    const verify = async (endChecks: boolean) => {
+      const runCommand = makeCommandRunner({ stdout: 'ok', stderr: '', code: 0 });
+      const verification = await runTriageVerification(
+        {
+          ...ref,
+          workspaceDir: ref.projectDir,
+          config: makeConfig({ endChecks }),
+          bus: makeBusRecorder().bus,
+          runCommand,
+        },
+        state,
+        VERIFY_V1,
+      );
+      return { verification, commands: runCommand.calls.map((call) => call.cmd) };
+    };
+
+    expect(await verify(true)).toEqual({
+      verification: [{ id: 'finding:F1', status: 'pass', output: 'V1: pass — ok' }],
+      commands: ['node'],
+    });
+    const off = await verify(false);
+    expect(off.commands).toEqual([]);
+    expect(off.verification[0]?.status).not.toBe('pass');
+    expect(off.verification[0]?.output).toContain('no check V1');
+  });
+
   it('appends fix tasks with verbatim findings, keeps completed tasks done and rewrites tasks.md', () => {
     const ref = setupProject(dirs);
     const state = triageState();
@@ -230,18 +295,19 @@ describe('review fix work', () => {
     for (const task of applied.state.tasks) expect(tasksMarkdown).toContain(task.id);
   });
 
-  it('carries the gate red an input answers onto the fix task and its brief', () => {
+  it('carries the red check an input answers onto the fix task and its brief', () => {
     const ref = setupProject(dirs);
     const state = triageState();
     saveState(ref, state);
     const inputs = [
       {
-        id: 'P1',
+        id: 'V1.1',
         kind: 'defect' as const,
         source: 'check' as const,
         file: 'src/shared/widget.test.ts',
-        text: 'The test full-suite check before review failed. Last changed by T001.',
-        stage: 'test' as const,
+        text: 'Reviewer check V1 (npm test) failed with new failures. Last changed by T001.',
+        checkIds: ['V1'],
+        command: 'npm test',
         output: 'FAIL src/shared/widget.test.ts > rethrows',
       },
       {
@@ -263,19 +329,23 @@ describe('review fix work', () => {
       state,
       state.review,
       inputs,
-      { ...fixResult(), fixTasks: [{ ...fixTaskSpec(), findingIds: ['P1', 'P2'] }] },
+      { ...fixResult(), fixTasks: [{ ...fixTaskSpec(), findingIds: ['V1.1', 'P2'] }] },
     );
     expect(applied.tasks[0]?.fix?.findings).toEqual([
       {
-        id: 'P1',
+        id: 'V1.1',
         text: inputs[0]?.text,
         acceptance: null,
         file: 'src/shared/widget.test.ts',
-        stage: 'test',
+        checkIds: ['V1'],
+        command: 'npm test',
         output: 'FAIL src/shared/widget.test.ts > rethrows',
       },
       { id: 'P2', text: inputs[1]?.text, acceptance: null, checkIds: ['K1'], output: 'broken' },
     ]);
+    expect(applied.tasks[0]?.description).toContain(
+      `**V1.1**: ${inputs[0]?.text}\nCommand: npm test`,
+    );
     expect(applied.tasks[0]?.description).toContain(
       'Failing output:\n```\nFAIL src/shared/widget.test.ts > rethrows\n```',
     );

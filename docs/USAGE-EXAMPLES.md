@@ -211,9 +211,7 @@ implementerProfiles:
       model: qwen2.5-coder-7b
       label: LM Studio Qwen2.5 Coder
 validation:
-  typecheck: true
-  lint: true
-  test: true
+  end_checks: true
 ```
 
 Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Named `implementerProfiles` persist in config. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
@@ -278,9 +276,7 @@ implementer:
   apiBase: http://localhost:11434/v1
   model: qwen3-coder:30b
 validation:
-  typecheck: true
-  lint: true
-  test: true
+  end_checks: true
 ```
 
 `claude-code` is an admitted PASS CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The bundled Ollama default is **`compatible-only`** — selectable, but not a runtime recommendation (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Local implementers keep code on your machine; no API credential is required for default loopback Ollama.
@@ -647,10 +643,11 @@ splitbrief start --plain --allow-hooks "regenerate API client from openapi.yaml"
 phase: planning
 phase: reviewing-plan
 phase: implementing
-task T001: done (typecheck lint test)
-task T002: done (typecheck lint test)
-task T003: done (typecheck lint test)
+task T001: done (2 of 2 checks passed)
+task T002: done (no checks)
+task T003: done (1 of 1 checks passed)
 phase: final-review
+reviewer check V1: passed (npm test)
 phase: complete
 review: passed
 done: 3 tasks
@@ -662,14 +659,14 @@ A task that exhausts its retries stops the run: headless has nobody to answer th
 
 ```
 phase: implementing
-task T001: done (typecheck lint test)
-task T002: failed (no gates)
+task T001: done (2 of 2 checks passed)
+task T002: failed (1 of 2 checks passed)
 ```
 
-Four line shapes and nothing else, so `grep` is enough:
+A few line shapes and nothing else, so `grep` is enough. [CLI-REFERENCE.md §Plain output stream](./CLI-REFERENCE.md#plain-output-stream---plain) lists them all:
 
 ```bash
-splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not pass their gates
+splitbrief start --plain "..." | grep -c '^task .*: failed' # tasks that did not pass their checks
 splitbrief start --plain "..." | tail -1                    # the closing line
 ```
 
@@ -705,7 +702,7 @@ splitbrief continue 2026-09-13-rate-limiter --action skip --plain
 
 ```
 phase: implementing
-task T003: done (typecheck lint test)
+task T003: done (1 of 1 checks passed)
 phase: final-review
 review: passed
 done: 2 tasks

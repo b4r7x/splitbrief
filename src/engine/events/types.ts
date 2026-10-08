@@ -8,12 +8,6 @@ export type ValidationStageSkips = {
   [K in z.infer<typeof ValidationStageSchema>]?: boolean | undefined;
 };
 
-export type ValidationStageAttempts = Record<z.infer<typeof ValidationStageSchema>, boolean>;
-
-export type ValidationStageCommands = {
-  [K in z.infer<typeof ValidationStageSchema>]?: string | undefined;
-};
-
 export type EngineEvent = z.infer<typeof EngineEventSchema>;
 
 export type EngineEventOf<T extends EngineEvent['type']> = Extract<EngineEvent, { type: T }>;

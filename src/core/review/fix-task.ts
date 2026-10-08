@@ -22,7 +22,7 @@ export function fixBriefDescription(intent: string, findings: readonly FixFindin
       (finding) =>
         `**${finding.id}**: ${finding.text}${
           finding.acceptance === null ? '' : `\nAcceptance: ${finding.acceptance}`
-        }`,
+        }${finding.command === undefined ? '' : `\nCommand: ${finding.command}`}`,
     ),
     ...[...outputs].map((output) => `Failing output:\n${fenced(output)}`),
     FIX_BRIEF_EVIDENCE_RULE,

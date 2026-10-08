@@ -3,6 +3,7 @@ import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { formatTime } from '../../../utils/format-time.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
@@ -33,9 +34,12 @@ export interface BuildProgress {
    * which is the normal case: the bound matters once a retry has spent one.
    */
   attempt: { current: number; max: number } | null;
-  /** What the run is doing: the seat and its operation, or the gate command it is inside. */
+  /** What the run is doing: the seat and its operation, or the command it is inside. */
   activity: string;
-  /** How long ago it last said so, or the tool it runs through a silence. */
+  /**
+   * The proof of life: how long the command in `activity` has run, else how long ago a seat last
+   * said something, or the tool it runs through a silence.
+   */
   freshness: string;
   /** True when the watchdog's stall makes freshness the silence warning, not the ordinary age. */
   silent: boolean;
@@ -75,19 +79,8 @@ function runnerLabel(
 // What the run is doing, not what it has spent: usage is reported where a reader asks for it,
 // through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
 function activityLine(input: DeriveBuildProgressInput): string {
-  const suite = input.operations.suiteStage ?? null;
-  if (suite !== null) {
-    return [suiteStageText(suite), `running ${formatTime(input.now - suite.stageStartedTs)}`].join(
-      SOFT_SEP,
-    );
-  }
-  const stage = input.operations.validationStage ?? null;
-  if (stage !== null) {
-    // How long the command has run is its proof of life. When the run last heard from a seat is
-    // the freshness line's to say, so the row does not say it twice.
-    const command = stage.command ?? stage.stage;
-    return [command, `running ${formatTime(input.now - stage.stageStartedTs)}`].join(SOFT_SEP);
-  }
+  const command = runningCommand(input.operations);
+  if (command !== null) return command.label;
   const operation = input.operations.active;
   // Between calls there is no seat and no operation to name, and printing the phase twice would
   // read as two facts. The phase alone is the whole truth at that moment.
@@ -101,6 +94,19 @@ function activityLine(input: DeriveBuildProgressInput): string {
   return [runnerLabel(operation.backendKind, operation.runnerName) ?? input.lifecycle.phase, doing]
     .filter((part) => part !== '')
     .join(SOFT_SEP);
+}
+
+/**
+ * The command the run is inside: a reviewer check, its re-run at the run base, or an older
+ * session's gate stage. No seat speaks while it runs, so its own clock is the block's proof of
+ * life, and the age of a seat's last word would only contradict it.
+ */
+function runningCommand(operations: OperationsState): { label: string; startedTs: number } | null {
+  const suite = operations.suiteStage ?? null;
+  if (suite !== null) return { label: suiteStageText(suite), startedTs: suite.stageStartedTs };
+  const stage = operations.validationStage ?? null;
+  if (stage === null) return null;
+  return { label: stage.command ?? stage.stage, startedTs: stage.stageStartedTs };
 }
 
 /**
@@ -122,12 +128,17 @@ function openToolText(tool: OpenTool): string {
   return item.label === 'RUN' ? `running ${item.value}` : `${item.groupLabel} ${item.value}`;
 }
 
-// Silence is a seat's. With no call running — a gate command, the step between two calls — no one
-// is expected to speak, and the quiet is only how long ago the last word was. The seat's name is
+// Silence is a seat's. While a command runs, its clock is the freshness. With no call running — the
+// step between two calls — no one is expected to speak, and the quiet is only how long ago the last
+// word was. The seat's name is
 // already on the activity line beside this one, so the silence names only itself. A tool the
 // stream opened and has not closed is what the seat is doing through that silence, so the line
 // names it; a stream that reports a tool only once it ends cannot name it, only say one runs.
 function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'freshness' | 'silent'> {
+  const command = runningCommand(input.operations);
+  if (command !== null) {
+    return { freshness: `running ${formatTime(input.now - command.startedTs)}`, silent: false };
+  }
   const call = input.operations.active;
   const silentMs = call === null ? null : runnerSilenceMs(input.lifecycle, input.now);
   if (call !== null && silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
@@ -187,11 +198,23 @@ export function buildProgressRowCount(width: number): number {
   return width >= 120 ? 2 : 3;
 }
 
-/** The same facts at every width, regrouped rather than dropped. */
+/**
+ * The same facts at every width, regrouped rather than dropped. Where the activity and freshness
+ * share a row, the activity gives way: a long command is cut, never the clock that follows it.
+ */
 export function buildProgressLines(progress: BuildProgress, width: number): string[] {
   const counts = countsText(progress);
   if (buildProgressRowCount(width) === 2) {
-    return [counts, [progress.activity, progress.freshness].join(SOFT_SEP)];
+    return [counts, fitBeforeTail(progress.activity, `${SOFT_SEP}${progress.freshness}`, width)];
   }
   return [counts, progress.activity, progress.freshness];
+}
+
+/**
+ * A line whose head gives way to its tail: the head is cut from its end so the tail — a clock —
+ * always fits. A command's label leads its head, so a long command loses only its own last words.
+ */
+export function fitBeforeTail(head: string, tail: string, width: number): string {
+  const room = Math.max(1, width - getTerminalCellWidth(tail));
+  return `${truncateTerminalDisplayText(head, room)}${tail}`;
 }

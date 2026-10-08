@@ -130,11 +130,11 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **What was built.**
 
-- The validator pipeline is now polyglot: it resolves commands from 4 layers — user config > planner-discovered > heuristic fallback > graceful skip.
+- Before each review the reviewer reads the project and chooses the reviewer checks that verify the change. SPLITBRIEF runs them under its command policy, which runs only programs on its allowlist: the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test` target, and the tools of the five registry stacks. Every refused command gets a named row. A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`; with none it is `not-runnable`.
 - Heuristic detection reads project marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer language and validation tools.
-- The research prompt asks the planner to identify the project's validation toolchain, which is persisted to `WorkflowState.discoveredValidation`.
+- The planning session asks the planner to identify the project's test toolchain (`language`, `test`, `testPattern`), which is persisted to `WorkflowState.discoveredValidation`.
 - Planner and implementer prompts are language-aware: TypeScript keeps ESM-with-`.js` guidance, while Python, Go, Rust, JavaScript, and generic contexts avoid TypeScript-specific wording.
-- Missing commands at any layer silently skip the stage instead of erroring.
+- A `test` check with no command at any layer is `not-runnable` with its reason instead of erroring; a required one halts with `required-checks-unrunnable`.
 - Default TS projects (`package.json` with `typescript` devDependency) preserve identical behavior to before.
 
 **Remaining.** Deeper language-specific planning heuristics can still be added as usage patterns emerge.

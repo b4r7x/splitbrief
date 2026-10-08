@@ -49,8 +49,6 @@ describe('sanitizeDiscoveredValidation', () => {
 
   it('passes through safe commands unchanged', () => {
     const input: DiscoveredValidation = {
-      typecheckCommand: 'npx tsc --noEmit',
-      lintCommand: 'npx biome check',
       testCommand: 'npm test',
       language: 'typescript',
       testPattern: '*.test.ts',
@@ -61,15 +59,12 @@ describe('sanitizeDiscoveredValidation', () => {
 
   it('allows cargo, go, and pytest commands', () => {
     const rust: DiscoveredValidation = {
-      typecheckCommand: 'cargo check',
-      lintCommand: 'cargo clippy --no-deps',
       testCommand: 'cargo test',
       language: 'rust',
     };
     expect(sanitize(rust)).toEqual(rust);
 
     const go: DiscoveredValidation = {
-      typecheckCommand: 'go vet ./...',
       testCommand: 'go test ./...',
       language: 'go',
     };
@@ -94,7 +89,7 @@ describe('sanitizeDiscoveredValidation', () => {
 
   it('blocks commands with parent-relative paths', () => {
     const input: DiscoveredValidation = {
-      typecheckCommand: '../other-repo/typecheck.sh',
+      testCommand: '../other-repo/typecheck.sh',
     };
     const result = sanitize(input);
     expect(result).toBeUndefined();
@@ -102,7 +97,7 @@ describe('sanitizeDiscoveredValidation', () => {
 
   it('blocks commands with absolute paths', () => {
     const input: DiscoveredValidation = {
-      lintCommand: '/usr/local/bin/custom-linter',
+      testCommand: '/usr/local/bin/custom-linter',
     };
     const result = sanitize(input);
     expect(result).toBeUndefined();
@@ -165,7 +160,7 @@ describe('sanitizeDiscoveredValidation', () => {
     'npx Node@ pwn',
     'npx TsX@ pwn',
   ])('refuses a code-running command behind %s', (command) => {
-    expect(sanitize({ lintCommand: command })).toBeUndefined();
+    expect(sanitize({ testCommand: command })).toBeUndefined();
     expect(warnings()).toEqual([expect.stringContaining(`${command} from the planner`)]);
   });
 
@@ -177,7 +172,7 @@ describe('sanitizeDiscoveredValidation', () => {
     'npx npm@10 test',
     'npx npm@ test',
   ])('keeps an admitted tool form: %s', (command) => {
-    expect(sanitize({ lintCommand: command })).toEqual({ lintCommand: command });
+    expect(sanitize({ testCommand: command })).toEqual({ testCommand: command });
     expect(warnings()).toEqual([]);
   });
 
@@ -189,23 +184,14 @@ describe('sanitizeDiscoveredValidation', () => {
     }
   });
 
-  it('warns on the run bus, once per stage, that a run script is not taken from the planner', () => {
-    const result = sanitize({
-      language: 'typescript',
-      typecheckCommand: 'npm run typecheck',
-      lintCommand: 'npm run lint',
-      testCommand: 'npm test',
-    });
-    expect(result).toEqual({ language: 'typescript', testCommand: 'npm test' });
+  it('warns once on the run bus that a run script is not taken from the planner', () => {
+    const result = sanitize({ language: 'typescript', testCommand: 'npm run unit' });
+    expect(result).toEqual({ language: 'typescript' });
     expect(recorder.events).toEqual([
-      expect.objectContaining({ type: 'warning', phase: 'researching', category: 'validation' }),
       expect.objectContaining({ type: 'warning', phase: 'researching', category: 'validation' }),
     ]);
     expect(warnings()).toEqual([
-      expect.stringMatching(
-        /^The typecheck stage .*npm run typecheck from the planner.*package script/,
-      ),
-      expect.stringMatching(/^The lint stage .*npm run lint from the planner.*package script/),
+      expect.stringMatching(/^The test checks .*npm run unit from the planner.*package script/),
     ]);
     expect(warnings().join('\n')).not.toMatch(/ignored|sanitize-discovered|allowlist/);
     expect(stderr).not.toHaveBeenCalled();
@@ -219,12 +205,12 @@ describe('sanitizeDiscoveredValidation', () => {
       'vitest --config scripts/pwn.js',
       'npm test | grep pass',
     ];
-    for (const cmd of allowlisted) sanitize({ lintCommand: cmd });
+    for (const cmd of allowlisted) sanitize({ testCommand: cmd });
     expect(warnings()).toHaveLength(allowlisted.length);
     expect(warnings().join('\n')).not.toContain('allowlist');
 
     recorder = makeBusRecorder();
-    sanitize({ lintCommand: 'custom-lint --all' });
+    sanitize({ testCommand: 'custom-lint --all' });
     expect(warnings()).toEqual([expect.stringContaining('outside the allowlist')]);
   });
 
@@ -253,15 +239,13 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(result?.testCommand).toBeUndefined();
   });
 
-  it('keeps safe fields when some commands are blocked', () => {
+  it('keeps safe fields when the test command is blocked', () => {
     const input: DiscoveredValidation = {
-      typecheckCommand: 'npx tsc --noEmit',
       testCommand: './evil-script',
       language: 'typescript',
       testPattern: '*.test.ts',
     };
     const result = sanitize(input);
-    expect(result?.typecheckCommand).toBe('npx tsc --noEmit');
     expect(result?.testCommand).toBeUndefined();
     expect(result?.language).toBe('typescript');
     expect(result?.testPattern).toBe('*.test.ts');
@@ -275,7 +259,7 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(result?.testPattern).toBeUndefined();
     expect(result?.language).toBe('typescript');
     expect(warnings()).toEqual([
-      expect.stringMatching(/^The test stage .*\.\.\/\.\.\/outside\.test\.ts from the planner/),
+      expect.stringMatching(/^The test checks .*\.\.\/\.\.\/outside\.test\.ts from the planner/),
     ]);
   });
 
@@ -304,25 +288,20 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(warnings()).toEqual([expect.stringContaining('(it contains "..")')]);
   });
 
-  it('publishes nothing when the stage resolves to the refused command', () => {
+  it('publishes nothing when the test check resolves to the refused command', () => {
     const result = sanitizeResolving(
-      { typecheckCommand: 'npm run typecheck' },
-      { typecheckCommand: 'npm run typecheck' },
+      { testCommand: 'npm run unit' },
+      { testCommand: 'npm run unit' },
     );
     expect(result).toBeUndefined();
     expect(warnings()).toEqual([]);
   });
 
   it('publishes one warning when the resolved command differs', () => {
-    const result = sanitizeResolving(
-      { typecheckCommand: 'npm run typecheck' },
-      { typecheckCommand: 'tsc --noEmit' },
-    );
+    const result = sanitizeResolving({ testCommand: 'npm run unit' }, { testCommand: 'npm test' });
     expect(result).toBeUndefined();
     expect(warnings()).toEqual([
-      expect.stringMatching(
-        /^The typecheck stage .*npm run typecheck from the planner.*package script/,
-      ),
+      expect.stringMatching(/^The test checks .*npm run unit from the planner.*package script/),
     ]);
   });
 

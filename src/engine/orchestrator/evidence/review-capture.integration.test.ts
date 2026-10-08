@@ -19,13 +19,17 @@ import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { createRunIsolation } from '../isolation/create.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runSingleTask } from '../task/step.js';
 import { resolveRunReviewScope } from './review-packet/run-scope.js';
 
 const SHARED = 'src/shared.ts';
 
-afterEach(cleanupTaskProjects);
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanupTaskProjects();
+});
 
 describe('captureTaskReviewChanges', () => {
   it('review diff is one diff for the shared file, attributed to both tasks', {
@@ -46,10 +50,7 @@ describe('captureTaskReviewChanges', () => {
           return { success: true, output: 'ok', usage: { inputTokens: 1, outputTokens: 1 } };
         }),
     });
-    const config = makeConfig({
-      workflow: { review: 'task' },
-      validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-    });
+    const config = makeConfig({ workflow: { review: 'task' } });
     const isolation = createRunIsolation({
       projectDir,
       sessionId,
@@ -104,6 +105,7 @@ describe('captureTaskReviewChanges', () => {
       id: 'T001',
       action: 'create',
       suggestedFiles: ['src/a.ts', 'src/b.ts'],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
     });
     const write = (file: string) =>
       vi.fn().mockImplementation(async ({ projectDir: dir }: ImplementerOptions) => {
@@ -111,10 +113,7 @@ describe('captureTaskReviewChanges', () => {
         writeFileSync(join(dir, file), `export const done = '${file}';\n`);
         return { success: true, output: 'ok', usage: { inputTokens: 1, outputTokens: 1 } };
       });
-    const config = makeConfig({
-      workflow: { review: 'task' },
-      validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-    });
+    const config = makeConfig({ workflow: { review: 'task' } });
     const isolation = createRunIsolation({
       projectDir,
       sessionId,
@@ -123,10 +122,12 @@ describe('captureTaskReviewChanges', () => {
       onRetained: () => {},
     });
     const workspaceDir = (await isolation.open({ config })).projectDir;
-    const runValidation = vi
-      .fn()
-      .mockResolvedValueOnce([{ stage: 'test' as const, passed: false, error: 'b is missing' }])
-      .mockResolvedValue([]);
+    // The brief check fails on the first attempt and passes once the retry writes src/b.ts.
+    vi.spyOn(commandRunner, 'runCommand')
+      .mockRejectedValueOnce(
+        processError.exitCode({ command: 'tsc', code: 2, stderr: 'b is missing', output: '' }),
+      )
+      .mockResolvedValue({ stdout: '', stderr: '', code: 0 });
 
     const state = await runSingleTask({
       wctx: makeTaskWorkflowContext({
@@ -140,7 +141,6 @@ describe('captureTaskReviewChanges', () => {
         }),
         config,
         isolation,
-        validator: { ...createValidator(), runValidation },
       }),
       task,
       index: 0,

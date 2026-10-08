@@ -168,11 +168,7 @@ export function writeConfigMarker(projectDir: string): void {
       '  model: qwen2.5-coder:7b',
       '  contextLength: 32768',
       'validation:',
-      '  typecheck: true',
-      '  lint: true',
-      '  test: true',
-      '  typecheckCommand: node -e ""',
-      '  lintCommand: node -e ""',
+      '  end_checks: true',
       '  testCommand: node -e ""',
     ].join('\n'),
     'utf-8',
@@ -202,17 +198,9 @@ export function writeReadyReadinessFixtures(
     '  model: qwen2.5-coder:7b',
     '  contextLength: 32768',
     'validation:',
-    `  typecheck: ${validation ? 'true' : 'false'}`,
-    `  lint: ${validation ? 'true' : 'false'}`,
-    `  test: ${validation ? 'true' : 'false'}`,
+    `  end_checks: ${validation ? 'true' : 'false'}`,
   ];
-  if (validation) {
-    lines.push(
-      '  typecheckCommand: node -e ""',
-      '  lintCommand: node -e ""',
-      '  testCommand: node -e ""',
-    );
-  }
+  if (validation) lines.push('  testCommand: node -e ""');
   lines.push('workflow:', `  approve: ${options.approve ?? 'plan'}`);
   if (options.codebase === false) {
     lines.push('codebase:', '  enabled: false');

@@ -28,7 +28,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
-  ['workflow-implementation-full-suite', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-check-running', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-implementation-retry', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-render-note', ['120x40', '80x24', '60x18', '160x45']],

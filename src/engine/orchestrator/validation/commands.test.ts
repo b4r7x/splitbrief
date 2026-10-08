@@ -2,25 +2,16 @@ import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
-import { createValidator } from './run.js';
+import { buildStageContext, planTestCheck } from './run.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { Task } from '../../../core/schemas/task.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
+import type { Config } from '../../../core/schemas/config.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { processError } from '../../../lib/process/errors.js';
-import {
-  makeConfig,
-  makeCommandRunner,
-  type RecordingCommandRunner,
-} from '#testing/helpers/validation-fixtures.js';
+import { makeConfig } from '#testing/helpers/validation-fixtures.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 
-function expectCommandRanInProject(runner: RecordingCommandRunner, projectDir: string): void {
-  expect(runner.calls.at(-1)?.options?.cwd).toBe(projectDir);
-}
-
-describe('runValidation', () => {
+describe('planTestCheck', () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -31,86 +22,49 @@ describe('runValidation', () => {
     cleanupTempDir(tempDir);
   });
 
-  function mkTask(file: string): Task {
-    return makeTask({ suggestedFiles: [file], action: 'modify' });
+  function plan(file: string, config: Config, discovered?: DiscoveredValidation) {
+    const ctx = buildStageContext({
+      projectDir: tempDir,
+      config,
+      discoveredValidation: discovered,
+      notices: { bus: makeBusRecorder().bus, phase: 'implementing' },
+    });
+    return planTestCheck(file, ctx);
   }
 
-  const fakeBus = { publish: () => {}, subscribe: () => () => {} };
-
-  it('config wins over discovered', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheckCommand: 'mypy src/', lint: false, test: false });
-    const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.py'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      discoveredValidation: discovered,
-    });
-
-    expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('mypy src/');
-    expectCommandRanInProject(runner, tempDir);
-  });
-
-  it('discovered wins over the stack default', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ lint: false, test: false });
-    const discovered: DiscoveredValidation = { typecheckCommand: 'cargo check' };
-    writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      discoveredValidation: discovered,
-    });
-
-    expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('cargo check');
-    expectCommandRanInProject(runner, tempDir);
-  });
-
-  it('stack default when no config, manifest or discovered command', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ lint: false, test: false });
+  it('runs a config-pinned command as written, over the planner and the stack', () => {
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
+    const planned = plan('src/main.rs', makeConfig({ testCommand: 'make test' }), {
+      testCommand: 'cargo test',
     });
 
-    expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('cargo check');
-    expectCommandRanInProject(runner, tempDir);
+    expect(planned).toMatchObject({ kind: 'run', command: 'make test', args: ['test'] });
   });
 
-  it('runs the stack-default cargo test when the loaded config sets no test_command', async () => {
+  it('takes the planner command over the stack default', () => {
+    writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
+    const planned = plan('pkg/x.go', makeConfig({ testCommand: undefined }), {
+      testCommand: 'cargo test',
+    });
+
+    expect(planned).toMatchObject({ kind: 'run', command: 'cargo test' });
+  });
+
+  it('takes the manifest test script over the planner command', () => {
+    writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
+    mkdirSync(join(tempDir, 'src'), { recursive: true });
+    writeFileSync(join(tempDir, 'src', 'app.test.js'), '');
+    const planned = plan('src/app.js', makeConfig({ testCommand: undefined }), {
+      testCommand: 'npx --no-install jest',
+    });
+
+    expect(planned).toMatchObject({ kind: 'run', resolved: { cmd: 'npm', source: 'manifest' } });
+  });
+
+  it('runs the stack-default cargo test, narrowed, when the loaded config sets no test_command', () => {
     const configDir = join(tempDir, SPLITBRIEF_DIR);
     mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, 'config.yaml'),
-      YAML.stringify({ version: 3, validation: { typecheck: false, lint: false, test: true } }),
-      'utf-8',
-    );
+    writeFileSync(join(configDir, 'config.yaml'), YAML.stringify({ version: 3 }), 'utf-8');
     writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'main.rs'), '#[cfg(test)]\nmod tests {}');
@@ -118,578 +72,85 @@ describe('runValidation', () => {
     const { config } = loadConfig(tempDir);
     expect(config.validation.testCommand).toBeUndefined();
 
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
+    expect(plan('src/main.rs', config)).toMatchObject({
+      kind: 'run',
+      command: 'cargo test -- main',
+      args: ['test', '--', 'main'],
     });
-
-    expect(results.find((r) => r.stage === 'test')?.output).toBe('cargo test -- main');
-    expect(runner.calls.at(-1)?.cmd).toBe('cargo');
-    expect(runner.calls.at(-1)?.args).toEqual(['test', '--', 'main']);
-    expectCommandRanInProject(runner, tempDir);
   });
 
-  it('lint stage records a skipped result when no layer provides a command', async () => {
-    const validator = createValidator({ runCommand: makeCommandRunner() });
-    const config = makeConfig({ typecheck: false, lint: true, test: false });
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/foo.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const lintResult = results.find((r) => r.stage === 'lint');
-    expect(lintResult).toMatchObject({ stage: 'lint', passed: true, skipped: true });
-  });
-
-  it('ENOENT skips gracefully', async () => {
-    const enoent = Object.assign(new Error('spawn cargo ENOENT'), { code: 'ENOENT' });
-    const validator = createValidator({ runCommand: makeCommandRunner(enoent) });
-
-    const config = makeConfig({ lint: false, test: false });
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const tc = results.find((r) => r.stage === 'typecheck');
-    expect(tc).toMatchObject({ stage: 'typecheck', passed: true, skipped: true });
-    expect(tc?.output).toContain('not found');
-  });
-
-  it('skips a stack-default lint command when the cargo subcommand is missing (rustup minimal)', async () => {
-    const missingClippy = processError.exitCode({
-      command: 'cargo',
-      label: 'lint validation',
-      code: 101,
-      stderr: 'error: no such command: `clippy`',
-      output: '',
-    });
-    const validator = createValidator({ runCommand: makeCommandRunner(missingClippy) });
-    const config = makeConfig({ typecheck: false, lint: true, test: false });
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const lint = results.find((r) => r.stage === 'lint');
-    expect(lint).toMatchObject({ stage: 'lint', passed: true, skipped: true });
-  });
-
-  it('still fails a configured command that exits 101 with a missing-subcommand signature', async () => {
-    const missingSubcommand = processError.exitCode({
-      command: 'cargo',
-      label: 'lint validation',
-      code: 101,
-      stderr: 'error: no such command: `clippy`',
-      output: '',
-    });
-    const validator = createValidator({ runCommand: makeCommandRunner(missingSubcommand) });
-    const config = makeConfig({
-      typecheck: false,
-      lint: true,
-      lintCommand: 'cargo clippy --no-deps',
-      test: false,
-    });
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/main.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const lint = results.find((r) => r.stage === 'lint');
-    expect(lint?.passed).toBe(false);
-    expect(lint?.skipped).toBeUndefined();
-  });
-
-  it('fails when a configured validation command is not found', async () => {
-    const enoent = Object.assign(new Error('spawn missing-typecheck ENOENT'), { code: 'ENOENT' });
-    const validator = createValidator({ runCommand: makeCommandRunner(enoent) });
-    const config = makeConfig({
-      typecheck: true,
-      typecheckCommand: 'missing-typecheck --strict',
-      lint: false,
-      test: false,
-    });
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const tc = results.find((r) => r.stage === 'typecheck');
-    expect(tc).toMatchObject({
-      passed: false,
-      stage: 'typecheck',
-    });
-    expect(tc?.error).toContain('Configured typecheck command not found: missing-typecheck');
-  });
-
-  it('records a skipped typecheck on a non-TS project instead of running tsc', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'package.json'), '{"name":"plain"}');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.js'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(results.find((r) => r.stage === 'typecheck')).toMatchObject({
-      stage: 'typecheck',
-      passed: true,
-      skipped: true,
-    });
-    expect(runner.calls).toHaveLength(0);
-  });
-
-  it('skips typecheck on a Python project instead of falling back to tsc', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'pyproject.toml'), '[tool.pytest]');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.py'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(results.find((r) => r.stage === 'typecheck')).toMatchObject({
-      stage: 'typecheck',
-      passed: true,
-      skipped: true,
-    });
-    expect(runner.calls).toHaveLength(0);
-  });
-
-  it('uses default npx tsc --noEmit when tsconfig.json exists but no language deps', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ lint: false, test: false });
+  it('skips when a narrowing command finds no affected test file', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+    writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
 
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('npx tsc --noEmit');
-  });
-
-  it('TS project uses default npx tsc --noEmit when no manifest script exists', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ lint: false, test: false });
-    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(results.find((r) => r.stage === 'typecheck')?.output).toBe('npx tsc --noEmit');
-    expectCommandRanInProject(runner, tempDir);
-  });
-
-  it('short-circuits on typecheck failure without running lint or test', async () => {
-    const validator = createValidator({
-      runCommand: makeCommandRunner(
-        processError.exitCode({ command: 'tsc', code: 1, stderr: 'type error', output: '' }),
-        { stdout: 'lint should not run', stderr: '', code: 0 },
-      ),
-    });
-
-    const config = makeConfig({ typecheck: true, lint: true, test: true });
-    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const tc = results.find((r) => r.stage === 'typecheck');
-    expect(tc?.passed).toBe(false);
-    expect(results.map((r) => r.stage)).toEqual(['typecheck']);
-  });
-
-  it('reports a timed-out stage as a timeout failure, not an exit-code error', async () => {
-    const timeout = processError.timeout({
-      command: 'tsc',
-      label: 'typecheck validation',
-      timeoutMs: 600_000,
-      output: '',
-    });
-    const validator = createValidator({ runCommand: makeCommandRunner(timeout) });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    const tc = results.find((r) => r.stage === 'typecheck');
-    expect(tc?.passed).toBe(false);
-    expect(tc?.error).toContain('timed out');
-    expect(tc?.error).not.toContain('exited with code');
-  });
-
-  it('passes the configured validation.timeoutMs through to the command runner', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: false, timeoutMs: 900_000 });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(runner.calls.at(-1)?.options?.timeout).toBe(900_000);
-  });
-
-  it('runs a stage for up to one hour when the loaded config sets no validation.timeoutMs', async () => {
-    const configDir = join(tempDir, SPLITBRIEF_DIR);
-    mkdirSync(configDir, { recursive: true });
-    writeFileSync(
-      join(configDir, 'config.yaml'),
-      YAML.stringify({ version: 3, validation: { typecheck: true, lint: false, test: false } }),
-      'utf-8',
-    );
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-    const { config } = loadConfig(tempDir);
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(config.validation.timeoutMs).toBeUndefined();
-    expect(runner.calls.at(-1)?.options?.timeout).toBe(3_600_000);
-  });
-
-  it('passes the abort signal through to validation commands', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    const controller = new AbortController();
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      signal: controller.signal,
-    });
-
-    expect(runner.calls.at(-1)?.options?.signal).toBe(controller.signal);
-  });
-
-  it('records a skipped test result when default source but no test file found', async () => {
-    const validator = createValidator({ runCommand: makeCommandRunner() });
-    const config = makeConfig({
-      typecheck: false,
-      lint: false,
-      test: true,
-      testCommand: undefined,
-    });
-    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(results.find((r) => r.stage === 'test')).toMatchObject({
-      stage: 'test',
-      passed: true,
-      skipped: true,
+    expect(plan('src/app.ts', makeConfig({ testCommand: undefined }))).toEqual({
+      kind: 'skip',
+      reason: 'no affected test file found',
     });
   });
-  it('manifest script beats discovered', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: true, test: false });
-    writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"lint":"biome check"}}');
 
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/app.js'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-      discoveredValidation: { lintCommand: 'eslint --max-warnings 0' },
+  it('skips with its reason on an unrecognised stack', () => {
+    expect(plan('src/app.ts', makeConfig({ testCommand: undefined }))).toEqual({
+      kind: 'skip',
+      reason: 'no test command for an unrecognised stack',
     });
-
-    expect(runner.calls[0]?.cmd).toBe('npm');
-    expect(runner.calls[0]?.args).toEqual(['run', 'lint']);
   });
 
-  it('narrowing unions affected tests over files', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
+  it('narrows a manifest test script to the affected test file', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
     writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'a.test.ts'), '');
-    writeFileSync(join(tempDir, 'src', 'b.test.ts'), '');
 
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: makeTask({ suggestedFiles: ['src/a.ts', 'src/b.ts'], action: 'modify' }),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
+    expect(plan('src/a.ts', makeConfig({ testCommand: undefined }))).toMatchObject({
+      kind: 'run',
+      args: ['test', '--', 'src/a.test.ts'],
     });
-
-    expect(runner.calls[0]?.cmd).toBe('npm');
-    expect(runner.calls[0]?.args).toEqual(['test', '--', 'src/a.test.ts', 'src/b.test.ts']);
   });
 
-  it("runs a test file only a sibling vitest config includes under that config's script", async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-    writeFileSync(
-      join(tempDir, 'package.json'),
-      JSON.stringify({
-        scripts: { test: 'vitest run', 'test:e2e': 'vitest run --config e2e/vitest.e2e.config.ts' },
-      }),
-    );
-    mkdirSync(join(tempDir, 'e2e', 'scenarios'), { recursive: true });
-    writeFileSync(
-      join(tempDir, 'e2e', 'vitest.e2e.config.ts'),
-      "export default { test: { include: ['e2e/scenarios/**/*.test.ts'] } };",
-    );
-    writeFileSync(join(tempDir, 'e2e', 'scenarios', 'stop.test.ts'), '');
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('e2e/scenarios/stop.test.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(runner.calls[0]?.cmd).toBe('npm');
-    expect(runner.calls[0]?.args).toEqual(['run', 'test:e2e', '--', 'e2e/scenarios/stop.test.ts']);
-  });
-
-  it("narrows a python stack with path-arg ''", async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
+  it("narrows a python stack with path-arg ''", () => {
     writeFileSync(join(tempDir, 'pyproject.toml'), '[project]\nname = "x"');
     mkdirSync(join(tempDir, 'tests'), { recursive: true });
     writeFileSync(join(tempDir, 'tests', 'test_a.py'), '');
 
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/a.py'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
+    expect(plan('src/a.py', makeConfig({ testCommand: undefined }))).toMatchObject({
+      kind: 'run',
+      resolved: { cmd: 'pytest' },
+      args: [join('tests', 'test_a.py')],
     });
-
-    expect(runner.calls[0]?.cmd).toBe('pytest');
-    expect(runner.calls[0]?.args).toEqual([join('tests', 'test_a.py')]);
   });
 
-  it('narrows a go stack with package-arg', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
+  it('narrows a go stack with package-arg', () => {
     writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
     mkdirSync(join(tempDir, 'pkg'), { recursive: true });
     writeFileSync(join(tempDir, 'pkg', 'x_test.go'), '');
 
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('pkg/x.go'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
+    expect(plan('pkg/x.go', makeConfig({ testCommand: undefined }))).toMatchObject({
+      kind: 'run',
+      resolved: { cmd: 'go' },
+      args: ['test', './pkg/'],
     });
-
-    expect(runner.calls[0]?.cmd).toBe('go');
-    expect(runner.calls[0]?.args).toEqual(['test', './pkg/']);
   });
 
-  it('narrows a rust stack with a name filter', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: false, lint: false, test: true });
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src', 'lib.rs'), '#[cfg(test)]\nmod tests {}');
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/lib.rs'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
-    });
-
-    expect(runner.calls[0]?.cmd).toBe('cargo');
-    expect(runner.calls[0]?.args).toEqual(['test', '--', 'lib']);
-  });
-
-  it('skips a config-pinned related-test command until the final review', async () => {
-    const runner = makeCommandRunner();
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({
-      typecheck: false,
-      lint: false,
-      test: true,
-      testCommand: 'npm test',
-    });
+  it('runs a config-pinned command whole, never narrowed', () => {
     writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
     mkdirSync(join(tempDir, 'src'), { recursive: true });
     writeFileSync(join(tempDir, 'src', 'a.test.ts'), '');
 
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: mkTask('src/a.ts'),
-      projectDir: tempDir,
-      config,
-      bus: fakeBus,
-      phase: 'implementing',
+    expect(plan('src/a.ts', makeConfig({ testCommand: 'npm test' }))).toMatchObject({
+      kind: 'run',
+      command: 'npm test',
+      args: ['test'],
     });
+  });
 
-    expect(runner.calls).toEqual([]);
-    expect(results[0]).toMatchObject({
-      skipped: true,
-      skippedReason:
-        'the test command cannot select related tests; the pre-review full suite runs it',
-    });
+  it('does not take an unsafe planner command and falls back to the stack default', () => {
+    writeFileSync(join(tempDir, 'go.mod'), 'module example.com/test');
+    mkdirSync(join(tempDir, 'pkg'), { recursive: true });
+    writeFileSync(join(tempDir, 'pkg', 'x_test.go'), '');
+
+    expect(
+      plan('pkg/x.go', makeConfig({ testCommand: undefined }), { testCommand: './evil-script' }),
+    ).toMatchObject({ kind: 'run', resolved: { cmd: 'go', source: 'default' } });
   });
 });

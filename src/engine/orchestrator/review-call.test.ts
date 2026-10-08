@@ -8,7 +8,11 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import type { Reviewer } from '../reviewers/types.js';
 import type { TypedCallContext } from '../planners/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
-import { ReviewAnswerSchema, type ReviewAnswer } from '../../core/schemas/review.js';
+import {
+  REVIEW_ANSWER_JSON_SCHEMA,
+  ReviewAnswerSchema,
+  type ReviewAnswer,
+} from '../../core/schemas/review.js';
 import { taskId } from '../../core/schemas/task.js';
 import { runReviewerCall } from './review-call.js';
 
@@ -77,6 +81,8 @@ describe('runReviewerCall', () => {
       reviewer,
       prompt: 'review the diff',
       schema: ReviewAnswerSchema,
+      jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+      schemaName: 'review_answer',
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -107,6 +113,8 @@ describe('runReviewerCall', () => {
       reviewer,
       prompt: 'review the diff',
       schema: ReviewAnswerSchema,
+      jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+      schemaName: 'review_answer',
       projectDir,
       workspaceDir: projectDir,
       sessionId,
@@ -144,6 +152,8 @@ describe('runReviewerCall', () => {
       reviewer,
       prompt: 'review the diff',
       schema: ReviewAnswerSchema,
+      jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+      schemaName: 'review_answer',
       projectDir,
       workspaceDir: projectDir,
       sessionId,

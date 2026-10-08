@@ -88,6 +88,28 @@ describe('checkPlan', () => {
     expect(codes(plan)).toEqual(['duplicate-task-id', 'duplicate-check-id', 'task-without-check']);
   });
 
+  it('refuses a plan check id in the V range the reviewer checks use, once per id', () => {
+    const v1 = { id: 'V1', kind: 'cmd' as const, value: 'npm test', required: true };
+    const plan = makePlanProposal({
+      checks: [v1],
+      tasks: [makeTaskSpec({ checks: [{ ...v1, id: 'V2' }] })],
+    });
+    expect(
+      checkPlan(plan, projectDir, fits, undefined).filter(
+        (error) => error.code === 'reserved-check-id',
+      ),
+    ).toEqual([
+      {
+        code: 'reserved-check-id',
+        message: "Check id V1 is reserved for the reviewer's checks (V1, V2, …).",
+      },
+      {
+        code: 'reserved-check-id',
+        message: "Check id V2 is reserved for the reviewer's checks (V1, V2, …).",
+      },
+    ]);
+  });
+
   it('refuses an unknown dependency, a dependency on a later batch and a cycle', () => {
     expect(codes(makePlanProposal({ tasks: [makeTaskSpec({ dependsOn: ['T009'] })] }))).toEqual([
       'unknown-dependency',

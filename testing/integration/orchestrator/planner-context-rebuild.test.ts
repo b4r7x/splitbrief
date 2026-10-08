@@ -123,7 +123,7 @@ function crewConfig(planner: Config['planner']): Config {
     makeConfig({
       planner,
       implementer: { kind: 'cli', tool: 'opencode', model: 'opencode/test', contextLength: 4096 },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { approve: 'none', maxRetries: 1 },
     }),
   );

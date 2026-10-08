@@ -5,7 +5,8 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import {
   createBusTextHandler,
   publishPlannerStatus,
-  publishValidation,
+  publishReviewCheck,
+  publishReviewChecksPlan,
   publishError,
   publishWarning,
   publishGitCommit,
@@ -18,7 +19,6 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { parseEngineEvent } from '../events/schema.js';
 import { taskId } from '../../core/schemas/task.js';
-import { skippedStage } from './validation/stage.js';
 
 const TASK = taskId('T001');
 
@@ -162,225 +162,95 @@ describe('createImplementerPublisher', () => {
   });
 });
 
-describe('publishValidation — result phase aggregates stage outcomes', () => {
-  it('passed=true only when every stage passed', () => {
+describe('publishReviewChecksPlan', () => {
+  it('publishes an off record with no plan fields', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'lint', passed: true },
-        { stage: 'test', passed: true },
-      ],
-      startTime: Date.now() - 100,
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
+    publishReviewChecksPlan({ bus, phase: 'final-review' }, { scope: 'final', status: 'off' });
 
-    expect(events[0]).toMatchObject({
-      type: 'validate',
-      status: 'done',
-      passed: true,
-      stages: { typecheck: true, lint: true, test: true },
-      attempted: { typecheck: true, lint: true, test: true },
-    });
-    expect((events[0] as Record<string, unknown>)['error']).toBeUndefined();
-  });
-
-  it('passed=false with first failing stage error on partial failure', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'lint', passed: false, error: 'lint error' },
-      ],
-      startTime: Date.now(),
-      acceptance: { accepted: false, exemptStages: [], blockingStages: ['lint'] },
-    });
-
-    expect(events[0]).toMatchObject({
-      type: 'validate',
-      passed: false,
-      stages: { typecheck: true, lint: false, test: false },
-      attempted: { typecheck: true, lint: true, test: false },
-      error: 'lint error',
+    expect(parseEngineEvent(events[0])).toEqual({
+      type: 'review_checks',
+      ts: expect.any(Number),
+      phase: 'final-review',
+      scope: 'final',
+      status: 'off',
     });
   });
 
-  it('marks only stages present in validation results as attempted', () => {
+  it('publishes the chosen commands, the declined tests and the reason', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [{ stage: 'test', passed: false, error: 'test error' }],
-      startTime: Date.now(),
-      acceptance: { accepted: false, exemptStages: [], blockingStages: ['test'] },
-    });
-
-    expect(events[0]).toMatchObject({
-      type: 'validate',
-      passed: false,
-      stages: { typecheck: false, lint: false, test: false },
-      attempted: { typecheck: false, lint: false, test: true },
-      error: 'test error',
-    });
-  });
-
-  it('forwards validation command metadata on progress and result events', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'progress',
-      stages: { typecheck: false, lint: false, test: false },
-      activeStage: 'typecheck',
-      commands: { typecheck: 'npm run typecheck' },
-      startTime: Date.now(),
-    });
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [{ stage: 'typecheck', passed: true, command: 'npm run typecheck' }],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
-
-    expect(events[0]).toMatchObject({
-      type: 'validate',
-      status: 'running',
-      activeStage: 'typecheck',
-      commands: { typecheck: 'npm run typecheck' },
-    });
-    expect(events[1]).toMatchObject({
-      type: 'validate',
-      status: 'done',
-      commands: { typecheck: 'npm run typecheck' },
-    });
-  });
-
-  it('duration is measured from startTime', () => {
-    const { bus, events } = makeBusRecorder();
-    const startTime = Date.now() - 500;
-
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [{ stage: 'typecheck', passed: true }],
-      startTime,
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
-
-    expect((events[0] as Record<string, unknown>)['duration']).toBeGreaterThanOrEqual(400);
-  });
-
-  it('a skipped stage is reported via the skipped channel, not as a passing stage', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'lint', passed: true, skipped: true },
-        { stage: 'test', passed: true },
-      ],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
-
-    expect(events[0]).toMatchObject({
-      type: 'validate',
-      passed: true,
-      stages: { typecheck: true, lint: false, test: true },
-      attempted: { typecheck: true, lint: true, test: true },
-      skipped: { lint: true },
-    });
-  });
-
-  it('validate event carries skippedReason', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [
-        skippedStage('typecheck', 'no typecheck command for an unrecognised stack'),
-        skippedStage('lint', 'no lint command for an unrecognised stack'),
-      ],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
-
-    expect(events[0]).toMatchObject({
-      type: 'validate',
-      skipped: { typecheck: true, lint: true },
-      skippedReason: {
-        typecheck: 'no typecheck command for an unrecognised stack',
-        lint: 'no lint command for an unrecognised stack',
+    publishReviewChecksPlan(
+      { bus, phase: 'implementing' },
+      {
+        scope: 'task',
+        status: 'planned',
+        plan: {
+          commands: [{ id: 'V1', command: 'npm test', reason: 'runs the changed tests' }],
+          declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
+          reason: null,
+        },
       },
+    );
+
+    expect(parseEngineEvent(events[0])).toMatchObject({
+      type: 'review_checks',
+      scope: 'task',
+      status: 'planned',
+      commands: [{ id: 'V1', command: 'npm test', reason: 'runs the changed tests' }],
+      declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
+      reason: null,
     });
   });
+});
 
-  it('omits skippedReason when nothing was skipped', () => {
+describe('publishReviewCheck', () => {
+  it('publishes a full_suite record with the check id and the detail of a refusal', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [{ stage: 'typecheck', passed: true }],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
+    publishReviewCheck(
+      { bus, phase: 'final-review' },
+      {
+        status: 'refused',
+        id: 'V2',
+        command: 'make test',
+        moment: 'pre-review',
+        detail: 'runs make on Makefile, which this run changed',
+      },
+    );
 
-    expect('skippedReason' in (events[0] as Record<string, unknown>)).toBe(false);
+    const event = parseEngineEvent(events[0]);
+    expect(event).toMatchObject({
+      type: 'full_suite',
+      status: 'refused',
+      id: 'V2',
+      command: 'make test',
+      moment: 'pre-review',
+      detail: 'runs make on Makefile, which this run changed',
+    });
+    expect(event).not.toHaveProperty('stage');
+    expect(event).not.toHaveProperty('passed');
   });
 
-  it('omits the skipped channel when no stage was skipped', () => {
+  it('carries the verdict and duration of a finished base re-run', () => {
     const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [{ stage: 'typecheck', passed: true }],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
-    });
+    publishReviewCheck(
+      { bus, phase: 'final-review' },
+      {
+        status: 'done',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'base',
+        passed: false,
+        duration: 12,
+      },
+    );
 
-    expect('skipped' in (events[0] as Record<string, unknown>)).toBe(false);
-  });
-
-  it('exempt-accepted task publishes passed true with exempt true', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: true },
-        { stage: 'test', passed: false, error: 'pre-existing suite failure' },
-      ],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: ['test'], blockingStages: [] },
-    });
-
-    expect(events[0]).toMatchObject({ type: 'validate', passed: true, exempt: true });
-    expect('error' in (events[0] as Record<string, unknown>)).toBe(false);
-  });
-
-  it('names the blocking stage’s error, not an earlier baseline-exempt one', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [
-        { stage: 'typecheck', passed: false, error: 'handle.test.ts(468,28): error TS2769' },
-        { stage: 'test', passed: false, error: 'FAIL src/new.test.ts > breaks' },
-      ],
-      startTime: Date.now(),
-      acceptance: { accepted: false, exemptStages: ['typecheck'], blockingStages: ['test'] },
-    });
-
-    expect(events[0]).toMatchObject({
-      type: 'validate',
+    expect(parseEngineEvent(events[0])).toMatchObject({
+      type: 'full_suite',
+      status: 'done',
+      id: 'V1',
+      moment: 'base',
       passed: false,
-      error: 'FAIL src/new.test.ts > breaks',
+      duration: 12,
     });
-  });
-
-  it('omits exempt when every stage passed on its own', () => {
-    const { bus, events } = makeBusRecorder();
-    publishValidation({ bus: bus, phase: 'implementing' }, TASK, {
-      phase: 'result',
-      results: [{ stage: 'typecheck', passed: true }],
-      startTime: Date.now(),
-      acceptance: { accepted: true, exemptStages: ['typecheck'], blockingStages: [] },
-    });
-
-    expect('exempt' in (events[0] as Record<string, unknown>)).toBe(false);
   });
 });
 

@@ -57,12 +57,19 @@ export const ConfigSchema = z.object({
   implementerProfiles: ImplementerProfilesConfigSchema.optional(),
   reviewer: ReviewerConfigSchema.optional(),
   validation: z.object({
-    typecheck: z.boolean(),
-    lint: z.boolean(),
-    test: z.boolean(),
+    /** The reviewer chooses and SPLITBRIEF runs the commands that verify the change; on when unset. */
+    endChecks: z.boolean().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    typecheck: z.unknown().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    lint: z.unknown().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    test: z.unknown().optional(),
     testCommand: z.string().min(1).optional(),
-    typecheckCommand: z.string().min(1).optional(),
-    lintCommand: z.string().min(1).optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    typecheckCommand: z.unknown().optional(),
+    /** Retired: loads with one notice and changes nothing. */
+    lintCommand: z.unknown().optional(),
     testPattern: z.string().min(1).optional(),
     timeoutMs: z.number().int().min(1000).optional(),
     stack: z.enum(STACK_IDS).optional(),

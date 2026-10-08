@@ -21,7 +21,6 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
 import { buildIsolationChecks } from './checks/isolation.js';
-import { probeValidationBaseline } from './checks/validation.js';
 import {
   aggregateReadinessStatus,
   countReadinessChecks,
@@ -84,7 +83,6 @@ export interface CollectReadinessOptions {
         interaction: 'interactive' | 'headless';
       }) => Promise<readonly ReadinessCheck[]>)
     | undefined;
-  probeValidation?: boolean | undefined;
   resumeSession?: SessionRef | undefined;
 }
 
@@ -176,12 +174,6 @@ export async function collectReadiness(
   }
   if (isolationChecks.length > 0) {
     mergeChecks(report, { id: 'repo', title: 'Repository' }, isolationChecks);
-  }
-  if (options.probeValidation === true && loaded.config) {
-    const probeChecks = await probeValidationBaseline(loaded.config, options.projectDir);
-    if (probeChecks.length > 0) {
-      mergeChecks(report, { id: 'validation', title: 'Validation' }, probeChecks);
-    }
   }
   if (loaded.config && options.interaction && options.probeRunnerAdmission) {
     try {

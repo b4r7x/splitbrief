@@ -25,7 +25,11 @@ import {
   parsePreparedConfig,
   type PreparedExecution,
 } from '../../../src/engine/runners/prepared-execution.js';
-import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import {
+  passingReviewVerdict,
+  planFromTasks,
+  typedCallPlanAndReview,
+} from '#testing/helpers/typed-planner.js';
 
 const dirs: string[] = [];
 
@@ -41,7 +45,10 @@ afterEach(() => {
 function setupProject(): string {
   const projectDir = createTempDir('orch-int-pre-existing-red');
   dirs.push(projectDir);
-  createTestGitRepo(projectDir, { 'src/loop.ts': 'export const loop = "initial";\n' });
+  createTestGitRepo(projectDir, {
+    'src/loop.ts': 'export const loop = "initial";\n',
+    'package.json': `${JSON.stringify({ name: 'red-tree', private: true, scripts: { test: 'node validate.mjs' } })}\n`,
+  });
   seedValidationProject(projectDir, 'from-retry');
   const script = join(projectDir, 'validate.mjs');
   writeFileSync(
@@ -109,7 +116,7 @@ function preparedExecution(input: {
 }
 
 describe('a red that was there before the run', { timeout: 90_000 }, () => {
-  it('runs no gate before the first brief, checks the review red at the run base and routes it to no brief', async () => {
+  it('runs no command before the first brief, checks the reviewer check red at the run base and routes it to no brief', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-pre-existing-red';
     const targetFile = 'src/other.ts';
@@ -132,8 +139,18 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
     expect(before.status).not.toBe(0);
 
     const events: EngineEvent[] = [];
+    // The reviewer chooses the project's own test command, which is red before the run.
     const planner = makePlanner({
-      typedCall: typedCallFromTasks([task], { inputTokens: 140, outputTokens: 90 }),
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks([task]),
+        (prompt) => passingReviewVerdict(prompt),
+        { plan: { inputTokens: 140, outputTokens: 90 } },
+        () => ({
+          commands: [{ id: 'V1', command: 'npm test', reason: 'The project tests every module.' }],
+          declined: [],
+          reason: null,
+        }),
+      ),
       review: vi.fn().mockResolvedValue({
         text: '# Final review\n\nThe red validation stage was red before the run.',
         usage: { inputTokens: 60, outputTokens: 30 },
@@ -165,9 +182,7 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
         contextLength: 4096,
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {
@@ -201,20 +216,25 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
     expect(firstBrief).toBeGreaterThan(-1);
     expect(events.slice(0, firstBrief).filter((event) => event.type === 'full_suite')).toEqual([]);
 
-    const suiteDone = events.filter(
+    // The same command text ran in the run workspace and at the run base, red both times.
+    const checksDone = events.filter(
       (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
         event.type === 'full_suite' && event.status === 'done',
     );
-    expect(suiteDone.map((event) => [event.moment, event.stage, event.passed])).toEqual([
-      ['pre-review', 'test', false],
-      ['base', 'test', false],
+    expect(
+      checksDone.map((event) => [event.moment, event.id, event.command, event.passed]),
+    ).toEqual([
+      ['pre-review', 'V1', 'npm test', false],
+      ['base', 'V1', 'npm test', false],
     ]);
 
     const ledger = readEvidenceLedger({ projectDir, sessionId });
-    const testChecks = (ledger?.tasks.find((entry) => entry.id === 'T001')?.checks ?? []).filter(
-      (entry) => entry.id === 'test',
-    );
-    expect(testChecks.at(-1)?.preExisting).toEqual(['src/loop.ts::loop > carries retry marker']);
+    const reviewerChecks = (
+      ledger?.tasks.find((entry) => entry.id === 'T001')?.checks ?? []
+    ).filter((entry) => entry.id === 'V1');
+    expect(reviewerChecks.at(-1)?.preExisting).toEqual([
+      'src/loop.ts::loop > carries retry marker',
+    ]);
 
     const after = spawnSync('node', ['validate.mjs'], { cwd: projectDir, encoding: 'utf-8' });
     expect(after.status).not.toBe(0);

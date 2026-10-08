@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { taskId } from '../../../core/schemas/task.js';
-import type { EngineEvent } from '../types.js';
+import type { EngineEvent, EngineEventOf } from '../types.js';
 import { createStdoutTextSink } from './stdout-text.js';
 
 function collect(events: EngineEvent[]): string[] {
@@ -21,13 +21,14 @@ describe('createStdoutTextSink', () => {
       { type: 'workflow_started', ts, phase: 'researching', feature: 'add a widget' },
       { type: 'planner_heartbeat', ts, phase: 'researching', elapsedMs: 5 },
       {
-        type: 'validate',
+        type: 'checks_run',
         ts,
         phase: 'implementing',
         taskId: taskId('T001'),
-        status: 'done',
-        passed: true,
-        stages: { typecheck: true, lint: true, test: false },
+        results: [
+          { id: 'K1', passed: true },
+          { id: 'K2', passed: false },
+        ],
       },
       {
         type: 'task_completed',
@@ -60,7 +61,7 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: researching',
       'phase: implementing',
-      'task T001: done (typecheck lint)',
+      'task T001: done (1 of 2 checks passed)',
       'phase: complete',
       'review: passed',
       'done: 1 tasks',
@@ -82,7 +83,7 @@ describe('createStdoutTextSink', () => {
 
     expect(lines).toEqual([
       'phase: implementing',
-      'task T002: failed (no gates)',
+      'task T002: failed (no checks)',
       'phase: final-review',
       'phase: complete',
       'review: failed (2 blocking)',
@@ -126,53 +127,14 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
-  it('gates: NONE — review-only', () => {
-    const gateless = (id: string): EngineEvent[] => [
-      {
-        type: 'validate',
-        ts,
-        phase: 'implementing',
-        taskId: taskId(id),
-        status: 'done',
-        passed: true,
-        stages: { typecheck: false, lint: false, test: false },
-        skipped: { typecheck: true, lint: true, test: true },
-      },
-      {
-        type: 'warning',
-        ts,
-        phase: 'implementing',
-        message: `Task ${id} was not validated: no gates for an unrecognised stack (typecheck, lint, test).`,
-        category: 'validation',
-        code: 'no_gates_unknown_stack',
-      },
-    ];
-
-    expect(collect([...gateless('T001'), ...gateless('T002')])).toEqual([
-      'phase: implementing',
-      'gates: NONE — review-only',
-    ]);
-  });
-
-  it('a mixed skip set does not announce gates: NONE', () => {
+  it('a task that ran no check reads no checks', () => {
     const lines = collect([
       {
-        type: 'validate',
+        type: 'checks_run',
         ts,
         phase: 'implementing',
         taskId: taskId('T001'),
-        status: 'done',
-        passed: true,
-        stages: { typecheck: false, lint: false, test: false },
-        skipped: { typecheck: true, lint: true, test: true },
-        skippedReason: { test: 'no test command for an unrecognised stack' },
-      },
-      {
-        type: 'warning',
-        ts,
-        phase: 'implementing',
-        message:
-          'Task T001 was not validated: every enabled validation stage was skipped (typecheck, lint, test).',
+        results: [],
       },
       {
         type: 'task_completed',
@@ -186,7 +148,105 @@ describe('createStdoutTextSink', () => {
       },
     ]);
 
-    expect(lines).toEqual(['phase: implementing', 'task T001: done (no gates)']);
+    expect(lines).toEqual(['phase: implementing', 'task T001: done (no checks)']);
+  });
+
+  it('names End-of-run checks off, and a plan with no command with its reason', () => {
+    const lines = collect([
+      { type: 'review_checks', ts, phase: 'final-review', scope: 'final', status: 'off' },
+      {
+        type: 'review_checks',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        status: 'planned',
+        commands: [],
+        declined: [],
+        reason: 'the change edits only the README',
+      },
+    ]);
+
+    expect(lines).toEqual([
+      'phase: final-review',
+      'reviewer checks: off',
+      'reviewer checks: none (the change edits only the README)',
+    ]);
+  });
+
+  it('writes one line per declined test and per finished, refused or not-run reviewer check', () => {
+    const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: 'done',
+      id: 'V1',
+      command: 'npm test',
+      moment: 'pre-review',
+      ...fields,
+    });
+    const lines = collect([
+      {
+        type: 'review_checks',
+        ts,
+        phase: 'final-review',
+        scope: 'task',
+        status: 'planned',
+        commands: [
+          { id: 'V1', command: 'npm test', reason: 'runs the changed tests' },
+          { id: 'V2', command: 'make test', reason: 'the project gate' },
+          { id: 'V3', command: 'cargo test', reason: 'the crate tests' },
+        ],
+        declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
+        reason: null,
+      },
+      check({ status: 'running' }),
+      check({ passed: false, duration: 3 }),
+      check({ status: 'running', moment: 'base' }),
+      check({ moment: 'base', passed: false, duration: 2 }),
+      check({
+        id: 'V2',
+        command: 'make test',
+        status: 'refused',
+        detail: 'runs make on Makefile, which this run changed',
+      }),
+      check({ id: 'V3', command: 'cargo test', status: 'not-run', detail: 'V1 failed' }),
+      check({ id: 'V4', command: 'go test ./...', passed: true, duration: 9 }),
+      check({ id: 'V4', moment: 'base', status: 'not-run', detail: 'no check V4' }),
+      check({ id: 'V5', command: 'pytest', passed: false, duration: 4 }),
+      check({ id: 'V5', command: 'pytest', moment: 'base', passed: true, duration: 4 }),
+      check({ id: 'V6', moment: 'base', status: 'refused', detail: 'names no program' }),
+    ]);
+
+    expect(lines).toEqual([
+      'phase: final-review',
+      'reviewer check declined: e2e/app.spec.ts (needs a browser)',
+      'reviewer check V1: failed (npm test)',
+      'reviewer check V1 at base: fails',
+      'reviewer check V2: refused (runs make on Makefile, which this run changed)',
+      'reviewer check V3: not run (V1 failed)',
+      'reviewer check V4: passed (go test ./...)',
+      'reviewer check V4 at base: not run (no check V4)',
+      'reviewer check V5: failed (pytest)',
+      'reviewer check V5 at base: passes',
+      'reviewer check V6 at base: refused (names no program)',
+    ]);
+  });
+
+  it('writes nothing for a full-suite stage of a session from before the reviewer chose its checks', () => {
+    const lines = collect([
+      {
+        type: 'full_suite',
+        ts,
+        phase: 'final-review',
+        status: 'done',
+        stage: 'test',
+        command: 'npm test',
+        moment: 'pre-review',
+        passed: true,
+      },
+    ]);
+
+    expect(lines).toEqual(['phase: final-review']);
   });
 
   it('writes nothing for pre-start events that carry the idle phase', () => {

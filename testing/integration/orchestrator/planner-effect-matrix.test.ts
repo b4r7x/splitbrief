@@ -38,7 +38,7 @@ function effectConfig(timeoutMs?: number): Config {
       tool: 'opencode',
       ...(timeoutMs !== undefined && { timeout: timeoutMs }),
     },
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    validation: { endChecks: false, testCommand: 'noop' },
     workflow: {
       maxRetries: 0,
       compactionFormat: 'auto',

@@ -614,12 +614,29 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     error: z.string().optional(),
     duration: z.number().optional(),
   }),
+  /** The commands the reviewer chose before a review, the tests it declined, or the checks being off. */
+  phaseEvent('review_checks').extend({
+    scope: z.enum(['final', 'task']),
+    status: z.enum(['planned', 'off']),
+    commands: z
+      .array(z.object({ id: z.string(), command: z.string(), reason: z.string() }))
+      .optional(),
+    declined: z.array(z.object({ target: z.string(), reason: z.string() })).optional(),
+    reason: z.string().nullable().optional(),
+  }),
+  /**
+   * One command run before a review: a reviewer check (`id`) or, in a session from before the
+   * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base.
+   */
   phaseEvent('full_suite').extend({
-    status: z.enum(['running', 'done', 'not-run']),
-    stage: z.enum(['typecheck', 'lint', 'test']),
+    status: z.enum(['running', 'done', 'not-run', 'refused']),
+    stage: z.enum(['typecheck', 'lint', 'test']).optional(),
+    id: z.string().optional(),
     command: z.string(),
     moment: z.enum(['pre-review', 'base']),
     passed: z.boolean().optional(),
+    /** Why the command did not run or was refused. */
+    detail: z.string().optional(),
     duration: z.number().optional(),
   }),
   phaseEvent('escalate').extend({

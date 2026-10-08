@@ -406,6 +406,7 @@ export async function runScheduledReview(args: {
         skillsContext: wctx.context.skillsContext,
       }),
       scope: 'task',
+      reviewChecks: true,
       setTrackedState,
     });
     state = review.state;

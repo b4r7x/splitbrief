@@ -25,7 +25,6 @@ import {
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import type { ValidationResult } from '../validation/result.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
 
@@ -72,13 +71,8 @@ function askUser(defaultAnswer: string | null): ConsultAnswer {
   };
 }
 
-function fakeValidator(opts?: { results?: ValidationResult[]; accepted?: boolean }): Validator {
-  const results = opts?.results ?? [{ stage: 'test' as const, passed: true }];
-  return {
-    formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-    runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-    runValidation: vi.fn().mockResolvedValue(results),
-  };
+function fakeValidator(): Validator {
+  return { formatChangedFiles: vi.fn().mockResolvedValue(undefined) };
 }
 
 type Harness = {
@@ -135,7 +129,7 @@ function harness(opts: {
 }
 
 describe('applyConsultAnswer verify', () => {
-  it('runs the validation and the selected checks and completes the task as consulted', async () => {
+  it('formats the changed files, runs the selected checks and completes the task as consulted', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({
       id: 'T003',
@@ -167,7 +161,7 @@ describe('applyConsultAnswer verify', () => {
       task: expect.objectContaining({ id: 'T003', status: 'done' }),
       durationMs: expect.any(Number),
     });
-    expect(validator.runValidation).toHaveBeenCalledWith(
+    expect(validator.formatChangedFiles).toHaveBeenCalledWith(
       expect.objectContaining({ task, phase: 'escalating', changedFiles: ['src/greet.ts'] }),
     );
     expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
@@ -222,13 +216,21 @@ describe('applyConsultAnswer verify', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
-    const { ctx, states, events, validator } = harness({ projectDir, sessionId, task, plan });
+    const runner = makeCommandRunner();
+    const { ctx, states, events } = harness({
+      projectDir,
+      sessionId,
+      task,
+      plan,
+      runCommand: runner,
+    });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(ctx, task, verify([], 'Nothing to check'), attempt);
 
     expect(result).toEqual({ action: 'failed', reason: 'the verify selection names no check' });
-    expect(validator.runValidation).not.toHaveBeenCalled();
+    expect(runner.calls).toEqual([]);
+    expect(events.filter((event) => event.type === 'checks_run')).toEqual([]);
     expect(events).toHaveLength(0);
     expect(states).toHaveLength(0);
   });
@@ -237,13 +239,15 @@ describe('applyConsultAnswer verify', () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
-    const { ctx, events, validator } = harness({ projectDir, sessionId, task, plan });
+    const runner = makeCommandRunner();
+    const { ctx, events } = harness({ projectDir, sessionId, task, plan, runCommand: runner });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(ctx, task, verify(['K9'], 'Check K9'), attempt);
 
     expect(result).toMatchObject({ action: 'failed', reason: expect.stringContaining('K9') });
-    expect(validator.runValidation).not.toHaveBeenCalled();
+    expect(runner.calls).toEqual([]);
+    expect(events.filter((event) => event.type === 'checks_run')).toEqual([]);
     expect(events).toHaveLength(0);
   });
 
@@ -257,48 +261,16 @@ describe('applyConsultAnswer verify', () => {
       ],
       ['K1', 'K2'],
     );
-    const { ctx, events, validator } = harness({ projectDir, sessionId, task, plan });
+    const runner = makeCommandRunner();
+    const { ctx, events } = harness({ projectDir, sessionId, task, plan, runCommand: runner });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Only one check'), attempt);
 
     expect(result).toMatchObject({ action: 'failed', reason: expect.stringContaining('K2') });
-    expect(validator.runValidation).not.toHaveBeenCalled();
+    expect(runner.calls).toEqual([]);
+    expect(events.filter((event) => event.type === 'checks_run')).toEqual([]);
     expect(events).toHaveLength(0);
-  });
-
-  it('records the checks but fails the consult when the validation is not accepted', async () => {
-    const { projectDir, sessionId } = setupRepo();
-    const task = makeTask({
-      id: 'T003',
-      suggestedFiles: ['src/greet.ts'],
-      criteria: ['C1'],
-      status: 'failed',
-    });
-    const plan = planWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
-    const commandRunner = makeCommandRunner({ stdout: 'clean', stderr: '', code: 0 });
-    const validator = fakeValidator({
-      results: [{ stage: 'test' as const, passed: false, error: 'boom' }],
-      accepted: false,
-    });
-    const { ctx, states, events } = harness({
-      projectDir,
-      sessionId,
-      task,
-      plan,
-      validator,
-      runCommand: commandRunner,
-    });
-    const attempt = await getChangedFilesSnapshot(projectDir);
-
-    const result = await applyConsultAnswer(ctx, task, verify(['K1'], 'Verify K1'), attempt);
-
-    expect(result).toMatchObject({ action: 'failed', reason: expect.stringContaining('boom') });
-    expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
-      { taskId: 'T003', results: [{ id: 'K1', passed: true }] },
-    ]);
-    expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(0);
-    expect(states.at(-1)?.tasks[0]?.status).toBe('failed');
   });
 
   it('records a failing check and fails the consult without completing the task', async () => {
@@ -453,7 +425,7 @@ describe('applyConsultAnswer verify under a pre_validation hook', () => {
       markHooksConfigTrusted(projectDir, hooks);
       const attempt = await getChangedFilesSnapshot(projectDir);
       writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "attempt";\n');
-      const { ctx, validator, states } = harness({
+      const { ctx, events, states } = harness({
         projectDir,
         sessionId,
         task,
@@ -470,7 +442,7 @@ describe('applyConsultAnswer verify under a pre_validation hook', () => {
 
       expect(result).toEqual({ action: 'skipped' });
       expect(states.at(-1)?.tasks[0]?.status).toBe('skipped');
-      expect(validator.runValidation).not.toHaveBeenCalled();
+      expect(events.filter((event) => event.type === 'checks_run')).toEqual([]);
       expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf8')).toBe(
         'export const greet = "base";\n',
       );

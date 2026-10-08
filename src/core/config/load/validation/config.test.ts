@@ -203,6 +203,33 @@ describe('validateConfig', () => {
     expect(retiredValueNotices(config)).toEqual([notice]);
   });
 
+  it.each([
+    ['typecheck', 'typecheck', true],
+    ['lint', 'lint', false],
+    ['test', 'test', true],
+    ['typecheckCommand', 'typecheck_command', 'npx tsc --noEmit'],
+    ['lintCommand', 'lint_command', 'npx biome check .'],
+  ] as const)('loads the retired validation.%s with exactly one notice', (key, name, value) => {
+    const base = makeConfig();
+    const config = { ...base, validation: { ...base.validation, [key]: value } };
+
+    const { errors, data } = validateConfig(config);
+
+    expect(errors).toEqual([]);
+    expect(data?.validation.endChecks).toBeUndefined();
+    expect(retiredValueNotices(config)).toEqual([
+      `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,
+    ]);
+  });
+
+  it('gives no retired notice for validation.end_checks', () => {
+    const base = makeConfig();
+    const config = { ...base, validation: { ...base.validation, endChecks: false } };
+
+    expect(validateConfig(config).errors).toEqual([]);
+    expect(retiredValueNotices(config)).toEqual([]);
+  });
+
   it('loads a retired approval.enabled: true with exactly one notice', () => {
     const config = { ...makeConfig(), approval: { enabled: true } };
 

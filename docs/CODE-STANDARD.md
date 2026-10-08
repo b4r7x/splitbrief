@@ -195,7 +195,7 @@ Run top to bottom on any diff. The mechanical rows are mostly covered by `npm ru
 - [ ] Tests assert observable behavior, not implementation — no `vi.mock` of `./` siblings, no `toHaveBeenCalledTimes` unless the call count *is* the contract ([TESTING.md](./TESTING.md), STRUCTURE rule 15).
 - [ ] No coupling to exact glyphs, spacing, or verbatim user-facing copy in rendered-frame assertions — assert stable signals (the id is flagged, an action exists), not `'▸ /usage'` or `'[3|]'`.
 - [ ] No `as any` fakes standing in for a real typed contract; no test of a trivial helper/wiring (`typeof x === 'function'`).
-- [ ] Check which validation stages were exempt as pre-existing for each task. Confirm the review packet names them next to raw pass counts and records their keys in the Checks Log.
+- [ ] Check which reviewer check failures were marked pre-existing (also red at the run base). Confirm the review packet names them next to raw pass counts and records their keys in the Checks Log.
 - [ ] Oversized test files (>500 LOC) split by concern, with shared setup in `testing/helpers/` factories rather than copy-pasted per test.
 
 **Looks & logic (user-visible changes — CLAUDE.md "Look-and-logic verification")**
