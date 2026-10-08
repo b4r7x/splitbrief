@@ -79,13 +79,23 @@ async function runStatus(args: string[]): Promise<void> {
 }
 
 describe('status command', () => {
-  it('uses light truecolor colours when COLORFGBG decides the background', async () => {
-    writeActiveSession(tmp, '2026-10-08-theme', 'theme output');
-    const originalLevel = chalk.level;
-    const originalColorfgbg = process.env.COLORFGBG;
-    chalk.level = 3;
-    process.env.COLORFGBG = '0;15';
-    try {
+  describe('theme colours', () => {
+    let originalLevel: typeof chalk.level;
+
+    beforeEach(() => {
+      originalLevel = chalk.level;
+      chalk.level = 3;
+    });
+
+    afterEach(() => {
+      chalk.level = originalLevel;
+      vi.unstubAllEnvs();
+    });
+
+    it('uses light truecolor colours when COLORFGBG decides the background', async () => {
+      writeActiveSession(tmp, '2026-10-08-theme', 'theme output');
+      vi.stubEnv('COLORFGBG', '0;15');
+
       await runStatus([]);
 
       expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:'));
@@ -93,20 +103,12 @@ describe('status command', () => {
         resolveTheme({ variant: 'light', level: 3, terminalBackground: undefined }).textDim,
       );
       expect(stripVTControlCharacters(captureOutput())).toContain('theme output');
-    } finally {
-      chalk.level = originalLevel;
-      if (originalColorfgbg === undefined) delete process.env.COLORFGBG;
-      else process.env.COLORFGBG = originalColorfgbg;
-    }
-  });
+    });
 
-  it('uses terminal ANSI colours when COLORFGBG is absent', async () => {
-    writeActiveSession(tmp, '2026-10-08-theme', 'theme output');
-    const originalLevel = chalk.level;
-    const originalColorfgbg = process.env.COLORFGBG;
-    chalk.level = 3;
-    delete process.env.COLORFGBG;
-    try {
+    it('uses terminal ANSI colours when COLORFGBG is absent', async () => {
+      writeActiveSession(tmp, '2026-10-08-theme', 'theme output');
+      vi.stubEnv('COLORFGBG', undefined);
+
       await runStatus([]);
 
       expect(captureOutput()).toContain(paint(plainTheme().textDim, 'Feature:'));
@@ -114,11 +116,7 @@ describe('status command', () => {
         /^(black|red|green|yellow|blue|magenta|cyan|white|gray)(Bright)?$/,
       );
       expect(stripVTControlCharacters(captureOutput())).toContain('theme output');
-    } finally {
-      chalk.level = originalLevel;
-      if (originalColorfgbg === undefined) delete process.env.COLORFGBG;
-      else process.env.COLORFGBG = originalColorfgbg;
-    }
+    });
   });
 
   it('reports no active workflow when .splitbrief has no active marker', async () => {

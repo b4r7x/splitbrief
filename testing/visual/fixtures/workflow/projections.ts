@@ -517,7 +517,7 @@ const implementationProjection: WorkflowFixtureProjection = {
   },
 };
 
-// A reopened end-cadence brief rechecks its failed stages; unrelated known failures stay exempt.
+// A brief gate whose red stages are also red at the run base accepts them as pre-existing failures.
 const validationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_VALIDATION_ID,
   feature: WORKFLOW_FEATURE,
@@ -801,7 +801,7 @@ const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   ],
 };
 
-/** Every brief passed once; the review triage appended a fix task, and its build is starting. */
+/** Every brief passed once; the review appended a fix task, and its build is starting. */
 const reviewFixProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_REVIEW_FIX_ID,
   feature: WORKFLOW_FEATURE,
@@ -1000,7 +1000,7 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   ],
 };
 
-/** The fix task the triage appended passed, and so did the review: every brief counted once. */
+/** The fix task the review appended passed, and so did the review: every brief counted once. */
 const completeAfterFixTasksProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-complete-after-fix-tasks'),
   feature: WORKFLOW_FEATURE,

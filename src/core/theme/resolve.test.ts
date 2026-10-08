@@ -11,7 +11,7 @@ import {
   type ThemeColor,
   type ThemeVariant,
 } from './palette.js';
-import { pickThemeVariant, plainTheme, resolveTheme, themeForTerminal } from './resolve.js';
+import { knownThemeVariant, plainTheme, resolveTheme, themeForTerminal } from './resolve.js';
 
 interface TerminalPalette {
   readonly name: string;
@@ -155,7 +155,7 @@ describe('bundled themes reach the contrast at truecolor and 256 colours', () =>
     ['light', '#ffffff'],
     ['light', '#a8a8a8'],
   ] as const)('%s on the edge ground %s at both levels', (variant, ground) => {
-    expect(pickThemeVariant({ background: ground, colorfgbg: undefined })).toBe(variant);
+    expect(knownThemeVariant({ background: ground, colorfgbg: undefined })).toBe(variant);
     for (const level of [3, 2] as const) {
       const theme = resolveTheme({ variant, level, terminalBackground: ground });
 
@@ -259,7 +259,7 @@ describe('one mapping from a token to what the terminal can show', () => {
   });
 });
 
-describe('plainTheme', () => {
+describe('terminal theme', () => {
   let originalLevel: typeof chalk.level;
   let originalColorfgbg: string | undefined;
 
@@ -276,32 +276,36 @@ describe('plainTheme', () => {
     else process.env.COLORFGBG = originalColorfgbg;
   });
 
-  it('uses only terminal ANSI colours when the background is unknown', () => {
-    for (const leaf of leaves(plainTheme())) {
-      if (leaf.color === undefined) continue;
-      expect(ANSI_NAMES, leaf.path).toContain(leaf.color);
-    }
+  describe('plainTheme', () => {
+    it('uses only terminal ANSI colours when the background is unknown', () => {
+      for (const leaf of leaves(plainTheme())) {
+        if (leaf.color === undefined) continue;
+        expect(ANSI_NAMES, leaf.path).toContain(leaf.color);
+      }
+    });
+
+    it('uses the light truecolor palette when COLORFGBG decides the background', () => {
+      process.env.COLORFGBG = '0;15';
+      expect(plainTheme()).toBe(
+        resolveTheme({ variant: 'light', level: 3, terminalBackground: undefined }),
+      );
+    });
   });
 
-  it('uses the light truecolor palette when COLORFGBG decides the background', () => {
-    process.env.COLORFGBG = '0;15';
-    expect(plainTheme()).toBe(
-      resolveTheme({ variant: 'light', level: 3, terminalBackground: undefined }),
-    );
-  });
-
-  it('preserves the truecolor dark fallback for the TUI', () => {
-    expect(themeForTerminal(undefined)).toBe(
-      resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined }),
-    );
+  describe('themeForTerminal', () => {
+    it('preserves the truecolor dark fallback for the TUI', () => {
+      expect(themeForTerminal(undefined)).toBe(
+        resolveTheme({ variant: 'dark', level: 3, terminalBackground: undefined }),
+      );
+    });
   });
 });
 
-describe('pickThemeVariant', () => {
+describe('knownThemeVariant', () => {
   it('follows the detected background', () => {
-    expect(pickThemeVariant({ background: '#24273a', colorfgbg: undefined })).toBe('dark');
-    expect(pickThemeVariant({ background: '#eff1f5', colorfgbg: undefined })).toBe('light');
-    expect(pickThemeVariant({ background: '#fdf6e3', colorfgbg: '15;0' })).toBe('light');
+    expect(knownThemeVariant({ background: '#24273a', colorfgbg: undefined })).toBe('dark');
+    expect(knownThemeVariant({ background: '#eff1f5', colorfgbg: undefined })).toBe('light');
+    expect(knownThemeVariant({ background: '#fdf6e3', colorfgbg: '15;0' })).toBe('light');
   });
 
   it.each([
@@ -311,12 +315,14 @@ describe('pickThemeVariant', () => {
     ['0;7', 'light'],
     ['0;default;15', 'light'],
     ['12;4', 'dark'],
-    ['nonsense', 'dark'],
   ] as const)('reads COLORFGBG %s as %s when no background was detected', (colorfgbg, variant) => {
-    expect(pickThemeVariant({ background: undefined, colorfgbg })).toBe(variant);
+    expect(knownThemeVariant({ background: undefined, colorfgbg })).toBe(variant);
   });
 
-  it('falls back to dark when nothing is known', () => {
-    expect(pickThemeVariant({ background: undefined, colorfgbg: undefined })).toBe('dark');
-  });
+  it.each(['nonsense', undefined])(
+    'knows no variant when COLORFGBG is %s and no background was detected',
+    (colorfgbg) => {
+      expect(knownThemeVariant({ background: undefined, colorfgbg })).toBeUndefined();
+    },
+  );
 });
