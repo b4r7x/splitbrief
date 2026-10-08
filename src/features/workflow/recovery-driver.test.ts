@@ -245,7 +245,7 @@ describe('createRecoveryDriver', () => {
       });
       const onDisk = makeConfig({
         planner: { kind: 'agent', command: 'changed-on-disk' },
-        validation: { render: 'true {id} {out}', lint: false, testCommand: 'disk-tests' },
+        validation: { render: 'true {id} {out}', endChecks: false, testCommand: 'disk-tests' },
       });
       writeConfig(prepared.session.ref.projectDir, onDisk);
       const { inputMode } = makeInputMode(['retry-same-worker']);

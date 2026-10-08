@@ -7,9 +7,6 @@ implementer:
   command: cat
   model: auto
 validation:
-  typecheck: false
-  lint: false
-  test: true
   testCommand: npm test
 workflow:
   approve: none
