@@ -4,19 +4,26 @@ import { join } from 'node:path';
 import type { SkillMeta } from '../core/skills/types.js';
 import { SPLITBRIEF_DIR } from '../core/paths.js';
 import { installDiagnosticSink } from '../lib/warn.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-const TMP = join(import.meta.dirname, '.tmp-skills-test');
-const FAKE_HOME = join(TMP, '__home__');
-
+let ROOT: string;
+let TMP: string;
+let FAKE_HOME: string;
+let OUTSIDE: string;
 let originalHome: string | undefined;
 
 beforeAll(() => {
+  ROOT = createTempDir('skills-test');
+  TMP = join(ROOT, 'project');
+  FAKE_HOME = join(TMP, '__home__');
+  OUTSIDE = join(ROOT, 'outside');
   originalHome = process.env.HOME;
   process.env.HOME = FAKE_HOME;
 });
 
 afterAll(() => {
   process.env.HOME = originalHome;
+  cleanupTempDir(ROOT);
 });
 
 beforeEach(() => {
@@ -32,8 +39,6 @@ afterEach(() => {
 const { discoverSkills, loadSkillContent, buildSkillsSection, skillRoot } = await import(
   './skill-discovery.js'
 );
-
-const OUTSIDE = join(import.meta.dirname, '.tmp-skills-outside');
 
 afterEach(() => {
   rmSync(OUTSIDE, { recursive: true, force: true });

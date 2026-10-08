@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { getIsolationStrategy } from '../accessors/values.js';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from './io.js';
 import { SPLITBRIEF_DIR } from '../../paths.js';
@@ -10,16 +10,16 @@ import {
   writeConfigYaml,
   writeConfigYamlText,
 } from '#testing/helpers/config-io.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-const TMP = join(import.meta.dirname, '.tmp-config-io-merge');
+let TMP: string;
 
 beforeAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
-  mkdirSync(TMP, { recursive: true });
+  TMP = createTempDir('config-io-merge');
 });
 
 afterAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
+  cleanupTempDir(TMP);
 });
 
 describe('config loading', () => {

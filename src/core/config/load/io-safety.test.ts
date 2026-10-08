@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync, rmSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -18,15 +18,14 @@ import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs-atomic.js';
 
-const TMP = join(import.meta.dirname, '.tmp-config-io-safety');
+let TMP: string;
 
 beforeAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
-  mkdirSync(TMP, { recursive: true });
+  TMP = createTempDir('config-io-safety');
 });
 
 afterAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
+  cleanupTempDir(TMP);
 });
 
 describe('config load safety', () => {

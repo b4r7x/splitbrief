@@ -1,5 +1,5 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../../../src/core/config/load/io.js';
 import { toYaml } from '../../../src/core/config/load/transform.js';
@@ -35,7 +35,6 @@ import type {
   RunnerPickerOption,
 } from '../../../src/features/runners/model-catalog/options.js';
 
-const TMP = join(import.meta.dirname, '.tmp-runner-config-roundtrip');
 const dirs: string[] = [];
 
 const commonGeneration = {
@@ -329,11 +328,6 @@ async function saveAndReload(dir: string, updated: Config): Promise<Config> {
   configStore.load(dir);
   return loadConfig(dir).config;
 }
-
-beforeAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
-  mkdirSync(TMP, { recursive: true });
-});
 
 afterEach(() => {
   configStore.__testReset();
