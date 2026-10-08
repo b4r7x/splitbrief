@@ -13,7 +13,7 @@ export type ColorLevel = 0 | 1 | 2 | 3;
 const candidates = Array.from({ length: 240 }, (_, index) => xterm256Hex(index + 16));
 const resolvedThemes = new Map<string, Theme>();
 
-function knownThemeVariant(input: {
+export function knownThemeVariant(input: {
   background: string | undefined;
   colorfgbg: string | undefined;
 }): ThemeVariant | undefined {
@@ -27,10 +27,6 @@ function knownThemeVariant(input: {
     if (index === 7 || (index >= 9 && index <= 15)) return 'light';
   }
   return undefined;
-}
-
-export function pickThemeVariant(input: Parameters<typeof knownThemeVariant>[0]): ThemeVariant {
-  return knownThemeVariant(input) ?? 'dark';
 }
 
 export function resolveTheme(input: {
@@ -102,10 +98,11 @@ export function resolveTheme(input: {
 
 export function themeForTerminal(terminalBackground: string | undefined): Theme {
   return resolveTheme({
-    variant: pickThemeVariant({
-      background: terminalBackground,
-      colorfgbg: process.env.COLORFGBG,
-    }),
+    variant:
+      knownThemeVariant({
+        background: terminalBackground,
+        colorfgbg: process.env.COLORFGBG,
+      }) ?? 'dark',
     level: chalk.level,
     terminalBackground,
   });

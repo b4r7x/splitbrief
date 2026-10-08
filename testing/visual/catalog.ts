@@ -408,11 +408,11 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-fix',
-      title: 'Workflow · the fix task the review triage appended',
+      title: 'Workflow · the fix task the review appended',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-fix',
-        title: 'Review triage fix task',
+        title: 'Review fix task',
         kind: 'implementation',
         marker: '3/4 briefs passed',
       },
