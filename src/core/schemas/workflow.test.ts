@@ -211,6 +211,19 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed.interruptedStep).toBeUndefined();
   });
 
+  it('loads an old fix task and pending input that carry no red', () => {
+    const finding = { id: 'F1', text: 'The greeting is wrong', acceptance: null };
+    const input = { id: 'P1', kind: 'defect', source: 'check', text: 'lint failed', file: null };
+    const parsed = WorkflowStateSchema.parse({
+      ...state({ phase: 'implementing' }),
+      tasks: [{ ...task, fix: { cycle: 1, findings: [finding] } }],
+      pendingTriage: { inputs: [input] },
+    });
+
+    expect(parsed.tasks[0]?.fix?.findings).toEqual([finding]);
+    expect(parsed.pendingTriage?.inputs).toEqual([input]);
+  });
+
   it('keeps a seat switch record, a seat-sourced park and an automatic offer', () => {
     const parsed = WorkflowStateSchema.parse({
       ...state({

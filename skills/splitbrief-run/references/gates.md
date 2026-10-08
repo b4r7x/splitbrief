@@ -19,7 +19,7 @@ Record each command and source in plan.json and the plan block. Run commands fro
 - With workflow.review: end, ordinary briefs run no stack gates. The final review runs all enabled gates and registered checks.
 - With workflow.review: task, each task runs related tests and due checks, then its scheduled review. The final review runs all gates.
 - Final gate failures enter triage and create fix tasks; no completed brief reopens. A fix task reruns the stage and checks of the red it answers at its brief gate, so a red fix retries through its ladder.
-- A test command that cannot select related tests is skipped by the brief gate. The final review runs it.
+- A test command that cannot select related tests is skipped by an ordinary brief gate. The gate of a fix task that answers a test red runs it on the full suite. The final review runs it.
 - When lint is enabled, format the brief changed files after every hand-back. A formatter failure records a warning.
 - Order: typecheck → lint → test. Stop at the first failing stage; every later stage is recorded `not run`.
 - Capture at most 4096 characters per stage, and keep the test stage's LAST 40 lines — runners print the pass/fail summary last.
@@ -41,7 +41,7 @@ Append every stage to `validation.md` under `## T00N — attempt N` with each co
 
 A stage whose command resolves to nothing is skipped. The columns show the default with the language's own tooling present; the resolution order above still wins over them.
 
-The brief gate's test stage runs only the tests affected by the brief's files and by every file the attempt changed when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config waits for the final review.
+The brief gate's test stage runs only the tests affected by the brief's files and by every file the attempt changed when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config waits for the final review, except at the gate of a fix task that answers a test red, which runs it on the full suite.
 
 | Language | test narrowing | allowed commands |
 |---|---|---|

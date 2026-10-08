@@ -7,6 +7,13 @@ const FIX_BRIEF_NO_CHANGE_RULE =
 
 export type FixFinding = NonNullable<Task['fix']>['findings'][number];
 
+/** A fence longer than any backtick run in the output, so the output cannot close it. */
+function fenced(output: string): string {
+  const longest = (output.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 2);
+  const fence = '`'.repeat(longest + 1);
+  return `${fence}\n${output}\n${fence}`;
+}
+
 export function fixBriefDescription(intent: string, findings: readonly FixFinding[]): string {
   const outputs = new Set(findings.flatMap((finding) => finding.output ?? []));
   return [
@@ -17,7 +24,7 @@ export function fixBriefDescription(intent: string, findings: readonly FixFindin
           finding.acceptance === null ? '' : `\nAcceptance: ${finding.acceptance}`
         }`,
     ),
-    ...[...outputs].map((output) => `Failing output:\n\`\`\`\n${output}\n\`\`\``),
+    ...[...outputs].map((output) => `Failing output:\n${fenced(output)}`),
     FIX_BRIEF_EVIDENCE_RULE,
     FIX_BRIEF_NO_CHANGE_RULE,
   ].join('\n\n');

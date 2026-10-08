@@ -497,7 +497,7 @@ validation: {
 | `typecheck` | boolean | `true` | Master switch for the type-checking stage |
 | `lint` | boolean | `true` | Master switch for the linting stage |
 | `test` | boolean | `true` | Master switch for the test stage |
-| `testCommand` | string | — | The escape hatch for the test stage: an argv-style command that runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. The brief gate skips this command because it cannot select related tests. When omitted, the brief gate selects related tests through the stack. |
+| `testCommand` | string | — | The escape hatch for the test stage: an argv-style command that runs **as-is** (the full suite) — shell operators and environment expansion are not interpreted, and no test-file argument is appended. An ordinary brief gate skips this command because it cannot select related tests. The gate of a fix task that answers a test red runs it on the full suite. When omitted, the brief gate selects related tests through the stack. |
 | `typecheckCommand` | string | — | The escape hatch for the type-checking stage (e.g. `cargo check`, `go vet ./...`, `mypy src/`). Same as-is semantics as `testCommand`. |
 | `lintCommand` | string | — | The escape hatch for the linting stage (e.g. `cargo clippy --no-deps`, `ruff check`). Same as-is semantics as `testCommand`. |
 | `testPattern` | string | — | Optional glob for finding test files (e.g. `*_test.go`, `test_*.py`). Overrides the stack's own patterns. |
@@ -664,7 +664,7 @@ workflow:
 ```
 
 Run related tests and due checks after each task, then review that task. The final review runs all gates.
-A test command that cannot select related tests is skipped until the final review. The final review runs that command on the full suite:
+A test command that cannot select related tests is skipped at an ordinary brief gate. The gate of a fix task that answers a test red runs it on the full suite. The final review always runs that command on the full suite:
 
 ```yaml
 workflow:
