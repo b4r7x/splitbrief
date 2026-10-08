@@ -44,12 +44,16 @@ function promptIds(prompt: string, label: string): string[] {
     .filter((id) => id !== '');
 }
 
-/** The verdict that passes `scope`: every task met, every criterion passed, no findings. */
-export function passingVerdict(scope: ReviewScope): ReviewVerdict {
+/** The answer that passes `scope`: every task met, every criterion passed, no findings. */
+export function passingVerdict(scope: ReviewScope): ReviewAnswer {
   return {
     tasks: scope.taskIds.map((id) => ({ id: taskId(id), plan: 'met' as const, note: '' })),
     criteria: scope.criterionIds.map((id) => ({ id, status: 'pass' as const, evidence: '' })),
     findings: [],
+    fixTasks: [],
+    rejected: [],
+    verify: [],
+    ask: null,
   };
 }
 
@@ -58,16 +62,10 @@ export function passingVerdict(scope: ReviewScope): ReviewVerdict {
  * id the prompt's Required Results lists, each met and passed, no findings.
  */
 export function passingReviewVerdict(prompt: string): ReviewAnswer {
-  return {
-    ...passingVerdict({
-      taskIds: promptIds(prompt, 'Task ids:'),
-      criterionIds: promptIds(prompt, 'Criterion ids:'),
-    }),
-    fixTasks: [],
-    rejected: [],
-    verify: [],
-    ask: null,
-  };
+  return passingVerdict({
+    taskIds: promptIds(prompt, 'Task ids:'),
+    criterionIds: promptIds(prompt, 'Criterion ids:'),
+  });
 }
 
 /** A passing verdict carrying one blocking finding, so the review fails. */
