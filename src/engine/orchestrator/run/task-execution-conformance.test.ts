@@ -3,7 +3,7 @@ import { rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeCopyingIsolation, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -53,7 +53,12 @@ describe('workspace acquisition conformance', () => {
     });
     const stopped = new AbortController();
     stopped.abort();
-    const wctx = makeWctx({ projectDir, sessionId, signal: stopped.signal });
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      signal: stopped.signal,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+    });
     const opening = vi.spyOn(wctx.isolation, 'open');
     const state = makeImplState([]);
     await expect(
@@ -85,7 +90,11 @@ describe('workspace acquisition conformance', () => {
     const feature = 'restart in the workspace';
     writeFileSync(join(projectDir, 'source.txt'), 'checkout\n');
     writeFileSync(join(projectDir, 'deleted.txt'), 'pre-task deletion input\n');
-    const wctx = makeWctx({ projectDir, sessionId });
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+    });
     const opened = await wctx.isolation.open({ config: wctx.config });
     writeFileSync(join(opened.projectDir, 'source.txt'), 'pre-task input\n');
     writeFileSync(join(opened.projectDir, 'earlier.txt'), 'earlier task\n');
@@ -164,7 +173,11 @@ describe('workspace acquisition conformance', () => {
     const sessionId = 'run-baseline-failure';
     writeFileSync(join(projectDir, 'source.txt'), 'baseline input');
     vi.mocked(writeFile).mockRejectedValueOnce(new Error('baseline storage failed once'));
-    const wctx = makeWctx({ projectDir, sessionId });
+    const wctx = makeWctx({
+      projectDir,
+      sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+    });
     const opening = vi.spyOn(wctx.isolation, 'open');
     const state = makeImplState([]);
     await expect(

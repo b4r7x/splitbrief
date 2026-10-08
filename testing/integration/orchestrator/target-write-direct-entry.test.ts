@@ -8,6 +8,7 @@ import { runImplementation } from '../../../src/engine/orchestrator/task/run-imp
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import {
+  makeCopyingIsolation,
   makeBusRecorder,
   makeImplementer,
   makeWctx,
@@ -58,7 +59,13 @@ describe('isolated implementation entry', () => {
     });
 
     const result = await runImplementation({
-      wctx: makeWctx({ projectDir, sessionId: TARGET_WRITE_SESSION_ID, implementer, bus }),
+      wctx: makeWctx({
+        projectDir,
+        sessionId: TARGET_WRITE_SESSION_ID,
+        implementer,
+        bus,
+        isolation: makeCopyingIsolation({ projectDir, sessionId: TARGET_WRITE_SESSION_ID }),
+      }),
       task,
       state: makeImplState([task]),
       taskStartSnapshot: snapshot,
@@ -92,7 +99,12 @@ describe('isolated implementation entry', () => {
     blockEvidenceWrites({ ref, keepReadable: true });
 
     const result = await runImplementation({
-      wctx: makeWctx({ projectDir, sessionId: TARGET_WRITE_SESSION_ID, implementer }),
+      wctx: makeWctx({
+        projectDir,
+        sessionId: TARGET_WRITE_SESSION_ID,
+        implementer,
+        isolation: makeCopyingIsolation({ projectDir, sessionId: TARGET_WRITE_SESSION_ID }),
+      }),
       task,
       state: makeImplState([task]),
       taskStartSnapshot: snapshot,

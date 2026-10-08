@@ -225,6 +225,7 @@ describe('runRetryStep', () => {
     const wctx = makeWctx({
       projectDir,
       sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
       implementer: makeImplementer({
         capabilities: { writesFiles: 'extracted-code' },
         implement: async ({ projectDir: dir }) => {

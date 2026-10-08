@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import {
+  makeCopyingIsolation,
   makeBusRecorder,
   makeImplementer,
   makePlanner,
@@ -292,6 +293,7 @@ async function review(opts: {
   if (state === null) throw new Error('expected the run state to persist');
   const wctx = makeWctx({
     ...ref,
+    isolation: makeCopyingIsolation({ projectDir: ref.projectDir, sessionId: ref.sessionId }),
     config: opts.config,
     bus,
     planner: reviewer,

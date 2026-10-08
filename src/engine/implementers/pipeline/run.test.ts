@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,16 +38,19 @@ vi.mock('../isolation/checkout-audit.js', async (importOriginal) => {
 
 let projectDir: string;
 
-beforeEach(() => {
+function setupProject(): void {
   projectDir = createTempDir('impl-base');
   createTestGitRepo(projectDir);
-});
+}
 
-afterEach(() => {
+function cleanupProject(): void {
   cleanupTempDir(projectDir);
-});
+}
 
 describe('createImplementerBase — language-aware system preamble', () => {
+  beforeAll(setupProject);
+  afterAll(cleanupProject);
+
   it('uses Python system guidance when a Python language context is provided', async () => {
     let seenPrompt = '';
     let seenSystemPreamble = '';
@@ -97,6 +100,9 @@ describe('createImplementerBase — language-aware system preamble', () => {
 });
 
 describe('createImplementerBase — continuation', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   it('keeps the brief body and trails the partial, the changed files and the steer', async () => {
     let seenPrompt = '';
     const invoke = vi.fn().mockImplementation(async (opts) => {
@@ -233,6 +239,9 @@ describe('createImplementerBase — continuation', () => {
 });
 
 describe('createImplementerBase — prompt write contracts', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   it('gives direct-write implementers the isolation editing and validation contract', async () => {
     let seenPrompt = '';
     const invoke = vi.fn().mockImplementation(async (opts) => {
@@ -366,6 +375,9 @@ describe('createImplementerBase — prompt write contracts', () => {
 });
 
 describe('createImplementerBase — typed implementer report', () => {
+  beforeAll(setupProject);
+  afterAll(cleanupProject);
+
   const doneReport = {
     status: 'done',
     filesChanged: ['src/hello.ts'],
@@ -516,6 +528,9 @@ describe('createImplementerBase — typed implementer report', () => {
 });
 
 describe('createImplementerBase — non-extracting backends (detectChanges)', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   it('ignores pre-existing dirty files and succeeds only when the backend writes a new file', async () => {
     const prePath = join(projectDir, 'src/pre-existing.ts');
     mkdirSync(join(projectDir, 'src'), { recursive: true });
@@ -617,6 +632,9 @@ describe('createImplementerBase — non-extracting backends (detectChanges)', ()
 });
 
 describe('createImplementerBase — wrote-nothing warning', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   it('publishes exactly one coded warning naming the runner and the task when the implementer wrote nothing', async () => {
     const { bus, events } = makeBusRecorder();
     const publisher = createImplementerPublisher(bus);
@@ -734,6 +752,9 @@ describe('createImplementerBase — wrote-nothing warning', () => {
 });
 
 describe('createImplementerBase — retry', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   it.each([
     ['local', 2, 'tsc failed', 0.4, 'Previous attempts failed.'],
     ['consult', 1, 'lint failed', 0.2, 'Your previous attempt had an error.'],
@@ -776,6 +797,9 @@ describe('createImplementerBase — retry', () => {
 });
 
 describe('createImplementerBase — thrown provider auth failures', () => {
+  beforeAll(setupProject);
+  afterAll(cleanupProject);
+
   it("thrown 401 provider error yields outcome 'unauthenticated' with the provider detail preserved", async () => {
     const { streamError } = await import('../../streaming/stream-errors.js');
     const providerDetail =
@@ -823,12 +847,14 @@ describe('createImplementerBase — isolation audit', () => {
   let isolationDir: string;
 
   beforeEach(() => {
+    setupProject();
     isolationDir = createTempDir('impl-base-isolation');
     createTestGitRepo(isolationDir);
   });
 
   afterEach(() => {
     cleanupTempDir(isolationDir);
+    cleanupProject();
   });
 
   function isolatedCall() {
@@ -983,6 +1009,9 @@ describe('createImplementerBase — isolation audit', () => {
 });
 
 describe('createImplementerBase — git writes during an in-place call (workflow.isolation: none)', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   function inPlaceCall(extra: Partial<ImplementerOptions> = {}) {
     return {
       task: makeTask(),
@@ -1104,6 +1133,9 @@ describe('createImplementerBase — git writes during an in-place call (workflow
 });
 
 describe('createImplementerBase — a staged copy inside the checkout', () => {
+  beforeEach(setupProject);
+  afterEach(cleanupProject);
+
   it("halts on git add from the staged copy, which writes the checkout's index", async () => {
     const staged = join(projectDir, '.splitbrief', 'sessions', 's1', 'stage-1', 'workspace');
     mkdirSync(staged, { recursive: true });
@@ -1131,6 +1163,7 @@ describe('createImplementerBase — git writes during a run worktree call', () =
   let worktreeDir: string;
 
   beforeEach(() => {
+    setupProject();
     worktreeDir = createTempDir('impl-base-worktree');
     execSync(`git worktree add -q -b splitbrief/run-1 ${worktreeDir}`, {
       cwd: projectDir,
@@ -1140,6 +1173,7 @@ describe('createImplementerBase — git writes during a run worktree call', () =
 
   afterEach(() => {
     cleanupTempDir(worktreeDir);
+    cleanupProject();
   });
 
   async function callThat(act: () => void) {

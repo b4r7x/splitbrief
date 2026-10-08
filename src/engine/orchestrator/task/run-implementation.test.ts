@@ -199,6 +199,7 @@ async function runIsolatedDirectScenario(approval: 'approved' | 'rejected'): Pro
   const wctx = makeWctx({
     projectDir,
     sessionId: 't028-session-must-not-reach-child',
+    isolation: makeCopyingIsolation({ projectDir, sessionId: 't028-session-must-not-reach-child' }),
     config,
     callbacks,
     implementer,
@@ -265,6 +266,7 @@ describe('runImplementation configured custom contracts', () => {
       const wctx = makeWctx({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({
           approval: { feedRejectionsToPlanner: false },
         }),
@@ -330,6 +332,7 @@ describe('runImplementation configured custom contracts', () => {
     const wctx = makeWctx({
       projectDir,
       sessionId,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
       implementer: makeImplementer({
         capabilities: { writesFiles: 'extracted-code' },
         implement: async (opts: ImplementerOptions) => {
@@ -404,6 +407,10 @@ describe('runImplementation configured custom contracts', () => {
     const wctx = makeWctx({
       projectDir,
       sessionId: 't028-session-must-not-reach-child',
+      isolation: makeCopyingIsolation({
+        projectDir,
+        sessionId: 't028-session-must-not-reach-child',
+      }),
       config: makeNoValidationConfig(),
       implementer,
     });

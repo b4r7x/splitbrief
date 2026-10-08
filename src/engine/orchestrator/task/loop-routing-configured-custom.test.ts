@@ -7,6 +7,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
+  makeCopyingIsolation,
   makeCallbacks,
   makeBusRecorder,
   makeWctx,
@@ -300,6 +301,7 @@ describe('runTaskLoop configured custom routing', { timeout: 90_000 }, () => {
         makeWctx({
           projectDir,
           sessionId,
+          isolation: makeCopyingIsolation({ projectDir, sessionId }),
           config,
           callbacks,
           bus,

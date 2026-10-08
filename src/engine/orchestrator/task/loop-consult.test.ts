@@ -7,6 +7,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
+  makeCopyingIsolation,
   makeCallbacks,
   makeBusRecorder,
   makeImplementer,
@@ -127,6 +128,7 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       makeWctx({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         config: makeNoValidationConfig({
           workflow: { review: 'task' },
           validation: { test: true },
