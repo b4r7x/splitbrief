@@ -56,9 +56,6 @@ export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
       apiKey: pair.apiKey,
     },
     validation: {
-      typecheck: true,
-      lint: false,
-      test: true,
       testCommand: 'npm test',
     },
     workflow: {

@@ -16,9 +16,6 @@ implementer:
   apiKey: eval-fixture-key
   model: claude-haiku-4-5-20251001
 validation:
-  typecheck: true
-  lint: false
-  test: true
   testCommand: npm test
 workflow:
   approve: none

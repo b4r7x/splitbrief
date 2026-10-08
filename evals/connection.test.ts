@@ -96,7 +96,7 @@ function localImplementerConfig(
       model: 'local-model',
       apiKey: connection.apiKey,
     },
-    validation: { typecheck: true, lint: false, test: true, testCommand: 'npm test' },
+    validation: { testCommand: 'npm test' },
     workflow: { maxRetries: 1, mode: 'quick' },
   };
 }
