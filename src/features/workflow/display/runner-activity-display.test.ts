@@ -57,6 +57,17 @@ describe('runnerActivityLedgerItem', () => {
     ).toMatchObject({ label: 'LIST', value: 'src/features', fitMode: 'start' });
   });
 
+  // Review render (red gate, 60 columns): a prose READ cut from the left read
+  // `…ing the typecheck failure and the pending input`.
+  it('keeps the head of a prose value under a file label and the tail of a path', () => {
+    const read = (label: string) =>
+      runnerActivityLedgerItem({ stage: 'completed', kind: 'read', label }).fitMode;
+
+    expect(read('Reading the typecheck failure and the pending input')).toBe('end');
+    expect(read('reading src/features/workflow/display/flow.tsx')).toBe('start');
+    expect(read('reading /Users/me/My Projects/a.ts')).toBe('start');
+  });
+
   it('keeps compound or unrecognized commands as raw RUN', () => {
     expect(
       runnerActivityLedgerItem({

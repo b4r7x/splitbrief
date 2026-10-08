@@ -354,9 +354,15 @@ const firstBriefAfterPlanProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
+  // A plan of real length, so the settled Plan row carries a duration past a minute.
   events: [
-    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-    { type: 'user_message', ts: FIXED_TS + 10, phase: 'planning', text: WORKFLOW_FEATURE },
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS - 720_000,
+      phase: 'planning',
+      feature: WORKFLOW_FEATURE,
+    },
+    { type: 'user_message', ts: FIXED_TS - 719_990, phase: 'planning', text: WORKFLOW_FEATURE },
     {
       type: 'artifact_written',
       ts: FIXED_TS + 15_000,

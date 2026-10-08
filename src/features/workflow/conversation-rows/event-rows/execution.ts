@@ -6,7 +6,12 @@ import type { ConversationRowBlock, RowBuildContext } from '../types.js';
 import { sanitizeRowDisplayText } from '../row-format/text.js';
 import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
-import { fullSuiteRow, validationStageNotes, validationSummarySegments } from '../event-format.js';
+import {
+  fullSuiteRow,
+  fullSuiteTone,
+  validationStageNotes,
+  validationSummarySegments,
+} from '../event-format.js';
 import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
 
 /** ` (+a -b)` when the call counted its lines; nothing when its baseline could not. */
@@ -157,7 +162,7 @@ export function fullSuiteRowBlock(
     keyPrefix,
     text: fullSuiteRow(event),
     width,
-    tone: 'textDim',
+    tone: fullSuiteTone(event),
   });
 }
 

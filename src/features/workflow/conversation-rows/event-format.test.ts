@@ -5,6 +5,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
   formatTaskStartedValue,
   fullSuiteRow,
+  fullSuiteTone,
   validationStageNotes,
   validationSummarySegments,
 } from './event-format.js';
@@ -195,6 +196,23 @@ describe('fullSuiteRow', () => {
     ).toBe('Pre-review suite · npm test · failed 3.0s');
   });
 
+  // Review render (red gate): `failed 16.0s` wore the same dim as the `not run` rows under it.
+  it('paints a failed stage as an error and leaves running, passed and not run dim', () => {
+    const suite = {
+      type: 'full_suite',
+      ts: 0,
+      phase: 'final-review',
+      stage: 'typecheck',
+      command: 'npx tsc --noEmit',
+      moment: 'pre-review',
+    } as const;
+
+    expect(fullSuiteTone({ ...suite, status: 'done', passed: false })).toBe('error');
+    expect(fullSuiteTone({ ...suite, status: 'done', passed: true })).toBe('textDim');
+    expect(fullSuiteTone({ ...suite, status: 'running' })).toBe('textDim');
+    expect(fullSuiteTone({ ...suite, status: 'not-run' })).toBe('textDim');
+  });
+
   it('says what a base re-run verdict means: the red was there before the run, or it was not', () => {
     const rerun = {
       type: 'full_suite',
@@ -213,6 +231,8 @@ describe('fullSuiteRow', () => {
     expect(fullSuiteRow({ ...rerun, passed: true })).toBe(
       'Base re-run · npm test -- src/legacy.test.ts · passes at the run base 2.0s',
     );
+    expect(fullSuiteTone({ ...rerun, passed: false })).toBe('warning');
+    expect(fullSuiteTone({ ...rerun, passed: true })).toBe('textDim');
   });
 });
 
