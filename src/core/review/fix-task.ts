@@ -8,6 +8,7 @@ const FIX_BRIEF_NO_CHANGE_RULE =
 export type FixFinding = NonNullable<Task['fix']>['findings'][number];
 
 export function fixBriefDescription(intent: string, findings: readonly FixFinding[]): string {
+  const outputs = new Set(findings.flatMap((finding) => finding.output ?? []));
   return [
     intent,
     ...findings.map(
@@ -16,6 +17,7 @@ export function fixBriefDescription(intent: string, findings: readonly FixFindin
           finding.acceptance === null ? '' : `\nAcceptance: ${finding.acceptance}`
         }`,
     ),
+    ...[...outputs].map((output) => `Failing output:\n\`\`\`\n${output}\n\`\`\``),
     FIX_BRIEF_EVIDENCE_RULE,
     FIX_BRIEF_NO_CHANGE_RULE,
   ].join('\n\n');

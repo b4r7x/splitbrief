@@ -246,8 +246,14 @@ describe('pre-review checks', () => {
 
     expect(result.unrunnable).toEqual([]);
     expect(result.defects).toHaveLength(1);
-    expect(result.defects[0]).toMatchObject({ id: 'P1', kind: 'defect', source: 'check' });
+    expect(result.defects[0]).toMatchObject({
+      id: 'P1',
+      kind: 'defect',
+      source: 'check',
+      checkIds: ['K2'],
+    });
     expect(result.defects[0]?.text).toContain('K2');
+    expect(result.defects[0]?.output).toContain('error TS1005');
   });
 
   it('attributes a required check diagnostic to the file it names and its last changer', async () => {
@@ -339,6 +345,7 @@ describe('pre-review checks', () => {
           {
             stage: 'test',
             passed: false,
+            error: '--- FAIL: TestFetch/site.example',
             failingTests: [{ file: '', name, message: 'connection failed' }],
           },
         ],
@@ -353,6 +360,8 @@ describe('pre-review checks', () => {
         source: 'check',
         file: null,
         text: 'The test full-suite check before review failed: TestFetch/site.example — connection failed. No task changed it.',
+        stage: 'test',
+        output: '--- FAIL: TestFetch/site.example',
       },
     ]);
   });

@@ -48,9 +48,16 @@ export async function runBriefGate(opts: {
   const { wctx, task, changedFiles } = opts;
   let state = opts.state;
   const track = opts.setTrackedState ?? (() => {});
+  // A fix task runs the red it answers again on top of what its cadence runs.
+  const fixed = task.fix?.findings ?? [];
+  const fixStages = fixed.flatMap((finding) =>
+    finding.stage === undefined ? [] : [finding.stage],
+  );
+  const fixCheckIds = new Set(fixed.flatMap((finding) => finding.checkIds ?? []));
   const cadence = wctx.config.workflow.review ?? 'end';
-  const stages: ValidationStage[] =
-    cadence === 'task' && wctx.config.validation.test ? ['test'] : [];
+  const stages: ValidationStage[] = [
+    ...new Set<ValidationStage>([...(cadence === 'task' ? ['test' as const] : []), ...fixStages]),
+  ].filter((stage) => wctx.config.validation[stage]);
   const due = new Set(dueCriterionIds(state, task.id));
   const checkIds = [
     ...new Set([
@@ -65,6 +72,7 @@ export async function runBriefGate(opts: {
               .flatMap((criterion) => criterion.checkIds),
           ]
         : []),
+      ...fixCheckIds,
       ...(opts.checkIds ?? []),
     ]),
   ];
@@ -108,9 +116,14 @@ export async function runBriefGate(opts: {
       ...validationOptions,
       phase: state.phase,
       stages,
-      changedFiles,
+      changedFiles: [
+        ...new Set([
+          ...changedFiles,
+          ...fixed.flatMap((finding) => (finding.file === undefined ? [] : [finding.file])),
+        ]),
+      ],
       base: runBaseOf(wctx, state),
-      testMode: 'related',
+      testMode: fixStages.includes('test') ? 'check' : 'related',
     });
     await recordCheckRuns({ ...wctx, state, task, validation: validationResults });
     const checked = await runTaskChecks({
@@ -130,7 +143,8 @@ export async function runBriefGate(opts: {
   const failedChecks = runs.filter((run) =>
     selected.has(run.checkId)
       ? run.status !== 'pass'
-      : run.status === 'fail' && registry.get(run.checkId)?.required === true,
+      : run.status === 'fail' &&
+        (fixCheckIds.has(run.checkId) || registry.get(run.checkId)?.required === true),
   );
   const acceptance: ValidationAcceptance = {
     ...stageAcceptance,

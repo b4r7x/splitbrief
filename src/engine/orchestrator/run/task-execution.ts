@@ -172,7 +172,11 @@ async function recheckMergedCandidate(
   };
   const ledger = readEvidenceLedger({ projectDir: wctx.projectDir, sessionId: wctx.sessionId });
   const registry = checkRegistry({ plan: state.plan, tasks: state.tasks });
-  const pushFiles = (files: readonly (string | null)[], text: string): void => {
+  const pushFiles = (
+    files: readonly (string | null)[],
+    text: string,
+    red: Pick<TriageInput, 'stage' | 'checkIds' | 'output'>,
+  ): void => {
     for (const file of files) {
       const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
       inputs.push({
@@ -181,6 +185,7 @@ async function recheckMergedCandidate(
         source: 'check',
         file,
         text: `${text} ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
+        ...red,
       });
     }
   };
@@ -193,7 +198,7 @@ async function recheckMergedCandidate(
         : check?.kind === 'test'
           ? [normalizeProjectRelativePath(check.value)]
           : [null];
-    pushFiles(files, text);
+    pushFiles(files, text, { checkIds: [run.checkId], output: run.output });
   };
   const collectRuns = (owner: string, runs: readonly CheckRunResult[]) => {
     const required = classifyRequiredChecks(
@@ -229,10 +234,15 @@ async function recheckMergedCandidate(
     if (!acceptance.accepted) {
       const text = `${task.id} validation: ${formatValidationError(results, acceptance)}`;
       failures.push(text);
-      const named = results
-        .filter((result) => !result.passed && acceptance.blockingStages.includes(result.stage))
-        .flatMap((result) => failingFilesOf(result, wctx.workspaceDir));
-      pushFiles(named.length > 0 ? [...new Set(named)] : [null], text);
+      for (const result of results) {
+        if (result.passed || !acceptance.blockingStages.includes(result.stage)) continue;
+        const named = failingFilesOf(result, wctx.workspaceDir);
+        const output = result.error ?? result.output;
+        pushFiles(named.length > 0 ? named : [null], text, {
+          stage: result.stage,
+          ...(output !== undefined && { output }),
+        });
+      }
     }
     const runs = await runChecks(
       (task.checks ?? []).map((check) => check.id),

@@ -188,11 +188,25 @@ function findingFor(
 ): FixFinding | undefined {
   const finding = review?.verdict.findings.find((candidate) => candidate.id === id);
   if (finding !== undefined) {
-    return { id: finding.id, text: finding.text, acceptance: finding.acceptance };
+    return {
+      id: finding.id,
+      text: finding.text,
+      acceptance: finding.acceptance,
+      ...(finding.file !== null && { file: finding.file }),
+      ...(finding.checkIds !== null && { checkIds: finding.checkIds }),
+    };
   }
   const input = inputs.find((candidate) => candidate.id === id);
-  if (input !== undefined) return { id: input.id, text: input.text, acceptance: null };
-  return undefined;
+  if (input === undefined) return undefined;
+  return {
+    id: input.id,
+    text: input.text,
+    acceptance: null,
+    ...(input.file !== null && { file: input.file }),
+    ...(input.stage !== undefined && { stage: input.stage }),
+    ...(input.checkIds !== undefined && { checkIds: input.checkIds }),
+    ...(input.output !== undefined && { output: input.output }),
+  };
 }
 
 function maxPlanBatch(tasks: readonly Task[]): number {

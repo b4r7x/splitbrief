@@ -215,11 +215,71 @@ describe('review fix work', () => {
     expect(applied.state.tasks[0]).toEqual(state.tasks[0]);
     expect(applied.tasks[0]?.fix).toEqual({
       cycle: 1,
-      findings: [{ id: 'F1', text: FAILING_FINDING.text, acceptance: FAILING_FINDING.acceptance }],
+      findings: [
+        {
+          id: 'F1',
+          text: FAILING_FINDING.text,
+          acceptance: FAILING_FINDING.acceptance,
+          file: FAILING_FINDING.file,
+        },
+      ],
     });
     expect(loadState(ref)?.tasks[1]?.fix?.cycle).toBe(1);
     const tasksMarkdown = readSpecFile(ref, TASKS_FILE) ?? '';
     expect(tasksMarkdown).toContain('planner: claude-code');
     for (const task of applied.state.tasks) expect(tasksMarkdown).toContain(task.id);
+  });
+
+  it('carries the gate red an input answers onto the fix task and its brief', () => {
+    const ref = setupProject(dirs);
+    const state = triageState();
+    saveState(ref, state);
+    const inputs = [
+      {
+        id: 'P1',
+        kind: 'defect' as const,
+        source: 'check' as const,
+        file: 'src/shared/widget.test.ts',
+        text: 'The test full-suite check before review failed. Last changed by T001.',
+        stage: 'test' as const,
+        output: 'FAIL src/shared/widget.test.ts > rethrows',
+      },
+      {
+        id: 'P2',
+        kind: 'defect' as const,
+        source: 'check' as const,
+        file: null,
+        text: 'Required check K1 failed: broken No task changed it.',
+        checkIds: ['K1'],
+        output: 'broken',
+      },
+    ];
+    const applied = applyTriage(
+      {
+        ...ref,
+        workspaceDir: ref.projectDir,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+      },
+      state,
+      state.review,
+      inputs,
+      { ...fixResult(), fixTasks: [{ ...fixTaskSpec(), findingIds: ['P1', 'P2'] }] },
+    );
+    expect(applied.tasks[0]?.fix?.findings).toEqual([
+      {
+        id: 'P1',
+        text: inputs[0]?.text,
+        acceptance: null,
+        file: 'src/shared/widget.test.ts',
+        stage: 'test',
+        output: 'FAIL src/shared/widget.test.ts > rethrows',
+      },
+      { id: 'P2', text: inputs[1]?.text, acceptance: null, checkIds: ['K1'], output: 'broken' },
+    ]);
+    expect(applied.tasks[0]?.description).toContain(
+      'Failing output:\n```\nFAIL src/shared/widget.test.ts > rethrows\n```',
+    );
+    expect(applied.tasks[0]?.description).toContain('Failing output:\n```\nbroken\n```');
+    expect(loadState(ref)?.tasks[1]?.fix?.findings).toEqual(applied.tasks[0]?.fix?.findings);
   });
 });

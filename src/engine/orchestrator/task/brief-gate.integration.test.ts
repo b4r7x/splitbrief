@@ -117,6 +117,76 @@ describe('brief gate', () => {
     }
   });
 
+  it('runs the red a fix task answers again at end cadence, and a red fails the gate', async () => {
+    const ref = setup();
+    const task = makeTask({
+      id: 'T004',
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: 'P1',
+            text: 'The test full-suite check before review failed.',
+            acceptance: null,
+            file: 'src/own.test.ts',
+            stage: 'test',
+            output: 'FAIL src/own.test.ts > adds',
+          },
+          {
+            id: 'P2',
+            text: 'Plan check K1 failed.',
+            acceptance: null,
+            checkIds: ['K1'],
+            output: 'broken',
+          },
+        ],
+      },
+    });
+    const plan = {
+      summary: 'fix',
+      decisions: [],
+      validation: null,
+      criteria: [],
+      checks: [{ id: 'K1', kind: 'cmd' as const, value: 'node --version', required: false }],
+    };
+    const runCommand = vi
+      .fn()
+      .mockRejectedValue(processError.exitCode({ command: 'node', code: 1, stderr: 'broken' }));
+    const validator = {
+      ...createValidator(),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
+      runValidation: vi
+        .fn()
+        .mockResolvedValue([
+          { stage: 'test', passed: false, error: 'FAIL src/own.test.ts > adds' },
+        ]),
+    };
+    const result = await runBriefGate({
+      wctx: makeWctx({
+        ...ref,
+        validator,
+        config: makeNoValidationConfig({ validation: { test: true, lint: false } }),
+      }),
+      state: makeImplState([task], { plan }),
+      task,
+      changedFiles: ['src/own.ts'],
+      taskStartSnapshot: null,
+      runCommand,
+    });
+    expect(validator.runValidation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stages: ['test'],
+        changedFiles: ['src/own.ts', 'src/own.test.ts'],
+        testMode: 'check',
+      }),
+    );
+    expect(runCommand).toHaveBeenCalledTimes(1);
+    expect(result.acceptance.accepted).toBe(false);
+    expect(result.acceptance.blockingStages).toEqual(['test']);
+    expect(result.error).toMatch(/FAIL src\/own\.test\.ts > adds/);
+    expect(result.error).toMatch(/check K1 did not pass \(fail\)/);
+  });
+
   it('hands its gate the run base the workspace recorded', async () => {
     const ref = setup();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/own.ts'] });

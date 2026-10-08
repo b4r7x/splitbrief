@@ -66,9 +66,6 @@ export function buildPreReviewInputs(input: {
     tasks: input.tasks,
     ledger: input.ledger,
   });
-  const push = (file: string | null, text: string): void => {
-    inputs.push({ id: `P${inputs.length + 1}`, kind: 'defect', source: 'check', file, text });
-  };
   for (const run of input.failed) {
     const check = input.registry.get(run.checkId);
     const named = failingFilesFromOutput(run.output, input.workspaceDir);
@@ -81,12 +78,17 @@ export function buildPreReviewInputs(input: {
     for (const file of files) {
       const owner =
         file === null ? undefined : lastTaskChangingFile(input.ledger, input.tasks, file);
-      push(
+      inputs.push({
+        id: `P${inputs.length + 1}`,
+        kind: 'defect',
+        source: 'check',
         file,
-        `Required check ${run.checkId} failed: ${run.output} ${
+        text: `Required check ${run.checkId} failed: ${run.output} ${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
-      );
+        checkIds: [run.checkId],
+        output: run.output,
+      });
     }
   }
   return inputs;

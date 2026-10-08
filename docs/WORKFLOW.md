@@ -114,6 +114,10 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every gate and check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built. Without an ask, every blocking finding that is not unverified and every pending input has exactly one fix, rejection or verification. Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The gates and the reviewer run again after the fixes.
 
+A red at the final review never reopens a finished brief. The reviewer writes the fix work, and each fix task carries the stage, checks, files and output of the red it answers. Its brief gate runs them again, so a red fix fails the task and enters the ladder (local retry with the exact errors, then the consult) before a fix cycle is spent on another full suite and review. Why: one decider (the reviewer) and one path; lane J lost the targeted recheck, not the reopen.
+
+The fields live on each finding of `task.fix` (`file`, `stage`, `checkIds`, `output`), copied from the pending input (`TriageInput`) the pre-review or the Apply re-check wrote, or from the reviewer finding's `file` and `checkIds`. The brief gate (`runBriefGate`, `src/engine/orchestrator/task/brief-gate.ts`) adds those stages to the stages its cadence runs. A `test` stage runs in `check` mode on the task's changed files plus the finding files. Those checks run too, and a carried check that fails rejects the brief even when it is optional. The fix brief shows each distinct failing output once (`fixBriefDescription`).
+
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
 
 `REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so the run permits 2 automatic fix cycles; each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. That key selects the cadence (`end` is the default): `end` reviews once after the final brief; `task` also reviews after every brief that passed its validation, scoped to the completed tasks and the criteria whose serving tasks are all done, while the final review still covers everything. A spent cap raises `review-failed`. With a red check or Apply input, it keeps the phase open and offers no Accept as is. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the gates.
@@ -518,6 +522,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       brief-gate selects commands by workflow.review:
         end → no commands
         task → related tests and checks due when this task completes
+        a fix task also runs again the stages and checks of the red it answers
       The formatter runs on this brief's changed files when validation.lint is enabled.
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, one retry)
@@ -537,6 +542,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Each red stage is checked at the run base before the next stage runs.
     The suite stops at the first stage with a new failure. No check runs after it.
     Every new red becomes a pending input for the reviewer. No brief reopens.
+    The input carries the red's stage or check ids and its output.
 
 13. final-review → REVIEW_DONE → complete
     The review seat returns a typed verdict and fix work; SPLITBRIEF derives pass,
@@ -545,8 +551,10 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Apply or Discard closes it. An older run without a workspace closes on pass.
     The same review answer supplies the fix tasks. They are appended
     with new ids and batch = highest plan batch + cycle, one fix cycle is spent,
-    and implementing re-runs them (START_FIX_CYCLE) up to the review cycle cap
-    of 2. After the cap the run halts on review-failed: fix again with a note
+    and implementing runs them (START_FIX_CYCLE) up to the review cycle cap.
+    Each fix task carries its red; its brief gate runs that red again, so a
+    still-red fix retries and consults before the next review. The cap is
+    2. After the cap the run halts on review-failed: fix again with a note
     (+1 cycle), Accept as is when no red check or Apply input blocks it, or end.
 ```
 

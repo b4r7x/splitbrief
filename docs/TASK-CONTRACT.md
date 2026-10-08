@@ -172,7 +172,13 @@ type Task = {
   checkResults?: Array<{ id: string; passed: boolean }>;  // a consult's verify answer, merged per check id
   fix?: {                            // set on a task the review answer appended
     cycle: number;                   // the fix cycle that created it
-    findings: Array<{ id: string; text: string; acceptance: string | null }>;  // the verdict's findings, verbatim
+    findings: Array<{
+      id: string; text: string; acceptance: string | null;  // the finding or input, verbatim
+      file?: string;                 // the file the red or finding names
+      stage?: 'typecheck' | 'lint' | 'test';  // the gate stage that was red
+      checkIds?: string[];           // the checks that were red, or the finding's checks
+      output?: string;               // the captured failing output
+    }>;                              // the brief gate runs the stage and checks again
   };
 };
 ```
@@ -257,7 +263,7 @@ type TriageResult = {
 
 Unless `ask` is set, the answer covers every blocking finding except an unverified finding. It also covers every pending input. Each id appears exactly once in `fixTasks[].findingIds`, `rejected[].findingId` or `verify[].findingId`. Rejections name pending inputs only. Unverified and minor findings never create fix tasks. A verification names registered plan or task checks. A fix task names only known criteria.
 
-SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
+SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`. A finding that answers a gate red also carries its `stage`, `checkIds`, `file` and `output`, from the pending input. The fix task's brief gate runs that stage and those checks again, so a red fix fails the brief and enters the retry ladder. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
 
 A missing `touchedNotSuggested` reason never overturns a passing check. These reasons inform the reviewer. Rejected inputs reach the next review packet. SPLITBRIEF runs `verify` checks before it starts fix work.
 
@@ -502,7 +508,7 @@ type EvidenceLedger = {
 
 A check is one of three kinds. A `test` check runs the named test file or pattern through the validation stage's own resolved command and narrowing. A `cmd` check runs its value as a command: `npm run <script>` is allowed only under an approved plan and only when `package.json` defines the script, and `npx` is allowed only as `npx --no-install <stack tool>`. `checkCommandRefusal` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) decides this; `planApprovesNpmScripts` reads the configured approval level and the run's recorded plan approval, and without approval every other command falls to `unsafeCommandReason`. The plan card lists approved `npm run` checks as confirmations (`planConfirmations`, `src/engine/orchestrator/approval/confirm.ts`). A `render` check runs the user's `validation.render` command — `{id}` is the check's value, one argv element matching `^[a-z0-9-]+$`, and `{out}` is a fresh directory under `<workspace>/.test-artifacts/ui/`, with cwd the workspace; it is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. With no `validation.render` the check is `not-runnable` with `validation.render is not set`.
 
-A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. A required check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A required check that ran and failed reaches the reviewer as a pending `defect` input. The brief gate follows `workflow.review`. End cadence runs no stack gates for ordinary briefs. Task cadence runs related tests and due checks. The final review runs the full suite and all plan and task checks, including renders. The suite stops at the first stage with a new failure. No check runs after it. Every new red reaches the reviewer. Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
+A check's status is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. A required check that cannot run — any status but `pass` or `fail` — halts before the review with `required-checks-unrunnable`, listing every check id; it never becomes a fix task. A required check that ran and failed reaches the reviewer as a pending `defect` input. The brief gate follows `workflow.review`. End cadence runs no stack gates for ordinary briefs. Task cadence runs related tests and due checks. A fix task also runs the stage and checks of the red it answers. The final review runs the full suite and all plan and task checks, including renders. The suite stops at the first stage with a new failure. No check runs after it. Every new red reaches the reviewer. Each run appends one entry to the task's `checks` log; the review packet prints them under `## Checks Log` with every path read outside the workspace.
 
 A `test`, `cmd` or `render` check whose executable is missing is `not-runnable` with `<executable> not found`. It never becomes `fail` or a pending review input.
 
