@@ -457,7 +457,8 @@ Tests follow a hybrid layout driven by **blast radius** — how many top-level f
 
 | Blast radius | Location | Example |
 |---|---|---|
-| ≤ 1 top-level folder | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/drift/analyze.test.ts`, `src/features/workflow/components/header.test.tsx` |
+| ≤ 1 top-level folder, unit test | Colocated next to source (`foo.test.ts` by `foo.ts`) | `src/engine/orchestrator/queue/submit.test.ts`, `src/features/workflow/components/header.test.tsx` |
+| ≤ 1 top-level folder, integration test | Colocated next to source (`<name>.integration.test.ts` by `<name>.ts`) | `src/engine/orchestrator/drift/analyze.integration.test.ts` |
 | ≥ 2 top-level folders | `testing/integration/<layer>/` | `testing/integration/cli/`, `testing/integration/orchestrator/`, `testing/integration/ui/` |
 
 The three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`).
@@ -474,7 +475,7 @@ The three `testing/integration/` subfolders align with the three stable seams: c
 - **Static is a tier.** TS strict + Zod schemas are first-class correctness — no runtime shape tests for Zod schemas, no `expectType<>` games.
 - **Do not test implementation.** No `vi.mock()` on `./` / `../` siblings, no spies on internal module functions, no `toHaveBeenCalledTimes` unless call-count IS the contract. See [TESTING.md](./TESTING.md).
 
-Test discovery is configured in `vitest.config.ts` via `include: ['src/**/*.test.{ts,tsx}', 'scripts/**/*.test.{ts,tsx}', 'testing/integration/**/*.test.{ts,tsx}', 'testing/helpers/**/*.test.{ts,tsx}', 'testing/visual/**/*.test.{ts,tsx}', 'evals/*.test.ts']`. All trees are picked up by a single `npm test`.
+`vitest.config.ts` collects the `src/`, `scripts/`, `testing/`, and `evals/` test roots across three projects. `npm test` runs `unit`. `npm run test:integration` runs `integration` and `workflow-screen`. See [TESTING.md](./TESTING.md#unit-and-integration-tests) for the membership rule.
 
 ## Design decisions
 

@@ -62,8 +62,9 @@ The runner fails closed: a broken gate command is a failed gate, not a zero-coun
 | 55 | `rg -n "buildRunnerUsageLimitRecoveryIssue\|buildRunnerUnauthenticatedRecoveryIssue\|usageLimitDetailFromError\|recordSeatsOfRecord" src` | 0 matches | The deleted seat-recovery names stay deleted under `src/` (test files included). Usage-limit and sign-out halts build through `buildSeatDownIssue`, and the seat switch writes its seat through `recordSeatOfRecord` with a revision check — [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#seat-down) |
 | 56 | `rg -n -F -e dimColor -e ansis.dim -e chalk.dim -e '\x1b[2m' -e '\u001b[2m' src --glob '!**/*.test.ts' --glob '!**/*.test.tsx'` | 0 matches | No faint text. Every secondary colour comes from a readable theme token. |
 | 57 | `rg -l -U "\bimport\s*\{[^}]*\bText\b[^}]*\}\s*from ['\"]ink['\"]" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/components/theme.tsx'` | 0 matches | Only `components/theme.tsx` imports Ink `Text`. Every component uses `ThemeText` to preserve the terminal foreground. |
+| 58 | `tsx scripts/unit-test-launches.ts \| wc -l` | 0 | An integration test builds a real git repository or worktree, drives the run loop or Apply, or launches git. A test that launches a fake CLI or node shim is also an integration test. Unit tests can launch short system tools: `ps`, `diff`, `sleep`, `node -e`, `mkfifo`, or a shell hook. See [TESTING.md](./TESTING.md#unit-and-integration-tests). |
 
-Gates are consolidated here; full rationale for each lives in the linked doc. The runner registers 51 gates, with ids up to `'57'`.
+Gates are consolidated here; full rationale for each lives in the linked doc. The runner registers 52 gates, with ids up to `'58'`.
 
 ### Workflow lifecycle and Markdown invariants
 

@@ -366,7 +366,8 @@ Then, in Claude Code, Cursor, OpenCode, Codex, Copilot, Antigravity, Command Cod
 ```bash
 npm run dev -- start "feature"   # Run with TUI
 npm run dev -- init              # Create config
-npm test                         # Vitest colocated test suite
+npm test                         # Vitest unit project
+npm run test:integration         # git, worktree, run-loop and process tests
 npm run build                    # tsc → dist/
 ```
 

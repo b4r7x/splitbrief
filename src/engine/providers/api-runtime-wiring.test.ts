@@ -162,7 +162,7 @@ beforeEach(() => {
   dispatches.length = 0;
   catalogRequests = [];
   catalogs.clear();
-  projectDir = createTempDir('api-runtime-integration');
+  projectDir = createTempDir('api-runtime-wiring');
   vi.stubGlobal('fetch', catalogFetch);
 });
 

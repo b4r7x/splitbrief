@@ -24,14 +24,14 @@ const secondPriorState = `.${secondPriorMachine}`;
 
 const negativeContractLines = new Map<string, ReadonlySet<string>>([
   [
-    'src/core/identity-contract.test.ts',
+    'src/core/identity-contract.integration.test.ts',
     new Set([
       `'${firstPriorState}', ${negativeMarker}`,
       `'${secondPriorState}', ${negativeMarker}`,
     ]),
   ],
   [
-    'src/engine/runtime-hard-cut.test.ts',
+    'src/engine/runtime-hard-cut.integration.test.ts',
     new Set([
       `'${firstPriorState}', ${negativeMarker}`,
       `'${secondPriorState}', ${negativeMarker}`,

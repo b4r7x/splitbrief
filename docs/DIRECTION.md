@@ -88,7 +88,7 @@ Design goals:
 
 Any function exceeding ~300 lines with 5+ responsibilities must be decomposed. Extract named helpers at the responsibility boundary. The orchestrator is the most-changed code; readability > compactness.
 
-Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `rollback.ts` (snapshot restore in the run workspace after hook denial, retry exhaustion or an interrupted attempt), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.test.ts` (completion/abort/evidence), `step-approval.test.ts`, `step-user-edit.test.ts`, and `step-recovery.test.ts`.
+Canonical example: `src/engine/orchestrator/task/step.ts` was decomposed into focused modules: `pre-task.ts` (pre-hook dispatch, task-start event, snapshot), `run-implementation.ts` (continuation loop, streaming, staging), `attempt-gate.ts` (the protected-write gate over an attempt's changes in the run workspace), `rollback.ts` (snapshot restore in the run workspace after hook denial, retry exhaustion or an interrupted attempt), and `resolve-deps.ts` (dependency resolution). Colocated tests split across `step.integration.test.ts` (completion/abort/evidence), `step-approval.integration.test.ts`, `step-user-edit.integration.test.ts`, and `step-recovery.integration.test.ts`.
 
 ### AD-3: Selector narrowness is performance
 

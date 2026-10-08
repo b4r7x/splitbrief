@@ -138,7 +138,7 @@ Diagnostic checklist:
 - `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
 - API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` (four vitest shards), `e2e-replay` and `smoke` as parallel jobs, and coverage nightly.
+- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` and `integration` (four vitest shards each), `e2e-replay` and `smoke` as parallel jobs, and coverage nightly.
 - Add the nightly coverage job on top with `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) — the superset of both CI workflows.
 
 ### Config load fails with "API key exfiltration risk"

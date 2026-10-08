@@ -110,7 +110,7 @@ describe('CLI integration: resume interrupted session', { timeout: 90_000 }, () 
 
     // The CLI's half: the phase is resumable rather than refused. The brief's own
     // restart — RESET_TASK plus the file restore — happens inside initializeWorkflow
-    // and is asserted in src/engine/orchestrator/run/init.test.ts.
+    // and is asserted in src/engine/orchestrator/run/init.integration.test.ts.
     expect(exitCode).toBe(0);
     expect(stderr).not.toContain('cannot be resumed');
     expect(stdout).toMatch(/Resuming/);

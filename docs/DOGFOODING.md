@@ -42,6 +42,8 @@ The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<i
 
 ## 2. Launch and gates
 
+A brief whose test target is an integration test runs through `npm run test:integration -- <file>`. The pre-review full suite runs `npm test`, which selects only the `unit` project. Integration tests run in `release-check` and CI.
+
 Readability does not depend on tmux settings. SPLITBRIEF maps every token to a readable value at 256 colours.
 Add `set -as terminal-features ',xterm-ghostty:RGB'` only for exact truecolor values inside tmux. Use the outer `$TERM` instead of `xterm-ghostty` when needed.
 

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { defineConfig, type TestProjectInlineConfiguration } from 'vitest/config';
 
 const coverageReportsDirectory = process.env.SPLITBRIEF_COVERAGE_DIR ?? 'coverage/manual';
 const underCoverage = process.env.SPLITBRIEF_COVERAGE_DIR !== undefined;
@@ -10,11 +10,23 @@ const waitBudgetSetup = './testing/helpers/wait-budget.ts';
 
 const workflowScreenIntegration = [
   'testing/integration/ui/workflow-key-ownership.test.tsx',
-  'testing/integration/ui/workflow-attached.test.tsx',
   'testing/integration/ui/workflow-lifecycle.test.tsx',
   'testing/integration/ui/workflow-review-editing.test.tsx',
   'testing/integration/ui/workflow-readiness-persistence.test.tsx',
 ] as const;
+
+const sharedTestSettings = {
+  setupFiles: [stateHomeSetup, waitBudgetSetup],
+  environment: 'node',
+  globals: false,
+  // Coverage instrumentation + fork contention regularly blows past a
+  // 10s budget on the full 1,000-file run; 30s keeps a stuck test visible
+  // while letting real-timer and subprocess tests survive a loaded box.
+  testTimeout: underCoverage ? 40_000 : 30_000,
+  hookTimeout: underCoverage ? 60_000 : 30_000,
+  pool: 'forks',
+  maxWorkers: 4,
+} satisfies TestProjectInlineConfiguration['test'];
 
 const coverage = {
   provider: 'v8' as const,
@@ -40,31 +52,33 @@ export default defineConfig({
     projects: [
       {
         test: {
-          name: 'default',
+          ...sharedTestSettings,
+          name: 'unit',
           include: [
             'src/**/*.test.{ts,tsx}',
             'scripts/**/*.test.{ts,tsx}',
-            'testing/{architecture,ci,docs,rebrand}/**/*.test.{ts,tsx}',
-            'testing/compat/**/*.test.{ts,tsx}',
+            'testing/{architecture,ci,compat,docs,helpers,rebrand,visual}/**/*.test.{ts,tsx}',
             // Helpers only — testing/e2e/scenarios is the replay and live tier that
             // `npm run test:e2e` and `npm run test:e2e:live` own.
             'testing/e2e/helpers/**/*.test.{ts,tsx}',
+            'evals/*.test.{ts,tsx}',
+          ],
+          exclude: ['node_modules', 'dist', '**/*.integration.test.{ts,tsx}'],
+        },
+      },
+      {
+        test: {
+          ...sharedTestSettings,
+          name: 'integration',
+          include: [
             'testing/integration/**/*.test.{ts,tsx}',
-            'testing/helpers/**/*.test.{ts,tsx}',
-            'testing/visual/**/*.test.{ts,tsx}',
-            'evals/*.test.ts',
+            'src/**/*.integration.test.{ts,tsx}',
+            'scripts/**/*.integration.test.{ts,tsx}',
+            'testing/{architecture,ci,compat,docs,helpers,rebrand,visual}/**/*.integration.test.{ts,tsx}',
+            'testing/e2e/helpers/**/*.integration.test.{ts,tsx}',
+            'evals/*.integration.test.{ts,tsx}',
           ],
           exclude: ['node_modules', 'dist', ...workflowScreenIntegration],
-          setupFiles: [stateHomeSetup, waitBudgetSetup],
-          environment: 'node',
-          globals: false,
-          // Coverage instrumentation + fork contention regularly blows past a
-          // 10s budget on the full 1,000-file run; 30s keeps a stuck test visible
-          // while letting real-timer and subprocess tests survive a loaded box.
-          testTimeout: underCoverage ? 40_000 : 30_000,
-          hookTimeout: underCoverage ? 60_000 : 30_000,
-          pool: 'forks',
-          maxWorkers: 4,
         },
       },
       {

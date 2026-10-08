@@ -2,6 +2,7 @@ import { globSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ViteUserConfig } from 'vitest/config';
+import { projectFiles, vitestProjects } from '../../scripts/unit-test-launches.js';
 import e2eConfig from '../e2e/vitest.e2e.config.js';
 import liveConfig from '../e2e/vitest.live.config.js';
 
@@ -12,7 +13,7 @@ const { scripts } = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'ut
 };
 
 const RELEASE_CHECK =
-  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:e2e && npm run check:invariants && npm run skills:check';
+  'npm run format:check && npm run typecheck && npm run lint && npm test && npm run test:integration && npm run test:e2e && npm run check:invariants && npm run skills:check';
 const E2E_CONFIG = 'testing/e2e/vitest.e2e.config.ts';
 const LIVE_CONFIG = 'testing/e2e/vitest.live.config.ts';
 const REAL_CLI_MARKERS = ['SPLITBRIEF_REAL_CLI', 'live-harness'];
@@ -61,6 +62,42 @@ describe('release-check and live-tier npm scripts', () => {
       expect(command, key).not.toContain('test:e2e:live');
       expect(command, key).not.toContain('SPLITBRIEF_REAL_CLI');
     }
+  });
+});
+
+describe('vitest projects and the npm scripts', () => {
+  it.each([' ', '='])('names every project exactly once with --project%s', (separator) => {
+    const commands = [scripts.test, scripts['test:integration']].map((command) =>
+      (command ?? '').replace(/--project(?:\s+|=)/g, `--project${separator}`),
+    );
+    const scriptProjects = commands.flatMap((command) =>
+      [...command.matchAll(/--project(?:\s+|=)(\S+)/g)].map((match) => match[1]),
+    );
+    const configProjects = vitestProjects().map((project) => project.name);
+
+    expect(configProjects.length).toBeGreaterThan(0);
+    expect(scriptProjects.sort()).toEqual(configProjects.sort());
+    expect(new Set(scriptProjects).size).toBe(scriptProjects.length);
+  });
+
+  it('runs coverage across every project', () => {
+    const source = readFileSync(join(REPO_ROOT, 'scripts/coverage-run.ts'), 'utf8');
+
+    expect(source).not.toContain('--project');
+  });
+
+  it('keeps unit and integration files disjoint and collects every colocated integration file', () => {
+    const unit = projectFiles('unit', REPO_ROOT);
+    const integration = new Set(projectFiles('integration', REPO_ROOT));
+    const unitRoots = vitestProjects().find((project) => project.name === 'unit')?.include ?? [];
+    const colocated = globSync(unitRoots, { cwd: REPO_ROOT }).filter((file) =>
+      /\.integration\.test\.tsx?$/.test(file),
+    );
+
+    expect(unit.length).toBeGreaterThan(0);
+    expect(unit.filter((file) => integration.has(file))).toEqual([]);
+    expect(colocated.length).toBeGreaterThan(0);
+    expect(colocated.filter((file) => !integration.has(file))).toEqual([]);
   });
 });
 
