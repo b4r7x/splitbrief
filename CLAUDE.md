@@ -27,8 +27,9 @@ npm run dev -- spec|init|status|resume
 npm run typecheck                # tsc --noEmit (src + test configs)
 npm run lint                     # Biome check
 npm run format                   # Biome format --write
-npm test                         # vitest run
-npm run release-check            # PR gate: format:check && typecheck && lint && test && test:e2e && invariants && skills:check
+npm test                         # unit; no git, no fake CLIs
+npm run test:integration         # git, worktree, run-loop, Apply, fake CLI and node shim tests
+npm run release-check            # PR gate: format:check && typecheck && lint && test && test:integration && test:e2e && invariants && skills:check
 npm run test-ci                  # exhaustive form: same, with test:coverage thresholds
 node scripts/dangling-imports.mjs  # audit: relative imports that resolve to nothing (exit 1 on findings)
 ```
@@ -104,7 +105,7 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Zero memoization.** No `useMemo`, `useCallback`, or `React.memo`. Store selectors make them unnecessary. See [STORES.md](./docs/STORES.md).
 - **No imperative handles.** No `forwardRef` / `useImperativeHandle`. Extract state to a store instead.
 - **Zero engine → React imports.** `src/engine/` must not import from `ink`, `react`, or `src/features/`, `src/components/`, `src/hooks/`.
-- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → e2e → invariants → skills:check) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
+- **Zero failing gates.** `npm run release-check` (format:check → typecheck → lint → test → test:integration → e2e → invariants → skills:check) must pass before any PR; `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds.
 - **Run contract.** A run is a durable record. `deriveRunStatus` (`src/core/sessions/run-status.ts`) supplies one status: `running`, `open`, `ready-to-apply` or `closed`. An open run is `waiting-for-you` (on a question, a gate or a halt) or `stopped` (paused, failed or interrupted), so a user sees five states: running, waiting for you, stopped, ready to apply, closed. Every listing, guard and screen reads it. An open run stays continuable; a ready run is not continued, it takes Apply or Discard. In worktree and staged-copy mode, a passing review makes it ready to apply. Apply, Discard or `CLOSE_RUN` closes it. In checkout mode (`workflow.isolation: none`), or on an older run without a workspace, a passing review or Accept as is override closes the run, with no Apply. The override preserves the failed verdict. A *Seat down* halt moves its seat at once when the seat declares a `fallback` and the halt is an account refusal or a long reset; this happens once per run and seat, and each switch is recorded in `seatSwitches`. `idle` exists only before `START`; gates never reject, and `continueRun` owns continuation. See [WORKFLOW.md](./docs/WORKFLOW.md#run-status).
 - **Change discipline, always.** Load the `change-discipline` skill before you implement, fix or review code, and follow it. Fix the root cause at the function every caller routes through. Reuse what the project already has. Migrate callers and delete the old path in the same change. Do not add speculative options, guards or fallbacks that hide errors. Hand back in its §9 form.
 - **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.

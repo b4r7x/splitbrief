@@ -34,10 +34,11 @@ npm run build                 # tsc -> dist/
 npm run typecheck             # src + test configs (tsc --noEmit)
 npm run lint                  # Biome check
 npm run format                # Biome format --write
-npm test                      # vitest run
+npm test                      # vitest run --project unit
+npm run test:integration      # git, worktree, run-loop and process tests
 npm run test:watch            # vitest watch mode
 npm run test:coverage         # tsx scripts/coverage-run.ts (vitest --coverage + run pruning)
-npm run release-check         # format:check -> typecheck -> lint -> vitest -> e2e -> invariants -> skills:check (no coverage)
+npm run release-check         # format:check -> typecheck -> lint -> test -> test:integration -> e2e -> invariants -> skills:check (no coverage)
 npm run test:e2e:live         # OPT-IN, costs money: real CLI calls (needs SPLITBRIEF_REAL_CLI_E2E=1)
 npm run test:e2e:release      # OPT-IN release proof: full live matrix (needs SPLITBRIEF_RELEASE_LIVE=1; real CLI calls)
 npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants -> skills:check
@@ -80,6 +81,7 @@ Full rule index: [docs/PRINCIPLES.md](./docs/PRINCIPLES.md).
 ## Testing
 
 - Colocate unit tests: `foo.test.ts` next to `foo.ts`.
+- Colocate integration tests as `foo.integration.test.ts` or `foo.integration.test.tsx`. See [the membership rule](./docs/TESTING.md#unit-and-integration-tests).
 - Multi-folder flows live in `testing/integration/{cli,orchestrator,ui}/`.
 - Assert on observable state (store contents, files on disk, emitted events) — never on call counts.
 - No `vi.mock('./sibling.js')`, no `vi.spyOn` on internal modules.

@@ -1225,7 +1225,7 @@ All sections are optional; absence means the documented default is used. The `pa
 
 Colocated test files (`foo.test.ts` next to `foo.ts`). Engine tests are headless; stores reset in `beforeEach`. Agent-implementer tests spawn real subprocesses (slow, ~30s per test).
 
-Full verification: `npm run test-ci` (format:check, typecheck, lint, test:coverage, e2e, invariants, then skills:check). Targeted verification: `npm test -- <path>` for the touched files before running the full suite.
+Full verification: `npm run test-ci` (format:check, typecheck, lint, test:coverage, e2e, invariants, then skills:check). Targeted verification uses `npm test -- <path>` for unit files and `npm run test:integration -- <path>` for integration files.
 
 ---
 

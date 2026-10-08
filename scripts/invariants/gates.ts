@@ -355,6 +355,13 @@ export const gates: readonly Gate[] = [
     command: String.raw`{ rg -l -U "\bimport\s*\{[^}]*\bText\b[^}]*\}\s*from ['\"]ink['\"]" src --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/components/theme.tsx' || true; } | wc -l`,
     expected: 0,
   },
+  {
+    id: '58',
+    description:
+      'Unit tests build no real git repository or worktree and launch no git or fake CLI (those are *.integration.test.* files)',
+    command: 'tsx scripts/unit-test-launches.ts | wc -l',
+    expected: 0,
+  },
 ];
 
 export function getInvariantGates(id: string): readonly Gate[] {

@@ -41,6 +41,7 @@ describe('CI workflow topology', () => {
   it('splits the push gate into independent parallel jobs', () => {
     expect(Object.keys(ci.jobs).sort()).toEqual([
       'e2e-replay',
+      'integration',
       'smoke',
       'static',
       'unit',
@@ -52,6 +53,14 @@ describe('CI workflow topology', () => {
     const unit = jobOf(ci, 'unit');
     expect(unit.strategy?.matrix?.shard).toEqual([1, 2, 3, 4]);
     expect(runCommands(unit)).toContain(`npm test -- --shard=\${{ matrix.shard }}/4`);
+  });
+
+  it('shards the integration run four ways without coverage instrumentation', () => {
+    const integration = jobOf(ci, 'integration');
+    expect(integration.strategy?.matrix?.shard).toEqual([1, 2, 3, 4]);
+    expect(runCommands(integration)).toContain(
+      `npm run test:integration -- --shard=\${{ matrix.shard }}/4`,
+    );
   });
 
   it('keeps coverage off the per-push critical path', () => {

@@ -12,6 +12,13 @@ function captureLog(): { lines: string[]; log: (line?: string) => void } {
 }
 
 describe('check-invariants', () => {
+  it('registers and documents the unit test launch gate 58', () => {
+    const gates = getInvariantGates('58');
+    expect(gates).toHaveLength(1);
+    expect(gates[0]?.command).toBe('tsx scripts/unit-test-launches.ts | wc -l');
+    expect(readFileSync('docs/INVARIANTS.md', 'utf8')).toContain('| 58 |');
+  });
+
   it('fails closed when a gate command fails', () => {
     const gate: Gate = {
       id: 'broken',
