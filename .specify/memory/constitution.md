@@ -300,7 +300,9 @@ first stage with a new failure. No plan or task check runs after it. With a
 green or all-pre-existing suite, every registered check runs, including
 renders. Every new red MUST reach the reviewer as a pending input. The same
 review answer returns the verdict and the fix tasks. Fix work MUST spend
-one fix cycle. Completed briefs MUST stay done. The final review MUST rerun
+one fix cycle. A fix task MUST carry the red it answers, and its brief gate
+MUST run that stage and those checks again, so the task's retry ladder sees
+the red before the next review. Completed briefs MUST stay done. The final review MUST rerun
 the gates after fixes.
 
 Worktree and staged-copy runs validate in the run workspace. The pipeline

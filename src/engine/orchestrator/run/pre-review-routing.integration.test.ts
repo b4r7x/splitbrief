@@ -124,7 +124,13 @@ describe('runPreReview hands a red gate to the review', () => {
     expect(result.state.lineages?.['T002']?.carriedFailure).toBeUndefined();
     expect(events.some((event) => event.type === 'task_reset')).toBe(false);
     expect(result.state.pendingTriage?.inputs).toEqual([
-      expect.objectContaining({ id: 'P1', source: 'check', file: 'src/second.ts' }),
+      expect.objectContaining({
+        id: 'P1',
+        source: 'check',
+        file: 'src/second.ts',
+        stage: 'typecheck',
+        output: "src/second.ts(5,1): error TS2322: Type 'string' is not 'number'.",
+      }),
     ]);
     expect(result.state.pendingTriage?.inputs[0]?.text).toContain('Last changed by T002.');
   });

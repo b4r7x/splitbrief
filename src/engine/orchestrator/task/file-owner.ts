@@ -80,10 +80,10 @@ export function buildFullSuiteInputs(input: {
 }): TriageInput[] {
   const inputs: TriageInput[] = [];
   for (const [stage, keys] of typedEntries<string, string[] | undefined>(input.suite.newFailures)) {
+    const result = input.suite.results.find((candidate) => candidate.stage === stage);
+    const output = result?.error ?? result?.output;
     for (const key of keys ?? []) {
-      const test = input.suite.results
-        .find((result) => result.stage === stage)
-        ?.failingTests?.find((test) => failingTestKey(test) === key);
+      const test = result?.failingTests?.find((test) => failingTestKey(test) === key);
       const file =
         test === undefined
           ? fileFromFailureKey(key)
@@ -102,6 +102,8 @@ export function buildFullSuiteInputs(input: {
         text: `The ${stage} full-suite check before review failed: ${diagnostic}${message}. ${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
+        ...(result !== undefined && { stage: result.stage }),
+        ...(output !== undefined && { output }),
       });
     }
   }

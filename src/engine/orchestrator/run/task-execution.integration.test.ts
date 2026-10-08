@@ -578,6 +578,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
           id: 'F1',
           text: 'src/shared/widget.ts drops the error',
           acceptance: null,
+          file: 'src/shared/widget.ts',
         },
       ],
     });
@@ -593,6 +594,85 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
     expect(vi.mocked(implementer.implement).mock.calls.map((call) => call[0].task.id)).toContain(
       'T002',
     );
+  });
+
+  it('a fix task runs the red it answers again, so a still-red fix retries before the next review', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(
+      join(projectDir, 'Makefile'),
+      'test:\n\t@test -f src/fixed.ts || (echo "src/widget.ts(1,1): error not fixed" >&2; exit 1)\n',
+    );
+    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
+    const write = (dir: string, file: string) => {
+      mkdirSync(join(dir, 'src'), { recursive: true });
+      writeFileSync(join(dir, file), 'export const value = 1;\n');
+    };
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+        write(call.projectDir, 'src/widget.ts');
+        return { success: true, output: 'code' };
+      }),
+      retry: vi.fn().mockImplementation(async (call: RetryOptions) => {
+        write(call.projectDir, 'src/fixed.ts');
+        return { success: true, output: 'fixed code' };
+      }),
+    });
+    let reviews = 0;
+    const { options } = runOptions({
+      projectDir,
+      sessionId,
+      state: {
+        ...plannedState(tasks, head),
+        plan: {
+          summary: 'Fix the widget.',
+          decisions: [],
+          criteria: [],
+          checks: [{ id: 'K1', kind: 'cmd', value: 'make test', required: true }],
+          validation: null,
+        },
+      },
+      review: (prompt) => {
+        reviews += 1;
+        return passingReviewVerdict(prompt);
+      },
+      triage: () => ({
+        fixTasks: [
+          {
+            ...makeTaskSpec({
+              id: 'T002',
+              suggestedFiles: ['src/widget.ts', 'src/fixed.ts'],
+              criteria: [],
+              checks: [],
+            }),
+            findingIds: ['P1'],
+          },
+        ],
+        rejected: [],
+        verify: [],
+        ask: null,
+      }),
+      onComplete: vi.fn(),
+      implementer,
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(result.state.tasks[1]?.fix?.findings[0]).toMatchObject({
+        id: 'P1',
+        checkIds: ['K1'],
+        output: expect.stringContaining('error not fixed'),
+      });
+      expect(implementer.retry).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(implementer.retry).mock.calls[0]?.[0].error).toContain(
+        'check K1 did not pass',
+      );
+      expect(result.state.fixCycles?.used).toBe(1);
+      expect(reviews).toBe(2);
+      expect(result.completed).toBe(true);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
   });
 
   it('the cap halt names the spent cycles and offers the exits', async () => {

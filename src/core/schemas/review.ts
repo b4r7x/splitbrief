@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ValidationStageSchema } from './enums.js';
 import { TaskSpecSchema } from './plan.js';
 import { TaskIdSchema } from './task.js';
 
@@ -67,6 +68,10 @@ export const TriageInputSchema = z.object({
   source: z.enum(['user', 'apply', 'check']),
   text: z.string(),
   file: z.string().nullable(),
+  /** A gate red: the stage or checks that failed and their captured output. */
+  stage: ValidationStageSchema.optional(),
+  checkIds: z.array(z.string()).optional(),
+  output: z.string().optional(),
 });
 export type TriageInput = z.infer<typeof TriageInputSchema>;
 

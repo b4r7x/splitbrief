@@ -18,7 +18,7 @@ Record each command and source in plan.json and the plan block. Run commands fro
 <!-- generated: gate-rules -->
 - With workflow.review: end, ordinary briefs run no stack gates. The final review runs all enabled gates and registered checks.
 - With workflow.review: task, each task runs related tests and due checks, then its scheduled review. The final review runs all gates.
-- A single completed owner retries final gate failures through its brief ladder. Other failures enter triage and create fix tasks.
+- Final gate failures enter triage and create fix tasks; no completed brief reopens. A fix task reruns the stage and checks of the red it answers at its brief gate, so a red fix retries through its ladder.
 - A test command that cannot select related tests is skipped by the brief gate. The final review runs it.
 - When lint is enabled, format the brief changed files after every hand-back. A formatter failure records a warning.
 - Order: typecheck → lint → test. Stop at the first failing stage; every later stage is recorded `not run`.
@@ -103,8 +103,10 @@ At cadence=task, run the affected tests and the due checks after each task. A re
 A due check is a check of the task, or of a criterion whose serving tasks are all done.
 Before the final review, run the full suite and every registered check. Only required checks decide a red.
 When a gate is red, re-run only the failing tests or command on the run base copy. A failure also red there is pre-existing: report it, and route no task to it.
-A red that names only files of one completed task reopens that task with the exact errors.
-Triage any other red into appended fix tasks with new ids. Run the gates again after each fix cycle.
+No completed task reopens. Triage every red into appended fix tasks with new ids.
+Each fix task carries its red: the stage or check ids, the file and the output.
+At either cadence, a fix task's gate re-runs that stage and those checks. A red there goes to its retry ladder.
+Run the gates again after each fix cycle.
 Log check ids, commands, output, exits and artifact paths in validation.md.
 Re-run checks when the candidate changes. Earlier green output cannot verify changed code.
 
