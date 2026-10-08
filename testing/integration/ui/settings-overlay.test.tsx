@@ -16,6 +16,7 @@ import { _resetMouseZones } from '../../../src/lib/terminal/mouse-zones.js';
 
 const PAGE_DOWN = '\u001b[6~';
 const ARROW_DOWN = '\u001b[B';
+const ARROW_UP = '\u001b[A';
 const CURSOR_GLYPH = '▌';
 const KITTY_SUPER_SPACE = '\u001b[32;9u';
 const KITTY_HYPER_SPACE = '\u001b[32;17u';
@@ -44,42 +45,42 @@ describe('settings overlay integration', () => {
   });
 
   it('space toggles a boolean field and saves to disk', async () => {
-    expect(configStore.get().config?.validation.typecheck).toBe(true);
+    expect(configStore.get().config?.validation.endChecks).toBe(true);
 
-    overlayStore.open('settings', 'validation.typecheck');
+    overlayStore.open('settings', 'validation.endChecks');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
-    expect(ui.lastFrame()).toContain('Type check');
+    expect(ui.lastFrame()).toContain('End-of-run checks');
 
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.validation.typecheck).toBe(false);
+      expect(loadConfig(dir).config.validation.endChecks).toBe(false);
     });
 
     ui.unmount();
   });
 
   it('applies queued Down before Space and toggles the new logical selection', async () => {
-    expect(configStore.get().config?.validation.typecheck).toBe(true);
-    expect(configStore.get().config?.validation.lint).toBe(true);
+    const isolation = loadConfig(dir).config.workflow.isolation;
+    expect(configStore.get().config?.validation.endChecks).toBe(true);
 
-    overlayStore.open('settings', 'validation.typecheck');
+    overlayStore.open('settings', 'workflow.isolation');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
     ui.stdin.write(ARROW_DOWN);
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      const validation = loadConfig(dir).config.validation;
-      expect(validation.typecheck).toBe(true);
-      expect(validation.lint).toBe(false);
+      const config = loadConfig(dir).config;
+      expect(config.workflow.isolation).toBe(isolation);
+      expect(config.validation.endChecks).toBe(false);
     });
 
     ui.unmount();
   });
 
   it('applies rapid boolean toggles sequentially against the latest config', async () => {
-    overlayStore.open('settings', 'validation.typecheck');
+    overlayStore.open('settings', 'validation.endChecks');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
@@ -87,22 +88,24 @@ describe('settings overlay integration', () => {
     ui.stdin.write(' ');
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.validation.typecheck).toBe(false);
+      expect(loadConfig(dir).config.validation.endChecks).toBe(false);
     });
 
+    // Back on, then up past Isolation to Create branch, which turns on.
     ui.stdin.write(' ');
-    ui.stdin.write(ARROW_DOWN);
+    ui.stdin.write(ARROW_UP);
+    ui.stdin.write(ARROW_UP);
     ui.stdin.write(' ');
     await vi.waitFor(() => {
-      const validation = loadConfig(dir).config.validation;
-      expect(validation.typecheck).toBe(true);
-      expect(validation.lint).toBe(false);
+      const config = loadConfig(dir).config;
+      expect(config.validation.endChecks).toBe(true);
+      expect(config.workflow.git?.createBranch).toBe(true);
     });
     ui.unmount();
   });
 
   it('does not toggle settings on modified Space input', async () => {
-    overlayStore.open('settings', 'validation.typecheck');
+    overlayStore.open('settings', 'validation.endChecks');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
 
@@ -110,7 +113,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(KITTY_HYPER_SPACE);
     await flushEffects();
 
-    expect(loadConfig(dir).config.validation.typecheck).toBe(true);
+    expect(loadConfig(dir).config.validation.endChecks).toBe(true);
     ui.unmount();
   });
 
@@ -130,16 +133,16 @@ describe('settings overlay integration', () => {
 
   it('clicking a boolean row toggles it and saves (alternate trigger)', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
-    expect(configStore.get().config?.validation.typecheck).toBe(true);
+    expect(configStore.get().config?.validation.endChecks).toBe(true);
 
-    overlayStore.open('settings', 'validation.typecheck');
+    overlayStore.open('settings', 'validation.endChecks');
     const ui = renderFeature(<SettingsOverlay />);
     await flushEffects();
-    expect(ui.lastFrame()).toContain('Type check');
+    expect(ui.lastFrame()).toContain('End-of-run checks');
 
-    collectClickableZones({ cols: 100, rows: 50 }).get('list-row:validation.typecheck')?.();
+    collectClickableZones({ cols: 100, rows: 50 }).get('list-row:validation.endChecks')?.();
     await vi.waitFor(() => {
-      expect(loadConfig(dir).config.validation.typecheck).toBe(false);
+      expect(loadConfig(dir).config.validation.endChecks).toBe(false);
     });
 
     ui.unmount();
@@ -287,7 +290,7 @@ describe('settings overlay integration', () => {
     ui.stdin.write(PAGE_DOWN);
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('Type check');
+      expect(lineContaining(frame, CURSOR_GLYPH)).toContain('End-of-run checks');
       // The page steps over the Workflow section and lands with the whole of it on screen — its
       // first row included — so no row was stepped over unseen.
       expect(frame).toContain('Plan approval');

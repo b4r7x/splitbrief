@@ -1,47 +1,52 @@
 # Gates
 
-Validation belongs to the session. The review cadence sets when it runs.
-Resolve commands from the current engine contracts. Never accept the implementer's claim as recorded evidence.
+Validation belongs to the session. At cadence=task the registered checks run after each brief; before each review the reviewer chooses the reviewer checks.
+Never accept the implementer's claim as recorded evidence.
 
-## Resolution, first match per stage
+## Test check command, first match
 
-1. Config overrides from `.splitbrief/config.yaml`.
-2. Project manifest scripts.
+A planner `test` check runs one test command, narrowed to its file or pattern. Resolve that command in this order:
+
+1. Config `validation.test_command` from `.splitbrief/config.yaml`.
+2. The test script of the project manifest.
 3. Planner discovery from instructions, the task, CI and existing tooling.
-4. Stack defaults from the registry below.
-5. No command → record the stage as skipped.
+4. The stack default from the registry below.
+5. No command → the test check cannot run. Record it unavailable with its reason.
 
-Record each command and source in plan.json and the plan block. Run commands from the project root.
+Record the command and its source in plan.json and the plan block. Run commands from the project root.
 
 ## Order, short-circuit, capture
 
 <!-- generated: gate-rules -->
-- With workflow.review: end, ordinary briefs run no stack gates. The final review runs all enabled gates and registered checks.
-- With workflow.review: task, each task runs related tests and due checks, then its scheduled review. The final review runs all gates.
-- Final gate failures enter triage and create fix tasks; no completed brief reopens. A fix task reruns the stage and checks of the red it answers at its brief gate, so a red fix retries through its ladder.
-- A test command that cannot select related tests is skipped by an ordinary brief gate. The gate of a fix task that answers a test red runs it on the full suite. The final review runs it.
-- When lint is enabled, format the brief changed files after every hand-back. A formatter failure records a warning.
-- Order: typecheck → lint → test. Stop at the first failing stage; every later stage is recorded `not run`.
-- Capture at most 4096 characters per stage, and keep the test stage's LAST 40 lines — runners print the pass/fail summary last.
+- At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, an ordinary brief runs no check: only a caller that names checks runs them, such as a consult `verify`.
+- Before each review, with End-of-run checks on, the reviewer reads the project in the plan call and chooses at most 6 reviewer checks (`V1`, `V2`, …) that verify the change, each with a reason, plus the related tests it declines and why. A task-cadence review chooses the tests related to the changed files.
+- A failed plan call halts the review the same way a failed verdict call does. It is never a pass.
+- Run each reviewer check in the run workspace under the command policy. Refuse a reviewer check whose package script or task file the run changed; a plan or task check is never refused for that.
+- Stop at the first reviewer check with new failures; every later one is recorded `not run`. Re-run a red reviewer check at the run base with the same text: a failure also red there is pre-existing. Plan checks, task checks and the Apply re-check never re-run at the run base.
+- A red required check, or a reviewer check with new failures, becomes a pending input; triage turns it into fix tasks, and no completed brief reopens. The fix task carries the red it answers: the check id, its command, its output and its file.
+- The brief gate of a fix task runs the check of its red again under the same command policy; a red reviewer check also re-runs at the run base, as at review. A still-red fix fails its gate and retries through its ladder before the next review.
+- With End-of-run checks off, no reviewer check runs and one row says so. Plan and task checks still run.
+- Format the brief changed files with the project formatter after every hand-back. A formatter failure records a warning.
+- Capture at most 4096 characters per command, and keep the LAST 40 lines of a test command — runners print the pass/fail summary last.
 - Narrowing kinds: `path-arg`, `package-arg`, `name-filter`, `none`.
 <!-- /generated -->
 
-Append every stage to `validation.md` under `## T00N — attempt N` with each command on its own line above its fenced output.
+Append every check and every reviewer check to `validation.md` under `## T00N — attempt N` or `## Review N`, with each command on its own line above its fenced output.
 
 ## Language defaults and narrowing
 
 <!-- generated: gates -->
-| Language (marker) | typecheck | lint | test | test files |
-|---|---|---|---|---|
-| rust (`Cargo.toml`) | `cargo check` | `cargo clippy --no-deps` | `cargo test` | inline `#\[cfg\(test\)\]` |
-| go (`go.mod`) | `go vet ./...` | `golangci-lint run` | `go test ./...` | `*_test.go` |
-| python (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile`) | `mypy .` | `ruff check .` | `uv run pytest` | `test_*.py`, `*_test.py` |
-| typescript (`tsconfig.json`) | `npx tsc --noEmit` | `npx biome check .` | `npm test` | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `__tests__/*.ts` |
-| javascript (`package.json`) | none | `npx biome check .` | `npm test` | `*.test.js`, `*.spec.js`, `*.test.mjs` |
+| Language (marker) | test check command | test files |
+|---|---|---|
+| rust (`Cargo.toml`) | `cargo test` | inline `#\[cfg\(test\)\]` |
+| go (`go.mod`) | `go test ./...` | `*_test.go` |
+| python (`pyproject.toml`, `setup.py`, `setup.cfg`, `requirements.txt`, `Pipfile`) | `uv run pytest` | `test_*.py`, `*_test.py` |
+| typescript (`tsconfig.json`) | `npm test` | `*.test.ts`, `*.test.tsx`, `*.spec.ts`, `__tests__/*.ts` |
+| javascript (`package.json`) | `npm test` | `*.test.js`, `*.spec.js`, `*.test.mjs` |
 
-A stage whose command resolves to nothing is skipped. The columns show the default with the language's own tooling present; the resolution order above still wins over them.
+A test check whose command resolves to nothing cannot run. The column shows the default with the language's own tooling present; the resolution order above still wins over it.
 
-The brief gate's test stage runs only the tests affected by the brief's files and by every file the attempt changed when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config waits for the final review, except at the gate of a fix task that answers a test red, which runs it on the full suite.
+A planner `test` check runs only the tests its file affects when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config runs as written.
 
 | Language | test narrowing | allowed commands |
 |---|---|---|
@@ -59,8 +64,8 @@ Write its path to `.splitbrief/current-run`. Record whether `.splitbrief/` is ig
 Save baseline hashes and bytes before any dispatch. Preserve pre-existing edits.
 For a saved run or failed review, retain the original baseline.
 A failure also red on the run base copy is pre-existing, not an implementer failure. Record it explicitly; it proves no criterion by itself.
-A new failure is a red at the gate that finds it, including a failure in a file outside the suggestions.
-A stage that cannot run is unavailable, with its reason. A required unavailable check blocks review pass.
+A new failure is a red at the check or command that finds it, including a failure in a file outside the suggestions.
+A check or command that cannot run is unavailable, with its reason. A required unavailable check blocks review pass.
 Ask the planner to repair defective tooling through a task. Keep the requirement that the command verifies.
 Apply the approval options in references/family-map.md before ordinary tooling repairs.
 Never install packages or write git state as a tooling repair.
@@ -86,7 +91,7 @@ Exclude run artifacts from the changed set. Preserve the original baseline throu
 <!-- /generated -->
 
 Write each task's actual changed paths to touched-files.md. Record touchedNotSuggested entries with reasons.
-At cadence=task, the affected tests cover every changed ordinary file. Do not reject or roll back an attempt for editing an unplanned file.
+At cadence=task, the reviewer's related tests cover every changed ordinary file, or the reviewer names each one it declines. Do not reject or roll back an attempt for editing an unplanned file.
 Confirm protected operations independently of --ask and --yes. Record confirmation by path and operation for the run.
 The confirmation holds for the same path and operation for the rest of the run.
 The session's run artifacts are orchestration writes. The implementer never edits `.splitbrief`.
@@ -98,20 +103,37 @@ Resolve criterion checkIds from the run and task registries. Reject unknown or e
 For test checks, run the named test file or pattern. For cmd checks, run the registered command under project policy.
 Allow no package installs, git writes, protected mutations without confirmation, or commands outside the workspace.
 Render checks are unavailable in these skills. Keep a required render criterion unverified.
-At cadence=end, run no stack gate and no check after an ordinary task.
-At cadence=task, run the affected tests and the due checks after each task. A red goes to that task's retry ladder.
+At cadence=task, after each task, run its checks and the due checks. A red required check goes to that task's retry ladder.
+At cadence=end, an ordinary task runs no check. Only a caller that names checks runs them, such as a consult `verify`.
 A due check is a check of the task, or of a criterion whose serving tasks are all done.
-Before the final review, run the full suite and every registered check. Only required checks decide a red.
-When a gate is red, re-run only the failing tests or command on the run base copy. A failure also red there is pre-existing: report it, and route no task to it.
-No completed task reopens. Triage every red into appended fix tasks with new ids.
-Each fix task carries its red: the stage or check ids, the file and the output.
-At either cadence, a fix task's gate re-runs that stage and those checks. A red there goes to its retry ladder.
-Run the gates again after each fix cycle.
+Before the final review, run every registered check. Only required checks decide a red.
+
+### End-of-run checks
+
+End-of-run checks are on by default (`validation.end_checks`). Before each review, the reviewer makes the plan call. It reads the project itself: its manifests and scripts, a Makefile or justfile, its CI configuration, its README. It chooses the reviewer checks that verify this change, with ids `V1`, `V2`, … and a reason for each.
+
+- At cadence=end, the final review's reviewer checks verify the whole change.
+- At cadence=task, each scheduled review's reviewer checks run the tests related to the changed files. The reviewer declines each other related test by name, with the reason.
+- When the reviewer chooses no reviewer check, it gives the reason. Record the reason; never skip in silence.
+- A failed plan call halts the review the same way a failed verdict call does. It is never a pass.
+
+Run the reviewer checks in order, in the run workspace, under the command policy:
+
+- Refuse a reviewer check that breaks the command policy, and a reviewer check whose package script or task file this run changed. Name each refused reviewer check with its reason. A plan or task check is never refused for a changed script: a plan may add a script and check it.
+- When a reviewer check is red, re-run it on the run base copy with the same command text. A failure also red there is pre-existing: report it, and route no task to it. Only reviewer checks re-run at the run base. Plan checks, task checks and the Apply re-check do not.
+- Stop at the first reviewer check with new failures. Record each later reviewer check as `not run: <id> failed`.
+- Each new failure becomes a pending input. The review answer must address every pending input.
+
+With End-of-run checks off, no reviewer check runs before a review. Record one row that says so. Plan and task checks still run.
+No completed task reopens. Triage each red into appended fix tasks with new ids.
+Each fix task carries its red: the check id, its command, the file and the output.
+At either cadence, a fix task's gate runs that check again under the same command policy. A red reviewer check also re-runs on the run base copy, and only a new failure counts. A red there goes to the fix task's retry ladder.
+The next review chooses and runs its reviewer checks again.
 Log check ids, commands, output, exits and artifact paths in validation.md.
 Re-run checks when the candidate changes. Earlier green output cannot verify changed code.
 
 ## Recorded validation output
 
-The packet's Recorded Validation Output carries current full-suite and required-check output, with commands and check ids.
-Include final task-attempt validation as context. Quote recorded output for all test, typecheck and lint claims.
-A generic green stage never proves an unrelated criterion. Missing required evidence keeps that criterion unverified.
+The packet's Recorded Validation Output carries the current reviewer-check and required-check output, with commands and ids.
+Include final task-attempt check output as context. Quote recorded output for every test, type check, lint or other command claim.
+A generic green command never proves an unrelated criterion. Missing required evidence keeps that criterion unverified.

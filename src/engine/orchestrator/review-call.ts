@@ -3,16 +3,17 @@ import type { Attachment } from '../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
-import { REVIEW_ANSWER_JSON_SCHEMA, type ReviewAnswer } from '../../core/schemas/review.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
 import { createBusTextHandler } from './events.js';
 import { addUsageAndSave } from './state-ops.js';
 
-export type RunReviewerCallOptions = {
+export type RunReviewerCallOptions<T> = {
   reviewer: Reviewer;
   prompt: string;
-  /** The verdict contract, coverage refinement included. */
-  schema: z.ZodType<ReviewAnswer>;
+  /** The answer contract: the verdict with its coverage refinement, or the plan call's answer. */
+  schema: z.ZodType<T>;
+  jsonSchema: Readonly<Record<string, unknown>>;
+  schemaName: string;
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
@@ -23,19 +24,19 @@ export type RunReviewerCallOptions = {
   signal?: AbortSignal | undefined;
 };
 
-export type RunReviewerCallResult = {
+export type RunReviewerCallResult<T> = {
   state: WorkflowState;
-  result: RequestTypedResult<ReviewAnswer>;
+  result: RequestTypedResult<T>;
 };
 
 /**
- * The one review call: a typed request through the reviewer seat, with the seat's
+ * A review call: a typed request through the reviewer seat, with the seat's
  * own one-repair contract, and the usage it spent booked against the reviewer
  * bucket whichever way it landed.
  */
-export async function runReviewerCall(
-  opts: RunReviewerCallOptions,
-): Promise<RunReviewerCallResult> {
+export async function runReviewerCall<T>(
+  opts: RunReviewerCallOptions<T>,
+): Promise<RunReviewerCallResult<T>> {
   const { reviewer, prompt, projectDir, workspaceDir, sessionId, bus } = opts;
   const call = reviewer.typedCall({
     projectDir: workspaceDir,
@@ -49,8 +50,8 @@ export async function runReviewerCall(
   const result = await requestTyped({
     prompt,
     schema: opts.schema,
-    jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
-    schemaName: 'review_answer',
+    jsonSchema: opts.jsonSchema,
+    schemaName: opts.schemaName,
     call,
   });
   const state = addUsageAndSave(

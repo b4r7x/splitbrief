@@ -483,6 +483,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-checks-off',
+      title: 'Workflow · final review with End-of-run checks off',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-checks-off',
+        title: 'The off row above the running review',
+        kind: 'implementation',
+        marker: 'End-of-run checks',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-retry',
       title: 'Workflow · brief after an attempt allowance grant',
       surface: screenSurface('workflow'),
@@ -516,7 +532,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-validation',
-      title: 'Workflow · gate verdicts',
+      title: 'Workflow · gate verdicts of a session from before reviewer checks',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'validation',
@@ -566,13 +582,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-planner-commands-refused',
-      title: 'Workflow · stage commands not taken from the planner',
+      title: 'Workflow · a test command not taken from the planner',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'planner-commands-refused',
-        title: 'Refused planner commands',
+        title: 'Refused planner command',
         kind: 'planning',
-        marker: 'The lint stage does not take',
+        marker: 'The test checks do not take',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1677,15 +1693,15 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     // S8 run 18:06–18:58: the ten-minute pre-review `npm test` read `Implementing… 10:02`.
     defineScenario({
-      id: 'workflow-implementation-full-suite',
-      title: 'Workflow · the pre-review full suite ten minutes in',
+      id: 'workflow-review-check-running',
+      title: 'Workflow · a reviewer check ten minutes in',
       surface: screenSurface('workflow'),
       viewports: WIDE_VIEWPORTS,
       checkpoint: {
-        id: 'implementation-full-suite',
-        title: 'The suite stage, its command and its clock in the byline and the build block',
-        kind: 'implementation',
-        marker: 'Pre-review suite',
+        id: 'review-check-running',
+        title: 'The reviewer check, its command and its clock in the byline and the build block',
+        kind: 'review',
+        marker: 'Reviewer check V2',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1693,18 +1709,49 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-check-long-command',
+      title: 'Workflow · a reviewer check with a command longer than the byline',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-check-long-command',
+        title: 'The label and the clock survive; only the command is cut',
+        kind: 'review',
+        marker: 'Reviewer check V2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-legacy-suite',
+      title: 'Workflow · a session from before reviewer checks replays its full-suite stages',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-legacy-suite',
+        title: 'Full-suite rows with no check id keep their own words',
+        kind: 'review',
+        marker: 'Pre-review suite',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Full-suite transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-red-gate',
-      title: 'Workflow · the reviewer answers a red typecheck gate',
+      title: 'Workflow · the reviewer answers a red reviewer check',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'review-red-gate',
-        title: 'The red stage followed by the configured reviewer activity and byline',
+        title: 'A refused, a red and a skipped check, then the reviewer activity and byline',
         kind: 'review',
         marker: 'REVIEW activity',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Red gate and reviewer activity' },
+        { id: 'transcript', title: 'Reviewer checks and reviewer activity' },
         { id: 'composer', title: 'Reviewer identity' },
       ],
     }),
@@ -1720,7 +1767,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Review validation transcript' },
+        { id: 'transcript', title: 'Reviewer checks transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -1872,6 +1919,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-filter-workflow',
         title: 'Overlay · settings · filtered to the workflow section',
         marker: 'Settings',
+      },
+      {
+        id: 'overlay-settings-end-checks',
+        title: 'Overlay · settings · the End-of-run checks toggle',
+        marker: 'End-of-run checks',
+      },
+      {
+        id: 'overlay-settings-end-checks-off',
+        title: 'Overlay · settings · End-of-run checks turned off',
+        marker: 'End-of-run checks',
       },
       {
         id: 'overlay-settings-isolation-checkout',

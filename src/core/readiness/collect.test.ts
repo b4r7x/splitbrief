@@ -91,50 +91,30 @@ function writeSessionLockfile(
   writeFileSync(join(sDir, LOCKFILE), JSON.stringify(makeSessionLockfile(sessionId, overrides)));
 }
 
-describe('collectReadiness validation probe wiring', () => {
+describe('collectReadiness End-of-run checks', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = createTempDir('collect-probe');
+    tempDir = createTempDir('collect-end-checks');
   });
 
   afterEach(() => {
     cleanupTempDir(tempDir);
   });
 
-  function redAtStartConfig() {
-    return makeConfig({
-      validation: {
-        typecheck: true,
-        lint: false,
-        test: false,
-        typecheckCommand: 'node -e "process.exit(1)"',
-      },
-    });
-  }
-
-  it('surfaces an already-failing check when probeValidation is enabled', async () => {
+  it('names End-of-run checks off as a warning', async () => {
     const { report } = await collectReadiness({
       projectDir: tempDir,
-      config: redAtStartConfig(),
-      probeValidation: true,
+      config: makeConfig({ validation: { endChecks: false } }),
     });
 
     const checks = flattenReadinessChecks(report.sections);
-    const failing = checks.find((check) => check.id === 'validation.already-failing');
-    expect(failing).toBeDefined();
-    expect(failing?.severity).toBe('warning');
-    expect(failing?.summary).toContain('typecheck');
-  });
-
-  it('does not run the probe when probeValidation is omitted', async () => {
-    const { report } = await collectReadiness({
-      projectDir: tempDir,
-      config: redAtStartConfig(),
-    });
-
-    const checks = flattenReadinessChecks(report.sections);
-    expect(checks.find((check) => check.id === 'validation.already-failing')).toBeUndefined();
+    expect(checks.find((check) => check.id === 'validation.configured')?.summary).toBe(
+      'End-of-run checks: off.',
+    );
+    expect(checks.find((check) => check.id === 'validation.end-checks-off')?.severity).toBe(
+      'warning',
+    );
   });
 });
 
@@ -259,11 +239,7 @@ describe('collectReadiness git posture', () => {
         model: 'planner',
         contextLength: 65536,
       },
-      validation: {
-        typecheckCommand: 'node -e "process.exit(0)"',
-        lintCommand: 'node -e "process.exit(0)"',
-        testCommand: 'node -e "process.exit(0)"',
-      },
+      validation: { testCommand: 'node -e "process.exit(0)"' },
       ...(workflow !== undefined && { workflow }),
     });
   }

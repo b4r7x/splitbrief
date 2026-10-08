@@ -224,8 +224,6 @@ function discoveredValidation(plan: PlanProposal): DiscoveredValidation | undefi
   if (validation === null) return undefined;
   return {
     ...(validation.language !== null && { language: validation.language }),
-    ...(validation.typecheck !== null && { typecheckCommand: validation.typecheck }),
-    ...(validation.lint !== null && { lintCommand: validation.lint }),
     ...(validation.test !== null && { testCommand: validation.test }),
     ...(validation.testPattern !== null && { testPattern: validation.testPattern }),
   };

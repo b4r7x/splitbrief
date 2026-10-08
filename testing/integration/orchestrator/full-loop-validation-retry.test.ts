@@ -28,6 +28,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import type { RunnerGate } from '../../../src/engine/runners/prepared-execution.js';
 import {
   guidanceConsult,
+  NO_REVIEW_CHECKS,
   planFromTasks,
   typedCallFromTasks,
   typedCallPlanAndConsult,
@@ -143,9 +144,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         contextLength: 4096,
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {
@@ -196,17 +195,22 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       true,
     ]);
 
-    const validationResults = events.filter(
-      (event): event is Extract<EngineEvent, { type: 'validate' }> =>
-        event.type === 'validate' && event.status === 'done',
+    // The brief's own check is the gate; a new run records no stage validation.
+    expect(events.find((event) => event.type === 'validate')).toBeUndefined();
+    // The review asked the reviewer for its checks; the fake reviewer chose none and said why.
+    const reviewChecks = events.filter(
+      (event): event is Extract<EngineEvent, { type: 'review_checks' }> =>
+        event.type === 'review_checks',
     );
-    expect(validationResults.map((event) => event.passed)).toEqual([true, true]);
-
-    const preReviewSuiteResults = events.filter(
-      (event): event is Extract<EngineEvent, { type: 'full_suite' }> =>
-        event.type === 'full_suite' && event.moment === 'pre-review' && event.status === 'done',
-    );
-    expect(preReviewSuiteResults.map((event) => event.passed)).toEqual([true]);
+    expect(reviewChecks.length).toBeGreaterThan(0);
+    for (const event of reviewChecks) {
+      expect(event).toMatchObject({
+        status: 'planned',
+        commands: [],
+        reason: NO_REVIEW_CHECKS.reason,
+      });
+    }
+    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'task_retry',
@@ -305,9 +309,7 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         contextLength: 4096,
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {

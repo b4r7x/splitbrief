@@ -236,7 +236,7 @@ describe('handleFailedImplementation — an account the provider refuses is a se
       bus,
       config: makeConfig({
         implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
     const outcome = runnerCallOutcome(
@@ -324,7 +324,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
           model: 'deepseek/deepseek-flash',
           fallback: { tool: 'claude-code' },
         },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -441,7 +441,7 @@ describe('handleFailedImplementation — an effect failure is no scope fence', (
       implementer: makeImplementer({ retry }),
       bus,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
     const error = "Tool implementer wrote outside the brief's declared files: src/other.ts";

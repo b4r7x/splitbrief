@@ -30,7 +30,7 @@ describe('buildSystemPreamble', () => {
 });
 
 const GATE_RULE =
-  "SPLITBRIEF runs the project's typecheck, lint and test gates after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.";
+  'SPLITBRIEF runs the checks after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names.';
 
 const DIRECT_WRITER_RULES = [
   'Start from the files the Task Brief suggests. If the change needs another project file (a caller, a test, a shared component), edit it and name it in your report with the reason. Never edit dependency manifests, lockfiles, CI configuration, env or key files, .git or .splitbrief unless the brief explicitly asks for that operation.',
@@ -86,7 +86,7 @@ describe('buildImplementerSystemPreamble', () => {
     expect(prompt).not.toContain('Run the validation commands the brief lists');
   });
 
-  it('forbids every gate command once across the assembled direct-writer prompt', () => {
+  it('forbids every check command once across the assembled direct-writer prompt', () => {
     const prompt = [
       buildImplementerSystemPreamble(buildLanguageContext('typescript'), 'direct', '/work'),
       formatTaskPrompt({
@@ -105,8 +105,8 @@ describe('buildImplementerSystemPreamble', () => {
       .split(/(?<=\.)\s+|\n/)
       .filter((sentence) => /\brun\b/i.test(sentence) && /\btests?\b/i.test(sentence));
     expect(runTestSentences).toEqual([
-      'Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.',
-      'SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run no test or other gate command.',
+      'Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names.',
+      'SPLITBRIEF runs the checks after you hand back, so run no test, typecheck, lint or other check command.',
     ]);
   });
 

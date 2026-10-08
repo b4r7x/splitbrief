@@ -77,7 +77,12 @@ describe('config loading', () => {
         'workflow.approve "all" was retired; using "plan": the plan waits for your approval before the build. Set approve to plan or none.',
         'workflow.task_review was retired and is ignored: the build no longer stops for your review after each brief. Delete workflow.task_review.',
         'workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.',
+        ...['typecheck', 'lint', 'test'].map(
+          (name) =>
+            `validation.${name} was retired and is ignored: the reviewer chooses the commands that verify the change, and validation.end_checks turns them on or off. Delete validation.${name}.`,
+        ),
       ]);
+      expect(config.validation.endChecks).toBe(true);
     });
 
     it('preserves schema-supported optional top-level sections while merging defaults', () => {
@@ -300,7 +305,7 @@ describe('config loading', () => {
       writeConfigYaml(dir, {
         planner: { kind: 'cli', tool: 'codex' },
         implementer: { temperature: 0.7 },
-        validation: { lint: false },
+        validation: { testCommand: 'make test' },
         workflow: { approve: 'none' },
       });
 
@@ -308,8 +313,8 @@ describe('config loading', () => {
       expect(expectCli(config.planner).tool).toBe('codex');
       expect(config.implementer.temperature).toBe(0.7);
       expect((config.implementer as { provider: string }).provider).toBe('ollama');
-      expect(config.validation.lint).toBe(false);
-      expect(config.validation.typecheck).toBe(true);
+      expect(config.validation.testCommand).toBe('make test');
+      expect(config.validation.endChecks).toBe(true);
       expect(config.workflow.approve).toBe('none');
       expect(getIsolationStrategy(config)).toBe('worktree');
     });

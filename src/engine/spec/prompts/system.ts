@@ -8,8 +8,8 @@ export function workspaceRules(dir: string): string {
 - Dependencies are already installed; never run a package-manager install, ci, add, remove or update (npm, pnpm, yarn, bun)`;
 }
 
-export const IMPLEMENTER_RUNS_NO_GATES =
-  "SPLITBRIEF runs the project's typecheck, lint and test gates after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other gate command, not even the tests you write or a command the brief names.";
+export const IMPLEMENTER_RUNS_NO_CHECKS =
+  'SPLITBRIEF runs the checks after you hand back, and its verdict is the authority. Run no test, typecheck, lint, format, screenshot, render or other check command, not even the tests you write or a command the brief names.';
 
 export function buildImplementerSystemPreamble(
   languageContext: LanguageContext,
@@ -33,7 +33,7 @@ ${workspaceRules(isolationDir)}
 - Follow the exact function signatures provided
 - Stop and report rather than guessing when the brief's stop conditions are met, or when the target file's current content contradicts the brief
 - The Task Brief inlines the read-only code of the context files it lists. Read the files it suggests before you edit them, and search only for a symbol the brief names.
-- ${IMPLEMENTER_RUNS_NO_GATES} Do not run repeated git diffs.
+- ${IMPLEMENTER_RUNS_NO_CHECKS} Do not run repeated git diffs.
 - Report deviations as decisions with what and why; use [] when none.
 - End your reply with ONE JSON object and nothing after it: {"status":"done","filesChanged":["<file>"],"touchedNotSuggested":[{"file":"<file>","reason":"<reason>"}],"notes":null,"decisions":[]}. If the brief cannot be completed without a file it does not provide, end with {"status":"blocked","question":"<question>","filesNeeded":["<file>"]} instead. Prose before the object is fine; text after it is not.
 

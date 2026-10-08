@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveApproveLevel, resolveEffortLevel } from './resolve.js';
+import { resolveApproveLevel, resolveEffortLevel, resolveEndChecks } from './resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { EffortLevel } from '../../schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -19,6 +19,16 @@ describe('resolveApproveLevel', () => {
         makeConfig({ workflow: { approve: 'none', git: { commitStrategy: 'none' } } }),
       ),
     ).toBe('none');
+  });
+});
+
+describe('resolveEndChecks', () => {
+  it('runs the End-of-run checks when the config names no value', () => {
+    expect(resolveEndChecks(makeConfig())).toBe(true);
+  });
+  it('takes the config value', () => {
+    expect(resolveEndChecks(makeConfig({ validation: { endChecks: false } }))).toBe(false);
+    expect(resolveEndChecks(makeConfig({ validation: { endChecks: true } }))).toBe(true);
   });
 });
 

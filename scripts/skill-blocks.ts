@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { BASELINE_RULE } from '../src/core/pipeline-spec/baseline.js';
 import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
 import { BRIEF_SECTION_ORDER, sliceRuleText } from '../src/core/pipeline-spec/brief.js';
-import { CAPTURE_LIMITS, GATE_ORDER, NARROWING_RULE } from '../src/core/pipeline-spec/gates.js';
+import { CAPTURE_LIMITS, NARROWING_RULE } from '../src/core/pipeline-spec/gates.js';
 import { HALT_SIGNATURES } from '../src/core/pipeline-spec/halts.js';
 import { DEFAULT_LOCAL_RETRIES } from '../src/core/pipeline-spec/retries.js';
 import { REVIEW_CYCLE_CAP } from '../src/core/pipeline-spec/review.js';
@@ -20,6 +20,7 @@ import {
 } from '../src/core/schemas/consult.js';
 import type { EffortLevel } from '../src/core/schemas/enums.js';
 import type { Plan } from '../src/core/schemas/plan.js';
+import { MAX_REVIEW_CHECKS } from '../src/core/schemas/review.js';
 import { TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
 import type { Stack, TestNarrowing } from '../src/core/validation/stacks/types.js';
@@ -38,7 +39,7 @@ import { READ_ONLY_CONTEXT_HEADING, TASK_BRIEF_HEADINGS } from '../src/engine/sp
 import { formatTaskPrompt } from '../src/engine/spec/prompt-formatter.js';
 import { buildConsultPrompt } from '../src/engine/spec/prompts/consult.js';
 import { buildLanguageContext } from '../src/engine/spec/prompts/language-context.js';
-import { IMPLEMENTER_RUNS_NO_GATES, workspaceRules } from '../src/engine/spec/prompts/system.js';
+import { IMPLEMENTER_RUNS_NO_CHECKS, workspaceRules } from '../src/engine/spec/prompts/system.js';
 import { buildTaskFormatExample } from '../src/engine/spec/prompts/task-format-example.js';
 
 const ctx = buildLanguageContext('typescript');
@@ -72,10 +73,7 @@ type Substitutions = ReadonlyArray<readonly [string, string]>;
 
 const CLOSING_LINE_SUBSTITUTIONS: Substitutions = [
   ['directly in the isolation directory.', 'directly in the working directory.'],
-  [
-    'SPLITBRIEF runs the typecheck, lint and test gates',
-    `The orchestrator runs the ${GATE_ORDER.join(', ')} gates`,
-  ],
+  ['SPLITBRIEF runs the checks', 'The orchestrator runs the checks'],
 ];
 
 function substitute(text: string, substitutions: Substitutions, source: string): string {
@@ -181,7 +179,7 @@ function preamble(): string {
       'Read the suggested files and the attached context before editing.',
       'Treat steps as guidance. Keep the accepted criteria and explicit exclusions.',
       substitute(
-        IMPLEMENTER_RUNS_NO_GATES,
+        IMPLEMENTER_RUNS_NO_CHECKS,
         [['SPLITBRIEF runs', 'The orchestrator runs']],
         'gate rule',
       ),
@@ -212,7 +210,7 @@ Read the workspace without editing it. Answer from this packet and the current c
 <per-task changed paths and touchedNotSuggested entries with reasons>
 
 ## Recorded Validation Output
-<current full-suite output and required checks by id, with commands, exits and artifact paths>
+<reviewer check output and required checks by id, with commands, exits and artifact paths>
 
 ## Consults and user answers
 <consult log, triage log, rejected findings with reasons, and user answers>
@@ -467,16 +465,14 @@ function gates(): string {
   const defaults = withProbeProject((dir) =>
     STACKS.map((stack) => [
       `${stack.language} (${stackMarkers(stack)})`,
-      command(stack.typecheck(dir)),
-      command(stack.lint(dir)),
       command(stack.test(dir)),
       stackTestFiles(stack),
     ]),
   );
   return [
-    table(['Language (marker)', 'typecheck', 'lint', 'test', 'test files'], defaults),
+    table(['Language (marker)', 'test check command', 'test files'], defaults),
     '',
-    "A stage whose command resolves to nothing is skipped. The columns show the default with the language's own tooling present; the resolution order above still wins over them.",
+    "A test check whose command resolves to nothing cannot run. The column shows the default with the language's own tooling present; the resolution order above still wins over it.",
     '',
     NARROWING_RULE.text,
     '',
@@ -493,13 +489,16 @@ function gates(): string {
 
 function gateRules(): string {
   return bullets([
-    'With workflow.review: end, ordinary briefs run no stack gates. The final review runs all enabled gates and registered checks.',
-    'With workflow.review: task, each task runs related tests and due checks, then its scheduled review. The final review runs all gates.',
-    'Final gate failures enter triage and create fix tasks; no completed brief reopens. A fix task reruns the stage and checks of the red it answers at its brief gate, so a red fix retries through its ladder.',
-    'A test command that cannot select related tests is skipped by an ordinary brief gate. The gate of a fix task that answers a test red runs it on the full suite. The final review runs it.',
-    'When lint is enabled, format the brief changed files after every hand-back. A formatter failure records a warning.',
-    `Order: ${GATE_ORDER.join(' → ')}. Stop at the first failing stage; every later stage is recorded \`not run\`.`,
-    `Capture at most ${CAPTURE_LIMITS.outputChars} characters per stage, and keep the test stage's LAST ${CAPTURE_LIMITS.testTailLines} lines — runners print the pass/fail summary last.`,
+    'At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, an ordinary brief runs no check: only a caller that names checks runs them, such as a consult `verify`.',
+    `Before each review, with End-of-run checks on, the reviewer reads the project in the plan call and chooses at most ${MAX_REVIEW_CHECKS} reviewer checks (\`V1\`, \`V2\`, …) that verify the change, each with a reason, plus the related tests it declines and why. A task-cadence review chooses the tests related to the changed files.`,
+    'A failed plan call halts the review the same way a failed verdict call does. It is never a pass.',
+    'Run each reviewer check in the run workspace under the command policy. Refuse a reviewer check whose package script or task file the run changed; a plan or task check is never refused for that.',
+    'Stop at the first reviewer check with new failures; every later one is recorded `not run`. Re-run a red reviewer check at the run base with the same text: a failure also red there is pre-existing. Plan checks, task checks and the Apply re-check never re-run at the run base.',
+    'A red required check, or a reviewer check with new failures, becomes a pending input; triage turns it into fix tasks, and no completed brief reopens. The fix task carries the red it answers: the check id, its command, its output and its file.',
+    'The brief gate of a fix task runs the check of its red again under the same command policy; a red reviewer check also re-runs at the run base, as at review. A still-red fix fails its gate and retries through its ladder before the next review.',
+    'With End-of-run checks off, no reviewer check runs and one row says so. Plan and task checks still run.',
+    'Format the brief changed files with the project formatter after every hand-back. A formatter failure records a warning.',
+    `Capture at most ${CAPTURE_LIMITS.outputChars} characters per command, and keep the LAST ${CAPTURE_LIMITS.testTailLines} lines of a test command — runners print the pass/fail summary last.`,
     `Narrowing kinds: ${NARROWING_RULE.kinds.map((kind) => `\`${kind}\``).join(', ')}.`,
   ]);
 }

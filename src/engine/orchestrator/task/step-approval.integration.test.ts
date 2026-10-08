@@ -17,7 +17,7 @@ import {
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
-import { createValidator } from '../validation/run.js';
+import type { Validator } from '../validation/types.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
@@ -45,7 +45,7 @@ describe('runSingleTask — approval gates', () => {
         return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
       }),
     });
-    const runValidation = vi.fn().mockResolvedValue([]);
+    const formatChangedFiles = vi.fn().mockResolvedValue(undefined);
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
 
@@ -60,9 +60,9 @@ describe('runSingleTask — approval gates', () => {
           workflow: { review: 'task' },
 
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
-        validator: { ...createValidator(), runValidation },
+        validator: { formatChangedFiles },
       }),
     );
     const result = await runSingleTask({
@@ -82,7 +82,7 @@ describe('runSingleTask — approval gates', () => {
     expect(implementer.retry).not.toHaveBeenCalled();
     expect(events.some((e) => e.type === 'approval_prompted')).toBe(false);
     expect(JSON.stringify(events)).not.toMatch(/revert/i);
-    expect(runValidation).toHaveBeenCalledWith(
+    expect(formatChangedFiles).toHaveBeenCalledWith(
       expect.objectContaining({ changedFiles: expect.arrayContaining(['src/unrelated.ts']) }),
     );
     expect(events.find((e) => e.type === 'task_touched_not_suggested')).toMatchObject({
@@ -122,7 +122,7 @@ describe('runSingleTask — approval gates', () => {
           workflow: { review: 'task' },
 
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
     );
@@ -182,7 +182,7 @@ describe('runSingleTask — approval gates', () => {
         config: makeConfig({
           workflow: { review: 'task' },
 
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
     );
@@ -242,7 +242,7 @@ describe('runSingleTask — approval gates', () => {
           workflow: { review: 'task' },
 
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
       task,
@@ -293,7 +293,7 @@ describe('runSingleTask — approval gates', () => {
           workflow: { review: 'task' },
 
           approval: { feedRejectionsToPlanner: true },
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
         }),
       }),
     );
@@ -348,7 +348,7 @@ describe('runSingleTask — approval gates', () => {
             workflow: { review: 'task' },
 
             approval: { feedRejectionsToPlanner: true },
-            validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+            validation: { endChecks: false, testCommand: 'noop' },
           }),
         }),
       ),
@@ -377,7 +377,7 @@ describe('runSingleTask — approval gates', () => {
 
   async function runDirtyProtectedTask(opts: {
     mutate: (projectDir: string) => void;
-    runValidation?: ReturnType<typeof createValidator>['runValidation'];
+    formatChangedFiles?: Validator['formatChangedFiles'];
   }) {
     const { projectDir, sessionId } = setupProject({ '.env.local': 'TOKEN=1\n' });
 
@@ -411,11 +411,11 @@ describe('runSingleTask — approval gates', () => {
         workflow: { review: 'task' },
 
         approval: { feedRejectionsToPlanner: false },
-        validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
-      ...(opts.runValidation === undefined
+      ...(opts.formatChangedFiles === undefined
         ? {}
-        : { validator: { ...createValidator(), runValidation: opts.runValidation } }),
+        : { validator: { formatChangedFiles: opts.formatChangedFiles } }),
     });
     const base = await createSnapshot({
       projectDir,
@@ -446,13 +446,13 @@ describe('runSingleTask — approval gates', () => {
   }
 
   it('blocks protected changes to an already-dirty file (dirty-at-start detection)', async () => {
-    const runValidation = vi.fn().mockResolvedValue([]);
+    const formatChangedFiles = vi.fn().mockResolvedValue(undefined);
     const { projectDir, userEdit, events, result } = await runDirtyProtectedTask({
       mutate: (dir) => writeFileSync(join(dir, '.env.local'), 'TOKEN=99\n'),
-      runValidation,
+      formatChangedFiles,
     });
 
-    expect(runValidation).not.toHaveBeenCalled();
+    expect(formatChangedFiles).not.toHaveBeenCalled();
     expect(result.currentTaskIndex).toBe(0);
     expect(result.pendingRecovery).toMatchObject({
       reason: 'approval-denied',

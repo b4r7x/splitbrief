@@ -13,7 +13,7 @@ Install SPLITBRIEF, choose your tools, and run your first change. This guide cov
 It splits the work an AI normally does in one shot into two roles:
 
 - A **planner** — the stronger of the two, which *thinks*: it reads your repo, asks clarifying questions, and compiles your request into a structured **Task Brief**. Admitted planners (CLI subscriptions, APIs, shells, agents) are listed in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md).
-- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, with the resolved typecheck, lint, and test pipeline after each. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a smaller model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
+- An **implementer** — a weaker **model** that *types*: it executes one task at a time against the brief, and SPLITBRIEF runs the plan's checks and, before each review, the reviewer checks. It reaches SPLITBRIEF over either of two equally supported transports — a CLI tool driving a smaller model, which writes files itself, or an API model, which returns file contents that SPLITBRIEF writes. You pick; SPLITBRIEF favours neither. Admitted implementers and API/local providers are in [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) and [CONFIGURATION.md](./CONFIGURATION.md).
 
 The orchestrator in the middle owns persistence, validation, retries, escalation, checkpoints, and final review. It persists state at workflow boundaries; an open run stays continuable, a ready run waits for Apply or Discard, and the brief is durable on disk. The implementer never certifies its own work, and the advantage compounds when the two sides come from different labs: a reviewer from another model family does not inherit the implementer's blind spots.
 
@@ -181,7 +181,7 @@ Full semantics: [docs/WORKFLOW.md](./WORKFLOW.md).
 
 Fastest path from install to a validated run using **admitted** runners only. Full support tables: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md) (CLI matrix, readiness states, billing posture per tool) and [CONFIGURATION.md](./CONFIGURATION.md) (API providers, model catalog, profiles).
 
-**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. If your tree already has failing checks, `splitbrief doctor --probe-validation` runs the configured validation commands and names the stages that are already red — use it before a run, not inside one (it can take minutes).
+**1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. `doctor` runs no validation command. During a run, a red command re-runs at the run base, and a failure that your tree already had is reported as pre-existing.
 
 **2. Hybrid recipe (subscription planner + local implementer).** The admitted CLI `claude-code` (evidence as-of 2026-07-31, tested version 2.0.0) uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a bundled **`compatible-only`** local row served by LM Studio (`local` billing; no key, traffic stays on loopback). Load the model in LM Studio and start its server first. No bundled model is `recommended` — see the note below:
 
@@ -203,16 +203,14 @@ implementer:
   temperature: 0.3
 
 validation:
-  typecheck: true
-  lint: true
-  test: true
-  testCommand: npm test
+  end_checks: true
+  test_command: npm test
 
 workflow:
   approve: plan
 ```
 
-The orchestrator resolves each typecheck, lint and test command in this order: this config first, then a `package.json` script or `Makefile`/`justfile` target of that name, then planner discovery, then the detected stack's own defaults. `workflow.review` sets when the gates run. With `end` (the default) they run once, before the final review. With `task` each task also runs its related tests and due checks. A red brief retries once, then the orchestrator consults the planner for one typed answer (guidance, a rewritten or split brief, a check re-run, or one question for you).
+With `end_checks: true` (the default), the reviewer reads the project before the review and chooses the reviewer checks that verify the change; SPLITBRIEF runs them under its command policy. `test_command` is the command a planner `test` check runs; without it the orchestrator resolves a `package.json` `test` script or `Makefile`/`justfile` `test` target, then planner discovery, then the detected stack's own default; with none of these the check is `not-runnable`. `workflow.review` sets when the checks run. With `end` (the default) the reviewer checks run before the final review. With `task` each task also runs its own checks and its due checks, and each task review runs the related tests the reviewer chooses. A red brief retries once, then the orchestrator consults the planner for one typed answer (guidance, a rewritten or split brief, a check re-run, or one question for you).
 
 **3. Subscription CLI implementer (optional).** To type through the same admitted CLI instead of an API, set `implementer.kind: cli` with `tool: claude-code`. The child CLI edits files in the run workspace, never your checkout; SPLITBRIEF asks before a protected write stands, and the reviewed result reaches your checkout only when you Apply it. Posture and auth channels: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
@@ -254,7 +252,7 @@ Explicit non-goals, so you don't go looking:
 
 - **Not a swarm or generic multi-agent manager.** Two roles, one workflow. An implementer pool selects one capable worker per Task Brief; it does not fan out competing agents over the same checkout.
 - **Native Windows is not supported.** Use macOS, Linux or run inside WSL. The process and filesystem handling requires POSIX semantics.
-- **No fixed validator language.** Validation is command-based and resolves per stack for TypeScript, JavaScript, Python, Go and Rust; any other stack runs review-only (`gates: NONE`) rather than guessing a command.
+- **No fixed validator language.** The reviewer chooses the reviewer checks from the project itself. The command policy runs only programs on its allowlist: the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test` target, and the tools of the five registry stacks. Every refused command gets a named row. A planner `test` check resolves its command per stack (TypeScript, JavaScript, Python, Go and Rust); on any other stack it needs `validation.test_command`, else it is `not-runnable`, never guessed.
 - **No SPLITBRIEF-defined tool-call protocol for implementers.** SPLITBRIEF does not layer a second control protocol on top of the runner. An implementer either returns file contents that SPLITBRIEF writes (`extracted-code`), or writes into its working directory itself (`direct` — `cli` and `agent` runners) and SPLITBRIEF inspects the resulting diff. Whatever tools the runner exposes internally are the runner's business. See [docs/VISION.md §Strategic decisions](./VISION.md).
 - **No cloud-side state.** Everything lives under `.splitbrief/` in your project. No accounts, no SaaS, no telemetry.
 

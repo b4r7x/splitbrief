@@ -259,7 +259,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
           model: 'fixture-agent',
           contextLength: 4096,
         },
-        validation: { typecheck: false, lint: false, test: false },
+        validation: { endChecks: false },
         workflow: { approve: 'none', maxRetries: 2 },
       });
 

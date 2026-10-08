@@ -22,9 +22,7 @@ export function createDefaultConfig(): Config {
       temperature: DEFAULT_IMPLEMENTER_TEMPERATURE,
     },
     validation: {
-      typecheck: true,
-      lint: true,
-      test: true,
+      endChecks: true,
     },
     workflow: {
       approve: 'plan',

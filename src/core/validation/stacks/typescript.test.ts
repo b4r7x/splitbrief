@@ -27,16 +27,6 @@ describe('typescriptStack', () => {
     expect(typescriptStack.test(dir)).toBe('npm test');
   });
 
-  it('typecheck is npx tsc --noEmit', () => {
-    expect(typescriptStack.typecheck(dir)).toBe('npx tsc --noEmit');
-  });
-
-  it('lint follows detectLintCommand', () => {
-    expect(typescriptStack.lint(dir)).toBeNull();
-    writeFileSync(join(dir, 'biome.json'), '{}');
-    expect(typescriptStack.lint(dir)).toBe('npx biome check .');
-  });
-
   it('the predicate marker admits a typescript devDependency', () => {
     writePackageJson({ devDependencies: { typescript: '^6.0.0' } });
     expect(hasTypescriptDependency(dir)).toBe(true);

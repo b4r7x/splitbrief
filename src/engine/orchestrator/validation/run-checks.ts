@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { copyFile, mkdir, readFile, readdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
+import { resolveApproveLevel, resolveEndChecks } from '../../../core/config/runtime/resolve.js';
 import { rendersDir } from '../../../core/paths.js';
 import { STAGE_TIMEOUT_MS } from '../../../core/pipeline-spec/gates.js';
 import { readPackageJson } from '../../../core/project-meta.js';
@@ -10,16 +10,22 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
-import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow.js';
+import type {
+  DiscoveredValidation,
+  ReviewChecksRecord,
+  WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
+import type { RunBase } from '../isolation/base-tree.js';
 import { checkCommandRefusal } from '../planning/sanitize-discovered-validation.js';
+import { changedDefinitionRefusal } from './changed-script.js';
 import type { ValidationResult } from './result.js';
-import { buildStageContext, planStage } from './run.js';
+import { buildStageContext, planTestCheck } from './run.js';
 import { boundedOutputTail, runValidationStep } from './stage.js';
 import type { ValidationCommandRunner } from './types.js';
 
@@ -36,13 +42,20 @@ export type CheckRunResult = {
   output: string;
   command?: string | undefined;
   exitCode?: number | undefined;
+  timedOut?: true | undefined;
   artifacts?: CheckRunArtifact[] | undefined;
+  /** The failure keys the same command also showed at the run base. */
+  preExisting?: readonly string[] | undefined;
 };
 
 export type RunChecksOptions = {
   task?: Task | undefined;
   tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
+  /** The commands the last review chose: checks `V1…`. */
+  reviewChecks?: ReviewChecksRecord | undefined;
+  /** The run base: a reviewer check whose script this run changed is refused against it. */
+  base?: RunBase | undefined;
   projectDir: string;
   sessionId?: string | undefined;
   checkoutDir?: string | undefined;
@@ -62,14 +75,33 @@ export function planApprovesNpmScripts(opts: {
   return resolveApproveLevel(opts.config) === 'plan' && opts.state.approve === 'plan';
 }
 
+/** The reviewer's chosen commands as required `cmd` checks. */
+export function reviewCheckList(record: ReviewChecksRecord | undefined): Check[] {
+  return (record?.plan.commands ?? []).map((command) => ({
+    id: command.id,
+    kind: 'cmd',
+    value: command.command,
+    required: true,
+  }));
+}
+
+/** The reviewer checks a run may name: none while End-of-run checks are off. */
+export function enabledReviewChecks(
+  config: Config,
+  record: ReviewChecksRecord | undefined,
+): ReviewChecksRecord | undefined {
+  return resolveEndChecks(config) ? record : undefined;
+}
+
 export function checkRegistry(
-  opts: Pick<RunChecksOptions, 'task' | 'tasks' | 'plan'>,
+  opts: Pick<RunChecksOptions, 'task' | 'tasks' | 'plan' | 'reviewChecks'>,
 ): Map<string, Check> {
   return new Map(
     [
       ...(opts.plan?.checks ?? []),
       ...(opts.tasks ?? []).flatMap((task) => task.checks ?? []),
       ...(opts.task?.checks ?? []),
+      ...reviewCheckList(opts.reviewChecks),
     ].map((check) => [check.id, check]),
   );
 }
@@ -105,13 +137,11 @@ async function runTestCheck(
   run: ValidationCommandRunner,
   stageContext: ReturnType<typeof buildStageContext>,
 ): Promise<CheckRunResult> {
-  const checkTask: Pick<Task, 'suggestedFiles'> = { suggestedFiles: [check.value] };
-  const planned = planStage('test', checkTask, stageContext, [check.value], 'check');
+  const planned = planTestCheck(check.value, stageContext);
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };
   }
   const result = await runValidationStep({
-    stage: 'test',
     cmd: planned.resolved.cmd,
     args: planned.args,
     source: planned.resolved.source,
@@ -119,7 +149,6 @@ async function runTestCheck(
     timeout: validationTimeout(opts.config),
     runCommand: run,
     command: planned.command,
-    stack: stageContext.stack,
     signal: opts.signal,
   });
   if (result.missingExecutable !== undefined) {
@@ -144,12 +173,24 @@ async function runCommandCheck(
   opts: RunChecksOptions,
   run: ValidationCommandRunner,
   packageScripts: PackageScriptsReadinessInput,
+  reviewCheck: boolean,
 ): Promise<CheckRunResult> {
-  const refusal = checkCommandRefusal(check.value, {
-    npmScriptsApproved: opts.npmScriptsApproved,
-    packageScripts,
-  });
-  if (refusal !== null) return { checkId: check.id, status: 'refused', output: refusal };
+  // Only a reviewer check is refused for a changed script: a plan may add a script and check it.
+  const refusal =
+    checkCommandRefusal(check.value, {
+      npmScriptsApproved: opts.npmScriptsApproved,
+      packageScripts,
+    }) ??
+    (!reviewCheck || opts.base === undefined
+      ? null
+      : await changedDefinitionRefusal({
+          command: check.value,
+          base: opts.base,
+          workspaceDir: opts.projectDir,
+        }));
+  if (refusal !== null) {
+    return { checkId: check.id, status: 'refused', output: refusal, command: check.value };
+  }
   const [cmd, ...args] = parseShellCommand(check.value);
   if (cmd === undefined) {
     return { checkId: check.id, status: 'refused', output: 'names no program' };
@@ -188,6 +229,7 @@ async function runCommandCheck(
         status: 'fail',
         output: boundedOutputTail(err.message),
         command: check.value,
+        timedOut: true,
       };
     }
     if (isENOENT(err) || processError.isNotFound(err)) {
@@ -298,6 +340,7 @@ export async function runChecks(
   });
   const packageScripts = readPackageScripts(opts.projectDir);
   const registry = checkRegistry(opts);
+  const reviewIds = new Set(reviewCheckList(opts.reviewChecks).map((check) => check.id));
   const results: CheckRunResult[] = [];
   const seen = new Set<string>();
   for (const checkId of checkIds) {
@@ -309,7 +352,9 @@ export async function runChecks(
     } else if (check.kind === 'render') {
       results.push(await runRenderCheck(check, opts, run));
     } else if (check.kind === 'cmd') {
-      results.push(await runCommandCheck(check, opts, run, packageScripts));
+      results.push(
+        await runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id)),
+      );
     } else {
       results.push(await runTestCheck(check, opts, run, stageContext));
     }

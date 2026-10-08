@@ -60,7 +60,6 @@ import { resolveCliExecutableAliases } from '../../engine/runners/resolve-cli-ex
 interface DoctorOpts {
   project?: string | undefined;
   json?: boolean | undefined;
-  probeValidation?: boolean | undefined;
   probeSeat?: string | undefined;
 }
 
@@ -387,16 +386,9 @@ async function withPreparationPreflights(options: {
 export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): void {
   program
     .command('doctor')
-    .description(
-      'Check run readiness without creating a workflow session (validation commands run only with --probe-validation)',
-    )
+    .description('Check run readiness without creating a workflow session')
     .option('--project <dir>', 'Project directory (default: cwd)')
     .option('--json', 'Emit readiness as JSON', false)
-    .option(
-      '--probe-validation',
-      'Run the configured validation commands to flag a pre-broken tree (can take minutes)',
-      false,
-    )
     .option(
       '--probe-seat <seat>',
       'Make one paid call through the plan, build or review seat adapter',
@@ -422,7 +414,6 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       const collected = await collectReadiness({
         projectDir,
         interaction,
-        probeValidation: opts.probeValidation === true,
         detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
         probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
       });

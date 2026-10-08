@@ -3,6 +3,7 @@ import { APPROVE_LEVELS, ISOLATION_STRATEGIES } from '../schemas/enums.js';
 import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
+import { resolveEndChecks } from '../config/runtime/resolve.js';
 import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 
 const isApiImplementer = (config: Config): boolean =>
@@ -108,31 +109,19 @@ export const SETTINGS_DEFS: SettingDef[] = [
     readValue: getIsolationStrategy,
   },
   {
-    id: 'validation.typecheck',
-    label: 'Type check',
+    id: 'validation.endChecks',
+    label: 'End-of-run checks',
     section: 'Validation',
-    description: "Run the stack's type checker",
+    description:
+      'The reviewer chooses reviewer checks that verify the change; SPLITBRIEF runs them',
     kind: 'boolean',
-  },
-  {
-    id: 'validation.lint',
-    label: 'Lint',
-    section: 'Validation',
-    description: 'Run linter',
-    kind: 'boolean',
-  },
-  {
-    id: 'validation.test',
-    label: 'Test',
-    section: 'Validation',
-    description: 'Run test suite',
-    kind: 'boolean',
+    readValue: resolveEndChecks,
   },
   {
     id: 'validation.testCommand',
     label: 'Test command',
     section: 'Validation',
-    description: "Argv-style test runner command (auto = the stack's own)",
+    description: "The command the planner's test checks run (auto = the stack's own)",
     kind: 'string',
     unsetLabel: 'auto',
   },

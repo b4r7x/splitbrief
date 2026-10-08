@@ -25,7 +25,7 @@ import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 
 const PLAIN_LINE =
-  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|gates: NONE — review-only)$/;
+  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|reviewer check V\d+: (passed|failed|refused|not run) \(.+\)|reviewer check V\d+ at base: (passes|fails|refused \(.+\)|not run \(.+\)))$/;
 
 const DONE_LINE = /^done: (\d+) tasks$/;
 
@@ -98,7 +98,8 @@ export function assertSessionDir(
   const calls = countRunnerCalls(events);
   expect(calls.planner).toBe(1);
   expect(calls.implementer).toBe(tasks.length);
-  expect(calls.review).toBe(1);
+  // The final review is two reviewer calls: the plan call that chooses the reviewer checks, then the verdict.
+  expect(calls.review).toBe(2);
   expect(events.filter(wroteNothing)).toHaveLength(0);
   expect(events.filter((entry) => entry.type === 'runner_call_error')).toHaveLength(0);
 

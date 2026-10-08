@@ -241,7 +241,7 @@ function unavailablePlannerConfig(): Config {
       kind: 'agent',
       command: '/definitely/does/not/exist/plannerbin',
     },
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    validation: { endChecks: false, testCommand: 'noop' },
     workflow: {
       approve: 'none',
     },
@@ -252,7 +252,7 @@ describe('runWorkflow — smoke', () => {
   it('keeps the prepared runner config after mutable config changes', async () => {
     const projectDir = setupProject();
     const mutableConfig = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { approve: 'none' },
     });
     const config = parsePreparedConfig(mutableConfig);
@@ -359,7 +359,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'stale boundary interrupt',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -387,7 +387,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'planning-failed-sid';
     const { callbacks } = makeCallbacks();
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
       },
@@ -477,7 +477,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'process-ledger-sid';
     const { callbacks } = makeCallbacks();
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
       },
@@ -618,7 +618,7 @@ describe('runWorkflow — smoke', () => {
         projectDir,
         sessionId,
         config: makeConfig({
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
           workflow: {
             approve: 'none',
           },
@@ -674,7 +674,7 @@ describe('runWorkflow — smoke', () => {
     const projectDir = setupProject();
     const sessionId = 'concurrent-run-sid';
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { approve: 'none' },
     });
     const releaseFirst = Promise.withResolvers<void>();
@@ -892,7 +892,7 @@ describe('runWorkflow — smoke', () => {
     // returns, the phases short-circuit and runWorkflow still produces a summary.
     const config = makeConfig({
       planner: { kind: 'agent', command: 'echo', args: ['done'] },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
       },
@@ -927,7 +927,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'ui cancel',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -961,7 +961,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'end the run',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'none' },
       }),
       callbacks,
@@ -1002,7 +1002,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'pause the run',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'none' },
       }),
       callbacks,
@@ -1060,7 +1060,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'stop at the plan approval',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'plan' },
       }),
       callbacks,
@@ -1126,7 +1126,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'approval-rewind-sid';
     const controller = new AbortController();
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         approve: 'plan',
       },
@@ -1180,7 +1180,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'record the gate approvals',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'plan' },
       }),
       callbacks,
@@ -1211,7 +1211,7 @@ describe('runWorkflow — smoke', () => {
     const sessionId = 'explicit-normal-abort-sid';
     const config = makeConfig({
       planner: { kind: 'agent', command: 'echo', args: ['done'] },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         approve: 'none',
       },
@@ -1245,7 +1245,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'carry planned task',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -1291,7 +1291,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'planner call events',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -1368,7 +1368,7 @@ describe('runWorkflow — smoke', () => {
       feature: 'inherited review seat call events',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'none' },
       }),
       callbacks,
@@ -1424,7 +1424,7 @@ describe('runWorkflow — smoke', () => {
       projectDir,
       config: makeConfig({
         reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'none' },
       }),
       callbacks,
@@ -1484,7 +1484,7 @@ describe('runWorkflow — smoke', () => {
         projectDir,
         config: makeConfig({
           planner: { kind: 'agent', command: 'echo', args: ['done'] },
-          validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+          validation: { endChecks: false, testCommand: 'noop' },
           workflow: { approve: 'none' },
         }),
         callbacks,
@@ -1621,7 +1621,7 @@ describe('runWorkflow — createBranch', () => {
     controller.abort();
 
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         git: { createBranch: true },
       },
@@ -1658,7 +1658,7 @@ describe('runWorkflow — createBranch', () => {
     controller.abort();
 
     const config = makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {
         git: { createBranch: false },
       },
@@ -1719,7 +1719,7 @@ describe('runWorkflow — recovery resume', () => {
       feature: 'feat',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -1767,7 +1767,7 @@ describe('runWorkflow — recovery resume', () => {
       feature: 'feat',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -1831,7 +1831,7 @@ describe('runWorkflow — recovery resume', () => {
           apiKey: 'test-key',
           model: 'deepseek-chat',
         },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
         },
@@ -1882,7 +1882,7 @@ describe('runWorkflow — a run still in flight when its test ends', () => {
       feature: 'in flight at teardown',
       projectDir,
       config: makeConfig({
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
         workflow: { approve: 'none' },
       }),
       callbacks,

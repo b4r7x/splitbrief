@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';
 import { collectTrackedFiles, hashFile } from '../../snapshots/files.js';
 import { readManifest } from '../../snapshots/manifest.js';
+import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
 import { isInternalGitStatusPath, sessionDir, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import { writeConfinedSecureFileAsync } from '../../../lib/fs.js';
@@ -204,6 +205,84 @@ export async function prepareWorktreeAcquisition(opts: {
   return { targetBaseline };
 }
 
+type BaseSnapshot = {
+  projectDir: string;
+  sessionId: string;
+  snapshotId: string;
+  manifest: SnapshotManifest;
+  baseline: SnapshotManifest;
+  entries: ReadonlyMap<string, SnapshotManifest['fileEntries'][number]>;
+  baselineEntries: ReadonlyMap<string, SnapshotManifest['fileEntries'][number]>;
+};
+
+async function readBaseSnapshot(base: {
+  projectDir: string;
+  sessionId: string;
+  snapshotId: string;
+}): Promise<BaseSnapshot> {
+  const manifest = await readManifest(base.projectDir, base.sessionId, base.snapshotId);
+  const baseline =
+    base.snapshotId === SNAPSHOT_BASELINE_ID
+      ? manifest
+      : await readManifest(base.projectDir, base.sessionId, SNAPSHOT_BASELINE_ID);
+  return {
+    ...base,
+    manifest,
+    baseline,
+    entries: new Map(manifest.fileEntries.map((entry) => [entry.path, entry])),
+    baselineEntries: new Map(baseline.fileEntries.map((entry) => [entry.path, entry])),
+  };
+}
+
+// A snapshot stores a blob only for the files it captured; an unchanged file inherits the baseline's.
+async function baseBlobPath(
+  snapshot: BaseSnapshot,
+  file: string,
+  hash: string,
+): Promise<string | null> {
+  const entry = snapshot.entries.get(file);
+  const inherited = entry === undefined && snapshot.baseline.fileHashes[file] === hash;
+  const resolvedEntry = inherited ? snapshot.baselineEntries.get(file) : entry;
+  if (resolvedEntry?.hash !== hash) return null;
+  return resolveValidatedBlobPath({
+    projectDir: snapshot.projectDir,
+    sessionId: snapshot.sessionId,
+    snapshotId: inherited ? SNAPSHOT_BASELINE_ID : snapshot.snapshotId,
+    path: file,
+    entry: resolvedEntry,
+  });
+}
+
+export type RunBaseFile =
+  | { kind: 'absent' }
+  | { kind: 'unchanged' }
+  | { kind: 'changed'; text: string | null };
+
+/**
+ * A reader of files at the run base, compared with the workspace: absent from both, unchanged, or
+ * changed with its base text (null when the run created it or the snapshot holds no copy of it).
+ * It reads the base snapshot once, however many files it then reads.
+ */
+export async function createRunBaseReader(input: {
+  projectDir: string;
+  sessionId: string;
+  snapshotId: string;
+  workspaceDir: string;
+}): Promise<(file: string) => Promise<RunBaseFile>> {
+  const snapshot = await readBaseSnapshot(input);
+  return async (file) => {
+    assertPathConfined(file, input.workspaceDir);
+    const current = await hashFile(join(input.workspaceDir, file));
+    const hash = snapshot.manifest.fileHashes[file];
+    if (hash === undefined || hash === '') {
+      return current === null ? { kind: 'absent' } : { kind: 'changed', text: null };
+    }
+    if (current === hash) return { kind: 'unchanged' };
+    const blob = await baseBlobPath(snapshot, file, hash);
+    return { kind: 'changed', text: blob === null ? null : await readFile(blob, 'utf8') };
+  };
+}
+
 export async function reconcileWorkspaceToBase(input: {
   projectDir: string;
   sessionId: string;
@@ -211,30 +290,15 @@ export async function reconcileWorkspaceToBase(input: {
   workspaceDir: string;
   keep: readonly string[];
 }): Promise<void> {
-  const { projectDir, sessionId, snapshotId, workspaceDir } = input;
-  const manifest = await readManifest(projectDir, sessionId, snapshotId);
-  const baseline =
-    snapshotId === SNAPSHOT_BASELINE_ID
-      ? manifest
-      : await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
+  const { projectDir, workspaceDir } = input;
+  const snapshot = await readBaseSnapshot(input);
+  const { manifest } = snapshot;
   const keep = new Set(input.keep);
-  const entries = new Map(manifest.fileEntries.map((entry) => [entry.path, entry]));
-  const baselineEntries = new Map(baseline.fileEntries.map((entry) => [entry.path, entry]));
   for (const [file, hash] of Object.entries(manifest.fileHashes)) {
     if (keep.has(file) || isInternalGitStatusPath(file) || hash === '') continue;
     assertPathConfined(file, workspaceDir);
     if ((await hashFile(join(workspaceDir, file))) === hash) continue;
-    const entry = entries.get(file);
-    const inherited = entry === undefined && baseline.fileHashes[file] === hash;
-    const resolvedEntry = inherited ? baselineEntries.get(file) : entry;
-    if (resolvedEntry?.hash !== hash) continue;
-    const blob = await resolveValidatedBlobPath({
-      projectDir,
-      sessionId,
-      snapshotId: inherited ? SNAPSHOT_BASELINE_ID : snapshotId,
-      path: file,
-      entry: resolvedEntry,
-    });
+    const blob = await baseBlobPath(snapshot, file, hash);
     if (blob === null) continue;
     const current = await readConfinedEntry(workspaceDir, file);
     const bytes = await readFile(blob);

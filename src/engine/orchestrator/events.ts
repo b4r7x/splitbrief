@@ -7,25 +7,14 @@ import type {
   TaskContextFit,
   Phase,
   RecoveryReason,
-  ValidationStage,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
-import type {
-  EngineEvent,
-  EngineEventOf,
-  EventBus,
-  ValidationStageAttempts,
-  ValidationStageCommands,
-  ValidationStages,
-  ValidationStageSkips,
-} from '../events/types.js';
-import type { ValidationResult } from './validation/result.js';
-import type { ValidationAcceptance } from './validation/acceptance.js';
-import type { FullSuiteMoment } from './validation/types.js';
+import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
+import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { ImplementerPublisher } from '../implementers/types.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
@@ -69,29 +58,6 @@ export function publishRunnerCallEvent(
   runnerCallEventSequence += 1;
   for (const projectedEvent of projected) ctx.bus.publish(projectedEvent);
 }
-
-const EMPTY_STAGES: ValidationStages = { typecheck: false, lint: false, test: false };
-
-type ValidationProgressPhase =
-  | { phase: 'start'; commands?: ValidationStageCommands | undefined }
-  | {
-      phase: 'progress';
-      stages: ValidationStages;
-      startTime: number;
-      activeStage?: ValidationResult['stage'] | undefined;
-      commands?: ValidationStageCommands | undefined;
-    }
-  | {
-      phase: 'result';
-      results: ValidationResult[];
-      startTime: number;
-    };
-
-type ValidationPhase =
-  | Exclude<ValidationProgressPhase, { phase: 'result' }>
-  | (Extract<ValidationProgressPhase, { phase: 'result' }> & {
-      acceptance: ValidationAcceptance;
-    });
 
 export function createBusTextHandler(
   ctx: BusContext,
@@ -209,91 +175,35 @@ export function publishTaskComplete(
   ctx.bus.publish({ type: 'task_completed', ts: Date.now(), phase: ctx.phase, ...opts });
 }
 
-export function publishValidation(ctx: BusContext, taskId: TaskId, opts: ValidationPhase): void {
-  if (opts.phase === 'start') {
-    ctx.bus.publish({
-      type: 'validate',
-      ts: Date.now(),
-      phase: ctx.phase,
-      taskId,
-      status: 'running',
-      passed: false,
-      stages: { ...EMPTY_STAGES },
-      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
-    });
-    return;
-  }
-
-  if (opts.phase === 'progress') {
-    ctx.bus.publish({
-      type: 'validate',
-      ts: opts.startTime,
-      phase: ctx.phase,
-      taskId,
-      status: 'running',
-      passed: false,
-      stages: opts.stages,
-      ...(opts.activeStage !== undefined && { activeStage: opts.activeStage }),
-      ...(hasValidationCommands(opts.commands) && { commands: opts.commands }),
-    });
-    return;
-  }
-
-  const stages: ValidationStages = { ...EMPTY_STAGES };
-  const attempted: ValidationStageAttempts = { ...EMPTY_STAGES };
-  const skipped: ValidationStageSkips = {};
-  const skippedReason: Record<string, string> = {};
-  let passed = true;
-  const commands: ValidationStageCommands = {};
-  for (const r of opts.results) {
-    attempted[r.stage] = true;
-    if (r.command !== undefined) commands[r.stage] = r.command;
-    if (r.skipped) {
-      skipped[r.stage] = true;
-      if (r.skippedReason !== undefined) skippedReason[r.stage] = r.skippedReason;
-      continue;
-    }
-    if (r.stage === 'typecheck') stages.typecheck = r.passed;
-    else if (r.stage === 'lint') stages.lint = r.passed;
-    else if (r.stage === 'test') stages.test = r.passed;
-    if (!r.passed) {
-      passed = false;
-    }
-  }
-  const hasSkips = Object.keys(skipped).length > 0;
-  const failedError = opts.results.find(
-    (r) => !r.passed && opts.acceptance.blockingStages.includes(r.stage),
-  )?.error;
-  // An exempt-accepted task failed only on stages the baseline already failed: the run passed on
-  // its own terms, so it publishes `passed` with the exemption named, never a failure the task
-  // did not cause.
-  const exempt = !passed && opts.acceptance.accepted && opts.acceptance.exemptStages.length > 0;
+export function publishReviewChecksPlan(
+  ctx: BusContext,
+  opts:
+    | { scope: 'final' | 'task'; status: 'off' }
+    | { scope: 'final' | 'task'; status: 'planned'; plan: ReviewChecksPlan },
+): void {
   ctx.bus.publish({
-    type: 'validate',
+    type: 'review_checks',
     ts: Date.now(),
     phase: ctx.phase,
-    taskId,
-    status: 'done',
-    passed: passed || exempt,
-    ...(exempt && { exempt: true }),
-    stages,
-    attempted,
-    ...(hasValidationCommands(commands) && { commands }),
-    ...(hasSkips && { skipped }),
-    ...(Object.keys(skippedReason).length > 0 && { skippedReason }),
-    ...(!exempt && failedError !== undefined && { error: failedError }),
-    duration: Date.now() - opts.startTime,
+    scope: opts.scope,
+    status: opts.status,
+    ...(opts.status === 'planned' && {
+      commands: opts.plan.commands.map((command) => ({ ...command })),
+      declined: opts.plan.declined.map((entry) => ({ ...entry })),
+      reason: opts.plan.reason,
+    }),
   });
 }
 
-export function publishFullSuite(
+export function publishReviewCheck(
   ctx: BusContext,
   opts: {
-    status: 'running' | 'done' | 'not-run';
-    stage: ValidationStage;
+    status: 'running' | 'done' | 'not-run' | 'refused';
+    id: string;
     command: string;
-    moment: FullSuiteMoment;
+    moment: 'pre-review' | 'base';
     passed?: boolean | undefined;
+    detail?: string | undefined;
     duration?: number | undefined;
   },
 ): void {
@@ -302,17 +212,13 @@ export function publishFullSuite(
     ts: Date.now(),
     phase: ctx.phase,
     status: opts.status,
-    stage: opts.stage,
+    id: opts.id,
     command: opts.command,
     moment: opts.moment,
     ...(opts.passed !== undefined && { passed: opts.passed }),
+    ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });
-}
-
-function hasValidationCommands(commands: ValidationStageCommands | undefined): boolean {
-  if (commands === undefined) return false;
-  return Object.values(commands).some((command) => command !== undefined && command.length > 0);
 }
 
 export function publishGitCommit(

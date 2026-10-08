@@ -15,9 +15,17 @@ import { createEventBus } from '../../events/bus.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
-import { planApprovesNpmScripts, runChecks, type RunChecksOptions } from './run-checks.js';
+import type { ReviewChecksRecord } from '../../../core/schemas/workflow.js';
+import { withApplyRun } from '#testing/helpers/apply-run.js';
+import { runBaseOf } from '../isolation/base-tree.js';
+import {
+  checkRegistry,
+  planApprovesNpmScripts,
+  reviewCheckList,
+  runChecks,
+  type RunChecksOptions,
+} from './run-checks.js';
 import type { ValidationCommandRunner } from './types.js';
-import { createValidator } from './run.js';
 
 function makePlan(checks: Check[]): Plan {
   return {
@@ -377,11 +385,7 @@ describe('runChecks', () => {
       sessionId,
       planner,
       bus,
-      config: makeConfig({ typecheck: false, lint: false, testCommand: 'missing-vitest run' }),
-      validator: {
-        ...createValidator(),
-        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      },
+      config: makeConfig({ testCommand: 'missing-vitest run' }),
     });
 
     const result = await runPreReview({ wctx, state, setTrackedState: vi.fn() });
@@ -504,7 +508,12 @@ describe('runChecks', () => {
     );
 
     expect(refused).toEqual([
-      { checkId: 'K1', status: 'refused', output: 'runs a package script or binary' },
+      {
+        checkId: 'K1',
+        status: 'refused',
+        output: 'runs a package script or binary',
+        command: 'npm run typecheck',
+      },
     ]);
   });
 
@@ -517,6 +526,7 @@ describe('runChecks', () => {
         checkId: 'K1',
         status: 'refused',
         output: 'runs the npm script deploy, which package.json does not define',
+        command: 'npm run deploy',
       },
     ]);
   });
@@ -541,7 +551,12 @@ describe('runChecks', () => {
         command: 'tsc --noEmit',
         exitCode: 0,
       },
-      { checkId: 'K2', status: 'refused', output: 'runs npx without --no-install' },
+      {
+        checkId: 'K2',
+        status: 'refused',
+        output: 'runs npx without --no-install',
+        command: 'npx some-package',
+      },
       {
         checkId: 'K3',
         status: 'pass',
@@ -553,11 +568,145 @@ describe('runChecks', () => {
     expect(runner.calls.map((call) => call.cmd)).toEqual(['tsc', 'npx']);
   });
 
+  it('runs every check kind under the configured timeout, an hour by default, and the caller signal', async () => {
+    const task = taskWith([
+      { id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true },
+      { id: 'K2', kind: 'test', value: 'src/a.test.ts', required: true },
+    ]);
+    const controller = new AbortController();
+    const byDefault = makeCommandRunner();
+    await runChecks(
+      ['K1', 'K2'],
+      options({ task, signal: controller.signal, runCommand: byDefault }),
+    );
+    const configured = makeCommandRunner();
+    await runChecks(
+      ['K1', 'K2'],
+      options({ task, config: makeConfig({ timeoutMs: 5_000 }), runCommand: configured }),
+    );
+
+    expect(byDefault.calls.map((call) => call.options?.timeout)).toEqual([3_600_000, 3_600_000]);
+    expect(byDefault.calls.map((call) => call.options?.signal)).toEqual([
+      controller.signal,
+      controller.signal,
+    ]);
+    expect(configured.calls.map((call) => call.options?.timeout)).toEqual([5_000, 5_000]);
+  });
+
   it('bounds cmd check output to the validation capture limit', async () => {
     const task = taskWith([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
     const runner = makeCommandRunner({ stdout: 'x'.repeat(10_000), stderr: '', code: 0 });
     const results = await runChecks(['K1'], options({ task, runCommand: runner }));
 
     expect(results[0]?.output.length).toBe(4096);
+  });
+});
+
+function reviewChecks(commands: Array<{ id: string; command: string }>): ReviewChecksRecord {
+  return {
+    scope: 'final',
+    cycle: 0,
+    plan: {
+      commands: commands.map((entry) => ({ ...entry, reason: 'verifies the change' })),
+      declined: [],
+      reason: null,
+    },
+    at: '2026-10-08T00:00:00.000Z',
+  };
+}
+
+describe('reviewer checks in the run registry', () => {
+  it('resolves the V ids the last review chose as required cmd checks', () => {
+    const record = reviewChecks([
+      { id: 'V1', command: 'npm test' },
+      { id: 'V2', command: 'make test' },
+    ]);
+
+    expect(reviewCheckList(record)).toEqual([
+      { id: 'V1', kind: 'cmd', value: 'npm test', required: true },
+      { id: 'V2', kind: 'cmd', value: 'make test', required: true },
+    ]);
+    const registry = checkRegistry({
+      plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: false }]),
+      reviewChecks: record,
+    });
+    expect([...registry.keys()]).toEqual(['K1', 'V1', 'V2']);
+    expect(registry.get('V2')).toMatchObject({ kind: 'cmd', value: 'make test', required: true });
+    expect(checkRegistry({ plan: makePlan([]) }).has('V1')).toBe(false);
+  });
+
+  it('refuses a reviewer check whose package script the run changed, and never runs it', {
+    timeout: 60_000,
+  }, async () => {
+    await withApplyRun(
+      { 'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }) },
+      { sessionId: 'sess-run-checks-base' },
+      async (run) => {
+        writeFileSync(
+          join(run.ws, 'package.json'),
+          JSON.stringify({ scripts: { test: 'echo all green' } }),
+        );
+        const runner = makeCommandRunner();
+        const results = await runChecks(['V1'], {
+          reviewChecks: reviewChecks([{ id: 'V1', command: 'npm test' }]),
+          base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
+          projectDir: run.ws,
+          checkoutDir: run.dir,
+          config: makeConfig({}),
+          bus: createEventBus(),
+          phase: 'final-review',
+          npmScriptsApproved: false,
+          runCommand: runner,
+        });
+
+        expect(results).toEqual([
+          {
+            checkId: 'V1',
+            status: 'refused',
+            output: 'runs the package script test, which this run changed',
+            command: 'npm test',
+          },
+        ]);
+        expect(runner.calls).toHaveLength(0);
+      },
+    );
+  });
+  it('runs a plan or task cmd check whose package script the run changed', {
+    timeout: 60_000,
+  }, async () => {
+    await withApplyRun(
+      { 'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }) },
+      { sessionId: 'sess-run-checks-plan-script' },
+      async (run) => {
+        writeFileSync(
+          join(run.ws, 'package.json'),
+          JSON.stringify({
+            scripts: { test: 'vitest run --coverage', 'test:new': 'vitest run src/new' },
+          }),
+        );
+        const runner = makeCommandRunner();
+        const results = await runChecks(['K1', 'C1-check'], {
+          task: taskWith([{ id: 'K1', kind: 'cmd', value: 'npm run test:new', required: true }]),
+          plan: makePlan([{ id: 'C1-check', kind: 'cmd', value: 'npm test', required: true }]),
+          base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
+          projectDir: run.ws,
+          checkoutDir: run.dir,
+          config: makeConfig({}),
+          bus: createEventBus(),
+          phase: 'final-review',
+          npmScriptsApproved: true,
+          runCommand: runner,
+        });
+
+        expect(results.map((result) => [result.checkId, result.status])).toEqual([
+          ['K1', 'pass'],
+          ['C1-check', 'pass'],
+        ]);
+        expect(runner.calls.map((call) => [call.cmd, ...call.args].join(' '))).toEqual([
+          'npm run test:new',
+          'npm test',
+        ]);
+      },
+    );
   });
 });

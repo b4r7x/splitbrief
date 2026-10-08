@@ -6,8 +6,11 @@ import { briefContract, criticalRules } from './tasks.js';
 describe('briefContract', () => {
   const contract = briefContract(buildLanguageContext('typescript'));
 
-  it('forbids planning for a red gate and names the three ways out', () => {
-    expect(contract).toContain('leave typecheck, lint and tests green on its own');
+  it('forbids planning for a red check and names the three ways out', () => {
+    expect(contract).toContain(
+      "leave the project's checks (its type checks, linters and tests) green on its own",
+    );
+    expect(contract).toContain('Never plan for a failing check');
     expect(contract).toContain('widen');
     expect(contract).toContain('backward compatible');
     expect(contract).toContain('split');
@@ -34,18 +37,18 @@ describe('briefContract', () => {
     expect(contract).toContain('1. **Identity**');
     expect(contract).toContain('9. **Evidence**');
     expect(contract.indexOf('9. **Evidence**')).toBeLessThan(
-      contract.indexOf('Every brief must also leave typecheck'),
+      contract.indexOf("Every brief must also leave the project's checks"),
     );
   });
 });
 
-describe('the planner gives gates to SPLITBRIEF and treats scope as guidance', () => {
+describe('the planner gives the checks to SPLITBRIEF and treats scope as guidance', () => {
   const ctx = buildLanguageContext(undefined);
   const prompt = `${briefContract(ctx)}\n${criticalRules(ctx)}`;
 
   it.each([
-    "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs typecheck, lint and the tests itself, all of them before the final review. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.",
-    "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and gate runs are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.",
+    "Name the test files and cases only: the implementer writes or changes the test files among the brief's files, and SPLITBRIEF runs the checks itself, and before each review the reviewer chooses the commands that verify the change. Never tell the implementer to run a test, typecheck, lint, format, screenshot or render command.",
+    "(the focused tests that pass, the changed files, the behavior a reviewer can check). Renders and check runs are the review seat's and SPLITBRIEF's evidence, not the implementer's steps.",
     '`files` are the suggested files; **Out of bounds** lists the explicit exclusions the reviewer checks.',
   ])('says %j once', (sentence) => {
     expect(prompt.split(sentence)).toHaveLength(2);

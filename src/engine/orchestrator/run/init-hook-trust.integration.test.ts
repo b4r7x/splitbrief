@@ -81,7 +81,7 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
   const config =
     extra.config ??
     makeConfig({
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {},
       ...(hooks !== undefined && { hooks }),
     });
@@ -203,7 +203,7 @@ describe('engine-level hook trust gate', () => {
         command: './scripts/agent',
         model: 'agent-default',
       },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {},
       hooks: HOOK,
     });
@@ -222,7 +222,7 @@ describe('engine-level hook trust gate', () => {
         command: './scripts/agent',
         model: 'agent-default',
       },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: {},
       hooks: HOOK,
     });

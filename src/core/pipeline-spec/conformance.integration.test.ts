@@ -28,14 +28,13 @@ import { isAuthFailureDiagnostic } from '../../engine/runners/auth-failure.js';
 import { isUsageLimitDiagnostic } from '../../engine/runners/usage-limit.js';
 import { formatRetryPrompt } from '../../engine/spec/prompt-formatter.js';
 import { SIGKILL_DELAY_MS } from '../../lib/process/registry.js';
-import { VALIDATION_STAGES } from '../schemas/enums.js';
 import { GenerationCommonFields } from '../schemas/runner-fields.js';
 import { ReviewVerdictSchema } from '../schemas/summary.js';
 import { transition } from '../state/machine.js';
 import { BOUNDS } from './bounds.js';
 import { sliceRuleText } from './brief.js';
 import { DIVERGENCE_TABLE } from './divergences.js';
-import { CAPTURE_LIMITS, GATE_ORDER } from './gates.js';
+import { CAPTURE_LIMITS } from './gates.js';
 import { HALT_SIGNATURES } from './halts.js';
 import { LADDER, RETRY_FRAMINGS } from './ladder.js';
 import { DEFAULT_LOCAL_RETRIES } from './retries.js';
@@ -57,10 +56,6 @@ describe('retry budget', () => {
 });
 
 describe('gates', () => {
-  it('the validation stage enum is the pipeline spec gate order', () => {
-    expect([...VALIDATION_STAGES]).toEqual([...GATE_ORDER]);
-  });
-
   it('the stage runner captures the pipeline spec limits', () => {
     expect(MAX_TEST_TAIL_LINES).toBe(CAPTURE_LIMITS.testTailLines);
     expect(MAX_VALIDATION_OUTPUT_CHARS).toBe(CAPTURE_LIMITS.outputChars);

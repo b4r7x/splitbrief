@@ -108,9 +108,7 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
         temperature: 0.1,
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {

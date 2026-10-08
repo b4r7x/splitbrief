@@ -86,6 +86,7 @@ import {
   type PlannerCallDiagnosis,
 } from './recovery/planner-call-failure.js';
 import {
+  REVIEW_ANSWER_JSON_SCHEMA,
   ReviewAnswerSchema,
   type ReviewAnswer,
   type ReviewVerdict,
@@ -99,7 +100,12 @@ import {
   type ReviewOutcome,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
-import { planApprovesNpmScripts, runChecks, checkRegistry } from './validation/run-checks.js';
+import {
+  checkRegistry,
+  enabledReviewChecks,
+  planApprovesNpmScripts,
+  runChecks,
+} from './validation/run-checks.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.js';
 import { currentCandidateId, recordCheckRuns } from './evidence/record-checks.js';
@@ -113,6 +119,8 @@ import {
   triageContractErrors,
 } from './triage.js';
 import type { PreReviewResult } from './run/pre-review-checks.js';
+import { runReviewChecks } from './review-checks.js';
+import { runBaseOf } from './isolation/base-tree.js';
 
 /** The code a failed review carries when the failure names none of its own. */
 export const REVIEW_UNAVAILABLE = 'review-unavailable';
@@ -267,6 +275,8 @@ async function verifyReviewClaims(args: {
     const runs = await runChecks(checkIds, {
       plan: args.state.plan,
       tasks: args.state.tasks,
+      reviewChecks: enabledReviewChecks(args.config, args.state.reviewChecks),
+      base: runBaseOf({ projectDir: args.projectDir, sessionId: args.sessionId }, args.state),
       projectDir: args.workspaceDir,
       sessionId: args.sessionId,
       checkoutDir: args.projectDir,
@@ -330,10 +340,15 @@ export async function runFinalReviewPhase(opts: {
   /** The cadence this review serves: 'task' is the scheduled mid-run review, 'final' the run's last. */
   scope?: 'final' | 'task' | undefined;
   /**
-   * The full suite and required checks run on the candidate before the review
-   * call. New failures become pending inputs in the review answer.
+   * The required checks run on the candidate before the review call. New
+   * failures become pending inputs in the review answer.
    */
   preReview?: ((state: WorkflowState) => Promise<PreReviewResult>) | undefined;
+  /**
+   * The reviewer chooses the commands that verify this candidate and SPLITBRIEF runs them before
+   * the verdict call. A review that only re-answers a pending question on the same candidate skips it.
+   */
+  reviewChecks?: boolean | undefined;
 }): Promise<FinalReviewResult> {
   let { state } = opts;
   const {
@@ -436,6 +451,40 @@ export async function runFinalReviewPhase(opts: {
         mergedPaths: state.applyReview.merged.map((entry) => entry.path),
       }),
     });
+    const scope = reviewScopeFor(state, opts.scope ?? 'final');
+    let reviewChecksSection: string | undefined;
+    if (opts.reviewChecks === true) {
+      const changedFiles =
+        opts.scope === 'task'
+          ? [
+              ...new Set(
+                (readEvidenceLedger({ projectDir, sessionId })?.tasks ?? [])
+                  .filter((entry) => scope.taskIds.includes(entry.id))
+                  .flatMap((entry) => entry.changedFiles),
+              ),
+            ]
+          : universe.changedFiles;
+      const checks = await runReviewChecks({
+        projectDir,
+        workspaceDir,
+        sessionId,
+        config,
+        bus,
+        state,
+        reviewer,
+        scope: opts.scope ?? 'final',
+        taskIds: scope.taskIds,
+        changedFiles,
+        signal: opts.signal,
+      });
+      state = checks.state;
+      opts.setTrackedState?.(state);
+      if (checks.kind === 'protocol-error') {
+        failure = { kind: 'seat-protocol-error', error: checks.error };
+        throw checks.error;
+      }
+      reviewChecksSection = checks.section;
+    }
     // A run planned on one session agreed on its plan; only an older run wrote a spec.
     const spec = readSpecFileOrEmpty(
       { projectDir, sessionId },
@@ -489,10 +538,10 @@ export async function runFinalReviewPhase(opts: {
     const promptPrefix = [
       workspaceReadInstructions(workspaceDir),
       ...(opts.integration !== undefined ? [opts.integration] : []),
+      ...(reviewChecksSection !== undefined ? [reviewChecksSection] : []),
       queueText,
     ].join('\n\n');
 
-    const scope = reviewScopeFor(state, opts.scope ?? 'final');
     // Coverage is a contract rule: an incomplete or invented answer fails the
     // schema, so the seat gets its one repair instead of a silent pass.
     const verdictSchema = ReviewAnswerSchema.superRefine((candidate, ctx) => {
@@ -504,6 +553,7 @@ export async function runFinalReviewPhase(opts: {
           candidate.findings,
           state.pendingTriage?.inputs ?? [],
           state.tasks,
+          enabledReviewChecks(config, state.reviewChecks),
         ),
       ]) {
         ctx.addIssue({ code: 'custom', message });
@@ -527,7 +577,11 @@ export async function runFinalReviewPhase(opts: {
     // no-vision statement.
     const renders = reviewRenders({
       ledger,
-      registry: checkRegistry({ plan: state.plan, tasks: state.tasks }),
+      registry: checkRegistry({
+        plan: state.plan,
+        tasks: state.tasks,
+        reviewChecks: enabledReviewChecks(config, state.reviewChecks),
+      }),
       projectDir,
       seatSupportsImages: seatSupportsImages({ runner: reviewRunner }),
       currentCandidateId: reviewCandidateId,
@@ -663,6 +717,8 @@ export async function runFinalReviewPhase(opts: {
           reviewer,
           prompt,
           schema: verdictSchema,
+          jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+          schemaName: 'review_answer',
           projectDir,
           workspaceDir,
           sessionId,
@@ -702,6 +758,8 @@ export async function runFinalReviewPhase(opts: {
                 ? prompt
                 : composeContinuation({ basePrompt: prompt, partial, steer }),
             schema: verdictSchema,
+            jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+            schemaName: 'review_answer',
             projectDir,
             workspaceDir,
             sessionId,

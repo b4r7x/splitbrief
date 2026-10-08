@@ -168,7 +168,7 @@ describe('agent implementer', () => {
     const prompt = readFileSync(outFile, 'utf-8');
     expect(prompt).toContain('test prompt content');
     expect(prompt).toContain(
-      `Edit ${task.suggestedFiles[0]} directly in the isolation directory. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run no test or other gate command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
+      `Edit ${task.suggestedFiles[0]} directly in the isolation directory. SPLITBRIEF runs the checks after you hand back, so run no test, typecheck, lint or other check command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`,
     );
     expect(prompt).not.toContain('{prompt}');
   });

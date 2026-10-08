@@ -28,7 +28,8 @@ type TaskEndEvent = TaskCompletedEvent | TaskSkippedEvent | TaskFullFailEvent;
 type WorkflowStartedEvent = { type: 'workflow_started'; feature: string };
 type FullSuiteEvent = {
   type: 'full_suite';
-  status: 'running' | 'done' | 'not-run';
+  status: 'running' | 'done' | 'not-run' | 'refused';
+  id?: string;
   command: string;
   moment: 'pre-review' | 'base';
   passed?: boolean;
@@ -320,7 +321,8 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   let failedChecks = 0;
   let fixes: string[] = [];
   for (const event of items) {
-    // A red base re-run marks the failure pre-existing; it is not a failed command of this review.
+    // A red reviewer check (or an older session's suite stage) is a failed command of this review. A
+    // red base re-run marks the failure pre-existing, and a refused or skipped command did not fail.
     if (
       isFullSuiteEvent(event) &&
       event.moment === 'pre-review' &&

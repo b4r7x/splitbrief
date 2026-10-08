@@ -32,16 +32,16 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `pre_planning`   | Before any planner phase starts             | `feature`                                                            |
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `files`, `action`, `index`, `total`       |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
-| `pre_validation` | Before a brief gate runs commands                   | `taskId`                                                            |
-| `post_validation`| After the brief gate stage run                   | `taskId`, `passed`, `stages` (`{typecheck,lint,test}`), `error?`     |
+| `pre_validation` | Before a brief runs its checks              | `taskId`                                                             |
+| `post_validation`| After a brief's checks ran (`checks_run` event) | `taskId`, `results` (`{ id, passed }[]`)                         |
 | `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
 | `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
-The validation hooks fire for task gates in `review: task` cadence.
-In `review: end` cadence, ordinary briefs run no gate commands. The final review runs the stack gates and registered checks.
-The pre-review suite fires neither validation hook.
+`pre_validation` fires when a brief gate has checks to run: the task's checks and its due checks in `review: task` cadence, or the checks a consult `verify` names. In `review: end` cadence, ordinary briefs run no check, so neither hook fires for them.
+`post_validation` fires on every `checks_run` event: after a brief gate's checks, and after the plan and task checks that run before the final review, once per task that owns them.
+The reviewer checks (`V1`, `V2`, …) fire neither validation hook; they publish `review_checks` and `full_suite` events.
 
 
 `pre_*` hooks **block** the workflow until they finish. `post_*` and `on_*` hooks are fire-and-forget — failures log a warning but don't gate the flow.
@@ -97,13 +97,13 @@ args: ["${event.file}", "--task=${event.taskId}"]
 |----------------------|----------------------------------------|------------------------------------------|
 | `${event.file}`      | task_*                     | Project-relative anchor path string      |
 | `${event.files}`     | pre_task                   | JSON-stringified array of the brief's declared paths |
-| `${event.taskId}`    | task_*, validate, consult_answered | Branded TaskId string                    |
+| `${event.taskId}`    | task_*, checks_run, consult_answered | Branded TaskId string                    |
 | `${event.title}`     | task_started, task_completed           | Task description                         |
 | `${event.action}`    | task_started                           | `'create'` or `'modify'`                 |
 | `${event.message}`   | error, warning             | String                                   |
-| `${event.stages}`    | validate                               | JSON-stringified `{typecheck, lint, test}` |
+| `${event.results}`   | checks_run                             | JSON-stringified `{ id, passed }[]`      |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
-| `${event.duration}`  | task_completed, validate               | Number (ms)                              |
+| `${event.duration}`  | task_completed                         | Number (ms)                              |
 | `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'consulted'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'` (older runs), `'failed'`, `'skipped'` |
 | `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
 | `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 failed` |
@@ -126,7 +126,7 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 | `pre_task`        | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.files}`, `${event.action}`, `${event.index}`, `${event.total}` |
 | `post_task`       | `${event.taskId}`, `${event.title}`, `${event.file}`, `${event.method}`, `${event.retries}`, `${event.duration}` |
 | `pre_validation`  | `${event.taskId}`                                                                 |
-| `post_validation` | `${event.taskId}`, `${event.stages}`, `${event.passed}`, `${event.error}`         |
+| `post_validation` | `${event.taskId}`, `${event.results}`                                             |
 | `pre_escalation`  | `${event.taskId}`                                                                 |
 | `on_error`        | `${event.message}`                                                                |
 | `on_halt`         | `${event.reason}`, `${event.taskId}`, `${event.headline}`, `${event.recommendedAction}`, `${event.resumeCommand}` |

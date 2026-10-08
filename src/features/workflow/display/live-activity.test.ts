@@ -112,6 +112,19 @@ describe('deriveLiveStatus', () => {
     expect(status).toEqual({ verb, stageStart: 90_000, waitedMs: 0, tone: 'validator' });
   });
 
+  it.each([
+    ['pre-review', 'Reviewer check V1 · npm test'],
+    ['base', 'Base re-run V1 · npm test'],
+  ] as const)('names the %s reviewer check by its id on its own clock', (moment, verb) => {
+    const status = deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      phaseFirstSeenTs: { 'final-review': 5_000 },
+      suiteStage: { id: 'V1', command: 'npm test', moment, stageStartedTs: 90_000 },
+    });
+    expect(status).toEqual({ verb, stageStart: 90_000, waitedMs: 0, tone: 'validator' });
+  });
+
   it('counts the stage from the later of its opening and the run resuming', () => {
     const resumedMidStage = deriveLiveStatus({
       ...base,

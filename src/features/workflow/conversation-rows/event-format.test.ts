@@ -6,6 +6,9 @@ import {
   formatTaskStartedValue,
   fullSuiteRow,
   fullSuiteTone,
+  reviewChecksDeclinedRows,
+  reviewChecksRow,
+  reviewChecksTone,
   validationStageNotes,
   validationSummarySegments,
 } from './event-format.js';
@@ -233,6 +236,154 @@ describe('fullSuiteRow', () => {
     );
     expect(fullSuiteTone({ ...rerun, passed: false })).toBe('warning');
     expect(fullSuiteTone({ ...rerun, passed: true })).toBe('textDim');
+  });
+});
+
+type ReviewCheckEvent = Extract<EngineEvent, { type: 'full_suite' }>;
+
+function reviewCheck(overrides: Partial<ReviewCheckEvent>): ReviewCheckEvent {
+  return {
+    type: 'full_suite',
+    ts: 0,
+    phase: 'final-review',
+    id: 'V1',
+    command: 'npm test',
+    moment: 'pre-review',
+    status: 'running',
+    ...overrides,
+  };
+}
+
+describe('fullSuiteRow for a reviewer check', () => {
+  it('names the check by its id while it runs and once it passed or failed', () => {
+    expect(fullSuiteRow(reviewCheck({ status: 'running' }))).toBe(
+      'Reviewer check V1 · npm test · running',
+    );
+    expect(fullSuiteRow(reviewCheck({ status: 'done', passed: true, duration: 1_000 }))).toBe(
+      'Reviewer check V1 · npm test · passed 1.0s',
+    );
+    expect(fullSuiteRow(reviewCheck({ status: 'done', passed: false, duration: 3_000 }))).toBe(
+      'Reviewer check V1 · npm test · failed 3.0s',
+    );
+  });
+
+  it('says why the policy refused a check or why it did not run, on its first line', () => {
+    expect(
+      fullSuiteRow(
+        reviewCheck({
+          id: 'V2',
+          command: 'npm run lint',
+          status: 'refused',
+          detail: 'runs the package script lint, and this run changed package.json\nsecond line',
+        }),
+      ),
+    ).toBe(
+      'Reviewer check V2 · npm run lint · refused · runs the package script lint, and this run changed package.json',
+    );
+    expect(fullSuiteRow(reviewCheck({ id: 'V3', status: 'not-run', detail: 'V2 failed' }))).toBe(
+      'Reviewer check V3 · npm test · not run · V2 failed',
+    );
+  });
+
+  it('names the re-run at the run base with the same id and command text', () => {
+    const base = reviewCheck({ moment: 'base', status: 'done', duration: 2_000 });
+    expect(fullSuiteRow({ ...base, passed: true })).toBe(
+      'Base re-run V1 · npm test · passes at the run base 2.0s',
+    );
+    expect(fullSuiteRow({ ...base, passed: false })).toBe(
+      'Base re-run V1 · npm test · fails at the run base too 2.0s',
+    );
+    expect(
+      fullSuiteRow(
+        reviewCheck({ moment: 'base', status: 'refused', detail: 'npm is not on the path' }),
+      ),
+    ).toBe('Base re-run V1 · npm test · refused · npm is not on the path');
+    expect(
+      fullSuiteRow(reviewCheck({ moment: 'base', status: 'not-run', detail: 'no check V1' })),
+    ).toBe('Base re-run V1 · npm test · not run · no check V1');
+  });
+
+  it('paints a red check as an error, a red base re-run and a refusal as warnings, the rest dim', () => {
+    expect(fullSuiteTone(reviewCheck({ status: 'done', passed: false }))).toBe('error');
+    expect(fullSuiteTone(reviewCheck({ moment: 'base', status: 'done', passed: false }))).toBe(
+      'warning',
+    );
+    expect(fullSuiteTone(reviewCheck({ status: 'refused', detail: 'runs a file by path' }))).toBe(
+      'warning',
+    );
+    expect(fullSuiteTone(reviewCheck({ status: 'done', passed: true }))).toBe('textDim');
+    expect(fullSuiteTone(reviewCheck({ status: 'running' }))).toBe('textDim');
+    expect(fullSuiteTone(reviewCheck({ status: 'not-run', detail: 'V1 failed' }))).toBe('textDim');
+  });
+});
+
+type ReviewChecksEvent = Extract<EngineEvent, { type: 'review_checks' }>;
+
+function reviewChecksEvent(overrides: Partial<ReviewChecksEvent>): ReviewChecksEvent {
+  return {
+    type: 'review_checks',
+    ts: 0,
+    phase: 'final-review',
+    scope: 'final',
+    status: 'planned',
+    commands: [],
+    declined: [],
+    reason: null,
+    ...overrides,
+  };
+}
+
+const CHOSEN = [
+  { id: 'V1', command: 'npm run typecheck', reason: 'The change edits exported types.' },
+  { id: 'V2', command: 'npm test', reason: 'The unit tests cover the formatter.' },
+];
+
+describe('reviewChecksRow', () => {
+  it('counts the commands the reviewer chose and the tests it declined', () => {
+    const event = reviewChecksEvent({
+      commands: CHOSEN,
+      declined: [{ target: 'npm run test:e2e', reason: 'It needs a browser.\nMore detail.' }],
+    });
+    expect(reviewChecksRow(event)).toBe('Reviewer checks · chose 2 · declined 1');
+    expect(reviewChecksDeclinedRows(event)).toEqual([
+      'declined · npm run test:e2e · It needs a browser.',
+    ]);
+    expect(reviewChecksTone(event)).toBe('textDim');
+  });
+
+  it('names no declined count when the reviewer declined nothing', () => {
+    const event = reviewChecksEvent({ commands: CHOSEN });
+    expect(reviewChecksRow(event)).toBe('Reviewer checks · chose 2');
+    expect(reviewChecksDeclinedRows(event)).toEqual([]);
+  });
+
+  it('gives the reason when the reviewer chose no command', () => {
+    const event = reviewChecksEvent({
+      reason: 'The project has no test command.\nNor a CI config.',
+    });
+    expect(reviewChecksRow(event)).toBe(
+      'Reviewer checks · chose none · The project has no test command.',
+    );
+    expect(reviewChecksTone(event)).toBe('textDim');
+  });
+
+  it('names the missing reason of an event the schema let through without one', () => {
+    expect(reviewChecksRow(reviewChecksEvent({ reason: undefined }))).toBe(
+      'Reviewer checks · chose none · no reason given',
+    );
+  });
+
+  it('says once, as a warning, that no reviewer check ran when End-of-run checks are off', () => {
+    const event: ReviewChecksEvent = {
+      type: 'review_checks',
+      ts: 0,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'off',
+    };
+    expect(reviewChecksRow(event)).toBe('End-of-run checks · off · no reviewer check ran');
+    expect(reviewChecksDeclinedRows(event)).toEqual([]);
+    expect(reviewChecksTone(event)).toBe('warning');
   });
 });
 

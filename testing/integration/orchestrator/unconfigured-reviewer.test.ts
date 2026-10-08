@@ -112,7 +112,7 @@ describe('run with no reviewer configured', () => {
         model: 'cheap-direct-agent',
         contextLength: 4096,
       },
-      validation: { typecheck: false, lint: false, test: true, testCommand: 'node validate.mjs' },
+      validation: { endChecks: false, testCommand: 'node validate.mjs' },
       workflow: { approve: 'none', maxRetries: 1 },
     });
     const prepared = makePreparedExecution({
@@ -178,11 +178,11 @@ describe('run with no reviewer configured', () => {
       'task_completed',
       'task_tokens',
       'snapshot_created',
-      'full_suite',
-      'full_suite',
       'checks_run',
       'planner_status',
       'all_tasks_done',
+      // End-of-run checks are off in this config: one row says so, and no command runs.
+      'review_checks',
       'drift_report',
       'planner_text',
       'cost_update',

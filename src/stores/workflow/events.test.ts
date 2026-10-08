@@ -534,6 +534,55 @@ describe('eventsStore — append via addEvent', () => {
         'test',
       ]);
     });
+
+    it('keys a reviewer check by its id: V1 settles in place, V2 gets a row of its own', () => {
+      const check = (overrides: Partial<EngineEventOf<'full_suite'>>) =>
+        makeFullSuite({ stage: undefined, phase: 'final-review', ...overrides });
+      addEvent(check({ id: 'V1', command: 'tsc --noEmit' }));
+      addEvent(check({ id: 'V2', command: 'npm test' }));
+      addEvent(check({ id: 'V2', command: 'npm test', status: 'done', passed: false }));
+
+      const events = eventsStore.get().events;
+      expect(events).toHaveLength(2);
+      expect(
+        events.map((event) => (event.type === 'full_suite' ? [event.id, event.status] : [])),
+      ).toEqual([
+        ['V1', 'running'],
+        ['V2', 'done'],
+      ]);
+    });
+
+    it('keeps the base re-run of a settled check as a row of its own', () => {
+      const check = (overrides: Partial<EngineEventOf<'full_suite'>>) =>
+        makeFullSuite({ stage: undefined, phase: 'final-review', id: 'V1', ...overrides });
+      addEvent(check({ status: 'running' }));
+      addEvent(check({ status: 'done', passed: false }));
+      addEvent(check({ status: 'running', moment: 'base' }));
+      addEvent(check({ status: 'done', moment: 'base', passed: false }));
+
+      const events = eventsStore.get().events;
+      expect(
+        events.map((event) => (event.type === 'full_suite' ? [event.moment, event.status] : [])),
+      ).toEqual([
+        ['pre-review', 'done'],
+        ['base', 'done'],
+      ]);
+    });
+
+    it('keeps a running check and its running base re-run as two rows when no verdict lands between', () => {
+      const check = (overrides: Partial<EngineEventOf<'full_suite'>>) =>
+        makeFullSuite({ stage: undefined, phase: 'final-review', id: 'V1', ...overrides });
+      addEvent(check({ status: 'running' }));
+      addEvent(check({ status: 'running', moment: 'base' }));
+
+      const events = eventsStore.get().events;
+      expect(
+        events.map((event) => (event.type === 'full_suite' ? [event.moment, event.status] : [])),
+      ).toEqual([
+        ['pre-review', 'running'],
+        ['base', 'running'],
+      ]);
+    });
   });
 
   it('mergeEvent caps text and keeps most recent content', () => {

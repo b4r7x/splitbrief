@@ -20,13 +20,14 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { ImplementerOptions, RetryOptions } from '../../implementers/types.js';
-import type { RunValidationOptions, Validator } from '../validation/types.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runTaskLoop } from './loop.js';
 
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -74,7 +75,12 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'], criteria: ['C1'] }),
-      makeTask({ id: 'T002', suggestedFiles: ['src/b.ts'], criteria: ['C2'] }),
+      makeTask({
+        id: 'T002',
+        suggestedFiles: ['src/b.ts'],
+        criteria: ['C2'],
+        checks: [{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+      }),
       makeTask({
         id: 'T003',
         suggestedFiles: ['src/final.ts'],
@@ -112,13 +118,15 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
       }),
     });
 
-    // Only T002 fails validation; every other brief passes.
-    const runValidation = vi.fn(async (opts: RunValidationOptions) =>
-      opts.task.id === 'T002'
-        ? [{ stage: 'test' as const, passed: false, error: 'T002 is not finished' }]
-        : [{ stage: 'test' as const, passed: true }],
+    // Only T002 carries a check, and it stays red; every other brief passes.
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({
+        command: 'tsc',
+        code: 2,
+        stderr: 'T002 is not finished',
+        output: '',
+      }),
     );
-    const validator: Validator = { ...createValidator(), runValidation };
 
     const { callbacks } = makeCallbacks({ onPlannerReply: vi.fn() });
     const { bus, events } = makeBusRecorder();
@@ -129,14 +137,10 @@ describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
         projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config: makeNoValidationConfig({
-          workflow: { review: 'task' },
-          validation: { test: true },
-        }),
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
         callbacks,
         planner,
         implementer,
-        validator,
         bus,
       }),
     );

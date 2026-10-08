@@ -125,6 +125,7 @@ const checkpointPredicates = [
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [checkpointId('final-review'), includesAll('3/3 briefs passed')],
+  [checkpointId('review-checks-off'), includesAll('End-of-run checks', 'off')],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
@@ -216,8 +217,10 @@ const checkpointPredicates = [
   ],
   [checkpointId('implementation-silent'), includesAll('Still working', 'a tool is running')],
   [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
-  [checkpointId('implementation-full-suite'), includesAll('Pre-review suite')],
-  // The red typecheck row scrolls out of a 60x18 transcript; the last stage that did not run stays.
+  [checkpointId('review-check-running'), includesAll('Reviewer check V2')],
+  [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
+  [checkpointId('review-legacy-suite'), includesAll('Pre-review suite · npm test')],
+  // The red check row scrolls out of a 60x18 transcript; the last check that did not run stays.
   [
     checkpointId('review-red-gate'),
     includesAll(

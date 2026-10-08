@@ -57,18 +57,24 @@ export function inlineActiveVerb(phase: Phase): string {
   return activeVerb(phase, null, null).replace('…', '').toLowerCase();
 }
 
-/** The pre-review suite or base re-run, and its command. */
-export function suiteStageText(suite: Pick<RunningSuiteStage, 'moment' | 'command'>): string {
-  return `${suiteMomentLabel(suite.moment)}${SOFT_SEP}${suite.command}`;
+/**
+ * The command run before a review, or its re-run at the run base, and its command text. A reviewer
+ * check carries its id; a full-suite stage from an older session keeps the words it had.
+ */
+export function suiteStageText(
+  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command'>,
+): string {
+  return `${suiteMomentLabel(suite)}${SOFT_SEP}${suite.command}`;
 }
 
-function suiteMomentLabel(moment: RunningSuiteStage['moment']): string {
-  switch (moment) {
+function suiteMomentLabel(suite: Pick<RunningSuiteStage, 'id' | 'moment'>): string {
+  const id = suite.id === undefined ? '' : ` ${suite.id}`;
+  switch (suite.moment) {
     case 'base':
-      return 'Base re-run';
+      return `Base re-run${id}`;
     case 'pre-review':
-      return 'Pre-review suite';
+      return suite.id === undefined ? 'Pre-review suite' : `Reviewer check${id}`;
     default:
-      return assertNever(moment);
+      return assertNever(suite.moment);
   }
 }

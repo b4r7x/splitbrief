@@ -110,11 +110,15 @@ function stageTone(state: ValidationStageState): ConversationRowTone {
 
 export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
   const label = suiteStageText({
+    id: event.id,
     moment: event.moment,
     command: truncateTerminalDisplayText(event.command, 48),
   });
+  // Why a command did not run or was refused; a session from before reviewer checks has none.
+  const detail = event.detail === undefined ? '' : `${SOFT_SEP}${firstLine(event.detail)}`;
   if (event.status === 'running') return `${label}${SOFT_SEP}running`;
-  if (event.status === 'not-run') return `${label}${SOFT_SEP}not run`;
+  if (event.status === 'not-run') return `${label}${SOFT_SEP}not run${detail}`;
+  if (event.status === 'refused') return `${label}${SOFT_SEP}refused${detail}`;
   const verdict =
     event.moment === 'base'
       ? event.passed === true
@@ -127,14 +131,50 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
   return `${label}${SOFT_SEP}${verdict}${dur}`;
 }
 
-// A red stage is the run's own failure; the same red at the run base is pre-existing, the warning a
-// pre-existing validation failure wears. Every other state stays dim, so `failed` never reads like
-// `not run`.
+// A red command is the run's own failure; the same red at the run base is pre-existing, the warning
+// a pre-existing validation failure wears. A refused command is the policy's call, not a red one.
+// Every other state stays dim, so `failed` never reads like `not run`.
 export function fullSuiteTone(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
 ): ConversationRowTone {
+  if (event.status === 'refused') return 'warning';
   if (event.status !== 'done' || event.passed === true) return 'textDim';
   return event.moment === 'base' ? 'warning' : 'error';
+}
+
+/** The headline of the commands the reviewer chose before a review, or of the checks being off. */
+export function reviewChecksRow(event: Extract<EngineEvent, { type: 'review_checks' }>): string {
+  if (event.status === 'off') {
+    return ['End-of-run checks', 'off', 'no reviewer check ran'].join(SOFT_SEP);
+  }
+  const chosen = event.commands?.length ?? 0;
+  const declined = event.declined?.length ?? 0;
+  if (chosen === 0) {
+    return ['Reviewer checks', 'chose none', firstLine(event.reason ?? 'no reason given')].join(
+      SOFT_SEP,
+    );
+  }
+  const counts = [`chose ${chosen}`, ...(declined > 0 ? [`declined ${declined}`] : [])];
+  return ['Reviewer checks', ...counts].join(SOFT_SEP);
+}
+
+/** One row per test the reviewer declined to run, with the reason it gave. */
+export function reviewChecksDeclinedRows(
+  event: Extract<EngineEvent, { type: 'review_checks' }>,
+): string[] {
+  return (event.declined ?? []).map((entry) =>
+    ['declined', entry.target, firstLine(entry.reason)].join(SOFT_SEP),
+  );
+}
+
+export function reviewChecksTone(
+  event: Extract<EngineEvent, { type: 'review_checks' }>,
+): ConversationRowTone {
+  return event.status === 'off' ? 'warning' : 'textDim';
+}
+
+function firstLine(text: string): string {
+  return text.trim().split('\n')[0]?.trim() ?? '';
 }
 
 function formatEventContextFit(

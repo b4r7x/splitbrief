@@ -1,17 +1,13 @@
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../core/schemas/config.js';
-import {
-  VALIDATION_STAGES,
-  type Phase,
-  type ValidationStage,
-} from '../../../core/schemas/enums.js';
+import { VALIDATION_STAGES, type Phase } from '../../../core/schemas/enums.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { isPackageManager } from '../../../core/trust/path-classification.js';
 import type { ManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { pythonStack } from '../../../core/validation/stacks/python.js';
 import { STACKS } from '../../../core/validation/stacks/registry.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
-import { resolveStageCommand } from '../../../core/validation/stage-command.js';
+import { resolveTestCommand } from '../../../core/validation/stage-command.js';
 import { isTestPatternSafe } from '../../../core/validation/test-discovery.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import type { EventBus } from '../../events/types.js';
@@ -24,6 +20,9 @@ const ALLOWED_COMMANDS = new Set([
   ...PACKAGE_MANAGERS,
   ...STACKS.flatMap((stack) => stack.allowedCommands),
 ]);
+
+/** The programs a check command may start; every other program is refused. */
+export const CHECK_PROGRAMS: readonly string[] = [...ALLOWED_COMMANDS].sort();
 
 const SHELL_OPERATORS = /[|&;`$(){}]/;
 
@@ -155,7 +154,7 @@ function passesPathToTestCommand(tokens: string[]): boolean {
   return start !== -1 && tokens.slice(start + 2).some(isPathLikeScriptArg);
 }
 
-// The one make or just form is the stage target that `readManifestCommands` builds.
+// make and just run only one bare target named typecheck, lint or test.
 function runsTaskRecipe(tokens: string[]): boolean {
   const start = tokens.findIndex((token) => TASK_RUNNERS.has(commandFamily(token)));
   if (start === -1) return false;
@@ -242,13 +241,6 @@ export function checkCommandRefusal(
   return unsafeCommandReason(command);
 }
 
-type CommandField = 'typecheckCommand' | 'lintCommand' | 'testCommand';
-const COMMAND_FIELDS: ReadonlyArray<readonly [CommandField, ValidationStage]> = [
-  ['typecheckCommand', 'typecheck'],
-  ['lintCommand', 'lint'],
-  ['testCommand', 'test'],
-];
-
 const REFUSED_WARNING = {
   category: 'validation',
   code: 'discovered_validation_refused',
@@ -259,7 +251,7 @@ function testPatternRefusal(pattern: string): string {
   return pattern.includes('..') ? 'it contains ".."' : 'it contains a path separator';
 }
 
-type StageResolutionContext = {
+type TestResolutionContext = {
   projectDir: string;
   config: Config;
   manifest: ManifestCommands;
@@ -269,7 +261,7 @@ type StageResolutionContext = {
 export function sanitizeDiscoveredValidation(
   discovered: DiscoveredValidation | null | undefined,
   notices: { bus: EventBus; phase: Phase },
-  resolution?: StageResolutionContext,
+  resolution?: TestResolutionContext,
 ): DiscoveredValidation | undefined {
   if (!discovered) return undefined;
 
@@ -288,31 +280,30 @@ export function sanitizeDiscoveredValidation(
       sanitized.testPattern = discovered.testPattern;
     } else {
       refuse(
-        `The test stage does not take the file pattern ${discovered.testPattern} from the planner (${testPatternRefusal(discovered.testPattern)}) and uses config or the stack's test file patterns.`,
+        `The test checks do not take the file pattern ${discovered.testPattern} from the planner (${testPatternRefusal(discovered.testPattern)}) and use config or the stack's test file patterns.`,
       );
     }
   }
 
-  for (const [field, stage] of COMMAND_FIELDS) {
-    const value = discovered[field];
-    if (!value) continue;
+  const value = discovered.testCommand;
+  if (value) {
     const refusal = unsafeCommandReason(value);
-    if (refusal === null) {
-      sanitized[field] = value;
-      continue;
-    }
     // A refusal empties only the discovered rung: config and the manifest outrank it and
-    // the stack default follows it, so the stage may still run this very command.
+    // the stack default follows it, so a test check may still run this very command.
     const resolved =
-      resolution === undefined
+      refusal === null || resolution === undefined
         ? null
-        : resolveStageCommand({ ...resolution, stage, discovered: undefined });
-    if (resolved !== null && formatValidationCommand(resolved.cmd, resolved.args) === value) {
-      continue;
+        : resolveTestCommand({ ...resolution, discovered: undefined });
+    if (refusal === null) {
+      sanitized.testCommand = value;
+    } else if (
+      resolved === null ||
+      formatValidationCommand(resolved.cmd, resolved.args) !== value
+    ) {
+      refuse(
+        `The test checks do not take ${value} from the planner (it ${refusal}) and use config, the manifest or the stack default.`,
+      );
     }
-    refuse(
-      `The ${stage} stage does not take ${value} from the planner (it ${refusal}) and uses config, the manifest or the stack default.`,
-    );
   }
 
   return Object.keys(sanitized).length > 0 ? sanitized : undefined;

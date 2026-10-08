@@ -224,6 +224,27 @@ describe('WorkflowStateSchema v4', () => {
     expect(parsed.pendingTriage?.inputs).toEqual([input]);
   });
 
+  it('drops the stage an older fix task and pending input carry', () => {
+    const red = { checkIds: ['K1'], output: 'broken' };
+    const finding = { id: 'P1', text: 'K1 failed', acceptance: null, ...red };
+    const input = {
+      id: 'P1',
+      kind: 'defect',
+      source: 'check',
+      text: 'K1 failed',
+      file: null,
+      ...red,
+    };
+    const parsed = WorkflowStateSchema.parse({
+      ...state({ phase: 'implementing' }),
+      tasks: [{ ...task, fix: { cycle: 1, findings: [{ ...finding, stage: 'test' }] } }],
+      pendingTriage: { inputs: [{ ...input, stage: 'test' }] },
+    });
+
+    expect(parsed.tasks[0]?.fix?.findings).toEqual([finding]);
+    expect(parsed.pendingTriage?.inputs).toEqual([input]);
+  });
+
   it('keeps a seat switch record, a seat-sourced park and an automatic offer', () => {
     const parsed = WorkflowStateSchema.parse({
       ...state({

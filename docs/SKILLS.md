@@ -117,7 +117,7 @@ An explicit plan approval confirms only the listed protected paths and operation
 | task | additionally after each completed task | completed tasks and criteria due so far; pending criteria stay pending |
 
 There is no batch review cadence and no batch-boundary suite.
-Before final review, run the full suite on the current candidate. Stop at the first stage with a new failure. Run registered checks only when every suite failure is pre-existing. A task-cadence review runs no full suite. Re-run parsed failing tests or a red typecheck or lint command at the run base. Report matching failures as pre-existing. Send every new red to the reviewer as a pending input.
+Before final review, run every registered check on the current candidate. Then the reviewer makes the plan call: it reads the project and chooses the reviewer checks that verify the change, at most 6, with a reason each. It names each related test it does not run, or the reason it chose none. Run the reviewer checks in order under the command policy, and refuse a reviewer check whose script or task file this run changed. Stop at the first reviewer check with new failures. A task-cadence review chooses only the tests related to the task's changed files. Re-run a red reviewer check at the run base with the same command text. Report matching failures as pre-existing. Send every new red to the reviewer as a pending input. A failed plan call (a transport error or a protocol error) halts the review the same way a failed verdict call does; it is never a pass. With `validation.end_checks: false`, no reviewer check runs; plan and task checks still run.
 Allow 2 fix cycles globally. At end cadence, this permits up to 3 reviews; task cadence adds reviews and shares the cap.
 The CLI runs the end/task cadence, the decisions ledger, one typed review answer with verdict and fix work, and reviewer questions about product changes.
 The skills follow that agreed design now. Render checks are unavailable in the skills.
@@ -147,8 +147,9 @@ Standalone skill records cannot serve as engine session state for `resume`.
 | Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions`; TRACE §4 |
 | End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`); TRACE §4 |
 | Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work; DESIGN §§4, 7 |
-| Validation stages, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
-| Registered checks and the cadence gates | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
+| Reviewer checks, base re-run and stop rule | `src/engine/orchestrator/review-checks.ts`; `src/engine/orchestrator/validation/changed-script.ts`; `src/core/schemas/review.ts` |
+| Test check command, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
+| Registered checks at each cadence | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
 | Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
 | Plain CLI output | `src/engine/events/sinks/stdout-text.ts` |
 

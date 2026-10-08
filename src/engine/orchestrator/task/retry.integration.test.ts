@@ -92,7 +92,7 @@ describe('retryAndRecord — retry budget', () => {
     expect(taskBreakdowns[0]?.method).toBe('local');
   });
 
-  it('keeps initial failure evidence distinct from successful retry validation', async () => {
+  it('keeps the initial failure evidence and the changed files of both attempts', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     let state = implementingState([task]);
@@ -112,18 +112,11 @@ describe('retryAndRecord — retry budget', () => {
           };
         }),
     });
-    const validator: Validator = {
-      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      runValidation: vi.fn().mockResolvedValue([{ stage: 'test' as const, passed: true }]),
-    };
+    const validator: Validator = { formatChangedFiles: vi.fn().mockResolvedValue(undefined) };
 
     const result = await retryAndRecord({
       wctx: makeWorkflowContext({
-        config: makeConfig({
-          workflow: { review: 'task' },
-          validation: { typecheck: false, lint: false, test: true },
-        }),
+        config: makeConfig({ workflow: { review: 'task' } }),
         projectDir,
         sessionId,
         implementer,
@@ -148,12 +141,6 @@ describe('retryAndRecord — retry budget', () => {
         errorSummary: 'initial failed',
         retryState: 'initial-failure',
         changedFiles: ['src/initial.ts'],
-      },
-      {
-        stage: 'test',
-        passed: true,
-        retryState: 'retry',
-        changedFiles: ['src/task.ts'],
       },
     ]);
     expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.changedFiles).toEqual([
@@ -199,82 +186,6 @@ describe('retryAndRecord — retry budget', () => {
     );
   });
 
-  it('stamps the initial-failure entry with the initial acceptance, not the retry acceptance', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
-    let state = implementingState([task]);
-    state = transition(state, { type: 'START_TASK', taskId: task.id });
-    state = transition(state, { type: 'TASK_SENT' });
-
-    const implementer = makeImplementer({
-      retry: vi
-        .fn()
-        .mockImplementation(async ({ projectDir: retryDir }: { projectDir: string }) => {
-          mkdirSync(join(retryDir, 'src'), { recursive: true });
-          writeFileSync(join(retryDir, task.suggestedFiles[0]), 'recovered implementation');
-          return {
-            success: true,
-            output: 'fixed',
-            usage: { inputTokens: 20, outputTokens: 10 },
-          };
-        }),
-    });
-    const validator: Validator = {
-      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      runValidation: vi.fn().mockResolvedValue([
-        {
-          stage: 'test' as const,
-          passed: false,
-          failureFiles: ['src/unrelated.ts'],
-          preExisting: ['test failed without diagnostics'],
-        },
-      ]),
-    };
-
-    const result = await retryAndRecord({
-      wctx: makeWorkflowContext({
-        config: makeConfig({
-          workflow: { review: 'task' },
-          validation: { typecheck: false, lint: false, test: true },
-        }),
-        projectDir,
-        sessionId,
-        implementer,
-        validator,
-      }),
-      task,
-      initialError: 'test failed',
-      initialValidation: [{ stage: 'test', passed: false, error: 'initial failed' }],
-      initialChangedFiles: ['src/initial.ts'],
-      initialExemptStages: [],
-      state,
-      taskStartTime: Date.now(),
-      tokensBefore: { ...state.tokenUsage },
-      taskBreakdowns: [],
-      setTrackedState: vi.fn(),
-    });
-
-    expect(result.completed).toBe(true);
-    const ledger = readEvidenceLedger({ projectDir, sessionId });
-    expect(ledger?.tasks[0]?.validation).toEqual([
-      {
-        stage: 'test',
-        passed: false,
-        errorSummary: 'initial failed',
-        retryState: 'initial-failure',
-        changedFiles: ['src/initial.ts'],
-      },
-      {
-        stage: 'test',
-        passed: false,
-        baselineExempt: true,
-        retryState: 'retry',
-        changedFiles: ['src/task.ts'],
-      },
-    ]);
-  });
-
   it('spends the local retries then the consult budget, persisting the bound halt', async () => {
     const task = makeTask({ id: 'T001' });
     let state = implementingState([task]);
@@ -300,7 +211,7 @@ describe('retryAndRecord — retry budget', () => {
       config: makeConfig({
         workflow: { review: 'task' },
 
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -355,7 +266,7 @@ describe('retryAndRecord — retry budget', () => {
       config: makeConfig({
         workflow: { review: 'task' },
 
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -488,7 +399,7 @@ describe('retryAndRecord — recovery stop points', () => {
       config: makeConfig({
         workflow: { review: 'task' },
 
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -547,7 +458,7 @@ describe('retryAndRecord — recovery stop points', () => {
       config: makeConfig({
         workflow: { review: 'task' },
 
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -595,7 +506,7 @@ describe('retryAndRecord — recovery stop points', () => {
       config: makeConfig({
         workflow: { review: 'task' },
 
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -645,7 +556,7 @@ describe('retryAndRecord — recovery stop points', () => {
       config: makeConfig({
         workflow: { review: 'task' },
 
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       }),
     });
 
@@ -702,7 +613,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     workflow: { review: 'task' },
 
     planner: { kind: 'cli', tool: 'codex', authChannel: defaultCliAuthChannel('codex').id },
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+    validation: { endChecks: false, testCommand: 'noop' },
   });
 
   async function consultHalted(words = CODEX_LIMIT) {

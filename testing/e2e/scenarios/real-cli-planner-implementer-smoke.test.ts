@@ -59,9 +59,7 @@ describe('real CLI smoke: planner to implementer', () => {
             contextLength: 4096,
           },
           validation: {
-            typecheck: false,
-            lint: false,
-            test: true,
+            endChecks: true,
             testCommand: 'node validate.mjs',
           },
           workflow: {

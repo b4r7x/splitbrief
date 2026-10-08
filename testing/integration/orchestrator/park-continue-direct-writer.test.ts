@@ -45,7 +45,7 @@ describe('a brief parked inside a direct writer', { timeout: 90_000 }, () => {
     });
     const config = makeConfig({
       implementer: { kind: 'agent', command: 'node', model: 'direct-agent', contextLength: 4096 },
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { approve: 'none', maxRetries: 1 },
     });
     const planner = makePlanner({

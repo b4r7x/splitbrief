@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { PassThrough } from 'node:stream';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCopyingIsolation,
   makeBusRecorder,
@@ -28,7 +28,7 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.js';
-import { taskId, type Task } from '../../../core/schemas/task.js';
+import { taskId, type Check, type Task } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { Validator } from '../validation/types.js';
 import type {
@@ -50,7 +50,8 @@ import { createStdoutTextSink } from '../../events/sinks/stdout-text.js';
 import { runTasksAndReview } from './task-execution.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { formatRetryPrompt } from '../../spec/prompt-formatter.js';
 
 /** How many times the session transcript holds this user turn. */
@@ -79,9 +80,24 @@ function pauseOnceSinks(): WorkflowSinks {
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
+
+const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
+
+/** The first brief check run fails with `error`; every later one passes. */
+function failCheckOnce(error: string): void {
+  let runs = 0;
+  vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+    runs += 1;
+    if (runs === 1) {
+      throw processError.exitCode({ command: 'tsc', code: 2, stderr: error, output: '' });
+    }
+    return { stdout: '', stderr: '', code: 0 };
+  });
+}
 
 function setupProject(): { projectDir: string; sessionId: string; head: string } {
   const { projectDir, sessionId } = setupGitSessionProject({
@@ -337,7 +353,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
       makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] }),
-      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
+      makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'], checks: BRIEF_CHECKS }),
     ];
     const correction = 'Do not run any test, typecheck or lint command.';
     const steers: { call: 'implement' | 'retry'; taskId: string; steer: string | undefined }[] = [];
@@ -358,7 +374,8 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
         return { success: true, output: 'fixed' };
       }),
     });
-    let t002Validations = 0;
+    // T002's brief check fails once, then passes.
+    failCheckOnce('TS2322 in src/beta.ts');
     const { events, options } = runOptions({
       projectDir,
       sessionId,
@@ -369,26 +386,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       onContinuationNeeded: async () => correction,
       continuation: createContinuationHolder(),
       implementer,
-      config: makeConfig({
-        workflow: { review: 'task' },
-        validation: { typecheck: true, lint: false, test: true, typecheckCommand: 'noop' },
-      }),
-      validator: {
-        ...createValidator(),
-        runValidation: vi.fn().mockImplementation(async ({ task }: { task: Task }) => {
-          const onT002 = task.id === 'T002';
-          if (onT002) t002Validations += 1;
-          const failed = onT002 && t002Validations === 1;
-          return [
-            {
-              stage: 'typecheck' as const,
-              passed: !failed,
-              error: failed ? 'TS2322 in src/beta.ts' : undefined,
-              failureFiles: failed ? ['src/beta.ts'] : [],
-            },
-          ];
-        }),
-      },
+      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
     });
 
     const result = await runTasksAndReview(options);
@@ -409,7 +407,9 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
 
   it('a correction typed at a stop inside a brief holds for that brief retry too', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], checks: BRIEF_CHECKS }),
+    ];
     const correction = 'Keep the helper in src/alpha.ts.';
     let abortCall: (() => void) | null = null;
     const sinks: WorkflowSinks = {
@@ -438,7 +438,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
         return { success: true, output: 'fixed' };
       }),
     });
-    let validations = 0;
+    failCheckOnce('TS2322 in src/alpha.ts');
     const { events, options } = runOptions({
       projectDir,
       sessionId,
@@ -449,25 +449,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       onContinuationNeeded: async () => correction,
       continuation: createContinuationHolder(),
       implementer,
-      config: makeConfig({
-        workflow: { review: 'task' },
-        validation: { typecheck: true, lint: false, test: true, typecheckCommand: 'noop' },
-      }),
-      validator: {
-        ...createValidator(),
-        runValidation: vi.fn().mockImplementation(async () => {
-          validations += 1;
-          const failed = validations === 1;
-          return [
-            {
-              stage: 'typecheck' as const,
-              passed: !failed,
-              error: failed ? 'TS2322 in src/alpha.ts' : undefined,
-              failureFiles: failed ? ['src/alpha.ts'] : [],
-            },
-          ];
-        }),
-      },
+      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
     });
 
     const result = await runTasksAndReview(options);
@@ -1106,9 +1088,11 @@ function promptRecordingImplementer(prompts: string[]): Implementer {
 describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () => {
   it('leaves the review instruction out of a retry after a validation failure', async () => {
     const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'] })];
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], checks: BRIEF_CHECKS }),
+    ];
     const prompts: string[] = [];
-    let validations = 0;
+    failCheckOnce('TS2322 in src/alpha.ts');
     const { options } = runOptions({
       projectDir,
       sessionId,
@@ -1116,24 +1100,7 @@ describe('runTasksAndReview review fix instruction', { timeout: 120_000 }, () =>
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
       implementer: promptRecordingImplementer(prompts),
-      config: makeConfig({
-        workflow: { review: 'task' },
-        validation: { typecheck: true, lint: false, test: true, typecheckCommand: 'noop' },
-      }),
-      validator: {
-        ...createValidator(),
-        runValidation: vi.fn().mockImplementation(async () => {
-          validations += 1;
-          return [
-            {
-              stage: 'typecheck' as const,
-              passed: validations > 1,
-              error: validations > 1 ? undefined : 'TS2322 in src/alpha.ts',
-              failureFiles: validations > 1 ? [] : ['src/alpha.ts'],
-            },
-          ];
-        }),
-      },
+      config: makeNoValidationConfig({ workflow: { review: 'task' } }),
     });
 
     await runTasksAndReview(options);
@@ -1215,18 +1182,15 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
         ask: null,
       }),
       onComplete,
-      validator: {
-        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-        runValidation: vi.fn().mockResolvedValue([]),
-        formatChangedFiles: vi.fn(),
-      },
     });
-    const suite = vi.mocked(options.wctx.validator.runFullSuite);
+    // The re-review that answers the correction runs no reviewer checks; the review after the
+    // fix task does, once.
+    const checkRows = () => events.filter((event) => event.type === 'review_checks').length;
     const answer = options.wctx.reviewer.typedCall;
     let reviewerCalls = 0;
     options.wctx.reviewer = makePlanner({
       typedCall: (ctx) => {
-        expect(suite).toHaveBeenCalledTimes(reviewerCalls++ === 0 ? 0 : 1);
+        expect(checkRows()).toBe(reviewerCalls++ === 0 ? 0 : 1);
         return answer(ctx);
       },
     });
@@ -1242,7 +1206,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
     expect(events.filter((e) => e.type === 'workflow_complete')).toEqual([
       expect.objectContaining({ review: 'passed' }),
     ]);
-    expect(suite).toHaveBeenCalledTimes(1);
+    expect(checkRows()).toBe(1);
     expect(result.completed).toBe(true);
     expect(result.state.reviewStatus).toBe('passed');
     expect(onComplete).toHaveBeenCalledTimes(1);
@@ -1407,52 +1371,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
-  it('the Apply re-check checks a red at the run base and does not count a pre-existing one', async () => {
-    const { projectDir, sessionId, head } = setupProject();
-    const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
-    const runValidation = vi.fn().mockResolvedValue([
-      {
-        stage: 'typecheck',
-        passed: false,
-        error: 'src/legacy.ts(3,7): error TS2322',
-        failureFiles: [],
-        preExisting: ['src/legacy.ts(3,7)'],
-      },
-    ]);
-    const { reviewPrompts, triagePrompts, options } = runOptions({
-      projectDir,
-      sessionId,
-      state: integrationReviewState(tasks, head, 1),
-      review: (prompt) => passingReviewVerdict(prompt),
-      onComplete: vi.fn(),
-      config: makeNoValidationConfig({ validation: { typecheck: true }, workflow: {} }),
-      validator: {
-        ...createValidator(),
-        runValidation,
-        runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      },
-    });
-
-    try {
-      const result = await runTasksAndReview(options);
-
-      expect(runValidation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          base: {
-            projectDir,
-            sessionId,
-            snapshotId: result.state.workspace?.base.snapshotId,
-          },
-        }),
-      );
-      expect(triagePrompts).toEqual([]);
-      expect(reviewPrompts[0]).toContain('All re-run checks passed.');
-      expect(result.state.reviewStatus).toBe('passed');
-    } finally {
-      await options.wctx.isolation.dispose();
-    }
-  });
-
   it('a changed candidate hands fresh Apply failures to the reviewer', async () => {
     const { projectDir, sessionId, head } = setupProject();
     writeFileSync(
@@ -1479,8 +1397,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         return { success: true, output: 'code' };
       }),
     });
-    const validator = createValidator();
-    const runValidation = vi.spyOn(validator, 'runValidation');
     const { reviewPrompts, triagePrompts, options } = runOptions({
       projectDir,
       sessionId,
@@ -1512,7 +1428,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         ask: null,
       }),
       onComplete: vi.fn(),
-      validator,
       implementer,
       signal: controller.signal,
     });
@@ -1522,12 +1437,6 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
 
       const workspacePath = result.state.workspace?.path;
       expect(workspacePath).toBeDefined();
-      expect(runValidation).toHaveBeenCalledWith(
-        expect.objectContaining({
-          projectDir: workspacePath,
-          task: expect.objectContaining({ id: 'T001' }),
-        }),
-      );
       // The re-check ran fresh: the recorded pass is overwritten by the merge's failure.
       expect(result.state.tasks[0]?.checkResults).toEqual([
         { id: 'C1', passed: false },

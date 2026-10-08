@@ -495,8 +495,6 @@ describe('the planning session on the live path', () => {
         makePlanProposal({
           validation: {
             language: 'typescript',
-            typecheck: 'npx tsc --noEmit',
-            lint: null,
             test: 'npx vitest run',
             testPattern: '*.test.ts',
           },
@@ -506,7 +504,6 @@ describe('the planning session on the live path', () => {
 
     expect(run.result.state.discoveredValidation).toEqual({
       language: 'typescript',
-      typecheckCommand: 'npx tsc --noEmit',
       testCommand: 'npx vitest run',
       testPattern: '*.test.ts',
     });

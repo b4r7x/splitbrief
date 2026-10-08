@@ -58,13 +58,18 @@ export function wrappedTextBlock(input: {
   tone: ConversationRowTone;
   bold?: boolean;
   kind?: ConversationRowKind;
+  /** Columns every wrapped line starts after, so a row reads as part of the row above it. */
+  indent?: number;
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
-  const wrapWidth = wrapWidthFor(input.kind ?? 'message', input.width);
+  const indent = input.indent ?? 0;
+  const wrapWidth = Math.max(1, wrapWidthFor(input.kind ?? 'message', input.width) - indent);
   const tone = input.tone;
   const bold = input.bold;
   const kind = input.kind;
-  const lines = eventWrappedLines(sanitizeRowDisplayText(input.text), wrapWidth);
+  const lines = eventWrappedLines(sanitizeRowDisplayText(input.text), wrapWidth).map(
+    (line) => `${' '.repeat(indent)}${line}`,
+  );
   const rowCount = lines.length;
   if (rowCount === 0) return null;
 

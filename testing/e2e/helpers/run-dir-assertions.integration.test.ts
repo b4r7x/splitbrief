@@ -27,9 +27,14 @@ function plainStdout(): string {
   return [
     'phase: planning',
     'phase: implementing',
-    'task T001: done (typecheck test)',
-    'task T002: done (typecheck test)',
+    'task T001: done (no checks)',
+    'task T002: done (no checks)',
     'phase: final-review',
+    'reviewer check declined: test/server.test.mjs (covered by V1)',
+    'reviewer check V1: refused (runs the package script lint, which this run changed)',
+    'reviewer check V2: failed (npm test)',
+    'reviewer check V2 at base: not run (this run recorded no run base)',
+    'reviewer check V3: not run (V2 failed)',
     'review: passed',
     'done: 2 tasks',
     '',
@@ -54,6 +59,7 @@ function sessionLog(extra: readonly string[] = []): string {
     logLine('runner_call_started', 'implementing', { role: 'planner' }),
     logLine('runner_call_started', 'implementing', { role: 'implementer' }),
     logLine('runner_call_started', 'implementing', { role: 'implementer' }),
+    logLine('runner_call_started', 'final-review', { role: 'review' }),
     logLine('runner_call_started', 'final-review', { role: 'review' }),
     logLine('task_completed', 'implementing', { duration: 4200 }, 'T001'),
     logLine('task_completed', 'implementing', { duration: 1300 }, 'T002'),
@@ -173,6 +179,19 @@ describe('assertPlainStdout', () => {
     expect(() => assertPlainStdout(stdout)).toThrow();
   });
 
+  it('accepts the reviewer-check lines of a run whose End-of-run checks are off or chose none', () => {
+    const stdout = plainStdout().replace(
+      'phase: final-review\n',
+      'phase: final-review\nreviewer checks: off\nreviewer checks: none (the change edits only docs)\n',
+    );
+    expect(() => assertPlainStdout(stdout)).not.toThrow();
+  });
+
+  it('rejects the retired checks lines without the reviewer prefix', () => {
+    expect(() => assertPlainStdout(`${plainStdout()}check V1: passed (npm test)\n`)).toThrow();
+    expect(() => assertPlainStdout(`${plainStdout()}checks: off\n`)).toThrow();
+  });
+
   it('rejects a JSON record on stdout', () => {
     const stdout = `${plainStdout()}{"type":"task_completed"}\n`;
     expect(() => assertPlainStdout(stdout)).toThrow();
@@ -194,7 +213,7 @@ describe('assertSessionDir', () => {
       completed: 2,
     });
 
-    expect(facts.calls).toEqual({ planner: 1, implementer: 2, review: 1 });
+    expect(facts.calls).toEqual({ planner: 1, implementer: 2, review: 2 });
     expect(facts.perBrief).toEqual([
       { id: 'T001', durationMs: 4200 },
       { id: 'T002', durationMs: 1300 },

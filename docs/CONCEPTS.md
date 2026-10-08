@@ -11,11 +11,11 @@ SPLITBRIEF is a CLI that splits AI coding work across two roles:
 - A **planner** — an expensive, high-quality model (Claude Code, Codex, GPT-4-class, …) does the *thinking*: researches the codebase and answers one typed plan, whose tasks become the Task Briefs.
 - An **implementer** — a weaker **model**, reached either as a CLI tool running a cheap model or as an API model (Ollama, LM Studio, a custom endpoint) — does the *typing*: turns each task from the list into code, one task at a time. Both transports are first-class; SPLITBRIEF favours neither.
 
-The orchestrator in the middle owns the workflow: it runs the planner, persists the plan and the Task Brief transport, walks through tasks, validates each one (`typecheck → lint → tests`), records evidence and checkpoint boundaries, and consults the planner when the implementer gets stuck. Git staging and commits belong to the user.
+The orchestrator in the middle owns the workflow: it runs the planner, persists the plan and the Task Brief transport, walks through tasks, validates each one (its checks, then the reviewer checks before the review), records evidence and checkpoint boundaries, and consults the planner when the implementer gets stuck. Git staging and commits belong to the user.
 
 The goal is a change that holds up: the tool that wrote the code never signs it off, and a deterministic pipeline — not the implementer's own opinion — decides whether the task passed. Lower total cost follows from the split; it is a reported outcome, not the promise.
 
-The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the brief grouping rule, the retry count, the ladder, the bounds, the timeouts, the gate order, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
+The **pipeline spec** (`src/core/pipeline-spec/`) is where that pipeline's countable rules live — the brief grouping rule, the retry count, the ladder, the bounds, the timeouts, the test check narrowing rule, the halt signatures, the review cycle cap. The orchestrator imports them and the portable agent skills are rendered from them, so the two cannot drift; `npm run skills:check` fails when they do.
 
 ---
 
@@ -50,7 +50,7 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 
 - The state machine (see `docs/WORKFLOW.md`).
 - Disk writes (`plan.json`, `plan.md` and `tasks.md` as the plan and its renderings, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
-- Validation pipeline (`typecheck → lint → tests`).
+- Validation pipeline (plan checks, then the reviewer checks).
 - Filesystem snapshots and manual Git review. An index checkpoint is a retired Git feature; filesystem snapshots remain supported.
 - Event emission through the EventBus to subscribed sinks: TUI, JSONL, logger, stdout JSON, and hooks.
 
@@ -88,7 +88,7 @@ idle
  ├─► planning          (the planning session: questions, typed plan, checks)
  │   └─► reviewing-plan   (the plan card waits for the user; skipped with approve: none)
  ├─► implementing      (implementer is working on current task)
- │   └─► validating-task  (typecheck → lint → tests running)
+ │   └─► validating-task  (the brief's checks running)
  │       └─► escalating   (retry spent → the planner's consult, then recovery)
  ├─► final-review      (review seat reads the whole diff against the briefs and the request)
  └─► complete
@@ -164,19 +164,17 @@ Task briefs are topologically sorted on dependency. Each task is independently p
 
 ## Validation pipeline
 
-Runs after every implementer response. Defined in `src/engine/orchestrator/validation/run.ts`.
+Runs the plan's checks after a brief (`src/engine/orchestrator/validation/run-checks.ts`) and the reviewer checks before a review (`src/engine/orchestrator/review-checks.ts`).
 
-A **stack** is the language toolchain the project's gates come from — one of five registered rows (TypeScript, JavaScript, Python, Go, Rust) in `src/core/validation/stacks/`, each naming that language's typecheck, lint and test commands and the file patterns that detect it. A command resolves through `config → manifest → discovered → stack default → none`; a project that matches no stack runs review-only and says so (`gates: NONE — review-only`).
+A **stack** is the language toolchain a planner `test` check takes its command from — one of five registered rows (TypeScript, JavaScript, Python, Go, Rust) in `src/core/validation/stacks/`, each naming that language's test command, its test file patterns and the marker files that detect it. The command resolves through `config → manifest → discovered → stack default → none`; on a project that matches no stack, a `test` check without `validation.test_command` is `not-runnable` and says so. The **reviewer checks** do not resolve through a stack: before a review the reviewer reads the project and chooses the reviewer checks (`V1`, `V2`, …) that verify the change. SPLITBRIEF runs them under its command policy (`validation.end_checks`, Settings: End-of-run checks). The command policy runs only programs on its allowlist: the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test` target, and the tools of the five stacks. Every refused command gets a named row.
 
-1. **Type-check** — the configured, discovered, or heuristic command. The built-in `npx tsc --noEmit` default applies only on TypeScript projects (a `tsconfig.json` exists or `typescript` is a dependency); on other languages the stage is skipped when nothing else resolves.
-2. **Lint** — the configured, discovered, or heuristic command; the stage is skipped when no lint command resolves.
-3. **Tests** — the configured, discovered, or heuristic command, falling back to `npm test`.
+1. **Plan checks** — with `workflow.review: task`, the brief gate runs the task's checks and its due checks after each hand-back; with `end`, an ordinary brief runs none. Before the final review every registered plan and task check runs, including renders.
+2. **Reviewer checks** — before each review the reviewer makes the plan call. It chooses at most 6 reviewer checks with a reason each, names each related test it declines, or gives the reason it chose none. SPLITBRIEF runs them in order under the command policy, which also refuses a reviewer check whose script or task file this run changed. A failed plan call (a transport error or a protocol error) halts the review the same way a failed verdict call does; it is never a pass. With End-of-run checks off, no reviewer check runs; plan and task checks still run.
+3. **Stop rule** — the first reviewer check with new failures stops the list; each later reviewer check reads `not run · <id> failed`.
 
-A stage that resolves to no command is recorded as *skipped* (not a pass). When every enabled stage is skipped, the run emits a warning so a nothing-validated task is not mistaken for all-green.
+A test check that resolves to no command is `not-runnable` (not a pass); a required one halts with `required-checks-unrunnable`.
 
-A failing stage whose failures are also red on a disposable run base copy is *failed but pre-existing*. The base check runs only after a red. It re-runs failing test files or the whole command for typecheck and lint. A task accepts this red only when every failure key is pre-existing and its evidence names no changed file. The evidence ledger retains `baselineExempt` for exempt stages and carries `preExisting` keys in check entries. The Checks Log reports these keys to the reviewer.
-
-Each step stops at the first failure attributable to the task and reports it to the orchestrator, which retries or consults the planner. An exempt pre-existing red lets the pipeline continue so later stages still get a verdict. It produces no retry prompt.
+A red reviewer check whose failures are also red on a disposable run base copy, with the same command text, is *failed but pre-existing*. The base check runs only after a red. The evidence ledger carries `preExisting` keys in check entries. The Checks Log reports these keys to the reviewer, and only new failures become pending inputs.
 
 ---
 

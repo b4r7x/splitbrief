@@ -5,6 +5,7 @@ import {
   ReviewVerdictSchema,
   ReviewAnswerSchema,
   REVIEW_ANSWER_JSON_SCHEMA,
+  ReviewChecksPlanSchema,
   TriageInputSchema,
   TriageResultSchema,
 } from './review.js';
@@ -131,5 +132,29 @@ describe('ReviewAnswerSchema', () => {
     expect(ReviewAnswerSchema.safeParse(verdict).success).toBe(false);
     expect(ReviewVerdictSchema.parse(answer)).toEqual(verdict);
     expect(TriageResultSchema.parse(answer)).toEqual(fix);
+  });
+});
+
+describe('ReviewChecksPlanSchema refinement', () => {
+  const command = (id: string) => ({ id, command: 'npm test', reason: 'runs the changed tests' });
+
+  it('needs a reason when it chooses no command', () => {
+    expect(
+      ReviewChecksPlanSchema.safeParse({ commands: [], declined: [], reason: null }).success,
+    ).toBe(false);
+    expect(
+      ReviewChecksPlanSchema.safeParse({ commands: [], declined: [], reason: '  ' }).success,
+    ).toBe(false);
+    expect(
+      ReviewChecksPlanSchema.safeParse({ commands: [], declined: [], reason: 'docs only' }).success,
+    ).toBe(true);
+  });
+
+  it('takes only unique V ids', () => {
+    const plan = (ids: string[]) => ({ commands: ids.map(command), declined: [], reason: null });
+
+    expect(ReviewChecksPlanSchema.safeParse(plan(['V1', 'V2'])).success).toBe(true);
+    expect(ReviewChecksPlanSchema.safeParse(plan(['K1'])).success).toBe(false);
+    expect(ReviewChecksPlanSchema.safeParse(plan(['V1', 'V1'])).success).toBe(false);
   });
 });

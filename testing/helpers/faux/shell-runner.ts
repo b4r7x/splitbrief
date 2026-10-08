@@ -82,9 +82,7 @@ export function makeShellRunnerConfig(overrides?: Parameters<typeof makeConfig>[
     },
     ...overrides,
     validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
+      endChecks: false,
       testCommand: 'noop',
       ...overrides?.validation,
     },

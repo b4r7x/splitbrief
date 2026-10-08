@@ -3,7 +3,11 @@ import { vi, type Mock } from 'vitest';
 import type { PlanProposal, PlanResult } from '../../src/core/schemas/plan.js';
 import type { ClarificationQuestion } from '../../src/core/schemas/question.js';
 import type { ConsultAnswer } from '../../src/core/schemas/consult.js';
-import type { ReviewAnswer, ReviewVerdict } from '../../src/core/schemas/review.js';
+import type {
+  ReviewAnswer,
+  ReviewChecksPlan,
+  ReviewVerdict,
+} from '../../src/core/schemas/review.js';
 import type { ReviewScope } from '../../src/core/review/verdict.js';
 import { taskId, type Task } from '../../src/core/schemas/task.js';
 import type {
@@ -12,6 +16,7 @@ import type {
   TypedCallContext,
 } from '../../src/engine/planners/types.js';
 import type { TypedSchemaInput, TypedSeatCall } from '../../src/engine/runners/typed-output.js';
+import type { RunnerCallResult } from '../../src/engine/calls/types.js';
 import { makeRunnerCallResult } from './factories/runner-call.js';
 
 const REVIEW_PROMPT_MARKER = '# Final Implementation Review';
@@ -28,6 +33,41 @@ type TypedInvokeInput = { prompt: string; schema?: TypedSchemaInput | undefined 
  */
 function isReviewCall(input: TypedInvokeInput): boolean {
   return input.schema?.name === 'review_answer' || isReviewPrompt(input.prompt);
+}
+
+/** The plan call the reviewer seat answers before a review's verdict. */
+function isReviewChecksCall(input: TypedInvokeInput): boolean {
+  return input.schema?.name === 'review_checks';
+}
+
+/** The plan-call answer a fake reviewer gives when a test scripts none: no command, and why. */
+export const NO_REVIEW_CHECKS: ReviewChecksPlan = {
+  commands: [],
+  declined: [],
+  reason: 'The fake reviewer chooses no command for this test.',
+};
+
+/**
+ * What a fake reviewer answers to a review-seat call the test does not script: the plan call
+ * gets `NO_REVIEW_CHECKS`, the verdict a passing one. Any other call is the caller's.
+ */
+function unscriptedReviewAnswer(
+  input: TypedInvokeInput,
+  usage?: Readonly<{ inputTokens: number; outputTokens: number }> | undefined,
+): RunnerCallResult | null {
+  if (isReviewChecksCall(input)) {
+    return makeRunnerCallResult({
+      status: 'completed',
+      text: JSON.stringify(NO_REVIEW_CHECKS),
+      usage: usage ?? null,
+    });
+  }
+  if (!isReviewCall(input)) return null;
+  return makeRunnerCallResult({
+    status: 'completed',
+    text: JSON.stringify(passingReviewVerdict(input.prompt)),
+    usage: usage ?? null,
+  });
 }
 
 function mockTypedOutput(seat: TypedCallContext['seat']): TypedSeatCall['typedOutput'] {
@@ -123,12 +163,8 @@ export function scriptedTypedCall(script: Array<PlanResult | string | Error>): {
       typedOutput: mockTypedOutput(ctx.seat),
       canResume: false,
       invoke: async ({ prompt, schema }) => {
-        if (isReviewCall({ prompt, schema })) {
-          return makeRunnerCallResult({
-            status: 'completed',
-            text: JSON.stringify(passingReviewVerdict(prompt)),
-          });
-        }
+        const review = unscriptedReviewAnswer({ prompt, schema });
+        if (review !== null) return review;
         prompts.push(prompt);
         const next = script.shift();
         if (next === undefined) throw new Error('the planner was asked once too often');
@@ -223,17 +259,12 @@ export function typedCallAnswering(
     typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
     invoke: async ({ prompt, schema }: TypedInvokeInput) =>
-      isReviewCall({ prompt, schema })
-        ? makeRunnerCallResult({
-            status: 'completed',
-            text: JSON.stringify(passingReviewVerdict(prompt)),
-            usage: usage ?? null,
-          })
-        : makeRunnerCallResult({
-            status: 'completed',
-            text: JSON.stringify({ result: await answer(prompt, ctx) }),
-            usage: usage ?? null,
-          }),
+      unscriptedReviewAnswer({ prompt, schema }, usage) ??
+      makeRunnerCallResult({
+        status: 'completed',
+        text: JSON.stringify({ result: await answer(prompt, ctx) }),
+        usage: usage ?? null,
+      }),
   }));
 }
 
@@ -250,6 +281,8 @@ export function typedCallPlanAndReview(
         review?: Readonly<{ inputTokens: number; outputTokens: number }>;
       }>
     | undefined,
+  /** The plan-call answer the reviewer gives before each verdict; no command by default. */
+  checks?: ((prompt: string) => ReviewChecksPlan) | undefined,
 ): Mock<Planner['typedCall']> {
   let reviewCalls = 0;
   return vi.fn((ctx: TypedCallContext) => ({
@@ -257,6 +290,13 @@ export function typedCallPlanAndReview(
     typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
     invoke: async ({ prompt, schema }: TypedInvokeInput) => {
+      if (isReviewChecksCall({ prompt, schema })) {
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify(checks?.(prompt) ?? NO_REVIEW_CHECKS),
+          usage: usage?.review ?? null,
+        });
+      }
       if (!isReviewCall({ prompt, schema }))
         return makeRunnerCallResult({
           status: 'completed',
@@ -297,17 +337,12 @@ export function consultCallAnswering(
     typedOutput: mockTypedOutput(ctx.seat),
     canResume: false,
     invoke: async ({ prompt, schema }: TypedInvokeInput) =>
-      isReviewCall({ prompt, schema })
-        ? makeRunnerCallResult({
-            status: 'completed',
-            text: JSON.stringify(passingReviewVerdict(prompt)),
-            usage: usage ?? null,
-          })
-        : makeRunnerCallResult({
-            status: 'completed',
-            text: JSON.stringify(answer(prompt, ctx)),
-            usage: usage ?? null,
-          }),
+      unscriptedReviewAnswer({ prompt, schema }, usage) ??
+      makeRunnerCallResult({
+        status: 'completed',
+        text: JSON.stringify(answer(prompt, ctx)),
+        usage: usage ?? null,
+      }),
   }));
 }
 
@@ -340,19 +375,14 @@ export function typedCallPlanAndConsult(
     return {
       ...call,
       invoke: async ({ prompt, schema }: TypedInvokeInput) =>
-        isReviewCall({ prompt, schema })
-          ? makeRunnerCallResult({
+        unscriptedReviewAnswer({ prompt, schema }, usage) ??
+        (prompt.includes('# Consult')
+          ? call.invoke({ prompt })
+          : makeRunnerCallResult({
               status: 'completed',
-              text: JSON.stringify(passingReviewVerdict(prompt)),
+              text: JSON.stringify({ result: plan() }),
               usage: usage ?? null,
-            })
-          : prompt.includes('# Consult')
-            ? call.invoke({ prompt })
-            : makeRunnerCallResult({
-                status: 'completed',
-                text: JSON.stringify({ result: plan() }),
-                usage: usage ?? null,
-              }),
+            })),
     };
   });
 }

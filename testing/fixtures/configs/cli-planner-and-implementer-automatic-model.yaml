@@ -8,9 +8,7 @@ implementer:
   tool: codex
   model: auto
 validation:
-  typecheck: true
-  lint: true
-  test: true
+  end_checks: true
 workflow:
   approve: plan
   git:

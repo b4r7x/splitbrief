@@ -67,7 +67,7 @@ Seats are declared in `.splitbrief/config.yaml` (gitignored), never with `--impl
 version: 3
 planner:     { kind: cli, tool: <installed-tool>, model: <named-model> }
 implementer: { kind: cli, tool: <installed-tool>, model: <named-model> }
-validation:  { typecheck: true, lint: true, test: true }
+validation:  { end_checks: true }
 workflow:    { approve: plan }
 ```
 
@@ -213,7 +213,7 @@ A catalog or model claim is verified by set equality, never by a count — "exit
 
 Record every trigger and its resolution in `<session-dir>/babysit.md`, with `file:line` evidence and commands actually run.
 
-With `workflow.review: end` a brief runs no gate, and with `task` it runs only its related tests; only the pre-review full suite sees a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
+A brief runs only its own checks. Before each review the reviewer chooses the end-of-run commands (with `workflow.review: task`, the tests related to the changed files); only those commands see a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
 
 ## Usage limits
 

@@ -78,10 +78,25 @@ export interface RunningValidationStage {
   stageStartedTs: number;
 }
 
-/** The full-suite stage the run is inside right now, and the moment of the run it runs at. */
-export interface RunningSuiteStage extends RunningValidationStage {
+/**
+ * The command run before a review that the run is inside right now: a reviewer check (`id`) or, in a
+ * session from before the reviewer chose them, a full-suite stage (`stage`).
+ */
+export interface RunningSuiteStage {
+  id?: string | undefined;
+  stage?: NonNullable<ValidationStage> | undefined;
   command: string;
   moment: EngineEventOf<'full_suite'>['moment'];
+  stageStartedTs: number;
+}
+
+/**
+ * One command's identity across its running and settled events: the moment it runs at, and its
+ * check id, else its stage. A reviewer check and its re-run at the run base share an id, so the
+ * moment keeps them two commands.
+ */
+export function suiteCommandKey(suite: Pick<RunningSuiteStage, 'id' | 'stage' | 'moment'>): string {
+  return `${suite.moment}:${suite.id ?? suite.stage}`;
 }
 
 export interface OperationsState {

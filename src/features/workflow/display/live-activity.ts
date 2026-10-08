@@ -87,7 +87,7 @@ export function deriveLiveStatus(input: {
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
-  // A full-suite stage can run for minutes before the review, and while a red is re-run at the run base:
+  // A reviewer check can run for minutes before the review, and so can its re-run at the run base:
   // it is the run's work at that moment, so it leads on its own clock rather than the rail stage's.
   if (input.suiteStage !== null) {
     return {

@@ -97,6 +97,7 @@ const phaseActions = {
     'ALL_DONE',
     'REVIEW_DONE',
     'RECORD_REVIEW',
+    'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
     'REVIEW_CORRECTION',
@@ -110,6 +111,7 @@ const phaseActions = {
     'REVIEW_CORRECTION',
     'RECORD_APPLY_RECHECK',
     'RECORD_REVIEW',
+    'RECORD_REVIEW_CHECKS',
     'RECORD_TRIAGE',
     'START_FIX_CYCLE',
     'QUEUE_TRIAGE',
@@ -359,6 +361,9 @@ export function transition(
             : record,
       };
     }
+
+    case 'RECORD_REVIEW_CHECKS':
+      return { ...state, reviewChecks: action.record };
 
     case 'RECORD_TRIAGE':
       return { ...state, triage: [...(state.triage ?? []), action.record] };

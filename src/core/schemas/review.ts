@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ValidationStageSchema } from './enums.js';
 import { TaskSpecSchema } from './plan.js';
 import { TaskIdSchema } from './task.js';
 
@@ -68,12 +67,52 @@ export const TriageInputSchema = z.object({
   source: z.enum(['user', 'apply', 'check']),
   text: z.string(),
   file: z.string().nullable(),
-  /** A gate red: the stage or checks that failed and their captured output. */
-  stage: ValidationStageSchema.optional(),
+  /** A red check: its id, the command it ran and its captured output. */
   checkIds: z.array(z.string()).optional(),
+  command: z.string().optional(),
   output: z.string().optional(),
 });
 export type TriageInput = z.infer<typeof TriageInputSchema>;
+
+/** The most reviewer checks one plan call may choose. */
+export const MAX_REVIEW_CHECKS = 6;
+
+/**
+ * The commands the reviewer chooses to verify the change, the tests or checks it chose not to run,
+ * and why it chose none when it chose none. SPLITBRIEF runs the commands; the reviewer never does.
+ */
+export const ReviewChecksPlanObjectSchema = z.object({
+  commands: z
+    .array(
+      z.object({
+        id: z.string(),
+        command: z.string().min(1),
+        reason: z.string().min(1),
+      }),
+    )
+    .max(MAX_REVIEW_CHECKS),
+  declined: z.array(z.object({ target: z.string().min(1), reason: z.string().min(1) })),
+  reason: z.string().nullable(),
+});
+
+export const ReviewChecksPlanSchema = ReviewChecksPlanObjectSchema.superRefine((plan, ctx) => {
+  if (plan.commands.length === 0 && (plan.reason ?? '').trim() === '') {
+    ctx.addIssue({ code: 'custom', message: 'reason: say why no command verifies this change' });
+  }
+  const ids = plan.commands.map((command) => command.id);
+  if (ids.some((id) => !/^V\d+$/.test(id))) {
+    ctx.addIssue({ code: 'custom', message: 'commands: every id is V1, V2, …' });
+  }
+  if (new Set(ids).size !== ids.length) {
+    ctx.addIssue({ code: 'custom', message: 'commands: every id must be unique' });
+  }
+});
+export type ReviewChecksPlan = z.infer<typeof ReviewChecksPlanSchema>;
+
+const { $schema: _checksDraftRef, ...reviewChecksPlanJsonSchema } = z.toJSONSchema(
+  ReviewChecksPlanObjectSchema,
+);
+export const REVIEW_CHECKS_PLAN_JSON_SCHEMA = reviewChecksPlanJsonSchema;
 
 const { $schema: _reviewDraftRef, ...reviewVerdictJsonSchema } =
   z.toJSONSchema(ReviewVerdictSchema);

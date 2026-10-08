@@ -1,6 +1,7 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
+import { fitBeforeTail } from './display/build-progress.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
 
 // The rail's fraction counts briefs that passed their checks, never the index of the one running:
@@ -12,6 +13,8 @@ export function stageFractionText(view: { passed: number; total: number }): stri
 export interface InputFooterBylineInput {
   cols: number;
   lead: string;
+  /** The lead's own clock. It follows the lead and survives every width: the lead is cut first. */
+  leadClock?: string | null | undefined;
   hintText?: string | null;
   queuedText: string | null;
   worktreeLabel?: string | null;
@@ -39,6 +42,8 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
   const width = getChromeContentWidth(input.cols);
   const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
   const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
+  const clockTail = input.leadClock && input.leadClock.length > 0 ? ` ${input.leadClock}` : '';
+  const fullLead = `${input.lead}${clockTail}`;
 
   const candidates: Array<{ hint: boolean; queued: boolean }> = [
     { hint: true, queued: true },
@@ -46,7 +51,7 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
     { hint: false, queued: false },
   ];
 
-  let leadOut = input.lead;
+  let leadOut = fullLead;
   let hintIncluded = false;
   let queuedIncluded = false;
   let line = '';
@@ -54,7 +59,7 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
 
   for (const candidate of candidates) {
     const candidateStr = joinBylineParts([
-      input.lead,
+      fullLead,
       candidate.hint ? hintPart : null,
       candidate.queued ? queuedPart : null,
     ]);
@@ -68,7 +73,7 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
   }
 
   if (!matched) {
-    leadOut = truncateTerminalDisplayText(input.lead, width);
+    leadOut = fitBeforeTail(input.lead, clockTail, width);
     line = leadOut;
   }
 

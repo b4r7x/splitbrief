@@ -29,6 +29,7 @@ import {
   escalateRowBlock,
   fullSuiteRowBlock,
   implementerDoneRowBlock,
+  reviewChecksRowBlock,
   runningImplementerRowBlock,
   validateRowBlock,
 } from './execution.js';
@@ -200,6 +201,8 @@ export function eventRowBlock(options: {
     }
     case 'validate':
       return validateRowBlock(keyPrefix, event, ctx.width);
+    case 'review_checks':
+      return reviewChecksRowBlock(keyPrefix, event, ctx.width);
     case 'full_suite':
       return fullSuiteRowBlock(keyPrefix, event, ctx.width);
     case 'escalate':

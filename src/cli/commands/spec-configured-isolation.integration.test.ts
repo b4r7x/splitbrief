@@ -78,7 +78,7 @@ describe('spec command', () => {
 
       const baseConfig = makeConfig({
         planner: { kind: 'cli', tool: 'codex', authChannel: 'session' },
-        validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+        validation: { endChecks: false, testCommand: 'noop' },
       });
 
       const childProgram = [

@@ -13,10 +13,6 @@ describe('javascriptStack', () => {
     cleanupTempDir(dir);
   });
 
-  it('javascript: typecheck is always null', () => {
-    expect(javascriptStack.typecheck(dir)).toBeNull();
-  });
-
   it('scripts.test selects npm test', () => {
     writeFileSync(join(dir, 'package.json'), JSON.stringify({ scripts: { test: 'node --test' } }));
     expect(javascriptStack.test(dir)).toBe('npm test');

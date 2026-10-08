@@ -25,6 +25,10 @@ describe('config defaults', () => {
     it('does not default the retired maxRetries', () => {
       expect(createDefaultConfig().workflow.maxRetries).toBeUndefined();
     });
+
+    it('turns the End-of-run checks on and sets no retired validation key', () => {
+      expect(createDefaultConfig().validation).toEqual({ endChecks: true });
+    });
   });
 
   describe('mergeWithDefaults', () => {
@@ -73,7 +77,7 @@ describe('config defaults', () => {
       const dir = join(TMP, 'no-test-command');
       writeConfigYaml(dir, {
         implementer: { model: 'codellama:13b' },
-        validation: { test: true },
+        validation: { end_checks: true },
       });
 
       const { config } = loadConfig(dir);
@@ -83,7 +87,7 @@ describe('config defaults', () => {
     it('keeps a user-set validation.testCommand of "npm test"', () => {
       const dir = join(TMP, 'explicit-npm-test');
       writeConfigYaml(dir, {
-        validation: { test: true, test_command: 'npm test' },
+        validation: { test_command: 'npm test' },
       });
 
       const { config } = loadConfig(dir);

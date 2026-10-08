@@ -408,7 +408,7 @@ function fixtureConfig(isolation?: IsolationStrategy): Config {
       contextLength: 200_000,
     },
     // The plan's `test` checks are prose; a command that exits 0 lets them run without a project test script.
-    validation: { typecheck: false, lint: false, test: false, testCommand: 'node --version' },
+    validation: { endChecks: false, testCommand: 'node --version' },
     workflow: {
       approve: 'none',
       maxRetries: 1,

@@ -1,14 +1,8 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { createValidator } from './run.js';
 import { runValidationStep } from './stage.js';
-import { createEventBus } from '../../events/bus.js';
-import type { EngineEvent, EngineEventOf } from '../../events/types.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { processError } from '../../../lib/process/errors.js';
-import { makeConfig, makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
+import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 
 describe('validation output redaction', () => {
   let tempDir: string;
@@ -19,109 +13,65 @@ describe('validation output redaction', () => {
     cleanupTempDir(tempDir);
   });
 
-  it('redacts API keys from validation error output before publishing', async () => {
+  it("redacts API keys from a failing command's error output", async () => {
     const secret = 'sk-ant-api03-TEST123456789012345678';
-    const runner = makeCommandRunner(
-      processError.exitCode({
-        command: 'tsc',
-        code: 1,
-        stderr: `FAIL: key=${secret}`,
-        output: `Error: ${secret}`,
-      }),
-    );
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((e) => events.push(e));
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: makeTask({ suggestedFiles: ['src/a.ts'] }),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'implementing',
+    const result = await runValidationStep({
+      cmd: 'npm',
+      args: ['test'],
+      source: 'config',
+      cwd: tempDir,
+      timeout: 1000,
+      runCommand: makeCommandRunner(
+        processError.exitCode({
+          command: 'npm test',
+          code: 1,
+          stderr: `FAIL: key=${secret}`,
+          output: `Error: ${secret}`,
+        }),
+      ),
+      command: 'npm test',
     });
 
-    const validateEvent = events.find(
-      (e): e is EngineEventOf<'validate'> => e.type === 'validate' && e.status === 'done',
-    );
-    expect(validateEvent).toBeDefined();
-    expect(String(validateEvent?.error ?? '')).not.toContain('TEST123456789012345678');
-    expect(String(validateEvent?.error ?? '')).toContain('REDACTED');
+    expect(result).toMatchObject({ passed: false, stage: 'test', exitCode: 1 });
+    expect(result.error).not.toContain('TEST123456789012345678');
+    expect(result.error).toContain('REDACTED');
+    expect(result.output).not.toContain('TEST123456789012345678');
   });
 
   it('keeps stdout test-failure detail when stderr carries only an unrelated warning', async () => {
-    const runner = makeCommandRunner(
-      processError.exitCode({
-        command: 'vitest',
-        code: 1,
-        stderr: '(node:123) DeprecationWarning: punycode is deprecated',
-        output: 'FAIL  src/a.test.ts > computes the total\nexpected 3 to equal 4',
-      }),
-    );
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({
-      typecheck: false,
-      lint: false,
-      test: true,
-    });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-    writeFileSync(
-      join(tempDir, 'package.json'),
-      JSON.stringify({ scripts: { test: 'vitest run' } }),
-    );
-    mkdirSync(join(tempDir, 'src'), { recursive: true });
-    writeFileSync(join(tempDir, 'src/a.test.ts'), '');
-    const events: EngineEvent[] = [];
-    const bus = createEventBus();
-    bus.subscribe((e) => events.push(e));
-
-    await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: makeTask({ suggestedFiles: ['src/a.ts'] }),
-      projectDir: tempDir,
-      config,
-      bus,
-      phase: 'implementing',
+    const result = await runValidationStep({
+      cmd: 'npm',
+      args: ['test'],
+      source: 'config',
+      cwd: tempDir,
+      timeout: 1000,
+      runCommand: makeCommandRunner(
+        processError.exitCode({
+          command: 'vitest',
+          code: 1,
+          stderr: '(node:123) DeprecationWarning: punycode is deprecated',
+          output: 'FAIL  src/a.test.ts > computes the total\nexpected 3 to equal 4',
+        }),
+      ),
+      command: 'npm test',
     });
 
-    const validateEvent = events.find(
-      (e): e is EngineEventOf<'validate'> => e.type === 'validate' && e.status === 'done',
-    );
-    expect(validateEvent).toBeDefined();
-    expect(String(validateEvent?.error ?? '')).toContain(
-      'FAIL  src/a.test.ts > computes the total',
-    );
-    expect(String(validateEvent?.error ?? '')).toContain('expected 3 to equal 4');
+    expect(result.error).toContain('FAIL  src/a.test.ts > computes the total');
+    expect(result.error).toContain('expected 3 to equal 4');
   });
 
   it('caps validation output to 4096 characters', async () => {
-    const longOutput = 'x'.repeat(5000);
-    const runner = makeCommandRunner({ stdout: longOutput, stderr: '', code: 0 });
-    const validator = createValidator({ runCommand: runner });
-    const config = makeConfig({ typecheck: true, lint: false, test: false });
-    writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
-    const bus = { publish: () => {}, subscribe: () => () => {} };
-
-    const results = await validator.runValidation({
-      stages: ['typecheck', 'lint', 'test'],
-      changedFiles: [],
-
-      task: makeTask({ suggestedFiles: ['src/a.ts'] }),
-      projectDir: tempDir,
-      config,
-      bus: bus as never,
-      phase: 'implementing',
+    const result = await runValidationStep({
+      cmd: 'npm',
+      args: ['test'],
+      source: 'config',
+      cwd: tempDir,
+      timeout: 1000,
+      runCommand: makeCommandRunner({ stdout: 'x'.repeat(5000), stderr: '', code: 0 }),
+      command: 'npm test',
     });
 
-    expect(results[0]?.output?.length).toBe(4096);
+    expect(result.output?.length).toBe(4096);
   });
 
   it('names the failing tests of a red test stage from the whole output, never the noise its passing tests wrote last', async () => {
@@ -139,7 +89,6 @@ describe('validation output redaction', () => {
       ),
     ].join('\n');
     const result = await runValidationStep({
-      stage: 'test',
       cmd: 'npm',
       args: ['test'],
       source: 'config',
@@ -173,7 +122,6 @@ describe('validation output redaction', () => {
     const filler = Array.from({ length: 400 }, (_, i) => `check ${i} passed`).join('\n');
     const stdout = `${filler}\nTest Files  1 passed (1)\n     Tests  4 passed (4)`;
     const result = await runValidationStep({
-      stage: 'test',
       cmd: 'npm',
       args: ['test'],
       source: 'config',

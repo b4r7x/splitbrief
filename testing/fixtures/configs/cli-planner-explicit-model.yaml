@@ -9,9 +9,7 @@ implementer:
   tool: claude-code
   model: sonnet
 validation:
-  typecheck: true
-  lint: true
-  test: true
+  end_checks: true
 workflow:
   approve: plan
   git:

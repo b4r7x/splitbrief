@@ -159,12 +159,7 @@ async function initializeTestWorkflow(
   tracked: { current: WorkflowState | undefined };
 }> {
   const config = makeConfig({
-    validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
-      testCommand: 'noop',
-    },
+    validation: { endChecks: false, testCommand: 'noop' },
     workflow: {},
     approval: { feedRejectionsToPlanner: true },
     codebase: { enabled: false, tokenBudget: 4000 },

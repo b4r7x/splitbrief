@@ -25,12 +25,14 @@ describe('settingsHelpLines', () => {
   });
 
   it('reads a boolean row straight off its definition', () => {
-    expect(linesFor('validation.lint')).toEqual([{ text: 'Run linter' }]);
+    expect(linesFor('validation.endChecks')).toEqual([
+      { text: 'The reviewer chooses reviewer checks that verify the change; SPLITBRIEF runs them' },
+    ]);
   });
 
   it('reads a string row straight off its definition', () => {
     expect(linesFor('validation.testCommand')).toEqual([
-      { text: "Argv-style test runner command (auto = the stack's own)" },
+      { text: "The command the planner's test checks run (auto = the stack's own)" },
     ]);
   });
 

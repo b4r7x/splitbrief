@@ -52,8 +52,8 @@ function plannerCall(callbacks: PlannerOutputCallbacks, callId: string, text: st
 }
 
 /**
- * The canary's consulted brief: with the task review cadence the brief gate runs the test stage,
- * validation fails, the local retry fails, the planner's consult call answers with guidance, and
+ * The canary's consulted brief: with the task review cadence the brief gate runs its test check,
+ * the check fails, the local retry fails, the planner's consult call answers with guidance, and
  * the guided retry lands. Every event it publishes names the phase the run is in.
  */
 async function runConsultedBrief(): Promise<EngineEvent[]> {
@@ -88,7 +88,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
       feature: 'escalate one brief',
       config: makeConfig({
         implementer: { kind: 'agent', command: 'node', model: 'cheap-direct-agent' },
-        validation: { typecheck: false, lint: false, test: true, testCommand: 'node validate.mjs' },
+        validation: { endChecks: false, testCommand: 'node validate.mjs' },
         workflow: { approve: 'none', review: 'task', maxRetries: 1 },
       }),
     }),

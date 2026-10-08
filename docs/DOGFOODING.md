@@ -28,7 +28,7 @@ planner: { kind: cli, tool: claude-code, model: opus, effort: high }   # fallbac
 implementer: { kind: cli, tool: antigravity, model: gemini-3.8-flash-high, effort: high }
 # implementer: { kind: cli, tool: claude-code, model: sonnet, effort: medium }
 # implementer: { kind: cli, tool: codex, model: <id> }
-validation: { typecheck: true, lint: true, test: true }
+validation: { end_checks: true }
 workflow: { approve: plan }
 ```
 
@@ -42,7 +42,7 @@ The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<i
 
 ## 2. Launch and gates
 
-A brief whose test target is an integration test runs through `npm run test:integration -- <file>`. The pre-review full suite runs `npm test`, which selects only the `unit` project. Integration tests run in `release-check` and CI.
+A brief's `test` check runs `npm test -- <file>`, which selects only the `unit` project. Name an integration test as a `cmd` check: `npm run test:integration -- <file>`. Before each review the reviewer chooses the reviewer checks, for example `npm test`, `npm run test:integration` or `npm run test:e2e`, and SPLITBRIEF runs them. `npm run <script>` needs an approved plan. The full gate set runs in `release-check` and CI.
 
 Readability does not depend on tmux settings. SPLITBRIEF maps every token to a readable value at 256 colours.
 Add `set -as terminal-features ',xterm-ghostty:RGB'` only for exact truecolor values inside tmux. Use the outer `$TERM` instead of `xterm-ghostty` when needed.

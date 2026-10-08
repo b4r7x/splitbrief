@@ -151,7 +151,7 @@ function buildTaskSections(
     outputContract === 'file-bundle-v1'
       ? `Answer with one JSON object: {"version":1,"files":[{"path":"...","action":"create"|"modify","content":"..."}]}. Carry the complete new contents of every file listed above that you change, and leave the rest out. No markdown fences. No explanations.`
       : writesFiles === 'direct'
-        ? `Edit ${files.join(', ')} directly in ${inPlace ? "the user's checkout" : 'the isolation directory'}. SPLITBRIEF runs the typecheck, lint and test gates after you hand back, so run no test or other gate command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
+        ? `Edit ${files.join(', ')} directly in ${inPlace ? "the user's checkout" : 'the isolation directory'}. SPLITBRIEF runs the checks after you hand back, so run no test, typecheck, lint or other check command. End your reply with the one JSON report object the rules describe: status done with the files you changed, or status blocked with your question and the files you need.`
         : `Output the complete file contents for ${task.suggestedFiles[0]}. No markdown fences. No explanations.`;
   sections.push('', completionInstruction);
 

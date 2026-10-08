@@ -180,7 +180,7 @@ describe('createHookSink', () => {
     expect(warnings[0]).toContain('informational only');
   });
 
-  it('does not dispatch for validate events with status=running (only done)', async () => {
+  it('does not dispatch post_validation for a validate event an older session recorded', async () => {
     const { bus, warnings, all } = makeBus();
     const hooks = trust({
       post_validation: [
@@ -188,30 +188,7 @@ describe('createHookSink', () => {
       ],
     });
     const sink = createHookSink(hooks, ctx, bus);
-    const runningEvent: EngineEvent = {
-      type: 'validate',
-      ts: 1,
-      phase: 'implementing',
-      taskId: taskId('T001'),
-      status: 'running',
-      passed: false,
-      stages: { typecheck: false, lint: false, test: false },
-    };
-    sink(runningEvent);
-    await waitForNoActivity(all);
-    expect(warnings).toHaveLength(0);
-    expect(all).toHaveLength(0);
-  });
-
-  it('dispatches post_validation for validate event with status=done', async () => {
-    const { bus, warnings } = makeBus();
-    const hooks = trust({
-      post_validation: [
-        makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
-      ],
-    });
-    const sink = createHookSink(hooks, ctx, bus);
-    const doneEvent: EngineEvent = {
+    const legacyEvent: EngineEvent = {
       type: 'validate',
       ts: 1,
       phase: 'implementing',
@@ -220,7 +197,28 @@ describe('createHookSink', () => {
       passed: true,
       stages: { typecheck: true, lint: true, test: true },
     };
-    sink(doneEvent);
+    sink(legacyEvent);
+    await waitForNoActivity(all);
+    expect(warnings).toHaveLength(0);
+    expect(all).toHaveLength(0);
+  });
+
+  it("dispatches post_validation when a brief's checks have run", async () => {
+    const { bus, warnings } = makeBus();
+    const hooks = trust({
+      post_validation: [
+        makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
+      ],
+    });
+    const sink = createHookSink(hooks, ctx, bus);
+    const checksEvent: EngineEvent = {
+      type: 'checks_run',
+      ts: 1,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      results: [{ id: 'K1', passed: true }],
+    };
+    sink(checksEvent);
     await waitForWarnings(warnings, 1);
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('marker');

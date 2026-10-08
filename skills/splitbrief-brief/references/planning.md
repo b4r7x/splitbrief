@@ -41,7 +41,7 @@ Use this shape with real ids, commands and paths:
   "decisions": ["Use the existing router"],
   "criteria": [{"id":"C1","text":"GET /health returns status ok","checkIds":["K1"]}],
   "checks": [],
-  "validation": {"language":"typescript","typecheck":"npm run typecheck","lint":"npm run lint","test":"npm test","testPattern":null},
+  "validation": {"language":"typescript","test":"npm test","testPattern":null},
   "tasks": [{
     "id":"T001", "title":"Add the health endpoint", "intent":"Return status ok from GET /health",
     "criteria":["C1"], "checks":[{"id":"K1","kind":"test","value":"src/health.test.ts","required":true}],

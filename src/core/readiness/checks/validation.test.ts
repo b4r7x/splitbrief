@@ -5,116 +5,14 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { readManifestCommands } from '../../validation/manifest-commands.js';
 import { detectStack, STACKS } from '../../validation/stacks/registry.js';
-import { resolveStageCommand } from '../../validation/stage-command.js';
-import { buildValidationChecks, probeValidationBaseline } from './validation.js';
+import { resolveTestCommand } from '../../validation/stage-command.js';
+import { buildValidationChecks } from './validation.js';
 
-describe('probeValidationBaseline', () => {
+describe('buildValidationChecks End-of-run checks', () => {
   let tempDir: string;
 
   beforeEach(() => {
-    tempDir = createTempDir('readiness-probe');
-  });
-
-  afterEach(() => {
-    cleanupTempDir(tempDir);
-  });
-
-  it('reports a warning when an enabled stage already fails on the working tree', async () => {
-    const config = makeConfig({
-      validation: {
-        typecheck: true,
-        lint: false,
-        test: true,
-        typecheckCommand: 'node -e "process.exit(0)"',
-        testCommand: 'node -e "process.exit(1)"',
-      },
-    });
-
-    const checks = await probeValidationBaseline(config, tempDir);
-
-    const failing = checks.find((c) => c.id === 'validation.already-failing');
-    expect(failing).toBeDefined();
-    expect(failing?.severity).toBe('warning');
-    expect(failing?.summary).toContain('test');
-    expect(failing?.summary).not.toContain('typecheck');
-  });
-
-  it('names the exact commands the probe ran in the check details', async () => {
-    const config = makeConfig({
-      validation: {
-        typecheck: true,
-        lint: true,
-        test: true,
-        typecheckCommand: 'node -e "process.exit(1)"',
-        lintCommand: 'node -e "process.exit(0)"',
-        testCommand: 'node -e "process.exit(1)"',
-      },
-    });
-
-    const checks = await probeValidationBaseline(config, tempDir);
-
-    const failing = checks.find((c) => c.id === 'validation.already-failing');
-    expect(failing?.details?.[0]).toContain("typecheck: node -e 'process.exit(1)'");
-    expect(failing?.details?.[0]).toContain("lint: node -e 'process.exit(0)'");
-    expect(failing?.details?.[0]).toContain("test: node -e 'process.exit(1)'");
-    expect(failing?.details?.[1]).toContain('pre-run commands');
-    expect(failing?.details?.[1]).toContain('planner discovery');
-  });
-
-  it('reports nothing when every enabled stage passes', async () => {
-    const config = makeConfig({
-      validation: {
-        typecheck: true,
-        lint: false,
-        test: true,
-        typecheckCommand: 'node -e "process.exit(0)"',
-        testCommand: 'node -e "process.exit(0)"',
-      },
-    });
-
-    const checks = await probeValidationBaseline(config, tempDir);
-
-    expect(checks).toHaveLength(0);
-  });
-
-  it('treats a missing command as not-failing rather than a red baseline', async () => {
-    const config = makeConfig({
-      validation: {
-        typecheck: true,
-        lint: false,
-        test: false,
-        typecheckCommand: 'definitely-not-a-real-command-xyz --check',
-      },
-    });
-
-    const checks = await probeValidationBaseline(config, tempDir);
-
-    expect(checks).toHaveLength(0);
-  });
-
-  it('treats a missing subcommand (exit 101, "no such command") as not-failing', async () => {
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-    const config = makeConfig({
-      validation: {
-        typecheck: false,
-        lint: true,
-        test: false,
-        lintCommand:
-          'node -e "process.stderr.write(\'error: no such command: clippy\'); process.exit(101)"',
-      },
-    });
-
-    const checks = await probeValidationBaseline(config, tempDir);
-
-    expect(checks).toHaveLength(0);
-  });
-});
-
-describe('buildValidationChecks lint posture', () => {
-  let tempDir: string;
-
-  beforeEach(() => {
-    tempDir = createTempDir('readiness-lint');
+    tempDir = createTempDir('readiness-end-checks');
   });
 
   afterEach(() => {
@@ -123,88 +21,49 @@ describe('buildValidationChecks lint posture', () => {
 
   const packageScripts = { packageJsonExists: false, scripts: {} };
 
-  it('reports lint as skipped instead of on when no lint command resolves', () => {
-    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
-    const config = makeConfig({ validation: { typecheck: true, lint: true, test: true } });
+  it('reports End-of-run checks on by default, with no warning', () => {
+    const checks = buildValidationChecks(makeConfig(), packageScripts, tempDir);
+
+    const configured = checks.find((c) => c.id === 'validation.configured');
+    expect(configured?.summary).toBe('End-of-run checks: on.');
+    expect(configured?.metadata?.['endChecks']).toBe(true);
+    expect(checks.some((c) => c.id === 'validation.end-checks-off')).toBe(false);
+  });
+
+  it('reports End-of-run checks off and warns that nothing verifies the change', () => {
+    const config = makeConfig({ validation: { endChecks: false } });
 
     const checks = buildValidationChecks(config, packageScripts, tempDir);
 
     const configured = checks.find((c) => c.id === 'validation.configured');
-    expect(configured?.summary).toContain('lint skipped (no lint command)');
-    expect(configured?.summary).not.toContain('lint on');
-    expect(configured?.metadata?.['lintCommand']).toBeNull();
+    expect(configured?.summary).toBe('End-of-run checks: off.');
+    expect(configured?.metadata?.['endChecks']).toBe(false);
+    const off = checks.find((c) => c.id === 'validation.end-checks-off');
+    expect(off?.severity).toBe('warning');
+    expect(off?.fix).toContain('validation.end_checks: true');
   });
 
-  it('reports lint on with the discovered command when a lint package script exists', () => {
-    writeFileSync(
-      join(tempDir, 'package.json'),
-      '{"devDependencies":{"typescript":"^5"},"scripts":{"lint":"eslint ."}}',
-    );
-    const config = makeConfig({ validation: { typecheck: true, lint: true, test: true } });
+  it('names no test check command for an unrecognised stack', () => {
+    const config = makeConfig({ validation: { testCommand: undefined } });
 
     const checks = buildValidationChecks(config, packageScripts, tempDir);
 
     const configured = checks.find((c) => c.id === 'validation.configured');
-    expect(configured?.summary).toContain('lint on');
-    expect(configured?.metadata?.['lintCommand']).toBe('npm run lint');
-    expect(checks.some((c) => c.id === 'validation.lint-unknown')).toBe(false);
-  });
-
-  it('reports lint off when the stage is disabled', () => {
-    const config = makeConfig({ validation: { typecheck: true, lint: false, test: true } });
-
-    const checks = buildValidationChecks(config, packageScripts, tempDir);
-
-    const configured = checks.find((c) => c.id === 'validation.configured');
-    expect(configured?.summary).toContain('lint off');
-    expect(configured?.metadata?.['lintCommand']).toBeNull();
-  });
-
-  it('points JS/TS projects at ESLint/Biome config discovery', () => {
-    writeFileSync(join(tempDir, 'package.json'), '{"devDependencies":{"typescript":"^5"}}');
-    const config = makeConfig({ validation: { typecheck: false, lint: true, test: false } });
-
-    const checks = buildValidationChecks(config, packageScripts, tempDir);
-
-    const info = checks.find((c) => c.id === 'validation.lint-unknown');
-    expect(info?.details?.[0]).toContain('ESLint/Biome');
-    expect(info?.details?.[0]).not.toContain('rust');
-  });
-
-  it('names the stack when its linter config is missing', () => {
-    writeFileSync(join(tempDir, 'pyproject.toml'), '[project]\nname = "test"');
-    const config = makeConfig({ validation: { typecheck: false, lint: true, test: false } });
-
-    const checks = buildValidationChecks(config, packageScripts, tempDir);
-
-    const info = checks.find((c) => c.id === 'validation.lint-unknown');
-    expect(info?.details?.[0]).toContain('python');
-    expect(info?.details?.[0]).toContain('validation.lintCommand');
-  });
-
-  it('reports the stack lint command for a non-JS project that has one', () => {
-    writeFileSync(join(tempDir, 'Cargo.toml'), '[package]\nname = "test"');
-    const config = makeConfig({ validation: { typecheck: false, lint: true, test: false } });
-
-    const checks = buildValidationChecks(config, packageScripts, tempDir);
-
-    const configured = checks.find((c) => c.id === 'validation.configured');
-    expect(configured?.summary).toContain('lint on');
-    expect(configured?.metadata?.['lintCommand']).toBe('cargo clippy --no-deps');
-    expect(checks.some((c) => c.id === 'validation.lint-unknown')).toBe(false);
-  });
-
-  it('resolves no command for an unconfigured stage of an unrecognised stack', () => {
-    const config = makeConfig({
-      validation: { typecheck: true, lint: true, test: true, testCommand: undefined },
-    });
-
-    const checks = buildValidationChecks(config, packageScripts, tempDir);
-
-    const configured = checks.find((c) => c.id === 'validation.configured');
-    expect(configured?.summary).toContain('lint skipped (no lint command)');
-    expect(configured?.details?.[0]).toBe('Test command: none (unrecognised stack)');
+    expect(configured?.details?.[1]).toBe('Test check command: none (unrecognised stack)');
     expect(configured?.metadata?.['testCommand']).toBeNull();
+  });
+
+  it('warns when the test check command names a package script that does not exist', () => {
+    const config = makeConfig({ validation: { testCommand: 'npm run unit' } });
+
+    const checks = buildValidationChecks(
+      config,
+      { packageJsonExists: true, scripts: { test: 'vitest run' } },
+      tempDir,
+    );
+
+    const missing = checks.find((c) => c.id === 'validation.test-script-missing');
+    expect(missing?.summary).toContain('"unit"');
   });
 });
 
@@ -228,9 +87,8 @@ describe('buildValidationChecks', () => {
         for (const [name, content] of STACK_MARKER_FILES[stack.id] ?? []) {
           writeFileSync(join(dir, name), content);
         }
-        const config = makeConfig({ validation: { typecheck: true, lint: true, test: true } });
-        const engine = resolveStageCommand({
-          stage: 'test',
+        const config = makeConfig();
+        const engine = resolveTestCommand({
           config,
           manifest: readManifestCommands(dir),
           discovered: undefined,

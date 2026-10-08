@@ -1,12 +1,8 @@
-import { runBaseOf } from '../isolation/base-tree.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
-import type { ValidationStage } from '../../../core/schemas/enums.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
 import type { WorkflowContext } from '../types.js';
-import { recordCheckRuns } from '../evidence/record-checks.js';
-import { formatValidationError, validationFailureLine } from '../validation/format-error.js';
-import { acceptValidationResults, type ValidationAcceptance } from '../validation/acceptance.js';
+import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { ValidationResult } from '../validation/result.js';
 import { checkRegistry, type CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
@@ -18,19 +14,10 @@ type BriefGateContext = Pick<
   'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal' | 'validator'
 >;
 
-export function verifyFailures(
-  validationResults: ValidationResult[],
-  acceptance: ValidationAcceptance,
-  checkRuns: readonly CheckRunResult[],
-): string[] {
-  const failures: string[] = [];
-  const stageError = formatValidationError(validationResults, acceptance);
-  if (stageError !== '') failures.push(stageError);
-  for (const run of checkRuns) {
-    if (run.status === 'pass') continue;
-    failures.push(`check ${run.checkId} did not pass (${run.status}): ${run.output}`);
-  }
-  return failures;
+export function verifyFailures(checkRuns: readonly CheckRunResult[]): string[] {
+  return checkRuns
+    .filter((run) => run.status !== 'pass')
+    .map((run) => `check ${run.checkId} did not pass (${run.status}): ${run.output}`);
 }
 
 export async function runBriefGate(opts: {
@@ -48,16 +35,11 @@ export async function runBriefGate(opts: {
   const { wctx, task, changedFiles } = opts;
   let state = opts.state;
   const track = opts.setTrackedState ?? (() => {});
-  // A fix task runs the red it answers again on top of what its cadence runs.
-  const fixed = task.fix?.findings ?? [];
-  const fixStages = fixed.flatMap((finding) =>
-    finding.stage === undefined ? [] : [finding.stage],
+  // A fix task runs the checks of the red it answers again on top of what its cadence runs.
+  const fixCheckIds = new Set(
+    (task.fix?.findings ?? []).flatMap((finding) => finding.checkIds ?? []),
   );
-  const fixCheckIds = new Set(fixed.flatMap((finding) => finding.checkIds ?? []));
   const cadence = wctx.config.workflow.review ?? 'end';
-  const stages: ValidationStage[] = [
-    ...new Set<ValidationStage>([...(cadence === 'task' ? ['test' as const] : []), ...fixStages]),
-  ].filter((stage) => wctx.config.validation[stage]);
   const due = new Set(dueCriterionIds(state, task.id));
   const checkIds = [
     ...new Set([
@@ -76,7 +58,7 @@ export async function runBriefGate(opts: {
       ...(opts.checkIds ?? []),
     ]),
   ];
-  const validationOptions = {
+  await wctx.validator.formatChangedFiles({
     task,
     projectDir: wctx.workspaceDir,
     config: wctx.config,
@@ -85,11 +67,11 @@ export async function runBriefGate(opts: {
     discoveredValidation: state.discoveredValidation,
     signal: wctx.signal,
     changedFiles,
-  };
-  await wctx.validator.formatChangedFiles(validationOptions);
-  let validationResults: ValidationResult[] = [];
+  });
+  const validationResults: ValidationResult[] = [];
   let runs: CheckRunResult[] = [];
-  if (stages.length > 0 || checkIds.length > 0) {
+  let settled: ReadonlySet<string> = new Set();
+  if (checkIds.length > 0) {
     const pre = await runPreValidationGate({
       wctx,
       state,
@@ -112,20 +94,6 @@ export async function runBriefGate(opts: {
         error: '',
         diagnosis: '',
       };
-    validationResults = await wctx.validator.runValidation({
-      ...validationOptions,
-      phase: state.phase,
-      stages,
-      changedFiles: [
-        ...new Set([
-          ...changedFiles,
-          ...fixed.flatMap((finding) => (finding.file === undefined ? [] : [finding.file])),
-        ]),
-      ],
-      base: runBaseOf(wctx, state),
-      testMode: fixStages.includes('test') ? 'check' : 'related',
-    });
-    await recordCheckRuns({ ...wctx, state, task, validation: validationResults });
     const checked = await runTaskChecks({
       wctx,
       state,
@@ -136,19 +104,21 @@ export async function runBriefGate(opts: {
     });
     state = checked.state;
     runs = checked.runs;
+    settled = checked.settled;
   }
-  const stageAcceptance = acceptValidationResults(validationResults, changedFiles);
   const registry = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
   const selected = new Set(opts.checkIds ?? []);
   const failedChecks = runs.filter((run) =>
     selected.has(run.checkId)
-      ? run.status !== 'pass'
+      ? run.status !== 'pass' && !settled.has(run.checkId)
       : run.status === 'fail' &&
+        !settled.has(run.checkId) &&
         (fixCheckIds.has(run.checkId) || registry.get(run.checkId)?.required === true),
   );
   const acceptance: ValidationAcceptance = {
-    ...stageAcceptance,
-    accepted: stageAcceptance.accepted && failedChecks.length === 0 && !wctx.signal?.aborted,
+    accepted: failedChecks.length === 0 && !wctx.signal?.aborted,
+    exemptStages: [],
+    blockingStages: [],
   };
   const firstFailedCheck = failedChecks[0];
   return {
@@ -156,9 +126,7 @@ export async function runBriefGate(opts: {
     stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
     validationResults,
     acceptance,
-    error: verifyFailures(validationResults, acceptance, failedChecks).join('\n\n'),
-    diagnosis:
-      validationFailureLine(validationResults, acceptance) ||
-      (firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`),
+    error: verifyFailures(failedChecks).join('\n\n'),
+    diagnosis: firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`,
   };
 }

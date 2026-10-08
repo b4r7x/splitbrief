@@ -1,5 +1,3 @@
-import { runBaseOf } from '../isolation/base-tree.js';
-import { acceptValidationResults } from '../validation/acceptance.js';
 import {
   answerPendingReviewQuestion,
   haltVerdictlessReview,
@@ -29,17 +27,12 @@ import {
 } from './pre-review-checks.js';
 import type { UnrunnableCheck } from '../recovery/builders/checks.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
-import { formatValidationError } from '../validation/format-error.js';
 import { captureReviewedCandidate } from '../apply/states.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import {
-  failingFilesOf,
-  failingFilesFromOutput,
-  lastTaskChangingFile,
-} from '../task/file-owner.js';
+import { failingFilesFromOutput, lastTaskChangingFile } from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -157,7 +150,6 @@ async function recheckMergedCandidate(
     state = transitionAndSave(ref, state, { type: 'ALL_DONE' });
     setTrackedState(state);
   }
-  const mergedPaths = applyReview.merged.map((entry) => entry.path);
   const checkOptions = {
     plan: state.plan,
     projectDir: wctx.workspaceDir,
@@ -175,7 +167,7 @@ async function recheckMergedCandidate(
   const pushFiles = (
     files: readonly (string | null)[],
     text: string,
-    red: Pick<TriageInput, 'stage' | 'checkIds' | 'output'>,
+    run: CheckRunResult,
   ): void => {
     for (const file of files) {
       const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
@@ -185,7 +177,9 @@ async function recheckMergedCandidate(
         source: 'check',
         file,
         text: `${text} ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
-        ...red,
+        checkIds: [run.checkId],
+        ...(run.command !== undefined && { command: run.command }),
+        output: run.output,
       });
     }
   };
@@ -198,7 +192,7 @@ async function recheckMergedCandidate(
         : check?.kind === 'test'
           ? [normalizeProjectRelativePath(check.value)]
           : [null];
-    pushFiles(files, text, { checkIds: [run.checkId], output: run.output });
+    pushFiles(files, text, run);
   };
   const collectRuns = (owner: string, runs: readonly CheckRunResult[]) => {
     const required = classifyRequiredChecks(
@@ -218,32 +212,6 @@ async function recheckMergedCandidate(
     }
   };
   for (const task of state.tasks) {
-    const results = await wctx.validator.runValidation({
-      task,
-      stages: ['typecheck', 'lint', 'test'],
-      base: runBaseOf(wctx, state),
-      projectDir: wctx.workspaceDir,
-      config: wctx.config,
-      bus: wctx.bus,
-      phase: state.phase,
-      discoveredValidation: state.discoveredValidation,
-      signal: wctx.signal,
-      changedFiles: mergedPaths,
-    });
-    const acceptance = acceptValidationResults(results, mergedPaths);
-    if (!acceptance.accepted) {
-      const text = `${task.id} validation: ${formatValidationError(results, acceptance)}`;
-      failures.push(text);
-      for (const result of results) {
-        if (result.passed || !acceptance.blockingStages.includes(result.stage)) continue;
-        const named = failingFilesOf(result, wctx.workspaceDir);
-        const output = result.error ?? result.output;
-        pushFiles(named.length > 0 ? named : [null], text, {
-          stage: result.stage,
-          ...(output !== undefined && { output }),
-        });
-      }
-    }
     const runs = await runChecks(
       (task.checks ?? []).map((check) => check.id),
       { ...checkOptions, task },
@@ -254,7 +222,6 @@ async function recheckMergedCandidate(
       workspaceDir: wctx.workspaceDir,
       state,
       task,
-      validation: results,
       runs,
     });
     if ((task.checks ?? []).length > 0) {
@@ -536,6 +503,7 @@ export async function runTasksAndReview(
         preReview: (s: WorkflowState) =>
           runPreReview({ wctx, state: s, setTrackedState, inputs: recheck.inputs }),
       }),
+      reviewChecks: !reviewAgain,
     });
     state = review.state;
     setTrackedState(state);

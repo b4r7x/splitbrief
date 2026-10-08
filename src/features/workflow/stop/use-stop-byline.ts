@@ -55,6 +55,7 @@ export function useStopByline(): StopByline | null {
       suiteStage === null
         ? null
         : {
+            id: suiteStage.id,
             moment: suiteStage.moment,
             command: suiteStage.command,
             elapsedMs: Date.now() - suiteStage.stageStartedTs,

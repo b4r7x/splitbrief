@@ -114,9 +114,6 @@ export function makeConfig(overrides?: ConfigOverrides): Config {
     planner: makePlannerConfig(overrides?.planner),
     implementer: makeImplementerConfig(overrides?.implementer),
     validation: {
-      typecheck: true,
-      lint: true,
-      test: true,
       testCommand: 'npm test',
       ...overrides?.validation,
     },
@@ -140,9 +137,7 @@ export function makeNoValidationConfig(overrides?: Parameters<typeof makeConfig>
   return makeConfig({
     ...overrides,
     validation: {
-      typecheck: false,
-      lint: false,
-      test: false,
+      endChecks: false,
       testCommand: 'noop',
       ...overrides?.validation,
     },

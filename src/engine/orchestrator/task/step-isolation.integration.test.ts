@@ -22,11 +22,14 @@ import { createRunIsolation } from '../isolation/create.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
-import type { RunValidationOptions } from '../validation/types.js';
-import { createValidator } from '../validation/run.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runSingleTask } from './step.js';
 
-afterEach(cleanupTaskProjects);
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanupTaskProjects();
+});
 
 /** Every checkout file outside git and SPLITBRIEF's own state, with its bytes. */
 function checkoutFiles(projectDir: string): Record<string, string> {
@@ -54,6 +57,7 @@ describe('runSingleTask — worktree isolation', () => {
       action: 'modify',
       suggestedFiles: ['src/main.ts'],
       scope: { inBounds: ['src/main.ts'] },
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
     });
     const passing = makeTask({
       id: 'T002',
@@ -83,10 +87,9 @@ describe('runSingleTask — worktree isolation', () => {
         usage: { inputTokens: 5, outputTokens: 2 },
       }),
     });
-    const runValidation = vi.fn(async (opts: RunValidationOptions) =>
-      opts.task.id === 'T001'
-        ? [{ stage: 'test' as const, passed: false, error: 'T001 is broken' }]
-        : [{ stage: 'test' as const, passed: true }],
+    // Only T001 carries a check, and it stays red.
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({ command: 'tsc', code: 2, stderr: 'T001 is broken', output: '' }),
     );
     const isolation = createRunIsolation({
       projectDir,
@@ -103,13 +106,8 @@ describe('runSingleTask — worktree isolation', () => {
         implementer,
         bus: makeBusRecorder().bus,
         isolation,
-        config: makeConfig({
-          workflow: { review: 'task' },
-
-          validation: { typecheck: false, lint: false, test: true, testCommand: 'noop' },
-        }),
+        config: makeConfig({ workflow: { review: 'task' } }),
         planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
-        validator: { ...createValidator(), runValidation },
       }),
     );
 

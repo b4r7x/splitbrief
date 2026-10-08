@@ -19,8 +19,6 @@ export type Stack = Readonly<{
   language: string;
   // Project-relative files; the first marker that exists admits the row.
   markers: readonly StackMarker[];
-  typecheck: (projectDir: string) => string | null;
-  lint: (projectDir: string) => string | null;
   test: (projectDir: string) => string | null;
   // Single-`*` globs, one per convention.
   testFilePatterns: readonly string[];
@@ -30,5 +28,4 @@ export type Stack = Readonly<{
   narrowing: TestNarrowing;
   // Feeds the planner-discovery allowlist.
   allowedCommands: readonly string[];
-  missingSubcommand?: Readonly<{ exitCode: number; stderr: RegExp }> | undefined;
 }>;

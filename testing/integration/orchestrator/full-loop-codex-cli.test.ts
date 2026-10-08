@@ -173,9 +173,7 @@ async function runCodexLoop(opts: {
         temperature: 0.1,
       },
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {

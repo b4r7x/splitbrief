@@ -298,7 +298,7 @@ async function runDirectWriterImplementation(
     bus,
     config: makeConfig({
       implementer: implementerConfig(),
-      validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+      validation: { endChecks: false, testCommand: 'noop' },
       workflow: { maxRetries: 0 },
     }),
   });
@@ -392,7 +392,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           }),
           config: makeConfig({
             implementer: implementerConfig(),
-            validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+            validation: { endChecks: false, testCommand: 'noop' },
             workflow: { maxRetries: 0 },
             approval: { feedRejectionsToPlanner: false },
           }),
@@ -453,7 +453,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           }),
           config: makeConfig({
             implementer: implementerConfig(),
-            validation: { typecheck: false, lint: false, test: false, testCommand: 'noop' },
+            validation: { endChecks: false, testCommand: 'noop' },
             workflow: { maxRetries: 0 },
             approval: { feedRejectionsToPlanner: false },
           }),
@@ -508,9 +508,7 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       },
       implementer: implementerConfig(),
       validation: {
-        typecheck: false,
-        lint: false,
-        test: true,
+        endChecks: true,
         testCommand: 'node validate.mjs',
       },
       workflow: {

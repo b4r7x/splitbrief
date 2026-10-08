@@ -40,8 +40,8 @@ You: "add user authentication with JWT"
           │ through the approval gate
           ▼
 ┌──────────────────────┐
-│  VALIDATION           │  typecheck → lint → test, in your project,
-│  (owned by SPLITBRIEF)│  first failure the task caused stops it → evidence
+│  VALIDATION           │  reviewer checks, run by SPLITBRIEF,
+│  (owned by SPLITBRIEF)│  first new failure stops them → evidence
 └─────────┬────────────┘
           │
     ┌─────┴─────┐
@@ -191,10 +191,8 @@ implementer:
   temperature: 0.3
 
 validation:
-  typecheck: true
-  lint: true
-  test: true
-  testCommand: npm test
+  end_checks: true
+  test_command: npm test
 
 workflow:
   approve: plan
@@ -384,7 +382,7 @@ TypeScript 6.x, ESM only, Ink 6.8 + React 19 for the TUI. Tests are colocated wi
 
 ## Current state
 
-Primary development stack is TypeScript/JavaScript. Validation is generic over five stacks, each with its own typecheck, lint and test commands: TypeScript (`npx tsc --noEmit`, ESLint or Biome, `npm test`), JavaScript (lint and test only), Python (`mypy`/`pyright`, `ruff`/`flake8`, `pytest` under `uv`, `poetry` or bare), Go (`go vet ./...`, `golangci-lint`/`staticcheck`, `go test ./...`) and Rust (`cargo check`, `cargo clippy --no-deps`, `cargo test`). The exact per-stack table, and the `config → manifest → discovered → stack default → none` ladder that picks a command, are in [docs/FEATURES.md §Validation pipeline](https://github.com/b4r7x/splitbrief/blob/main/docs/FEATURES.md#validation-pipeline--checkpoints). Any other stack runs review-only (`gates: NONE`) rather than guessing.
+Primary development stack is TypeScript/JavaScript. Before each review the reviewer reads the project and chooses the reviewer checks that verify the change. SPLITBRIEF runs them under its command policy (`validation.end_checks`, on by default). The policy runs only programs on its allowlist: the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test` target, and the tools of the five registry stacks. SPLITBRIEF records every refused command as a named row. A planner `test` check resolves its command per stack for five stacks: TypeScript and JavaScript (`npm test`), Python (`pytest` under `uv`, `poetry` or bare), Go (`go test ./...`) and Rust (`cargo test`). The exact per-stack table, and the `config → manifest → discovered → stack default → none` ladder that picks the command, are in [docs/FEATURES.md §Validation pipeline](https://github.com/b4r7x/splitbrief/blob/main/docs/FEATURES.md#validation-pipeline--checkpoints). On any other stack a `test` check needs `validation.test_command`; without it the check is `not-runnable`, never guessed.
 
 Use macOS, Linux or run inside WSL. Native Windows is not supported: process and filesystem handling requires POSIX semantics.
 

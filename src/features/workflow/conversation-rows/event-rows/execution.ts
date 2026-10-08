@@ -9,6 +9,9 @@ import { segmentedRow } from '../row-format/rows.js';
 import {
   fullSuiteRow,
   fullSuiteTone,
+  reviewChecksDeclinedRows,
+  reviewChecksRow,
+  reviewChecksTone,
   validationStageNotes,
   validationSummarySegments,
 } from '../event-format.js';
@@ -164,6 +167,30 @@ export function fullSuiteRowBlock(
     width,
     tone: fullSuiteTone(event),
   });
+}
+
+export function reviewChecksRowBlock(
+  keyPrefix: string,
+  event: Extract<EngineEvent, { type: 'review_checks' }>,
+  width: number,
+): ConversationRowBlock | null {
+  return compositeBlock(keyPrefix, [
+    wrappedTextBlock({
+      keyPrefix,
+      text: reviewChecksRow(event),
+      width,
+      tone: reviewChecksTone(event),
+    }),
+    ...reviewChecksDeclinedRows(event).map((text, index) =>
+      wrappedTextBlock({
+        keyPrefix: `${keyPrefix}-declined-${index}`,
+        text,
+        width,
+        tone: 'textDim',
+        indent: 2,
+      }),
+    ),
+  ]);
 }
 
 export function escalateRowBlock(

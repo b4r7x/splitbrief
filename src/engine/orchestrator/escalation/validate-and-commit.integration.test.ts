@@ -8,6 +8,8 @@ import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
+import { processError } from '../../../lib/process/errors.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Validator } from '../validation/types.js';
 import type { EscalationContext } from './types.js';
 import { validateAndCommit } from './validate-and-commit.js';
@@ -15,6 +17,7 @@ import { validateAndCommit } from './validate-and-commit.js';
 let dirs: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs) cleanupTempDir(dir);
   dirs = [];
 });
@@ -33,7 +36,6 @@ function configWithProfiles(): Config {
     ...makeNoValidationConfig({
       approval: { feedRejectionsToPlanner: true },
       workflow: { review: 'task' },
-      validation: { test: true },
     }),
     implementerProfiles: {
       default: 'local-small',
@@ -78,11 +80,8 @@ describe('validateAndCommit', () => {
     const task = makeTask({ id: 'T011', suggestedFiles: ['src/abort.ts'] });
     const controller = new AbortController();
     const validator: Validator = {
-      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      runValidation: vi.fn().mockImplementation(async () => {
+      formatChangedFiles: vi.fn().mockImplementation(async () => {
         controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
-        return [{ stage: 'test' as const, passed: true }];
       }),
     };
 
@@ -104,55 +103,27 @@ describe('validateAndCommit', () => {
     expect(result).toMatchObject({
       completed: false,
       blockedReason: 'aborted',
-      validationResults: [{ stage: 'test', passed: true }],
+      validationResults: [],
       acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
     });
   });
 
-  it('accepts a retry whose only failing stage was pre-existing, like the task path', async () => {
+  it('blocks a retry whose required brief check fails', async () => {
     const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T012', suggestedFiles: ['src/exempt.ts'] });
-    const validator: Validator = {
-      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      runValidation: vi.fn().mockResolvedValue([
-        {
-          stage: 'test' as const,
-          passed: false,
-          failureFiles: ['src/unrelated.ts'],
-          preExisting: ['test failed without diagnostics'],
-        },
-      ]),
-    };
-
-    const result = await validateAndCommit({
-      ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
-      task,
-      state: makeImplState([task]),
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-      retryCount: 1,
-      preApprovedChangedFiles: [task.suggestedFiles[0]],
+    const task = makeTask({
+      id: 'T013',
+      suggestedFiles: ['src/blocks.ts'],
+      checks: [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }],
     });
-
-    expect(result).toMatchObject({
-      completed: true,
-      acceptance: { accepted: true, exemptStages: ['test'], blockingStages: [] },
-    });
-  });
-
-  it('blocks a retry whose failing stage has no pre-existing attribution', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const task = makeTask({ id: 'T013', suggestedFiles: ['src/blocks.ts'] });
-    const validator: Validator = {
-      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
-      runFullSuite: vi.fn().mockResolvedValue({ results: [], newFailures: {} }),
-      runValidation: vi
-        .fn()
-        .mockResolvedValue([
-          { stage: 'test' as const, passed: false, failureFiles: ['src/blocking.ts'] },
-        ]),
-    };
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({
+        command: 'tsc',
+        code: 2,
+        stderr: 'src/blocks.ts(1,1): error TS1005',
+        output: '',
+      }),
+    );
+    const validator: Validator = { formatChangedFiles: vi.fn().mockResolvedValue(undefined) };
 
     const result = await validateAndCommit({
       ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
@@ -166,7 +137,8 @@ describe('validateAndCommit', () => {
 
     expect(result).toMatchObject({
       completed: false,
-      acceptance: { accepted: false, exemptStages: [], blockingStages: ['test'] },
+      acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
+      diagnosis: 'check K1 failed',
     });
   });
 });

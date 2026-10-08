@@ -10,7 +10,7 @@ import {
 
 const REVIEW_INSTRUCTIONS = `Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs. Be thorough but fair -- minor style differences are acceptable; missing functionality or incorrect behavior is not.
 
-Validation claims are evidence-bound. Any statement about test, typecheck, or lint results must quote the relevant line verbatim from the Checks Log section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If the Checks Log section is absent or contains no relevant execution, state that validation output was not recorded instead of asserting results.
+Validation claims are evidence-bound. The Checks Log section and the Reviewer checks section carry the run's command output: the checks of the plan and the tasks, and the commands you chose for this review. Any statement about a test, type check, lint or other command result must quote the relevant line verbatim from the Checks Log section (for example the test runner's own summary line); never report counts or totals that do not appear there. If you run additional checks yourself, present them separately as reviewer observations -- they do not replace the recorded results. If the Checks Log section is absent or contains no relevant execution, state that validation output was not recorded instead of asserting results.
 
 A failure the Checks Log marks pre-existing was red at the run base before any task ran: report it as pre-existing and raise no finding against this run for it.`;
 
