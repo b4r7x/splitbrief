@@ -148,7 +148,7 @@
         "headers": {
           "content-type": "text/event-stream"
         },
-        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"tasks\\\":[{\\\"id\\\":\\\"T001\\\",\\\"plan\\\":\\\"met\\\",\\\"note\\\":\\\"\\\"}],\\\"criteria\\\":[{\\\"id\\\":\\\"C1\\\",\\\"status\\\":\\\"pass\\\",\\\"evidence\\\":\\\"\\\"}],\\\"findings\\\":[]}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":295,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
+        "body": "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"{\\\"tasks\\\":[{\\\"id\\\":\\\"T001\\\",\\\"plan\\\":\\\"met\\\",\\\"note\\\":\\\"\\\"}],\\\"criteria\\\":[{\\\"id\\\":\\\"C1\\\",\\\"status\\\":\\\"pass\\\",\\\"evidence\\\":\\\"\\\"}],\\\"findings\\\":[],\\\"fixTasks\\\":[],\\\"rejected\\\":[],\\\"verify\\\":[],\\\"ask\\\":null}\"},\"finish_reason\":null}]}\n\ndata: {\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":295,\"completion_tokens\":14}}\n\ndata: [DONE]\n\n"
       },
       "provider": "openai-compatible",
       "durationMs": 630

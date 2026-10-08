@@ -15,7 +15,7 @@ const scenario = {
   feature: 'update config parser',
   config: makeE2eScenarioConfig({
     hooks: {
-      pre_validation: [
+      pre_task: [
         {
           kind: 'command',
           command: 'node',
