@@ -496,7 +496,7 @@ function gateRules(): string {
     'With workflow.review: end, ordinary briefs run no stack gates. The final review runs all enabled gates and registered checks.',
     'With workflow.review: task, each task runs related tests and due checks, then its scheduled review. The final review runs all gates.',
     'Final gate failures enter triage and create fix tasks; no completed brief reopens. A fix task reruns the stage and checks of the red it answers at its brief gate, so a red fix retries through its ladder.',
-    'A test command that cannot select related tests is skipped by the brief gate. The final review runs it.',
+    'A test command that cannot select related tests is skipped by an ordinary brief gate. The gate of a fix task that answers a test red runs it on the full suite. The final review runs it.',
     'When lint is enabled, format the brief changed files after every hand-back. A formatter failure records a warning.',
     `Order: ${GATE_ORDER.join(' → ')}. Stop at the first failing stage; every later stage is recorded \`not run\`.`,
     `Capture at most ${CAPTURE_LIMITS.outputChars} characters per stage, and keep the test stage's LAST ${CAPTURE_LIMITS.testTailLines} lines — runners print the pass/fail summary last.`,

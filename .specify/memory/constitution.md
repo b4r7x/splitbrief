@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.0.0 → 4.1.0. MINOR: Principle V expands. A fix task carries the red it answers, and its brief gate runs that stage and those checks again before the next review.
+- Modified principles: V.
+- Updated sections: Governance (version line).
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible.
+- Docs and skills: workflow, task contract, recovery, configuration, features, how-it-works and the generated gates references updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 3.0.0 → 4.0.0. MAJOR: Principle V gives every new red to the review seat and removes brief reopening. Principle I and VI.3 let the same review answer return fix work.
 - Modified principles: I, V, VI.3.
 - Updated sections: Governance.
@@ -302,8 +312,8 @@ renders. Every new red MUST reach the reviewer as a pending input. The same
 review answer returns the verdict and the fix tasks. Fix work MUST spend
 one fix cycle. A fix task MUST carry the red it answers, and its brief gate
 MUST run that stage and those checks again, so the task's retry ladder sees
-the red before the next review. Completed briefs MUST stay done. The final review MUST rerun
-the gates after fixes.
+the red before the next review. Completed briefs MUST stay done. The final
+review MUST rerun the gates after fixes.
 
 Worktree and staged-copy runs validate in the run workspace. The pipeline
 writes the reviewed result to the user's project only at Apply. Checkout runs
@@ -451,6 +461,8 @@ The 4.0.0 amendment redefines Principle V. The review seat owns every new red an
 This rule puts the gates at the review that owns their result. Regression tests
 verify both cadences and failure routing. The configuration, workflow, engine and
 generated skill references carry the same rule.
+The 4.1.0 amendment expands Principle V. A fix task's brief gate runs the red
+it answers again before the next review.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
@@ -467,4 +479,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.0.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-08
+**Version**: 4.1.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-08

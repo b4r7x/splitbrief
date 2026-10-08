@@ -187,6 +187,44 @@ describe('brief gate', () => {
     expect(result.error).toMatch(/check K1 did not pass \(fail\)/);
   });
 
+  it('does not run a stage the fix task answers when that stage is disabled', async () => {
+    const ref = setup();
+    const task = makeTask({
+      id: 'T004',
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: 'P1',
+            text: 'The lint full-suite check before review failed.',
+            acceptance: null,
+            file: 'src/own.ts',
+            stage: 'lint',
+            output: 'src/own.ts:1:1 lint/style',
+          },
+        ],
+      },
+    });
+    const validator = {
+      ...createValidator(),
+      formatChangedFiles: vi.fn().mockResolvedValue(undefined),
+      runValidation: vi.fn(),
+    };
+    const result = await runBriefGate({
+      wctx: makeWctx({
+        ...ref,
+        validator,
+        config: makeNoValidationConfig({ validation: { lint: false } }),
+      }),
+      state: makeImplState([task]),
+      task,
+      changedFiles: ['src/own.ts'],
+      taskStartSnapshot: null,
+    });
+    expect(validator.runValidation).not.toHaveBeenCalled();
+    expect(result.acceptance.accepted).toBe(true);
+  });
+
   it('hands its gate the run base the workspace recorded', async () => {
     const ref = setup();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/own.ts'] });

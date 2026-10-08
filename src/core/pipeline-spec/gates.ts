@@ -16,6 +16,6 @@ export const NO_GATES_WARNING = {
 } as const;
 
 export const NARROWING_RULE = {
-  text: "The brief gate's test stage runs only the tests affected by the brief's files and by every file the attempt changed when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config waits for the final review.",
+  text: "The brief gate's test stage runs only the tests affected by the brief's files and by every file the attempt changed when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config waits for the final review, except at the gate of a fix task that answers a test red, which runs it on the full suite.",
   kinds: NARROWING_KINDS,
 } as const;

@@ -1,9 +1,9 @@
 import { isAbsolute, relative } from 'node:path';
+import { GATE_ORDER } from '../../../core/pipeline-spec/gates.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { typedEntries } from '../../../utils/type-guards.js';
 import { extractFailureKeys } from '../validation/extract-failure-keys.js';
 import type { ValidationResult } from '../validation/result.js';
 import { failingTestKey, failingTestLabel } from '../validation/test-failures.js';
@@ -79,10 +79,10 @@ export function buildFullSuiteInputs(input: {
   ledger: EvidenceLedger | null;
 }): TriageInput[] {
   const inputs: TriageInput[] = [];
-  for (const [stage, keys] of typedEntries<string, string[] | undefined>(input.suite.newFailures)) {
+  for (const stage of GATE_ORDER) {
     const result = input.suite.results.find((candidate) => candidate.stage === stage);
     const output = result?.error ?? result?.output;
-    for (const key of keys ?? []) {
+    for (const key of input.suite.newFailures[stage] ?? []) {
       const test = result?.failingTests?.find((test) => failingTestKey(test) === key);
       const file =
         test === undefined
@@ -102,7 +102,7 @@ export function buildFullSuiteInputs(input: {
         text: `The ${stage} full-suite check before review failed: ${diagnostic}${message}. ${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
-        ...(result !== undefined && { stage: result.stage }),
+        stage,
         ...(output !== undefined && { output }),
       });
     }
