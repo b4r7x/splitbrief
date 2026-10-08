@@ -5,6 +5,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  makeCopyingIsolation,
   openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -56,6 +57,7 @@ describe('runSingleTask — user edits', () => {
       wctx: makeWorkflowContext({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         callbacks,
         implementer,
         bus,
@@ -116,6 +118,7 @@ describe('runSingleTask — user edits', () => {
       wctx: makeWorkflowContext({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         callbacks,
         implementer,
         bus,
@@ -173,6 +176,7 @@ describe('runSingleTask — user edits', () => {
       makeWorkflowContext({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         callbacks,
         implementer,
         bus,
@@ -250,6 +254,7 @@ describe('runSingleTask — user edits', () => {
       makeWorkflowContext({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         callbacks,
         implementer,
         bus,

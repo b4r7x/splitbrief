@@ -5,6 +5,7 @@ import {
   makeCallbacks,
   makeImplementer,
   makeBusRecorder,
+  makeCopyingIsolation,
   openRunWorkspace,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -284,6 +285,7 @@ describe('runSingleTask — approval gates', () => {
       makeWorkflowContext({
         projectDir,
         sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
         callbacks,
         implementer,
         bus,
