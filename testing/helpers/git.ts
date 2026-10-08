@@ -112,9 +112,36 @@ function validateFixturePath(path: string): void {
 }
 
 export function createTestGitRepo(dir: string, files: RepoFiles = {}): void {
-  execSync('git init', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.email "test@test.com"', { cwd: dir, stdio: 'pipe' });
-  execSync('git config user.name "Test"', { cwd: dir, stdio: 'pipe' });
+  for (const path of ['objects/info', 'objects/pack', 'refs/heads', 'refs/tags', 'info', 'hooks']) {
+    mkdirSync(join(dir, '.git', path), { recursive: true });
+  }
+  writeFileSync(
+    join(dir, '.git', 'info', 'exclude'),
+    [
+      '# git ls-files --others --exclude-from=.git/info/exclude',
+      "# Lines that start with '#' are comments.",
+      '# For a project mostly in C, the following would be a good set of',
+      '# exclude patterns (uncomment them if you want to use them):',
+      '# *.[oa]',
+      '# *~',
+      '',
+    ].join('\n'),
+  );
+  const configPath = join(dir, '.git', 'config');
+  const coreConfig = [
+    '[core]',
+    '\trepositoryformatversion = 0',
+    '\tfilemode = true',
+    '\tbare = false',
+    '\tlogallrefupdates = true',
+  ];
+  writeFileSync(configPath, `${coreConfig.join('\n')}\n`);
+  if (existsSync(join(dir, '.git', 'CONFIG'))) coreConfig.push('\tignorecase = true');
+  if (process.platform === 'darwin') coreConfig.push('\tprecomposeunicode = true');
+  writeFileSync(
+    configPath,
+    [...coreConfig, '[user]', '\temail = test@test.com', '\tname = Test', ''].join('\n'),
+  );
 
   const repoFiles = { 'init.txt': 'init', ...files };
   const root = emptyTree();
@@ -143,7 +170,6 @@ export function createTestGitRepo(dir: string, files: RepoFiles = {}): void {
   ].join('\n');
   const commitSha = writeObject(dir, 'commit', commit);
 
-  mkdirSync(join(dir, '.git', 'refs', 'heads'), { recursive: true });
   writeFileSync(join(dir, '.git', 'refs', 'heads', 'main'), `${commitSha}\n`);
   writeFileSync(join(dir, '.git', 'HEAD'), 'ref: refs/heads/main\n');
   writeIndex(dir, indexEntries);

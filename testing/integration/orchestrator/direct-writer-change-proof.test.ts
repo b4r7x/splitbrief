@@ -30,6 +30,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import {
+  makeCopyingIsolation,
   makeBusRecorder,
   makeCallbacks,
   makePlanner,
@@ -293,6 +294,7 @@ async function runDirectWriterImplementation(
   const wctx = makeWctx({
     projectDir,
     sessionId,
+    isolation: makeCopyingIsolation({ projectDir, sessionId }),
     bus,
     config: makeConfig({
       implementer: implementerConfig(),

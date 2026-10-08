@@ -8,7 +8,12 @@ import { tmpdir } from 'node:os';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata } from '#testing/helpers/factories/workflow-state.js';
-import { makeImplementer, makePlanner, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeCopyingIsolation,
+  makeImplementer,
+  makePlanner,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -43,6 +48,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
     const stopped = await runSingleTask({
       wctx: makeWctx({
         ...f,
+        isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
         signal: stop.signal,
         implementer: makeImplementer({
           capabilities: { writesFiles: 'direct' },
@@ -110,6 +116,7 @@ it.each(['initial', 'local', 'consult'] as const)(
     };
     const wctx = makeWctx({
       ...f,
+      isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
       config,
       signal: stop.signal,
       planner: makePlanner({
@@ -166,6 +173,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
     let workspace = '';
     const wctx = makeWctx({
       ...f,
+      isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
       signal: stop.signal,
       implementer: makeImplementer({
         capabilities: { writesFiles: 'direct' },
@@ -204,6 +212,7 @@ it.each(['returned', 'thrown', 'success'] as const)(
     let attempt = -1;
     const wctx = makeWctx({
       ...f,
+      isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
       signal: stop.signal,
       planner: makePlanner({
         typedCall: consultCallAnswering(() => guidanceConsult('Write the partial file.')),
@@ -252,6 +261,7 @@ it.each(['end', 'failure'] as const)('discards initial output for %s', async (ki
   let workspace = '';
   const wctx = makeWctx({
     ...f,
+    isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
     signal: stop.signal,
     implementer: makeImplementer({
       capabilities: { writesFiles: 'direct' },
@@ -288,6 +298,7 @@ it('leaves a partial API application on its receipt and recovery path during Sto
   const state = { ...f.state, tasks: [task] };
   const wctx = makeWctx({
     ...f,
+    isolation: makeCopyingIsolation({ projectDir: f.projectDir, sessionId: f.sessionId }),
     signal: stop.signal,
     implementer: makeImplementer({
       capabilities: { writesFiles: 'extracted-code' },

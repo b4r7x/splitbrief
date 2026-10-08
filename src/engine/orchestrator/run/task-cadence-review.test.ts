@@ -6,6 +6,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
+  makeCopyingIsolation,
   makeBusRecorder,
   makeCallbacks,
   makeImplementer,
@@ -122,6 +123,7 @@ function runOptions(opts: {
   const wctx = makeWctx({
     projectDir: opts.projectDir,
     sessionId: opts.sessionId,
+    isolation: makeCopyingIsolation({ projectDir: opts.projectDir, sessionId: opts.sessionId }),
     config: opts.config ?? makeNoValidationConfig({ workflow: { review: 'task' } }),
     callbacks: makeCallbacks({ onComplete: opts.onComplete }).callbacks,
     bus,

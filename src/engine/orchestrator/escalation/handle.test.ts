@@ -33,9 +33,6 @@ import { applyRecoveryAction } from '../recovery/actions.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 
-// The consult attempts acquire from the run isolation handle; on the copying
-// strategy under parallel full-suite load that staged-copy IO can push these
-// cases past the 10s default, so widen the timeout for this file.
 vi.setConfig({ testTimeout: 60_000 });
 
 let dirs: string[] = [];

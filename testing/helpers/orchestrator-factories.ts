@@ -54,6 +54,19 @@ export function makeWorktreeIsolation(opts: {
   });
 }
 
+export function makeCheckoutIsolation(opts: {
+  projectDir: string;
+  sessionId: string;
+}): RunIsolation {
+  return createRunIsolation({
+    projectDir: opts.projectDir,
+    sessionId: opts.sessionId,
+    strategy: 'none',
+    onFallback: () => {},
+    onRetained: () => {},
+  });
+}
+
 /** The context a run hands its task loop: the run workspace opened, code read and validated there. */
 export async function openRunWorkspace(wctx: WorkflowContext): Promise<WorkflowContext> {
   const opened = await wctx.isolation.open({ config: wctx.config });
@@ -76,7 +89,7 @@ export function makeWctx(
     callbacks: makeCallbacks().callbacks,
     bus: createEventBus(),
     context: { ...defaultContext, dir: overrides.projectDir },
-    isolation: makeCopyingIsolation({
+    isolation: makeCheckoutIsolation({
       projectDir: overrides.projectDir,
       sessionId: overrides.sessionId,
     }),

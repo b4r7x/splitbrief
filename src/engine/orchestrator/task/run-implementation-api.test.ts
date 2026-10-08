@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeCopyingIsolation, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
@@ -59,7 +59,13 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
     ),
   );
   const task = makeTask({ id: 'T001', suggestedFiles: [file], action: 'modify' });
-  const wctx = makeWctx({ projectDir, sessionId, config, implementer: api });
+  const wctx = makeWctx({
+    projectDir,
+    sessionId,
+    config,
+    implementer: api,
+    isolation: makeCopyingIsolation({ projectDir, sessionId }),
+  });
   const opened = await wctx.isolation.open({ config });
   wctx.workspaceDir = opened.projectDir;
   const taskStartSnapshot = (await wctx.isolation.acquire({ role: 'implementer', config }))
@@ -94,6 +100,7 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
   const continued = makeWctx({
     projectDir,
     sessionId,
+    isolation: makeCopyingIsolation({ projectDir, sessionId }),
     config,
     implementer: api,
     workspaceDir: opened.projectDir,
