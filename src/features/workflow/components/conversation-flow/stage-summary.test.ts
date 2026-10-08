@@ -28,7 +28,7 @@ describe('stageSummaryRow', () => {
       state: {
         kind: 'stage',
         failed: true,
-        detail: ['npm test, 1 check', 'fixes T006 T007 T008', '2834.2s'],
+        detail: ['npm test, 1 check', 'fixes T006 T007 T008', '47m 14s'],
       },
     });
   });

@@ -104,7 +104,7 @@ export function runnerActivityLedgerItem(
     value,
     tone: severityTone(severity),
     valueTone: valueTone(display.stage, severity),
-    fitMode: activityFitMode(label, display),
+    fitMode: activityFitMode(label, display, value),
     severity,
     rawMarker,
     diagnosticPreview,
@@ -338,16 +338,25 @@ function valueTone(
   }
 }
 
+// A path keeps its tail, where the filename is. Prose under the same label keeps its head: cut from
+// the left, `Reading the typecheck failure` read `…ing the typecheck failure`.
 function activityFitMode(
   label: RunnerActivityLedgerLabel,
   input: RunnerActivityDisplayInput,
+  value: string,
 ): ActivityDisplayValueFit {
   if (label === 'RUN') return 'middle';
   if (label === 'READ' || label === 'EDIT' || label === 'LIST' || input.kind === 'file') {
-    return 'start';
+    return isProse(value) ? 'end' : 'start';
   }
   if (label === 'WARN' || label === 'ERR') return 'middle';
   return 'end';
+}
+
+// `CLAUDE.md :1-240` and `My Projects/a.ts` are paths; `Reading the typecheck failure` is not.
+function isProse(value: string): boolean {
+  const words = value.trim().split(/\s+/u);
+  return words.length > 1 && !value.includes('/') && !(words[0] ?? '').includes('.');
 }
 
 function isUserInterruptedActivity(input: RunnerActivityDisplayInput): boolean {

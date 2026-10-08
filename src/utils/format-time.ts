@@ -1,6 +1,9 @@
+/** `3.0s` under a minute; from a minute on, whole units (`46m 54s`), since `2814.2s` reads as a number. */
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms)) return '0.0s';
-  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+  const tenths = Math.round(Math.max(0, ms) / 100);
+  if (tenths < 600) return `${(tenths / 10).toFixed(1)}s`;
+  return formatTime(Math.round(ms / 1000) * 1000);
 }
 
 export function formatTime(ms: number): string {

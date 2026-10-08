@@ -127,6 +127,16 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
   return `${label}${SOFT_SEP}${verdict}${dur}`;
 }
 
+// A red stage is the run's own failure; the same red at the run base is pre-existing, the warning a
+// pre-existing validation failure wears. Every other state stays dim, so `failed` never reads like
+// `not run`.
+export function fullSuiteTone(
+  event: Extract<EngineEvent, { type: 'full_suite' }>,
+): ConversationRowTone {
+  if (event.status !== 'done' || event.passed === true) return 'textDim';
+  return event.moment === 'base' ? 'warning' : 'error';
+}
+
 function formatEventContextFit(
   contextFit: TaskContextFit,
   estimatedTokens: number | undefined,
