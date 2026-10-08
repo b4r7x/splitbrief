@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { initConfig, loadConfig, writeConfig } from './io.js';
@@ -8,16 +8,16 @@ import { SPLITBRIEF_DIR } from '../../paths.js';
 import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js';
 import { expectApi } from '#testing/helpers/config-narrowing.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-const TMP = join(import.meta.dirname, '.tmp-config-defaults');
+let TMP: string;
 
 beforeAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
-  mkdirSync(TMP, { recursive: true });
+  TMP = createTempDir('config-defaults');
 });
 
 afterAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
+  cleanupTempDir(TMP);
 });
 
 describe('config defaults', () => {

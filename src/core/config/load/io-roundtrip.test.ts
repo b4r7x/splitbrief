@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { loadConfig, writeConfig } from './io.js';
@@ -21,8 +21,9 @@ import {
   writeConfigYamlText,
 } from '#testing/helpers/config-io.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
-const TMP = join(import.meta.dirname, '.tmp-config-io-roundtrip');
+let TMP: string;
 
 function yamlBlock(rawYaml: string, key: string): string | undefined {
   return rawYaml.match(new RegExp(`^${key}:\\n(?:^[ \\t].*\\n)*`, 'm'))?.[0];
@@ -56,13 +57,12 @@ function legacyClaudeConfigYaml(comment: string): string {
 }
 
 beforeAll(() => {
-  rmSync(TMP, { recursive: true, force: true });
-  mkdirSync(TMP, { recursive: true });
+  TMP = createTempDir('config-io-roundtrip');
 });
 
 afterAll(() => {
   configStore.__testReset();
-  rmSync(TMP, { recursive: true, force: true });
+  cleanupTempDir(TMP);
 });
 
 describe('config roundtrip', () => {
