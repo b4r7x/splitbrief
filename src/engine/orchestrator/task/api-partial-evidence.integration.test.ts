@@ -4,7 +4,11 @@ import { join, relative } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
-import { makeBusRecorder, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCopyingIsolation,
+  makeImplementer,
+} from '#testing/helpers/orchestrator-factories.js';
 import {
   cleanupTaskProjects,
   makeTaskWorkflowContext as makeWorkflowContext,
@@ -138,7 +142,13 @@ describe('partial evidence and resume', () => {
     const calls: ImplementerOptions[] = [];
     const implementer = stoppingImplementer(calls);
     const { bus, events } = makeBusRecorder();
-    const wctx = makeWorkflowContext({ projectDir, sessionId, implementer, bus });
+    const wctx = makeWorkflowContext({
+      projectDir,
+      sessionId,
+      implementer,
+      bus,
+      isolation: makeCopyingIsolation({ projectDir, sessionId }),
+    });
 
     const { implState, ledger } = await runAttempt(wctx, task);
     const entry = ledgerTask(ledger);
