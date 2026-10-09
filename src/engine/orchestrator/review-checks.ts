@@ -15,6 +15,7 @@ import {
   type ReviewChecksRecord,
   type WorkflowState,
 } from '../../core/schemas/workflow.js';
+import { namesListedIn } from '../../lib/fs.js';
 import { nowIso } from '../../utils/format-time.js';
 import type { EventBus } from '../events/types.js';
 import type { Reviewer } from '../reviewers/types.js';
@@ -110,11 +111,9 @@ async function readProjectFiles(workspaceDir: string): Promise<ProjectFileText[]
   } catch {
     ci = [];
   }
-  // Names compare exactly: a case-insensitive filesystem would read `Makefile` again as `makefile`.
-  const present = new Set(await readdir(workspaceDir));
   const files: ProjectFileText[] = [];
   let total = 0;
-  for (const path of [...PROJECT_FILES.filter((name) => present.has(name)), ...ci]) {
+  for (const path of [...(await namesListedIn(workspaceDir, PROJECT_FILES)), ...ci]) {
     const text = await readText(join(workspaceDir, path));
     if (text === null) continue;
     const room = Math.min(MAX_FILE_CHARS, MAX_PROJECT_CHARS - total);

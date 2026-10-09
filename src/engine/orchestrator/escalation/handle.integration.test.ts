@@ -20,6 +20,7 @@ import {
   makeImplementer,
   makeBusRecorder,
   makeWctx,
+  disposeWctxIsolations,
 } from '#testing/helpers/orchestrator-factories.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
@@ -42,7 +43,8 @@ beforeEach(() => {
   trustHome = useTrustHome('escalation-handle-trust-home');
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await disposeWctxIsolations();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
   trustHome.restore();

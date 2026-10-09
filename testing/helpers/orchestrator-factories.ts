@@ -80,19 +80,36 @@ export function runWorkspaceDir(ref: SessionRef): string {
   return path;
 }
 
+const wctxIsolations = new Set<RunIsolation>();
+
+/**
+ * Disposes the isolations `makeWctx` made. A failed attempt queues its revert without awaiting it,
+ * so a test awaits this before it deletes the project, or that revert still runs git there.
+ */
+export async function disposeWctxIsolations(): Promise<void> {
+  const isolations = [...wctxIsolations];
+  wctxIsolations.clear();
+  await Promise.all(isolations.map((isolation) => isolation.dispose()));
+}
+
 export function makeWctx(
   overrides: Partial<WorkflowContext> & { projectDir: string; sessionId: string },
 ): WorkflowContext {
   const planner = overrides.planner ?? makePlanner();
+  let isolation = overrides.isolation;
+  if (isolation === undefined) {
+    isolation = makeCheckoutIsolation({
+      projectDir: overrides.projectDir,
+      sessionId: overrides.sessionId,
+    });
+    wctxIsolations.add(isolation);
+  }
   return {
     config: makeNoValidationConfig(),
     callbacks: makeCallbacks().callbacks,
     bus: createEventBus(),
     context: { ...defaultContext, dir: overrides.projectDir },
-    isolation: makeCheckoutIsolation({
-      projectDir: overrides.projectDir,
-      sessionId: overrides.sessionId,
-    }),
+    isolation,
     planner,
     reviewer: planner,
     implementer: makeImplementer(),
