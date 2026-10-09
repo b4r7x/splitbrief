@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { PlanProposalSchema, type PlanProposal } from '../../core/schemas/plan.js';
-import { checkPlan, renderCheckNotes, type PlanTaskFit } from './plan-checks.js';
+import { checkPlan, planRepairWarning, renderCheckNotes, type PlanTaskFit } from './plan-checks.js';
 
 const projectDir = '/repo';
 const k2 = [{ id: 'K2', kind: 'test' as const, value: 'src/b.test.ts', required: true }];
@@ -16,6 +16,25 @@ const fits = new Map<string, PlanTaskFit>([
 function codes(plan: PlanProposal, contextFits = fits, dir = projectDir): string[] {
   return checkPlan(plan, dir, contextFits, undefined).map((error) => error.code);
 }
+
+describe('planRepairWarning', () => {
+  it.each(['Criterion C2 is served by no task.', 'Criterion C2 is served by no task'])(
+    'embeds the check message without a trailing full stop: %s',
+    (message) => {
+      for (const more of [
+        [],
+        [{ code: 'empty-plan', message: 'The plan has no task.' }],
+      ] as const) {
+        const first = { code: 'uncovered-criterion', message } as const;
+        const warning = planRepairWarning([first, ...more]);
+        expect(warning.message).toBe(
+          `The plan failed check uncovered-criterion: Criterion C2 is served by no task${more.length > 0 ? ' (+1 more)' : ''}; it goes back to the planner once.`,
+        );
+        expect(warning.planCheck).toEqual({ code: 'uncovered-criterion', message });
+      }
+    },
+  );
+});
 
 describe('checkPlan', () => {
   it('passes a plan whose tasks cover every criterion and fit BUILD, tight included', () => {

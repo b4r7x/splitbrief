@@ -351,7 +351,7 @@ describe('readConversationScrollSnapshot', () => {
     const sidebarWidth = getWorkflowSidebarWidth({ cols, sidebarVisible: true });
     const scroll = readConversationScrollSnapshot();
     const hover = readConversationHoverSnapshot();
-    const pointerVisibleCount = hover.stickyLeadingRows + hover.viewportHeight;
+    const pointerVisibleCount = hover.viewportHeight;
 
     expect(sidebarWidth).toBeGreaterThan(0);
     expect(scroll.contentRect.height).toBe(fullBodyHeight);
@@ -391,7 +391,7 @@ describe('readConversationScrollSnapshot', () => {
     const fullBodyHeight = getWorkflowViewportHeight({ rows, inputRows });
     const scroll = readConversationScrollSnapshot();
     const hover = readConversationHoverSnapshot();
-    const pointerVisibleCount = hover.stickyLeadingRows + hover.viewportHeight;
+    const pointerVisibleCount = hover.viewportHeight;
 
     expect(scroll.contentRect.height).toBe(fullBodyHeight);
     expect(scroll.transcriptViewportHeight).toBe(fullBodyHeight);

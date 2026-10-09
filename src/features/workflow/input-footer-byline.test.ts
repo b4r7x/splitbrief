@@ -224,6 +224,7 @@ describe('the stop byline through the footer', () => {
   const running: Parameters<typeof stopByline>[0] = {
     intent: 'stop-now',
     phase: 'terminating',
+    workflowPhase: 'implementing',
     parked: null,
     currentTaskId: 'T002',
     nextTaskId: 'T003',

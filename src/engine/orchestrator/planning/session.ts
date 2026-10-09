@@ -36,13 +36,13 @@ import { DEFAULT_UNKNOWN_CONTEXT_LENGTH } from '../../../core/tokens/context-len
 import { readManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { countNoun } from '../../../utils/pluralize.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { Planner, PriorMessage } from '../../planners/types.js';
 import { fallbackInstruction, type RequestTypedResult } from '../../runners/typed-output.js';
 import {
   blocksPlan,
+  planRepairWarning,
   checkPlan,
   renderCheckNotes,
   type PlanCheckError,
@@ -342,7 +342,7 @@ export async function runPlanningSession(
         publishWarning({
           bus,
           phase: state.phase,
-          message: `The plan failed ${countNoun(turn.errors.length, 'check')}; it goes back to the planner once.`,
+          ...planRepairWarning(turn.errors),
         });
       }
       const drained = drainAndFormat(projectDir, sessionId, state, bus);

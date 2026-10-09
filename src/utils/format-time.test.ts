@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration } from './format-time.js';
+import { formatDuration, formatElapsedClock } from './format-time.js';
 
 describe('formatDuration', () => {
   it.each([
@@ -15,5 +15,17 @@ describe('formatDuration', () => {
     [Number.POSITIVE_INFINITY, '0.0s'],
   ])('formats %d ms as %s', (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected);
+  });
+});
+
+describe('formatElapsedClock', () => {
+  it.each([
+    [0, '0:00'],
+    [3_000, '0:03'],
+    [3_599_000, '59:59'],
+    [3_600_000, '1:00:00'],
+    [10_314_000, '2:51:54'],
+  ])('formats %d ms as %s', (ms, expected) => {
+    expect(formatElapsedClock(ms)).toBe(expected);
   });
 });

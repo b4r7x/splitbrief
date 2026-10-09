@@ -496,14 +496,14 @@ describe('ConversationFlow', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('Finished task');
-    expect(frame).toContain(COMPLETED_HEADER);
+    expect(frame).not.toContain(COMPLETED_HEADER);
     expect(frame).toMatch(/event \d/);
     expect(frameRowCount(frame)).toBeLessThanOrEqual(10);
 
     ui.unmount();
   });
 
-  it('pins one ◇ completed section pip above the sticky summary block', () => {
+  it('renders completed tasks in the transcript without a Completed ledger header', () => {
     const events: EngineEvent[] = [
       { ...makeLongTaskStarted(), title: 'Finished task' },
       makeTaskCompleted(),
@@ -512,14 +512,37 @@ describe('ConversationFlow', () => {
     const ui = renderConversation(events, 8, 80);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain(COMPLETED_HEADER);
+    expect(frame).not.toContain(COMPLETED_HEADER);
     expect(frame).toContain('Finished task');
-    expect(frame.match(new RegExp(COMPLETED_HEADER, 'g')) ?? []).toHaveLength(1);
 
     ui.unmount();
   });
 
-  it('states the brief count above a settled Plan while the first brief runs', () => {
+  it.each(['passed', 'failed'] as const)(
+    'renders one terminal %s Review after the completed brief',
+    (review) => {
+      const ui = renderConversation(
+        [
+          makeTaskStart({ taskId: taskId('T001'), title: 'First brief' }),
+          makeTaskComplete(),
+          { type: 'planner_text', ts: 3_000, phase: 'final-review', text: 'Checking the diff.' },
+          { type: 'workflow_complete', ts: 8_000, phase: 'complete', review },
+        ],
+        18,
+        60,
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame.split(`Review 1 ${review}`)).toHaveLength(2);
+      expect(frame).toContain('5.0s');
+      expect(frame.indexOf(`Review 1 ${review}`)).toBeGreaterThan(
+        frame.indexOf('T001 First brief'),
+      );
+      expect(frame).not.toContain('Checking the diff.');
+      ui.unmount();
+    },
+  );
+
+  it('renders settled Plan in the transcript without a Completed ledger heading while the first brief runs', () => {
     const projection = workflowFixtureProjections.get(
       scenarioId('workflow-first-brief-after-plan'),
     );
@@ -529,7 +552,8 @@ describe('ConversationFlow', () => {
     const ui = renderConversation([...projection.events], 30, 90);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Completed · 0/3 briefs passed');
+    expect(frame).not.toContain('Completed');
+    expect(frame).not.toContain('briefs passed');
     expect(frame).toContain(`${glyph('check')} Plan ${projection.feature}`);
     expect(frame).toContain('T001');
     expect(tasksStore.get().tasks.find((task) => task.id === 'T001')?.status).toBe('in_progress');
@@ -538,9 +562,7 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
-  // sb-RED (owner screenshot, 2026-10-08): under `Completed · 9/9 briefs passed` the Tasks card, its
-  // validation warning and the earlier pre-review cycles painted below the newest briefs.
-  it('counts hidden settled sections and lists the newest entries above the live review', async () => {
+  it('renders settled sections in event order inside the transcript without a capped ledger', async () => {
     const suite = (
       ts: number,
       stage: 'typecheck' | 'test',
@@ -597,28 +619,14 @@ describe('ConversationFlow', () => {
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const lineOf = (text: string) => lines.findIndex((line) => line.includes(text));
 
-    expect(lineOf('+2 earlier')).toBeGreaterThan(-1);
-    expect(lineOf('Review 1 failed')).toBeGreaterThan(lineOf('+2 earlier'));
+    expect(lineOf('+2 earlier')).toBe(-1);
+    expect(lineOf('Plan Fix the red tests')).toBeGreaterThan(-1);
+    expect(lineOf('T001 First brief')).toBeGreaterThan(lineOf('Plan Fix the red tests'));
+    expect(lineOf('Review 1 failed')).toBeGreaterThan(lineOf('T001 First brief'));
     expect(lines[lineOf('Review 1 failed')]).toContain('npm test · fixes T002');
     expect(lineOf('T002 Fix brief')).toBeGreaterThan(lineOf('Review 1 failed'));
     expect(lineOf('npm test · running')).toBeGreaterThan(lineOf('T002 Fix brief'));
-    expect(lineOf('First brief of the first plan')).toBe(-1);
-    expect(lineOf('does not take the file pattern')).toBe(-1);
-    expect(lineOf('npm test · failed')).toBe(-1);
-    expect(lineOf('T001 First brief')).toBe(-1);
-    expect(lineOf('Plan Fix the red tests')).toBe(-1);
-    expect(lineOf('T002 Fix brief') - lineOf(COMPLETED_HEADER)).toBe(3);
     expect(frameRowCount(ui.lastFrame() ?? '')).toBeLessThanOrEqual(30);
-
-    hoverStore.set(1);
-    await tick(20);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain(FOCUS_MARK);
-    hoverStore.set(2);
-    await tick(20);
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-      `${FOCUS_MARK}${glyph('statusFailed')} Review 1 failed`,
-    );
-    hoverStore.clear();
 
     ui.unmount();
   });
@@ -943,6 +951,41 @@ describe('ConversationFlow', () => {
 
     expect(frame).toContain(`${CREW_SEAT_LABELS.plan} activity`);
     expect(frame).toContain('src/only.ts');
+    ui.unmount();
+  });
+
+  it('focuses settled Plan, brief, and Review rows by their transcript indices', async () => {
+    hoverStore.clear();
+    const ui = renderConversation(
+      [
+        { type: 'workflow_started', ts: 1_000, phase: 'planning', feature: 'Fix the queue' },
+        { type: 'plan_approved', ts: 2_000, phase: 'reviewing-plan' },
+        makeTaskStart({ ts: 3_000, title: 'First brief' }),
+        makeTaskComplete({ ts: 4_000 }),
+        { type: 'planner_text', ts: 5_000, phase: 'final-review', text: 'Checking the diff.' },
+        { type: 'workflow_complete', ts: 6_000, phase: 'complete', review: 'passed' },
+      ],
+      10,
+      90,
+    );
+    const baseline = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(baseline).not.toContain(FOCUS_MARK);
+    for (const [index, label] of [
+      'Plan Fix the queue',
+      'T001 First brief',
+      'Review 1 passed',
+    ].entries()) {
+      hoverStore.set(index);
+      await tick(20);
+      const focused = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(countGlyphOccurrences(focused, FOCUS_MARK)).toBe(1);
+      expect(focused.split('\n').find((line) => line.includes(label))).toContain(
+        `${FOCUS_MARK}${glyph('check')}`,
+      );
+    }
+    hoverStore.clear();
+    await tick(20);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toBe(baseline);
     ui.unmount();
   });
 

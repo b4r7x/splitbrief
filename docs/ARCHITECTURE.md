@@ -488,7 +488,6 @@ src/
 │   ├── hooks/trust-digest.ts      Hook config + hook file digest hashing
 │   ├── trust/receipt-store.ts     Machine-scoped receipt store shared by hook and custom runner trust
 │   ├── sections/                  pure section builders:
-│   │                              completed-task-summary-rows,
 │   │                              event-sections
 │   │                              (other layout math lives under
 │   │                              features/workflow/layout/)

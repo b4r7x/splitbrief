@@ -9,12 +9,13 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { stepWord, stopByline, type StopBylineInput } from './copy.js';
+import { stepWord, stopByline, stopPoint, type StopBylineInput } from './copy.js';
 
 function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
   return {
     intent: 'none',
     phase: 'idle',
+    workflowPhase: 'implementing',
     parked: null,
     currentTaskId: 'T002',
     nextTaskId: 'T003',
@@ -69,6 +70,15 @@ describe('stopByline', () => {
   it('names the brief it is stopping and how long it has waited', () => {
     expect(stopByline(input({ intent: 'stop-now', phase: 'terminating' }))).toEqual({
       lead: 'Stopping T002 · Waiting for processes to exit · 0:03',
+      hint: 'esc back after stop · ctrl+c quit after stop',
+    });
+  });
+
+  it('formats the stopping lead clock as h:mm:ss when over an hour', () => {
+    expect(
+      stopByline(input({ intent: 'stop-now', phase: 'terminating', elapsedMs: 10_314_000 })),
+    ).toEqual({
+      lead: 'Stopping T002 · Waiting for processes to exit · 2:51:54',
       hint: 'esc back after stop · ctrl+c quit after stop',
     });
   });
@@ -133,6 +143,22 @@ describe('stopByline', () => {
     });
   });
 
+  it('formats the suite clock as h:mm:ss when over an hour', () => {
+    const paused = input({
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      currentTaskId: null,
+      finishedTaskId: 'T003',
+      suite: { moment: 'pre-review', command: 'npm test', elapsedMs: 10_314_000 },
+    });
+
+    expect(stopByline(paused)).toEqual({
+      lead: 'Pre-review suite · npm test',
+      clock: '2:51:54',
+      hint: 'Pause requested; no next brief will start',
+    });
+  });
+
   it('names the reviewer check a pause waits on by its id', () => {
     const paused = input({
       intent: 'pause-after-brief',
@@ -145,6 +171,21 @@ describe('stopByline', () => {
     expect(stopByline(paused)).toMatchObject({
       lead: 'Reviewer check V2 · npm test',
       clock: '0:42',
+    });
+  });
+
+  it('keeps the Review prefix while a pause waits on a reviewer check', () => {
+    const paused = input({
+      intent: 'pause-after-brief',
+      phase: 'requested',
+      workflowPhase: 'final-review',
+      currentTaskId: null,
+      suite: { id: 'V1', moment: 'pre-review', command: 'npm test', elapsedMs: 42_000 },
+    });
+    expect(stopByline(paused)).toEqual({
+      lead: 'Review · Reviewer check V1 · npm test',
+      clock: '0:42',
+      hint: 'Pause requested; no next brief will start',
     });
   });
 
@@ -180,6 +221,23 @@ describe('stopByline', () => {
     });
   });
 
+  it('parks at a boundary with no next brief before the review', () => {
+    expect(
+      stopByline(
+        input({
+          intent: 'pause-after-brief',
+          phase: 'parked',
+          parked: { kind: 'boundary', taskId: 'T005' },
+          nextTaskId: null,
+          passed: 5,
+        }),
+      ),
+    ).toEqual({
+      lead: 'Stopped before the review · 5 of 5 briefs complete',
+      hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
+    });
+  });
+
   it('names the gate a planning stop settled at and claims no changes', () => {
     expect(stopByline(settled({ kind: 'gate', gate: 'plan' }))).toEqual({
       lead: 'Stopped at the plan',
@@ -203,6 +261,25 @@ describe('stopByline', () => {
     expect(
       stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'boundary'))?.lead,
     ).toBe('Stopped before T003');
+  });
+
+  it('names the review when settled at a boundary before the review', () => {
+    expect(stopByline(settled({ kind: 'review', cycle: 0 }, 'boundary'))?.lead).toBe(
+      'Stopped before the review',
+    );
+  });
+
+  it('claims kept partial changes only when the cut is mid-step', () => {
+    expect(
+      stopByline(
+        input({
+          intent: 'stop-now',
+          phase: 'parked',
+          parked: null,
+          currentTaskId: 'T002',
+        }),
+      )?.lead,
+    ).toBe('Stopped at T002');
   });
 
   it('says only that it paused when a park names no step at all', () => {
@@ -255,6 +332,12 @@ describe('stopByline', () => {
     );
   });
 
+  it('formats the ending run lead clock as h:mm:ss when over an hour', () => {
+    expect(
+      stopByline(input({ intent: 'end-run', phase: 'terminating', elapsedMs: 10_314_000 }))?.lead,
+    ).toBe('Ending run · Waiting for processes to exit · 2:51:54');
+  });
+
   it('says it is saving the session on the way out', () => {
     expect(stopByline(input({ intent: 'quit', phase: 'terminating' }))).toEqual({
       lead: 'Quitting',
@@ -285,5 +368,28 @@ describe('stepWord', () => {
     [{ kind: 'review', cycle: 1 } as const, 'the review'],
   ])('names %o as %s', (step, word) => {
     expect(stepWord(step)).toBe(word);
+  });
+});
+
+describe('stopPoint', () => {
+  it.each([
+    [
+      { kind: 'brief', taskId: taskId('T003'), attempt: 0 } as const,
+      'boundary' as const,
+      'before T003',
+    ],
+    [
+      { kind: 'brief', taskId: taskId('T003'), attempt: 0 } as const,
+      'mid-step' as const,
+      'at T003',
+    ],
+    [{ kind: 'brief', taskId: taskId('T003'), attempt: 0 } as const, undefined, 'at T003'],
+    [{ kind: 'review', cycle: 0 } as const, 'boundary' as const, 'before the review'],
+    [{ kind: 'review', cycle: 0 } as const, 'mid-step' as const, 'at the review'],
+    [{ kind: 'review', cycle: 0 } as const, undefined, 'at the review'],
+    [{ kind: 'gate', gate: 'plan' } as const, 'boundary' as const, 'at the plan'],
+    [{ kind: 'planner', call: 'plan' } as const, 'boundary' as const, 'at the plan'],
+  ])('phrases %o with cut %s as %s', (step, cut, expected) => {
+    expect(stopPoint(step, cut)).toBe(expected);
   });
 });

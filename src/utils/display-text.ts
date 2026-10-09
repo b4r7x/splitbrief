@@ -203,6 +203,30 @@ export function truncateTerminalDisplayTextMiddle(text: string, maxCells: number
   return `${head}${ELLIPSIS}${tail}`;
 }
 
+export function elidePathLabel(label: string, width: number): string {
+  if (getTerminalCellWidth(label) <= width) return label;
+  const segments = label.split('/');
+  for (let start = 1; start < segments.length; start++) {
+    const candidate = `${ELLIPSIS}/${segments.slice(start).join('/')}`;
+    if (getTerminalCellWidth(candidate) <= width) return candidate;
+  }
+  return label;
+}
+
+export function elidePathMiddle(path: string, width: number): string {
+  if (getTerminalCellWidth(path) <= width) return path;
+  const separator = path.indexOf('/');
+  if (separator >= 0) {
+    const prefix = path.slice(0, separator + 1);
+    const middle = `${prefix}${elidePathLabel(path.slice(separator + 1), width - getTerminalCellWidth(prefix))}`;
+    if (getTerminalCellWidth(middle) <= width) return middle;
+    const tail = elidePathLabel(path, width);
+    if (getTerminalCellWidth(tail) <= width) return tail;
+  }
+  const filename = path.slice(path.lastIndexOf('/') + 1);
+  return truncateTerminalDisplayTextMiddle(filename, width);
+}
+
 export function padTerminalDisplayTextEnd(text: string, width: number): string {
   const clean = stripTerminalControls(text);
   return `${clean}${' '.repeat(Math.max(0, width - getTerminalCellWidth(clean)))}`;

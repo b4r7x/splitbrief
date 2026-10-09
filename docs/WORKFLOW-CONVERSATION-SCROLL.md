@@ -52,7 +52,11 @@ segments, and each is one line, so the row count the scroll model charges is exa
 zero renderable units — it is not an event the run emitted, so it never counts toward the
 `N new events` banner.
 
-The pinned block is the ledger of settled sections in event order: briefs and the settled Plan and Review N stages, grouped by `groupEventsIntoSections`. `src/core/sections/completed-task-summary-rows.ts` returns how many ledger entries fit in the current viewport; the dynamic scroll viewport subtracts those rows before building scroll state. The dynamic window holds the live stage and the running brief. A build-phase row no brief owns belongs to a brief section: a row between two briefs joins the brief that closed before it once the next brief starts, and a run-level row joins the first brief, so it collapses with that brief's summary. `review_fix_started` closes its review stage and names the fix briefs in that stage's ledger row. Rows after the last brief stay live until another brief starts.
+Settled sections render inline inside the one scroller in finish order: briefs and the settled Plan and Review N stages, grouped by `groupEventsIntoSections`. `walkTranscript` yields them as one-row transcript blocks (`ConversationRow` with a `node` renderer that passes focus to `TaskSummary`, via `settledRowBlock` in `src/features/workflow/conversation-rows/settled-row-block.tsx`), with no blank spacer between consecutive settled rows. There is no sticky Completed ledger, no `Completed · n/m briefs passed` heading, no `+N earlier` row, and no row cap: settled rows simply scroll inside the one continuous transcript. The dynamic window holds settled sections, the live stage and the running brief. A skipped brief settles on `task_skipped`, even when a pre-hook denied it before `task_started`. A build-phase row no brief owns belongs to a brief section: a row between two briefs joins the brief that closed before it only up to the first `consult_answered` event whose `taskId` is the next brief (from that event on it joins the next brief), and a run-level row joins the first brief, so it collapses with that brief's summary. `review_fix_started` closes its review stage and names the fix briefs in that stage's ledger row. Each Review collapses on its explicit `workflow_complete.review` verdict, with its outcome and duration, even when no later brief starts. A correction followed by another verdict creates the next settled Review row. A running or interrupted review stays live. Rows after the last verdict stay live, including recovery prompts. The operator's consult answer is published as a `user_message` event with `qa` and rendered by the shared answered-questions row block as `You → <answer>` beneath the question. A bare Enter records and renders the default answer.
+
+Done brief rows in both the transcript and closed ledger use `TaskSummary` and its shared `fitDetailRun`. The method and duration stay whole at every width. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
+
+Check-row statuses `not run` and `chose none` join their words with a non-breaking space (`\u00a0`), so wrapping at 60 columns keeps each phrase whole. Running checks use `formatElapsedClock` in the build block and byline (`running 10:02`, `running 0:35` in the block). Finished-row durations keep `2m 0s` or `14.0s`.
 
 ## Scroll Window
 
@@ -125,7 +129,7 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - adjacent scroll offsets move by one rendered row
   - wrapped `task_started` rows do not jump by card
   - streaming output participates in row height
-  - the settled ledger remains pinned outside dynamic scroll
+  - settled sections render in event order inside the transcript without a capped ledger
   - new-event counts surface through the chrome label, not viewport rows
 - `src/features/workflow/conversation-rows/projection-cache.test.ts`
   - unchanged source identity reuses projections
@@ -150,13 +154,13 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - the window spans the full visible height; banners ride the chrome dividers
 - `src/features/workflow/layout/rect.test.ts`
   - prompt rows are capped to the available middle area
-- `src/core/sections/completed-task-summary-rows.test.ts`
-  - the settled ledger cannot reserve more rows than the viewport has
+- `src/features/workflow/conversation-rows/transcript-walk.test.ts`
+  - settled sections yield in event order inside the transcript
 
 ## Invariants
 
 - Scroll units are rendered terminal rows.
 - Row descriptors must render as exactly one terminal row.
-- Prompt rows and the settled ledger are part of the row budget; scroll banners live on the chrome dividers.
+- Prompt rows and queued rows are part of the row budget; settled rows scroll inside the transcript; scroll banners live on the chrome dividers.
 - Terminal width changes must recompute row wrapping and total height.
 - Stores remain the data source; layout helpers remain pure enough to test without running the workflow engine.

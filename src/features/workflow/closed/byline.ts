@@ -164,7 +164,10 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
         action: formatResetAt(stop.on.resetAt) ?? '⏎ to continue',
       };
     default:
-      return { reason: `Stopped ${stopPoint(resumeAt, undefined)}`, action: '⏎ to continue' };
+      return {
+        reason: `Stopped ${stopPoint(resumeAt, undefined)}`,
+        action: '⏎ to continue',
+      };
   }
 }
 

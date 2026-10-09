@@ -13,7 +13,7 @@ import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
-import { publishTaskReplaced, publishTasksInserted } from '../events.js';
+import { publishTaskReplaced, publishTasksInserted, publishUserMessage } from '../events.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
 import { transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
@@ -300,13 +300,13 @@ function defaultAnswer(question: ClarificationQuestion): string {
   return question.default ?? '';
 }
 
-function replyAnswer(
+export function consultReplyAnswer(
   question: ClarificationQuestion,
   reply: string | PlannerReplyAnswer | undefined,
 ): string {
   if (reply === undefined) return defaultAnswer(question);
-  if (typeof reply === 'string') return reply.trim() === '' ? defaultAnswer(question) : reply;
-  return reply.text.trim() === '' ? defaultAnswer(question) : reply.text;
+  const answer = typeof reply === 'string' ? reply : (reply.qa[0]?.answer ?? reply.text);
+  return answer.trim() === '' ? defaultAnswer(question) : answer;
 }
 
 /** The planner's confirm: the decisions extend the run's ledger on the reporting task. */
@@ -339,13 +339,16 @@ async function applyAskUser(
   const reply = await waitForPlannerReply(ctx, asked);
   if (reply === undefined && question.default === undefined)
     return { action: 'failed', reason: 'The planner question remains unanswered.' };
-  const answered = replyAnswer(question, reply);
+  const answered = consultReplyAnswer(question, reply);
   const recorded = transitionAndSave(ctx, ctx.state, {
     type: 'SET_PLANNER_CONVERSATION',
     conversation: { ...asked, answered: true, answers: [{ reply: asked.text, answer: answered }] },
   });
   const cleared = transitionAndSave(ctx, recorded, { type: 'CLEAR_PLANNER_CONVERSATION' });
   ctx.onStateChange?.(cleared);
+  publishUserMessage({ bus: ctx.bus, phase: cleared.phase }, answered, [
+    { question: action.question, answer: answered },
+  ]);
   return { action: 'guidance', instructions: answered, context: null };
 }
 

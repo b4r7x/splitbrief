@@ -18,6 +18,7 @@ const base = {
   plannerCall: null,
   plannerCallStartedTs: null,
   suiteStage: null,
+  activeOperation: null,
 };
 
 describe('deriveLiveStatus', () => {
@@ -113,9 +114,9 @@ describe('deriveLiveStatus', () => {
   });
 
   it.each([
-    ['pre-review', 'Reviewer check V1 · npm test'],
-    ['base', 'Base re-run V1 · npm test'],
-    ['brief', 'Fix check V1 · npm test'],
+    ['pre-review', 'Review · Reviewer check V1 · npm test'],
+    ['base', 'Review · Base re-run V1 · npm test'],
+    ['brief', 'Review · Fix check V1 · npm test'],
   ] as const)('names the %s reviewer check by its id on its own clock', (moment, verb) => {
     const status = deriveLiveStatus({
       ...base,
@@ -237,17 +238,45 @@ describe('deriveLiveStatus', () => {
     expect(liveNow()).toMatchObject({ verb: 'Compiling briefs…', stageStart: 50_000 });
   });
 
-  it('names the reviewer seat during final review and keeps the seatless wording without one', () => {
+  it('names the reviewer seat during final review only while a call runs, and names the step otherwise', () => {
+    const running = {
+      callId: 'call-1',
+      role: 'review' as const,
+      phase: 'final-review' as const,
+      label: 'review',
+      startedAt: 1000,
+      status: 'running' as const,
+      endedAt: null,
+      durationMs: null,
+      partial: false as const,
+      reason: null,
+      usage: null,
+      warnings: [],
+    };
     const configured = deriveLiveStatus({
       ...base,
       phase: 'final-review',
       reviewerLabel: 'Sonnet 4.5',
+      activeOperation: running,
     });
     expect(configured?.verb).toContain('Sonnet 4.5');
     expect(configured?.tone).toBe('validator');
 
-    const unconfigured = deriveLiveStatus({ ...base, phase: 'final-review' });
-    expect(unconfigured?.verb).toBe('Review…');
+    const betweenCalls = deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      reviewerLabel: 'Sonnet 4.5',
+      activeOperation: null,
+    });
+    expect(betweenCalls?.verb).toBe('Review · waiting for the verdict');
+    expect(betweenCalls?.tone).toBe('validator');
+
+    const unconfigured = deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      activeOperation: running,
+    });
+    expect(unconfigured?.verb).toBe('Review · reviewing');
     expect(unconfigured?.tone).toBe('validator');
   });
 
@@ -257,6 +286,74 @@ describe('deriveLiveStatus', () => {
     for (const verb of verbs) {
       expect(verb).toMatch(/^[A-Z]/);
     }
+  });
+
+  it.each(['planner', 'implementer'] as const)(
+    'reads the %s role in the final review as no call: the planner_status marker is not a seat call',
+    (role) => {
+      const activeOperation = {
+        callId: 'planner-status:final-review',
+        role,
+        phase: 'final-review' as const,
+        label: `${role} final-review`,
+        startedAt: 1000,
+        status: 'running' as const,
+        endedAt: null,
+        durationMs: null,
+        partial: false as const,
+        reason: null,
+        usage: null,
+        warnings: [],
+      };
+      expect(
+        deriveLiveStatus({
+          ...base,
+          phase: 'final-review',
+          reviewerLabel: 'GPT-6 Astra',
+          activeOperation,
+        })?.verb,
+      ).toBe('Review · waiting for the verdict');
+    },
+  );
+
+  it.each(['summary', 'compaction', 'escalation'] as const)(
+    'names the %s step without inheriting the reviewer identity',
+    (role) => {
+      const activeOperation = {
+        callId: 'side-call',
+        role,
+        phase: 'final-review' as const,
+        label: `${role} final-review (codex gpt-6-astra)`,
+        startedAt: 1000,
+        status: 'running' as const,
+        endedAt: null,
+        durationMs: null,
+        partial: false as const,
+        reason: null,
+        usage: null,
+        warnings: [],
+      };
+      const verb = deriveLiveStatus({
+        ...base,
+        phase: 'final-review',
+        reviewerLabel: 'GPT-6 Astra',
+        activeOperation,
+      })?.verb;
+      expect(verb).toMatch(/^Review · /);
+      expect(verb?.toLowerCase()).toContain(role);
+      expect(verb).not.toContain('GPT-6 Astra');
+      expect(verb).not.toContain('final-review');
+    },
+  );
+
+  it('keeps a fix check in Build without a Review prefix', () => {
+    expect(
+      deriveLiveStatus({
+        ...base,
+        phase: 'implementing',
+        suiteStage: { id: 'V1', command: 'npm test', moment: 'brief', stageStartedTs: 2000 },
+      })?.verb,
+    ).toBe('Fix check V1 · npm test');
   });
 });
 

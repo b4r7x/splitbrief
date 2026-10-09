@@ -1,8 +1,15 @@
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
+import type {
+  ActiveOperation,
+  RunningSuiteStage,
+} from '../../../stores/workflow/operations/state.js';
+import { phaseStage } from '../../../core/rail-stages.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { runnerActivityRoleLabel } from './runner-activity-display.js';
+
+export const REVIEW_WAITING_VERDICT = 'Review · waiting for the verdict';
 
 // One vocabulary for what the run is doing right now: the byline says it as a heading, the build
 // block says it inside a sentence. Both read it here. The plan stage is one planning session, and
@@ -43,7 +50,7 @@ export function activeVerb(
     case 'escalating':
       return 'Escalating…';
     case 'final-review':
-      return reviewerLabel === null ? 'Review…' : `Review… ${reviewerLabel}`;
+      return reviewerLabel === null ? REVIEW_WAITING_VERDICT : `Review… ${reviewerLabel}`;
     case 'idle':
     case 'complete':
       return '';
@@ -54,7 +61,40 @@ export function activeVerb(
 
 /** The same verb inside a sentence: no capital, no ellipsis, no reviewer name. */
 export function inlineActiveVerb(phase: Phase): string {
+  if (phase === 'final-review') return 'review';
   return activeVerb(phase, null, null).replace('…', '').toLowerCase();
+}
+
+export function reviewActivityText(
+  operation: ActiveOperation | null | undefined,
+  reviewerLabel: string | null,
+): string {
+  if (operation?.status !== 'running') return REVIEW_WAITING_VERDICT;
+  switch (operation.role) {
+    case 'review':
+      return reviewerLabel === null
+        ? 'Review · reviewing'
+        : activeVerb('final-review', reviewerLabel, null);
+    case 'summary':
+    case 'compaction':
+    case 'escalation':
+      return `Review${SOFT_SEP}${runnerActivityRoleLabel(operation.role)}`;
+    // Only the review seat's own call runs in the final review (`isReviewSeatCall`); a planner
+    // operation there is the stage's planner_status marker, not a call.
+    case 'planner':
+    case 'implementer':
+      return REVIEW_WAITING_VERDICT;
+    default:
+      return assertNever(operation.role);
+  }
+}
+
+export function suiteStatusText(
+  phase: Phase,
+  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command'>,
+): string {
+  const text = suiteStageText(suite);
+  return phaseStage(phase) === 'review' ? `Review${SOFT_SEP}${text}` : text;
 }
 
 /**

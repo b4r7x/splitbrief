@@ -189,6 +189,10 @@ const RUNNER_HEARTBEAT_EVENT_TYPES = new Set<EngineEvent['type']>([
   'implementer_generate_running',
   'implementer_generate_done',
   'implementer_generate_failed',
+  'full_suite',
+  'checks_run',
+  'validate',
+  'review_checks',
 ]);
 
 /** The two clocks the build-progress block reads: last sign of life, and this attempt's start. */

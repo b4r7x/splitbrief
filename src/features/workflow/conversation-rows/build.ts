@@ -30,6 +30,7 @@ import {
   markdownConversationRowsCacheKey,
 } from './markdown-rows.js';
 import { materializeConversationRowsWindow } from './materialize-window.js';
+import { settledRowBlock } from './settled-row-block.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
 const MIN_ROW_WIDTH = 1;
@@ -76,13 +77,18 @@ function buildConversationRowsProjectionWithContext(
   const blocks: ConversationRowBlock[] = [];
   let renderableCount = 0;
   let hasRenderableBlock = false;
+  let lastAppendedWasSettled = false;
   // The feature/prompt, captured from the first user_message so the planner's opening H1 echo of it
   // can be stripped (the prompt already renders as the first transcript row).
   let dedupTitle: string | undefined;
 
-  const appendBlock = (block: ConversationRowBlock, globalIndex: number): void => {
+  const appendBlock = (
+    block: ConversationRowBlock,
+    globalIndex: number,
+    isSettled = false,
+  ): void => {
     if (block.rowCount === 0) return;
-    if (hasRenderableBlock) {
+    if (hasRenderableBlock && !(lastAppendedWasSettled && isSettled)) {
       blocks.push({
         key: `spacer-${globalIndex}`,
         rowCount: SECTION_SPACER_ROWS,
@@ -95,6 +101,7 @@ function buildConversationRowsProjectionWithContext(
     }
     blocks.push(block);
     hasRenderableBlock = true;
+    lastAppendedWasSettled = isSettled;
     renderableCount += block.renderableUnits;
   };
 
@@ -113,6 +120,11 @@ function buildConversationRowsProjectionWithContext(
   };
 
   for (const step of walkTranscript(inputs.sections)) {
+    if (step.kind === 'settled') {
+      const block = settledRowBlock({ section: step.section, width: ctx.width });
+      appendBlock(block, step.section.startIndex, true);
+      continue;
+    }
     if (step.kind === 'activity-batch') {
       flushActivityBatch(step.batch);
       continue;

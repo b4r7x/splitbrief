@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { activeVerb, inlineActiveVerb, suiteStageText } from './phase-verb.js';
+import {
+  activeVerb,
+  inlineActiveVerb,
+  suiteStageText,
+  REVIEW_WAITING_VERDICT,
+} from './phase-verb.js';
 
 describe('activeVerb', () => {
   it('says one verb for the planning session and names an old chain briefs call', () => {
@@ -39,7 +44,7 @@ describe('activeVerb', () => {
       expect(activeVerb(phase, null, 'tasks')).toBe(activeVerb(phase, null, null));
     }
     expect(activeVerb('final-review', 'Sonnet 4.5', null)).toBe('Review… Sonnet 4.5');
-    expect(activeVerb('final-review', null, null)).toBe('Review…');
+    expect(activeVerb('final-review', null, null)).toBe('Review · waiting for the verdict');
   });
 });
 
@@ -77,5 +82,11 @@ describe('suiteStageText', () => {
     expect(suiteStageText({ id: 'V2', moment: 'brief', command: 'npm test' })).toBe(
       'Fix check V2 · npm test',
     );
+  });
+});
+
+describe('REVIEW_WAITING_VERDICT', () => {
+  it('is the status text while waiting for the verdict in final review', () => {
+    expect(REVIEW_WAITING_VERDICT).toBe('Review · waiting for the verdict');
   });
 });

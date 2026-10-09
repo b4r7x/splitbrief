@@ -103,7 +103,7 @@ describe('outcomeLine', () => {
 
   it('reads a run stopped inside a brief as a fraction, a brief and what survived', () => {
     expect(outcomeLine(endedInBuild(), WIDE)).toBe(
-      'Ended · Build 2/5 · stopped in T003 · partial changes kept',
+      'Ended · Build 2/5 · stopped at T003 · partial changes kept',
     );
   });
 
@@ -185,7 +185,7 @@ describe('outcomeLine', () => {
         earlierRows: [],
       },
     });
-    expect(outcomeLine(view, WIDE)).toContain('stopped in T003');
+    expect(outcomeLine(view, WIDE)).toContain('stopped at T003');
   });
 
   it('reads a legacy run with no changed set as unrecorded, never as empty', () => {

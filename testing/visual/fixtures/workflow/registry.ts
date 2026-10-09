@@ -7,6 +7,7 @@ import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
+import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
   WORKFLOW_FIXTURE_TEXT,
   workflowFixtureProjections,
@@ -32,6 +33,26 @@ const CONSULT_BOUND_NOTE = 'run the formatter first';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (
+    projection.scenarioId === 'workflow-consult-answer-default' ||
+    projection.scenarioId === 'workflow-consult-answer-typed'
+  ) {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        const fixedNow = Date.now;
+        Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
+        try {
+          if (projection.scenarioId === 'workflow-consult-answer-typed') {
+            await write.press('redis');
+          }
+          await write.press('\r');
+        } finally {
+          Date.now = fixedNow;
+        }
+      },
+    });
+  }
   if (projection.scenarioId === 'workflow-selection-copy') {
     return () => ({
       ...base(),
@@ -106,14 +127,16 @@ const checkpointPredicates = [
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
   [checkpointId('review-fix'), includesAll()],
-  // The newest settled brief and live cycle appear at every width. At 80 columns and wider,
-  // the ledger also names the failed review and its fix brief; earlier stage rows stay collapsed.
   [
     checkpointId('review-fix-cycles'),
     (context) => {
       const text = stripAnsiStyles(context.output);
       return (
-        includesAll('T904', 'npm test · running')(context) &&
+        includesAll(
+          '4/4 briefs passed',
+          'Review · Reviewer check V2',
+          'npm test · running',
+        )(context) &&
         (context.viewport.cols < 80 || includesAll('Review 1 failed', 'fixes T904')(context)) &&
         !text.includes('does not take') &&
         !text.includes('Tasks  ') &&
@@ -125,6 +148,11 @@ const checkpointPredicates = [
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [checkpointId('final-review'), includesAll('3/3 briefs passed')],
+  [checkpointId('review-settled-passed'), includesAll('✓ Review 1 passed', '7.0s')],
+  [checkpointId('review-settled-failed'), includesAll('✗ Review 1 failed', '7.0s')],
+  [checkpointId('review-corrected'), includesAll('T902', 'Review 1 failed', 'Review 2 passed')],
+  [checkpointId('review-summary'), includesAll('Review · Summary')],
+  [checkpointId('review-compaction'), includesAll('Review · Compaction')],
   [checkpointId('review-checks-off'), includesAll('End-of-run checks', 'off')],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
@@ -159,6 +187,8 @@ const checkpointPredicates = [
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   // The transcript pins the tail, so the block's last row is the width-stable marker.
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],
+  [checkpointId('consult-answer-default'), includesAll('Which store?', 'You → memory')],
+  [checkpointId('consult-answer-typed'), includesAll('Which store?', 'You → redis')],
   [checkpointId('paused-mid-brief'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
@@ -187,7 +217,13 @@ const checkpointPredicates = [
   [checkpointId('failure'), includesAll(WORKFLOW_FIXTURE_TEXT.failure, 'Build failed')],
   [checkpointId('recovery'), includesAll(WORKFLOW_FIXTURE_TEXT.recovery)],
   [checkpointId('recovery-plan'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
-  [checkpointId('recovery-plan-checks'), includesAll('Criterion C2 is served by no task.')],
+  [
+    checkpointId('recovery-plan-checks'),
+    (context) =>
+      includesAll('Criterion C2 is served by no task.')(context) &&
+      (context.viewport.cols < 80 ||
+        includesAll('The plan failed check uncovered-criterion:', '(+1 more)')(context)),
+  ],
   [checkpointId('recovery-plan-questions'), includesAll('Which store keeps the greeting?')],
   [checkpointId('recovery-review'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
@@ -224,10 +260,11 @@ const checkpointPredicates = [
     includesAll('No output for', 'running npx vitest run'),
   ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
-  [checkpointId('review-check-running'), includesAll('Reviewer check V2')],
+  [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],
+  [checkpointId('review-pause-requested'), includesAll('Review · Reviewer check V2')],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
   [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],
-  [checkpointId('review-checks-skipped'), includesAll('not run V1, V2')],
+  [checkpointId('review-checks-skipped'), includesAll('not\u00a0run V1, V2')],
   [checkpointId('review-legacy-suite'), includesAll('Pre-review suite · npm test')],
   // The red check row scrolls out of a 60x18 transcript; the last check that did not run stays.
   [
@@ -236,12 +273,12 @@ const checkpointPredicates = [
       'REVIEW activity',
       'OpenAI Codex CLI',
       'GPT-6 Astra',
-      'npm test · not run',
+      'npm test · not\u00a0run',
       'Review…',
     ),
   ],
   [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],
-  [checkpointId('review-base-mixed'), includesAll('2 new,', 'V1 failed')],
+  [checkpointId('review-base-mixed'), includesAll('2\u00a0new,', 'V1 failed')],
   [checkpointId('fix-check-running'), includesAll('Fix check V2 · npm test')],
   [
     checkpointId('fix-check-done'),
@@ -258,7 +295,7 @@ const checkpointPredicates = [
   [
     checkpointId('review-base-not-verified'),
     // The reason wraps at narrow widths; the last row settles the transcript.
-    includesAll('Base re-run V1', 'npm test · not run'),
+    includesAll('Base re-run V1', 'npm test · not\u00a0run'),
   ],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];

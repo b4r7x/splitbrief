@@ -110,7 +110,8 @@ export const REVIEW_CONFIRMS_INDENT = 2;
  * The line that keeps what approving confirms in view while the plan scrolls: the card's body can
  * be one row tall, and these operations are what `y` grants beyond the plan itself. Counted, it
  * names how many: the plan lists each one under Protected operations, right under its summary.
- * Listed, the line breaks after a `, ` only; an operation wider than the line wraps inside itself.
+ * Listed operations stay whole, moving below the introduction when needed; any operation wider
+ * than the line uses the counted text.
  */
 function reviewConfirmsText(
   confirms: readonly string[],
@@ -119,22 +120,27 @@ function reviewConfirmsText(
 ): string | null {
   if (confirms.length === 0) return null;
   const lineWidth = Math.max(MIN_TEXT_WIDTH, width - REVIEW_CONFIRMS_INDENT);
-  if (form === 'counted') {
+  const units = confirms.map(
+    (operation, index) => `${operation}${index < confirms.length - 1 ? ',' : ''}`,
+  );
+  if (form === 'counted' || units.some((unit) => getTerminalCellWidth(unit) > lineWidth)) {
     return wrapPathAwareText(
       `Approving also confirms ${countNoun(confirms.length, 'protected operation')}`,
       lineWidth,
     );
   }
   const lines: string[] = [];
-  confirms.forEach((operation, index) => {
-    const unit = `${index === 0 ? 'Approving also confirms: ' : ''}${operation}${index < confirms.length - 1 ? ',' : ''}`;
-    const last = lines.at(-1);
-    if (last !== undefined && getTerminalCellWidth(`${last} ${unit}`) <= lineWidth) {
-      lines[lines.length - 1] = `${last} ${unit}`;
+  let line = 'Approving also confirms:';
+  for (const unit of units) {
+    const next = `${line} ${unit}`;
+    if (getTerminalCellWidth(next) <= lineWidth) {
+      line = next;
     } else {
-      lines.push(...wrapPathAwareText(unit, lineWidth).split('\n'));
+      lines.push(line);
+      line = unit;
     }
-  });
+  }
+  lines.push(line);
   return lines.join('\n');
 }
 

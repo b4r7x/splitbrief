@@ -1,9 +1,12 @@
 import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import { activeVerb, suiteStageText } from './phase-verb.js';
+import { activeVerb, suiteStatusText, reviewActivityText } from './phase-verb.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
-import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
+import type {
+  ActiveOperation,
+  RunningSuiteStage,
+} from '../../../stores/workflow/operations/state.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   getActiveRailStage,
@@ -44,13 +47,6 @@ export function stallRunnerHint(
   return QUIET_STREAM_RUNNERS.has(runnerName) ? 'tools report when done' : null;
 }
 
-export function formatStageElapsed(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const seconds = String(total % 60).padStart(2, '0');
-  const minutes = Math.floor(total / 60);
-  return `${minutes}:${seconds}`;
-}
-
 function railRoleTone(role: RailRole): ConversationRowTone {
   switch (role) {
     case 'planner':
@@ -84,6 +80,7 @@ export function deriveLiveStatus(input: {
   plannerCall: PlannerCall | null;
   plannerCallStartedTs: number | null;
   suiteStage: RunningSuiteStage | null;
+  activeOperation?: ActiveOperation | null;
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
@@ -91,7 +88,7 @@ export function deriveLiveStatus(input: {
   // it is the run's work at that moment, so it leads on its own clock rather than the rail stage's.
   if (input.suiteStage !== null) {
     return {
-      verb: suiteStageText(input.suiteStage),
+      verb: suiteStatusText(input.phase, input.suiteStage),
       stageStart: input.suiteStage.stageStartedTs,
       waitedMs: 0,
       tone: 'validator',
@@ -114,7 +111,10 @@ export function deriveLiveStatus(input: {
     0,
   );
   return {
-    verb: activeVerb(input.phase, input.reviewerLabel, input.plannerCall),
+    verb:
+      input.phase === 'final-review'
+        ? reviewActivityText(input.activeOperation, input.reviewerLabel)
+        : activeVerb(input.phase, null, input.plannerCall),
     stageStart,
     waitedMs,
     tone: railRoleTone(railStageRole(activeStage.stage)),

@@ -4,6 +4,7 @@ import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
 import {
   ELLIPSIS,
+  elidePathLabel,
   getTerminalCellWidth,
   stripTerminalControls,
   truncateTerminalDisplayText,
@@ -126,20 +127,6 @@ function fitWholeWords(
       spent: widest,
     }
   );
-}
-
-/**
- * `…thropic/claude-opus-4.5` names nothing and rags the column, so a path label sheds whole leading
- * segments: `kilo/anthropic/claude-opus-4.5` at 20 cells reads `…/claude-opus-4.5`.
- */
-function elidePathLabel(label: string, width: number): string {
-  if (getTerminalCellWidth(label) <= width) return label;
-  const segments = label.split('/');
-  for (let start = 1; start < segments.length; start++) {
-    const candidate = `${ELLIPSIS}/${segments.slice(start).join('/')}`;
-    if (getTerminalCellWidth(candidate) <= width) return candidate;
-  }
-  return label;
 }
 
 export function listRowLead(state: ListRowState): string {

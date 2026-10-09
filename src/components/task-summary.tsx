@@ -7,6 +7,7 @@ import { classifyTaskCompletionMethod } from '../core/task-completion.js';
 import { SOFT_SEP } from '../core/separators.js';
 import { formatDuration } from '../utils/format-time.js';
 import {
+  elidePathMiddle,
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
@@ -33,25 +34,109 @@ interface FittedDetailRun {
   tail: string[];
 }
 
-// A `·`-joined run carries its meaning at the end: the filename, the outcome. Cutting it at the
-// right edge takes exactly the part worth reading and leaves `models-de…`, which could be
-// models-dev.ts or models-detect.ts. Whole segments come off the tail instead, and the last one
-// standing is fitted from the middle so a path keeps both of its ends.
-export function fitDetailRun(head: string, tail: string[], width: number): FittedDetailRun {
+const SETTLED_METHODS = new Set([
+  'local',
+  'consulted',
+  'intermediate',
+  'hint',
+  'escalated',
+  'escalated-intermediate',
+  'escalated-hint',
+  'escalated-full',
+]);
+
+function isRetrySegment(segment: string): boolean {
+  return /^\d+\s+(?:retry|retries)$/.test(segment);
+}
+
+function isSettledTail(tail: string[]): boolean {
+  return tail.some((segment) => SETTLED_METHODS.has(segment));
+}
+
+function partitionSettledTail(tail: string[]): {
+  file: string | undefined;
+  retries: string | undefined;
+  keptMeta: string[];
+} {
+  let file: string | undefined;
+  let meta: string[];
+
+  const first = tail[0];
+  if (first !== undefined && !SETTLED_METHODS.has(first)) {
+    file = first;
+    meta = tail.slice(1);
+  } else {
+    file = undefined;
+    meta = [...tail];
+  }
+
+  let retries: string | undefined;
+  const keptMeta: string[] = [];
+
+  for (const segment of meta) {
+    if (retries === undefined && isRetrySegment(segment)) {
+      retries = segment;
+    } else {
+      keptMeta.push(segment);
+    }
+  }
+
+  return { file, retries, keptMeta };
+}
+
+export function fitDetailRun(
+  head: string,
+  tail: string[],
+  width: number,
+  settled?: boolean,
+): FittedDetailRun {
   const budget = Math.max(0, width - LEADING_CELLS);
-  const segments = [...tail];
   const cells = (parts: string[]): number =>
     getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${parts.join(SOFT_SEP)}`);
 
-  while (segments.length > 1 && cells(segments) > budget) segments.pop();
-  if (cells(segments) <= budget) return { head, tail: segments };
+  const isSettled = settled ?? isSettledTail(tail);
+  if (!isSettled) {
+    const segments = [...tail];
+    while (segments.length > 1 && cells(segments) > budget) segments.pop();
+    if (cells(segments) <= budget) return { head, tail: segments };
 
-  const only = segments[0];
-  const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length;
-  if (only !== undefined && room > 0) {
-    return { head, tail: [truncateTerminalDisplayTextMiddle(only, room)] };
+    const only = segments[0];
+    const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length;
+    if (only !== undefined && room > 0) {
+      return { head, tail: [truncateTerminalDisplayTextMiddle(only, room)] };
+    }
+    return { head: truncateTerminalDisplayText(head, budget), tail: [] };
   }
-  return { head: truncateTerminalDisplayText(head, budget), tail: [] };
+
+  if (cells(tail) <= budget) return { head, tail };
+
+  const { file, retries, keptMeta } = partitionSettledTail(tail);
+
+  const tailWithoutRetries = [file, ...keptMeta].filter(isPresent);
+  if (retries !== undefined && cells(tailWithoutRetries) <= budget) {
+    return { head, tail: tailWithoutRetries };
+  }
+
+  if (file !== undefined) {
+    const keptMetaWidth =
+      keptMeta.length === 0
+        ? 0
+        : getTerminalCellWidth(SOFT_SEP) + getTerminalCellWidth(keptMeta.join(SOFT_SEP));
+    const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length - keptMetaWidth;
+    if (room > 0) {
+      const shortenedFile = elidePathMiddle(file, room);
+      return { head, tail: [shortenedFile, ...keptMeta] };
+    }
+  }
+
+  if (cells(keptMeta) <= budget) {
+    return { head, tail: keptMeta };
+  }
+
+  const keptMetaWidth =
+    keptMeta.length === 0 ? 0 : TITLE_SEP.length + getTerminalCellWidth(keptMeta.join(SOFT_SEP));
+  const headBudget = Math.max(0, budget - keptMetaWidth);
+  return { head: truncateTerminalDisplayText(head, headBudget), tail: keptMeta };
 }
 
 /**
@@ -159,6 +244,7 @@ export function TaskSummary({
     head,
     detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
     width - (failed ? FAILED_SUFFIX.length : 0),
+    state.kind === 'settled' && state.method !== 'failed' && state.method !== 'skipped',
   );
 
   return (

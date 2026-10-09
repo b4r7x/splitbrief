@@ -23,7 +23,13 @@ export interface RecoveryFold {
   resolved?: EngineEventOf<'recovery_resolved'>;
 }
 
+export type SettledTranscriptSection = Extract<
+  Section<EngineEvent>,
+  { type: 'completed-task' | 'settled-stage' }
+>;
+
 export type TranscriptWalkStep =
+  | { kind: 'settled'; section: SettledTranscriptSection }
   | { kind: 'activity-batch'; batch: RunnerActivityBatch }
   | { kind: 'recovery'; recovery: RecoveryFold }
   | { kind: 'event'; event: EngineEvent; globalIndex: number };
@@ -56,6 +62,7 @@ export function* walkTranscript(
       yield* flush();
       lastRowEvent = null;
       openHeader = null;
+      yield { kind: 'settled', section };
       continue;
     }
     for (const [index, event] of section.items.entries()) {

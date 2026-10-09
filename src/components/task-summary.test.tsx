@@ -4,8 +4,9 @@ import { defaultTheme } from './theme.js';
 import { paint } from '../core/theme/paint.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { TaskSummary } from './task-summary.js';
+import { TaskSummary, fitDetailRun } from './task-summary.js';
 import { glyph } from '../lib/glyphs.js';
+import { getTerminalCellWidth } from '../utils/display-text.js';
 
 const jwt =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
@@ -229,6 +230,110 @@ describe('TaskSummary', () => {
     expect(frame).toContain(glyph('check'));
     expect(frame).toContain('src/auth/session.ts');
     expect(frame).toContain('·');
+
+    ui.unmount();
+  });
+
+  it('keeps method and duration at 60, 80 and 120 widths while keeping first directory and file name', () => {
+    const head = 'T1';
+    const longPath =
+      'src/engine/subsystems/workflow/coordinator/deeply/nested/components/tasks/resume.ts';
+    for (const width of [60, 80, 120]) {
+      const fitted = fitDetailRun(head, [longPath, 'local', '48.0s'], width);
+      expect(fitted.tail).toContain('local');
+      expect(fitted.tail).toContain('48.0s');
+      expect(fitted.tail[0]?.startsWith('src/')).toBe(true);
+      expect(fitted.tail[0]?.endsWith('resume.ts')).toBe(true);
+    }
+  });
+
+  it('drops retries before shortening file segment', () => {
+    const fitted = fitDetailRun('T1', ['src/auth/session.ts', 'local', '2 retries', '48.0s'], 45);
+    expect(fitted.tail).toContain('local');
+    expect(fitted.tail).toContain('48.0s');
+    expect(fitted.tail).not.toContain('2 retries');
+  });
+
+  it.each([60, 80, 120])(
+    'elides whole directories at %s columns with and without retries',
+    (width) => {
+      const file = 'testing/visual/fixtures/workflow/checkpoints/deeply/nested/projections.ts';
+      const expected =
+        width === 60
+          ? 'testing/…/nested/projections.ts'
+          : width === 80
+            ? 'testing/…/checkpoints/deeply/nested/projections.ts'
+            : file;
+      for (const retries of [[], ['1 retry'], ['2 retries']]) {
+        for (const settled of [undefined, true]) {
+          const fitted = fitDetailRun('T1', [file, 'local', ...retries, '2m 0s'], width, settled);
+          expect(fitted.tail).toEqual([
+            expected,
+            'local',
+            ...(width === 120 ? retries : []),
+            '2m 0s',
+          ]);
+          expect(
+            getTerminalCellWidth(` ✓ ${fitted.head}  ${fitted.tail.join(' · ')}`),
+          ).toBeLessThanOrEqual(width);
+        }
+      }
+    },
+  );
+
+  it('gives up the first directory and then the path marker before cutting a file name', () => {
+    const file = 'testing/visual/fixtures/workflow/projections.ts';
+    for (const width of [60, 80, 120]) {
+      for (const [room, expected] of [
+        [24, 'testing/…/projections.ts'],
+        [16, '…/projections.ts'],
+        [14, 'projections.ts'],
+        [8, 'pro…s.ts'],
+      ] as const) {
+        const head = 'T1'.padEnd(width - 21 - room, 'x');
+        const fitted = fitDetailRun(head, [file, 'local', '1 retry', '2m 0s'], width, true);
+        expect(fitted.tail).toEqual([expected, 'local', '2m 0s']);
+      }
+    }
+  });
+
+  it('uses the settled retry priority for the closed signup row', () => {
+    const fitted = fitDetailRun(
+      'T002 Wire validator into the signup form',
+      ['src/components/signup/form.ts', 'local', '1 retry', '2m 21s'],
+      80,
+      true,
+    );
+    expect(fitted.tail).toEqual(['src/…/form.ts', 'local', '2m 21s']);
+  });
+
+  it('cuts title last when room runs out completely', () => {
+    const fitted = fitDetailRun(
+      'T1 long task title that exceeds the budget',
+      ['src/auth/session.ts', 'local', '48.0s'],
+      26,
+    );
+    expect(fitted.tail).toEqual(['local', '48.0s']);
+    expect(fitted.head.endsWith('…')).toBe(true);
+  });
+
+  it('renders settled task summary keeping method and duration at narrow width', () => {
+    const ui = renderFeature(
+      <TaskSummary
+        width={60}
+        id="T1"
+        title="hash passwords"
+        state={{ kind: 'settled', method: 'local' }}
+        file="src/engine/subsystems/workflow/coordinator/resume.ts"
+        duration={48000}
+      />,
+    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain('local');
+    expect(frame).toContain('48.0s');
+    expect(frame).toContain('src/');
+    expect(frame).toContain('resume.ts');
 
     ui.unmount();
   });

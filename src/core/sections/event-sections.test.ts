@@ -7,6 +7,7 @@ import {
 } from './event-sections.js';
 import type { Section } from './event-sections.js';
 import type { Phase } from '../schemas/enums.js';
+import type { EngineEvent } from '../../engine/events/types.js';
 import { taskId } from '../schemas/task.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events/task.js';
@@ -25,6 +26,83 @@ function requireSection<T extends Section['type']>(
 }
 
 describe('groupEventsIntoSections', () => {
+  it('accepts engine events with an explicitly undefined or nullable task id', () => {
+    const events = [
+      {
+        type: 'no_progress_cut',
+        ts: 1,
+        phase: 'final-review',
+        taskId: null,
+        seat: 'review',
+        silentMs: 10,
+      },
+      {
+        type: 'runner_call_started',
+        ts: 2,
+        phase: 'final-review',
+        taskId: undefined,
+        callId: 'review',
+        role: 'review',
+        backendKind: 'cli',
+        attempt: 1,
+        sequence: 0,
+      },
+    ] satisfies import('../../engine/events/types.js').EngineEvent[];
+    expect(groupEventsIntoSections(events)[0]?.items).toEqual(events);
+  });
+
+  it.each(['passed', 'failed'] as const)(
+    'settles a terminal %s Review from its explicit verdict',
+    (review) => {
+      const events = [
+        makeTaskStart({ ts: 1_000 }),
+        makeTaskComplete({ ts: 2_000 }),
+        { type: 'planner_text', ts: 3_000, phase: 'final-review', text: 'Checking the diff.' },
+        { type: 'workflow_complete', ts: 8_000, phase: 'complete', review },
+      ] satisfies import('../../engine/events/types.js').EngineEvent[];
+      const sections = groupEventsIntoSections(events);
+      expect(sections).toHaveLength(2);
+      expect(requireSection(sections, 1, 'settled-stage')).toMatchObject({
+        startIndex: 2,
+        items: events.slice(2),
+        summary: { stage: 'review', ordinal: 1, outcome: review, fixes: [], duration: 5_000 },
+      });
+    },
+  );
+
+  it.each(['runner_call_started', 'turn_interrupted', 'workflow_cancelled', 'workflow_complete'])(
+    'keeps a review live after %s without an explicit verdict',
+    (type) => {
+      const tail = [
+        { type: 'planner_text', phase: 'final-review' as const, ts: 3_000 },
+        { type, phase: 'final-review' as const, ts: 4_000 },
+      ];
+      const sections = groupEventsIntoSections([makeTaskStart(), makeTaskComplete(), ...tail]);
+      expect(requireSection(sections, 1, 'events').items).toEqual(tail);
+    },
+  );
+
+  it('leaves recovery rows after a terminal failed verdict in the live transcript', () => {
+    const recovery = { type: 'recovery_prompted', phase: 'final-review' as const, ts: 9_000 };
+    const sections = groupEventsIntoSections([
+      makeTaskStart(),
+      makeTaskComplete(),
+      { type: 'planner_text', phase: 'final-review' as const, ts: 3_000 },
+      {
+        type: 'workflow_complete',
+        phase: 'final-review' as const,
+        ts: 8_000,
+        review: 'failed' as const,
+      },
+      recovery,
+    ]);
+    expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
+      outcome: 'failed',
+      duration: 5_000,
+    });
+    expect(requireSection(sections, 2, 'events').items).toEqual([recovery]);
+  });
+
   it('returns empty array for empty events', () => {
     expect(groupEventsIntoSections([])).toEqual([]);
   });
@@ -70,6 +148,65 @@ describe('groupEventsIntoSections', () => {
     expect(summary.retries).toBe(0);
     expect(summary.duration).toBe(0);
   });
+
+  it('settles a pre-hook skip without task_started between the briefs that finished around it', () => {
+    const events: EngineEvent[] = [
+      makeTaskStart({ taskId: taskId('T001'), ts: 1_000 }),
+      makeTaskComplete({ taskId: taskId('T001'), ts: 2_000 }),
+      { type: 'warning', ts: 3_000, phase: 'implementing', message: 'pre_task blocked: policy' },
+      makeTaskSkipped({
+        taskId: taskId('T002'),
+        title: 'Skipped brief',
+        reason: 'policy',
+        ts: 3_000,
+      }),
+      makeTaskStart({ taskId: taskId('T003'), index: 2, ts: 4_000 }),
+      makeTaskComplete({ taskId: taskId('T003'), ts: 5_000 }),
+    ];
+    const sections = groupEventsIntoSections(events);
+    expect(sections).toHaveLength(3);
+    expect(requireSection(sections, 0, 'completed-task').summary.id).toBe('T001');
+    expect(requireSection(sections, 1, 'completed-task')).toMatchObject({
+      startIndex: 3,
+      items: [events[3]],
+      summary: { id: 'T002', title: 'Skipped brief', method: 'skipped', reason: 'policy' },
+    });
+    expect(requireSection(sections, 2, 'completed-task').summary.id).toBe('T003');
+  });
+
+  it.each([false, true])(
+    'settles failed Review, correction, and passing Review without intervening briefs, later brief %s',
+    (laterBrief) => {
+      const events: EngineEvent[] = [
+        makeTaskStart({ ts: 1_000 }),
+        makeTaskComplete({ ts: 2_000 }),
+        { type: 'planner_text', ts: 3_000, phase: 'final-review', text: 'A blocking finding.' },
+        { type: 'workflow_complete', ts: 8_000, phase: 'final-review', review: 'failed' },
+        {
+          type: 'user_message',
+          ts: 9_000,
+          phase: 'final-review',
+          text: 'Check the updated fixture.',
+        },
+        { type: 'planner_text', ts: 10_000, phase: 'final-review', text: 'Checking again.' },
+        { type: 'workflow_complete', ts: 14_000, phase: 'complete', review: 'passed' },
+        ...(laterBrief ? [makeTaskStart({ taskId: taskId('T002'), index: 1, ts: 15_000 })] : []),
+      ];
+      const sections = groupEventsIntoSections(events);
+      expect(sections).toHaveLength(laterBrief ? 4 : 3);
+      expect(requireSection(sections, 1, 'settled-stage')).toMatchObject({
+        startIndex: 2,
+        items: events.slice(2, 4),
+        summary: { stage: 'review', ordinal: 1, outcome: 'failed', duration: 5_000 },
+      });
+      expect(requireSection(sections, 2, 'settled-stage')).toMatchObject({
+        startIndex: 4,
+        items: events.slice(4, 7),
+        summary: { stage: 'review', ordinal: 2, outcome: 'passed', duration: 5_000 },
+      });
+      if (laterBrief) expect(requireSection(sections, 3, 'active-task').startIndex).toBe(7);
+    },
+  );
 
   it('creates completed-task section for task-start + task-full-fail pair', () => {
     const events = [
@@ -252,6 +389,7 @@ describe('groupEventsIntoSections', () => {
       makeTaskStart({ taskId: taskId('T001'), index: 0 }),
       makeTaskComplete({ taskId: taskId('T001') }),
       makePlannerText({ text: 'Middle', phase: 'final-review' }),
+      { type: 'workflow_complete', phase: 'complete', review: 'passed' } as const,
       makeTaskStart({ taskId: taskId('T002'), index: 1 }),
       makeTaskComplete({ taskId: taskId('T002') }),
     ];
@@ -393,6 +531,67 @@ describe('groupEventsIntoSections', () => {
       expect(requireSection(sections, 1, 'settled-stage').items).toEqual(events.slice(3, 6));
       expect(requireSection(sections, 2, 'active-task').startIndex).toBe(6);
     });
+
+    it("joins a consult before its brief starts to that brief's section", () => {
+      const consult = row('consult_answered', 'implementing', { taskId: 'T009' });
+      const userMessage = row('user_message', 'implementing', { text: 'Use redis' });
+      const events = [
+        start('T008', 7),
+        complete('T008'),
+        consult,
+        userMessage,
+        start('T009', 8),
+        complete('T009'),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'completed-task']);
+      const t008 = requireSection(sections, 0, 'completed-task');
+      expect(t008.summary.id).toBe('T008');
+      expect(t008.items).toEqual(events.slice(0, 2));
+      const t009 = requireSection(sections, 1, 'completed-task');
+      expect(t009.summary.id).toBe('T009');
+      expect(t009.items).toEqual(events.slice(2));
+      expect(t009.startIndex).toBe(2);
+    });
+
+    it('joins boundary rows to the earlier brief and a pre-start consult to the next brief', () => {
+      const boundary = row('task_tokens', 'implementing', { taskId: 'T008' });
+      const consult = row('consult_answered', 'implementing', { taskId: 'T009' });
+      const userMessage = row('user_message', 'implementing', { text: 'Use redis' });
+      const events = [
+        start('T008', 7),
+        complete('T008'),
+        boundary,
+        consult,
+        userMessage,
+        start('T009', 8),
+        complete('T009'),
+      ];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'completed-task']);
+      const t008 = requireSection(sections, 0, 'completed-task');
+      expect(t008.summary.id).toBe('T008');
+      expect(t008.items).toEqual(events.slice(0, 3));
+      const t009 = requireSection(sections, 1, 'completed-task');
+      expect(t009.summary.id).toBe('T009');
+      expect(t009.items).toEqual(events.slice(3));
+      expect(t009.startIndex).toBe(3);
+    });
+
+    it("joins a pre-start consult to an active brief's section", () => {
+      const consult = row('consult_answered', 'implementing', { taskId: 'T009' });
+      const userMessage = row('user_message', 'implementing', { text: 'Use redis' });
+      const events = [start('T008', 7), complete('T008'), consult, userMessage, start('T009', 8)];
+      const sections = groupEventsIntoSections(events);
+
+      expect(sections.map((section) => section.type)).toEqual(['completed-task', 'active-task']);
+      expect(requireSection(sections, 0, 'completed-task').items).toEqual(events.slice(0, 2));
+      const t009 = requireSection(sections, 1, 'active-task');
+      expect(t009.items).toEqual(events.slice(2));
+      expect(t009.startIndex).toBe(2);
+    });
   });
 
   // sb-RED (owner screenshot, 2026-10-08): under `Completed · 9/9 briefs passed` the transcript painted
@@ -501,6 +700,7 @@ describe('groupEventsIntoSections', () => {
       expect(first.items).toEqual(review1);
       expect(first.summary).toEqual({
         stage: 'review',
+        outcome: 'failed',
         ordinal: 1,
         failedCommands: ['npm test'],
         failedChecks: 1,
@@ -511,6 +711,7 @@ describe('groupEventsIntoSections', () => {
       expect(second.items).toEqual(review2);
       expect(second.summary).toEqual({
         stage: 'review',
+        outcome: 'failed',
         ordinal: 2,
         failedCommands: ['npm run typecheck', 'npm test'],
         failedChecks: 0,
@@ -522,7 +723,7 @@ describe('groupEventsIntoSections', () => {
     it('settles a review that passed between two batches with no fix cycle', () => {
       const passed = [
         suite(20_000, 'npm test', true),
-        at('warning', 'final-review', 21_000, { message: 'ok' }),
+        at('workflow_complete', 'complete', 21_000, { review: 'passed' }),
       ];
       const sections = groupEventsIntoSections([
         start('T001', 0),
@@ -533,6 +734,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toEqual({
         stage: 'review',
+        outcome: 'passed',
         ordinal: 1,
         failedCommands: [],
         failedChecks: 0,
@@ -564,6 +766,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toEqual({
         stage: 'review',
+        outcome: 'failed',
         ordinal: 1,
         failedCommands: ['npm test'],
         failedChecks: 3,
@@ -711,6 +914,7 @@ describe('findLatestRenderableDiffKey', () => {
         items: [makeImplementerGenerate({ status: 'done', diff: '+ settled' })],
         summary: {
           stage: 'review',
+          outcome: 'failed',
           ordinal: 1,
           failedCommands: [],
           failedChecks: 0,

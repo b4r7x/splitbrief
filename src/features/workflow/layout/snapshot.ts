@@ -45,12 +45,10 @@ export interface ConversationScrollSnapshot {
   totalHeight: number;
   viewportHeight: number;
   transcriptViewportHeight: number;
-  stickyLeadingRows: number;
 }
 
 export interface ConversationHoverSnapshot {
   contentRect: ReturnType<typeof getWorkflowContentRect>;
-  stickyLeadingRows: number;
   viewportHeight: number;
 }
 
@@ -205,7 +203,6 @@ export function readConversationHoverSnapshot(): ConversationHoverSnapshot {
   const layout = readConversationLayoutSnapshot();
   return {
     contentRect: layout.contentRect,
-    stickyLeadingRows: layout.viewportSplit.stickyLeadingRows,
     viewportHeight: layout.transcriptViewportHeight,
   };
 }
@@ -250,6 +247,5 @@ export function readConversationScrollSnapshot(): ConversationScrollSnapshot {
     totalHeight: totalDynamicHeight,
     viewportHeight: scrollViewportHeight,
     transcriptViewportHeight: layout.transcriptViewportHeight,
-    stickyLeadingRows: layout.viewportSplit.stickyLeadingRows,
   };
 }

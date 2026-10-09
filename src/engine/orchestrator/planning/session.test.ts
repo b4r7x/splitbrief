@@ -366,19 +366,61 @@ describe('the planning session on the live path', () => {
 
       expect(run.prompts).toHaveLength(2);
       expect(run.prompts[1]).toContain(`- ${code}: `);
-      // The planner reads the check codes; the operator's warning names only the count.
       expect(run.events).toContainEqual(
         expect.objectContaining({
           type: 'warning',
           message: expect.stringMatching(
-            /^The plan failed \d+ checks?; it goes back to the planner once\.$/,
+            new RegExp(`^The plan failed check ${code}: .+; it goes back to the planner once\\.$`),
           ),
+          planCheck: expect.objectContaining({ code, message: expect.any(String) }),
         }),
       );
       expect(run.onApprovalNeeded).toHaveBeenCalledTimes(1);
       expect(run.result.disposition).toBe('ready-for-tasks');
     },
   );
+
+  it('names the check code and reason in the warning on one failing check', async () => {
+    const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
+
+    expect(run.events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message:
+          'The plan failed check uncovered-criterion: Criterion C2 is served by no task; it goes back to the planner once.',
+        planCheck: {
+          code: 'uncovered-criterion',
+          message: 'Criterion C2 is served by no task.',
+        },
+      }),
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('names the first blocking check and the count of more checks when three checks fail', async () => {
+    const threeErrorsPlan = makePlanProposal({
+      criteria: [
+        { id: 'C1', text: 'A name gets a greeting', checkIds: [] },
+        { id: 'C2', text: 'An empty name is refused', checkIds: [] },
+        { id: 'C3', text: 'Special characters handled', checkIds: [] },
+      ],
+      tasks: [makeTaskSpec({ criteria: ['C1', 'C2', 'C3'] })],
+    });
+    const run = await plan({ script: [threeErrorsPlan, makePlanProposal()] });
+
+    expect(run.events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message:
+          'The plan failed check criterion-without-check: Criterion C1 names no check that verifies it (+2 more); it goes back to the planner once.',
+        planCheck: {
+          code: 'criterion-without-check',
+          message: 'Criterion C1 names no check that verifies it.',
+        },
+      }),
+    );
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
 
   it('halts on a second plan that fails its checks and never opens the approval', async () => {
     const run = await plan({ script: [uncoveredPlan, uncoveredPlan] });

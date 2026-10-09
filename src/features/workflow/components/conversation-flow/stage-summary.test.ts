@@ -2,6 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { stageSummaryRow } from './stage-summary.js';
 
 describe('stageSummaryRow', () => {
+  it('keeps a failed terminal verdict red even when no fixes are appended', () => {
+    expect(
+      stageSummaryRow({
+        stage: 'review',
+        ordinal: 2,
+        outcome: 'failed',
+        failedCommands: [],
+        failedChecks: 0,
+        fixes: [],
+        duration: 5_000,
+      }),
+    ).toEqual({
+      id: 'Review 2',
+      title: '',
+      state: { kind: 'stage', failed: true, detail: ['5.0s'] },
+    });
+  });
   it('names the plan by the run it planned and how long it took', () => {
     expect(
       stageSummaryRow({ stage: 'plan', feature: 'Fix the red tests', duration: 8_000 }),
@@ -16,6 +33,7 @@ describe('stageSummaryRow', () => {
     expect(
       stageSummaryRow({
         stage: 'review',
+        outcome: 'failed',
         ordinal: 1,
         failedCommands: ['npm test'],
         failedChecks: 1,
@@ -37,6 +55,7 @@ describe('stageSummaryRow', () => {
     expect(
       stageSummaryRow({
         stage: 'review',
+        outcome: 'failed',
         ordinal: 2,
         failedCommands: ['npm run typecheck', 'npm test'],
         failedChecks: 3,
@@ -54,6 +73,7 @@ describe('stageSummaryRow', () => {
     expect(
       stageSummaryRow({
         stage: 'review',
+        outcome: 'failed',
         ordinal: 1,
         failedCommands: [],
         failedChecks: 0,
@@ -71,6 +91,7 @@ describe('stageSummaryRow', () => {
     expect(
       stageSummaryRow({
         stage: 'review',
+        outcome: 'passed',
         ordinal: 1,
         failedCommands: [],
         failedChecks: 0,

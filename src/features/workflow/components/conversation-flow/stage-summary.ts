@@ -17,7 +17,7 @@ export function stageSummaryRow(summary: StageSummary): {
     };
   }
 
-  if (summary.fixes.length === 0) {
+  if (summary.outcome === 'passed') {
     return {
       id: `Review ${summary.ordinal}`,
       title: 'passed',
@@ -27,14 +27,16 @@ export function stageSummaryRow(summary: StageSummary): {
 
   const failures = [...summary.failedCommands];
   if (summary.failedChecks > 0) failures.push(countNoun(summary.failedChecks, 'check'));
-  const fixes = `fixes ${summary.fixes.join(' ')}`;
+  const detail = failures.length > 0 ? [failures.join(', ')] : [];
+  if (summary.fixes.length > 0) detail.push(`fixes ${summary.fixes.join(' ')}`);
+  detail.push(duration);
   return {
     id: `Review ${summary.ordinal}`,
     title: '',
     state: {
       kind: 'stage',
       failed: true,
-      detail: failures.length > 0 ? [failures.join(', '), fixes, duration] : [fixes, duration],
+      detail,
     },
   };
 }
