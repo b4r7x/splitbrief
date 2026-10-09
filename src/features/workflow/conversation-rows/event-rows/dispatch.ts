@@ -400,7 +400,7 @@ function consultAnsweredText(event: EngineEventOf<'consult_answered'>): string {
       return `${CREW_SEAT_LABELS.plan} asks you about the decisions ${event.taskId} reported`;
     }
   }
-  return `${CREW_SEAT_LABELS.plan}${arrowSep()}${event.taskId}: ${consultAnsweredAction(event)}`;
+  return `${CREW_SEAT_LABELS[event.seat ?? 'plan']}${arrowSep()}${event.taskId}: ${consultAnsweredAction(event)}`;
 }
 
 function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): string {

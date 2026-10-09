@@ -102,7 +102,23 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = await handle.waitForCheckpoint();
-      expect(frame).toContain('Claude Code CLI · answering the consult on T901');
+      expect(frame).toContain('PLAN · Claude Code CLI · answering the consult on T901');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([80, 120])('names the review seat on a fix-task consult at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-build-review-consult');
+    if (scenario === undefined) throw new Error('Missing review consult scenario');
+    const checkpoint = scenario.checkpoints[0];
+    const viewport = scenario.viewports.find((size) => size.cols === cols);
+    if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      expect(frame).toContain('REVIEW · Claude Code CLI · answering the consult on T904');
+      expect(frame).toContain('REVIEW → T904: guidance');
     } finally {
       await handle.unmount();
     }

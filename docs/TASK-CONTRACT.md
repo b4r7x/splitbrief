@@ -3,7 +3,7 @@
 > **Status:** stable (state/config v4).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
-A brief that fails after its one retry, reports `blocked`, or is stale goes to the planner's consult, not to a fixed tier chain. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load; S9 removes those readers.
+A brief that fails after its one retry, reports `blocked`, or is stale goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load; S9 removes those readers.
 
 ## v4 contract boundary
 
@@ -220,7 +220,7 @@ any --[SKIP_TASK]--> skipped
 any --[RESET_TASK]--> pending
 ```
 
-The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents` — and the run's planner-call count in `state.plannerCalls`.
+The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), not on the individual task. The ladder's own counters live per lineage in `state.lineages` — `consults`, `attempts`, `consultAllowance`, `attemptAllowance`, `consultRecords`, `replacedParents` — and the run's consult count in `state.plannerCalls` (the name stays; planner and review-seat consults share it).
 
 ### Lifecycle guarantees
 

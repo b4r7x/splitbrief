@@ -194,12 +194,6 @@ export function typedRunnerCallErrorCode(err: unknown): string | null {
   return typeof callError.code === 'string' ? callError.code : null;
 }
 
-/** The role of the call a failed runner call's error names; a thrown provider error names none. */
-export function runnerCallRole(err: unknown): string | null {
-  const role = errorData(err)?.role;
-  return typeof role === 'string' ? role : null;
-}
-
 /**
  * The runner's own words for a failed call: the typed call error, else the raw
  * detail an API error keeps under its rewritten hint.

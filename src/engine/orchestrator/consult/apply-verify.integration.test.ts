@@ -118,6 +118,7 @@ function harness(opts: {
       callbacks,
       sinks: TEST_SINKS,
       state,
+      seat: 'plan',
       changedFiles: opts.changedFiles ?? [],
       ...(opts.runCommand !== undefined && { runCommand: opts.runCommand }),
       onStateChange: (next) => states.push(next),

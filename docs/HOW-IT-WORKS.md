@@ -134,7 +134,7 @@ The loop iterates tasks in the order of `plan.json`. `checkPlan` (`src/engine/sp
 
 **Dependency check** — if any task in this task's `dependsOn` list has failed or been skipped, the task enters recovery. The user is prompted to decide what to do.
 
-**Input refresh** reads and hashes code in the run workspace. A stale brief gets the planner consult before dispatch. Checkout edits do not enter the workspace between tasks. Apply integrates them at the end. See [Run workspace and Apply](#run-workspace-and-apply).
+**Input refresh** reads and hashes code in the run workspace. A stale brief gets a consult before dispatch. Checkout edits do not enter the workspace between tasks. Apply integrates them at the end. See [Run workspace and Apply](#run-workspace-and-apply).
 
 **Implementer profile routing** — `routeTaskToImplementerProfile()` (`src/engine/orchestrator/context-routing/route.ts`) estimates the task's token requirements and selects the best implementer profile. Each profile's context window resolves through one ladder — `resolveRunnerContextWindow()` (`src/engine/providers/model/context-window.ts`): cached models.dev metadata, then runtime metadata, then the bundled known-model catalog, then the shared default; a CLI tool under `model: auto` resolves to the smallest window its bundled catalog guarantees. If no profile can handle the task (context overflow), the task enters recovery. The routing preview behind brief approval and the review overlay (`buildRoutingPreviewMetadata()`, `src/engine/routing-preview.ts`) is built from the same model cache and detected context length as dispatch-time routing, so the preview and the dispatched route agree by construction. The routing decision is carried into the implementer call: `configForProfile()` (`src/engine/orchestrator/task/routing.ts`) copies the decided `contextLength` into the config handed to the selected implementer when the profile declares none, so the prompt the implementer receives is budgeted against the routed window, not an unbudgeted whole file.
 
@@ -156,7 +156,7 @@ Filesystem snapshots, diffs, and validation remain available; the Git index and 
    The final review runs the reviewer checks. The first reviewer check with new failures stops the list. The reviewer returns the fix work for it.
 
 7. On pass: transitions to `VALIDATION_PASS` and records evidence
-8. On fail: retries once with the error message, then consults the planner for one typed answer — guidance, a rewritten or split brief, a check re-run, or one question for you — and a spent bound halts for recovery
+8. On fail: retries once with the error message, then consults a seat for one typed answer (the planner for a plan task, the review seat for a fix task) — guidance, a rewritten or split brief, a check re-run, or one question for you — and a spent bound halts for recovery
 
 ---
 

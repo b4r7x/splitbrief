@@ -570,11 +570,11 @@ describe('retryAndRecord — recovery stop points', () => {
         taskId: 'T001',
       }),
     );
-    // A failure that names no planner call is the retry's own.
+    // The consult rethrew the crash, so the row names the seat whose consult failed.
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'error',
-        message: 'Retrying T001 failed: hint planner crashed',
+        message: 'Planner consult for T001 failed: hint planner crashed',
       }),
     );
   });
@@ -607,7 +607,6 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     const planner = makePlanner({
       typedCall: scriptedTypedCall([
         error('runner-call-failed', 'Planner escalation call failed', {
-          role: 'escalation',
           status: 'failed',
           error: { code: 'codex-turn-failed', message: words },
         }),

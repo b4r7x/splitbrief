@@ -730,6 +730,7 @@ export function transition(
         taskId: action.taskId,
         revision: action.revision,
         answer: action.answer,
+        seat: action.seat,
       };
       return withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
         ...lineage,
@@ -774,6 +775,7 @@ export function transition(
       }));
 
     case 'COUNT_PLANNER_CALL': {
+      // Both consult seats spend this one allowance; the field keeps its planner name.
       const plannerCalls = plannerCallsOf(state);
       return { ...state, plannerCalls: { ...plannerCalls, used: plannerCalls.used + 1 } };
     }

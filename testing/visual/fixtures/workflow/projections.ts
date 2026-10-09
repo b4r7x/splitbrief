@@ -62,7 +62,7 @@ import {
   diagnosePlannerCallFailure,
   type PlannerCallDiagnosis,
 } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
-import { retryFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
+import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
 import {
   publishError,
   publishRecoveryActionSelected,
@@ -862,6 +862,57 @@ const reviewFixProjection: WorkflowFixtureProjection = {
         action: 'modify',
         tool: 'ollama',
         model: FIXED_RUNNER_MODEL,
+      },
+    ];
+  },
+};
+
+/**
+ * The review's fix task reported `blocked`: the reviewer that wrote it answered with guidance,
+ * the next attempt stopped on the same decision, and the reviewer answers again while the run is
+ * still implementing. The fixture crew has no reviewer block, so the review seat runs on the
+ * PLAN tool.
+ */
+const buildReviewConsultProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-build-review-consult'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  get events(): EngineEvent[] {
+    return [
+      ...reviewFixProjection.events,
+      {
+        type: 'consult_answered',
+        ts: FIXED_TS + 500,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        reason: 'blocked',
+        seat: 'review',
+        action: 'guidance',
+        diagnosis: 'The finding asks for the cache key, not the whole entry.',
+        newTaskIds: null,
+      },
+      {
+        type: 'task_retry',
+        lineageAttempt: 2,
+        attemptAllowance: 8,
+        ts: FIXED_TS + 550,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        attempt: 1,
+        maxRetries: 2,
+        error: 'Blocked: which cache key does the finding name?',
+      },
+      {
+        type: 'runner_call_started',
+        ts: FIXED_TS + 600,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        callId: 'visual-build-review-consult',
+        role: 'review',
+        backendKind: 'cli',
+        runnerName: 'claude',
+        sequence: 0,
       },
     ];
   },
@@ -2286,13 +2337,13 @@ function consultSeatRecoveryIssue(): RecoveryIssue {
     id: 'rec_visual_hint_usage_limit',
     diagnosis: plannerLimitDiagnosis({
       err,
-      label: retryFailureLabel(err, WORKFLOW_FIXTURE_TASK_ID),
+      label: consultFailureLabel('plan', WORKFLOW_FIXTURE_TASK_ID),
       runner: CODEX_PLAN_SEAT,
     }),
     task: HALTED_TASK,
     phase: 'escalating',
     runner: CODEX_PLAN_SEAT,
-    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID),
+    details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID, 'plan'),
     seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
@@ -3795,6 +3846,7 @@ const projections = [
   firstBriefAfterPlanProjection,
   implementationProjection,
   buildConsultProjection,
+  buildReviewConsultProjection,
   implementationRetryProjection,
   reviewFixProjection,
   reviewFixCyclesProjection,

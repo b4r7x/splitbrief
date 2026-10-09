@@ -706,7 +706,7 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults the planner. Only a red reviewer check at review re-runs at the run base, with the same command text.
+**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults a seat: the planner for a plan task, the reviewer for a fix task. Only a red reviewer check at review re-runs at the run base, with the same command text.
 
 A fix check runs once and never re-runs there. It judges the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
 

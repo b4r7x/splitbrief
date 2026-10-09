@@ -1,6 +1,8 @@
+import type { ConsultSeat } from '../../../../core/schemas/consult.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
+import { consultSeatRunner } from '../../escalation/consult-guidance.js';
 import { summarizeText } from './issue.js';
 
 /** `> <package>@<version> <script>`: npm and pnpm print it, then `> <command>`, above a script's output. */
@@ -59,9 +61,9 @@ export function reviewSeatDetails(followsPlan: boolean): string[] {
     : [];
 }
 
-/** A consult halt names the brief whose consult the planner could not answer. */
-export function consultHaltDetails(taskId: TaskId): string[] {
-  return [`The planner could not answer the consult for ${taskId}.`];
+/** A consult halt names the brief whose consult its seat could not answer. */
+export function consultHaltDetails(taskId: TaskId, seat: ConsultSeat): string[] {
+  return [`The ${consultSeatRunner(seat)} could not answer the consult for ${taskId}.`];
 }
 
 export function taskFiles(task: Task): string[] {

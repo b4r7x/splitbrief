@@ -17,8 +17,7 @@ import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
 import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
-import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
-import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
+import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { applyTriage, startFixCycle } from '../triage.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -126,19 +125,11 @@ async function haltProtocolError(args: {
   setTrackedState: (state: WorkflowState) => void;
   error: SeatProtocolError;
 }): Promise<WorkflowState> {
-  const role = args.error.data.seat;
-  const runner =
-    role === 'reviewer' ? resolveReviewerRunner(args.wctx.config).runner : args.wctx.config.planner;
-  const seatSwap = await loadSeatSwapContext({
+  const issue = await seatProtocolHaltIssue({
     projectDir: args.wctx.projectDir,
-    seat: role === 'reviewer' ? 'review' : 'plan',
-    runner,
-  });
-  const issue = buildSeatProtocolErrorRecoveryIssue({
+    config: args.wctx.config,
     error: args.error,
     phase: args.state.phase,
-    ...(seatSwap !== undefined && { seatSwap }),
-    createdAt: nowIso(),
   });
   return raisePendingRecovery(
     { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId, bus: args.wctx.bus },

@@ -374,6 +374,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-build-review-consult',
+      title: 'Workflow · reviewer consult on a fix task',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-review-consult',
+        title: 'The reviewer answers the consult of its fix task',
+        kind: 'implementation',
+        marker: 'answering the consult on T904',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Fix brief with the reviewer consult row' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-narration',
       title: 'Workflow · a Claude Code build call narrating between tool calls',
       surface: screenSurface('workflow'),

@@ -279,12 +279,13 @@ function briefTemplate(): string {
 }
 
 /**
- * The consult contract: the prompt the planner answers, rendered with placeholders, and
+ * The consult contract: the prompt the consulted seat answers, rendered with placeholders, and
  * the error block the one post-consult attempt retries with.
  */
 function consultContract(): string {
   const prompt = buildConsultPrompt({
     workspaceDir: '<the run workspace>',
+    seat: 'plan',
     reason: 'failed',
     plan: PLACEHOLDER_PLAN,
     task: PLACEHOLDER_TASK,
@@ -306,7 +307,7 @@ function consultContract(): string {
     '',
     "The guidance of a `guidance` or `ask-user` answer is appended to the failed attempt's error block, not prefixed to it:",
     '',
-    indent(consultAttemptError(ERROR_PLACEHOLDER, '<the instructions and context>')),
+    indent(consultAttemptError(ERROR_PLACEHOLDER, '<the instructions and context>', 'plan')),
     '',
     `The composed error block is truncated to ${BOUNDS.consultFailingOutputChars} characters.`,
     '',
@@ -338,7 +339,9 @@ function consultTable(): string {
     confirm: 'Decision-confirm only: record the accepted decisions, then run the brief gate.',
   };
   return [
-    `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a planner consult.`,
+    `Attempt → ${DEFAULT_LOCAL_RETRIES} local retry with the exact errors → a consult.`,
+    'A plan task consults the planner. A fix task the reviewer wrote consults the reviewer, also after a rewrite or a split.',
+    'Every decision-confirm stays with the planner.',
     '',
     table(
       ['Action', 'Next step'],
@@ -356,7 +359,7 @@ function consultTable(): string {
     ),
     '',
     `Keep lineage counters across splits and resume: ${BOUNDS.consultsPerLineage} consults and ${BOUNDS.attemptsPerLineage} attempts.`,
-    `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning, including consults and triage.`,
+    `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning, including the consults of both seats and triage.`,
     'Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.',
     'A stale consult spends no run planner decision. A blocked report consults at once.',
     'A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).',
