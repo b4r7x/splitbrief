@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { namesListedIn } from '../../../lib/fs.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { createRunBaseReader } from '../isolation/acquisition.js';
@@ -78,7 +79,7 @@ export async function changedDefinitionRefusal(input: {
   if (definition === null) return null;
   const read = await createRunBaseReader({ ...input.base, workspaceDir: input.workspaceDir });
   if (definition.kind === 'task-file') {
-    for (const file of definition.files) {
+    for (const file of await namesListedIn(input.workspaceDir, definition.files)) {
       const atBase = await read(file);
       if (atBase.kind === 'changed') {
         return `runs ${definition.runner} on ${file}, which this run changed`;

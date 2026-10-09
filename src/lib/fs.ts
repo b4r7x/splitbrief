@@ -14,7 +14,7 @@ import {
   closeSync,
 } from 'node:fs';
 import { randomBytes } from 'node:crypto';
-import { readFile, lstat, writeFile, rename, rm } from 'node:fs/promises';
+import { readdir, readFile, lstat, writeFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { error, matches } from '../utils/error.js';
 import { assertWritablePathConfined } from './path-confinement.js';
@@ -273,6 +273,15 @@ export async function readFileSafeAsync(path: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The names among `names` that `dir` lists exactly. A case-insensitive filesystem also opens
+ * `Makefile` as `makefile`, so a read or hash by name cannot tell which spelling is present.
+ */
+export async function namesListedIn(dir: string, names: readonly string[]): Promise<string[]> {
+  const listed = new Set(await readdir(dir));
+  return names.filter((name) => listed.has(name));
 }
 
 function getWritableGitignorePath(projectDir: string): string {
