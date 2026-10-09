@@ -537,6 +537,7 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |
 | `skills` | Skills picker — toggle available skills for a workflow | `app/overlays/skills.tsx` | dissolved (page only) |
 | `stop` | Inline stop menu above the workflow composer | `app/screens/workflow.tsx` | `features/workflow/stop/` |
+| `review-checks` | Inline reviewer checks card above the workflow composer (`validation.approve_checks: ask`): Run all or Skip all | `app/screens/workflow.tsx` | `features/workflow/review-checks/` |
 
 Each surface's entry page is what `src/app/router.tsx` imports (and `app/layout.tsx` wraps). Internal structure is documented by inspection — there is no catalog per-feature.
 

@@ -125,25 +125,33 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
     event.passed === false &&
     event.newFailures !== undefined &&
     event.preExisting !== undefined
-      ? baseSplit({ newFailures: event.newFailures, preExisting: event.preExisting })
+      ? baseSplit({
+          newFailures: event.newFailures,
+          preExisting: event.preExisting,
+          notVerified: event.notVerified,
+          reason: event.detail === undefined ? undefined : firstLine(event.detail),
+        })
       : null;
   const verdict =
     split?.verdict ??
     (event.moment === 'base'
       ? event.passed === true
         ? 'passes at the run base'
-        : 'fails at the run base too'
+        : 'red at the run base too'
       : event.passed === true
         ? 'passed'
         : 'failed');
   const dur = event.duration === undefined ? '' : `${SOFT_SEP}${formatDuration(event.duration)}`;
-  // The clock follows the verdict, as on every other row; the reason a red is pre-existing follows it.
+  // The clock follows the verdict, as on every other row; the reason a red is pre-existing, or not
+  // verified at the run base, follows it.
   const why = split === null || split.why === null ? '' : `${SOFT_SEP}${split.why}`;
   return `${label}${SOFT_SEP}${verdict}${dur}${why}`;
 }
 
-// A red reviewer or fix check is an error. A red base re-run is an error when new failures remain;
-// all-pre-existing failures and older base rows stay warning. Refused commands also stay warning.
+// A red reviewer or fix check is an error. A red base re-run is an error when new failures remain.
+// All-pre-existing failures, failures not verified at the run base (the red workspace row and its
+// pending input carry them; the reviewer decides) and older base rows stay warning. Refused
+// commands also stay warning.
 export function fullSuiteTone(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
 ): ConversationRowTone {
@@ -154,10 +162,20 @@ export function fullSuiteTone(
     : 'error';
 }
 
-/** The headline of the commands the reviewer chose before a review, or of the checks being off. */
+/**
+ * The headline of the commands the reviewer chose before a review, of the checks being off, or of
+ * a chosen plan none of whose commands ran.
+ */
 export function reviewChecksRow(event: Extract<EngineEvent, { type: 'review_checks' }>): string {
   if (event.status === 'off') {
     return ['End-of-run checks', 'off', 'no reviewer check ran'].join(SOFT_SEP);
+  }
+  if (event.status === 'skipped') {
+    return [
+      'Reviewer checks',
+      `not run ${(event.commands ?? []).map((command) => command.id).join(', ')}`,
+      firstLine(event.reason ?? 'no reason given'),
+    ].join(SOFT_SEP);
   }
   const chosen = event.commands?.length ?? 0;
   const declined = event.declined?.length ?? 0;
@@ -182,7 +200,7 @@ export function reviewChecksDeclinedRows(
 export function reviewChecksTone(
   event: Extract<EngineEvent, { type: 'review_checks' }>,
 ): ConversationRowTone {
-  return event.status === 'off' ? 'warning' : 'textDim';
+  return event.status === 'planned' ? 'textDim' : 'warning';
 }
 
 function firstLine(text: string): string {

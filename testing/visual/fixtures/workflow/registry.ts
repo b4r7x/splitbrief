@@ -219,6 +219,8 @@ const checkpointPredicates = [
   [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
   [checkpointId('review-check-running'), includesAll('Reviewer check V2')],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
+  [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],
+  [checkpointId('review-checks-skipped'), includesAll('not run V1, V2')],
   [checkpointId('review-legacy-suite'), includesAll('Pre-review suite · npm test')],
   // The red check row scrolls out of a 60x18 transcript; the last check that did not run stays.
   [
@@ -234,6 +236,11 @@ const checkpointPredicates = [
   [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],
   [checkpointId('review-base-mixed'), includesAll('2 new,', 'V1 failed')],
   [checkpointId('fix-check-running'), includesAll('Fix check V2 · npm test')],
+  [
+    checkpointId('review-base-not-verified'),
+    // The reason wraps at narrow widths; the last row settles the transcript.
+    includesAll('Base re-run V1', 'npm test · not run'),
+  ],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

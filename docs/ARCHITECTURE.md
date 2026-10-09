@@ -425,7 +425,7 @@ A snapshot of the codebase as it actually stands today, generated for an AI agen
 SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the other executes, and SPLITBRIEF holds the contract, the isolation, the validation, the retry, the consult, and the evidence between them. It composes two roles around a strict workflow:
 
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
-2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the checks that judge the result are SPLITBRIEF's: the plan's checks, and the reviewer checks that the review seat chooses from the project and SPLITBRIEF runs under its command policy.
+2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the checks that judge the result are SPLITBRIEF's: the plan's checks, and the reviewer checks that the review seat chooses from the project and SPLITBRIEF runs under the reviewer command policy.
 
 The repository layers many supporting subsystems on top of that core loop:
 
@@ -690,6 +690,7 @@ src/
 │   ├── create-store.ts            ~45-LOC factory
 │   ├── use-stores.ts              Cross-store React aggregator
 │   ├── approval-prompt/           actions, store
+│   ├── review-checks-prompt/      reviewer checks card (approve_checks: ask)
 │   ├── discovery/model-cache/     Cached models-dev catalog (entry state.ts)
 │   ├── navigation/router.ts       Active screen + overlay
 │   ├── project/                   config, detection, sessions, skills
@@ -896,7 +897,7 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
 **Validation / escalation / git (8):**
-`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` — the chosen `commands`, the `declined` tests and the `reason`), `full_suite` (one event per reviewer check state: its `id`, `command`, `moment` — `pre-review` | `base` | `brief`, where `brief` is a fix brief running the reviewer check it answers again — and `status` `running` | `done` | `not-run` | `refused`, with pass/fail and duration on done, the `newFailures` and `preExisting` counts on a red base done, and a `detail` on not-run and refused; an event without `id` is an older session's full-suite `stage`), `checks_run` (the per-check results of a brief gate, a consult `verify` included, and of the plan and task checks before the final review, once per task that owns them; it fires `post_validation` with `taskId` and `results`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
+`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` | `skipped` — the chosen `commands`, the `declined` tests and the `reason`; `skipped` follows `planned` when `validation.approve_checks: ask` ran none of the commands), `full_suite` (one event per reviewer check state: its `id`, `command`, `moment` — `pre-review` | `base` | `brief`, where `brief` is a fix brief running the reviewer check it answers again — and `status` `running` | `done` | `not-run` | `refused`, with pass/fail and duration on done, the `newFailures`, `preExisting` and `notVerified` counts on a red base done, and a `detail` on not-run and refused or, on a red base done, the reason a failure is not verified at the run base; an event without `id` is an older session's full-suite `stage`), `checks_run` (the per-check results of a brief gate, a consult `verify` included, and of the plan and task checks before the final review, once per task that owns them; it fires `post_validation` with `taskId` and `results`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
 
 **Clarifications / queue / messages (7):**
 `clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`

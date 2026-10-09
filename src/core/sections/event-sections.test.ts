@@ -619,7 +619,7 @@ describe('groupEventsIntoSections', () => {
     });
 
     // Q2 review B3: a red whose every failure also fails at the run base counted as a failed command.
-    it('counts a red whose every failure is pre-existing as no failed command', () => {
+    it('counts a red whose every failure is pre-existing as no failed command, and a red not verified at the run base as one', () => {
       const check = (ts: number, id: string, fields: Record<string, unknown>) =>
         at('full_suite', 'final-review', ts, { id, moment: 'pre-review', ...fields });
       const sections = groupEventsIntoSections([
@@ -644,13 +644,24 @@ describe('groupEventsIntoSections', () => {
           newFailures: 1,
           preExisting: 1,
         }),
-        at('review_fix_started', 'implementing', 22_000, { taskIds: ['T002'] }),
+        check(22_000, 'V3', { status: 'done', command: 'cargo test', passed: false }),
+        check(22_500, 'V3', {
+          status: 'done',
+          command: 'cargo test',
+          moment: 'base',
+          passed: false,
+          newFailures: 0,
+          preExisting: 0,
+          notVerified: 1,
+          detail: 'both runs timed out',
+        }),
+        at('review_fix_started', 'implementing', 23_000, { taskIds: ['T002'] }),
         start('T002', 1),
       ]);
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
         stage: 'review',
-        failedCommands: ['make test'],
+        failedCommands: ['make test', 'cargo test'],
       });
     });
 

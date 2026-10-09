@@ -12,7 +12,7 @@ import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 
 const IMPLEMENTER_SANDBOX = {
-  sandbox: { enabled: true, failIfUnavailable: false, allowUnsandboxedCommands: false },
+  sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false },
   permissions: { blockReadsOutsideWorkingDirectories: true },
 };
 const IMPLEMENTER_SETTINGS = ['--settings', JSON.stringify(IMPLEMENTER_SANDBOX)] as const;

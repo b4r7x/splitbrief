@@ -30,7 +30,11 @@ import {
   finishClaudeStream,
 } from '../../../../src/engine/runners/claude/stream.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
-import type { TieredApprovalRequest } from '../../../../src/core/approval/types.js';
+import type {
+  ReviewChecksApprovalRequest,
+  TieredApprovalRequest,
+} from '../../../../src/core/approval/types.js';
+import { reviewChecksCardLayout } from '../../../../src/features/workflow/review-checks/options.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
 import type { ScenarioId } from '../../contracts/identifiers.js';
 import { scenarioId } from '../../contracts/identifiers.js';
@@ -184,6 +188,8 @@ export interface WorkflowFixtureProjection {
   readonly question?: FixtureQuestion;
   readonly questionPreview?: 'overflow-back';
   readonly approval?: FixtureApproval;
+  /** The reviewer checks card, open on the commands the reviewer chose. */
+  readonly reviewChecksPrompt?: ReviewChecksApprovalRequest;
   readonly review?: FixtureReview;
   /** The artifact the document review panel names, when the projection opens that gate. */
   readonly reviewArtifact?: ReviewArtifact;
@@ -871,7 +877,7 @@ function reviewChecksPlanned(ts: number): EngineEvent {
 
 /**
  * One reviewer check before the final review, its re-run at the run base, or a fix brief running it
- * again; `newFailures` and `preExisting` split a red base re-run.
+ * again; `newFailures`, `preExisting` and `notVerified` split a red base re-run.
  */
 function reviewCheck(
   ts: number,
@@ -885,6 +891,8 @@ function reviewCheck(
         duration?: number;
         newFailures?: number;
         preExisting?: number;
+        notVerified?: number;
+        detail?: string;
       },
   phase: 'final-review' | 'implementing' = 'final-review',
 ): EngineEvent {
@@ -3056,6 +3064,44 @@ const reviewCheckRunningProjection: WorkflowFixtureProjection = {
   ],
 };
 
+// `validation.approve_checks: ask`: the reviewer chose two commands and the card waits for Run all
+// or Skip all before either runs.
+const reviewChecksApproveProjection: WorkflowFixtureProjection = {
+  ...reviewCheckRunningProjection,
+  scenarioId: scenarioId('workflow-review-checks-approve'),
+  events: reviewCheckRunningProjection.events.filter((event) => event.type !== 'full_suite'),
+  reviewChecksPrompt: {
+    scope: 'final',
+    commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
+  },
+};
+
+// The user chose Skip all: one row names every command that did not run and why.
+const reviewChecksSkippedProjection: WorkflowFixtureProjection = {
+  ...reviewCheckRunningProjection,
+  scenarioId: scenarioId('workflow-review-checks-skipped'),
+  events: [
+    ...reviewCheckRunningProjection.events.filter((event) => event.type !== 'full_suite'),
+    {
+      type: 'review_checks',
+      ts: PRE_REVIEW_TEST_STARTED_TS - 25_000,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'skipped',
+      commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
+      reason: 'Skip all was chosen on the card',
+    },
+    {
+      type: 'planner_status',
+      ts: PRE_REVIEW_TEST_STARTED_TS - 20_000,
+      phase: 'final-review',
+      status: 'running',
+      tool: 'claude-code',
+      model: 'fixture-planner-v1',
+    },
+  ],
+};
+
 const LONG_REVIEW_CHECK_TEST = {
   id: 'V2',
   command: 'npx vitest run src/features/workflow/display/build-progress.test.ts',
@@ -3320,6 +3366,56 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
   },
 };
 
+const BASE_NOT_VERIFIED_E2E = {
+  id: 'V1',
+  command: 'npm run e2e',
+  reason: 'The end-to-end suite drives the changed checkout flow.',
+};
+const BASE_NOT_VERIFIED_TEST = {
+  id: 'V2',
+  command: 'npm test',
+  reason: 'The unit tests cover the changed module.',
+};
+
+const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-base-not-verified'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...everyBriefPassed(),
+    {
+      type: 'review_checks',
+      ts: FIXED_TS + 900,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+      commands: [BASE_NOT_VERIFIED_E2E, BASE_NOT_VERIFIED_TEST],
+      declined: [],
+      reason: null,
+    },
+    reviewCheck(FIXED_TS + 1_000, BASE_NOT_VERIFIED_E2E, {
+      status: 'done',
+      passed: false,
+      duration: 600_000,
+    }),
+    reviewCheck(FIXED_TS + 1_200, BASE_NOT_VERIFIED_E2E, {
+      status: 'done',
+      moment: 'base',
+      passed: false,
+      duration: 600_000,
+      newFailures: 0,
+      preExisting: 0,
+      notVerified: 1,
+      detail: 'both runs timed out',
+    }),
+    reviewCheck(FIXED_TS + 1_500, BASE_NOT_VERIFIED_TEST, {
+      status: 'not-run',
+      detail: 'V1 failed',
+    }),
+  ],
+};
+
 const projections = [
   idleProjection,
   planningProjection,
@@ -3386,10 +3482,13 @@ const projections = [
   implementationToolRunningProjection,
   reviewCheckRunningProjection,
   reviewCheckLongCommandProjection,
+  reviewChecksApproveProjection,
+  reviewChecksSkippedProjection,
   reviewLegacySuiteProjection,
   reviewBaseRerunProjection,
   reviewBaseMixedProjection,
   fixCheckRunningProjection,
+  reviewBaseNotVerifiedProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,
 ] as const;
@@ -3413,6 +3512,9 @@ export function getWorkflowFixturePromptRows(
   projection: WorkflowFixtureProjection,
   cols: number,
 ): number {
+  if (projection.reviewChecksPrompt !== undefined) {
+    return reviewChecksCardLayout(projection.reviewChecksPrompt, cols).height;
+  }
   const approvalState: ApprovalPromptState =
     projection.approval === undefined
       ? { status: 'idle' }

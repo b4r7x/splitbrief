@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.1.0 → 4.2.0. MINOR: Principle V expands. The reviewer command policy runs any installed program of any language and refuses only what breaks a named danger rule; plan checks keep the allowlist. A red that the run base re-run cannot compare (a timeout, or no failure keys) is never pre-existing. With `validation.approve_checks: ask` the user runs or skips the reviewer checks, and a skipped check is never a pass.
+- Modified principles: V.
+- Updated sections: Technical Constraints (Project languages), Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They name no check program.
+- Docs and skills: configuration, workflow, features, concepts, task contract, troubleshooting, CLI reference and the canonical skill gates reference updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 4.0.0 → 4.1.0. MINOR: Principle V expands. The reviewer chooses the reviewer checks from the project, and SPLITBRIEF runs them under its command policy. Only reviewer checks re-run at the run base. The stack gates and their typecheck, lint and test settings are retired. A failed plan call halts the review the same way a failed verdict call does. A fix task carries the red check it answers, and its brief gate runs that check again before the next review.
 - Modified principles: V.
 - Updated sections: Technical Constraints (Project languages), Governance.
@@ -305,13 +315,19 @@ runs no check; it runs only the checks a caller names, such as a consult
 due checks before its scheduled review. Before the final review every
 registered check runs, including renders. With `validation.end_checks` on,
 the reviewer MUST choose the reviewer checks from the project itself,
-and SPLITBRIEF MUST run them under its command policy. A task review chooses
+and SPLITBRIEF MUST run them under the reviewer command policy: any installed
+program of any language, refused only for a named danger rule, with a named row
+for each refusal. With `validation.approve_checks: ask` the user MUST choose
+Run all or Skip all first, and a skipped reviewer check MUST NOT count as a
+pass. A task review chooses
 only the reviewer checks that run the related tests. With
 `validation.end_checks` off, no reviewer check runs; plan and task checks
 still run. Only a red reviewer check MUST be re-run at the run base, with
 the same command text. Plan checks, task checks and the Apply re-check
 MUST NOT run at the run base. SPLITBRIEF MUST refuse a reviewer check whose
-package script or task file this run changed. The run MUST stop at the first
+package script, task file or interpreter script this run changed. A red that
+the run base re-run cannot compare (a timeout, or no failure keys) MUST NOT be
+exempt as pre-existing; it reaches the reviewer as not verified at the run base. The run MUST stop at the first
 reviewer check with new failures. A failed plan call (a transport error or a
 protocol error) halts the review the same way a failed verdict call does; it
 is never a pass. Every new red MUST reach the reviewer as a pending input. The same
@@ -426,9 +442,10 @@ Explicit anti-goals that MUST NOT be implemented:
 - **TUI**: Ink 6.x (React 19 for CLI), conversation flow layout with structured event cards
 - **Target**: macOS (primary), Linux (secondary)
 - **Project languages**: TypeScript and JavaScript are the primary stack. The reviewer
-  chooses the reviewer checks from the project itself, but the command policy runs only
-  programs on its allowlist: the package managers, `make` and `just` on a bare
-  `typecheck`, `lint` or `test` target, and the tools of the five registry stacks.
+  chooses the reviewer checks from the project itself, and the reviewer command policy
+  runs any installed program of any language. Plan `cmd` checks keep the allowlist:
+  the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test`
+  target, and the tools of the five registry stacks.
   SPLITBRIEF records every refused command as a named row. A planner `test` check
   also resolves for Python, Go, and Rust
 - **Planner**: Pluggable runner kinds via config: `cli`, `api`, `shell`, and `agent`
@@ -475,6 +492,9 @@ These rules put the reviewer checks at the review that owns their result. Regres
 verify both cadences and failure routing. The configuration, workflow, engine and
 generated skill references carry the same rule. A fix task's brief gate runs the
 red check it answers again before the next review.
+The 4.2.0 amendment expands Principle V. The reviewer command policy has no program
+allowlist, an uncomparable red at the run base is never pre-existing, and the user
+may approve the reviewer checks before they run.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
@@ -491,4 +511,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.1.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-08
+**Version**: 4.2.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-09

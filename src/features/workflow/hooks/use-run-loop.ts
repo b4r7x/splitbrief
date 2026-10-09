@@ -60,6 +60,7 @@ import {
   killAllProcesses,
 } from '../../../lib/process/registry.js';
 import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
+import { closeReviewChecksPrompt } from '../../../stores/review-checks-prompt/prompt.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -181,12 +182,14 @@ export function useRunLoop({
       controller.abort();
       inputMode.resetMode();
       closeApprovalPrompt();
+      closeReviewChecksPrompt();
       stopStore.get().parked?.resolve?.('');
     });
     setCancelHandler(() => {
       controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
       inputMode.resetMode();
       closeApprovalPrompt();
+      closeReviewChecksPrompt();
       stopStore.get().parked?.resolve?.('');
     });
 
@@ -517,6 +520,7 @@ export function useRunLoop({
       controller.abort();
       clearAllHandlers();
       closeApprovalPrompt();
+      closeReviewChecksPrompt();
     };
   }, [prepared, runId]);
 

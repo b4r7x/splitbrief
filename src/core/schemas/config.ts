@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { CommitStrategySchema, ApproveLevelSchema, IsolationStrategySchema } from './enums.js';
+import {
+  CommitStrategySchema,
+  ApproveChecksSchema,
+  ApproveLevelSchema,
+  IsolationStrategySchema,
+} from './enums.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import { ImplementerConfigSchema, ImplementerProfilesConfigSchema } from './implementer-config.js';
 import { ReviewerConfigSchema } from './reviewer-config.js';
@@ -59,6 +64,8 @@ export const ConfigSchema = z.object({
   validation: z.object({
     /** The reviewer chooses and SPLITBRIEF runs the commands that verify the change; on when unset. */
     endChecks: z.boolean().optional(),
+    /** `ask` shows the reviewer's chosen commands for the user to run or skip; `auto` when unset. */
+    approveChecks: ApproveChecksSchema.optional(),
     /** Retired: loads with one notice and changes nothing. */
     typecheck: z.unknown().optional(),
     /** Retired: loads with one notice and changes nothing. */

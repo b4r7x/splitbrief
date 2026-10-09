@@ -179,7 +179,8 @@ export function publishReviewChecksPlan(
   ctx: BusContext,
   opts:
     | { scope: 'final' | 'task'; status: 'off' }
-    | { scope: 'final' | 'task'; status: 'planned'; plan: ReviewChecksPlan },
+    | { scope: 'final' | 'task'; status: 'planned'; plan: ReviewChecksPlan }
+    | { scope: 'final' | 'task'; status: 'skipped'; plan: ReviewChecksPlan; reason: string },
 ): void {
   ctx.bus.publish({
     type: 'review_checks',
@@ -191,6 +192,10 @@ export function publishReviewChecksPlan(
       commands: opts.plan.commands.map((command) => ({ ...command })),
       declined: opts.plan.declined.map((entry) => ({ ...entry })),
       reason: opts.plan.reason,
+    }),
+    ...(opts.status === 'skipped' && {
+      commands: opts.plan.commands.map((command) => ({ ...command })),
+      reason: opts.reason,
     }),
   });
 }
@@ -205,6 +210,7 @@ export function publishReviewCheck(
     passed?: boolean | undefined;
     newFailures?: number | undefined;
     preExisting?: number | undefined;
+    notVerified?: number | undefined;
     detail?: string | undefined;
     duration?: number | undefined;
   },
@@ -220,6 +226,7 @@ export function publishReviewCheck(
     ...(opts.passed !== undefined && { passed: opts.passed }),
     ...(opts.newFailures !== undefined && { newFailures: opts.newFailures }),
     ...(opts.preExisting !== undefined && { preExisting: opts.preExisting }),
+    ...(opts.notVerified !== undefined && { notVerified: opts.notVerified }),
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });

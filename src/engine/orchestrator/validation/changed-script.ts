@@ -1,10 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { namesListedIn } from '../../../lib/fs.js';
+import { isPathConfined } from '../../../lib/path-confinement.js';
+import { isTestFile, STACKS } from '../../../core/validation/stacks/registry.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { createRunBaseReader } from '../isolation/acquisition.js';
 import type { RunBase } from '../isolation/base-tree.js';
+import { interpreterScript } from './reviewer-command-policy.js';
 
 const PACKAGE_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun']);
 const SCRIPT_SUBCOMMANDS = new Set(['run', 'run-script']);
@@ -18,7 +21,8 @@ const TASK_FILES: Readonly<Record<string, readonly string[]>> = {
 
 type Definition =
   | { kind: 'package-script'; runner: string; script: string }
-  | { kind: 'task-file'; runner: string; files: readonly string[] };
+  | { kind: 'task-file'; runner: string; files: readonly string[] }
+  | { kind: 'script-file'; file: string };
 
 function packageScriptOf(cmd: string, args: readonly string[]): Definition | null {
   const [sub, name] = args.filter((arg) => !arg.startsWith('-'));
@@ -39,8 +43,21 @@ function scriptsRun(definition: { runner: string; script: string }): string[] {
   return runner === 'npm' ? [`pre${script}`, script, `post${script}`] : [script];
 }
 
+/**
+ * A test file by a registry stack's test pattern or test directory. Running a test is what a
+ * review is for, so a test this run wrote or changed is not a check definition.
+ */
+function isTestScript(file: string): boolean {
+  const dirs = file.split('/').slice(0, -1);
+  return STACKS.some(
+    (stack) => isTestFile(file, stack) || stack.testDirs.some((dir) => dirs.includes(dir)),
+  );
+}
+
 /** The project file that defines what a command runs, when the command runs a script or a task. */
 function commandDefinition(command: string): Definition | null {
+  const script = interpreterScript(command);
+  if (script !== null) return { kind: 'script-file', file: script };
   const [cmd, ...args] = parseShellCommand(command);
   if (cmd === undefined) return null;
   if (PACKAGE_MANAGERS.has(cmd)) return packageScriptOf(cmd, args);
@@ -67,8 +84,9 @@ async function workspaceText(workspaceDir: string, file: string): Promise<string
 }
 
 /**
- * A command whose script or task file this run changed runs code the run wrote, not the project's
- * own check, so it is refused. Null when the definition is the one the run started from.
+ * A command whose package script, task file or interpreter script this run changed runs code the
+ * run wrote, not the project's own check, so it is refused. Null when the definition is the one
+ * the run started from.
  */
 export async function changedDefinitionRefusal(input: {
   command: string;
@@ -77,7 +95,15 @@ export async function changedDefinitionRefusal(input: {
 }): Promise<string | null> {
   const definition = commandDefinition(input.command);
   if (definition === null) return null;
+  if (definition.kind === 'script-file' && !isPathConfined(definition.file, input.workspaceDir)) {
+    return `runs ${definition.file}, which is outside the run workspace`;
+  }
+  if (definition.kind === 'script-file' && isTestScript(definition.file)) return null;
   const read = await createRunBaseReader({ ...input.base, workspaceDir: input.workspaceDir });
+  if (definition.kind === 'script-file') {
+    const atBase = await read(definition.file);
+    return atBase.kind === 'changed' ? `runs ${definition.file}, which this run changed` : null;
+  }
   if (definition.kind === 'task-file') {
     for (const file of await namesListedIn(input.workspaceDir, definition.files)) {
       const atBase = await read(file);

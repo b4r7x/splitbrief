@@ -173,6 +173,28 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('names every reviewer check a skipped plan did not run, and why, on one line', () => {
+    const lines = collect([
+      {
+        type: 'review_checks',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        status: 'skipped',
+        commands: [
+          { id: 'V1', command: 'npm run typecheck', reason: 'types changed' },
+          { id: 'V2', command: 'npm test', reason: 'tests cover it' },
+        ],
+        reason: 'validation.approve_checks is ask and this run has no screen to ask on',
+      },
+    ]);
+
+    expect(lines).toEqual([
+      'phase: final-review',
+      'reviewer checks: not run V1, V2 (validation.approve_checks is ask and this run has no screen to ask on)',
+    ]);
+  });
+
   it('writes one line per declined test and per finished, refused or not-run reviewer check', () => {
     const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
       type: 'full_suite',
@@ -215,6 +237,18 @@ describe('createStdoutTextSink', () => {
       check({ id: 'V5', command: 'pytest', passed: false, duration: 4 }),
       check({ id: 'V5', command: 'pytest', moment: 'base', passed: true, duration: 4 }),
       check({ id: 'V6', moment: 'base', status: 'refused', detail: 'names no program' }),
+      check({ id: 'V7', command: 'npm run e2e', passed: false, duration: 5 }),
+      check({
+        id: 'V7',
+        command: 'npm run e2e',
+        moment: 'base',
+        passed: false,
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+        detail: 'both runs timed out',
+        duration: 5,
+      }),
     ]);
 
     expect(lines).toEqual([
@@ -229,6 +263,8 @@ describe('createStdoutTextSink', () => {
       'reviewer check V5: failed (pytest)',
       'base re-run V5: passes',
       'base re-run V6: refused (names no program)',
+      'reviewer check V7: failed (npm run e2e)',
+      'base re-run V7: 1 not verified at the run base · both runs timed out',
     ]);
   });
 
@@ -253,6 +289,13 @@ describe('createStdoutTextSink', () => {
       check({ moment: 'brief', duration: 3 }),
       check({ newFailures: 0, preExisting: 1 }),
       check({ moment: 'brief', status: 'refused', detail: 'names no program' }),
+      check({
+        id: 'V3',
+        newFailures: 1,
+        preExisting: 1,
+        notVerified: 1,
+        detail: 'the run base re-run timed out',
+      }),
     ]);
 
     expect(lines).toEqual([
@@ -262,6 +305,7 @@ describe('createStdoutTextSink', () => {
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',
+      'base re-run V3: 1 new, 1 pre-existing, 1 not verified at the run base · the run base re-run timed out',
     ]);
   });
 

@@ -42,7 +42,9 @@ The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<i
 
 ## 2. Launch and gates
 
-A brief's `test` check runs `npm test -- <file>`, which selects only the `unit` project. Name an integration test as a `cmd` check: `npm run test:integration -- <file>`. Before each review the reviewer chooses the reviewer checks, for example `npm test`, `npm run test:integration` or `npm run test:e2e`, and SPLITBRIEF runs them. `npm run <script>` needs an approved plan. The full gate set runs in `release-check` and CI.
+A brief's `test` check runs `npm test -- <file>`, which selects only the `unit` project. Name an integration test as a `cmd` check: `npm run test:integration -- <file>`. In a plan `cmd` check, `npm run <script>` needs an approved plan.
+
+Before each review, the reviewer chooses its checks, for example `npm test`, `npm run test:integration` or `npm run test:e2e`. SPLITBRIEF runs reviewer package scripts without plan approval. Every reviewer `npm run` gets the changed-definition check. The full gate set runs in `release-check` and CI.
 
 Readability does not depend on tmux settings. SPLITBRIEF maps every token to a readable value at 256 colours.
 Add `set -as terminal-features ',xterm-ghostty:RGB'` only for exact truecolor values inside tmux. Use the outer `$TERM` instead of `xterm-ghostty` when needed.

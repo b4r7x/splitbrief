@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { resolveApproveLevel, resolveEffortLevel, resolveEndChecks } from './resolve.js';
+import {
+  resolveApproveChecks,
+  resolveApproveLevel,
+  resolveEffortLevel,
+  resolveEndChecks,
+} from './resolve.js';
 import type { Config } from '../../schemas/config.js';
 import type { EffortLevel } from '../../schemas/enums.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -29,6 +34,18 @@ describe('resolveEndChecks', () => {
   it('takes the config value', () => {
     expect(resolveEndChecks(makeConfig({ validation: { endChecks: false } }))).toBe(false);
     expect(resolveEndChecks(makeConfig({ validation: { endChecks: true } }))).toBe(true);
+  });
+});
+
+describe('resolveApproveChecks', () => {
+  it('runs the reviewer checks without asking when the config names no value', () => {
+    expect(resolveApproveChecks(makeConfig())).toBe('auto');
+  });
+  it('takes the config value', () => {
+    expect(resolveApproveChecks(makeConfig({ validation: { approveChecks: 'ask' } }))).toBe('ask');
+    expect(resolveApproveChecks(makeConfig({ validation: { approveChecks: 'auto' } }))).toBe(
+      'auto',
+    );
   });
 });
 

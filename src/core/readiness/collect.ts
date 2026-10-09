@@ -21,6 +21,7 @@ import { toErrorMessage } from '../../utils/format-errors.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { buildReadinessReport } from './checks/build.js';
 import { buildIsolationChecks } from './checks/isolation.js';
+import { buildClaudeSandboxChecks, isOnSeatPath } from './checks/claude-sandbox.js';
 import {
   aggregateReadinessStatus,
   countReadinessChecks,
@@ -174,6 +175,15 @@ export async function collectReadiness(
   }
   if (isolationChecks.length > 0) {
     mergeChecks(report, { id: 'repo', title: 'Repository' }, isolationChecks);
+  }
+  if (loaded.config) {
+    const sandboxChecks = buildClaudeSandboxChecks(loaded.config, {
+      platform: process.platform,
+      isOnPath: (program) => isOnSeatPath(program, options.projectDir),
+    });
+    if (sandboxChecks.length > 0) {
+      mergeChecks(report, { id: 'runners', title: 'Runners' }, sandboxChecks);
+    }
   }
   if (loaded.config && options.interaction && options.probeRunnerAdmission) {
     try {

@@ -614,10 +614,13 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     error: z.string().optional(),
     duration: z.number().optional(),
   }),
-  /** The commands the reviewer chose before a review, the tests it declined, or the checks being off. */
+  /**
+   * The commands the reviewer chose before a review, the tests it declined, or the checks being off.
+   * `skipped`: none of the chosen commands ran, and `reason` says why.
+   */
   phaseEvent('review_checks').extend({
     scope: z.enum(['final', 'task']),
-    status: z.enum(['planned', 'off']),
+    status: z.enum(['planned', 'off', 'skipped']),
     commands: z
       .array(z.object({ id: z.string(), command: z.string(), reason: z.string() }))
       .optional(),
@@ -636,10 +639,17 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     command: z.string(),
     moment: z.enum(['pre-review', 'base', 'brief']),
     passed: z.boolean().optional(),
-    /** On base done events, the red run's failure keys that are new or also red at the run base. */
+    /**
+     * On base done events, the red run's failure keys that are new, also red at the run base, or
+     * red at the run base too without proof that it is the same failure (`notVerified`).
+     */
     newFailures: z.number().int().nonnegative().optional(),
     preExisting: z.number().int().nonnegative().optional(),
-    /** Why the command did not run or was refused. */
+    notVerified: z.number().int().nonnegative().optional(),
+    /**
+     * Why the command did not run or was refused; on a red base re-run, why SPLITBRIEF could not
+     * verify that it shows the same failure as the run workspace.
+     */
     detail: z.string().optional(),
     duration: z.number().optional(),
   }),

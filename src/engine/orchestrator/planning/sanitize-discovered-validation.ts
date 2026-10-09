@@ -21,14 +21,12 @@ const ALLOWED_COMMANDS = new Set([
   ...STACKS.flatMap((stack) => stack.allowedCommands),
 ]);
 
-/** The programs a check command may start; every other program is refused. */
-export const CHECK_PROGRAMS: readonly string[] = [...ALLOWED_COMMANDS].sort();
-
 const SHELL_OPERATORS = /[|&;`$(){}]/;
 
 const INTERPRETERS = new Set(['node', 'python', 'python3']);
 
-const CODE_LOAD_FLAGS = new Set([
+/** The interpreter options that load code other than a script file. */
+export const CODE_LOAD_FLAGS: ReadonlySet<string> = new Set([
   '-e',
   '--eval',
   '-r',

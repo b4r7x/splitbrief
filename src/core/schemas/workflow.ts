@@ -191,6 +191,8 @@ export const ReviewChecksRecordSchema = z.object({
   cycle: z.number().int(),
   plan: ReviewChecksPlanObjectSchema,
   at: z.string(),
+  /** None of the chosen commands ran: the user skipped them, or the run had no screen to ask on. */
+  skipped: z.object({ reason: z.string() }).optional(),
 });
 export type ReviewChecksRecord = z.infer<typeof ReviewChecksRecordSchema>;
 

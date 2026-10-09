@@ -75,13 +75,13 @@ The `*_API_KEY` passthrough on provider-dependent channels is deliberate and is 
 
 ## Child environment
 
-One allowlist module builds the environment of every runner, readiness probe and catalog probe that SPLITBRIEF starts: `src/lib/process/spawn/child-env.ts`. Such a child gets no variable that the allowlist does not name. Only three kinds of child keep the full SPLITBRIEF environment: a workflow hook (last row), the `git` commands SPLITBRIEF runs itself, and the validation gates and probes that `runCommand` starts.
+`src/lib/process/spawn/child-env.ts` builds the environments for seats, probes and checks. Seats, readiness probes and catalog probes use `createSanitizedChildEnv`, which keeps only named variables. Commands SPLITBRIEF runs itself use `createCommandEnv`, which inherits defined variables and drops credential names, selectors and helpers. Workflow hooks and the `git` commands SPLITBRIEF runs itself keep the full SPLITBRIEF environment.
 
 | Child | Builder | What the child gets |
 |---|---|---|
 | Planner, reviewer and implementer of kind `cli`, `shell` or `agent`; readiness probe; catalog probe | `createRunnerSandboxEnv` / `createSandboxEnv` (`src/engine/runners/sandbox-env.ts`), over `createSanitizedChildEnv` | The runtime keys (`LANG`, `LC_*`, `TZ`, `TERM`, `COLORTERM`, `TERM_PROGRAM*`, `NO_COLOR`, `FORCE_COLOR`, `COLUMNS`, `LINES`), a `PATH` with the project's own directories removed, the staged `HOME`, `XDG_*` and caches, a private `TMPDIR` outside the project (`<system tmp>/sb-<hash>`), and the credential variables of the runner (next table). |
 | `customCommands` runner | `resolveCustomRunnerEnvironment` (`src/engine/runners/redaction.ts`) | The runtime keys and the names in the command's `env` list. |
-| Validation gate, the readiness probe of a gate, the `--version` availability probe | `runCommand` (`src/lib/process/spawn/run-command.ts`), no builder | The full SPLITBRIEF environment. |
+| Plan check, reviewer check, base re-run, the checks of a fix task, `render` check, the formatter, the `--version` availability probe | `runCommand` (`src/lib/process/spawn/run-command.ts`) → `createCommandEnv` | All defined environment variables except credential names, selectors and helpers. Project settings such as `NODE_OPTIONS`, `DATABASE_URL`, `DISPLAY`, `XDG_RUNTIME_DIR` and `RAILS_ENV` stay. The real `HOME` and `USERPROFILE` stay; `PATH` keeps only absolute entries. Provider API keys, cloud credentials, tokens, AWS profiles, credential files, SSH sockets, Git helpers and npm userconfig selectors stay out. See [CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach). |
 | `api` runner | none: the HTTP call runs in process | nothing |
 | Agent-skill recipe spawn (`skills/*/references/tool-recipes.md`) | `nohup sh -c` in the shell of the agent session, no builder | The full environment of the agent session that runs the skill. |
 | Conformance harness legs (`scripts/cli-conformance.ts` `raw`, `production`, `cwd`) | `sandboxEnvironment` → `createSandboxEnv`; `cwd` uses `createRunnerSandboxEnv` | The runner profile, with the contract's declared credential variables. |

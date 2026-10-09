@@ -648,7 +648,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":false,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
+      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
     ]);
   });
 

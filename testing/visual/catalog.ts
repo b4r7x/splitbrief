@@ -1724,6 +1724,37 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-checks-approve',
+      title: 'Workflow · the reviewer checks wait for Run all or Skip all',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-checks-approve',
+        title: 'One card names each chosen command and its reason above the composer',
+        kind: 'review',
+        marker: 'Skip all',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-checks-skipped',
+      title: 'Workflow · the user skipped the reviewer checks',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-checks-skipped',
+        title: 'One row names every command that did not run and why',
+        kind: 'review',
+        marker: 'not run V1, V2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-legacy-suite',
       title: 'Workflow · a session from before reviewer checks replays its full-suite stages',
       surface: screenSurface('workflow'),
@@ -1780,6 +1811,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'The base row counts the new and the pre-existing failures',
         kind: 'review',
         marker: 'pre-existing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Reviewer checks transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-base-not-verified',
+      title: 'Workflow · a red base re-run not verified at the run base',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-base-not-verified',
+        title: 'The base re-run row counts the failure not verified at the run base and says why',
+        kind: 'review',
+        marker: 'Base re-run V1',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1961,6 +2008,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-settings-end-checks-off',
         title: 'Overlay · settings · End-of-run checks turned off',
         marker: 'End-of-run checks',
+      },
+      {
+        id: 'overlay-settings-approve-checks-ask',
+        title: 'Overlay · settings · the reviewer checks wait for your Run all or Skip all',
+        marker: 'Approve checks',
       },
       {
         id: 'overlay-settings-isolation-checkout',

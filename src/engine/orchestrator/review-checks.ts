@@ -1,7 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
-import { resolveEndChecks } from '../../core/config/runtime/resolve.js';
+import { resolveApproveChecks, resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
@@ -16,16 +16,17 @@ import {
   type WorkflowState,
 } from '../../core/schemas/workflow.js';
 import { namesListedIn } from '../../lib/fs.js';
+import { throwIfAborted } from '../../utils/abort.js';
 import { nowIso } from '../../utils/format-time.js';
 import type { EventBus } from '../events/types.js';
 import type { Reviewer } from '../reviewers/types.js';
+import type { OrchestratorCallbacks } from './types.js';
 import type { SeatProtocolError } from '../runners/typed-output.js';
 import { workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { buildReviewChecksPrompt, type ProjectFileText } from '../spec/prompts/review-checks.js';
 import { recordCheckRuns } from './evidence/record-checks.js';
 import { publishReviewCheck, publishReviewChecksPlan } from './events.js';
 import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.js';
-import { CHECK_PROGRAMS } from './planning/sanitize-discovered-validation.js';
 import { runReviewerCall } from './review-call.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromOutput, lastTaskChangingFile } from './task/file-owner.js';
@@ -88,6 +89,8 @@ export type ReviewChecksOptions = {
   /** The files the review covers. */
   changedFiles: readonly string[];
   signal?: AbortSignal | undefined;
+  /** Asks the user to run or skip the chosen commands; a run without a screen has none. */
+  onApproval?: OrchestratorCallbacks['onReviewChecksApproval'];
 };
 
 export type ReviewChecksOutcome =
@@ -125,31 +128,55 @@ async function readProjectFiles(workspaceDir: string): Promise<ProjectFileText[]
   return files;
 }
 
-/** The failure keys of a red command: its failing tests by name, else its diagnostic lines. */
-function failureKeys(run: CheckRunResult, dir: string): string[] {
-  if (run.timedOut === true) return ['timed out'];
+/**
+ * The keys of a red command. Its failing tests by name, else its diagnostic lines, identify the
+ * failure; a timeout or a red with neither has one placeholder key, and `placeholder` says how it
+ * failed, since that key names no failure. Output lines that name no file, such as an `npm`
+ * script banner or a `make` error summary, are not diagnostic lines.
+ */
+type FailureKeys = { keys: string[]; placeholder?: string | undefined };
+
+function failureKeys(run: CheckRunResult, dir: string): FailureKeys {
+  if (run.timedOut === true) return { keys: ['timed out'], placeholder: 'timed out' };
   const output = run.output.replaceAll(`${dir}/`, '');
   const tests = parseFailingTests(output);
-  const keys = tests.length > 0 ? tests.map(failingTestKey) : extractFailureKeys(output);
-  if (keys.length > 0) return [...new Set(keys)];
+  if (tests.length > 0) return { keys: [...new Set(tests.map(failingTestKey))] };
+  const extracted = extractFailureKeys(output);
+  if (extracted.diagnostics) return { keys: extracted.keys };
+  if (run.exitCode === undefined) {
+    return { keys: ['failed without diagnostics'], placeholder: 'failed without diagnostics' };
+  }
+  const key = `exited with code ${run.exitCode}`;
+  return { keys: [key], placeholder: `${key} without diagnostics` };
+}
+
+/** Why two reds whose keys include a placeholder do not show the same failure. */
+function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
+  if (workspace.placeholder !== undefined && workspace.placeholder === base.placeholder) {
+    return `both runs ${workspace.placeholder}`;
+  }
   return [
-    run.exitCode === undefined ? 'failed without diagnostics' : `exited with code ${run.exitCode}`,
-  ];
+    workspace.placeholder === undefined ? null : `the workspace run ${workspace.placeholder}`,
+    base.placeholder === undefined ? null : `the run base re-run ${base.placeholder}`,
+  ]
+    .filter((side) => side !== null)
+    .join(' and ');
 }
 
 /**
  * The keys of a red command that the same command text also shows at the run base, or why the
- * re-run at the run base could not tell.
+ * re-run at the run base could not tell. A red base re-run proves a pre-existing failure only when
+ * both runs name their failures: with a placeholder on either side nothing is pre-existing, and
+ * `notVerified` says why.
  */
 async function preExistingKeys(input: {
   id: string;
   command: string;
-  run: CheckRunResult;
-  keys: readonly string[];
+  failure: FailureKeys;
   base: RunBase;
   checkOptions: RunChecksOptions;
   notices: { bus: EventBus; phase: WorkflowState['phase'] };
-}): Promise<{ keys: string[]; unavailable?: string }> {
+}): Promise<{ keys: string[]; unavailable?: string; notVerified?: string }> {
   const startedAt = Date.now();
   publishReviewCheck(input.notices, {
     status: 'running',
@@ -179,26 +206,29 @@ async function preExistingKeys(input: {
       unavailable: `${atBase?.run.status === 'refused' ? 'refused' : 'not run'}: ${atBase?.run.output ?? `no check ${input.id}`}`,
     };
   }
-  let keys: string[] = [];
-  if (atBase.run.status === 'fail') {
-    if (input.run.timedOut === true || atBase.run.timedOut === true) {
-      if (input.run.timedOut === true && atBase.run.timedOut === true) keys = [...input.keys];
-    } else {
-      const known = new Set(atBase.keys);
-      keys = input.keys.filter((key) => known.has(key));
-    }
-  }
+  const reason =
+    atBase.run.status === 'fail' &&
+    (input.failure.placeholder !== undefined || atBase.keys.placeholder !== undefined)
+      ? notVerifiedReason(input.failure, atBase.keys)
+      : undefined;
+  const known = new Set(atBase.keys.keys);
+  const keys =
+    atBase.run.status === 'fail' && reason === undefined
+      ? input.failure.keys.filter((key) => known.has(key))
+      : [];
   publishReviewCheck(input.notices, {
     status: 'done',
     id: input.id,
     command: input.command,
     moment: 'base',
     passed: atBase.run.status === 'pass',
+    detail: reason,
     duration: Date.now() - startedAt,
-    newFailures: input.keys.length - keys.length,
+    newFailures: reason === undefined ? input.failure.keys.length - keys.length : 0,
     preExisting: keys.length,
+    notVerified: reason === undefined ? undefined : input.failure.keys.length,
   });
-  return { keys };
+  return reason === undefined ? { keys } : { keys, notVerified: reason };
 }
 
 function noRunBase(
@@ -218,32 +248,38 @@ function noRunBase(
 
 /**
  * The failures of a red reviewer check split by the run base: `preExisting` are the keys the same
- * command text also shows there, `fresh` the rest.
+ * command text also shows there, `fresh` the rest. `notVerified` says why a red that is also red at
+ * the run base is not shown to be the same failure; its keys stay fresh.
  */
 async function splitAtRunBase(input: {
   run: CheckRunResult;
   command: string;
   checkOptions: RunChecksOptions;
-}): Promise<{ fresh: string[]; preExisting: string[]; unavailable?: string | undefined }> {
+}): Promise<{
+  fresh: string[];
+  preExisting: string[];
+  unavailable?: string | undefined;
+  notVerified?: string | undefined;
+}> {
   const { run, command, checkOptions } = input;
   const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
-  const keys = failureKeys(run, checkOptions.projectDir);
+  const failure = failureKeys(run, checkOptions.projectDir);
   const atBase =
     checkOptions.base === undefined
       ? noRunBase(notices, { id: run.checkId, command })
       : await preExistingKeys({
           id: run.checkId,
           command,
-          run,
-          keys,
+          failure,
           base: checkOptions.base,
           checkOptions,
           notices,
         });
   return {
-    fresh: keys.filter((key) => !atBase.keys.includes(key)),
+    fresh: failure.keys.filter((key) => !atBase.keys.includes(key)),
     preExisting: atBase.keys,
     unavailable: atBase.unavailable,
+    notVerified: 'notVerified' in atBase ? atBase.notVerified : undefined,
   };
 }
 
@@ -252,7 +288,12 @@ export async function runReviewCheck(input: {
   check: { id: string; command: string };
   moment: 'pre-review' | 'brief';
   checkOptions: RunChecksOptions;
-}): Promise<{ run: CheckRunResult; fresh: string[]; unavailable?: string | undefined }> {
+}): Promise<{
+  run: CheckRunResult;
+  fresh: string[];
+  unavailable?: string | undefined;
+  notVerified?: string | undefined;
+}> {
   const { moment, checkOptions } = input;
   const { id, command } = input.check;
   const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
@@ -283,7 +324,7 @@ export async function runReviewCheck(input: {
     duration: Date.now() - startedAt,
   });
   if (run.status === 'pass') return { run, fresh: [] };
-  const { fresh, preExisting, unavailable } = await splitAtRunBase({
+  const { fresh, preExisting, unavailable, notVerified } = await splitAtRunBase({
     run,
     command,
     checkOptions,
@@ -292,7 +333,58 @@ export async function runReviewCheck(input: {
     run: preExisting.length > 0 ? { ...run, preExisting } : run,
     fresh,
     unavailable,
+    notVerified,
   };
+}
+
+/** Why none of the chosen commands ran, as the row, the record and the verdict call name it. */
+export const REVIEW_CHECKS_SKIP_REASON = {
+  user: 'Skip all was chosen on the card',
+  noAnswer: 'the reviewer checks card closed without an answer',
+  noScreen: 'validation.approve_checks is ask and this run has no screen to ask on',
+} as const;
+
+/**
+ * With `validation.approve_checks: ask` the user sees the chosen commands before any of them runs.
+ * The reason none runs, or undefined when they run.
+ */
+async function skipReason(
+  opts: ReviewChecksOptions,
+  plan: ReviewChecksPlan,
+): Promise<string | undefined> {
+  if (resolveApproveChecks(opts.config) !== 'ask' || plan.commands.length === 0) return undefined;
+  if (opts.onApproval === undefined) return REVIEW_CHECKS_SKIP_REASON.noScreen;
+  const answer = await opts.onApproval({ scope: opts.scope, commands: plan.commands });
+  throwIfAborted(opts.signal);
+  if (answer === 'run') return undefined;
+  return answer === 'skip' ? REVIEW_CHECKS_SKIP_REASON.user : REVIEW_CHECKS_SKIP_REASON.noAnswer;
+}
+
+function skippedSection(plan: ReviewChecksPlan, reason: string): string {
+  return [
+    '## Reviewer checks',
+    '',
+    `SPLITBRIEF ran none of the commands you chose before this review because ${reason}. No command below is a pass. Mark a criterion that only these commands would verify unverified, and judge the rest only from the recorded evidence in the Checks Log.`,
+    '',
+    ...plan.commands.map((chosen) => `- ${chosen.id} \`${chosen.command}\`: not run, ${reason}`),
+    ...planLines(plan),
+  ].join('\n');
+}
+
+/** A repeated review re-runs its commands: their earlier inputs give way to this run's. */
+function replaceReviewCheckInputs(
+  ref: { projectDir: string; sessionId: string },
+  state: WorkflowState,
+  inputs: readonly TriageInput[],
+): WorkflowState {
+  const pending = state.pendingTriage;
+  const kept = (pending?.inputs ?? []).filter((input) => !REVIEW_CHECK_INPUT_ID.test(input.id));
+  if (inputs.length === 0 && kept.length === (pending?.inputs.length ?? 0)) return state;
+  return transitionAndSave(ref, state, {
+    type: 'QUEUE_TRIAGE',
+    inputs: [...kept, ...inputs],
+    ...(pending?.question !== undefined && { question: pending.question }),
+  });
 }
 
 function planLines(plan: ReviewChecksPlan): string[] {
@@ -328,8 +420,6 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     scope: opts.scope,
     taskIds: opts.taskIds,
     changedFiles: opts.changedFiles,
-    npmScriptsApproved,
-    programs: CHECK_PROGRAMS,
     ...(readsOwnFiles
       ? { workspaceInstructions: workspaceReadInstructions(opts.workspaceDir) }
       : { projectFiles: await readProjectFiles(opts.workspaceDir) }),
@@ -358,6 +448,21 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   };
   state = transitionAndSave(ref, state, { type: 'RECORD_REVIEW_CHECKS', record });
   publishReviewChecksPlan(notices, { scope: opts.scope, status: 'planned', plan });
+  const skipped = await skipReason(opts, plan);
+  if (skipped !== undefined) {
+    state = transitionAndSave(ref, state, {
+      type: 'RECORD_REVIEW_CHECKS',
+      record: { ...record, skipped: { reason: skipped } },
+    });
+    publishReviewChecksPlan(notices, {
+      scope: opts.scope,
+      status: 'skipped',
+      plan,
+      reason: skipped,
+    });
+    state = replaceReviewCheckInputs(ref, state, []);
+    return { kind: 'ran', state, section: skippedSection(plan, skipped) };
+  }
 
   const base = runBaseOf(ref, state);
   const checkOptions: RunChecksOptions = {
@@ -393,7 +498,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       lines.push(`- ${label}: not run, ${stoppedBy} failed`);
       continue;
     }
-    const { run, fresh, unavailable } = await runReviewCheck({
+    const { run, fresh, unavailable, notVerified } = await runReviewCheck({
       check: chosen,
       moment: 'pre-review',
       checkOptions,
@@ -409,11 +514,13 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     }
     const preExisting = run.preExisting ?? [];
     lines.push(
-      `- ${label}: failed, ${fresh.length} new failure(s)${fresh.length > 0 ? `: ${fresh.join('; ')}` : ''}${
-        preExisting.length > 0
-          ? `; ${preExisting.length} pre-existing (also red at the run base): ${preExisting.join('; ')}`
-          : ''
-      }${unavailable === undefined ? '' : `; base re-run ${unavailable}`}`,
+      notVerified === undefined
+        ? `- ${label}: failed, ${fresh.length} new failure(s)${fresh.length > 0 ? `: ${fresh.join('; ')}` : ''}${
+            preExisting.length > 0
+              ? `; ${preExisting.length} pre-existing (also red at the run base): ${preExisting.join('; ')}`
+              : ''
+          }${unavailable === undefined ? '' : `; base re-run ${unavailable}`}`
+        : `- ${label}: failed (${fresh.join('; ')}), not verified at the run base (${notVerified}); the reviewer decides`,
     );
     if (fresh.length === 0) continue;
     stoppedBy = chosen.id;
@@ -425,9 +532,11 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         kind: 'defect',
         source: 'check',
         file,
-        text: `Reviewer check ${chosen.id} (${chosen.command}) failed with new failures: ${fresh.join('; ')}. ${
-          owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
-        }`,
+        text: `Reviewer check ${chosen.id} (${chosen.command}) failed ${
+          notVerified === undefined
+            ? `with new failures: ${fresh.join('; ')}.`
+            : `(${fresh.join('; ')}) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
+        } ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
         checkIds: [chosen.id],
         command: chosen.command,
         output: run.output,
@@ -449,20 +558,11 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       runs,
     });
   }
-  // A repeated review re-runs its commands: their earlier inputs give way to this run's.
-  const pending = state.pendingTriage;
-  const kept = (pending?.inputs ?? []).filter((input) => !REVIEW_CHECK_INPUT_ID.test(input.id));
-  if (inputs.length > 0 || kept.length !== (pending?.inputs.length ?? 0)) {
-    state = transitionAndSave(ref, state, {
-      type: 'QUEUE_TRIAGE',
-      inputs: [...kept, ...inputs],
-      ...(pending?.question !== undefined && { question: pending.question }),
-    });
-  }
+  state = replaceReviewCheckInputs(ref, state, inputs);
   const section = [
     '## Reviewer checks',
     '',
-    'Before this review SPLITBRIEF ran the commands you chose, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. Each new failure is a pending input.',
+    'Before this review SPLITBRIEF ran the commands you chose, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. A failure marked not verified at the run base is red at the run base too, but SPLITBRIEF could not show it is the same failure: decide from the output. Each new or not verified failure is a pending input.',
     '',
     ...lines,
     ...planLines(plan),

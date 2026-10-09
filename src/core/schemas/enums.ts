@@ -205,6 +205,11 @@ export const ApproveLevelSchema = z.preprocess(
 );
 export type ApproveLevel = z.infer<typeof ApproveLevelSchema>;
 
+/** Whether the reviewer checks wait for the user before they run (`ask`) or run at once (`auto`). */
+export const APPROVE_CHECKS = ['ask', 'auto'] as const;
+export const ApproveChecksSchema = z.enum(APPROVE_CHECKS);
+export type ApproveChecks = z.infer<typeof ApproveChecksSchema>;
+
 const BRIEF_REVIEW_PROMPT_KINDS = ['plan', 'artifact'] as const;
 const BriefReviewPromptKindSchema = z.enum(BRIEF_REVIEW_PROMPT_KINDS);
 export type BriefReviewPromptKind = z.infer<typeof BriefReviewPromptKindSchema>;

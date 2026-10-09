@@ -70,6 +70,8 @@ src/stores/
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Confirmation prompt (protected writes, custom-runner admission)
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
+├── review-checks-prompt/     # Reviewer checks card (validation.approve_checks: ask)
+│   └── prompt.ts             # reviewChecksPromptStore (via channels/prompt)
 ├── channels/                 # Cross-store messaging channels
 │   ├── prompt.ts             # createPromptChannel — request/response with supersede/cancel
 │   └── feedback.ts           # Feedback error publish/subscribe
@@ -89,7 +91,7 @@ src/stores/
 
 `stores/` is grouped by concern, one directory per domain.
 
-`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` (with supersede / cancel semantics).
+`stores/channels/` holds cross-store messaging channels — decoupled pub/sub and request/response wires that let one store signal another without a direct import cycle. `feedback.ts` carries feedback errors (`router` publishes, `ui/feedback` subscribes); `prompt.ts` exposes `createPromptChannel`, the request/response primitive backing `approvalPromptStore` and `reviewChecksPromptStore` (with supersede / cancel semantics).
 
 **Import pattern:**
 
@@ -214,6 +216,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
 | `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
+| `reviewChecksPromptStore` | `review-checks-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` — the reviewer's chosen commands waiting for Run all or Skip all | `openReviewChecksPrompt()`, `closeReviewChecksPrompt(answer?)` (via `channels/prompt`); a superseded or cancelled card resolves `undefined`, which the engine never reads as Run all |
 | `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
 | `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, totalCount, projectDir }` | `load()`, `refresh()` |

@@ -1,6 +1,7 @@
 import { getRailActiveIndex } from '../../../core/rail-stages.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readStopMenuRows, stopMenuLayout } from '../stop/options.js';
+import { reviewChecksCardLayout } from '../review-checks/options.js';
 import { getProgressRows, selectRailForm } from './chrome-rows.js';
 import { getRailStageZones, resolveRailFraction, type RailStageZone } from './hit-test.js';
 import {
@@ -25,6 +26,7 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
+import { reviewChecksPromptStore } from '../../../stores/review-checks-prompt/prompt.js';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { formatRecoveryPrompt } from '../recovery-prompt.js';
@@ -62,6 +64,10 @@ interface ConversationLayoutSnapshot {
 function readWorkflowPromptRows(): number {
   if (overlayStore.get().active === 'stop-sheet')
     return stopMenuLayout(readStopMenuRows(), terminalSizeStore.get().cols).height;
+  const checks = reviewChecksPromptStore.get();
+  if (checks.status === 'pending') {
+    return reviewChecksCardLayout(checks.request, terminalSizeStore.get().cols).height;
+  }
   const controls = controlsStore.get();
   const approvalState = approvalPromptStore.get();
   const recoveryIssue = recoveryNoticeStore.get().issue;

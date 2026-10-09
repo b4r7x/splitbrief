@@ -157,7 +157,7 @@ These fire from any phase. They modify sub-state without changing `phase`.
 | `INSERT_TASKS` | A consult's `split-task` answer (with `parentId`): removes the parent from `state.tasks`, appends it to its lineage's `replacedParents`, inserts the subtasks at the parent's position with `parentId` set to the lineage root, re-points every pending `dependsOn` that named the parent to all subtasks and adjusts `currentTaskIndex`. With `parentId: null` the review answer's fix tasks are appended at the end, with no lineage change |
 | `RECORD_CONSULT` | Appends the answer to the task's lineage with its reason, action and diagnosis, raises the lineage's consult count (a decision-confirm, reason `deviation`, does not raise it), and remembers the revision a stale consult saw |
 | `RECORD_REVIEW` | Stores the typed review as `state.review`: its verdict, its derived outcome and the check runs behind its unverified claims |
-| `RECORD_REVIEW_CHECKS` | Stores the answer of the reviewer's plan call (chosen reviewer checks, declined tests, reason) as `state.reviewChecks` with its scope (`final` or `task`) and fix cycle. Accepted in `implementing` and `final-review` |
+| `RECORD_REVIEW_CHECKS` | Stores the answer of the reviewer's plan call (chosen reviewer checks, declined tests, reason) as `state.reviewChecks` with its scope (`final` or `task`) and fix cycle. A second dispatch adds `skipped: { reason }` when none of the chosen commands ran (`validation.approve_checks: ask`). Accepted in `implementing` and `final-review` |
 | `RECORD_TRIAGE` | Appends the fix part of one review answer (`cycle`, input ids, result, and verification) to `state.triage` |
 | `QUEUE_TRIAGE` | Saves check, user or Apply inputs as `state.pendingTriage`. The reviewer answers them. A correction or question answer reviews again without the reviewer checks |
 | `COUNT_ATTEMPT` | Raises the lineage's attempt count. Never reset by a split or a resume |
@@ -510,7 +510,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     reviewer checks run the tests related to the task's changed files.
     validation.end_checks: false runs no reviewer check; one row says so.
     A red reviewer check is re-run at the run base with the same command text;
-    only new failures reach the reviewer as pending inputs.
+    only new or not verified failures reach the reviewer as pending inputs.
     Each reviewer check and its base re-run publish full_suite events (id V1, …).
 
 11. Per task:
@@ -557,13 +557,24 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          A task review chooses only the tests related to the task's changed files.
          A failed plan call (a transport error or a protocol error) halts the
          review the same way a failed verdict call does; it is never a pass.
+         With validation.approve_checks: ask, one card shows the chosen commands
+         and their reasons: Run all or Skip all. Skip all, a card closed without
+         an answer, or a headless run runs none of them; one row and
+         state.reviewChecks.skipped name the reason, and step 2 is skipped.
       2. SPLITBRIEF runs the reviewer checks in the run workspace, in order,
-         under the command policy (a script or task file this run changed is
-         refused). A red reviewer check re-runs at the run base with the same
-         text; failures red there too are pre-existing. The first reviewer check
+         under the reviewer command policy: any installed program, but no shell
+         syntax, program by path, inline code, download-and-run launcher, setup
+         command, or script, task file or interpreter script this run changed.
+         Each refused command is a named row. A red reviewer check re-runs at
+         the run base with the same text; failures red there too are
+         pre-existing. A timeout or a red without failure keys is never
+         pre-existing: with a red base re-run it is "not verified at the run
+         base", stays new, and the reviewer decides. The first reviewer check
          with new failures stops the list; each later one is not run (<id> failed).
       3. Verdict call: the reviewer gets every result in a Reviewer checks section.
-    Every new red becomes a pending input for the reviewer. No brief reopens.
+         A skipped plan is named there: none of its commands is a pass, and a
+         criterion that only they verify is unverified.
+    Every new or not verified red becomes a pending input. No brief reopens.
     The input carries the red check's id, its command and its output.
     A re-review of the same candidate (after an answer or a correction) runs
     no new reviewer checks. validation.end_checks: false skips steps 1 and 2;
@@ -584,6 +595,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 ```
 
 During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. Request changes on the plan card to revise the plan.
+
+**What the checks run.** Every check in steps 10 to 13 runs the project's own code: its tests, build scripts, `Makefile` recipes and package scripts. This applies to plan checks, reviewer checks, base re-runs, the checks of a fix task, `render` checks and the formatter. They run with your user's permissions, in the run workspace. SPLITBRIEF isolates their working directory, drops secrets from their environment, stops them at `validation.timeout_ms`, bounds their output, and kills their whole process group. It does not isolate the file system, the network or other processes: a check can read and write any file your user can, `~/.ssh` and `~/.npmrc` included. There is no OS sandbox for checks. [CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach) lists the kept environment variables. The seats are isolated differently; see [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
 ---
 
@@ -623,7 +636,8 @@ type WorkflowState = {
   fixCycles?: { used: number; allowance: number; notes: string[] }  // cycle cap and grants
   triage?: TriageRecord[]                  // RECORD_TRIAGE; fix part of each review answer
   pendingTriage?: { inputs: TriageInput[] }  // pending inputs waiting for the reviewer
-  reviewChecks?: ReviewChecksRecord        // RECORD_REVIEW_CHECKS; the reviewer's chosen commands
+  reviewChecks?: ReviewChecksRecord        // RECORD_REVIEW_CHECKS; the reviewer's chosen commands,
+                                           // and skipped: { reason } when none of them ran
   reviewStatus?: 'passed' | 'failed'
   discoveredValidation?: DiscoveredValidation
 
