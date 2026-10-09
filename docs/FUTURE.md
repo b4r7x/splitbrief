@@ -158,7 +158,7 @@ Owner decision, 2026-10-09. Today a check runs the project's own code with your 
 
 Decided 2026-10-09: checks inherit defined environment variables and drop credential names, selectors and helpers. No pass-through option is needed.
 
-The changed-definition refusal compares only `package.json` scripts, `Makefile`, `justfile` and interpreter scripts with the run base. SPLITBRIEF does not compare build manifests (`pom.xml`, `build.gradle`, `composer.json`, `Gemfile`, `mix.exs`, `build.rs`). A dependency change edits these files, and a refusal would block the check that verifies it. The refusal guards against a swapped check definition. It does not establish trusted execution.
+The changed-definition refusal compares these definitions with the run base: the scripts in every `package.json`, the `scripts` and `scripts-aliases` of `composer.json`, `Makefile`, `justfile`, `Rakefile` and `rakelib`, the Gradle and Maven wrappers, and interpreter scripts. SPLITBRIEF does not compare build manifests (`pom.xml`, `build.gradle`, `composer.json` as a dependency manifest, `Gemfile`, `mix.exs`, `build.rs`). A dependency change edits these files, and a refusal would block the check that verifies it. The refusal guards against a swapped check definition. It does not establish trusted execution.
 
 **Where to start when we do it.**
 

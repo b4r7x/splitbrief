@@ -677,7 +677,8 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 The policy refuses these forms:
 
 - Shell syntax, control characters, environment prefixes, `cd`, URLs and paths outside the run workspace.
-- Programs run by path, such as `./mvnw` and `./gradlew`.
+- Programs run by path, such as `bin/test` and a nested `sub/gradlew`.
+- The project's own `./gradlew` or `./mvnw` when this run changed its wrapper files, or when the run has no run base to compare them with.
 - Shells and wrappers, including `bash`, `env`, `sudo`, `busybox`, `toybox`, `nix-shell`, `nix` and `npm explore`. This also applies through `npx --no-install` and `pnpm exec`.
 - Inline interpreter code, including `node -e`, `python -c`, `deno eval`, `elixir -e`, `elixir --erl`, `iex -e`, `groovy -e`, `scala -e` and `kotlin -e`. This includes `erl -eval`, `erl -s`, `erl -run`, `php -r`, `php -B`, `php -R`, `php -F` and `php -E`.
 - Inline task code, including `make --eval`, `rake -e`, `rake --require`, `gradle --init-script`, `just --command`, `mvn exec:*`, `mvn antrun:*`, `rails runner` and `rails r`. `mix run -e`, `mix run --eval` and `mix eval` are refused too. `mvn` refuses the exec and antrun plugins also by coordinate (`mvn org.codehaus.mojo:exec-maven-plugin:*`). `mix do` checks each task it chains as its own `mix` command.
@@ -686,17 +687,18 @@ The policy refuses these forms:
 - Every `config`, `pkg` or `version` subcommand of `npm`, `pnpm` and `yarn`, including `config get` and `config list`. The policy also refuses their `audit` commands with `fix` or `--fix`.
 - Programs that do not verify a change, including `git`, `rm`, `osascript`, `sed`, `tar` and `docker`. Refused network tools include `curl`, `wget`, `ssh`, `scp`, `nc`, `ncat`, `socat`, `telnet`, `ftp` and `sftp`.
 - `find` with `-delete`, `-exec`, `-execdir`, `-ok` or `-okdir`.
-- Other task files or directories for `make` and `just`, such as `make -f`, `make -C`, `make -I` and `just -f`. A `make` operand cannot change its shell or definition variables, or assign with `!=`.
-- Package scripts, task files or interpreter scripts that this run changed. Test files that this run wrote or changed can run.
+- Other task files or directories for `make`, `just` and `rake`, such as `make -f`, `make -C`, `make -I`, `just -f`, `rake -f`, `rake -C` and `rake -R`. A `make` operand cannot change its shell or definition variables, or assign with `!=`.
+- Package scripts, task files, build wrappers or interpreter scripts that this run changed or the run base does not hold. Test files that this run wrote or changed can run.
 
-Verification targets such as `make lock` and package scripts such as `npm run lock` can run. Reviewer package scripts need no plan approval. Every reviewer `npm run` still gets the changed-definition check. Interpreter option values are not code. For example, `perl -Mstrict t/x.t`, `php -c php.ini vendor/bin/phpunit` and `php -dmemory_limit=1G vendor/bin/phpunit` can run.
+Verification targets such as `make lock` and package scripts such as `npm run lock` can run. Reviewer package scripts need no plan approval. Every reviewer `npm run` still gets the changed-definition check. Interpreter option values are not code. For example, `perl -Mstrict t/x.t`, `php -c php.ini artisan test` and `php -dmemory_limit=1G artisan test` can run. In checkout mode, `php vendor/bin/phpunit` is refused because the run base holds no gitignored file. Use `composer test` or `composer exec phpunit`.
 
 The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, `mix ecto.drop`, `python manage.py flush --noinput` and `dotnet ef database drop -f`. Checks run with your permissions and can act on databases outside the workspace. See [What a check can reach](./CONFIGURATION.md#what-a-check-can-reach).
 
 **Fix:**
 1. Read the reason on the row, for example `runs a program by path`.
-2. Correct the review with a note that names an allowed command, for example `mvn test` in place of `./mvnw test`.
+2. Correct the review with a note that names an allowed command, for example `make test` in place of `bin/test`.
 3. When a setup step is missing, run it yourself in the run workspace; SPLITBRIEF never runs a setup command as a check.
+4. When an admitted `./gradlew` or `./mvnw` check times out on its first run, the wrapper downloads its distribution. Run `./gradlew --version` once yourself, or raise `validation.timeout_ms`.
 
 **See also:** [CONFIGURATION.md §Reviewer checks](./CONFIGURATION.md#reviewer-checks), `src/engine/orchestrator/validation/reviewer-command-policy.ts`.
 

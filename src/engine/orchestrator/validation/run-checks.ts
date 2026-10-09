@@ -190,7 +190,7 @@ async function runCommandCheck(
           npmScriptsApproved: opts.npmScriptsApproved,
           packageScripts,
         })) ??
-    (!reviewCheck || opts.base === undefined
+    (!reviewCheck
       ? null
       : await changedDefinitionRefusal({
           command: check.value,

@@ -563,8 +563,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          state.reviewChecks.skipped name the reason, and step 2 is skipped.
       2. SPLITBRIEF runs the reviewer checks in the run workspace, in order,
          under the reviewer command policy: any installed program, but no shell
-         syntax, program by path, inline code, download-and-run launcher, setup
-         command, or script, task file or interpreter script this run changed.
+         syntax, program by path (the root ./gradlew and ./mvnw run while
+         this run changed none of their wrapper files), inline code,
+         download-and-run launcher, setup command, or package script, task
+         file, build wrapper or interpreter script this run changed or the
+         run base does not hold.
          Each refused command is a named row. A red reviewer check re-runs at
          the run base with the same text, in a detached Git worktree at the
          base commit with the base snapshot on top (withRunBaseTree); failures

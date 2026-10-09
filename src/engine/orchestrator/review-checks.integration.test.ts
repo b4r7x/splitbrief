@@ -555,6 +555,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           ['V1', 'mvn test'],
           ['V2', 'npm run lint'],
           ['V3', './gradlew test'],
+          ['V4', 'bin/test'],
         ]),
         state: { approve: 'none' },
       });
@@ -562,10 +563,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(commands).toEqual([
         { command: 'mvn test', at: 'workspace' },
         { command: 'npm run lint', at: 'workspace' },
+        { command: './gradlew test', at: 'workspace' },
       ]);
-      expect(sectionOf(outcome)).toContain(
-        '- V3 `./gradlew test`: refused, runs a program by path',
-      );
+      expect(sectionOf(outcome)).toContain('- V4 `bin/test`: refused, runs a program by path');
     });
   });
 

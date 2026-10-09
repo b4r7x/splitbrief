@@ -672,6 +672,66 @@ describe('reviewer checks in the run registry', () => {
       },
     );
   });
+
+  it.each([
+    {
+      name: 'a workspace package script',
+      files: {
+        'package.json': JSON.stringify({ workspaces: ['packages/*'] }),
+        'packages/x/package.json': JSON.stringify({ name: 'x', scripts: { test: 'vitest run' } }),
+      },
+      file: 'packages/x/package.json',
+      changed: JSON.stringify({ name: 'x', scripts: { test: 'echo all green' } }),
+      command: 'pnpm --filter x test',
+      output: 'runs the package script test, which this run changed in packages/x/package.json',
+    },
+    {
+      name: 'a composer script',
+      files: { 'composer.json': JSON.stringify({ scripts: { test: ['phpunit'] } }) },
+      file: 'composer.json',
+      changed: JSON.stringify({ scripts: { test: ['true'] } }),
+      command: 'composer test',
+      output: 'runs the package script test, which this run changed',
+    },
+    {
+      name: 'a Rakefile',
+      files: { Rakefile: 'task :test do\n  ruby "test/all.rb"\nend\n' },
+      file: 'Rakefile',
+      changed: 'task :test do\n  sh "true"\nend\n',
+      command: 'rake test',
+      output: 'runs rake on Rakefile, which this run changed',
+    },
+  ])(
+    'refuses a reviewer check whose $name the run changed, and never runs it',
+    {
+      timeout: 60_000,
+    },
+    async ({ files, file, changed, command, output }) => {
+      await withApplyRun(
+        files,
+        { sessionId: `sess-run-checks-${file.replace(/\W/g, '-')}` },
+        async (run) => {
+          writeFileSync(join(run.ws, file), changed);
+          const runner = makeCommandRunner();
+          const results = await runChecks(['V1'], {
+            reviewChecks: reviewCheckList(reviewChecks([{ id: 'V1', command }])),
+            base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
+            projectDir: run.ws,
+            checkoutDir: run.dir,
+            config: makeConfig({}),
+            bus: createEventBus(),
+            phase: 'final-review',
+            npmScriptsApproved: false,
+            runCommand: runner,
+          });
+
+          expect(results).toEqual([{ checkId: 'V1', status: 'refused', output, command }]);
+          expect(runner.calls).toHaveLength(0);
+        },
+      );
+    },
+  );
+
   it('runs a plan or task cmd check whose package script the run changed', {
     timeout: 60_000,
   }, async () => {

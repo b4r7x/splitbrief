@@ -195,6 +195,7 @@ const FORWARDERS: Readonly<Record<string, readonly string[]>> = {
   pixi: ['run'],
   rye: ['run'],
   mise: ['exec', 'x'],
+  composer: ['exec'],
 };
 /**
  * pnpm's and yarn's own commands. Any other first word names a package script or an installed
@@ -279,6 +280,8 @@ const PACKAGE_MANAGER_COMMANDS = new Set([
   'versions',
   'why',
 ]);
+/** Package scripts that start or stop the application: they do not verify a change. */
+const APPLICATION_SCRIPTS = new Set(['start', 'stop', 'restart']);
 /** pnpm's and yarn's options that take the next word as their value. */
 const PACKAGE_MANAGER_VALUE_OPTIONS = new Set([
   '--filter',
@@ -293,6 +296,11 @@ const PACKAGE_MANAGER_VALUE_OPTIONS = new Set([
   '--test-pattern',
   '--changed-files-ignore-pattern',
   '--resume-from',
+  '--from',
+  '--include',
+  '--exclude',
+  '--jobs',
+  '-j',
 ]);
 const NPM_VALUE_OPTIONS = new Set([
   '--prefix',
@@ -308,6 +316,15 @@ const NPM_VALUE_OPTIONS = new Set([
   '--tag',
   '--scope',
 ]);
+const COMPOSER_VALUE_OPTIONS = new Set(['-d', '--working-dir']);
+/** The options that run a package manager in another directory, on that directory's manifest. */
+const DIRECTORY_OPTIONS: Readonly<Record<string, readonly string[]>> = {
+  npm: ['--prefix', '-C'],
+  pnpm: ['-C', '--dir'],
+  yarn: ['--cwd'],
+  bun: ['--cwd'],
+  composer: ['-d', '--working-dir'],
+};
 /** pnpm's and yarn's words before the script or program they run, with the words each takes. */
 const PACKAGE_MANAGER_PREFIXES: Readonly<Record<string, number>> = {
   run: 0,
@@ -429,7 +446,17 @@ const TASK_RUNNERS: Readonly<
       '-r',
       '--require',
     ],
-    definition: [],
+    definition: [
+      '-f',
+      '--rakefile',
+      '-C',
+      '--directory',
+      '-R',
+      '--rakelibdir',
+      '--rakelib',
+      '-g',
+      '--system',
+    ],
     valueLetters: 'DIjTtW',
   },
   gradle: {
@@ -439,6 +466,20 @@ const TASK_RUNNERS: Readonly<
   },
   mix: { code: ['-e', '--eval'], definition: [], valueLetters: null },
 };
+/** The project's build wrappers: each runs as its tool, and only while this run changed none of its files. */
+const PROJECT_WRAPPERS: Readonly<
+  Record<string, { tool: string; files: readonly string[]; dirs: readonly string[] }>
+> = {
+  './gradlew': { tool: 'gradle', files: ['gradlew'], dirs: ['gradle/wrapper'] },
+  './mvnw': { tool: 'mvn', files: ['mvnw'], dirs: ['.mvn/wrapper'] },
+};
+/** The task files each task runner reads in its directory, and the directories it loads tasks from. */
+const TASK_FILES: Readonly<Record<string, { files: readonly string[]; dirs: readonly string[] }>> =
+  {
+    make: { files: ['Makefile', 'makefile', 'GNUmakefile'], dirs: [] },
+    just: { files: ['justfile', 'Justfile', '.justfile'], dirs: [] },
+    rake: { files: ['Rakefile', 'rakefile', 'Rakefile.rb', 'rakefile.rb'], dirs: ['rakelib'] },
+  };
 const TASK_CODE_GOALS: Readonly<Record<string, readonly string[]>> = {
   mvn: [
     'exec:',
@@ -471,11 +512,11 @@ const taskRunnerOptions = (kind: 'code' | 'definition'): string =>
 /** The reviewer command policy in words: the plan prompt states it, the policy below enforces it. */
 export const REVIEWER_COMMAND_RULES: readonly string[] = [
   'Write each command as one program and its arguments: no shell operator, substitution or redirect (`| & ; < > $ ( ) { }` or backticks), no control character (a line break or a tab), no environment variable before the program, no `cd`, no URL and no path outside the run workspace, also not after `KEY=` or attached to an option (`DESTDIR=/`, `-o/tmp/x`).',
-  'Run an installed program by its name, never by path: `./mvnw`, `./gradlew` and `bin/test` are refused.',
-  `A shell (${code(SHELLS)}) and a program that runs another command line (${code(WRAPPERS)}, \`npm explore\`) are refused. ${code(Object.entries(FORWARDERS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))} and \`python -m\` are checked by the program they run. Forwarders may take options. Every non-option word after the subcommand is checked as a possible program start. \`uv run --with\` is refused because it downloads a package; \`mise exec\` runs only as \`mise exec -- <program>\`, because it installs the tools named before \`--\`. A first word that is not a command of \`pnpm\` or \`yarn\` is a script or program they run, and it is checked the same way (\`pnpm tsx\`, \`yarn node\`).`,
-  `An interpreter, under any version of its name (\`python3.12\`, \`pypy3\`), runs a project script (\`python manage.py test\`, \`php artisan test\`) or a module (\`python -m pytest\`). It never runs inline code: \`node -e\`, \`python -c\`, \`deno eval\`, \`elixir -e\`, \`elixir --erl\`, \`iex -e\`, \`groovy -e\`, \`scala -e\`, \`kotlin -e\`, \`erl -eval\`, \`erl -s\`, \`erl -run\`, and \`php -r\`, \`php -B\`, \`php -R\`, \`php -F\`, \`php -E\` are refused. Interpreter option values are not code: \`perl -Mstrict t/x.t\`, \`php -c php.ini vendor/bin/phpunit\` and \`php -dmemory_limit=1G vendor/bin/phpunit\` can run. A build or task runner runs no inline code either: ${taskRunnerOptions('code')} are refused. So are ${code(Object.entries(TASK_CODE_GOALS).flatMap(([program, goals]) => goals.map((goal) => `${program} ${goal}${goal.endsWith(':') ? '*' : ''}`)))}, and \`mix do\` checks each task it chains as its own \`mix\` command. A \`make\` operand cannot set ${code(MAKE_CONTROL_VARIABLES)} or assign with \`!=\`.`,
+  "Run an installed program by its name, never by path: `bin/test` and `sub/gradlew` are refused. The project's own `./gradlew` and `./mvnw` are the exception: they run as `gradle` and `mvn` under the same rules, and only when this run changed none of their wrapper files (`gradlew` and `gradle/wrapper/`, `mvnw` and `.mvn/wrapper/`).",
+  `A shell (${code(SHELLS)}) and a program that runs another command line (${code(WRAPPERS)}, \`npm explore\`) are refused. ${code(Object.entries(FORWARDERS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))} and \`python -m\` are checked by the program they run. Forwarders may take options. The program is the first word after the subcommand that does not follow an option; a word after an option can be its value, so it is checked as a possible program start too. Write a path value as \`--option=value\`. \`uv run --with\` is refused because it downloads a package; \`mise exec\` runs only as \`mise exec -- <program>\`, because it installs the tools named before \`--\`. A first word that is not a command of \`pnpm\` or \`yarn\` is a script or program they run, and it is checked the same way (\`pnpm tsx\`, \`yarn node\`).`,
+  `An interpreter, under any version of its name (\`python3.12\`, \`pypy3\`), runs a project script (\`python manage.py test\`, \`php artisan test\`) or a module (\`python -m pytest\`). It never runs inline code: \`node -e\`, \`python -c\`, \`deno eval\`, \`elixir -e\`, \`elixir --erl\`, \`iex -e\`, \`groovy -e\`, \`scala -e\`, \`kotlin -e\`, \`erl -eval\`, \`erl -s\`, \`erl -run\`, and \`php -r\`, \`php -B\`, \`php -R\`, \`php -F\`, \`php -E\` are refused. Interpreter option values are not code: \`perl -Mstrict t/x.t\`, \`php -c php.ini artisan test\` and \`php -dmemory_limit=1G artisan test\` can run. A build or task runner runs no inline code either: ${taskRunnerOptions('code')} are refused. So are ${code(Object.entries(TASK_CODE_GOALS).flatMap(([program, goals]) => goals.map((goal) => `${program} ${goal}${goal.endsWith(':') ? '*' : ''}`)))}, and \`mix do\` checks each task it chains as its own \`mix\` command. A \`make\` operand cannot set ${code(MAKE_CONTROL_VARIABLES)} or assign with \`!=\`.`,
   `\`npx\` runs only as \`npx --no-install <tool>\`, and \`npm exec\` only with \`--no-install\`; neither takes \`--yes\` or \`-y\`. A launcher that downloads and runs a package is refused: ${code(LAUNCHERS.map((pattern) => pattern.join(' ')))}, \`go run <package>@<version>\`.`,
-  `A setup command is refused: a program whose subcommand or goal is ${code([...SETUP_VERBS].filter((verb) => SCOPED_SETUP_VERBS[verb] === undefined))} (\`npm ci\`, \`pip install\`, \`go generate\`, \`go mod tidy\`, \`mvn install\`), and a bare ${code(BARE_INSTALLERS)}. These setup verbs apply only to their named tools: ${code(Object.entries(SCOPED_SETUP_VERBS).flatMap(([verb, programs]) => programs.map((program) => `${program} ${verb}`)))}. \`npm run <script>\` and \`npm run-script <script>\` name package scripts, not setup verbs. A verification target such as \`make lock\` can run.`,
+  `A setup command is refused: a program whose subcommand or goal is ${code([...SETUP_VERBS].filter((verb) => SCOPED_SETUP_VERBS[verb] === undefined))} (\`npm ci\`, \`pip install\`, \`go generate\`, \`go mod tidy\`, \`mvn install\`), and a bare ${code(BARE_INSTALLERS)}. These setup verbs apply only to their named tools: ${code(Object.entries(SCOPED_SETUP_VERBS).flatMap(([verb, programs]) => programs.map((program) => `${program} ${verb}`)))}. \`npm run <script>\` and \`npm run-script <script>\` name package scripts, not setup verbs. A verification target such as \`make lock\` can run. An operand after an option can be the option's value, so it is checked too: write the subcommand or target before the options (\`cargo test --locked sync\`, \`pytest tests/ -k install -v\`).`,
   `Package state commands are refused: ${code(Object.entries(PACKAGE_MUTATIONS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))}. All forms of \`config\` and \`pkg\` are refused. An \`npm\`, \`pnpm\` or \`yarn\` \`audit\` with \`fix\` or \`--fix\` is refused; an audit without a fix can run.`,
   `\`find\` with ${code(FIND_ACTIONS)} is refused because it changes files or runs commands. Other \`find\` checks can run.`,
   `A program that does not verify a change is refused: ${code(NOT_VERIFICATION)}. ${code(
@@ -483,25 +524,40 @@ export const REVIEWER_COMMAND_RULES: readonly string[] = [
       .filter(([, options]) => options.definition.length > 0)
       .map(([program]) => program),
   )} run only on the project's own task file, in its directory: ${taskRunnerOptions('definition')} are refused.`,
-  'A package script, Makefile, justfile or interpreter script that this run changed is refused. A test file is not a check definition: a test this run wrote or changed runs (`node --test test/new.test.js`).',
+  `A package script in any \`package.json\` or \`composer.json\` of the workspace, a \`Makefile\`, \`justfile\`, \`Rakefile\` or \`rakelib\` task, a build wrapper, or an interpreter script that this run changed or created is refused. A test file is not a check definition: a test this run wrote or changed runs (\`node --test test/new.test.js\`). \`deno task\` tasks and \`mix.exs\` aliases are not compared. A \`package.json\` script named ${code(APPLICATION_SCRIPTS)} is refused in every form (\`npm start\`, \`pnpm --filter x start\`, \`yarn workspace x run start\`): it starts or stops the application and does not verify a change.`,
 ];
 
 function isFlag(token: string): boolean {
   return token.startsWith('-');
 }
 
-/** The words after the program that are not options, nor package manager option values. */
-function operands(tokens: readonly string[]): string[] {
+/** A table's own entry for a command word: `constructor` or `toString` names no entry. */
+function lookup<T>(table: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(table, key) ? table[key] : undefined;
+}
+
+/** The build wrapper a first word names, by its exact spelling: `sub/gradlew` names none. */
+function projectWrapper(first: string): (typeof PROJECT_WRAPPERS)[string] | undefined {
+  return lookup(PROJECT_WRAPPERS, first);
+}
+
+/** The words after the program, without the values of the package manager's value options. */
+function argumentsWithoutValues(tokens: readonly string[]): string[] {
   const program = (tokens[0] ?? '').toLowerCase();
   const values =
     program === 'npm'
       ? NPM_VALUE_OPTIONS
-      : program === 'pnpm' || program === 'yarn'
+      : program === 'pnpm' || program === 'yarn' || program === 'bun'
         ? PACKAGE_MANAGER_VALUE_OPTIONS
-        : null;
-  return tokens
-    .slice(1)
-    .filter((token, index) => !isFlag(token) && values?.has(tokens[index] ?? '') !== true);
+        : program === 'composer'
+          ? COMPOSER_VALUE_OPTIONS
+          : null;
+  return tokens.slice(1).filter((_, index) => values?.has(tokens[index] ?? '') !== true);
+}
+
+/** The words after the program that are not options, nor package manager option values. */
+function operands(tokens: readonly string[]): string[] {
+  return argumentsWithoutValues(tokens).filter((token) => !isFlag(token));
 }
 
 /**
@@ -529,9 +585,9 @@ type InterpreterCall =
 
 function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
   const program = interpreterName(tokens[0] ?? '');
-  const subcommands = SUBCOMMAND_INTERPRETERS[program];
+  const subcommands = lookup(SUBCOMMAND_INTERPRETERS, program);
   if (!SCRIPT_INTERPRETERS.has(program) && subcommands === undefined) return null;
-  const codeOptions = INTERPRETER_CODE_OPTIONS[program];
+  const codeOptions = lookup(INTERPRETER_CODE_OPTIONS, program);
   const codeFlags = codeOptions?.flags ?? INLINE_CODE_FLAGS;
   let runs = false;
   for (let index = 1; index < tokens.length; index++) {
@@ -566,7 +622,7 @@ function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
     }
     const letters = arg.slice(1);
     for (const [offset, letter] of [...letters].entries()) {
-      if (VALUE_LETTERS[program]?.includes(letter) === true) {
+      if (lookup(VALUE_LETTERS, program)?.includes(letter) === true) {
         if (offset === letters.length - 1) index++;
         break;
       }
@@ -600,22 +656,36 @@ function npmSubcommandAt(tokens: readonly string[], names: readonly string[]): n
 
 type Forwarded = { commands: string[][] } | { refusal: string };
 
-/** The script or program pnpm or yarn runs when its first word is not one of its own commands. */
-function packageManagerForwarded(tokens: readonly string[]): Forwarded | null {
+/**
+ * Where pnpm, yarn or bun name the command, script or program they run, past their options and
+ * prefix words, and whether a `run` or `run-script` prefix names it a script.
+ */
+function packageManagerWord(
+  tokens: readonly string[],
+): { index: number; afterRun: boolean } | null {
+  let afterRun = false;
   for (let index = 1; index < tokens.length; index++) {
     const token = tokens[index] ?? '';
     if (isFlag(token)) {
       if (PACKAGE_MANAGER_VALUE_OPTIONS.has(token)) index++;
       continue;
     }
-    const takes = PACKAGE_MANAGER_PREFIXES[token];
+    const takes = lookup(PACKAGE_MANAGER_PREFIXES, token);
     if (takes !== undefined) {
+      if (token === 'run' || token === 'run-script') afterRun = true;
       index += takes;
       continue;
     }
-    return PACKAGE_MANAGER_COMMANDS.has(token) ? null : { commands: [tokens.slice(index)] };
+    return { index, afterRun };
   }
   return null;
+}
+
+/** The script or program pnpm or yarn runs when its first word is not one of its own commands. */
+function packageManagerForwarded(tokens: readonly string[]): Forwarded | null {
+  const word = packageManagerWord(tokens);
+  if (word === null || PACKAGE_MANAGER_COMMANDS.has(tokens[word.index] ?? '')) return null;
+  return { commands: [tokens.slice(word.index)] };
 }
 
 /** The command line npx, npm exec, a forwarder's subcommand, pnpm or yarn hands on. */
@@ -641,7 +711,7 @@ function forwarded(tokens: readonly string[]): Forwarded | null {
     if (tool === undefined) return { refusal: `runs ${name} without a program` };
     return { commands: [[npxProgram(tool), ...own.slice(toolIndex + 1)]] };
   }
-  const subs = FORWARDERS[program] ?? [];
+  const subs = lookup(FORWARDERS, program) ?? [];
   const at = tokens.findIndex((token, index) => index > 0 && subs.includes(token));
   if (at === -1) {
     return program === 'pnpm' || program === 'yarn' ? packageManagerForwarded(tokens) : null;
@@ -661,32 +731,71 @@ function forwarded(tokens: readonly string[]): Forwarded | null {
     return { refusal: 'downloads and runs a package (uv run --with)' };
   }
   return {
-    commands: rest.flatMap((token, index) => {
-      if (isFlag(token)) return [];
+    commands: leadingOperands(rest).map((index) => {
+      const token = rest[index] ?? '';
       // hatch runs `<environment>:<command>` in that environment.
       const first = program === 'hatch' ? token.slice(token.lastIndexOf(':') + 1) : token;
-      return [[first, ...rest.slice(index + 1)]];
+      return [first, ...rest.slice(index + 1)];
     }),
   };
 }
 
+/** A word after which a program runs a script or another program, which the walk does not read. */
+function handsOn(program: string, token: string): boolean {
+  if (program === 'npx' || token === 'run' || token === 'run-script') return true;
+  if (program === 'npm' && (token === 'exec' || token === 'x')) return true;
+  return lookup(FORWARDERS, program)?.includes(token) === true;
+}
+
+/**
+ * The indexes of the operands that can name what a command runs. An operand after an option can be
+ * the option's value (`go -C . generate`, `uv run --python 3.12 pytest`), so the walk ends at the
+ * first operand that follows no option; `--option=value` holds its own value. An operand that
+ * `takesMore` names (a command group: `go -C . mod tidy`) does not end the walk.
+ */
+function leadingOperands(
+  args: readonly string[],
+  takesMore: (operand: string) => boolean = () => false,
+): number[] {
+  const indexes: number[] = [];
+  for (const [index, token] of args.entries()) {
+    if (isFlag(token)) continue;
+    indexes.push(index);
+    const previous = args[index - 1];
+    const followsOption = previous !== undefined && isFlag(previous) && !previous.includes('=');
+    if (!followsOption && !takesMore(token)) break;
+  }
+  return indexes;
+}
+
+/**
+ * The operands that can name a program's subcommand. The walk ends before a word that hands on to
+ * a script or program (`npm --silent run update`): the forwarded walk checks those.
+ */
+function subcommandWords(tokens: readonly string[]): string[] {
+  const program = (tokens[0] ?? '').toLowerCase();
+  const args = argumentsWithoutValues(tokens);
+  const words: string[] = [];
+  for (const index of leadingOperands(args, (token) => COMMAND_GROUPS.has(token))) {
+    const token = args[index] ?? '';
+    if (handsOn(program, token)) break;
+    words.push(token);
+  }
+  return words;
+}
+
 function setupRefusal(program: string, tokens: readonly string[]): string | null {
-  const words = operands(tokens);
-  if (words.length === 0) {
+  if (operands(tokens).length === 0) {
     return BARE_INSTALLERS.has(program) ? `runs ${program} with no argument, which installs` : null;
   }
-  const checked = GOAL_RUNNERS.has(program)
-    ? words
-    : COMMAND_GROUPS.has(words[0] ?? '')
-      ? words.slice(0, 2)
-      : words.slice(0, 1);
+  const checked = GOAL_RUNNERS.has(program) ? operands(tokens) : subcommandWords(tokens);
   const at = checked.findIndex(
     (word) =>
-      SETUP_VERBS.has(word) &&
-      (SCOPED_SETUP_VERBS[word] === undefined || SCOPED_SETUP_VERBS[word].includes(program)),
+      SETUP_VERBS.has(word) && (lookup(SCOPED_SETUP_VERBS, word)?.includes(program) ?? true),
   );
   if (at === -1) return null;
-  const named = GOAL_RUNNERS.has(program) ? checked.slice(at, at + 1) : checked.slice(0, at + 1);
+  const group = GOAL_RUNNERS.has(program) ? [] : checked.slice(at - 1, at);
+  const named = [...group.filter((word) => COMMAND_GROUPS.has(word)), ...checked.slice(at, at + 1)];
   return `runs a setup command (${[program, ...named].join(' ')})`;
 }
 
@@ -709,7 +818,7 @@ function taskRunnerOption(
   program: string,
   token: string,
 ): (typeof TASK_OPTION_KINDS)[number] | undefined {
-  const runner = TASK_RUNNERS[program];
+  const runner = lookup(TASK_RUNNERS, program);
   if (runner === undefined || !isFlag(token)) return undefined;
   const long = (option: string) => option.startsWith('--');
   if (token.startsWith('--')) {
@@ -748,7 +857,7 @@ function makeVariableRefusal(tokens: readonly string[]): string | null {
 function taskRunnerRefusal(program: string, tokens: readonly string[]): string | null {
   const variable = program === 'make' ? makeVariableRefusal(tokens) : null;
   if (variable !== null) return variable;
-  const goals = TASK_CODE_GOALS[program];
+  const goals = lookup(TASK_CODE_GOALS, program);
   const words = operands(tokens);
   if (
     (GOAL_RUNNERS.has(program) ? words : words.slice(0, 1)).some((word) =>
@@ -791,6 +900,8 @@ function tokensRefusal(tokens: readonly string[]): string | null {
   if (tokens.some((token) => CONTROL_CHARACTER.test(token))) return 'contains a control character';
   if (tokens.some((token) => SHELL_SYNTAX.test(token))) return 'contains a shell operator';
   if (first.includes('=')) return 'sets an environment variable before the program';
+  const wrapper = projectWrapper(first);
+  if (wrapper !== undefined) return tokensRefusal([wrapper.tool, ...tokens.slice(1)]);
   if (first.includes('/') || first.includes('\\')) return 'runs a program by path';
   if (tokens.some((token) => REMOTE.test(token))) return 'names a URL or a remote package';
   if (tokens.some(leavesWorkspace)) return 'names a path outside the run workspace';
@@ -803,10 +914,11 @@ function tokensRefusal(tokens: readonly string[]): string | null {
   }
   if (NOT_VERIFICATION.has(program)) return `runs ${program}, which does not verify a change`;
   const words = operands(tokens);
-  const mutation = PACKAGE_MUTATIONS[program]?.find((sub) => words[0] === sub);
+  const mutations = lookup(PACKAGE_MUTATIONS, program);
+  const mutation = mutations?.find((sub) => words[0] === sub);
   if (mutation !== undefined) return `runs ${program} ${mutation}, which changes package state`;
   if (
-    PACKAGE_MUTATIONS[program] !== undefined &&
+    mutations !== undefined &&
     words[0] === 'audit' &&
     tokens.slice(1).some((token) => token === 'fix' || token.replace(/=.*$/s, '') === '--fix')
   ) {
@@ -823,6 +935,14 @@ function tokensRefusal(tokens: readonly string[]): string | null {
     launcherRefusal(program, tokens) ??
     setupRefusal(program, tokens);
   if (refusal !== null) return refusal;
+  const script = packageScript(tokens);
+  if (
+    script?.kind === 'package-script' &&
+    script.manifest === 'package.json' &&
+    APPLICATION_SCRIPTS.has(script.script)
+  ) {
+    return `runs the package script ${script.script}, which starts or stops the application and does not verify a change`;
+  }
   const next = forwarded(tokens);
   if (next === null) return null;
   if ('refusal' in next) return next.refusal;
@@ -842,22 +962,102 @@ export function reviewerCommandRefusal(command: string): string | null {
   return tokensRefusal(parseShellCommand(command));
 }
 
-/**
- * The project script a command runs through an interpreter, relative to the run workspace, looking
- * through `npx`, `bundle exec`, `uv run` and the like. Null when it runs no script file.
- */
-export function interpreterScript(command: string): string | null {
-  function script(tokens: readonly string[]): string | null {
-    const call = interpreterCall(tokens);
-    if (call?.kind === 'script') return posix.normalize(call.file);
-    if (call !== null) return null;
-    const next = forwarded(tokens);
-    if (next === null || 'refusal' in next) return null;
-    for (const candidate of next.commands) {
-      const file = script(candidate);
-      if (file !== null) return file;
+/** The project file or files that define what a check runs. */
+export type CheckDefinition =
+  | { kind: 'script-file'; file: string }
+  | {
+      kind: 'package-script';
+      runner: string;
+      manifest: 'package.json' | 'composer.json';
+      script: string;
+      /** The directory a directory option names (`npm --prefix sub`), or `.`. */
+      dir: string;
     }
-    return null;
+  | { kind: 'task-file'; runner: string; files: readonly string[]; dirs: readonly string[] }
+  | { kind: 'wrapper'; runner: string; files: readonly string[]; dirs: readonly string[] };
+
+/** The directory the last directory option before `--` names, posix-normalized, or `.`. */
+function directoryOf(runner: string, tokens: readonly string[]): string {
+  const options = lookup(DIRECTORY_OPTIONS, runner) ?? [];
+  let dir = '.';
+  for (let index = 1; index < tokens.length; index++) {
+    const token = tokens[index] ?? '';
+    if (token === '--') break;
+    const name = token.replace(/=.*$/s, '');
+    if (options.includes(name)) {
+      dir = name === token ? (tokens[++index] ?? '.') : token.slice(name.length + 1);
+    } else if (/^-[A-Za-z]./s.test(token) && options.includes(token.slice(0, 2))) {
+      dir = token.slice(2);
+    }
   }
-  return script(parseShellCommand(command));
+  return posix.join(dir, '.');
+}
+
+/** The package script npm, pnpm, yarn, bun or composer runs, when the command runs one. */
+function packageScript(tokens: readonly string[]): CheckDefinition | null {
+  const runner = (tokens[0] ?? '').toLowerCase();
+  const defined = (script: string | undefined): CheckDefinition | null =>
+    script === undefined
+      ? null
+      : {
+          kind: 'package-script',
+          runner,
+          manifest: runner === 'composer' ? 'composer.json' : 'package.json',
+          script,
+          dir: directoryOf(runner, tokens),
+        };
+  if (runner === 'npm' || runner === 'composer') {
+    const [sub, name] = operands(tokens);
+    if (sub === 'run' || sub === 'run-script') return defined(name);
+    // `composer exec <program>` runs a program, not a script: the forwarded walk names it.
+    if (runner === 'composer') {
+      return sub !== undefined && handsOn(runner, sub) ? null : defined(sub);
+    }
+    if (sub === 'test' || sub === 't') return defined('test');
+    return defined(sub !== undefined && APPLICATION_SCRIPTS.has(sub) ? sub : undefined);
+  }
+  if (runner !== 'pnpm' && runner !== 'yarn' && runner !== 'bun') return null;
+  const word = packageManagerWord(tokens);
+  if (word === null) return null;
+  const script = tokens[word.index] ?? '';
+  if (word.afterRun) return defined(script);
+  // `bun test` and `bun build` are bun's own test runner and bundler; `bun run <name>` runs a script.
+  if (script === 'test' || script === 't') return defined(runner === 'bun' ? undefined : 'test');
+  if (runner === 'bun' && script === 'build') return null;
+  if (APPLICATION_SCRIPTS.has(script)) return defined(script);
+  if (PACKAGE_MANAGER_COMMANDS.has(script)) return null;
+  // A bare word runs a program when one is installed under that name: `pnpm node scripts/x.js`.
+  return definitionOf(tokens.slice(word.index)) ?? defined(script);
+}
+
+function definitionOf(tokens: readonly string[]): CheckDefinition | null {
+  const call = interpreterCall(tokens);
+  if (call?.kind === 'script') return { kind: 'script-file', file: posix.normalize(call.file) };
+  if (call !== null) return null;
+  const first = tokens[0] ?? '';
+  const wrapper = projectWrapper(first);
+  if (wrapper !== undefined) {
+    return { kind: 'wrapper', runner: first, files: wrapper.files, dirs: wrapper.dirs };
+  }
+  const script = packageScript(tokens);
+  if (script !== null) return script;
+  const program = first.toLowerCase();
+  const task = lookup(TASK_FILES, program);
+  if (task !== undefined) return { kind: 'task-file', runner: program, ...task };
+  const next = forwarded(tokens);
+  if (next === null || 'refusal' in next) return null;
+  for (const candidate of next.commands) {
+    const definition = definitionOf(candidate);
+    if (definition !== null) return definition;
+  }
+  return null;
+}
+
+/**
+ * The project file or files that define what a command runs: an interpreter script, a package
+ * script, a task file or a build wrapper, looking through `npx`, `bundle exec`, `uv run` and the
+ * like. Null when the command runs none.
+ */
+export function checkDefinition(command: string): CheckDefinition | null {
+  return definitionOf(parseShellCommand(command));
 }
