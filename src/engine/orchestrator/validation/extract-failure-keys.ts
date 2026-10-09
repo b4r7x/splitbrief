@@ -12,9 +12,15 @@ import { failingTestKey, parseFailingTests } from './test-failures.js';
  * an output that lists only whole paths. A timeout, an incomplete capture or a red that names no
  * failure has one placeholder key, and `placeholder` says how it failed, since that key names no
  * failure. Output lines that name no file, such as an `npm` script banner or a `make` error
- * summary, are not diagnostic lines.
+ * summary, are not diagnostic lines. `messages` holds, per failing test key, the first line the
+ * runner printed under it (its assertion message), read from the whole capture; a diagnostic key
+ * is its own line and has no entry.
  */
-export type FailureKeys = { keys: string[]; placeholder?: string | undefined };
+export type FailureKeys = {
+  keys: string[];
+  placeholder?: string | undefined;
+  messages?: ReadonlyMap<string, string> | undefined;
+};
 
 export function failureKeys(
   run: {
@@ -37,7 +43,16 @@ export function failureKeys(
   const keys = [
     ...new Set([...tests.map(failingTestKey), ...(extracted.diagnostics ? extracted.keys : [])]),
   ];
-  if (keys.length > 0) return { keys };
+  const messages = new Map<string, string>();
+  for (const test of tests) {
+    const key = failingTestKey(test);
+    // A message that is a key itself, such as a Go test's diagnostic line, is listed as that key.
+    const listed = keys.includes(test.message);
+    if (test.message !== '' && !STACK_FRAME.test(test.message) && !listed && !messages.has(key)) {
+      messages.set(key, test.message);
+    }
+  }
+  if (keys.length > 0) return { keys, ...(messages.size > 0 && { messages }) };
   if (
     extracted.keys.length > 0 &&
     extracted.keys.every((line) => fileFromFailureKey(line) === normalizeProjectRelativePath(line))
@@ -50,6 +65,9 @@ export function failureKeys(
   const key = `exited with code ${run.exitCode}`;
   return { keys: [key], placeholder: `${key} without diagnostics` };
 }
+
+/** A stack frame row: `at fn (file:1:2)`, vitest's `❯ file:1:2`, jest's `→ file:1:2`. */
+const STACK_FRAME = /^(?:at |❯ |→ )/;
 
 const TOKEN_PATTERNS = [
   String.raw`::[\w.:[\]-]+`,
@@ -85,7 +103,8 @@ export function extractFailureKeys(rawOutput: string): { keys: string[]; diagnos
     .filter((line) => line.length > 0);
   const tokens: string[] = [];
   for (const line of lines) {
-    if (/^(?:at |❯ |→ |[✓√])|^.+:\d+: in \S+/.test(line) || /^warning\b/i.test(line)) continue;
+    if (STACK_FRAME.test(line) || /^[✓√]|^.+:\d+: in \S+/.test(line) || /^warning\b/i.test(line))
+      continue;
     const token = tokenOf(line);
     if (token === undefined) continue;
     if (isTestNodeKey(token) ? !/\b(?:FAILED|ERROR)\b/.test(line) : WARNING_SEVERITY.test(token)) {

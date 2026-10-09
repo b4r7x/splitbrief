@@ -119,6 +119,40 @@ describe('brief gate', () => {
       expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: false }]);
     }
   });
+  // Live run 2026-10-09: the 4k tail of `npm run test-ci` was an event-log line.
+  it('leads the retry text with the failing test and its message when the output tail is noise', async () => {
+    const ref = setup();
+    const noise = Array.from(
+      { length: 200 },
+      (_line, index) => `{"type":"task_end","id":${index},"endedAt":1760000000000,"durationMs":63}`,
+    );
+    const output = [
+      ' FAIL  src/a.test.ts > a > adds',
+      'AssertionError: expected 1 to be 2',
+      ' ❯ src/a.test.ts:3:5',
+      ...noise,
+    ].join('\n');
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const result = await runBriefGate({
+      wctx: makeWctx({ ...ref, config: makeNoValidationConfig({ workflow: { review: 'task' } }) }),
+      task,
+      state: makeImplState([task]),
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand: vi
+        .fn()
+        .mockRejectedValue(processError.exitCode({ command: 'node', code: 1, stderr: output })),
+    });
+    expect(result.acceptance).toEqual({ accepted: false });
+    expect(result.error).toMatch(
+      /^check K1 did not pass \(fail\): 1 failure\nFailures:\n- src\/a\.test\.ts::a > adds\n {2}AssertionError: expected 1 to be 2\nOutput tail:\n/,
+    );
+    expect(result.error.endsWith(noise.at(-1) ?? '')).toBe(true);
+  });
+
   it('runs the check of the red a fix task answers again at end cadence, and a red fails the gate', async () => {
     const ref = setup();
     const task = makeTask({
@@ -323,6 +357,9 @@ describe('brief gate', () => {
         expect(places).toEqual(['workspace']);
         expect(result.acceptance.accepted).toBe(false);
         expect(result.error).toMatch(/^check V1 did not pass \(fail\): .*TS2322/s);
+        expect(result.error).toContain(
+          `your 1\u00a0failure remains\nYour failures that remain:\n- ${NEW_KEY}\nOther failures:\n- ${OLD_RED}\nOutput tail:`,
+        );
         expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: false }]);
       });
     });

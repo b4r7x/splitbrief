@@ -69,7 +69,7 @@ function diagnosticIdentity(key: string): string | null {
 }
 
 /** Pair exact keys first, then diagnostic identities, each re-run key at most once. */
-function pairFailureKeys(carried: readonly string[], rerun: readonly string[]) {
+export function pairFailureKeys(carried: readonly string[], rerun: readonly string[]) {
   const remaining = new Set(rerun.map((_key, index) => index));
   const matched = new Set<number>();
   for (const [index, key] of carried.entries()) {

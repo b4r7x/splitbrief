@@ -20,6 +20,7 @@ import {
   planApprovesNpmScripts,
   runChecks,
 } from '../validation/run-checks.js';
+import { checkFailureText } from '../validation/failure-text.js';
 import {
   classifyRequiredChecks,
   haltRequiredChecksUnrunnable,
@@ -215,7 +216,7 @@ async function recheckMergedCandidate(
       if (unrunnable.has(run.checkId) || run.status === 'not-runnable') {
         notRun.push(`${owner} check ${run.checkId} not run: ${run.output}`);
       } else if (run.status !== 'pass') {
-        const text = `${owner} check ${run.checkId} did not pass (${run.status}): ${run.output}`;
+        const text = `${owner} ${checkFailureText(run)}`;
         failures.push(text);
         pushRun(run, text);
       }

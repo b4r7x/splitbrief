@@ -1,8 +1,10 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
+import { fixCheckKeys } from '../../../core/review/fix-task.js';
 import type { WorkflowContext } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
+import { checkFailureText } from '../validation/failure-text.js';
 import { checkRegistry, type CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
@@ -12,12 +14,6 @@ type BriefGateContext = Pick<
   WorkflowContext,
   'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal' | 'validator'
 >;
-
-export function verifyFailures(checkRuns: readonly CheckRunResult[]): string[] {
-  return checkRuns
-    .filter((run) => run.status !== 'pass')
-    .map((run) => `check ${run.checkId} did not pass (${run.status}): ${run.output}`);
-}
 
 export async function runBriefGate(opts: {
   wctx: BriefGateContext;
@@ -111,12 +107,13 @@ export async function runBriefGate(opts: {
   const acceptance: ValidationAcceptance = {
     accepted: failedChecks.length === 0 && !wctx.signal?.aborted,
   };
+  const carried = fixCheckKeys(task);
   const firstFailedCheck = failedChecks[0];
   return {
     state,
     stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
     acceptance,
-    error: verifyFailures(failedChecks).join('\n\n'),
+    error: failedChecks.map((run) => checkFailureText(run, carried.get(run.checkId))).join('\n\n'),
     diagnosis: firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`,
   };
 }
