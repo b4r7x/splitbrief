@@ -51,6 +51,9 @@ const EvidenceCheckEntrySchema = z.object({
   exitCode: z.number().int().optional(),
   output: z.string().optional(),
   preExisting: z.array(z.string()).optional(),
+  base: z
+    .object({ exitCode: z.number().int().optional(), output: z.string().optional() })
+    .optional(),
   artifacts: z.array(z.object({ path: z.string(), sha256: z.string() })).optional(),
   workspaceSnapshotId: z.string().optional(),
   ts: z.string(),

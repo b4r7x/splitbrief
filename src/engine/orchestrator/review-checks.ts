@@ -30,7 +30,7 @@ import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.
 import { runReviewerCall } from './review-call.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromOutput, lastTaskChangingFile } from './task/file-owner.js';
-import { extractFailureKeys } from './validation/extract-failure-keys.js';
+import { failureKeys, type FailureKeys } from './validation/extract-failure-keys.js';
 import {
   planApprovesNpmScripts,
   reviewCheckList,
@@ -38,7 +38,6 @@ import {
   type CheckRunResult,
   type RunChecksOptions,
 } from './validation/run-checks.js';
-import { failingTestKey, parseFailingTests } from './validation/test-failures.js';
 
 /** Files a seat that reads none of its own gets verbatim, so it can see how the project verifies. */
 const PROJECT_FILES = [
@@ -128,28 +127,6 @@ async function readProjectFiles(workspaceDir: string): Promise<ProjectFileText[]
   return files;
 }
 
-/**
- * The keys of a red command. Its failing tests by name, else its diagnostic lines, identify the
- * failure; a timeout or a red with neither has one placeholder key, and `placeholder` says how it
- * failed, since that key names no failure. Output lines that name no file, such as an `npm`
- * script banner or a `make` error summary, are not diagnostic lines.
- */
-type FailureKeys = { keys: string[]; placeholder?: string | undefined };
-
-function failureKeys(run: CheckRunResult, dir: string): FailureKeys {
-  if (run.timedOut === true) return { keys: ['timed out'], placeholder: 'timed out' };
-  const output = run.output.replaceAll(`${dir}/`, '');
-  const tests = parseFailingTests(output);
-  if (tests.length > 0) return { keys: [...new Set(tests.map(failingTestKey))] };
-  const extracted = extractFailureKeys(output);
-  if (extracted.diagnostics) return { keys: extracted.keys };
-  if (run.exitCode === undefined) {
-    return { keys: ['failed without diagnostics'], placeholder: 'failed without diagnostics' };
-  }
-  const key = `exited with code ${run.exitCode}`;
-  return { keys: [key], placeholder: `${key} without diagnostics` };
-}
-
 /** Why two reds whose keys include a placeholder do not show the same failure. */
 function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
   if (workspace.placeholder !== undefined && workspace.placeholder === base.placeholder) {
@@ -176,7 +153,12 @@ async function preExistingKeys(input: {
   base: RunBase;
   checkOptions: RunChecksOptions;
   notices: { bus: EventBus; phase: WorkflowState['phase'] };
-}): Promise<{ keys: string[]; unavailable?: string; notVerified?: string }> {
+}): Promise<{
+  keys: string[];
+  run?: CheckRunResult | undefined;
+  unavailable?: string | undefined;
+  notVerified?: string | undefined;
+}> {
   const startedAt = Date.now();
   publishReviewCheck(input.notices, {
     status: 'running',
@@ -184,14 +166,14 @@ async function preExistingKeys(input: {
     command: input.command,
     moment: 'base',
   });
-  const atBase = await withRunBaseTree(input.base, async (dir) => {
+  const atBase = await withRunBaseTree(input.base, async ({ dir, incomplete }) => {
     const [run] = await runChecks([input.id], {
       ...input.checkOptions,
       projectDir: dir,
       base: undefined,
       checkoutDir: undefined,
     });
-    return run === undefined ? undefined : { run, keys: failureKeys(run, dir) };
+    return run === undefined ? undefined : { run, incomplete };
   });
   if (atBase === undefined || (atBase.run.status !== 'pass' && atBase.run.status !== 'fail')) {
     publishReviewCheck(input.notices, {
@@ -203,15 +185,19 @@ async function preExistingKeys(input: {
     });
     return {
       keys: [],
+      run: atBase?.run,
       unavailable: `${atBase?.run.status === 'refused' ? 'refused' : 'not run'}: ${atBase?.run.output ?? `no check ${input.id}`}`,
     };
   }
+  const baseFailure = atBase.run.failure ?? failureKeys('', {}, input.checkOptions.projectDir);
   const reason =
-    atBase.run.status === 'fail' &&
-    (input.failure.placeholder !== undefined || atBase.keys.placeholder !== undefined)
-      ? notVerifiedReason(input.failure, atBase.keys)
+    atBase.run.status === 'fail'
+      ? (atBase.incomplete ??
+        (input.failure.placeholder !== undefined || baseFailure.placeholder !== undefined
+          ? notVerifiedReason(input.failure, baseFailure)
+          : undefined))
       : undefined;
-  const known = new Set(atBase.keys.keys);
+  const known = new Set(baseFailure.keys);
   const keys =
     atBase.run.status === 'fail' && reason === undefined
       ? input.failure.keys.filter((key) => known.has(key))
@@ -228,7 +214,7 @@ async function preExistingKeys(input: {
     preExisting: keys.length,
     notVerified: reason === undefined ? undefined : input.failure.keys.length,
   });
-  return reason === undefined ? { keys } : { keys, notVerified: reason };
+  return { keys, run: atBase.run, notVerified: reason };
 }
 
 function noRunBase(
@@ -258,12 +244,13 @@ async function splitAtRunBase(input: {
 }): Promise<{
   fresh: string[];
   preExisting: string[];
+  base?: CheckRunResult | undefined;
   unavailable?: string | undefined;
   notVerified?: string | undefined;
 }> {
   const { run, command, checkOptions } = input;
   const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
-  const failure = failureKeys(run, checkOptions.projectDir);
+  const failure = run.failure ?? failureKeys('', {}, checkOptions.projectDir);
   const atBase =
     checkOptions.base === undefined
       ? noRunBase(notices, { id: run.checkId, command })
@@ -278,6 +265,7 @@ async function splitAtRunBase(input: {
   return {
     fresh: failure.keys.filter((key) => !atBase.keys.includes(key)),
     preExisting: atBase.keys,
+    base: 'run' in atBase ? atBase.run : undefined,
     unavailable: atBase.unavailable,
     notVerified: 'notVerified' in atBase ? atBase.notVerified : undefined,
   };
@@ -324,13 +312,22 @@ export async function runReviewCheck(input: {
     duration: Date.now() - startedAt,
   });
   if (run.status === 'pass') return { run, fresh: [] };
-  const { fresh, preExisting, unavailable, notVerified } = await splitAtRunBase({
+  const { fresh, preExisting, base, unavailable, notVerified } = await splitAtRunBase({
     run,
     command,
     checkOptions,
   });
   return {
-    run: preExisting.length > 0 ? { ...run, preExisting } : run,
+    run: {
+      ...run,
+      ...(preExisting.length > 0 && { preExisting }),
+      ...(base !== undefined && {
+        base: {
+          output: base.output,
+          ...(base.exitCode !== undefined && { exitCode: base.exitCode }),
+        },
+      }),
+    },
     fresh,
     unavailable,
     notVerified,

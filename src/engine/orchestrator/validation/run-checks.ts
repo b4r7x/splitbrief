@@ -24,6 +24,7 @@ import type { EventBus } from '../../events/types.js';
 import type { RunBase } from '../isolation/base-tree.js';
 import { checkCommandRefusal } from '../planning/sanitize-discovered-validation.js';
 import { changedDefinitionRefusal } from './changed-script.js';
+import { failureKeys, type FailureKeys } from './extract-failure-keys.js';
 import type { ValidationResult } from './result.js';
 import { reviewerCommandRefusal } from './reviewer-command-policy.js';
 import { buildStageContext, planTestCheck } from './run.js';
@@ -44,9 +45,13 @@ export type CheckRunResult = {
   command?: string | undefined;
   exitCode?: number | undefined;
   timedOut?: true | undefined;
+  /** The failure keys of a red command, read from its whole captured output; `output` keeps only its tail. */
+  failure?: FailureKeys | undefined;
   artifacts?: CheckRunArtifact[] | undefined;
   /** The failure keys the same command also showed at the run base. */
   preExisting?: readonly string[] | undefined;
+  /** The same command's re-run at the run base. */
+  base?: { output: string; exitCode?: number | undefined } | undefined;
 };
 
 export type RunChecksOptions = {
@@ -223,6 +228,7 @@ async function runCommandCheck(
         checkId: check.id,
         status: 'fail',
         output: boundedOutputTail(output),
+        failure: failureKeys(output, { exitCode: err.data.code ?? undefined }, opts.projectDir),
         command: check.value,
         ...(err.data.code !== null && { exitCode: err.data.code }),
       };
@@ -232,6 +238,7 @@ async function runCommandCheck(
         checkId: check.id,
         status: 'fail',
         output: boundedOutputTail(err.message),
+        failure: failureKeys('', { timedOut: true }, opts.projectDir),
         command: check.value,
         timedOut: true,
       };

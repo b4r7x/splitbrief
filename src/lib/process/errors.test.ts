@@ -159,21 +159,20 @@ describe('processError.exitCode', () => {
     expect(err.data.output).toBe('Credit balance is too low');
   });
 
-  it('sanitizes and bounds terminal-unsafe failure payloads', () => {
+  it('sanitizes full terminal-unsafe failure payloads and bounds the message', () => {
+    const padding = 'x'.repeat(DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS + 10);
     const err = processError.exitCode({
       command: 'node',
       code: 1,
-      stderr: `\u001b]0;owned\u0007token=${JWT_FIXTURE} \u001b[31mred\u001b[0m`,
-      output: `key=sk-abcdefghijklmnopqrstuvwxyz ${'x'.repeat(
-        DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS + 10,
-      )}`,
+      stderr: `\u001b]0;owned\u0007token=${JWT_FIXTURE} \u001b[31mred\u001b[0m\n${padding}`,
+      output: `\u001b]0;owned\u0007key=sk-abcdefghijklmnopqrstuvwxyz \u001b[31m${padding}\u001b[0m\nsummary`,
     });
 
-    expect(err.message).toBe('node exited with code 1: token=***REDACTED*** red');
-    expect(err.data.stderr).toBe('token=***REDACTED*** red');
-    expect(err.data.output).not.toContain('abcdefghijklmnopqrstuvwxyz');
-    expect(err.data.output).toHaveLength(DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS);
-    expect(err.data.output.endsWith('…')).toBe(true);
+    expect(err.message).toHaveLength(DEFAULT_TERMINAL_DIAGNOSTIC_MAX_CHARS);
+    expect(err.message.startsWith('node exited with code 1: token=***REDACTED*** red')).toBe(true);
+    expect(err.message.endsWith('…')).toBe(true);
+    expect(err.data.stderr).toBe(`token=***REDACTED*** red\n${padding}`);
+    expect(err.data.output).toBe(`key=sk-***REDACTED*** ${padding}\nsummary`);
   });
 
   it('sanitizes process-output command and label payloads', () => {

@@ -1,4 +1,31 @@
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
+import { failingTestKey, parseFailingTests } from './test-failures.js';
+
+/**
+ * The keys of a red command. Its failing tests by name, else its diagnostic lines, identify the
+ * failure; a timeout or a red with neither has one placeholder key, and `placeholder` says how it
+ * failed, since that key names no failure. Output lines that name no file, such as an `npm`
+ * script banner or a `make` error summary, are not diagnostic lines.
+ */
+export type FailureKeys = { keys: string[]; placeholder?: string | undefined };
+
+export function failureKeys(
+  text: string,
+  run: { timedOut?: true | undefined; exitCode?: number | undefined },
+  dir: string,
+): FailureKeys {
+  if (run.timedOut === true) return { keys: ['timed out'], placeholder: 'timed out' };
+  const output = text.replaceAll(`${dir}/`, '');
+  const tests = parseFailingTests(output);
+  if (tests.length > 0) return { keys: [...new Set(tests.map(failingTestKey))] };
+  const extracted = extractFailureKeys(output);
+  if (extracted.diagnostics) return { keys: extracted.keys };
+  if (run.exitCode === undefined) {
+    return { keys: ['failed without diagnostics'], placeholder: 'failed without diagnostics' };
+  }
+  const key = `exited with code ${run.exitCode}`;
+  return { keys: [key], placeholder: `${key} without diagnostics` };
+}
 
 const TOKEN_PATTERNS = [
   /[\w./\\-]+\.\w+::[\w.:[\]-]+/,
