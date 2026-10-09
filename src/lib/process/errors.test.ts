@@ -75,12 +75,12 @@ describe('processError.timeout', () => {
 });
 
 describe('processError.idleTimeout', () => {
-  it('idleTimeout builds a command-idle-timeout error with seconds in the message', () => {
+  it('idleTimeout builds a command-idle-timeout error with the elapsed clock in the message', () => {
     const err = processError.idleTimeout({ command: 'codex', label: 'Codex', idleMs: 90_000 });
 
     expect(err).toMatchObject({
       kind: 'command-idle-timeout',
-      message: 'Codex produced no output for 90s and was terminated',
+      message: 'Codex sent no output for 1:30; SPLITBRIEF stopped it',
       data: { command: 'codex', label: 'Codex', idleMs: 90_000 },
     });
     expect(processError.isIdleTimeout(err)).toBe(true);
@@ -89,7 +89,7 @@ describe('processError.idleTimeout', () => {
   it('falls back to the command when no label is given', () => {
     const err = processError.idleTimeout({ command: 'codex', idleMs: 60_000 });
 
-    expect(err.message).toBe('codex produced no output for 60s and was terminated');
+    expect(err.message).toBe('codex sent no output for 1:00; SPLITBRIEF stopped it');
   });
 
   it('sanitizes idle timeout command and label payloads', () => {
@@ -99,7 +99,7 @@ describe('processError.idleTimeout', () => {
       idleMs: 1000,
     });
 
-    expect(err.message).toBe('label-***REDACTED*** produced no output for 1s and was terminated');
+    expect(err.message).toBe('label-***REDACTED*** sent no output for 0:01; SPLITBRIEF stopped it');
     expect(err.data).toMatchObject({
       command: 'cmd-***REDACTED***',
       label: 'label-***REDACTED***',

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createRunnerCallRecorder } from '../calls/recorder.js';
+import type { RunnerCallEvent } from '../calls/types.js';
 import { getLineParser } from './output-parsers.js';
 import { parseJsonlLine } from './parse-jsonl.js';
 import { parseOpencodeLine } from './parse-opencode.js';
 import { parseTextLine } from './parse-text.js';
+import { createParsedLineRecorder } from './parsed-line-recorder.js';
 
 describe('getLineParser dispatch', () => {
   it('routes text lines through parseTextLine', () => {
@@ -53,15 +56,21 @@ describe('wrapStreamParser field projections', () => {
     );
   });
 
-  it('forwards toolUse', () => {
+  it('forwards toolUse when a tool_result closes the tool', () => {
+    parse(
+      jsonLine({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', id: 'r1', name: 'read_file', input: {} }] },
+      }),
+    );
     expect(
       parse(
         jsonLine({
-          type: 'assistant',
-          message: { content: [{ type: 'tool_use', name: 'read_file', input: {} }] },
+          type: 'user',
+          message: { content: [{ type: 'tool_result', tool_use_id: 'r1' }] },
         }),
       ),
-    ).toEqual(expect.objectContaining({ toolUse: [{ name: 'read_file', input: {} }] }));
+    ).toEqual(expect.objectContaining({ toolUse: [{ id: 'r1', name: 'read_file', input: {} }] }));
   });
 
   it('forwards toolUseStart', () => {
@@ -131,7 +140,10 @@ describe('getLineParser stream-json wrap integration', () => {
           content: [{ type: 'tool_use', name: 'read_file', input: { path: 'src/foo.ts' } }],
         },
       }),
-      { sessionId: 'sess-wrap', toolUse: [{ name: 'read_file', input: { path: 'src/foo.ts' } }] },
+      {
+        sessionId: 'sess-wrap',
+        toolUseStart: [{ name: 'read_file', input: { path: 'src/foo.ts' } }],
+      },
     ],
     [
       'mixed text and tool event',
@@ -147,7 +159,7 @@ describe('getLineParser stream-json wrap integration', () => {
       {
         text: 'doing something',
         channel: 'assistant',
-        toolUse: [{ name: 'write_file', input: { path: 'out.ts' } }],
+        toolUseStart: [{ name: 'write_file', input: { path: 'out.ts' } }],
       },
     ],
     [
@@ -179,5 +191,55 @@ describe('getLineParser stream-json wrap integration', () => {
     ],
   ] as const)('wraps %s', (_name, line, expected) => {
     expect(parse(line)).toEqual(expected);
+  });
+});
+
+describe('getLineParser stream-json tool lifecycle', () => {
+  it('reports an assistant tool_use as started and closes it only on its user tool_result', () => {
+    const parse = getLineParser('stream-json');
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context: { callId: 'tool-life', role: 'implementer', backendKind: 'shell' },
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+    const parsed = createParsedLineRecorder({ recorder });
+    const toolEvents = () =>
+      events.filter((e) => e.type === 'call_tool_use_delta' || e.type === 'call_tool_use_done');
+
+    parsed.apply(
+      parse(
+        JSON.stringify({
+          type: 'assistant',
+          message: {
+            content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'ls' } }],
+          },
+        }),
+      ),
+    );
+    expect(toolEvents()).toEqual([
+      expect.objectContaining({
+        type: 'call_tool_use_delta',
+        toolUseId: 'b1',
+        name: 'Bash',
+        inputDelta: '{"command":"ls"}',
+      }),
+    ]);
+
+    parsed.apply(
+      parse(
+        JSON.stringify({
+          type: 'user',
+          message: { content: [{ type: 'tool_result', tool_use_id: 'b1' }] },
+        }),
+      ),
+    );
+    expect(toolEvents()).toEqual([
+      expect.objectContaining({ type: 'call_tool_use_delta', toolUseId: 'b1' }),
+      expect.objectContaining({
+        type: 'call_tool_use_done',
+        toolUse: expect.objectContaining({ id: 'b1', name: 'Bash', input: { command: 'ls' } }),
+      }),
+    ]);
   });
 });

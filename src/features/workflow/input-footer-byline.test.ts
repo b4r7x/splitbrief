@@ -146,15 +146,13 @@ describe('buildInputFooterByline', () => {
   it('renders the hint as its own dim part, directly behind the lead it explains', () => {
     const byline = buildInputFooterByline({
       cols: 120,
-      lead: '⚠ Still working — silent 5m 12s',
+      lead: '⚠ No output for 5:12',
       hintText: 'tools report when done',
       queuedText: '2 queued',
     });
 
     expect(byline.hint).toBe(`${SOFT_SEP}tools report when done`);
-    expect(fullByline(byline)).toBe(
-      '⚠ Still working — silent 5m 12s · tools report when done · 2 queued',
-    );
+    expect(fullByline(byline)).toBe('⚠ No output for 5:12 · tools report when done · 2 queued');
   });
 
   it('omits the hint segment when no hint is passed', () => {

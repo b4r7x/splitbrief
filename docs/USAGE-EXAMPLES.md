@@ -586,7 +586,7 @@ splitbrief start --json --allow-hooks "regenerate API client from openapi.yaml" 
 {"type":"workflow_complete","ts":1745692980000,"phase":"complete"}
 ```
 
-`--json` requires a feature argument and replaces the TUI sink with NDJSON-on-stdout. The on-disk JSONL log is still written. `--allow-hooks` skips the interactive trust prompt. The plan card is approved unattended; set `workflow.approve: none` in the CI config to skip it. A planner question stops the run with an `input_required` record and exit code 1.
+`--json` requires a feature argument and replaces the TUI sink with NDJSON-on-stdout. The on-disk JSONL log is still written. `--allow-hooks` skips the interactive trust prompt. The plan card is approved unattended; set `workflow.approve: none` in the CI config to skip it. A planner question stops the run with an `input_required` record and exit code 1. A seat call has no default end. Set the CI job's own timeout, or set `idleKillMs` or `timeout` on each seat. SIGINT and SIGTERM stop the run resumably and exit 0.
 
 **Variations:** `CI=1` env var auto-disables fullscreen mode even without `--json`.
 

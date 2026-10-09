@@ -187,7 +187,7 @@ On validation failure:
 - **The bounds** (`src/core/pipeline-spec/bounds.ts`): 2 consults and 8 attempts per lineage, 10 planner calls per run. A spent bound halts with `consult-bound-spent` or `planner-calls-spent`; `continue` grants +1 consult and +4 attempts, or +5 planner calls.
 - **Recovery** follows a spent bound or a ladder that cannot continue. The planner never automatically takes over code-writing implementation.
 
-Ladder logic: `src/engine/orchestrator/escalation/handle.ts`; seat trouble (transient retries, a ≤10-minute reset wait, the 20-minute no-progress cut) in `src/engine/runners/transient.ts` and `src/engine/orchestrator/escalation/seat-wait.ts`.
+Ladder logic: `src/engine/orchestrator/escalation/handle.ts`; seat trouble (transient retries, a ≤10-minute reset wait, the opt-in `idleKillMs` cut) in `src/engine/runners/transient.ts` and `src/engine/orchestrator/escalation/seat-wait.ts`.
 
 ---
 

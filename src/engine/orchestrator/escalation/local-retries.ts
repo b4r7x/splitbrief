@@ -22,7 +22,6 @@ import {
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 import { runRetryStep, type RetryStepResult } from './step.js';
 import { failedRetry, type EscalationContext, type RetryAttemptFailure } from './types.js';
-import { RUNNER_IDLE_KILL_MS } from '../../../core/schemas/runner-fields.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { TIMEOUTS } from '../../../core/pipeline-spec/timeouts.js';
 import type { RunnerFailureOutcomeState } from '../../runners/errors.js';
@@ -52,7 +51,9 @@ function isAbortedOutcome(lastError: string, signal: AbortSignal | undefined): b
 /**
  * The session log's record of a cut. A cut is an ordinary failed attempt on the
  * lineage — the retry and the consult that follow are already the ladder's own
- * mechanics — so nothing else changes here.
+ * mechanics — so nothing else changes here. Only a set `idleKillMs` cuts a
+ * call, so the record quotes it; a runner without one has no silence limit to
+ * quote, and the log records no cut for it.
  */
 export function recordNoProgressCut(
   ctx: EscalationContext,
@@ -62,14 +63,16 @@ export function recordNoProgressCut(
 ): void {
   if (failure?.outcome !== 'no-progress-cut') return;
   const runner = failure.runner;
-  const silentMs =
-    'idleKillMs' in runner && runner.idleKillMs !== undefined
-      ? runner.idleKillMs
-      : RUNNER_IDLE_KILL_MS;
+  if (!('idleKillMs' in runner) || runner.idleKillMs === undefined) return;
   publishNoProgressCut(
     { bus: ctx.bus, phase: state.phase },
-    { taskId: task.id, seat: 'build', silentMs },
+    { taskId: task.id, seat: 'build', silentMs: runner.idleKillMs },
   );
+}
+
+/** A timeout and a no-progress cut both end a call that did not finish. */
+function isUnfinishedCall(failure: RetryAttemptFailure | undefined): boolean {
+  return failure?.outcome === 'timeout' || failure?.outcome === 'no-progress-cut';
 }
 
 /** The ladder cannot ask the planner again; the operator decides the grant. */
@@ -133,7 +136,7 @@ export async function runLocalRetries(
   let lastError = opts.lastError;
   let lastDiagnosis = opts.lastDiagnosis;
   let attempts = 0;
-  let consecutiveTimeouts = opts.initialFailure?.outcome === 'timeout' ? 1 : 0;
+  let consecutiveTimeouts = isUnfinishedCall(opts.initialFailure) ? 1 : 0;
   let lastFailure: RetryAttemptFailure | undefined;
   let attemptSnapshot: ChangedFilesSnapshot | undefined;
   let answer = opts.answer;
@@ -272,7 +275,9 @@ export async function runLocalRetries(
     if (failure?.outcome === 'no-staged-change') {
       return { ...outcome, state };
     }
-    if (failure?.outcome !== 'timeout') {
+    // Timeouts and no-progress cuts share one count: two unfinished calls in a
+    // row halt as `runner-timeout-repeated`; any other outcome resets it.
+    if (failure === undefined || !isUnfinishedCall(failure)) {
       consecutiveTimeouts = 0;
       continue;
     }

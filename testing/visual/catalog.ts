@@ -1662,14 +1662,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-implementation-silent',
-      title: 'Workflow · a silent seat mid-brief',
+      title: 'Workflow · a silent seat mid-brief, on a stream that reports tools when done',
       surface: screenSurface('workflow'),
       viewports: [...WIDE_VIEWPORTS, viewport({ cols: 220, rows: 45 })],
       checkpoint: {
         id: 'implementation-silent',
-        title: 'Silence stated once, in the build block',
+        title: 'Silence stated once, in the build block, with the stream hint',
         kind: 'implementation',
-        marker: 'Still working',
+        marker: 'tools report when done',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1678,13 +1678,28 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-implementation-tool-running',
-      title: 'Workflow · a seat quiet while its tool runs',
+      title: 'Workflow · a seat silent while its tool runs',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'implementation-tool-running',
-        title: 'The running tool named in the build block',
+        title: 'The silence names the running tool in the build block',
         kind: 'implementation',
         marker: 'running npx vitest run',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-silent-bare',
+      title: 'Workflow · a silent seat with no open tool and no stream hint',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-silent-bare',
+        title: 'The silence alone, in the build block',
+        kind: 'implementation',
+        marker: 'No output for',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

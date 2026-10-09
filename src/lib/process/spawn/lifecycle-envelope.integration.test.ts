@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { processError } from '../errors.js';
 import { killAllProcesses, SIGKILL_DELAY_MS } from '../registry.js';
 import {
@@ -11,21 +11,6 @@ import {
   spawnPipeError,
   type SpawnPipeFatalSignal,
 } from './lifecycle.js';
-
-// Counts the idle kill windows a live descendant carried past, so a test can
-// wait for those windows instead of sleeping through them.
-const killWindows = vi.hoisted(() => ({ survived: 0 }));
-vi.mock('../liveness.js', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../liveness.js')>();
-  return {
-    ...actual,
-    hasLiveDescendants: (pid: number): boolean => {
-      const live = actual.hasLiveDescendants(pid);
-      if (live) killWindows.survived += 1;
-      return live;
-    },
-  };
-});
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -55,7 +40,14 @@ function blockUntilExited(pid: number): void {
 function pipe(opts: {
   script: string;
   env?: NodeJS.ProcessEnv | undefined;
-  idle?: { warnMs: number; killMs: number } | undefined;
+  idle?:
+    | {
+        warnMs: number;
+        killMs?: number | undefined;
+        onWarn?: ((silentMs: number) => void) | undefined;
+        onClear?: (() => void) | undefined;
+      }
+    | undefined;
   signal?: AbortSignal | undefined;
   stdin?: string | undefined;
   onStdout?: (chunk: string) => SpawnPipeFatalSignal | undefined;
@@ -166,28 +158,29 @@ describe('spawnPipe lifecycle termination', () => {
   );
 
   itUnix(
-    'does not cut a silent leader while its child process is still running',
+    'only warns a silent leader when no kill bound is set, and clears the warning on output',
     async () => {
       const dir = markerDir();
-      const pidFile = join(dir, 'child.pid');
+      const go = join(dir, 'go');
       const controller = new AbortController();
-      let leaderPid = 0;
+      let warnings = 0;
+      let clears = 0;
       let settled = false;
-      killWindows.survived = 0;
       const pending = pipe({
         script: [
-          "const {spawn}=require('node:child_process')",
-          "const child=spawn('sleep',['30'],{stdio:'ignore'})",
-          `require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid))`,
-          'setInterval(()=>{},1000)',
+          "const fs=require('node:fs')",
+          `const t=setInterval(()=>{if(fs.existsSync(${JSON.stringify(go)})){clearInterval(t);process.stdout.write('back');setInterval(()=>{},1000)}},10)`,
         ].join(';'),
-        // The first window also covers the leader's own Node start-up, which a
-        // loaded machine stretches past a few hundred milliseconds.
-        idle: { warnMs: 100, killMs: 1_000 },
-        signal: controller.signal,
-        onSpawned: (spawnedPid) => {
-          leaderPid = spawnedPid;
+        idle: {
+          warnMs: 50,
+          onWarn: () => {
+            warnings += 1;
+          },
+          onClear: () => {
+            clears += 1;
+          },
         },
+        signal: controller.signal,
       });
       pending.then(
         () => {
@@ -198,25 +191,82 @@ describe('spawnPipe lifecycle termination', () => {
         },
       );
 
-      for (let waited = 0; waited < 5_000 && !existsSync(pidFile); waited += 20) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      // Several kill windows pass with no output; the running child keeps the
-      // call alive each time.
-      await vi.waitFor(() => expect(killWindows.survived).toBeGreaterThanOrEqual(2), {
-        timeout: 5_000,
-        interval: 20,
-      });
+      await vi.waitFor(() => expect(warnings).toBe(1), { timeout: 5_000, interval: 10 });
+      // Several warn windows pass in silence: one warning, and no cut.
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(warnings).toBe(1);
+      expect(clears).toBe(0);
+      expect(settled).toBe(false);
+
+      writeFileSync(go, '');
+      await vi.waitFor(() => expect(clears).toBe(1), { timeout: 5_000, interval: 10 });
       expect(settled).toBe(false);
 
       controller.abort(new DOMException('test finished', 'AbortError'));
       await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    },
+    15_000,
+  );
 
+  itUnix(
+    'cuts a silent leader with a running child at the kill bound and reaps the child',
+    async () => {
+      const dir = markerDir();
+      const pidFile = join(dir, 'child.pid');
+      let leaderPid = 0;
+      const pending = pipe({
+        script: [
+          "const {spawn}=require('node:child_process')",
+          "const child=spawn('sleep',['30'],{stdio:'ignore'})",
+          `require('node:fs').writeFileSync(${JSON.stringify(pidFile)},String(child.pid))`,
+          'setInterval(()=>{},1000)',
+        ].join(';'),
+        // The window also covers the leader's own Node start-up, which a
+        // loaded machine stretches past a few hundred milliseconds.
+        idle: { warnMs: 100, killMs: 1_000 },
+        onSpawned: (spawnedPid) => {
+          leaderPid = spawnedPid;
+        },
+      });
+
+      await expect(pending).rejects.toSatisfy(processError.isIdleTimeout);
       const childPid = Number.parseInt(readFileSync(pidFile, 'utf8'), 10);
       expect(leaderPid).toBeGreaterThan(1);
       expect(childPid).toBeGreaterThan(1);
       expect(processIsAbsent(leaderPid)).toBe(true);
       expect(processIsAbsent(childPid)).toBe(true);
+    },
+    15_000,
+  );
+
+  itUnix(
+    'resets the warn and kill timers on every output chunk',
+    async () => {
+      let warnings = 0;
+      let output = '';
+      // Output every 150 ms for 2.25 s, then silence: the call outlives two
+      // kill bounds while it speaks and is cut only once it falls silent.
+      const startedAt = performance.now();
+      const pending = pipe({
+        script:
+          "let n=0;const t=setInterval(()=>{process.stdout.write('.');if(++n===15)clearInterval(t)},150);setInterval(()=>{},1000)",
+        idle: {
+          warnMs: 500,
+          killMs: 1_000,
+          onWarn: () => {
+            warnings += 1;
+          },
+        },
+        onStdout: (chunk) => {
+          output += chunk;
+          return undefined;
+        },
+      });
+
+      await expect(pending).rejects.toSatisfy(processError.isIdleTimeout);
+      expect(output).toBe('.'.repeat(15));
+      expect(performance.now() - startedAt).toBeGreaterThanOrEqual(2_250);
+      expect(warnings).toBe(1);
     },
     15_000,
   );

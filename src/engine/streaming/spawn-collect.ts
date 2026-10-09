@@ -1,5 +1,5 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
-import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import {
   createRunnerCallCredentialRedactor,
@@ -275,7 +275,7 @@ export async function spawnAndCollect(
       signal: cancellation.signal,
       idle: {
         warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
-        killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+        killMs: opts.idle?.killMs,
         onWarn: (silentMs) => recorder.stalled({ silentMs }),
         onClear: () => recorder.stallCleared(),
       },

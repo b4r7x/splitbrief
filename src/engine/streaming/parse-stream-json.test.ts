@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { formatStoredReset } from '../../core/recovery/reset-clock.js';
-import { parseStreamLine } from './parse-stream-json.js';
+import { createStreamParser, parseStreamLine } from './parse-stream-json.js';
 
 function jsonLine(value: unknown): string {
   return JSON.stringify(value);
@@ -99,7 +99,7 @@ describe('parseStreamLine', () => {
       {
         sessionId: 'sess-tool',
         textSemantics: 'final',
-        toolUse: [{ id: 'tool-1', name: 'read_file', input: { path: '/tmp/test.ts' } }],
+        toolUseInput: [{ id: 'tool-1', name: 'read_file', input: { path: '/tmp/test.ts' } }],
       },
     ],
     [
@@ -123,7 +123,7 @@ describe('parseStreamLine', () => {
         channel: 'assistant',
         textSemantics: 'final',
         sessionId: 'sess-mixed',
-        toolUse: [{ name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } }],
+        toolUseInput: [{ name: 'write_file', input: { path: '/tmp/out.ts', content: 'code' } }],
       },
     ],
     [
@@ -142,7 +142,7 @@ describe('parseStreamLine', () => {
         text: 'visible text',
         channel: 'assistant',
         textSemantics: 'final',
-        toolUse: [{ name: 'read_file', input: {} }],
+        toolUseInput: [{ name: 'read_file', input: {} }],
       },
     ],
     [
@@ -213,6 +213,78 @@ describe('parseStreamLine', () => {
     ],
   ] as const)('parses %s', (_name, line, expected) => {
     expect(parseStreamLine(line)).toEqual(expected);
+  });
+
+  it('closes a tool on its user tool_result, not on the assistant record that completes its input', () => {
+    const parse = createStreamParser();
+    expect(
+      parse(
+        jsonLine({
+          type: 'stream_event',
+          event: {
+            type: 'content_block_start',
+            index: 1,
+            content_block: { type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} },
+          },
+        }),
+      ).toolUseStart,
+    ).toEqual([{ id: 'toolu_1', name: 'Read', input: {} }]);
+    const input = parse(
+      jsonLine({
+        type: 'assistant',
+        session_id: 'sess-tool',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } },
+          ],
+        },
+      }),
+    );
+    expect(input.toolUseInput).toEqual([
+      { id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } },
+    ]);
+    expect(input.toolUse).toBeUndefined();
+
+    expect(
+      parse(
+        jsonLine({
+          type: 'user',
+          session_id: 'sess-tool',
+          message: {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'file text' }],
+          },
+        }),
+      ),
+    ).toEqual({
+      sessionId: 'sess-tool',
+      toolUse: [{ id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } }],
+    });
+  });
+
+  it('closes a tool it never saw open under the placeholder name', () => {
+    expect(
+      parseStreamLine(
+        jsonLine({
+          type: 'user',
+          session_id: 'sess-tool',
+          parent_tool_use_id: 'toolu_parent',
+          message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_9', content: 'ok' }] },
+        }),
+      ),
+    ).toEqual({
+      sessionId: 'sess-tool',
+      toolUse: [{ id: 'toolu_9', name: 'tool_use', input: {} }],
+      isSubagent: true,
+    });
+  });
+
+  it('reads a user record without a tool_result as before', () => {
+    expect(
+      parseStreamLine(
+        jsonLine({ type: 'user', session_id: 'sess-user', message: { content: 'prompt' } }),
+      ),
+    ).toEqual({ sessionId: 'sess-user' });
   });
 
   it.each([

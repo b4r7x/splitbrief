@@ -225,7 +225,8 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
       semantics: parsed.usageSemantics ?? (parsed.isResult ? 'final' : 'delta'),
     });
   }
-  for (const toolUse of parsed.toolUseStart ?? []) {
+  // A tool is started from its first block until its `tool_result`; the whole input re-announces it.
+  for (const toolUse of [...(parsed.toolUseStart ?? []), ...(parsed.toolUseInput ?? [])]) {
     events.push({
       type: 'tool-use',
       stage: 'started',
@@ -237,6 +238,7 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
   for (const toolUse of parsed.toolUse ?? []) {
     events.push({
       type: 'tool-use',
+      stage: 'done',
       id: toolUse.id ?? null,
       name: toolUse.name,
       input: { ...toolUse.input },

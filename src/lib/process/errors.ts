@@ -3,6 +3,7 @@ import {
   sanitizeTerminalDiagnosticText,
   sanitizeTerminalDisplayText,
 } from '../../utils/display-text.js';
+import { formatElapsedClock } from '../../utils/format-time.js';
 
 export const spawnError = {
   streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
@@ -82,10 +83,9 @@ export const processError = {
     const command = sanitizeTerminalDiagnosticText(opts.command);
     const label = opts.label === undefined ? undefined : sanitizeTerminalDiagnosticText(opts.label);
     const subject = label ?? command;
-    const seconds = Math.round(opts.idleMs / 1000);
     return error(
       'command-idle-timeout',
-      `${subject} produced no output for ${seconds}s and was terminated`,
+      `${subject} sent no output for ${formatElapsedClock(opts.idleMs)}; SPLITBRIEF stopped it`,
       {
         command,
         label,

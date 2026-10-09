@@ -68,6 +68,44 @@ describe('createStdoutTextSink', () => {
     ]);
   });
 
+  it('prints one stalled line at the warn and nothing when the stall clears', () => {
+    const call = {
+      phase: 'implementing',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+    } as const;
+    const lines = collect([
+      { type: 'runner_call_stalled', ts, ...call, sequence: 1, silentMs: 300_000 },
+      { type: 'runner_call_stall_cleared', ts, ...call, sequence: 2 },
+    ]);
+
+    expect(lines).toEqual([
+      'phase: implementing',
+      'stalled: implementer (opencode) · no output for 5:00',
+    ]);
+    expect(lines.filter((line) => line.startsWith('stalled:'))).toHaveLength(1);
+  });
+
+  it('names a CLI call by its tool id and runs the clock on past an hour', () => {
+    const lines = collect([
+      {
+        type: 'runner_call_stalled',
+        ts,
+        phase: 'final-review',
+        callId: 'call-2',
+        role: 'review',
+        backendKind: 'cli',
+        runnerName: 'claude',
+        sequence: 1,
+        silentMs: 4_500_000,
+      },
+    ]);
+
+    expect(lines).toContain('stalled: review (claude-code) · no output for 1:15:00');
+  });
+
   it('review: failed carries the blocking count the event already knows', () => {
     const lines = collect([
       { type: 'task_full_fail', ts, phase: 'implementing', taskId: taskId('T002') },

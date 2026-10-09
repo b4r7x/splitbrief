@@ -311,15 +311,15 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Planner times out before producing a brief
 
-**Likely cause:** There is no default total-call timeout. What you are hitting is the fixed 60-second **stream-idle** guard: an `api`-kind planner aborts when no token (including the first one) arrives for 60s. A cold-loading local model (Ollama/LM Studio pulling a model into memory) easily exceeds that time-to-first-token window. Non-`api` planners (`cli`, `shell`, `agent`) are covered by the **inactivity watchdog** instead: after 5 minutes of output silence the byline shows a "still working" warning, and at 20 minutes of silence, with no child process running, the runner process group is auto-interrupted and a retry prompt appears (type instructions to steer, or press Enter to retry). Both thresholds are tunable per runner via `idleWarnMs` / `idleKillMs`; `planner.timeout` remains the optional wall-clock cap on the whole call.
+**Likely cause:** An `api` planner has three deadlines. The total call has 10 minutes (`TIMEOUTS.reviewerMs`). The first response must arrive within 120 s. A 60 s stream-idle guard applies between chunks. A cold-loading local model (Ollama or LM Studio loads the model into memory) usually hits the first-response deadline. Non-`api` planners (`cli`, `shell`, `agent`) have no default limit. The **inactivity watchdog** warns after 5 minutes of no output. Beside the build block, the byline shows the normal live status. Where no block is painted, the byline reads `⚠ No output for 5:00`. The call continues until it ends or you press Esc. Set `idleKillMs` to cut a silent call, or `planner.timeout` to put a wall-clock cap on the whole call; both are opt-in.
 
 **Fix:**
-1. Warm the model before the run so the first token arrives within 60s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
+1. Warm the model before the run so the first token arrives within 120s — e.g. issue one throwaway request to your local server, or pre-pull the model so it is resident.
 2. Set `planner.timeout` (milliseconds) in `.splitbrief/config.yaml` to put a total wall-clock budget on each planner call (Opus planning passes can take several minutes). This caps the whole call; it does not extend the 60s idle guard.
 3. If the planner is genuinely stuck (no token activity), check provider status pages and your network; restart the run.
 4. Reduce `codebase.tokenBudget` so the prompt is smaller and the call returns sooner.
 
-**Prevention:** Keep local models warm so time-to-first-token stays under the 60s idle guard, and set `planner.timeout` as a total-call ceiling for high-latency planners.
+**Prevention:** Keep local models warm so the first response arrives within the 120s first-response deadline, and set `planner.timeout` as a total-call ceiling for high-latency planners.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/WORKFLOW.md](./WORKFLOW.md).
 
@@ -608,14 +608,14 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: two consecutive timeouts halted my run
 
-**Likely cause:** The implementer hit its wall clock twice in a row on the same brief. Each `cli` implementer attempt gets 20 minutes (`TIMEOUTS.implementerMs`, overridable per seat with `implementer.timeout`, capped at the same 20 minutes); a review call gets 10. A second consecutive `timeout` outcome on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
+**Likely cause:** The implementer hit a limit twice in a row on the same brief. A `cli`, `shell` or `agent` seat has no default limit, so this halt follows an opt-in `timeout` or `idleKillMs` on the seat, or the role total of an `api` seat (`TIMEOUTS.implementerMs`, 20 minutes, for BUILD; 10 for REVIEW). A second consecutive timeout or idle cut on one brief raises the recovery issue `runner-timeout-repeated` — `<tool> timed out twice in a row on T00N` — instead of retrying or consulting the planner, because handing an unfinishable brief to the planner only spends planner money on the same defect.
 
 **Fix:**
 1. Read the issue's details: they carry the tool's own last message, the attempt count, and the implementer profile that was selected.
 2. The halt is *Seat down*. The offered actions are retry, switch seat (when another ready tool was detected), skip the brief, or end the run. Headless, the stderr block prints the exact line to paste — for example `splitbrief continue <session> --action retry`.
 3. If the brief is simply too large for this seat, the durable fix is to split it in a new plan along its independent outcomes, so each brief is one coherent change the seat can finish.
-4. If the tool is genuinely slow rather than stuck, raise its seat's `timeout` toward the 1 200 000 ms cap, or move the seat to a faster model.
-5. Distinguish it from silence: `idleWarnMs` / `idleKillMs` watch for *no output*, while this halt is about total wall clock. A run producing output steadily for 20 minutes still times out.
+4. If the tool is genuinely slow rather than stuck, raise or remove its seat's `timeout` and `idleKillMs`, or move the seat to a faster model.
+5. Know the two limits: `idleKillMs` cuts on *no output*, and `timeout` cuts on total wall clock. Both count toward this halt. A call that produces output steadily still times out at its `timeout`.
 
 **Prevention:** Keep each brief to one coherent outcome, and give a slow local model a bigger `timeout` before the run rather than after the second halt.
 
@@ -769,13 +769,13 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ## Workflow issues
 
-### Symptom: `Still working` sits in the byline for minutes with OpenCode
+### Symptom: `No output for` counts up for minutes with OpenCode
 
 **Likely cause:** OpenCode's `run --format json` mode reports a tool only once that tool completes, and it never forwards child-session (subagent) events at all. A `task explore` subagent that runs for two minutes therefore produces no output until it lands, so the idle watchdog warns at `RUNNER_IDLE_WARN_MS` (5 minutes) even though the call is healthy. The run is not hung.
 
 **Fix:**
-1. Wait. The byline appends `· tools report when done` when the silent runner is one that only reports finished tools, which is the signal that this silence is expected rather than a hang. How long the runner has been silent is stated once: in the build block's freshness line (`a tool is running · 5m 12s` for such a runner) while the block is on screen, and on the byline itself (`Still working — silent 5m 12s`) whenever no block is painted — during planning, or while the stop menu takes its rows.
-2. If you want to confirm liveness, the watchdog is still armed underneath: a genuinely dead process is killed at `RUNNER_IDLE_KILL_MS` (20 minutes, and only when no child process is running), and the stall clears on the next activity, completion, or error event.
+1. Wait. The hint `· tools report when done` shows when the silent runner reports only finished tools. This hint tells you that the silence is expected and that the call is not hung. SPLITBRIEF states the silence in one place only. While the build block is on screen, its freshness line reads `No output for 5:12 · tools report when done`, and the byline shows the normal live status (`Implementing…`). When no block is painted — during planning, or while the stop menu takes its rows — the byline reads `⚠ No output for 5:12 · tools report when done`. The byline adds the hint only when no block is painted.
+2. The watchdog does not end the call by default. The stall clears on the next activity, completion, or error event. To stop a call you think is dead, press Esc (resumable), then Resume the seat. For an unattended run, set `idleKillMs` on the seat.
 3. To see what the tool actually did, read the run tree after the call completes — the tool uses land there in one batch.
 
 **Prevention:** Use a runner that streams tool use live (Claude Code's `stream-json`) for the role where you want per-tool progress, and keep OpenCode for the role where a batched report is acceptable.

@@ -4,7 +4,7 @@ import { CompactionFormatSchema } from '../schemas/compaction.js';
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { getIsolationStrategy } from '../config/accessors/values.js';
 import { resolveApproveChecks, resolveEndChecks } from '../config/runtime/resolve.js';
-import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
+import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
@@ -71,7 +71,7 @@ export const SETTINGS_DEFS: SettingDef[] = [
     min: 1,
     integer: true,
     appliesTo: isApiImplementer,
-    unsetLabel: `auto (idle kill ${RUNNER_IDLE_KILL_MS / 60_000}m)`,
+    unsetLabel: `auto (API total ${TIMEOUTS.implementerMs / 60_000}m)`,
   },
   {
     id: 'workflow.approve',

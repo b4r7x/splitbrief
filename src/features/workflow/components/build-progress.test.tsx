@@ -147,9 +147,9 @@ describe('BuildProgressBlock', () => {
     const frame = ui.lastFrame();
 
     expect(stripAnsiStyles(frame)).toContain(
-      'OpenCode CLI · implementing · a tool is running · 5m 12s',
+      'OpenCode CLI · implementing · No output for 5:12 · tools report when done',
     );
-    expect(frame).toContain(`${warning}a tool is running · 5m 12s`);
+    expect(frame).toContain(`${warning}No output for 5:12 · tools report when done`);
     expect(frame).not.toContain(`${warning}OpenCode CLI · implementing`);
 
     ui.unmount();
@@ -166,7 +166,7 @@ describe('BuildProgressBlock', () => {
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = stripAnsiStyles(ui.lastFrame());
 
-    expect(frame).toContain('claude · implementing · No update for 5m 12s');
+    expect(frame).toContain('claude · implementing · No output for 5:12');
     expect(frame).not.toContain('Claude Code CLI');
 
     ui.unmount();
@@ -183,7 +183,7 @@ describe('BuildProgressBlock', () => {
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = stripAnsiStyles(ui.lastFrame());
 
-    expect(frame).toContain('claude-code · implementing · No update for 5m 12s');
+    expect(frame).toContain('claude-code · implementing · No output for 5:12');
     expect(frame).not.toContain('Claude Code CLI');
 
     ui.unmount();

@@ -7,6 +7,11 @@ import { parseTextLine } from './parse-text.js';
 import { parseOpencodeLine } from './parse-opencode.js';
 
 function streamParsedLine(r: StreamParseResult): ParsedLine {
+  // A tool's whole input re-announces it as started; only its `tool_result` (`toolUse`) closes it.
+  const toolUseStart =
+    r.toolUseStart !== undefined || r.toolUseInput !== undefined
+      ? [...(r.toolUseStart ?? []), ...(r.toolUseInput ?? [])]
+      : undefined;
   return {
     ...(r.text !== undefined ? { text: r.text } : {}),
     ...(r.channel !== undefined ? { channel: r.channel } : {}),
@@ -16,7 +21,7 @@ function streamParsedLine(r: StreamParseResult): ParsedLine {
     ...(r.isError !== undefined ? { isError: r.isError } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
     ...(r.toolUse !== undefined ? { toolUse: r.toolUse } : {}),
-    ...(r.toolUseStart !== undefined ? { toolUseStart: r.toolUseStart } : {}),
+    ...(toolUseStart !== undefined ? { toolUseStart } : {}),
     ...(r.toolUseDelta !== undefined ? { toolUseDelta: r.toolUseDelta } : {}),
     ...(r.warning !== undefined ? { warning: r.warning } : {}),
     ...(r.isHeartbeat !== undefined ? { isHeartbeat: r.isHeartbeat } : {}),

@@ -30,7 +30,7 @@ import { antigravityImplementerAdapter } from './antigravity.js';
 import { claudeCodeImplementerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
 import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
-import { toCliEnvironment } from '../invoke-cli-adapter.js';
+import { invokeCliAdapter, toCliEnvironment } from '../invoke-cli-adapter.js';
 import {
   resolveCliExecutable,
   revalidateCliExecutableIdentity,
@@ -1361,6 +1361,56 @@ describe('invokeProcessCli', () => {
     expect(result).toMatchObject({ status: 'failed', error: { code: 'no-progress-cut' } });
     expect(result.error?.message).toContain(CLI_TOOL_CATALOG.codex.id);
     expect(result.error?.message).not.toContain(realpathSync(process.execPath));
+  });
+
+  describe('opt-in seat limits on a review call', () => {
+    const reviewContext = { ...callContext, role: 'review' } satisfies RunnerCallContext;
+    const unbounded = (script: string): CliInvocation => ({
+      ...invocation({ script }),
+      timeoutMs: undefined,
+    });
+
+    it('completes a call with no timeout and no idle kill after it falls silent past the warning', async () => {
+      const events: RunnerCallEvent[] = [];
+      const result = await invokeCliAdapter({
+        adapter: adapter({ kind: 'stdin' }),
+        invocation: unbounded("setTimeout(()=>process.stdout.write('RESULT\\n'),600)"),
+        prompt: '',
+        callContext: reviewContext,
+        onCallEvent: (event) => events.push(event),
+        idle: { warnMs: 50 },
+      });
+
+      expect(result).toMatchObject({ status: 'completed' });
+      const watchdog = events
+        .map((event) => event.type)
+        .filter((type) => type === 'call_stalled' || type === 'call_stall_cleared');
+      expect(watchdog).toEqual(['call_stalled', 'call_stall_cleared']);
+    });
+
+    it('ends a silent call at an explicit timeout', async () => {
+      const result = await invokeCliAdapter({
+        adapter: adapter({ kind: 'stdin' }),
+        invocation: { ...unbounded('setInterval(()=>{},1000)'), timeoutMs: 100 },
+        prompt: '',
+        callContext: reviewContext,
+        idle: { warnMs: 50 },
+      });
+
+      expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+    });
+
+    it('ends a silent call at an explicit idle kill', async () => {
+      const result = await invokeCliAdapter({
+        adapter: adapter({ kind: 'stdin' }),
+        invocation: unbounded('setInterval(()=>{},1000)'),
+        prompt: '',
+        callContext: reviewContext,
+        idle: { warnMs: 50, killMs: 150 },
+      });
+
+      expect(result).toMatchObject({ status: 'failed', error: { code: 'no-progress-cut' } });
+    });
   });
 
   it.skipIf(process.platform === 'win32')('awaits process-group reaping after abort', async () => {

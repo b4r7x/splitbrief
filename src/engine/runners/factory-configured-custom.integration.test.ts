@@ -16,6 +16,7 @@ import { resolveCustomRunnerTrustFile } from './custom-trust.js';
 import {
   createImplementer as createPreparedImplementer,
   createPlanner as createPreparedPlanner,
+  createReviewer as createPreparedReviewer,
 } from './factory.js';
 import type { CustomRunnerRuntimePort } from './types.js';
 import type { PlannerFactoryOptions } from '../planners/types.js';
@@ -27,6 +28,7 @@ import { customRunnerAdmissionError } from './custom-launchability.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { prepareExecution } from './prepare-execution/prepare-execution.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
+import { processError } from '../../lib/process/errors.js';
 
 type CustomRunnerRole = 'planner' | 'implementer';
 type CustomCommandContract = 'output' | 'direct';
@@ -90,6 +92,39 @@ async function createPlanner(
   return createPreparedPlanner(config, {
     ...options,
     initialSessionId,
+    preparedConfig: config,
+    preparationId,
+    slot,
+    gates: [
+      {
+        kind: runner.command.contract === 'output' ? 'shell' : 'agent',
+        slot,
+        preparationId,
+        command: { kind: 'configured-custom', invocation: admission.invocation },
+      },
+    ],
+  });
+}
+
+async function createReviewer(config: Config, options: PlannerFactoryOptions) {
+  const runtime = options.customRuntime;
+  const runner = resolveConfiguredCustomRunner(config, 'reviewer');
+  if (runtime === undefined || runner === null)
+    throw new Error('Missing configured reviewer test input.');
+  const admission = await prepareCustomRunnerAdmission({
+    ...runtime.admission,
+    projectDir: runtime.authorizationProjectDir,
+    runner,
+    posture: customRunnerSecurityPosture('planner', runner.command.contract),
+    phase: 'planning',
+    authorizationPathEnv: runtime.authorizationPathEnv ?? '',
+    authorizationPathExt: runtime.authorizationPathExt ?? '',
+  });
+  if (admission.kind !== 'admitted') throw customRunnerAdmissionError.denied('planner');
+  const preparationId = 'factory-configured-reviewer';
+  const slot = { role: 'reviewer' as const };
+  return createPreparedReviewer(config, {
+    ...options,
     preparedConfig: config,
     preparationId,
     slot,
@@ -534,6 +569,69 @@ describe('configured custom runner factory behavior', () => {
     } finally {
       outerStage.cleanup();
     }
+  });
+
+  it('ends a configured implementer child at the seat timeout through the public factory', {
+    timeout: 30_000,
+  }, async () => {
+    const fixture = createFixture('implementer-timeout');
+    const behaviorConfig = configuredFactoryBehaviorConfig({
+      role: 'implementer',
+      contract: 'output',
+      sourceName: fixture.sourceName,
+      program: 'setInterval(() => undefined, 1_000);',
+      legacyProgram: `require('node:fs').writeFileSync(${JSON.stringify(fixture.legacyMarker)}, 'legacy');`,
+    });
+    const profile = behaviorConfig.implementerProfiles?.profiles['factory-r7'];
+    if (profile === undefined) throw new Error('Expected the configured implementer profile.');
+    const config = ConfigSchema.parse({
+      ...behaviorConfig,
+      implementerProfiles: {
+        default: 'factory-r7',
+        profiles: { 'factory-r7': { ...profile, timeout: 200 } },
+      },
+    });
+
+    const implementer = await createImplementer(config, {
+      customRuntime: factoryRuntime(fixture, 'interactive'),
+    });
+    const call = implementer.implement({
+      task: makeTask({ suggestedFiles: ['src/factory-timeout.ts'] }),
+      projectDir: fixture.projectDir,
+      config,
+      context: { ...defaultContext, dir: fixture.projectDir },
+      onOutput: () => {},
+    });
+
+    await expect(call).rejects.toSatisfy(processError.isTimeout);
+    expect(existsSync(fixture.legacyMarker)).toBe(false);
+  });
+
+  it('ends a configured reviewer child at the seat timeout through the public factory', {
+    timeout: 30_000,
+  }, async () => {
+    const fixture = createFixture('reviewer-timeout');
+    const behaviorConfig = configuredFactoryBehaviorConfig({
+      role: 'planner',
+      contract: 'output',
+      sourceName: fixture.sourceName,
+      program: 'setInterval(() => undefined, 1_000);',
+      legacyProgram: "process.stdout.write('legacy');",
+    });
+    const config = ConfigSchema.parse({
+      ...behaviorConfig,
+      planner: API_PLANNER,
+      reviewer: { ...behaviorConfig.planner, timeout: 200 },
+    });
+
+    const reviewer = await createReviewer(config, {
+      customRuntime: factoryRuntime(fixture, 'interactive'),
+    });
+    const call = reviewer.review('review the fixture', fixture.projectDir, {
+      onOutput: () => {},
+    });
+
+    await expect(call).rejects.toSatisfy(processError.isTimeout);
   });
 
   it('passes prepared custom shell and agent admission through factories without prompting again', async () => {

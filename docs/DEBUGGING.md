@@ -107,7 +107,7 @@ Diagnostic path:
    ```bash
    tail -20 .splitbrief/sessions/<id>/session.jsonl | jq .
    ```
-2. Check the runner timeout — the `timeout` field in `planner.*` / `implementer.*` (max 600000 ms, schema ceiling).
+2. Check the runner limits — the opt-in `timeout` and `idleKillMs` fields in `planner.*` / `implementer.*` / `reviewer.*`. A `cli`, `shell` or `agent` seat has no default limit; the watchdog only warns after 5 minutes of no output.
 3. For API runners, check network reachability to `apiBase`.
 4. For CLI runners, ensure the tool is on `PATH` (planner CLI probe is in `src/engine/planners/cli.ts`).
 5. `cost_update` events stop arriving → the subprocess is live but not producing tokens; check remote provider status.

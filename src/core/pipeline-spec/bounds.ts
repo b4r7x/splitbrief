@@ -10,5 +10,4 @@ export const BOUNDS = {
   toolUseCountLimit: 256,
   rateLimitResetWaitMs: 600_000,
   transientRetries: 3,
-  noProgressCutMs: 1_200_000,
 } as const;

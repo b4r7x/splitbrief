@@ -702,10 +702,61 @@ describe('Claude Code stream protocol adapter', () => {
       ),
     ).toContainEqual({
       type: 'tool-use',
+      stage: 'started',
       id: 'toolu_1',
       name: 'Read',
       input: { file_path: 'src/a.ts' },
     });
+  });
+
+  it('closes a tool on its user tool_result, not on the assistant record that completes its input', () => {
+    const parse = claudeCodeImplementerAdapter.createParser?.();
+    if (parse === undefined) throw new Error('claude-code declares a stateful parser');
+    parse(
+      JSON.stringify({
+        type: 'stream_event',
+        event: {
+          type: 'content_block_start',
+          index: 1,
+          content_block: { type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} },
+        },
+      }),
+    );
+    const input = parse(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } },
+          ],
+        },
+      }),
+    );
+    expect(input.filter((event) => event.type === 'tool-use')).toEqual([
+      {
+        type: 'tool-use',
+        stage: 'started',
+        id: 'toolu_1',
+        name: 'Read',
+        input: { file_path: 'src/a.ts' },
+      },
+    ]);
+    expect(
+      parse(
+        JSON.stringify({
+          type: 'user',
+          message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'x' }] },
+        }),
+      ),
+    ).toEqual([
+      {
+        type: 'tool-use',
+        stage: 'done',
+        id: 'toolu_1',
+        name: 'Read',
+        input: { file_path: 'src/a.ts' },
+      },
+    ]);
   });
 
   it('retains explicit failure terminals and bounded parser warnings', () => {

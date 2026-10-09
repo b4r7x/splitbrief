@@ -57,7 +57,7 @@ function defaultRemediation(state: RunnerFailureOutcomeState): string {
     case 'timeout':
       return 'Retry the command or increase its configured timeout.';
     case 'no-progress-cut':
-      return 'The runner produced no output past its idle limit with no child process running and was stopped; the task is retried.';
+      return 'The runner sent no output for its idleKillMs and was stopped; the retry ladder continues, and a second cut or timeout in a row halts the run.';
     case 'user-abort':
       return 'Retry the command when you are ready to continue.';
     case 'signal-exit':

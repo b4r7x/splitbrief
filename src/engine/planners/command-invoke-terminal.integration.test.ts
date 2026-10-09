@@ -12,6 +12,7 @@ import { prepareCustomRunnerAdmission } from '../runners/custom-admission.js';
 import type { RunnerGate } from '../runners/prepared-execution.js';
 import type { CustomRunnerRuntimePort } from '../runners/types.js';
 import { createConfiguredCustomPlanner } from './command-invoke.js';
+import { processError } from '../../lib/process/errors.js';
 import {
   createCommandInvokeTestFixtures,
   reviewCandidateRoot,
@@ -23,6 +24,7 @@ const { testProject } = createCommandInvokeTestFixtures();
 async function createPreparedPlanner(
   runner: ConfiguredCustomRunner,
   runtime: CustomRunnerRuntimePort,
+  timeoutMs?: number,
 ) {
   const admission = await prepareCustomRunnerAdmission({
     ...runtime.admission,
@@ -40,7 +42,7 @@ async function createPreparedPlanner(
     preparationId: 'configured-terminal-test',
     command: { kind: 'configured-custom', invocation: admission.invocation },
   } satisfies RunnerGate;
-  return createConfiguredCustomPlanner(runner, runtime, gate.command.invocation);
+  return createConfiguredCustomPlanner(runner, runtime, gate.command.invocation, timeoutMs);
 }
 
 describe('configured direct planner terminal cleanup', () => {
@@ -78,6 +80,7 @@ describe('configured direct planner terminal cleanup', () => {
       runnerOptions?: TerminalRunnerOptions;
       sourceEnv?: NodeJS.ProcessEnv;
       abortAfterOutput?: string;
+      timeoutMs?: number;
       onApprovalNeeded?: Parameters<typeof beginDeclaredArtifactReview>[0]['onApprovalNeeded'];
     }>,
   ): Promise<Readonly<{ approvalRequests: number; output: string[]; failure: unknown }>> {
@@ -126,6 +129,7 @@ describe('configured direct planner terminal cleanup', () => {
           };
         },
       }),
+      input.timeoutMs,
     );
     const controller = input.abortAfterOutput === undefined ? undefined : new AbortController();
     let resolveChildStarted: (() => void) | undefined;
@@ -246,6 +250,18 @@ describe('configured direct planner terminal cleanup', () => {
 
     expect(observed.approvalRequests).toBe(0);
     expect(observed.output).toEqual(['child-started\n']);
+  });
+
+  it('ends a direct review call at a configured timeout', async () => {
+    const observed = await expectTerminalFailure({
+      name: 'total-timeout',
+      script:
+        "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'would be valid');setInterval(() => {}, 1_000);",
+      timeoutMs: 200,
+    });
+
+    expect(observed.approvalRequests).toBe(0);
+    expect(observed.failure).toSatisfy(processError.isTimeout);
   });
 
   it('disposes the direct lease and stage when the explicit approval rejects', async () => {

@@ -264,6 +264,7 @@ describe('stallRunnerHint', () => {
   it('explains the silence for a runner that only reports finished tools', () => {
     expect(stallRunnerHint('opencode', 'cli')).toBe('tools report when done');
     expect(stallRunnerHint('opencode')).toBe('tools report when done');
+    expect(stallRunnerHint('kilo-code', 'cli')).toBe('tools report when done');
   });
 
   it('never hands the CLI hint to an API call that reuses the name', () => {

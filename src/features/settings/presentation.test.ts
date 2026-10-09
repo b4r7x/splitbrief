@@ -54,7 +54,7 @@ describe('displayValue', () => {
   });
 
   it('unsetLabel fallbacks for timeout, contextLength and testCommand', () => {
-    expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (idle kill 20m)');
+    expect(displayValue(getDef('implementer.timeout'), null)).toBe('auto (API total 20m)');
     expect(displayValue(getDef('implementer.contextLength'), undefined)).toBe('auto');
     expect(displayValue(getDef('validation.testCommand'), undefined)).toBe('auto');
   });

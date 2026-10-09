@@ -3,11 +3,7 @@ import { canonicalJSON } from '../../utils/canonical-json.js';
 import { sha256Hex } from '../../utils/sha256.js';
 import { storesInterpreterCommandString } from '../trust/interpreter-command-string.js';
 import { OutputFormatSchema, type OutputFormat, type RunnerKind } from '../schemas/enums.js';
-import {
-  EnvironmentReferenceNameSchema,
-  RUNNER_IDLE_KILL_MS,
-  RUNNER_IDLE_WARN_MS,
-} from '../schemas/runner-fields.js';
+import { EnvironmentReferenceNameSchema, RUNNER_IDLE_WARN_MS } from '../schemas/runner-fields.js';
 import type { ImplementerConfig, ImplementerProfileConfig } from '../schemas/implementer-config.js';
 import type { PlannerConfig } from '../schemas/planner-config.js';
 
@@ -36,10 +32,6 @@ function hasRepeatedValues(values: readonly string[] | undefined): boolean {
 
 function defaultedIdleWarnMs(value: number | undefined): number {
   return value ?? RUNNER_IDLE_WARN_MS;
-}
-
-function defaultedIdleKillMs(value: number | undefined): number {
-  return value ?? RUNNER_IDLE_KILL_MS;
 }
 
 export const CustomCommandIdSchema = z
@@ -86,8 +78,7 @@ export const CustomCommandDefinitionSchema = z
     }
 
     const idleWarnMs = defaultedIdleWarnMs(definition.idleWarnMs);
-    const idleKillMs = defaultedIdleKillMs(definition.idleKillMs);
-    if (idleKillMs < idleWarnMs) {
+    if (definition.idleKillMs !== undefined && definition.idleKillMs < idleWarnMs) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['idleKillMs'],
@@ -150,7 +141,7 @@ const CustomCommandShape = {
   argv: z.array(LiteralStringSchema).max(MAX_ARGV_LENGTH).readonly(),
   outputFormat: OutputFormatSchema,
   idleWarnMs: z.number().int().positive(),
-  idleKillMs: z.number().int().positive(),
+  idleKillMs: z.number().int().positive().optional(),
   env: z.array(EnvironmentReferenceNameSchema).max(64).readonly(),
 } as const;
 
@@ -208,7 +199,7 @@ export type CustomCommandExecutionTuple = Readonly<{
   argv: readonly string[];
   outputFormat: OutputFormat;
   idleWarnMs: number;
-  idleKillMs: number;
+  idleKillMs?: number | undefined;
   env: readonly string[];
 }>;
 
@@ -230,7 +221,7 @@ export function customCommandTuple(input: CustomCommandTupleInput): CustomComman
     argv: [...(input.argv ?? [])],
     outputFormat: input.outputFormat ?? 'text',
     idleWarnMs: defaultedIdleWarnMs(input.idleWarnMs),
-    idleKillMs: defaultedIdleKillMs(input.idleKillMs),
+    ...(input.idleKillMs !== undefined && { idleKillMs: input.idleKillMs }),
     env: [...(input.env ?? [])].sort(),
   };
 }

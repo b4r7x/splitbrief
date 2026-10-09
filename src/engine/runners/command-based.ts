@@ -7,7 +7,7 @@ import { createBoundedOutput } from '../../lib/process/bounded-output.js';
 import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { error } from '../../utils/error.js';
 import { commandName, isShellEvaluatedPromptArg } from '../../core/trust/path-classification.js';
-import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createCustomRunnerRedactor, resolveCustomRunnerEnvironment } from './redaction.js';
 import {
   customRunnerAdmissionError,
@@ -74,6 +74,8 @@ export interface CustomCommandBasedOptions {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   callContext?: RunnerCallContext | undefined;
   signal?: AbortSignal | undefined;
+  /** The seat's opt-in total (`timeout`); unset, the call has no deadline. */
+  timeoutMs?: number | undefined;
 }
 
 export type CustomCommandBasedResult = Awaited<ReturnType<typeof spawnAndCollect>>;
@@ -167,6 +169,7 @@ export async function invokeCustomCommandBasedRunner(
     onCallEvent: opts.onCallEvent,
     callContext: opts.callContext,
     signal: opts.signal,
+    timeoutMs: opts.timeoutMs,
     idle: {
       warnMs: admission.runner.command.idleWarnMs,
       killMs: admission.runner.command.idleKillMs,
@@ -192,7 +195,6 @@ export async function invokeCommandBasedRunner(
   const rawArgs = opts.args ?? [];
   const format: OutputFormat = opts.outputFormat ?? 'text';
   const idleWarnMs = opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS;
-  const idleKillMs = opts.idleKillMs ?? RUNNER_IDLE_KILL_MS;
 
   rejectPromptPlaceholderCommand(opts.command);
   rejectShellEvaluatedPrompt({
@@ -232,7 +234,7 @@ export async function invokeCommandBasedRunner(
     }),
     signal,
     timeoutMs: opts.timeout,
-    idle: { warnMs: idleWarnMs, killMs: idleKillMs },
+    idle: { warnMs: idleWarnMs, killMs: opts.idleKillMs },
     outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
     onStderr: (chunk) => {
       stderrOutput.append(chunk);

@@ -328,7 +328,7 @@ For retries, `buildRetryPrompt()` prepends the error message with escalating fra
 
 The implementer base normalizes backend output into `RunnerCallResult` before processing files. A non-completed status returns a failed `ImplementerResult` with partial output and usage preserved; user aborts, timeouts, truncation, refusals, unsupported tools, and incomplete streams are not collapsed into generic success/failure strings.
 
-**Call deadlines.** A CLI implementer call runs under a deadline of `config.timeout ?? TIMEOUTS.implementerMs` — 20 minutes (`src/engine/implementers/cli.ts`, `src/core/pipeline-spec/timeouts.ts`), which is also the cap the `timeout` config field accepts. The reviewer's one call runs under `TIMEOUTS.reviewerMs`, 10 minutes (`src/engine/planners/cli.ts`, the `review` role); every other planner call has no deadline of its own, because a planning turn's length is the operator's to judge. A deadline that fires is a `timeout` outcome, not a crash, and two of them in a row on the same brief stop the run with an `runner-timeout-repeated` recovery rather than consulting the planner over an oversized slice (`TIMEOUTS.consecutiveTimeoutsHalt`).
+**Call deadlines.** No subprocess seat call (`cli`, `shell`, `agent`; planner, implementer and reviewer) has a default deadline, interactive or headless, because the length of a seat call is the operator's to judge. The watchdog warns after 5 minutes of no output (`idleWarnMs`), and the call continues; the user stops it with Esc. `timeout` and `idleKillMs` are opt-in limits, and they apply on every subprocess path, `shell` and `agent` planners and reviewers included. An `api` seat keeps its deadlines: 120 s to the first response, 60 s of stream idle, and the role total (`TIMEOUTS.implementerMs`, 20 minutes, for BUILD; `TIMEOUTS.reviewerMs`, 10 minutes, for PLAN and REVIEW; `src/core/pipeline-spec/timeouts.ts`). A deadline that fires is a `timeout` outcome, not a crash. Two timeouts or idle cuts in a row on the same brief stop the run with a `runner-timeout-repeated` recovery rather than consulting the planner over an oversized slice (`TIMEOUTS.consecutiveTimeoutsHalt`).
 
 ---
 
@@ -636,6 +636,8 @@ The role vector is pinned and effect-verified per backend. A role that is missin
 
 Antigravity's `stream-json` evidence exists for agy 1.2.7 and 1.2.9 only, while `minimumAdmittedVersion` stays 1.2.2.
 
+Claude Code reports the end of a tool in a `user` record that carries the `tool_result`. That record closes the tool. So while a Claude `Bash` command runs, the freshness line can name it: `No output for m:ss · running <command>`.
+
 Claude Code's `system` frames never reach a transcript as text (`parseSystemProgress`, `src/engine/streaming/parse-stream-json.ts`). Most are its own bookkeeping: `init`, the `hook_*` frames, `status`, `thinking_tokens` and the background `task_*` frames. Each of those becomes a runner heartbeat (`runner_call_heartbeat`), at most one a second per call (`createRunnerCallRecorder`, `src/engine/calls/recorder.ts`), since Claude Code sends them in bursts. A heartbeat moves the Build progress block's freshness clock, so a seat that thinks for minutes does not read as silent. It paints no row and stays out of `session.jsonl`. The frames an operator needs become warnings or errors, which the seat's activity shows as `Warn` or `Err` rows and `session.jsonl` keeps:
 
 | Frame | Code | Message |
@@ -699,7 +701,7 @@ type GenerationCommon = {
   customModels?: string[]
   contextLength?: number
   temperature?: number       // 0–2
-  timeout?: number           // ms, max 1200000 (TIMEOUTS.implementerMs)
+  timeout?: number           // ms; opt-in, no default on cli/shell/agent seats
   effort?: EffortLevel
   variant?: string           // named preset for the `variant` effort channel
 }

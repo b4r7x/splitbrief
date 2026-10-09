@@ -7,11 +7,7 @@ import type { Planner, PlannerCallbacks, PlannerFactoryOptions } from './types.j
 import { ONE_SHOT_API_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
 import { createCommandAvailability } from '../availability.js';
-import {
-  CLI_NO_DEADLINE_MS,
-  invokeCliAdapter,
-  toCliEnvironment,
-} from '../runners/invoke-cli-adapter.js';
+import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
 import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
@@ -38,7 +34,6 @@ import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
 import { createRunnerSandboxEnv, resolveCliRunnerAuth } from '../runners/sandbox-env.js';
 import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
-import { TIMEOUTS } from '../../core/pipeline-spec/timeouts.js';
 const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function cliNotFoundMessage(descriptor: CliPlannerAdapter['descriptor']): string {
@@ -160,8 +155,7 @@ export function createCliPlanner(
           sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner')),
         ),
         cwd: projectDir,
-        timeoutMs:
-          timeout ?? (callContext.role === 'review' ? TIMEOUTS.reviewerMs : CLI_NO_DEADLINE_MS),
+        timeoutMs: timeout,
         signal: effectiveSignal,
       },
       prompt,

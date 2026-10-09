@@ -81,6 +81,8 @@ export function createCommandBasedImplementer(
 export interface ConfiguredCustomImplementerOptions {
   readonly runtime: CustomRunnerRuntimePort;
   readonly admission: AdmittedCustomRunnerInvocation;
+  /** The seat's opt-in total (`timeout`); unset, the call has no deadline. */
+  readonly timeoutMs?: number | undefined;
   readonly factoryOptions?: ImplementerFactoryOptions | undefined;
 }
 
@@ -93,6 +95,7 @@ export interface ConfiguredCustomImplementerOptions {
 export function createConfiguredCustomImplementer({
   runtime,
   admission,
+  timeoutMs,
   factoryOptions,
 }: ConfiguredCustomImplementerOptions): Implementer {
   const extractsCode = admission.runner.command.contract === 'output';
@@ -116,6 +119,7 @@ export function createConfiguredCustomImplementer({
           onCallEvent: invokeOpts.onCallEvent,
           callContext: invokeOpts.callContext,
           signal: invokeOpts.signal,
+          timeoutMs,
         });
 
       if (!extractsCode) return invokeAdmittedRunner(invokeOpts.projectDir);

@@ -235,7 +235,9 @@ describe('runHeadless — a halted session exits non-zero', () => {
       expect.objectContaining({
         type: 'recovery_required',
         reason: 'planner-call-failed',
-        message: expect.stringContaining('produced no output'),
+        message: expect.stringContaining(
+          'fake-planner sent no output for 5:00; SPLITBRIEF stopped it',
+        ),
       }),
     );
   }, 20_000);

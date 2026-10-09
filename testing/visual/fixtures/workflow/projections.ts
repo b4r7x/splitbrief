@@ -3002,6 +3002,24 @@ const implementationToolRunningProjection: WorkflowFixtureProjection = {
   ),
 };
 
+// The same silence on a seat whose stream reports each tool as it starts: nothing is open and no
+// hint applies, so the build block states the silence alone.
+const CODEX_BUILD_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } as const;
+const implementationSilentBareProjection: WorkflowFixtureProjection = {
+  ...implementationSilentProjection,
+  scenarioId: scenarioId('workflow-implementation-silent-bare'),
+  config: { implementer: CODEX_BUILD_SEAT },
+  events: implementationSilentProjection.events.map((event): EngineEvent => {
+    if (event.type === 'task_started') {
+      return { ...event, tool: CODEX_BUILD_SEAT.tool, model: CODEX_BUILD_SEAT.model };
+    }
+    if (event.type === 'runner_call_started' || event.type === 'runner_call_stalled') {
+      return { ...event, runnerName: CODEX_BUILD_SEAT.tool, model: CODEX_BUILD_SEAT.model };
+    }
+    return event;
+  }),
+};
+
 // Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
 // call: the suite is the whole of what the run is doing.
 const PRE_REVIEW_TEST_STARTED_TS = FIXED_TS + 42_000 - 602_000;
@@ -3480,6 +3498,7 @@ const projections = [
   planningClaudeFramesProjection,
   implementationSilentProjection,
   implementationToolRunningProjection,
+  implementationSilentBareProjection,
   reviewCheckRunningProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,

@@ -3,7 +3,6 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { error, matches } from '../../../utils/error.js';
 import { createBoundedOutput, type BoundedOutputMetadata } from '../bounded-output.js';
 import { spawnError, processError } from '../errors.js';
-import { hasLiveDescendants } from '../liveness.js';
 import {
   registerProcess,
   unregisterProcess,
@@ -46,7 +45,8 @@ export const spawnPipeError = {
 
 export interface SpawnIdleOptions {
   warnMs: number;
-  killMs: number;
+  /** Opt-in cut on byte silence; unset, the watchdog only warns. */
+  killMs?: number | undefined;
   /** Names the subject in the idle diagnostic so it need not carry the resolved binary path. */
   label?: string | undefined;
   onWarn?: ((silentMs: number) => void) | undefined;
@@ -272,24 +272,18 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       });
 
     const armIdleKillTimer = () => {
-      if (idle === undefined) return;
+      const killMs = idle?.killMs;
+      if (killMs === undefined) return;
       idleKillTimer = setTimeout(() => {
-        // A running child process is progress: it may be the test, build or
-        // command the runner launched and is still doing the work. Only a call
-        // that emitted no event and has no live descendant is cut.
-        if (proc.pid !== undefined && hasLiveDescendants(proc.pid)) {
-          armIdleKillTimer();
-          return;
-        }
         terminate({
           kind: 'error',
           error: processError.idleTimeout({
             command: opts.command,
-            label: idle.label,
-            idleMs: idle.killMs,
+            label: idle?.label,
+            idleMs: killMs,
           }),
         });
-      }, idle.killMs);
+      }, killMs);
       idleKillTimer.unref?.();
     };
     const armIdleTimers = () => {

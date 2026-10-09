@@ -68,6 +68,7 @@ export function createLegacyCommandInvoke(
       onCallEvent: input.callbacks.onCallEvent,
       callContext: input.callContext,
       signal: input.signal,
+      ...(runner.timeout !== undefined && { timeout: runner.timeout }),
       ...(runner.idleWarnMs !== undefined && { idleWarnMs: runner.idleWarnMs }),
       ...(runner.idleKillMs !== undefined && { idleKillMs: runner.idleKillMs }),
     });
@@ -137,6 +138,7 @@ export function createConfiguredCustomPlanner(
   runner: ConfiguredCustomRunner,
   runtime: CustomRunnerRuntimePort,
   admission: AdmittedCustomRunnerInvocation,
+  timeoutMs?: number | undefined,
 ): Planner {
   const direct = runner.command.contract === 'direct';
 
@@ -184,6 +186,7 @@ export function createConfiguredCustomPlanner(
           onCallEvent: callbacks.onCallEvent,
           callContext,
           signal,
+          timeoutMs,
         });
 
       if (direct && callContext.role === 'escalation') {

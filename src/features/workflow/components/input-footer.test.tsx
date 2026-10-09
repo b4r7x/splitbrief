@@ -622,8 +622,8 @@ describe('InputFooter', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     // The shown span includes the silence that elapsed before the warning fired:
-    // 5s since the warning + the 60s warn threshold = 1m 5s.
-    expect(frame).toContain('Still working — silent 1m 5s');
+    // 5s since the warning + the 60s warn threshold = 1:05.
+    expect(frame).toContain('No output for 1:05');
     expect(frame).not.toContain('tools report when done');
 
     ui.unmount();
@@ -646,14 +646,15 @@ describe('InputFooter', () => {
 
     const besideBlock = renderFeature(<InputFooter buildBlockShown />);
     const besideBlockFrame = stripAnsiStyles(besideBlock.lastFrame() ?? '');
-    expect(besideBlockFrame).toContain('Still working');
-    expect(besideBlockFrame).not.toContain('silent');
+    expect(besideBlockFrame).toContain('Implementing…');
+    expect(besideBlockFrame).not.toContain('⚠');
+    expect(besideBlockFrame).not.toContain('No output');
     besideBlock.unmount();
 
     // The same stalled call states its silence once the block is not on screen, so the silence
     // above is the block's doing and not a footer that never had one to show.
     const bare = renderFeature(<InputFooter />);
-    expect(stripAnsiStyles(bare.lastFrame() ?? '')).toContain('silent');
+    expect(stripAnsiStyles(bare.lastFrame() ?? '')).toContain('No output for 1:05');
     bare.unmount();
 
     terminalSizeStore.reset();
@@ -677,16 +678,16 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
 
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-      'Still working — silent 1m 5s · tools report when done',
+      'No output for 1:05 · tools report when done',
     );
 
     ui.unmount();
     terminalSizeStore.reset();
   });
 
-  // The stream reported this tool as it opened and the build block names it running, so neither a
-  // silence warning nor a hint that tools report only when done may contradict it.
-  it('reads as working, not as a silence, while the call has a tool open', () => {
+  // The stream reported this tool as it opened: the build block states the silence and names the
+  // tool, so the byline beside it shows the normal live status, with no warning and no hint.
+  it('leaves an open tool through a silence to the block beside it', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({
       status: 'running',
@@ -705,8 +706,9 @@ describe('InputFooter', () => {
 
     const ui = renderFeature(<InputFooter buildBlockShown />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Implementing');
-    expect(frame).not.toContain('Still working');
+    expect(frame).toContain('Implementing…');
+    expect(frame).not.toContain('⚠');
+    expect(frame).not.toContain('No output');
     expect(frame).not.toContain('tools report when done');
 
     ui.unmount();
@@ -731,7 +733,7 @@ describe('InputFooter', () => {
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Still working — silent 1m 5s');
+    expect(frame).toContain('No output for 1:05');
     expect(frame).not.toContain('tools report when done');
 
     ui.unmount();

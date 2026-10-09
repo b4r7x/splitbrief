@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { finishClaudeStream, createStreamHandler, interruptedError } from './stream.js';
+import {
+  buildClaudeIdleOptions,
+  createStreamHandler,
+  finishClaudeStream,
+  interruptedError,
+} from './stream.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../../calls/types.js';
 import { projectRunnerCallEvents } from '../../calls/event-projection.js';
 import { RUNNER_CALL_OUTPUT_MAX_BYTES } from '../../calls/output-limit.js';
@@ -425,5 +430,71 @@ describe('Claude stream text budget', () => {
         warning: expect.objectContaining({ code: 'runner_call_text_limit' }),
       }),
     ]);
+  });
+});
+
+describe('Claude stream tool lifecycle', () => {
+  it('keeps a tool open through its whole input and closes it on its tool_result', () => {
+    const events: RunnerCallEvent[] = [];
+    const { handleLine } = createStreamHandler({
+      context,
+      onOutput: () => {},
+      onCallEvent: (event) => events.push(event),
+    });
+    const toolStages = () =>
+      events
+        .flatMap((event) => projectRunnerCallEvents(event, { phase: 'planning', sequence: 0 }))
+        .filter((event) => event.type === 'runner_call_activity' && event.kind !== 'session')
+        .map((event) => (event.type === 'runner_call_activity' ? event.stage : null));
+
+    handleLine(
+      streamEvent({
+        type: 'content_block_start',
+        index: 1,
+        content_block: { type: 'tool_use', id: 'toolu_1', name: 'Read', input: {} },
+      }),
+    );
+    handleLine(
+      JSON.stringify({
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } },
+          ],
+        },
+      }),
+    );
+    expect(events.some((event) => event.type === 'call_tool_use_done')).toBe(false);
+    expect(toolStages().every((stage) => stage === 'started' || stage === 'updated')).toBe(true);
+
+    handleLine(
+      JSON.stringify({
+        type: 'user',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'text' }] },
+      }),
+    );
+    expect(events.filter((event) => event.type === 'call_tool_use_done')).toEqual([
+      expect.objectContaining({
+        toolUse: { id: 'toolu_1', name: 'Read', input: { file_path: 'src/a.ts' } },
+      }),
+    ]);
+    expect(toolStages().at(-1)).toBe('completed');
+  });
+});
+
+describe('buildClaudeIdleOptions', () => {
+  const { state } = createStreamHandler({ context, onOutput: () => {} });
+
+  it('only warns by default', () => {
+    const idle = buildClaudeIdleOptions(state, {});
+    expect(idle.warnMs).toBeGreaterThan(0);
+    expect(idle.killMs).toBeUndefined();
+  });
+
+  it('cuts only when the seat sets idleKillMs', () => {
+    expect(buildClaudeIdleOptions(state, { idleWarnMs: 5, idleKillMs: 9 })).toMatchObject({
+      warnMs: 5,
+      killMs: 9,
+    });
   });
 });
