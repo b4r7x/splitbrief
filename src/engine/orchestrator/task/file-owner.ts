@@ -2,30 +2,21 @@ import { isAbsolute, relative } from 'node:path';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { isTaskCompleted, type Task } from '../../../core/schemas/task.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { extractFailureKeys } from '../validation/extract-failure-keys.js';
-
-const FAILURE_KEY_FILE = /^(.*?\.\w+?)(?:\(|::|:|$)/;
-
-/** The file a failure key names; null when the key names no file. */
-export function fileFromFailureKey(key: string): string | null {
-  const match = FAILURE_KEY_FILE.exec(key);
-  return match?.[1] === undefined ? null : normalizeProjectRelativePath(match[1]);
-}
+import { extractFailureKeys, fileFromFailureKey } from '../validation/extract-failure-keys.js';
 
 /**
  * The workspace-relative files a failing check or validation output names, in
- * first-seen order with repeats dropped. A diagnostic may quote an absolute
- * path; it is reported relative to the workspace, and a path that escapes it is
- * not a file this run can own.
+ * first-seen order with repeats dropped. Only a path token names a file
+ * (`fileFromFailureKey`). A diagnostic may quote an absolute path; it is
+ * reported relative to the workspace, and a path that escapes it is not a file
+ * this run can own.
  */
 export function failingFilesFromOutput(output: string, workspaceDir: string): string[] {
   const files: string[] = [];
   const seen = new Set<string>();
-  const { keys, diagnostics } = extractFailureKeys(output);
-  for (const key of keys) {
+  for (const key of extractFailureKeys(output).keys) {
     const named = fileFromFailureKey(key);
-    // An output line that is no diagnostic names a file only when the whole line is its path.
-    if (named === null || (!diagnostics && named !== normalizeProjectRelativePath(key))) continue;
+    if (named === null) continue;
     const file = isAbsolute(named)
       ? normalizeProjectRelativePath(relative(workspaceDir, named))
       : named;
