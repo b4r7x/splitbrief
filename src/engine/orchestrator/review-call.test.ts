@@ -101,11 +101,11 @@ describe('runReviewerCall', () => {
     expect(persisted?.tokenUsage).toMatchObject({ reviewerInput: 41, reviewerOutput: 17 });
   });
 
-  it('streams the review body to the bus instead of publishing an artifact card', async () => {
+  it('streams no seat text and publishes no artifact card for the typed answer', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
     const reviewer = typedReviewer(async ({ onOutput }) => {
-      onOutput?.('partial review text');
+      onOutput?.(JSON.stringify(VERDICT));
       return makeRunnerCallResult({ status: 'completed', text: JSON.stringify(VERDICT) });
     });
 
@@ -122,11 +122,7 @@ describe('runReviewerCall', () => {
       state: createInitialState('feature'),
     });
 
-    expect(
-      events.filter(
-        (event) => event.type === 'planner_text' && event.text === 'partial review text',
-      ),
-    ).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'planner_text')).toHaveLength(0);
     expect(events.filter((event) => event.type === 'artifact_written')).toHaveLength(0);
   });
 

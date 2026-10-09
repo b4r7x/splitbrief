@@ -166,18 +166,12 @@ export async function haltVerdictlessReview(args: {
       acceptAsIs: scheduledTaskReview(state) || state.phase === 'final-review',
       createdAt: nowIso(),
     });
-    publishError({
-      bus: wctx.bus,
-      phase: state.phase,
-      message: issue.message,
-      safety: { category: 'recovery', code: 'review_input_too_large' },
-    });
     return raisePendingRecovery(ref, state, issue, setTrackedState);
   }
-  // A seat out of quota or signed out halts the way a planner call does; the review
-  // already published the tool's own words, so no second error row. A review that
-  // follows the planner runs on the plan seat's tool, so its swap moves the plan seat
-  // and the review keeps following it.
+  // The review publishes the one error row for every failure it caught; the halt
+  // only raises the recovery. A seat out of quota or signed out halts the way a planner
+  // call does. A review that follows the planner runs on the plan seat's tool, so
+  // its swap moves the plan seat and the review keeps following it.
   if (failure?.kind === 'seat-protocol-error')
     return haltProtocolError({ wctx, state, setTrackedState, error: failure.error });
   if (failure?.kind === 'seat-blocked') {
@@ -199,12 +193,6 @@ export async function haltVerdictlessReview(args: {
       phase: state.phase,
       failure,
       createdAt: nowIso(),
-    });
-    publishError({
-      bus: wctx.bus,
-      phase: state.phase,
-      message: issue.message,
-      safety: { category: 'recovery', code: 'review_failed' },
     });
     return raisePendingRecovery(ref, state, issue, setTrackedState);
   }

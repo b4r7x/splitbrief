@@ -34,6 +34,14 @@ function withPlannerOutputCallbacks(
   };
 }
 
+/** A typed-answer call's text is its answer, which the caller validates and records, so none of it reaches the transcript. */
+function withTypedAnswerCallbacks(
+  callbacks: PlannerOutputCallbacks,
+  ctx: PlannerCallPublisherContext,
+): PlannerOutputCallbacks {
+  return { ...withPlannerOutputCallbacks(callbacks, ctx), onOutput: () => {} };
+}
+
 function withPlannerCallEventCallbacks(
   callbacks: PlannerCallEventCallbacks | undefined,
   ctx: PlannerCallPublisherContext,
@@ -94,7 +102,7 @@ export function withPlannerCallPublishing(
     typedCall: (typedCtx) =>
       planner.typedCall({
         ...typedCtx,
-        callbacks: withPlannerOutputCallbacks(typedCtx.callbacks, ctx),
+        callbacks: withTypedAnswerCallbacks(typedCtx.callbacks, ctx),
       }),
     summarize: (messages, opts) =>
       planner.summarize(messages, withPlannerSummaryOptions(opts, ctx)),
@@ -126,6 +134,6 @@ export function withReviewerCallPublishing(
     review: (prompt, projectDir, callbacks) =>
       review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
     typedCall: (typedCtx) =>
-      typedCall({ ...typedCtx, callbacks: withPlannerOutputCallbacks(typedCtx.callbacks, ctx) }),
+      typedCall({ ...typedCtx, callbacks: withTypedAnswerCallbacks(typedCtx.callbacks, ctx) }),
   };
 }
