@@ -775,7 +775,7 @@ done: 3 tasks
 - `reviewer checks: not run <ids> (<reason>)` — none of the chosen reviewer checks ran. A headless run with `validation.approve_checks: ask` has no card to ask on, so it writes `reviewer checks: not run V1, V2 (validation.approve_checks is ask and this run has no screen to ask on)`. The review is told that none of these commands is a pass.
 - `reviewer check declined: <target> (<reason>)` — one line for each related test the reviewer chose not to run, with its reason.
 - `reviewer check <id>: passed (<command>)` or `reviewer check <id>: failed (<command>)` — the result of one reviewer check (`V1`, `V2`, …) in the run workspace.
-- `reviewer check <id>: refused (<detail>)` — the reviewer command policy refused the reviewer check, and `<detail>` names the rule, for example `runs a program by path` or `runs a setup command (pip install)`, or a script this run changed.
+- `reviewer check <id>: refused (<detail>)` — the reviewer command policy refused the reviewer check, and `<detail>` names the rule, for example `runs a program by path` or `runs a setup command (pip install)`, or a package script, task file, build wrapper or interpreter script this run changed or the run base does not hold (`runs vendor/bin/phpunit, which the run base does not hold`).
 - `reviewer check <id>: not run (<detail>)` — the reviewer check did not run. An earlier reviewer check with new failures stops the later ones: `not run (V1 failed)`.
 - `base re-run <id>: passes` — the re-run of a red reviewer check at the run base, with the same command text, passed: every failure is new.
 - `base re-run <id>: <m> new, <n> pre-existing` — the re-run is red too, and `<m>` failures do not occur at the run base. New failures stop the later reviewer checks.

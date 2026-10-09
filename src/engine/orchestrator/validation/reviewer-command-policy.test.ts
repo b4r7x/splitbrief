@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  interpreterScript,
+  checkDefinition,
   REVIEWER_COMMAND_RULES,
   reviewerCommandRefusal,
 } from './reviewer-command-policy.js';
@@ -82,14 +82,7 @@ describe('reviewerCommandRefusal', () => {
     'make check DESTDIR=build',
     'make -k check',
     'rake -T',
-    'rake -f other.rake test',
-    'rake --rakefile other.rake test',
-    'rake -C sub test',
-    'rake -R tasks test',
-    'rake --rakelibdir tasks test',
-    'rake --rakelib tasks test',
-    'rake -g test',
-    'rake --system test',
+    'rake -j4 test',
     'just --list',
     'npx --no-install --no-yes vitest',
     'mise exec -- npm test',
@@ -98,6 +91,27 @@ describe('reviewerCommandRefusal', () => {
     'bun run test',
     'deno run -A main.ts',
     'gcc -Ilib -o build/a a.c',
+    './mvnw test',
+    './gradlew test',
+    './gradlew -p sub test',
+    './gradlew :app:test --no-daemon',
+    './mvnw -B verify',
+    './mvnw -q test',
+    './mvnw -f sub/pom.xml verify',
+    'gradlew test',
+    'cargo test --features install',
+    'go -C . test ./...',
+    'composer -d sub test',
+    'uv run pytest tests/test_a.py',
+    'bundle exec rspec spec/a_spec.rb',
+    'poetry run pytest tests/',
+    'uv run --python 3.12 pytest tests/',
+    'uv run --python=3.12 pytest tests/x.py',
+    'conda run --prefix=./env pytest',
+    'cargo test --locked sync',
+    'pytest tests/ -k install -v',
+    'bun build ./src/index.ts',
+    'bun run build',
   ])('runs %s', (command) => {
     expect(reviewerCommandRefusal(command)).toBeNull();
   });
@@ -108,9 +122,39 @@ describe('reviewerCommandRefusal', () => {
     ['npm test > out.txt', 'contains a shell operator'],
     ['pytest $(cat list)', 'contains a shell operator'],
     ['CI=1 npm test', 'sets an environment variable before the program'],
-    ['./mvnw test', 'runs a program by path'],
-    ['./gradlew test', 'runs a program by path'],
     ['bin/test', 'runs a program by path'],
+    ['sub/gradlew test', 'runs a program by path'],
+    ['./gradlew.bat test', 'runs a program by path'],
+    ['.//gradlew test', 'runs a program by path'],
+    ['./gradlew wrapper', 'runs a setup command (gradle wrapper)'],
+    ['./gradlew test wrapper', 'runs a setup command (gradle wrapper)'],
+    ['./gradlew --init-script x.gradle test', 'runs inline code'],
+    ['./gradlew -I init.gradle test', 'runs inline code'],
+    ['./mvnw exec:java', 'runs inline code'],
+    ['./mvnw clean install', 'runs a setup command (mvn install)'],
+    ['./gradlew test ../x', 'names a path outside the run workspace'],
+    ['./gradlew test;id', 'contains a shell operator'],
+    ['rake -f other.rake test', 'runs rake in another directory or on another file'],
+    ['rake --rakefile other.rake test', 'runs rake in another directory or on another file'],
+    ['rake -C sub test', 'runs rake in another directory or on another file'],
+    ['rake -R lib/tasks test', 'runs rake in another directory or on another file'],
+    ['rake --rakelibdir tasks test', 'runs rake in another directory or on another file'],
+    ['rake --rakelib tasks test', 'runs rake in another directory or on another file'],
+    ['rake -g test', 'runs rake in another directory or on another file'],
+    ['rake --system test', 'runs rake in another directory or on another file'],
+    ['rake -fx test', 'runs rake in another directory or on another file'],
+    ['bundle exec rake --rakefile x test', 'runs rake in another directory or on another file'],
+    ['go -C . generate ./...', 'runs a setup command (go generate)'],
+    ['go -C . get example.com/x', 'runs a setup command (go get)'],
+    ['go -C . mod tidy', 'runs a setup command (go mod tidy)'],
+    ['uv --directory . sync', 'runs a setup command (uv sync)'],
+    ['poetry -C . install', 'runs a setup command (poetry install)'],
+    ['composer -d . install', 'runs a setup command (composer install)'],
+    ['composer --working-dir . update', 'runs a setup command (composer update)'],
+    ['composer -d .', 'runs composer with no argument, which installs'],
+    ['bun --cwd . install', 'runs a setup command (bun install)'],
+    ['pip --python .venv/bin/python install x', 'runs a setup command (pip install)'],
+    ['pytest -k install', 'runs a setup command (pytest install)'],
     ['cd src', 'changes the directory'],
     ['bash -c "npm test"', 'runs the shell bash'],
     ['sh test.sh', 'runs the shell sh'],
@@ -270,6 +314,58 @@ describe('reviewerCommandRefusal', () => {
     ['gcc -o/tmp/x a.c', 'names a path outside the run workspace'],
     ['gcc -I/abs a.c', 'names a path outside the run workspace'],
     ['make check PREFIX=../out', 'names a path outside the run workspace'],
+    ['uv run --python 3.12 sh -c x', 'runs the shell sh'],
+    ['bundle exec --gemfile x sh', 'runs the shell sh'],
+    ['conda run -p ./env pytest', 'runs a program by path'],
+    ['cargo --locked test sync', 'runs a setup command (cargo sync)'],
+    [
+      'npm start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'npm stop',
+      'runs the package script stop, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'npm restart',
+      'runs the package script restart, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'npm run start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'pnpm start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'pnpm --filter x start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'yarn start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'yarn workspace x run start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'yarn restart',
+      'runs the package script restart, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'bun start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'bun run stop',
+      'runs the package script stop, which starts or stops the application and does not verify a change',
+    ],
+    [
+      'pnpm exec npm start',
+      'runs the package script start, which starts or stops the application and does not verify a change',
+    ],
   ])('refuses %s: %s', (command, reason) => {
     expect(reviewerCommandRefusal(command)).toBe(reason);
   });
@@ -419,8 +515,26 @@ describe('reviewerCommandRefusal', () => {
     'npm run-script lock',
     'npm --prefix x run lock',
     'npm -w web run lock',
+    'npm --silent run update',
+    'npm -s run-script generate',
+    'pnpm --silent run sync',
+    'yarn --silent run generate',
+    'composer --no-interaction run-script update',
+    'pnpm run toString',
+    'yarn constructor',
+    'constructor x',
   ])('runs the verification target or package script %s', (command) => {
     expect(reviewerCommandRefusal(command)).toBeNull();
+  });
+
+  it.each([
+    ['npx --no-install vitest -t sync', 'runs a setup command (vitest sync)'],
+    ['npx --no-install npm install', 'runs a setup command (npm install)'],
+    ['composer exec sh', 'runs the shell sh'],
+    ['composer exec -- node -e 1', 'runs inline code'],
+    ['composer --no-interaction exec git status', 'runs git, which does not verify a change'],
+  ])('checks the program a forwarder hands on to: %s, %s', (command, reason) => {
+    expect(reviewerCommandRefusal(command)).toBe(reason);
   });
 
   it.each([
@@ -527,54 +641,178 @@ describe('reviewerCommandRefusal', () => {
   });
 });
 
-describe('interpreterScript', () => {
-  it('names the project script an interpreter runs, through a forwarder too', () => {
-    expect(interpreterScript('python manage.py test')).toBe('manage.py');
-    expect(interpreterScript('php artisan test')).toBe('artisan');
-    expect(interpreterScript('node ./scripts/check.js --fast')).toBe('scripts/check.js');
-    expect(interpreterScript('uv run python manage.py test')).toBe('manage.py');
-    expect(interpreterScript('uv run --group dev python scripts/check.py')).toBe(
-      'scripts/check.py',
-    );
-    expect(interpreterScript('conda run -n py312 python manage.py test')).toBe('manage.py');
-    expect(interpreterScript('hatch run --verbose test:python manage.py test')).toBe('manage.py');
-    expect(interpreterScript('uv run --group dev conda run -n py312 python manage.py test')).toBe(
-      'manage.py',
-    );
-    expect(interpreterScript('npx --no-install tsx scripts/check.ts')).toBe('scripts/check.ts');
-    expect(interpreterScript('python3.12 manage.py test')).toBe('manage.py');
-    expect(interpreterScript('pnpm node scripts/check.js')).toBe('scripts/check.js');
-    expect(interpreterScript('node --test test/new.test.js')).toBe('test/new.test.js');
-    expect(interpreterScript('groovy -cp lib test/check.groovy')).toBe('test/check.groovy');
-    expect(interpreterScript('elixir -pa ebin test/x.exs')).toBe('test/x.exs');
+const MAKE = {
+  kind: 'task-file',
+  runner: 'make',
+  files: ['Makefile', 'makefile', 'GNUmakefile'],
+  dirs: [],
+};
+const JUST = {
+  kind: 'task-file',
+  runner: 'just',
+  files: ['justfile', 'Justfile', '.justfile'],
+  dirs: [],
+};
+const RAKE = {
+  kind: 'task-file',
+  runner: 'rake',
+  files: ['Rakefile', 'rakefile', 'Rakefile.rb', 'rakefile.rb'],
+  dirs: ['rakelib'],
+};
+
+describe('checkDefinition', () => {
+  it.each([
+    ['python manage.py test', 'manage.py'],
+    ['php artisan test', 'artisan'],
+    ['node ./scripts/check.js --fast', 'scripts/check.js'],
+    ['uv run python manage.py test', 'manage.py'],
+    ['uv run --group dev python scripts/check.py', 'scripts/check.py'],
+    ['conda run -n py312 python manage.py test', 'manage.py'],
+    ['hatch run --verbose test:python manage.py test', 'manage.py'],
+    ['uv run --group dev conda run -n py312 python manage.py test', 'manage.py'],
+    ['npx --no-install tsx scripts/check.ts', 'scripts/check.ts'],
+    ['python3.12 manage.py test', 'manage.py'],
+    ['pnpm node scripts/check.js', 'scripts/check.js'],
+    ['node --test test/new.test.js', 'test/new.test.js'],
+    ['groovy -cp lib test/check.groovy', 'test/check.groovy'],
+    ['elixir -pa ebin test/x.exs', 'test/x.exs'],
+    ['bun scripts/check.ts', 'scripts/check.ts'],
+    ['bun run scripts/check.ts', 'scripts/check.ts'],
+    ['deno run -A scripts/check.ts', 'scripts/check.ts'],
+    ['composer exec php scripts/check.php', 'scripts/check.php'],
+    ['uv run python scripts/check.py', 'scripts/check.py'],
+    ['uv run --python 3.12 python scripts/check.py', 'scripts/check.py'],
+  ])('names the script file %s runs: %s', (command, file) => {
+    expect(checkDefinition(command)).toEqual({ kind: 'script-file', file });
   });
 
-  it('names the script file bun and deno run, and no package script or test run', () => {
-    expect(interpreterScript('bun scripts/check.ts')).toBe('scripts/check.ts');
-    expect(interpreterScript('bun run scripts/check.ts')).toBe('scripts/check.ts');
-    expect(interpreterScript('deno run -A scripts/check.ts')).toBe('scripts/check.ts');
-    expect(interpreterScript('bun run test')).toBeNull();
-    expect(interpreterScript('bun test')).toBeNull();
-    expect(interpreterScript('deno test')).toBeNull();
+  it.each([
+    ['pnpm --filter x test', 'pnpm', 'test', '.'],
+    ['pnpm --filter=x test', 'pnpm', 'test', '.'],
+    ['pnpm -F x run test', 'pnpm', 'test', '.'],
+    ['pnpm -C packages/x test', 'pnpm', 'test', 'packages/x'],
+    ['pnpm --dir packages/x test', 'pnpm', 'test', 'packages/x'],
+    ['pnpm --dir=./packages/x/ test', 'pnpm', 'test', 'packages/x'],
+    ['pnpm -r test', 'pnpm', 'test', '.'],
+    ['pnpm -F x run lint', 'pnpm', 'lint', '.'],
+    ['pnpm lint', 'pnpm', 'lint', '.'],
+    ['pnpm run test', 'pnpm', 'test', '.'],
+    ['pnpm test', 'pnpm', 'test', '.'],
+    ['pnpm t', 'pnpm', 'test', '.'],
+    ['pnpm run toString', 'pnpm', 'toString', '.'],
+    ['yarn constructor', 'yarn', 'constructor', '.'],
+    ['npm test', 'npm', 'test', '.'],
+    ['npm -w pkg run test', 'npm', 'test', '.'],
+    ['npm --workspace=pkg run test', 'npm', 'test', '.'],
+    ['npm test -w pkg', 'npm', 'test', '.'],
+    ['npm run test --workspaces', 'npm', 'test', '.'],
+    ['npm --prefix sub test', 'npm', 'test', 'sub'],
+    ['npm --prefix=test/fixtures/app test', 'npm', 'test', 'test/fixtures/app'],
+    ['npm -C sub test', 'npm', 'test', 'sub'],
+    ['npm -Csub test', 'npm', 'test', 'sub'],
+    ['npm --prefix . test', 'npm', 'test', '.'],
+    ['npm run test -- --prefix sub', 'npm', 'test', '.'],
+    ['mise exec -- npm -w pkg run test', 'npm', 'test', '.'],
+    ['mise exec -- npm --prefix sub run test', 'npm', 'test', 'sub'],
+    ['npm run test -- --coverage', 'npm', 'test', '.'],
+    ['yarn workspace x test', 'yarn', 'test', '.'],
+    ['yarn workspaces foreach -A run test', 'yarn', 'test', '.'],
+    ['yarn workspaces foreach --from x run test', 'yarn', 'test', '.'],
+    ['yarn workspaces foreach --include x --exclude y -j 2 run test', 'yarn', 'test', '.'],
+    ['yarn workspaces foreach --jobs 2 run test', 'yarn', 'test', '.'],
+    ['yarn --cwd dist test', 'yarn', 'test', 'dist'],
+    ['yarn --cwd=dist test', 'yarn', 'test', 'dist'],
+    ['bun run test', 'bun', 'test', '.'],
+    ['bun run --filter x test', 'bun', 'test', '.'],
+    ['bun --cwd web run test', 'bun', 'test', 'web'],
+    ['bun run build', 'bun', 'build', '.'],
+    ['npm start', 'npm', 'start', '.'],
+    ['npm restart', 'npm', 'restart', '.'],
+    ['pnpm stop', 'pnpm', 'stop', '.'],
+    ['yarn start', 'yarn', 'start', '.'],
+    ['bun start', 'bun', 'start', '.'],
+  ])('names the package script %s runs: %s %s in %s', (command, runner, script, dir) => {
+    expect(checkDefinition(command)).toEqual({
+      kind: 'package-script',
+      runner,
+      manifest: 'package.json',
+      script,
+      dir,
+    });
   });
 
-  it('names no script for a module, a bare program or a non-interpreter', () => {
-    expect(interpreterScript('python -m pytest')).toBeNull();
-    expect(interpreterScript('node --version')).toBeNull();
-    expect(interpreterScript('npm test')).toBeNull();
-    expect(interpreterScript('deno test')).toBeNull();
+  it.each([
+    ['composer test', '.'],
+    ['composer run-script test', '.'],
+    ['composer -d sub test', 'sub'],
+    ['composer --working-dir=sub test', 'sub'],
+    ['composer --working-dir sub test', 'sub'],
+    ['composer -d vendor/acme/x test', 'vendor/acme/x'],
+  ])('names the composer script %s runs, in %s', (command, dir) => {
+    expect(checkDefinition(command)).toEqual({
+      kind: 'package-script',
+      runner: 'composer',
+      manifest: 'composer.json',
+      script: 'test',
+      dir,
+    });
+  });
+
+  it.each([
+    ['uv run make test', MAKE],
+    ['make check', MAKE],
+    ['pnpm exec just test', JUST],
+    ['bundle exec rake test', RAKE],
+    ['rake spec', RAKE],
+    ['composer exec make test', MAKE],
+    [
+      './gradlew test',
+      { kind: 'wrapper', runner: './gradlew', files: ['gradlew'], dirs: ['gradle/wrapper'] },
+    ],
+    [
+      'mise exec -- ./mvnw verify',
+      { kind: 'wrapper', runner: './mvnw', files: ['mvnw'], dirs: ['.mvn/wrapper'] },
+    ],
+  ])('names the task file or build wrapper %s runs', (command, definition) => {
+    expect(checkDefinition(command)).toEqual(definition);
+  });
+
+  it.each([
+    'python -m pytest',
+    'node --version',
+    'bun test',
+    'bun build ./src/index.ts',
+    'deno test',
+    'pnpm exec vitest',
+    'npm exec --no-install vitest',
+    'deno task test',
+    'mix test',
+    'turbo run test',
+    'gradlew test',
+    'sub/gradlew test',
+    'composer exec phpunit',
+    'constructor x',
+  ])('names no definition for %s', (command) => {
+    expect(checkDefinition(command)).toBeNull();
   });
 });
 
 describe('REVIEWER_COMMAND_RULES', () => {
   it('states the rules the policy enforces', () => {
     const text = REVIEWER_COMMAND_RULES.join('\n');
-    expect(text).toContain('`./mvnw`');
+    expect(REVIEWER_COMMAND_RULES[1]).toContain('`bin/test` and `sub/gradlew` are refused');
+    expect(REVIEWER_COMMAND_RULES[1]).toContain('`./gradlew` and `./mvnw` are the exception');
+    expect(REVIEWER_COMMAND_RULES[3]).toContain('`php -c php.ini artisan test`');
+    expect(text).not.toContain('vendor/bin/phpunit');
+    expect(REVIEWER_COMMAND_RULES[8]).toContain('`rake -f`');
+    expect(REVIEWER_COMMAND_RULES[9]).toContain('`composer.json`');
+    expect(REVIEWER_COMMAND_RULES[9]).toContain('`rakelib`');
     expect(text).toContain('`npx --no-install <tool>`');
     expect(text).toContain('`install`');
     expect(text).toContain('`git`');
     expect(text).toContain('`bundle exec`');
-    expect(text).toContain('this run changed is refused');
+    expect(REVIEWER_COMMAND_RULES[2]).toContain('`composer exec`');
+    expect(text).toContain('this run changed or created is refused');
     expect(text).toContain('`make --eval`');
     expect(text).toContain('`rake -e`');
     expect(text).toContain('`just -c`');
@@ -582,10 +820,12 @@ describe('REVIEWER_COMMAND_RULES', () => {
     expect(text).toContain('`make -f`');
     expect(text).not.toContain('`mvn -f`');
     expect(text).not.toContain('`gradle -b`');
-    expect(text).not.toContain('`rake --rakefile`');
     expect(REVIEWER_COMMAND_RULES[3]).toContain('`rake --require`');
     expect(REVIEWER_COMMAND_RULES[3]).toContain('`gradle --init-script`');
-    expect(text).toContain('Every non-option word after the subcommand');
+    expect(text).toContain('The program is the first word after the subcommand');
+    expect(text).toContain('`--option=value`');
+    expect(text).toContain('`cargo test --locked sync`');
+    expect(text).toContain('`start`, `stop`, `restart`');
     expect(text).toContain('`uv run --with`');
     expect(text).toContain('`gradle --init-script`');
     expect(text).toContain('`npm explore`');

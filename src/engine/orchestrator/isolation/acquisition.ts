@@ -255,13 +255,15 @@ async function baseBlobPath(
 
 export type RunBaseFile =
   | { kind: 'absent' }
+  | { kind: 'new' }
   | { kind: 'unchanged' }
   | { kind: 'changed'; text: string | null };
 
 /**
- * A reader of files at the run base, compared with the workspace: absent from both, unchanged, or
- * changed with its base text (null when the run created it or the snapshot holds no copy of it).
- * It reads the base snapshot once, however many files it then reads.
+ * A reader of files at the run base, compared with the workspace: absent from both, new when the
+ * base holds no copy of a file the workspace has (the walk skipped it, or listed it with the empty
+ * hash of a file it could not read), unchanged, or changed with its base text (null when the
+ * snapshot holds no blob of it). It reads the base snapshot once, however many files it then reads.
  */
 export async function createRunBaseReader(input: {
   projectDir: string;
@@ -275,7 +277,7 @@ export async function createRunBaseReader(input: {
     const current = await hashFile(join(input.workspaceDir, file));
     const hash = snapshot.manifest.fileHashes[file];
     if (hash === undefined || hash === '') {
-      return current === null ? { kind: 'absent' } : { kind: 'changed', text: null };
+      return current === null ? { kind: 'absent' } : { kind: 'new' };
     }
     if (current === hash) return { kind: 'unchanged' };
     const blob = await baseBlobPath(snapshot, file, hash);
