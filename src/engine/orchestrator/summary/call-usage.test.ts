@@ -36,6 +36,7 @@ afterEach(() => {
 // The projection is given no task, so any taskId on the evidence was recorded by the call.
 function persist(event: RunnerCallEvent): void {
   for (const projected of projectRunnerCallEvents(event, {
+    rootDir: '/project',
     phase: 'implementing',
     sequence: sequence++,
   })) {

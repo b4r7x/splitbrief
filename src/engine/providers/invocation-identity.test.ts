@@ -93,7 +93,7 @@ function streamClient(): StreamClient {
 
 function project(events: readonly RunnerCallEvent[]) {
   return events.flatMap((event, sequence) =>
-    projectRunnerCallEvents(event, { phase: 'planning', sequence }),
+    projectRunnerCallEvents(event, { rootDir: '/project', phase: 'planning', sequence }),
   );
 }
 

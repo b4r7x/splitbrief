@@ -91,7 +91,11 @@ describe('createRunnerAttemptCallbackBuffer', () => {
     const warning = events.find((event) => event.type === 'call_warning');
     expect(warning).toMatchObject(context);
     if (warning === undefined) throw new Error('Expected overflow warning');
-    const projected = projectRunnerCallEvents(warning, { phase: 'implementing', sequence: 1 });
+    const projected = projectRunnerCallEvents(warning, {
+      rootDir: '/project',
+      phase: 'implementing',
+      sequence: 1,
+    });
     expect(projected.map((event) => event.type)).toEqual([
       'runner_call_warning',
       'runner_call_activity',

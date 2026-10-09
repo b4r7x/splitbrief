@@ -67,6 +67,7 @@ export function formatTaskStartedParts(
 export function validationSummarySegments(
   event: Extract<EngineEvent, { type: 'validate' }>,
 ): ConversationRowSegment[] {
+  if (event.status === 'stopped') return [{ text: 'Validate · stopped', tone: 'textDim' }];
   const segments: ConversationRowSegment[] = [{ text: 'Validate', tone: 'textDim' }];
   for (const stage of ValidationStageSchema.options) {
     const state = validationStageSymbol(event, event.stages, stage, event.skipped);
@@ -121,11 +122,13 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
   const label = suiteStageText({
     id: event.id,
     moment: event.moment,
+    scenario: event.scenario,
     command: truncateTerminalDisplayText(event.command, 48),
   });
   // Why a command did not run or was refused; a session from before reviewer checks has none.
   const detail = event.detail === undefined ? '' : `${SOFT_SEP}${firstLine(event.detail)}`;
   if (event.status === 'running') return `${label}${SOFT_SEP}running`;
+  if (event.status === 'stopped') return `${label}${SOFT_SEP}stopped`;
   if (event.status === 'not-run') return `${label}${SOFT_SEP}${NOT_RUN}${detail}`;
   if (event.status === 'refused') return `${label}${SOFT_SEP}refused${detail}`;
   if (
@@ -164,7 +167,9 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
         ? 'passes at the run base'
         : 'red at the run base too'
       : event.passed === true
-        ? 'passed'
+        ? event.scenario === undefined
+          ? 'passed'
+          : 'rendered'
         : 'failed');
   const dur = event.duration === undefined ? '' : `${SOFT_SEP}${rowDuration(event.duration)}`;
   // The clock follows the verdict, as on every other row; the reason a red is pre-existing, or not

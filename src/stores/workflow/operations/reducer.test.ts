@@ -701,38 +701,62 @@ describe('operationsStore', () => {
     });
   });
 
-  it('restarts the stage clocks when a stopped run runs the same stage again', () => {
-    const suiteRunning = (ts: number) =>
-      addEvent({
-        type: 'full_suite',
-        ts,
-        phase: 'implementing',
-        status: 'running',
-        stage: 'test',
-        command: 'npm test',
-        moment: 'pre-review',
-      });
-    const gateRunning = (ts: number) =>
-      addEvent(
-        makeValidate({
+  it.each(['workflow_cancelled', 'turn_interrupted'] as const)(
+    '%s clears command stages and a resumed command starts a new clock',
+    (type) => {
+      const suiteRunning = (ts: number) =>
+        addEvent({
+          type: 'full_suite',
           ts,
+          phase: 'implementing',
           status: 'running',
-          activeStage: 'lint',
-          commands: { lint: 'npm run lint' },
-        }),
-      );
-    suiteRunning(5_000);
-    gateRunning(5_000);
+          stage: 'test',
+          command: 'npm test',
+          moment: 'pre-review',
+        });
+      const gateRunning = (ts: number) =>
+        addEvent(
+          makeValidate({
+            ts,
+            status: 'running',
+            activeStage: 'lint',
+            commands: { lint: 'npm run lint' },
+          }),
+        );
+      suiteRunning(5_000);
+      gateRunning(5_000);
 
-    addEvent({ type: 'workflow_cancelled', ts: 8_000, phase: 'implementing' });
+      addEvent({ type, ts: 8_000, phase: 'implementing' });
+      expect(operationsStore.get().suiteStage).toBeNull();
+      expect(operationsStore.get().validationStage).toBeNull();
+
+      hydrateFromState(makeWorkflowState({ phase: 'implementing' }), { endedAt: 8_000 });
+      addEvent({ type: 'workflow_resumed', ts: 600_000, phase: 'implementing' });
+      suiteRunning(600_000);
+      gateRunning(600_000);
+      expect(operationsStore.get().suiteStage?.stageStartedTs).toBe(600_000);
+      expect(operationsStore.get().validationStage?.stageStartedTs).toBe(600_000);
+    },
+  );
+
+  it('retains the scenario and clock of a plan render until stopped settles it', () => {
+    const render = {
+      type: 'full_suite',
+      ts: 5_000,
+      phase: 'final-review',
+      id: 'R1',
+      moment: 'plan',
+      scenario: 'workflow-x',
+      command: 'npm run tui-shots -- --scenario workflow-x',
+      status: 'running',
+    } satisfies EngineEventOf<'full_suite'>;
+    addEvent(render);
+    expect(operationsStore.get().suiteStage).toMatchObject({
+      moment: 'plan',
+      scenario: 'workflow-x',
+      stageStartedTs: 5_000,
+    });
+    addEvent({ ...render, ts: 8_000, status: 'stopped' });
     expect(operationsStore.get().suiteStage).toBeNull();
-    expect(operationsStore.get().validationStage).toBeNull();
-
-    hydrateFromState(makeWorkflowState({ phase: 'implementing' }), { endedAt: 8_000 });
-    addEvent({ type: 'workflow_resumed', ts: 600_000, phase: 'implementing' });
-    suiteRunning(600_000);
-    gateRunning(600_000);
-    expect(operationsStore.get().suiteStage?.stageStartedTs).toBe(600_000);
-    expect(operationsStore.get().validationStage?.stageStartedTs).toBe(600_000);
   });
 });

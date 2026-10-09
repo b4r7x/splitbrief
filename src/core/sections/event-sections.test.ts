@@ -810,6 +810,20 @@ describe('groupEventsIntoSections', () => {
         check(20_500, 'V3', { status: 'done', command: 'npm test', passed: false }),
         check(21_000, 'V3', { status: 'done', command: 'npm test', moment: 'base', passed: false }),
         check(21_500, 'V4', { status: 'not-run', command: 'make test', detail: 'V3 failed' }),
+        check(21_600, 'K1', {
+          moment: 'plan',
+          status: 'done',
+          command: 'make check',
+          passed: false,
+        }),
+        check(21_700, 'R1', {
+          moment: 'plan',
+          status: 'done',
+          command: 'npm run tui-shots',
+          scenario: 'workflow-x',
+          passed: false,
+        }),
+        check(21_800, 'V5', { moment: 'brief', status: 'stopped', command: 'npm run test-ci' }),
         at('review_fix_started', 'implementing', 22_000, { taskIds: ['T002'] }),
         start('T002', 1),
       ]);

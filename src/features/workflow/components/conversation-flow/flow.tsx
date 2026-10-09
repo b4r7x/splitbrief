@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
+import { formatTaskHeading } from '../../../../components/task-summary.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
@@ -120,11 +121,14 @@ export function ConversationFlow({
       ? viewportSplit.queuedRows - 1
       : Math.min(viewportSplit.queuedRows, pendingTasks.length);
   const hiddenPending = viewportSplit.queuedRows > 1 ? pendingTasks.length - shownPending : 0;
-  const queuedRows = pendingTasks
-    .slice(0, shownPending)
-    .map((task) =>
-      row({ key: `queued-${task.id}`, text: task.title, tone: 'textDim', kind: 'task-header' }),
-    );
+  const queuedRows = pendingTasks.slice(0, shownPending).map((task) =>
+    row({
+      key: `queued-${task.id}`,
+      text: formatTaskHeading(task),
+      tone: 'textDim',
+      kind: 'task-header',
+    }),
+  );
   const transcriptViewportHeight = viewportSplit.transcriptViewportHeight;
   const {
     newEventCount,

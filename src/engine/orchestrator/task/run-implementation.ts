@@ -1,7 +1,11 @@
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
+import {
+  lineageAttemptsOf,
+  type ChangedFilesSnapshot,
+  type WorkflowState,
+} from '../../../core/schemas/workflow.js';
 import { briefCorrections } from '../../../core/state/machine.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
@@ -192,6 +196,7 @@ export async function runImplementation(opts: {
             createdByThisTask,
           }),
           phase: state.phase,
+          lineageAttempts: lineageAttemptsOf(state, task),
           approveWrite: async (file) => {
             const decision = await gateChangedFiles({
               changedFiles: [file],

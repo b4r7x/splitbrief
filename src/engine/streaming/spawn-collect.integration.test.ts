@@ -199,11 +199,19 @@ describe('spawnAndCollect', () => {
     });
 
     const projected = callbackEvents.flatMap((event, index) =>
-      projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+      projectRunnerCallEvents(event, {
+        rootDir: process.cwd(),
+        phase: 'planning',
+        sequence: index + 1,
+      }),
     );
     const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionEntries = callbackEvents.map((event, index) =>
-      runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+      runnerCallEventToSessionLogEntry(event, {
+        rootDir: process.cwd(),
+        phase: 'planning',
+        sequence: index + 1,
+      }),
     );
     const observed = JSON.stringify({
       callbackEvents,
@@ -289,11 +297,19 @@ describe('spawnAndCollect', () => {
     });
 
     const projected = callbackEvents.flatMap((event, index) =>
-      projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+      projectRunnerCallEvents(event, {
+        rootDir: process.cwd(),
+        phase: 'planning',
+        sequence: index + 1,
+      }),
     );
     const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionEntries = callbackEvents.map((event, index) =>
-      runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+      runnerCallEventToSessionLogEntry(event, {
+        rootDir: process.cwd(),
+        phase: 'planning',
+        sequence: index + 1,
+      }),
     );
     const toolDeltas = callbackEvents.filter((event) => event.type === 'call_tool_use_delta');
     const observed = JSON.stringify({
@@ -380,11 +396,19 @@ describe('spawnAndCollect', () => {
 
     try {
       const projected = callbackEvents.flatMap((event, index) =>
-        projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+        projectRunnerCallEvents(event, {
+          rootDir: process.cwd(),
+          phase: 'planning',
+          sequence: index + 1,
+        }),
       );
       const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
       const sessionEntries = callbackEvents.map((event, index) =>
-        runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+        runnerCallEventToSessionLogEntry(event, {
+          rootDir: process.cwd(),
+          phase: 'planning',
+          sequence: index + 1,
+        }),
       );
       const observedFailure =
         failure instanceof Error

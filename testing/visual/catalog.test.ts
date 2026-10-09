@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
+import { stripTerminalControls } from '../../src/utils/display-text.js';
 import {
   listVisualScenarios,
   findVisualScenario,
@@ -45,6 +46,105 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('keeps the interrupted fix row stopped while the continued brief runs', async () => {
+    const scenario = findVisualScenario('workflow-fix-check-stopped-continued');
+    if (scenario === undefined) throw new Error('Missing stopped-check scenario');
+    const checkpoint = scenario.checkpoints[0];
+    const viewport = scenario.viewports.find((size) => size.cols === 80);
+    if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      expect(frame).toContain('Fix check V2 · npm test · stopped');
+      expect(frame).toContain('working on T904');
+      expect(frame).toContain('Stopped at T904');
+      expect(frame).not.toContain('Stopped mid-turn');
+      expect(frame).not.toContain('Fix check V2 · npm test · running');
+      expect(frame).not.toContain('running 0:40');
+    } finally {
+      await handle.unmount();
+    }
+  });
+  it.each([80, 120])(
+    'shows render collection and its twelve-second clock at %s columns',
+    async (cols) => {
+      const scenario = findVisualScenario('workflow-review-render-running');
+      if (scenario === undefined) throw new Error('Missing render scenario');
+      const checkpoint = scenario.checkpoints[0];
+      const viewport = scenario.viewports.find((size) => size.cols === cols);
+      if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        expect(frame).toContain('3/3 briefs passed');
+        expect(frame).toContain('Review · Render workflow-review');
+        expect(frame).toContain('running 0:12');
+        expect(frame).toContain('Review · Render workflow-review 0:12');
+        const plain = stripTerminalControls(frame, { preserveLineBreaks: true });
+        for (const id of ['T901', 'T902', 'T903']) expect(plain).toContain(`✓ ${id}`);
+        expect(plain).toMatch(/✓ T902[^\n]*registry\.ts/);
+        expect(plain).toMatch(/✓ T903[^\n]*review-fixture\.md/);
+        expect(frame).toContain('Render workflow-plan-compiled · rendered · 14.2s');
+        expect(frame).toContain('Render workflow-implementation · failed · 11.0s');
+        expect(frame).toContain('Render workflow-review · running');
+        expect(frame).not.toContain('npm run tui-shots');
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+  it.each([80, 120])('names the consult brief in build progress at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-build-consult');
+    if (scenario === undefined) throw new Error('Missing consult scenario');
+    const checkpoint = scenario.checkpoints[0];
+    const viewport = scenario.viewports.find((size) => size.cols === cols);
+    if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      expect(frame).toContain('Claude Code CLI · answering the consult on T901');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([80, 120])('keeps fix-check phrases whole at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-fix-check-done');
+    if (scenario === undefined) throw new Error('Missing fix-check scenario');
+    const checkpoint = scenario.checkpoints[0];
+    const viewport = scenario.viewports.find((size) => size.cols === cols);
+    if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      expect(frame).toContain('2\u00a0failures gone');
+      expect(frame).toContain('3\u00a0others left');
+      expect(frame).toContain('not\u00a0proven\u00a0fixed');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([
+    ['workflow-review-context-insufficient', true],
+    ['workflow-review-call-failed', false],
+  ] as const)('renders recovery copy for %s', async (id, needsContext) => {
+    const scenario = findVisualScenario(id);
+    if (scenario === undefined) throw new Error(`Missing scenario ${id}`);
+    const checkpoint = scenario.checkpoints[0];
+    const viewport = scenario.viewports.find((size) => size.cols === 120);
+    if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = await handle.waitForCheckpoint();
+      expect(frame).toContain('Try again');
+      expect(frame.includes('/crew review')).toBe(needsContext);
+      expect(frame).not.toContain('/resume');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it('shows a failed task beside the retried task at a sidebar viewport', async () => {
     const scenario = findVisualScenario('workflow-implementation-retry');
     if (scenario === undefined) throw new Error('Missing retry scenario');

@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
@@ -9,6 +9,9 @@ import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { makePlanner, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createEventBus } from '../../events/bus.js';
+import type { EngineEventOf } from '../../events/types.js';
+import { parseEngineEvent } from '../../events/schema.js';
+import type { ValidationCommandRunner } from '../validation/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -75,6 +78,163 @@ describe('pre-review checks', () => {
       ...overrides,
     };
   }
+
+  it('prepares commands once for the running rows and execution', async () => {
+    mkdirSync(join(projectDir, 'src'));
+    writeFileSync(join(projectDir, 'src', 'a.test.ts'), '');
+    writeFileSync(join(projectDir, 'src', 'b.test.ts'), '');
+    const state = makeImplState([], {
+      plan: makePlan([
+        { id: 'K1', kind: 'test', value: 'src/a.test.ts', required: true },
+        { id: 'K2', kind: 'test', value: 'src/b.test.ts', required: true },
+        { id: 'K3', kind: 'cmd', value: 'node --version', required: true },
+      ]),
+      discoveredValidation: { testPattern: '../*.test.ts' },
+    });
+    const bus = createEventBus();
+    const warnings: EngineEventOf<'warning'>[] = [];
+    const checks: EngineEventOf<'full_suite'>[] = [];
+    const commands: string[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'warning') warnings.push(event);
+      if (event.type === 'full_suite') checks.push(event);
+    });
+    const runCommand: ValidationCommandRunner = async (cmd, args) => {
+      commands.push([cmd, ...args].join(' '));
+      return { stdout: 'ok', stderr: '', code: 0 };
+    };
+    const result = await runPreReviewChecks(options({ state, bus, runCommand }));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      category: 'validation',
+      code: 'discovered_validation_refused',
+    });
+    expect(result.runs.map((run) => run.status)).toEqual(['pass', 'pass', 'pass']);
+    expect(
+      checks.filter((event) => event.status === 'running').map((event) => event.command),
+    ).toEqual(commands);
+    expect(checks.filter((event) => event.status === 'done').map((event) => event.command)).toEqual(
+      commands,
+    );
+  });
+
+  it('publishes each plan and task check before execution and settles it before the next check', async () => {
+    const checks: Check[] = [
+      { id: 'K1', kind: 'cmd', value: 'node --version', required: true },
+      { id: 'K2', kind: 'test', value: 'src/a.test.ts', required: true },
+      { id: 'R1', kind: 'render', value: 'workflow-x', required: true },
+      { id: 'R2', kind: 'render', value: 'workflow-y', required: false },
+      { id: 'R3', kind: 'render', value: 'Invalid!', required: false },
+      { id: 'K3', kind: 'cmd', value: 'tsc --noEmit', required: false },
+    ];
+    const task = makeTask({
+      status: 'done',
+      checks: [{ id: 'K4', kind: 'cmd', value: 'node --version', required: false }],
+    });
+    mkdirSync(join(projectDir, 'src'));
+    writeFileSync(join(projectDir, 'src', 'a.test.ts'), '');
+    const state = makeImplState([task], { plan: makePlan(checks), phase: 'final-review' });
+    saveState({ projectDir, sessionId: 'sess-pre-review' }, state);
+    const bus = createEventBus();
+    const events: EngineEventOf<'full_suite'>[] = [];
+    const order: string[] = [];
+    bus.subscribe((event) => {
+      if (event.type !== 'full_suite') return;
+      events.push(event);
+      order.push(`${event.id}:${event.status}`);
+    });
+    let now = 1_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const runner: ValidationCommandRunner = async (command, args, opts) => {
+      order.push(`${opts?.label}:execute`);
+      now += 14_200;
+      if (args.includes('workflow-y'))
+        throw processError.exitCode({ command, code: 1, stderr: 'render failed' });
+      if (command === 'tsc') throw processError.notFound('tsc');
+      return { stdout: 'ok', stderr: '', code: 0 };
+    };
+    const result = await runPreReviewChecks(
+      options({
+        state,
+        bus,
+        config: makeConfig({ render: 'npm run tui-shots -- --scenario {id} --output {out}' }),
+        runCommand: runner,
+      }),
+    );
+    expect(order).toEqual([
+      'K1:running',
+      'check K1:execute',
+      'K1:done',
+      'K2:running',
+      'test validation:execute',
+      'K2:done',
+      'R1:running',
+      'check R1:execute',
+      'R1:done',
+      'R2:running',
+      'check R2:execute',
+      'R2:done',
+      'R3:running',
+      'R3:refused',
+      'K3:running',
+      'check K3:execute',
+      'K3:not-run',
+      'K4:running',
+      'check K4:execute',
+      'K4:done',
+    ]);
+    expect(events.every((event) => event.phase === 'final-review' && event.moment === 'plan')).toBe(
+      true,
+    );
+    expect(events.every((event) => parseEngineEvent(event) !== null)).toBe(true);
+    expect(
+      events.filter((event) => event.status === 'done').every((event) => event.duration === 14_200),
+    ).toBe(true);
+    expect(events.find((event) => event.id === 'K2')).toMatchObject({
+      command: 'npm test -- src/a.test.ts',
+    });
+    expect(events.filter((event) => event.id === 'R1')).toEqual([
+      expect.objectContaining({ scenario: 'workflow-x', status: 'running' }),
+      expect.objectContaining({ scenario: 'workflow-x', status: 'done', passed: true }),
+    ]);
+    expect(events.find((event) => event.id === 'R2' && event.status === 'done')).toMatchObject({
+      passed: false,
+    });
+    expect(events.find((event) => event.id === 'K3' && event.status === 'not-run')).toMatchObject({
+      detail: 'tsc not found',
+    });
+    expect(
+      events
+        .filter((event) => !event.id?.startsWith('R'))
+        .every((event) => event.scenario === undefined),
+    ).toBe(true);
+    expect(result.defects).toEqual([]);
+  });
+
+  it('shows a render which cannot run with its scenario and reason', async () => {
+    const bus = createEventBus();
+    const events: EngineEventOf<'full_suite'>[] = [];
+    bus.subscribe((event) => {
+      if (event.type === 'full_suite') events.push(event);
+    });
+    await runPreReviewChecks(
+      options({
+        bus,
+        state: makeImplState([], {
+          plan: makePlan([{ id: 'R1', kind: 'render', value: 'workflow-x', required: false }]),
+        }),
+      }),
+    );
+    expect(events).toEqual([
+      expect.objectContaining({ id: 'R1', scenario: 'workflow-x', status: 'running' }),
+      expect.objectContaining({
+        id: 'R1',
+        scenario: 'workflow-x',
+        status: 'not-run',
+        detail: 'validation.render is not set',
+      }),
+    ]);
+  });
 
   it('runs optional checks and records results on their task or the last task for a plan check', async () => {
     const first = makeTask({

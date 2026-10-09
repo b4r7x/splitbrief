@@ -455,7 +455,8 @@ export async function runTasksAndReview(
   };
 
   // Each pass reviews the candidate and follows the answer. Fix tasks run before
-  // the next gates; pending corrections and answers re-review the same candidate.
+  // the next gates; corrections and answers to that cycle's final review re-review
+  // the same candidate.
   for (;;) {
     if (wctx.signal?.aborted) return stopHere();
     const candidate = await captureCandidate();
@@ -470,7 +471,11 @@ export async function runTasksAndReview(
       state = answered.state;
       if (answered.stopped) return stopHere();
     }
-    const reviewAgain = state.pendingTriage !== undefined && state.review !== undefined;
+    const reviewAgain =
+      state.pendingTriage !== undefined &&
+      state.review !== undefined &&
+      state.review.scope !== 'task' &&
+      state.review.cycle === fixCyclesOf(state).used;
     const recheck = reviewAgain
       ? { state, failures: [], notRun: [], inputs: [], unrunnable: [] }
       : await recheckMergedCandidate({ wctx, state, setTrackedState });

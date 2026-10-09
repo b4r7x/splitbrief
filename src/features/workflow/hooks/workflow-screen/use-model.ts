@@ -104,7 +104,6 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   const promptPending = approvalPromptState.status === 'pending';
 
   useWorkflowInlineEdit({
-    promptPending,
     inputMode,
     openExternalEditor: deps?.reviewInput?.openExternalEditor,
   });

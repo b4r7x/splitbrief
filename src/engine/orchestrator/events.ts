@@ -48,11 +48,12 @@ type PlannerTextOptions = Pick<Partial<EngineEventOf<'planner_text'>>, 'role' | 
 let runnerCallEventSequence = 0;
 
 export function publishRunnerCallEvent(
-  ctx: BusContext & { taskId?: TaskId | undefined },
+  ctx: BusContext & { rootDir: string; taskId?: TaskId | undefined },
   event: RunnerCallEvent,
 ): void {
   const projected = projectRunnerCallEvents(event, {
     phase: ctx.phase,
+    rootDir: ctx.rootDir,
     ...(ctx.taskId !== undefined && { taskId: ctx.taskId }),
     sequence: runnerCallEventSequence,
   });
@@ -207,7 +208,8 @@ export function publishReviewCheck(
     status: 'running' | 'done' | 'not-run' | 'refused';
     id: string;
     command: string;
-    moment: 'pre-review' | 'base' | 'brief';
+    moment: 'pre-review' | 'base' | 'brief' | 'plan';
+    scenario?: string | undefined;
     passed?: boolean | undefined;
     newFailures?: number | undefined;
     preExisting?: number | undefined;
@@ -228,6 +230,7 @@ export function publishReviewCheck(
     id: opts.id,
     command: opts.command,
     moment: opts.moment,
+    ...(opts.scenario !== undefined && { scenario: opts.scenario }),
     ...(opts.passed !== undefined && { passed: opts.passed }),
     ...(opts.newFailures !== undefined && { newFailures: opts.newFailures }),
     ...(opts.preExisting !== undefined && { preExisting: opts.preExisting }),
@@ -548,15 +551,18 @@ export function publishWorkflowConfig(
 
 export function publishImplementerGenerateRunning(
   ctx: BusContext,
-  taskId: TaskId,
-  file?: string,
+  opts: Omit<Parameters<ImplementerPublisher['publishRunning']>[0], 'phase'>,
 ): void {
   ctx.bus.publish({
     type: 'implementer_generate_running',
     ts: Date.now(),
     phase: ctx.phase,
-    taskId,
-    ...(file !== undefined && { file }),
+    taskId: opts.taskId,
+    ...(opts.file !== undefined && { file: opts.file }),
+    ...(opts.lineageAttempts !== undefined && {
+      lineageAttempt: opts.lineageAttempts.used + 1,
+      attemptAllowance: opts.lineageAttempts.allowance,
+    }),
   });
 }
 
@@ -605,10 +611,9 @@ function publishImplementerGenerateFailed(
 
 export function createImplementerPublisher(bus: EventBus): ImplementerPublisher {
   return {
-    publishRunning: ({ phase, taskId, file }) =>
-      publishImplementerGenerateRunning({ bus, phase }, taskId, file),
-    publishCallEvent: ({ phase, taskId, event }) =>
-      publishRunnerCallEvent({ bus, phase, taskId }, event),
+    publishRunning: ({ phase, ...opts }) => publishImplementerGenerateRunning({ bus, phase }, opts),
+    publishCallEvent: ({ phase, taskId, rootDir, event }) =>
+      publishRunnerCallEvent({ bus, phase, taskId, rootDir }, event),
     publishDone: ({ phase, ...opts }) => publishImplementerGenerateDone({ bus, phase }, opts),
     publishFailed: ({ phase, taskId, model, error }) =>
       publishImplementerGenerateFailed({ bus, phase }, taskId, model, error),

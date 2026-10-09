@@ -14,6 +14,7 @@ import type { RunnerSlot } from '../runners/prepared-execution.js';
 import type { BundleApplyResult } from './file-bundle.js';
 import type { ImplementerReport } from '../../core/schemas/consult.js';
 import type { PlanContext } from '../spec/prompt-formatter.js';
+import type { lineageAttemptsOf } from '../../core/schemas/workflow.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -31,8 +32,18 @@ export interface ImplementerResult {
 }
 
 export interface ImplementerPublisher {
-  publishRunning(opts: { phase: Phase; taskId: TaskId; file?: string | undefined }): void;
-  publishCallEvent(opts: { phase: Phase; taskId: TaskId; event: RunnerCallEvent }): void;
+  publishRunning(
+    opts: { phase: Phase; taskId: TaskId; file?: string | undefined } & Pick<
+      ImplementerOptions,
+      'lineageAttempts'
+    >,
+  ): void;
+  publishCallEvent(opts: {
+    phase: Phase;
+    taskId: TaskId;
+    rootDir: string;
+    event: RunnerCallEvent;
+  }): void;
   publishDone(opts: {
     phase: Phase;
     taskId: TaskId;
@@ -99,6 +110,7 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy {
   languageContext?: LanguageContext | undefined;
   plan?: PlanContext | undefined;
   phase?: Phase | undefined;
+  lineageAttempts?: ReturnType<typeof lineageAttemptsOf> | undefined;
   /**
    * Paths an earlier attempt of this same task is recorded to have created. A
    * retry rewrites them instead of refusing to create them twice; what this

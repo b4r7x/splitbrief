@@ -41,6 +41,7 @@ describe('fitCompactActivityDisplayLine', () => {
           inputDelta: JSON.stringify({ command }),
         },
         1,
+        '/project',
       );
       expect(activity).not.toBeNull();
       if (activity === null) return;

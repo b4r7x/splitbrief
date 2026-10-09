@@ -43,6 +43,7 @@ export type StateAction =
   | { type: 'REVIEW_DONE'; reviewStatus: ReviewStatus; candidate?: Record<string, string> }
   | { type: 'RECORD_REVIEW'; review: NonNullable<WorkflowState['review']> }
   | { type: 'RECORD_REVIEW_CHECKS'; record: NonNullable<WorkflowState['reviewChecks']> }
+  | { type: 'SET_PENDING_REVIEW_COMMANDS'; commands: string[] }
   | { type: 'RECORD_TRIAGE'; record: NonNullable<WorkflowState['triage']>[number] }
   | { type: 'START_FIX_CYCLE' }
   | { type: 'REVIEW_CORRECTION'; text: string }

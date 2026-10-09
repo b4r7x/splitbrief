@@ -433,7 +433,7 @@ describe('recovery prompt', () => {
         'The planning seat was not given the context this call needs, so nothing was dispatched. Evidence this call requires is missing. Missing: evidence.json, drift-report.json',
       details: [
         'Missing: evidence.json, drift-report.json',
-        'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+        'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
       ],
       facts: {
         apiContextCode: 'insufficient-context',
@@ -460,7 +460,7 @@ describe('recovery prompt', () => {
     );
     expect(visible).toContain('Missing: evidence.json, drift-report.json');
     expect(visible).toContain(
-      'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+      'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
     );
     expect(visible).toContain('r   retry PLAN recommended');
     expect(visible).toContain('a   end run · closes this run, changes kept');
@@ -479,9 +479,7 @@ describe('recovery prompt', () => {
       seat: 'review',
       phase: 'final-review',
       message: 'The review seat was not given the context this call needs.',
-      details: [
-        'Adjust the review seat with /crew review or Settings, then /resume and choose retry.',
-      ],
+      details: ['Pick a review seat with a larger context in /crew review, then choose Try again.'],
       facts: {
         apiContextCode: 'insufficient-context',
         apiContextSeat: 'review',
@@ -510,9 +508,7 @@ describe('recovery prompt', () => {
       seat: 'review',
       phase: 'final-review',
       message: 'The review call did not land: socket hang up',
-      details: [
-        'Adjust the review seat with /crew review or Settings, then /resume and choose retry.',
-      ],
+      details: [],
       facts: { reviewFailureKind: 'call-failed' },
       recommendedAction: 'retry-same-worker',
     });
@@ -521,6 +517,7 @@ describe('recovery prompt', () => {
 
     // No context diagnosis, so the halt keeps the ordinary headline — only the retry is seat-level.
     expect(visible).toContain('Needs you · The review call did not land: socket hang up');
+    expect(visible).not.toContain('/crew');
     expect(visible).toContain('r   retry REVIEW');
     expect(parseRecoveryActionAnswer('r', issue)).toBe('retry-same-worker');
     expect(parseRecoveryActionAnswer('retry', issue)).toBe('retry-same-worker');

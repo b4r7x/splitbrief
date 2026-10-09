@@ -13,6 +13,7 @@ import {
   type CrewSeatId,
 } from '../../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
 import type {
   DeepReadonly,
   RunnerConfig,
@@ -952,9 +953,6 @@ export interface ReviewFailedRecoveryOptions extends RecoveryBuilderBase {
   unverified?: number | undefined;
 }
 
-const REVIEW_SEAT_REMEDY =
-  'Adjust the review seat with /crew review or Settings, then /resume and choose retry.';
-
 /**
  * A review that judged nothing is not a review that failed. It names no blocker
  * count, sits on the review seat rather than the briefs it never read, and is
@@ -984,7 +982,11 @@ function buildNoVerdictReviewIssue(
     details: [
       ...(missing.length > 0 ? [`Missing: ${missing.join(', ')}`] : []),
       ...(opts.detail === undefined ? [] : [opts.detail]),
-      REVIEW_SEAT_REMEDY,
+      ...(diagnostic === undefined
+        ? []
+        : [
+            `Pick a review seat with a larger context in /crew review, then choose ${recoveryActionLabel('retry-same-worker')}.`,
+          ]),
     ],
     facts: compactFacts({
       reviewFailureKind: failure.kind,

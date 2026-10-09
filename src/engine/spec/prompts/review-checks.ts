@@ -10,6 +10,7 @@ export type ReviewChecksPromptInput = {
   /** The task ids a task-cadence review covers. */
   taskIds: readonly string[];
   changedFiles: readonly string[];
+  requiredCommands: readonly string[];
   /** The read instruction for a seat that reads the workspace itself. */
   workspaceInstructions?: string | undefined;
   /** Verbatim project files for a seat that reads no file of its own. */
@@ -41,6 +42,16 @@ export function buildReviewChecksPrompt(input: ReviewChecksPromptInput): string 
     '# Choose the checks for this review',
     'You review a SPLITBRIEF run. Before your review, SPLITBRIEF runs the commands you choose here in the run workspace and gives you every result in the review call. This call is read-only: do not run, write or change anything.',
     scopeText(input),
+    ...(input.requiredCommands.length === 0
+      ? []
+      : [
+          '## Commands a fix check ran',
+          input.requiredCommands.map((command) => `- \`${command}\``).join('\n'),
+          'Fix checks ran these commands after the last review that ran them. Choose each of them first, as V1, V2, ..., with this exact command text, before any other command. A fix check can pass while the command still shows other failures, so this review runs them again.',
+          ...(input.scope === 'task'
+            ? ['For these commands, the whole-suite restriction above does not apply.']
+            : []),
+        ]),
     '## Changed files',
     input.changedFiles.length === 0
       ? 'No file changed.'

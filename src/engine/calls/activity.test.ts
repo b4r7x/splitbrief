@@ -33,8 +33,8 @@ function runnerWarning(input: RunnerCallWarningInput) {
 }
 
 describe('projectRunnerCallActivity', () => {
-  it('normalizes safe structured tool, session, artifact, and warning activity', () => {
-    expect(projectRunnerCallActivity(runnerToolUse(), 1)).toMatchObject({
+  it('normalizes safe structured tool, artifact, and warning activity', () => {
+    expect(projectRunnerCallActivity(runnerToolUse(), 1, '/project')).toMatchObject({
       kind: 'read',
       label: 'reading src/app.ts',
     });
@@ -42,6 +42,7 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Bash', inputDelta: '{"command":"npm run typecheck"}' }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'command', label: 'running npm run typecheck' });
     expect(
@@ -51,27 +52,33 @@ describe('projectRunnerCallActivity', () => {
           inputDelta: '{"type":"command_execution","command":"npm test"}',
         }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'command', label: 'running npm test', target: 'npm test' });
     expect(
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Grep', inputDelta: '{"pattern":"useWorkflowRunner"}' }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'search', label: 'searching useWorkflowRunner' });
     expect(
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Glob', inputDelta: '{"pattern":"src/**/*.tsx"}' }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'glob', label: 'matching src/**/*.tsx' });
     expect(
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Edit', inputDelta: '{"file_path":"src/app.tsx"}' }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'write', label: 'editing src/app.tsx' });
-    expect(projectRunnerCallActivity(runnerToolUse({ name: 'apply_patch' }), 1)).toMatchObject({
+    expect(
+      projectRunnerCallActivity(runnerToolUse({ name: 'apply_patch' }), 1, '/project'),
+    ).toMatchObject({
       kind: 'edit',
       label: 'applying patch',
     });
@@ -79,16 +86,9 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         { ...runnerCallBase, type: 'call_session_id', nativeSessionId: 'native-session-1' },
         1,
+        '/project',
       ),
-    ).toMatchObject({ kind: 'session', label: 'session captured' });
-    expect(
-      JSON.stringify(
-        projectRunnerCallActivity(
-          { ...runnerCallBase, type: 'call_session_id', nativeSessionId: 'native-session-1' },
-          1,
-        ),
-      ),
-    ).not.toContain('native-session-1');
+    ).toBeNull();
     expect(
       projectRunnerCallActivity(
         {
@@ -104,6 +104,7 @@ describe('projectRunnerCallActivity', () => {
           },
         },
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'artifact', label: 'artifact plan.md' });
     expect(
@@ -114,6 +115,7 @@ describe('projectRunnerCallActivity', () => {
           warning: runnerWarning({ code: 'stderr', message: 'raw' }),
         },
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'warning', label: 'warning stderr' });
   });
@@ -126,6 +128,7 @@ describe('projectRunnerCallActivity', () => {
           inputDelta: '{"CommandLine":"pwd; ls -la README.md"}',
         }),
         1,
+        '/project',
       ),
     ).toMatchObject({
       kind: 'command',
@@ -136,6 +139,7 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         runnerToolUse({ name: 'view_file', inputDelta: '{"AbsolutePath":"/tmp/probe/README.md"}' }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'read', label: 'reading /tmp/probe/README.md' });
     for (const name of ['write_to_file', 'replace_file_content', 'multi_replace_file_content']) {
@@ -143,6 +147,7 @@ describe('projectRunnerCallActivity', () => {
         projectRunnerCallActivity(
           runnerToolUse({ name, inputDelta: '{"TargetFile":"/tmp/probe/check.sh"}' }),
           1,
+          '/project',
         ),
       ).toMatchObject({ kind: 'write', label: 'editing /tmp/probe/check.sh' });
     }
@@ -160,6 +165,7 @@ describe('projectRunnerCallActivity', () => {
         }),
       }),
       1,
+      '/project',
     );
 
     expect(activity).toMatchObject({ label: 'task general' });
@@ -171,6 +177,7 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Explore', inputDelta: '{"description":"files"}' }),
         1,
+        '/project',
       ),
     ).toMatchObject({ label: 'tool Explore' });
   });
@@ -183,11 +190,16 @@ describe('projectRunnerCallActivity', () => {
           inputDelta: '{"url":"https://example.com/path?token=sk-abcdefghijklmnopqrstuvwxyz"}',
         }),
         1,
+        '/project',
       ),
     ).toMatchObject({ kind: 'web', label: 'calling WebFetch example.com' });
 
     expect(
-      projectRunnerCallActivity(runnerToolUse({ name: 'mcp__chrome_devtools__click' }), 1),
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'mcp__chrome_devtools__click' }),
+        1,
+        '/project',
+      ),
     ).toMatchObject({ kind: 'mcp', label: 'calling mcp__chrome_devtools__click' });
 
     expect(
@@ -197,6 +209,7 @@ describe('projectRunnerCallActivity', () => {
           inputDelta: '{"type":"mcp_tool_call","server":"github","tool_name":"list_issues"}',
         }),
         1,
+        '/project',
       ),
     ).toMatchObject({
       kind: 'mcp',
@@ -207,7 +220,11 @@ describe('projectRunnerCallActivity', () => {
 
   it('falls back to a safe tool name for malformed input deltas', () => {
     expect(
-      projectRunnerCallActivity(runnerToolUse({ name: 'Bash', inputDelta: '{"command":' }), 1),
+      projectRunnerCallActivity(
+        runnerToolUse({ name: 'Bash', inputDelta: '{"command":' }),
+        1,
+        '/project',
+      ),
     ).toMatchObject({ label: 'tool Bash' });
   });
 
@@ -221,6 +238,7 @@ describe('projectRunnerCallActivity', () => {
           text: 'reading\u001b[31m files\u001b[0m token sk-abcdefghijklmnopqrst',
         },
         1,
+        '/project',
       ),
     ).toMatchObject({
       label: 'system activity',
@@ -231,18 +249,21 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         { ...runnerCallBase, type: 'call_text_delta', channel: 'stdout', text: 'stdout' },
         1,
+        '/project',
       ),
     ).toBeNull();
     expect(
       projectRunnerCallActivity(
         { ...runnerCallBase, type: 'call_text_delta', channel: 'assistant', text: 'answer' },
         1,
+        '/project',
       ),
     ).toBeNull();
     expect(
       projectRunnerCallActivity(
         { ...runnerCallBase, type: 'call_text_delta', channel: 'result', text: 'answer' },
         1,
+        '/project',
       ),
     ).toBeNull();
     expect(
@@ -254,6 +275,7 @@ describe('projectRunnerCallActivity', () => {
           text: 'benign progress',
         },
         1,
+        '/project',
       ),
     ).toBeNull();
   });
@@ -264,6 +286,7 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Bash', inputDelta: JSON.stringify({ command }) }),
         1,
+        '/project',
       ),
     ).toMatchObject({ label: `running ${command}`, target: command });
     expect(
@@ -275,6 +298,7 @@ describe('projectRunnerCallActivity', () => {
           text: command,
         },
         1,
+        '/project',
       ),
     ).toMatchObject({ textPartial: command });
     expect(
@@ -285,6 +309,7 @@ describe('projectRunnerCallActivity', () => {
           warning: runnerWarning({ code: 'progress', message: command }),
         },
         1,
+        '/project',
       ),
     ).toMatchObject({ diagnosticPartial: command });
   });
@@ -295,10 +320,12 @@ describe('projectRunnerCallActivity', () => {
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Bash', inputDelta: JSON.stringify({ command }) }),
         1,
+        '/project',
       ),
       projectRunnerCallActivity(
         { ...runnerCallBase, type: 'call_text_delta', channel: 'system', text: command },
         1,
+        '/project',
       ),
       projectRunnerCallActivity(
         {
@@ -307,6 +334,7 @@ describe('projectRunnerCallActivity', () => {
           warning: runnerWarning({ code: 'progress', message: command }),
         },
         1,
+        '/project',
       ),
     ];
     for (const activity of activities) {
@@ -343,6 +371,7 @@ describe('projectRunnerCallActivity', () => {
         }),
       }),
       1,
+      '/project',
     );
     expect(activity).toMatchObject({
       redacted: true,
@@ -367,6 +396,7 @@ describe('projectRunnerCallActivity', () => {
           nativeSessionId: null,
         },
         10,
+        '/project',
       ),
     ).toBeNull();
 
@@ -385,6 +415,7 @@ describe('projectRunnerCallActivity', () => {
           nativeSessionId: null,
         },
         11,
+        '/project',
       ),
     ).toMatchObject({
       activityId: 'call-1:terminal',
@@ -408,6 +439,7 @@ describe('projectRunnerCallActivity', () => {
           warning,
         },
         12,
+        '/project',
       ),
     ).toMatchObject({
       stage: 'warning',
@@ -427,6 +459,7 @@ describe('projectRunnerCallActivity', () => {
         warning: runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' }),
       },
       12,
+      '/project',
     );
     const repeated = projectRunnerCallActivity(
       {
@@ -435,6 +468,7 @@ describe('projectRunnerCallActivity', () => {
         warning: runnerWarning({ code: 'stderr', message: 'line one sk-abcdefghijklmnopqrst' }),
       },
       13,
+      '/project',
     );
     const changed = projectRunnerCallActivity(
       {
@@ -443,6 +477,7 @@ describe('projectRunnerCallActivity', () => {
         warning: runnerWarning({ code: 'stderr', message: 'line two sk-abcdefghijklmnopqrst' }),
       },
       14,
+      '/project',
     );
 
     expect(first?.activityId).toBe(repeated?.activityId);

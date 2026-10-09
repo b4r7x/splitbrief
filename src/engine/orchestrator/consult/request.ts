@@ -175,7 +175,10 @@ export async function requestConsult(
   const call = {
     compose,
     onCallEvent: (event: RunnerCallEvent) =>
-      publishRunnerCallEvent({ bus: ctx.bus, phase: state.phase }, event),
+      publishRunnerCallEvent(
+        { bus: ctx.bus, phase: state.phase, rootDir: ctx.projectDir, taskId: input.task.id },
+        event,
+      ),
   };
   const session = {
     ...ref,

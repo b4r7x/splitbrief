@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 export const PTY_VIEWPORT = Object.freeze({ cols: 100, rows: 30 });
 
 export const PTY_ACTIVE_REVIEW_MARKER = 'PTY active review contract';
+export const PTY_EDITOR_OVERLAY_FOOTER = 'ctrl+o external';
 export const PTY_EDITOR_STARTED_MARKER = 'PTY editor started';
 export const PTY_EDITOR_FINISHED_MARKER = 'PTY editor finished';
 export const PTY_APPROVED_MARKER = 'PTY contract approved';
@@ -12,6 +13,7 @@ export const PTY_APPROVED_MARKER = 'PTY contract approved';
 export const PTY_APPROVAL_PREFIX = 'appro';
 export const PTY_APPROVAL_SUFFIX = 've';
 export const PTY_EDIT_INPUT = '\x1b[101;5u';
+export const PTY_EXTERNAL_EDIT_INPUT = '\x1b[111;5u';
 export const PTY_SUBMIT_INPUT = '\x1b[13u';
 export const PTY_EXIT_INPUT = '\x1b[113;5u';
 

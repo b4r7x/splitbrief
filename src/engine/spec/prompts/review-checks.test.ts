@@ -7,12 +7,26 @@ function prompt(overrides: Partial<ReviewChecksPromptInput> = {}): string {
     scope: 'final',
     taskIds: ['T001', 'T002'],
     changedFiles: ['src/a.ts', 'src/a.test.ts'],
+    requiredCommands: [],
     workspaceInstructions: 'The run workspace is `/ws`.',
     ...overrides,
   });
 }
 
 describe('buildReviewChecksPrompt', () => {
+  it('requires pending commands first, even for a task review of the whole suite', () => {
+    const text = prompt({ scope: 'task', requiredCommands: ['npm test', 'npm run typecheck'] });
+
+    expect(text).toContain('## Commands a fix check ran\n\n- `npm test`\n- `npm run typecheck`');
+    expect(text).toContain(
+      'Choose each of them first, as V1, V2, ..., with this exact command text',
+    );
+    expect(text).toContain('A fix check can pass while the command still shows other failures');
+    expect(text).toContain('For these commands, the whole-suite restriction above does not apply.');
+    expect(text).toContain('Do not choose the whole suite.');
+    expect(prompt()).not.toContain('## Commands a fix check ran');
+  });
+
   it('asks a final review for the project checks, and a task review for the related tests only', () => {
     const final = prompt();
     expect(final).toContain('The review covers every change of this run.');

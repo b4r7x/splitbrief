@@ -28,7 +28,7 @@ type ActivityEvent = EngineEventOf<'runner_call_activity'>;
 /** A tool the call's stream opened and has not closed yet, and when it opened. */
 export interface OpenTool {
   activityId: string;
-  kind: ActivityEvent['kind'];
+  kind: Exclude<ActivityEvent['kind'], 'session'>;
   label: string;
   target?: string;
   since: number;
@@ -79,14 +79,15 @@ export interface RunningValidationStage {
 }
 
 /**
- * The command run before a review that the run is inside right now: a reviewer check (`id`) or, in a
- * session from before the reviewer chose them, a full-suite stage (`stage`).
+ * The command or render the run is inside: a plan or reviewer check (`id`) or, in a session from
+ * before the reviewer chose them, a full-suite stage (`stage`).
  */
 export interface RunningSuiteStage {
   id?: string | undefined;
   stage?: NonNullable<ValidationStage> | undefined;
   command: string;
   moment: EngineEventOf<'full_suite'>['moment'];
+  scenario?: string | undefined;
   stageStartedTs: number;
 }
 

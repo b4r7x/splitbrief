@@ -3,7 +3,7 @@ import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { lineageAttemptsOf, type WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
@@ -33,6 +33,20 @@ import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
+import { createImplementerBase } from '../../implementers/pipeline/run.js';
+import { createImplementerPublisher } from '../events.js';
+import { attemptBoundSpent } from '../recovery/builders/consult.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import {
+  buildProgressLines,
+  deriveBuildProgress,
+} from '../../../features/workflow/display/build-progress.js';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -48,6 +62,7 @@ afterEach(async () => {
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
   trustHome.restore();
+  resetWorkflow();
 });
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -198,6 +213,78 @@ describe('handleRetryAndEscalation', () => {
     expect(state.pendingRecovery?.details?.[0]).toBe('Last diagnosis: still broken');
     expect(formatRecoveryHeadline(state.pendingRecovery!)).toBe('T001 used its consult allowance');
   });
+
+  it.each(['consult', 'answer', 'answer at the bound'] as const)(
+    'announces the lineage attempt before the %s call without an extra Retry row',
+    async (kind) => {
+      resetWorkflow();
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({ id: 'T013' });
+      let currentState = transition(makeImplState([task]), { type: 'TASK_SENT' });
+      const used = kind === 'consult' ? 1 : kind === 'answer' ? 2 : 7;
+      for (let index = 0; index < used; index += 1) {
+        currentState = transition(currentState, { type: 'COUNT_ATTEMPT', taskId: task.id });
+      }
+      const { bus, events } = makeBusRecorder();
+      bus.subscribe(addEvent);
+      addEvent(makeTaskStart({ taskId: task.id, total: 1 }));
+      const counts: string[] = [];
+      const invoke = vi.fn(() => {
+        const progress = deriveBuildProgress({
+          tasks: tasksStore.get(),
+          lifecycle: lifecycleStore.get(),
+          operations: operationsStore.get(),
+          now: Date.now(),
+        });
+        counts.push(buildProgressLines(progress, 118)[0] ?? '');
+        return Promise.resolve(
+          makeRunnerCallResult({
+            status: 'completed',
+            text:
+              kind === 'consult' && counts.length === 1
+                ? 'No code yet'
+                : '```ts\nexport const hello = "world";\n```',
+          }),
+        );
+      });
+      const implementer = createImplementerBase(
+        makeBaseConfig({ invoke, publisher: createImplementerPublisher(bus) }),
+      );
+      const { planner } = consultPlanner([guidanceAnswer('The export is missing', 'Add it.')]);
+
+      const outcome = await handleRetryAndEscalation({
+        taskStartTime: Date.now(),
+        wctx: makeWctx({ projectDir, sessionId, planner, implementer, bus }),
+        task,
+        initialError: 'type error',
+        currentState,
+        ...(kind !== 'consult' && { initialAnswer: 'Use the existing helper.' }),
+      });
+
+      expect(outcome.result.completed).toBe(true);
+      expect(counts.map((line) => line.split(' · ').at(-1))).toEqual(
+        kind === 'consult'
+          ? ['attempt 2 of 8', 'attempt 3 of 8']
+          : kind === 'answer'
+            ? ['attempt 3 of 8']
+            : ['attempt 8 of 8'],
+      );
+      expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(
+        kind === 'consult' ? 1 : 0,
+      );
+      const spent = kind === 'answer at the bound' ? 8 : 3;
+      expect(lineageAttemptsOf(outcome.state, task)).toEqual({ used: spent, allowance: 8 });
+      expect(tasksStore.get()).toMatchObject({ currentAttempt: spent, attemptAllowance: 8 });
+      if (kind === 'answer at the bound') {
+        expect(attemptBoundSpent(outcome.state, task)).toMatchObject({
+          attempts: tasksStore.get().currentAttempt,
+          attemptAllowance: tasksStore.get().attemptAllowance,
+        });
+      } else {
+        expect(attemptBoundSpent(outcome.state, task)).toBeUndefined();
+      }
+    },
+  );
 
   it('a guidance answer retries once with the instructions and completes as consulted', async () => {
     const { projectDir, sessionId } = setupProject();

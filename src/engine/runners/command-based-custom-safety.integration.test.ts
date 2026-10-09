@@ -110,11 +110,19 @@ describe('invokeCustomCommandBasedRunner safety', () => {
     });
     const protectedProjection = observation.events
       .flatMap((event, index) =>
-        projectRunnerCallEvents(event, { phase: 'planning', sequence: index + 1 }),
+        projectRunnerCallEvents(event, {
+          rootDir: process.cwd(),
+          phase: 'planning',
+          sequence: index + 1,
+        }),
       )
       .map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionLogProjection = observation.events.map((event, index) =>
-      runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index + 1 }),
+      runnerCallEventToSessionLogEntry(event, {
+        rootDir: process.cwd(),
+        phase: 'planning',
+        sequence: index + 1,
+      }),
     );
 
     expect(observation.failure).toBeUndefined();
@@ -297,8 +305,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
               '-e',
               [
                 'const fs = require("node:fs");',
-                `process.stdout.write('x'.repeat(64 * 1024 * 1024 + 1));`,
-                `setTimeout(() => fs.writeFileSync(${JSON.stringify(delayedEffect)}, "late"), 2_500);`,
+                `process.stdout.write('x'.repeat(64 * 1024 * 1024 + 1), () => setTimeout(() => fs.writeFileSync(${JSON.stringify(delayedEffect)}, "late"), 2_500));`,
                 'setInterval(() => undefined, 1_000);',
               ].join(''),
             ],
@@ -315,7 +322,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
         status: 'truncated',
         error: { code: 'runner_process_output_limit' },
       });
-      // Past the moment the child scheduled its write: a surviving child would have run it.
+      // Past the delay after output drains: a surviving child would have run its side effect.
       await delay(4_000);
       expect(existsSync(delayedEffect)).toBe(false);
     });

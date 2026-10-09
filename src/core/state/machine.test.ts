@@ -1227,6 +1227,23 @@ describe('consult and split state operations', () => {
     ]);
   });
 
+  it('SET_PENDING_REVIEW_COMMANDS replaces the list and clears an empty list', () => {
+    const state = implementationState([makeTask({ id: 'T002' })]);
+    const pending = transition(state, {
+      type: 'SET_PENDING_REVIEW_COMMANDS',
+      commands: ['npm test', 'npm run typecheck'],
+    });
+    const replaced = transition(pending, {
+      type: 'SET_PENDING_REVIEW_COMMANDS',
+      commands: ['npm run typecheck'],
+    });
+    expect(replaced.pendingReviewCommands).toEqual(['npm run typecheck']);
+    expect(
+      transition(replaced, { type: 'SET_PENDING_REVIEW_COMMANDS', commands: [] })
+        .pendingReviewCommands,
+    ).toBeUndefined();
+  });
+
   it('SET_SEAT_WAIT parks the seat and CLEAR_SEAT_WAIT releases it', () => {
     const state = implementationState([makeTask({ id: 'T002' })]);
 

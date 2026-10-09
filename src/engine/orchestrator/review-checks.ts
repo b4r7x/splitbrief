@@ -10,6 +10,7 @@ import {
 } from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
+  MAX_REVIEW_CHECKS,
   REVIEW_CHECKS_PLAN_JSON_SCHEMA,
   ReviewChecksPlanSchema,
   type ReviewChecksPlan,
@@ -98,7 +99,7 @@ export type ReviewChecksOptions = {
 };
 
 export type ReviewChecksOutcome =
-  | { kind: 'ran'; state: WorkflowState; section: string }
+  | { kind: 'ran'; state: WorkflowState; section: string; discharged: string[] }
   | { kind: 'protocol-error'; state: WorkflowState; error: SeatProtocolError };
 
 async function readText(path: string): Promise<string | null> {
@@ -376,13 +377,18 @@ async function skipReason(
   return answer === 'skip' ? REVIEW_CHECKS_SKIP_REASON.user : REVIEW_CHECKS_SKIP_REASON.noAnswer;
 }
 
-function skippedSection(plan: ReviewChecksPlan, reason: string): string {
+function skippedSection(
+  plan: ReviewChecksPlan,
+  reason: string,
+  waitingLines: readonly string[],
+): string {
   return [
     '## Reviewer checks',
     '',
     `SPLITBRIEF ran none of the commands you chose before this review because ${reason}. No command below is a pass. Mark a criterion that only these commands would verify unverified, and judge the rest only from the recorded evidence in the Checks Log.`,
     '',
     ...plan.commands.map((chosen) => `- ${chosen.id} \`${chosen.command}\`: not run, ${reason}`),
+    ...waitingLines,
     ...planLines(plan),
   ].join('\n');
 }
@@ -427,23 +433,41 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const notices = { bus: opts.bus, phase: state.phase };
   if (!resolveEndChecks(opts.config)) {
     publishReviewChecksPlan(notices, { scope: opts.scope, status: 'off' });
-    return { kind: 'ran', state, section: OFF_SECTION };
+    return { kind: 'ran', state, section: OFF_SECTION, discharged: [] };
   }
 
   const npmScriptsApproved = planApprovesNpmScripts({ config: opts.config, state });
   const readsOwnFiles = resolveReviewerRunner(opts.config).runner.kind !== 'api';
+  const requiredCommands = (state.pendingReviewCommands ?? []).slice(0, MAX_REVIEW_CHECKS);
+  const waitingLines = (state.pendingReviewCommands ?? [])
+    .slice(MAX_REVIEW_CHECKS)
+    .map(
+      (command) =>
+        `- \`${command}\`: not run, a fix check ran it and the plan holds at most ${MAX_REVIEW_CHECKS} commands; it stays pending`,
+    );
   const prompt = buildReviewChecksPrompt({
     scope: opts.scope,
     taskIds: opts.taskIds,
     changedFiles: opts.changedFiles,
+    requiredCommands,
     ...(readsOwnFiles
       ? { workspaceInstructions: workspaceReadInstructions(opts.workspaceDir) }
       : { projectFiles: await readProjectFiles(opts.workspaceDir) }),
   });
+  const planSchema = ReviewChecksPlanSchema.superRefine((candidate, ctx) => {
+    const firstCommands = candidate.commands.slice(0, requiredCommands.length);
+    for (const command of requiredCommands) {
+      if (firstCommands.some((chosen) => chosen.command === command)) continue;
+      ctx.addIssue({
+        code: 'custom',
+        message: `commands: choose \`${command}\` among the first ${requiredCommands.length} commands, with this exact text; a fix check ran it and no review has run it since`,
+      });
+    }
+  });
   const call = await runReviewerCall({
     reviewer: opts.reviewer,
     prompt,
-    schema: ReviewChecksPlanSchema,
+    schema: planSchema,
     jsonSchema: REVIEW_CHECKS_PLAN_JSON_SCHEMA,
     schemaName: 'review_checks',
     projectDir: opts.projectDir,
@@ -477,7 +501,12 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       reason: skipped,
     });
     state = replaceReviewCheckInputs(ref, state, []);
-    return { kind: 'ran', state, section: skippedSection(plan, skipped) };
+    return {
+      kind: 'ran',
+      state,
+      section: skippedSection(plan, skipped, waitingLines),
+      discharged: [],
+    };
   }
 
   const base = runBaseOf(ref, state);
@@ -500,6 +529,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const runs: CheckRunResult[] = [];
   const inputs: TriageInput[] = [];
   const lines: string[] = [];
+  const ranRequiredCommands = new Set<string>();
   let stoppedBy: string | undefined;
   for (const chosen of plan.commands) {
     const label = `${chosen.id} \`${chosen.command}\``;
@@ -524,6 +554,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       lines.push(`- ${label}: ${run.status === 'refused' ? 'refused' : 'not run'}, ${run.output}`);
       continue;
     }
+    if (requiredCommands.includes(chosen.command)) ranRequiredCommands.add(chosen.command);
     if (run.status === 'pass') {
       lines.push(`- ${label}: passed`);
       continue;
@@ -585,7 +616,8 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     'Before this review SPLITBRIEF ran the commands you chose, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. A failure marked not verified at the run base is red at the run base too, but SPLITBRIEF could not show it is the same failure: decide from the output. Each new or not verified failure is a pending input.',
     '',
     ...lines,
+    ...waitingLines,
     ...planLines(plan),
   ].join('\n');
-  return { kind: 'ran', state, section };
+  return { kind: 'ran', state, section, discharged: [...ranRequiredCommands] };
 }

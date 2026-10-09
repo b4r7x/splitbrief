@@ -10,6 +10,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
   makeCopyingIsolation,
+  makeWorktreeIsolation,
   makeBusRecorder,
   makeCallbacks,
   makeImplementer,
@@ -27,7 +28,11 @@ import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.js';
+import type {
+  ReviewChecksPlan,
+  ReviewVerdict,
+  TriageResult,
+} from '../../../core/schemas/review.js';
 import { taskId, type Check, type Task } from '../../../core/schemas/task.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../types.js';
 import type { Validator } from '../validation/types.js';
@@ -144,6 +149,7 @@ function runOptions(opts: {
   review: ReviewVerdict | ((prompt: string, call: number) => ReviewVerdict);
   /** The triage answer; the default rejects every blocking finding. */
   triage?: ((prompt: string, call: number) => TriageResult | string) | undefined;
+  checks?: ((prompt: string) => ReviewChecksPlan) | undefined;
   onComplete: () => void;
   sinks?: WorkflowSinks | undefined;
   signal?: AbortSignal | undefined;
@@ -172,6 +178,8 @@ function runOptions(opts: {
         const fixWork = opts.triage(prompt, call);
         return typeof fixWork === 'string' ? fixWork : { ...verdict, ...fixWork };
       },
+      undefined,
+      opts.checks,
     ),
   });
   const implementer =
@@ -656,6 +664,240 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       await options.wctx.isolation.dispose();
     }
   });
+
+  it.each([
+    { name: 'records its verdict', stopBeforeVerdict: false },
+    { name: 'continues after a verdictless halt', stopBeforeVerdict: true },
+  ])('the post-fix review receives a hidden red and $name', async ({ stopBeforeVerdict }) => {
+    const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(
+      join(projectDir, 'Makefile'),
+      [
+        'test:',
+        '\t@if test -f src/widget.ts && ! test -f src/fixed.ts; then echo "src/a.ts(1,1): error A"; fi',
+        '\t@echo "src/b.ts(1,1): error B"',
+        '\t@if test -f src/fixed.ts; then echo "src/c.ts(1,1): error C"; fi',
+        '\t@exit 1',
+        '',
+      ].join('\n'),
+    );
+    const tasks = [
+      makeTask({ id: 'T001', suggestedFiles: ['src/widget.ts'], checks: [], tests: [] }),
+    ];
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
+        const file = call.task.id === 'T001' ? 'src/widget.ts' : 'src/fixed.ts';
+        mkdirSync(join(call.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(call.projectDir, file), 'export const value = 1;\n');
+        return { success: true, output: 'code' };
+      }),
+    });
+    const planPrompts: string[] = [];
+    const { options, reviewPrompts, events } = runOptions({
+      projectDir,
+      sessionId,
+      state: reviewedState(tasks, head, 0),
+      config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      implementer,
+      checks: (prompt) => {
+        planPrompts.push(prompt);
+        if (planPrompts.length === 2)
+          return { commands: [], declined: [], reason: 'nothing to check' };
+        return {
+          commands: [{ id: 'V1', command: 'make test', reason: 'Verifies the widget.' }],
+          declined: [],
+          reason: null,
+        };
+      },
+      review: (prompt) => passingReviewVerdict(prompt),
+      triage: (_prompt, call) => {
+        if (stopBeforeVerdict && (call === 2 || call === 3)) return '{}';
+        return call === 1
+          ? {
+              fixTasks: [
+                {
+                  ...makeTaskSpec({
+                    id: 'T002',
+                    suggestedFiles: ['src/fixed.ts'],
+                    criteria: [],
+                    checks: [],
+                  }),
+                  findingIds: ['V1.1'],
+                },
+              ],
+              rejected: [],
+              verify: [],
+              ask: null,
+            }
+          : {
+              fixTasks: [],
+              rejected: [{ findingId: 'V1.1', reason: 'The test records this new failure.' }],
+              verify: [],
+              ask: null,
+            };
+      },
+      onComplete: vi.fn(),
+    });
+
+    options.wctx.isolation = makeWorktreeIsolation({ projectDir, sessionId });
+
+    try {
+      let result = await runTasksAndReview(options);
+
+      if (stopBeforeVerdict) {
+        expect(result.completed).toBe(false);
+        expect(result.state.pendingRecovery).toMatchObject({
+          reason: 'seat-protocol-error',
+          seat: 'review',
+        });
+        expect(result.state.review?.cycle).toBe(0);
+        expect(result.state.pendingReviewCommands).toEqual(['make test']);
+        expect(loadState({ projectDir, sessionId })?.pendingReviewCommands).toEqual(['make test']);
+        expect(result.state.pendingTriage?.inputs).toContainEqual(
+          expect.objectContaining({
+            command: 'make test',
+            output: expect.stringContaining('error C'),
+          }),
+        );
+        const corrected = await applyRecoveryAction({
+          projectDir,
+          sessionId,
+          state: result.state,
+          action: 'retry-same-worker',
+          bus: options.wctx.bus,
+        });
+        expect(corrected.ok).toBe(true);
+        if (!corrected.ok) throw new Error(corrected.message);
+        result = await runTasksAndReview({ ...options, state: corrected.state });
+        expect(planPrompts[3]).toContain('## Commands a fix check ran\n\n- `make test`');
+      }
+
+      expect(planPrompts).toHaveLength(stopBeforeVerdict ? 4 : 3);
+      expect(planPrompts[0]).not.toContain('## Commands a fix check ran');
+      expect(planPrompts[1]).toContain('## Commands a fix check ran\n\n- `make test`');
+      expect(planPrompts[2]).toContain('choose `make test` among the first 1 commands');
+      expect(reviewPrompts).toHaveLength(stopBeforeVerdict ? 4 : 2);
+      const pending = reviewPrompts.at(-1)?.split('## Pending Inputs\n')[1]?.split('\n## ')[0];
+      expect(pending).toContain('**V1.1** (check · defect)');
+      expect(pending).toContain('src/c.ts(1,1): error C');
+      expect(pending).not.toContain('src/a.ts(1,1): error A');
+      expect(pending).not.toContain('src/b.ts(1,1): error B');
+      expect(result.state.review?.cycle).toBe(1);
+      expect(result.state.pendingReviewCommands ?? []).toEqual([]);
+      expect(loadState({ projectDir, sessionId })?.pendingReviewCommands ?? []).toEqual([]);
+      expect(result.state.tasks[1]).toMatchObject({
+        id: 'T002',
+        status: 'done',
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'V1.1',
+              commands: { V1: 'make test' },
+              failureKeys: { V1: ['src/a.ts(1,1): error A'] },
+              redKeys: { V1: ['src/a.ts(1,1): error A', 'src/b.ts(1,1): error B'] },
+            },
+          ],
+        },
+        checkResults: [{ id: 'V1', passed: true }],
+      });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: 'full_suite',
+          id: 'V1',
+          moment: 'brief',
+          status: 'done',
+          passed: true,
+          ownLeft: 0,
+          others: 2,
+        }),
+      );
+      expect(implementer.implement).toHaveBeenCalledTimes(2);
+      expect(implementer.retry).not.toHaveBeenCalled();
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
+  it.each([
+    { scope: 'final' as const, cycle: 0 },
+    { scope: 'task' as const, cycle: 1 },
+  ])(
+    'continues a post-fix review with inputs left under a $scope review',
+    async ({ scope, cycle }) => {
+      const { projectDir, sessionId, head } = setupProject();
+      const task = makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/alpha.ts'],
+        status: 'done',
+        checks: BRIEF_CHECKS,
+      });
+      const state: WorkflowState = {
+        ...resumedReviewState([task], head, 1),
+        review: {
+          scope,
+          cycle,
+          verdict: failedReviewVerdict('task T001', 'The original check failed.'),
+          outcome: 'fail',
+          verification: [],
+          at: '2026-10-09T10:00:00.000Z',
+        },
+        pendingTriage: {
+          inputs: [
+            {
+              id: 'P1',
+              kind: 'defect',
+              source: 'check',
+              file: 'src/alpha.ts',
+              text: 'The previous pre-review failed.',
+              checkIds: ['K1'],
+            },
+          ],
+        },
+      };
+      const commands: string[] = [];
+      const output = 'src/alpha.ts(1,1): error continued pre-review failure.';
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async (cmd, args) => {
+        const command = [cmd, ...args].join(' ');
+        commands.push(command);
+        if (cmd === 'tsc') throw processError.exitCode({ command, code: 2, stderr: '', output });
+        return { stdout: 'ok', stderr: '', code: 0 };
+      });
+      const checkPrompts: string[] = [];
+      const { options, reviewPrompts } = runOptions({
+        projectDir,
+        sessionId,
+        state,
+        config: makeNoValidationConfig({ validation: { endChecks: true } }),
+        checks: (prompt) => {
+          checkPrompts.push(prompt);
+          return {
+            commands: [{ id: 'V1', command: 'node --version', reason: 'Checks the runtime.' }],
+            declined: [],
+            reason: null,
+          };
+        },
+        review: (prompt) => passingReviewVerdict(prompt),
+        triage: () => ({
+          fixTasks: [],
+          rejected: [{ findingId: 'P1', reason: 'The test records this failure.' }],
+          verify: [],
+          ask: null,
+        }),
+        onComplete: vi.fn(),
+      });
+
+      const result = await runTasksAndReview(options);
+
+      expect(checkPrompts).toHaveLength(1);
+      expect(commands).toEqual(['tsc --noEmit', 'node --version']);
+      expect(reviewPrompts).toHaveLength(1);
+      expect(reviewPrompts[0]).toContain(output);
+      expect(reviewPrompts[0]).toContain('**P1** (check · defect)');
+      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K1', passed: false });
+      expect(result.state.reviewChecks).toMatchObject({ scope: 'final', cycle: 1 });
+    },
+  );
 
   it('the cap halt names the spent cycles and offers the exits', async () => {
     const { projectDir, sessionId, head } = setupProject();

@@ -46,6 +46,7 @@ function runningSuiteStage(event: SuiteEvent): RunningSuiteStage | null {
     ...(event.stage !== undefined && { stage: event.stage }),
     command: event.command,
     moment: event.moment,
+    ...(event.scenario !== undefined && { scenario: event.scenario }),
     stageStartedTs: event.ts,
   };
 }
@@ -75,7 +76,6 @@ function cancelOperations(
 // Activity that is not a tool the seat runs: it never opens, so it never holds a silence open.
 const NOT_A_TOOL: ReadonlySet<EngineEventOf<'runner_call_activity'>['kind']> = new Set([
   'text',
-  'session',
   'artifact',
   'warning',
   'error',
@@ -85,7 +85,7 @@ const NOT_A_TOOL: ReadonlySet<EngineEventOf<'runner_call_activity'>['kind']> = n
 // activity closes it; the time it opened is the first one, however many updates follow.
 function nextOpenTools(
   open: readonly OpenTool[],
-  event: EngineEventOf<'runner_call_activity'>,
+  event: EngineEventOf<'runner_call_activity'> & { kind: OpenTool['kind'] },
 ): readonly OpenTool[] {
   const opened = open.find((tool) => tool.activityId === event.activityId);
   const rest = open.filter((tool) => tool.activityId !== event.activityId);
@@ -116,13 +116,18 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
           ? { ...operation, apiRuntimeStatus: event.runtimeStatus }
           : operation,
       );
-    case 'runner_call_activity':
-      if (NOT_A_TOOL.has(event.kind)) return state;
+    case 'runner_call_activity': {
+      const kind = event.kind;
+      if (kind === 'session' || NOT_A_TOOL.has(kind)) return state;
       return updateKnownOperation(state, event.callId, (operation) =>
         operation.status === 'running'
-          ? { ...operation, openTools: nextOpenTools(operation.openTools ?? [], event) }
+          ? {
+              ...operation,
+              openTools: nextOpenTools(operation.openTools ?? [], { ...event, kind }),
+            }
           : operation,
       );
+    }
     case 'runner_call_usage':
       return updateKnownOperation(state, event.callId, (operation) => ({
         ...operation,
@@ -153,9 +158,10 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
         partial: event.partial,
       });
     case 'workflow_cancelled':
+    case 'turn_interrupted':
       return cancelOperations(state, {
         ts: event.ts,
-        reason: event.reason ?? 'workflow_cancelled',
+        reason: event.type === 'workflow_cancelled' ? (event.reason ?? event.type) : event.type,
       });
     case 'planner_status':
       return updatePlannerStatusFallback(state, event);

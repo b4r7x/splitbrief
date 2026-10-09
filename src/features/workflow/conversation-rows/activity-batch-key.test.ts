@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
+import { EngineEventSchema } from '../../../engine/events/schema.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
@@ -36,6 +37,34 @@ describe('activityBatchKey', () => {
 });
 
 describe('findLatestExpandableActivityBatchKey', () => {
+  it('omits historical session activity from rows and expandable counts', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          EngineEventSchema.parse(activity({ kind: 'session', label: 'session captured' })),
+          activity({ label: 'reading a.ts' }),
+          activity({ label: 'reading b.ts' }),
+          activity({ label: 'reading c.ts' }),
+        ],
+      },
+    ];
+    expect(findLatestExpandableActivityBatchKey(sections)).toBeNull();
+    const { rows } = buildConversationRows({
+      sections,
+      cols: 80,
+      viewportHeight: 20,
+      streaming,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+    });
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain('3 updates');
+    expect(text).not.toContain('captured');
+    expect(text).not.toContain('Sess');
+  });
+
   it('returns the latest batch with hidden activity rows', () => {
     const sections: Section<EngineEvent>[] = [
       {

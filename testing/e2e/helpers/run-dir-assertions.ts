@@ -24,8 +24,8 @@ import type { Task } from '../../../src/core/schemas/task.js';
 import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 
-const PLAIN_LINE =
-  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|(reviewer|fix) check V\d+: (passed|failed|refused|not run) \(.+\)|fix check V\d+: (your \d+ failures? gone( · \d+ others? left)?|your 1 failure remains|\d+ of your \d+ failures remains?) \(.+\)|base re-run V\d+: (passes|fails|refused \(.+\)|not run \(.+\)|\d+[ \u00a0]new, \d+[ \u00a0]pre-existing|pre-existing · (all \d+ failures|the failure) also fails? before this run's changes))$/;
+export const PLAIN_LINE =
+  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|plan check \S+: ((passed|failed)( · (\d+\.\ds|(\d+h )?\d+m \d+s))? \(.*\)|(not run|refused)( \(.*\))?)|Render .+: ((rendered|failed)( · (\d+\.\ds|(\d+h )?\d+m \d+s))?|(not run|refused)( \(.*\))?)|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|(reviewer|fix) check V\d+: (passed|failed|refused|not run) \(.+\)|fix check V\d+: (your \d+[ \u00a0]failures? gone( · \d+[ \u00a0]others? left)?|your 1[ \u00a0]failure remains|\d+[ \u00a0]of your \d+[ \u00a0]failures remains?) \(.+\)|base re-run V\d+: (passes|fails|refused \(.+\)|not run \(.+\)|\d+[ \u00a0]new, \d+[ \u00a0]pre-existing|pre-existing · (all \d+ failures|the failure) also fails? before this run's changes))$/;
 
 const DONE_LINE = /^done: (\d+) tasks$/;
 

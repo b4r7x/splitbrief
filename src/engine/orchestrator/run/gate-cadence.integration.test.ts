@@ -91,7 +91,7 @@ function runHarness(opts: {
   sessionId: string;
   state: WorkflowState;
   config: Config;
-  checks: ReviewChecksPlan;
+  checks: ReviewChecksPlan | ((prompt: string) => ReviewChecksPlan);
   runCommand: (line: string, cwd: string | undefined) => void;
 }) {
   const log: string[] = [];
@@ -136,7 +136,7 @@ function runHarness(opts: {
       undefined,
       (prompt) => {
         checksPrompts.push(prompt);
-        return opts.checks;
+        return typeof opts.checks === 'function' ? opts.checks(prompt) : opts.checks;
       },
     ),
   });
@@ -357,7 +357,19 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
         },
       },
       config: makeConfig({ workflow: { review: 'task' } }),
-      checks: latestChecks,
+      checks: (prompt) => {
+        const required = ['tsc --noEmit', 'npm test'].filter((command) =>
+          prompt.includes(`- \`${command}\``),
+        );
+        return {
+          ...latestChecks,
+          commands: [...required, 'node --version'].map((command, index) => ({
+            id: `V${index + 1}`,
+            command,
+            reason: 'Verifies the fix and the runtime.',
+          })),
+        };
+      },
       runCommand: () => {},
     });
 
@@ -382,9 +394,13 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
     );
     expect(betweenFixes.filter((entry) => entry.startsWith('cmd:'))).toEqual([
       'cmd:tsc --noEmit',
+      'cmd:tsc --noEmit',
       'cmd:node --version',
     ]);
     expect(betweenFixes).toContain('checks:task:planned');
+    expect(harness.checksPrompts[0]).toContain('- `tsc --noEmit`');
+    expect(harness.checksPrompts[1]).toContain('- `npm test`');
+    expect(result.state.pendingReviewCommands ?? []).toEqual([]);
     expect(result.state.tasks.map((task) => task.checkResults)).toEqual([
       [{ id: 'V1', passed: true }],
       [{ id: 'V1', passed: true }],

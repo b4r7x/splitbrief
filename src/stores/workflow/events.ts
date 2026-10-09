@@ -13,7 +13,6 @@ export interface EventsState {
 const initial: EventsState = { events: [] };
 
 const store = createStore<EventsState>(initial);
-const SESSION_ACTIVITY_LABEL = 'session captured';
 
 // Test escape hatch — see docs/STORES.md#test-escape-hatches. Do not use outside tests.
 function __testReset(next?: Partial<EventsState>): void {
@@ -74,8 +73,7 @@ type TailMerge =
 const DROP_TAIL_MERGE: TailMerge = { kind: 'drop' };
 const APPEND_TAIL_MERGE: TailMerge = { kind: 'append' };
 
-// The only part of the log an arriving event can change besides its own slot. Both the live path
-// and the batch path decide here, so they cannot drift apart.
+// Text deltas merge only at the tail. Both live and replay logs use the same rule.
 function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailMerge {
   if (event.type === 'runner_call_text_delta') return DROP_TAIL_MERGE;
   if (
@@ -90,27 +88,59 @@ function mergeIntoTail(last: EngineEvent | undefined, event: EngineEvent): TailM
       joined.length > MAX_MERGED_TEXT_LENGTH ? joined.slice(-MAX_MERGED_TEXT_LENGTH) : joined;
     return { kind: 'replace', event: { ...last, text } };
   }
-  // A running gate is progress on the one verdict that settles it: the verdict takes its slot.
-  if (
-    event.type === 'validate' &&
-    last?.type === 'validate' &&
-    last.status === 'running' &&
-    last.taskId === event.taskId
-  ) {
-    return { kind: 'replace', event };
-  }
-  if (
-    event.type === 'full_suite' &&
-    last?.type === 'full_suite' &&
-    last.status === 'running' &&
-    suiteCommandKey(last) === suiteCommandKey(event)
-  ) {
-    return { kind: 'replace', event };
-  }
   return APPEND_TAIL_MERGE;
 }
 
+function commandKey(event: EngineEventOf<'full_suite' | 'validate'>): string {
+  return event.type === 'full_suite'
+    ? `suite:${suiteCommandKey(event)}`
+    : `validate:${event.taskId}`;
+}
+
+// Running updates and verdicts take their command's slot even across an intervening warning.
+function commandReplacementIndex(
+  events: readonly EngineEvent[],
+  event: EngineEvent,
+  runningCommands?: ReadonlyMap<string, number>,
+): number {
+  if (event.type !== 'full_suite' && event.type !== 'validate') return -1;
+  const key = commandKey(event);
+  if (runningCommands !== undefined) return runningCommands.get(key) ?? -1;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const running = events[index];
+    if (
+      (running?.type === 'full_suite' || running?.type === 'validate') &&
+      running.status === 'running' &&
+      commandKey(running) === key
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function updateRunningCommandIndex(
+  runningCommands: Map<string, number>,
+  event: EngineEvent,
+  index: number,
+): void {
+  if (event.type !== 'full_suite' && event.type !== 'validate') return;
+  const key = commandKey(event);
+  if (event.status === 'running') runningCommands.set(key, index);
+  else runningCommands.delete(key);
+}
+
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
+  if (event.type === 'turn_interrupted' || event.type === 'workflow_cancelled') {
+    events = events.slice();
+    settleStoppedCommands(events);
+  }
+  const commandIndex = commandReplacementIndex(events, event);
+  if (commandIndex >= 0) {
+    const next = events.slice();
+    next[commandIndex] = event;
+    return next;
+  }
   const merge = mergeIntoTail(events[events.length - 1], event);
   if (merge.kind === 'drop') return events;
   if (merge.kind === 'replace') {
@@ -129,12 +159,13 @@ export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEve
   return [...events, event];
 }
 
-// The batch form of mergeEvent for a replayed log: same projection, same tail merge, same eviction
-// order, but the survivors are marked in place and materialized once, so a 50k-event log costs one
-// pass rather than one whole-array copy per event past the cap.
+// The batch form of mergeEvent uses the same projection, command and tail merges, and eviction
+// order. It marks survivors in place and materializes once, so a 50k-event log costs one pass
+// rather than one whole-array copy per event past the cap.
 export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
   const log: EngineEvent[] = [];
   const dropped: boolean[] = [];
+  const runningCommands = new Map<string, number>();
   let live = 0;
   let evictable = 0;
   let oldest = 0;
@@ -142,6 +173,15 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
   for (const event of events) {
     const projected = projectEventForTuiEventLog(event);
     if (projected === null) continue;
+    if (projected.type === 'turn_interrupted' || projected.type === 'workflow_cancelled') {
+      settleStoppedCommands(log, runningCommands);
+    }
+    const commandIndex = commandReplacementIndex(log, projected, runningCommands);
+    if (commandIndex >= 0) {
+      log[commandIndex] = projected;
+      updateRunningCommandIndex(runningCommands, projected, commandIndex);
+      continue;
+    }
     const merge = mergeIntoTail(log[log.length - 1], projected);
     if (merge.kind === 'drop') continue;
     if (merge.kind === 'replace') {
@@ -150,22 +190,47 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
     }
     if (live >= MAX_EVENTS) {
       evictable = nextEvictableIndex(log, dropped, evictable);
+      let evictionIndex = evictable;
       if (evictable < log.length) {
-        dropped[evictable] = true;
         evictable += 1;
       } else {
         oldest = nextSurvivingIndex(dropped, oldest, log.length);
-        dropped[oldest] = true;
+        evictionIndex = oldest;
         oldest += 1;
       }
+      const evicted = log[evictionIndex];
+      if (
+        (evicted?.type === 'full_suite' || evicted?.type === 'validate') &&
+        commandReplacementIndex(log, evicted, runningCommands) === evictionIndex
+      ) {
+        runningCommands.delete(commandKey(evicted));
+      }
+      dropped[evictionIndex] = true;
       live -= 1;
     }
+    updateRunningCommandIndex(runningCommands, projected, log.length);
     log.push(projected);
     dropped.push(false);
     live += 1;
   }
 
   return log.filter((_, index) => dropped[index] !== true);
+}
+
+function settleStoppedCommands(events: EngineEvent[], runningCommands?: Map<string, number>): void {
+  const running = runningCommands ?? new Map<string, number>();
+  if (runningCommands === undefined) {
+    for (const [index, event] of events.entries()) {
+      updateRunningCommandIndex(running, event, index);
+    }
+  }
+  for (const index of running.values()) {
+    const event = events[index];
+    if (event?.type === 'full_suite' || event?.type === 'validate') {
+      events[index] = { ...event, status: 'stopped' };
+    }
+  }
+  running.clear();
 }
 
 // Both scans resume where the last one stopped: an entry already passed over is structural or
@@ -193,15 +258,14 @@ function nextSurvivingIndex(dropped: readonly boolean[], from: number, end: numb
 function projectRunnerActivityForTuiEventLog(
   event: EngineEventOf<'runner_call_activity'>,
 ): EngineEventOf<'runner_call_activity'> | null {
-  const label = cleanRequiredTuiEventLogText(safeRunnerActivityLabel(event));
+  if (event.kind === 'session') return null;
+  const label = cleanRequiredTuiEventLogText(event.label);
   if (label === null) return null;
 
-  const target = event.kind === 'session' ? undefined : cleanOptionalTuiEventLogText(event.target);
-  const textPartial =
-    event.kind === 'session' ? undefined : cleanOptionalTuiEventLogText(event.textPartial);
-  const diagnosticPartial =
-    event.kind === 'session' ? undefined : cleanOptionalTuiEventLogText(event.diagnosticPartial);
-  const rawAvailable = event.kind === 'session' ? false : event.rawAvailable === true;
+  const target = cleanOptionalTuiEventLogText(event.target);
+  const textPartial = cleanOptionalTuiEventLogText(event.textPartial);
+  const diagnosticPartial = cleanOptionalTuiEventLogText(event.diagnosticPartial);
+  const rawAvailable = event.rawAvailable === true;
   const runnerName = cleanOptionalTuiEventLogText(event.runnerName);
   const model = cleanOptionalTuiEventLogText(event.model);
   const originalModel = cleanOptionalTuiEventLogText(event.originalModel);
@@ -241,10 +305,6 @@ function projectRunnerActivityForTuiEventLog(
     ...(originalModel !== undefined && { originalModel: originalModel.text }),
     ...(fallbackModel !== undefined && { fallbackModel: fallbackModel.text }),
   };
-}
-
-function safeRunnerActivityLabel(event: EngineEventOf<'runner_call_activity'>): string {
-  return event.kind === 'session' ? SESSION_ACTIVITY_LABEL : event.label;
 }
 
 function cleanRequiredTuiEventLogText(

@@ -657,7 +657,7 @@ describe('ConversationFlow', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain(QUEUED_MARK);
-    expect(frame).toContain('wire login route');
+    expect(frame).toContain(`${QUEUED_MARK} T002 wire login route`);
 
     ui.unmount();
   });
@@ -698,8 +698,8 @@ describe('ConversationFlow', () => {
 
     expect(heading).toBeGreaterThan(-1);
     expect(rows.slice(heading + 1)).toEqual([
-      `${QUEUED_MARK} brief one`,
-      `${QUEUED_MARK} brief two`,
+      `${QUEUED_MARK} T002 brief one`,
+      `${QUEUED_MARK} T003 brief two`,
       '+4 more',
     ]);
 

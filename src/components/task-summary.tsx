@@ -169,6 +169,11 @@ interface MarkerSpec {
   color: string | undefined;
 }
 
+export function formatTaskHeading(input: Pick<TaskSummaryProps, 'id' | 'title'>): string {
+  const title = sanitizeTerminalDisplayText(input.title);
+  return title === '' ? input.id : `${input.id} ${title}`;
+}
+
 function settledMarker(method: TaskCompletionMethod, t: Theme): MarkerSpec {
   if (method === 'failed') return { name: 'statusFailed', color: t.error };
   if (method === 'skipped') return { name: 'statusSkipped', color: t.textDim };
@@ -208,11 +213,10 @@ export function TaskSummary({
   focused,
 }: TaskSummaryProps) {
   const t = useTheme();
-  const safeTitle = sanitizeTerminalDisplayText(title);
   const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
   const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
   const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
-  const head = safeTitle === '' ? id : `${id} ${safeTitle}`;
+  const head = formatTaskHeading({ id, title });
   const marker = markerSpec(state, t);
   // One leading for every row kind — the transcript's padding then the marker slot — so a settled
   // brief and a pending one line their marks up in the same column, and that column is the one the

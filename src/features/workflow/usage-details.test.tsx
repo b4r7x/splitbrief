@@ -139,7 +139,7 @@ const contextHalt: RecoveryIssue = {
   files: [],
   affectedTaskIds: [],
   message: 'The review seat was not given the context this call needs.',
-  details: ['Adjust the review seat with /crew review or Settings, then /resume and choose retry.'],
+  details: ['Pick a review seat with a larger context in /crew review, then choose Try again.'],
   facts: {
     apiContextCode: 'insufficient-context',
     apiContextSeat: 'review',

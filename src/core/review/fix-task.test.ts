@@ -219,8 +219,8 @@ describe('judgeFixCheck', () => {
 
   it('says absent failures are not proven fixed', () => {
     expect(fixCheckVerdict({ own: 2, ownLeft: 0, others: 1, proven: false })).toEqual([
-      'your 2 failures not shown',
-      'not proven fixed',
+      'your 2\u00a0failures not shown',
+      'not\u00a0proven\u00a0fixed',
     ]);
   });
 

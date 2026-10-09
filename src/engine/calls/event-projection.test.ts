@@ -6,6 +6,22 @@ import type { RunnerCallEvent } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
 describe('projectRunnerCallEvent', () => {
+  it('keeps a native session event without adding session activity', () => {
+    const events = projectRunnerCallEvents(
+      {
+        type: 'call_session_id',
+        ts: 0,
+        callId: 'session-call',
+        role: 'implementer',
+        backendKind: 'cli',
+        nativeSessionId: 'native-1',
+      },
+      { rootDir: '/workspace', phase: 'implementing', sequence: 1 },
+    );
+    expect(events.map((event) => event.type)).toEqual(['runner_call_session_id']);
+    expect(events[0]).toMatchObject({ nativeSessionId: 'native-1' });
+  });
+
   it('projects call events to strict engine event variants', () => {
     const event: RunnerCallEvent = {
       type: 'call_usage',
@@ -17,7 +33,9 @@ describe('projectRunnerCallEvent', () => {
       semantics: 'delta',
     };
 
-    expect(projectRunnerCallEvent(event, { phase: 'planning', sequence: 3 })).toEqual({
+    expect(
+      projectRunnerCallEvent(event, { rootDir: '/project', phase: 'planning', sequence: 3 }),
+    ).toEqual({
       type: 'runner_call_usage',
       ts: 10,
       phase: 'planning',
@@ -41,7 +59,9 @@ describe('projectRunnerCallEvent', () => {
       text: 'assistant answer',
     };
 
-    expect(projectRunnerCallEvent(event, { phase: 'planning', sequence: 4 })).toEqual({
+    expect(
+      projectRunnerCallEvent(event, { rootDir: '/project', phase: 'planning', sequence: 4 }),
+    ).toEqual({
       type: 'runner_call_text_delta',
       ts: 11,
       phase: 'planning',
@@ -67,7 +87,9 @@ describe('projectRunnerCallEvent', () => {
       semantics: 'final',
     };
 
-    expect(projectRunnerCallEvent(event, { phase: 'planning', sequence: 4 })).toEqual({
+    expect(
+      projectRunnerCallEvent(event, { rootDir: '/project', phase: 'planning', sequence: 4 }),
+    ).toEqual({
       type: 'runner_call_text_delta',
       ts: 11,
       phase: 'planning',
@@ -95,7 +117,7 @@ describe('projectRunnerCallEvent', () => {
           name: 'Bash',
           inputDelta: '{"command":"npm',
         },
-        { phase: 'planning', sequence: 5 },
+        { rootDir: '/project', phase: 'planning', sequence: 5 },
       ),
     ).toEqual({
       type: 'runner_call_tool_use',
@@ -122,7 +144,7 @@ describe('projectRunnerCallEvent', () => {
           channel: 'tool',
           toolUse: { id: 'tool-1', name: 'Bash', input: { command: 'npm test' } },
         },
-        { phase: 'planning', sequence: 6 },
+        { rootDir: '/project', phase: 'planning', sequence: 6 },
       ),
     ).toEqual({
       type: 'runner_call_tool_use',
@@ -152,7 +174,7 @@ describe('projectRunnerCallEvent', () => {
           input: { command: 'echo sk-abcdefghijklmnopqrst' },
         },
       },
-      { phase: 'planning', sequence: 6 },
+      { rootDir: '/project', phase: 'planning', sequence: 6 },
     );
 
     expect(projected).toEqual([
@@ -195,7 +217,9 @@ describe('projectRunnerCallEvent', () => {
       nativeSessionId: null,
     };
 
-    expect(projectRunnerCallEvent(event, { phase: 'planning', sequence: 4 })).toEqual({
+    expect(
+      projectRunnerCallEvent(event, { rootDir: '/project', phase: 'planning', sequence: 4 }),
+    ).toEqual({
       type: 'runner_call_completed',
       ts: 20,
       phase: 'planning',
@@ -234,7 +258,7 @@ describe('projectRunnerCallEvent', () => {
         usage: null,
         nativeSessionId: null,
       },
-      { phase: 'implementing', sequence: 7 },
+      { rootDir: '/project', phase: 'implementing', sequence: 7 },
     );
 
     expect(projected).toEqual([
@@ -253,7 +277,7 @@ describe('projectRunnerCallEvent', () => {
         channel: 'stderr',
         text: 'x'.repeat(RUNNER_CALL_MESSAGE_MAX_LENGTH + 100),
       },
-      { phase: 'planning', sequence: 5 },
+      { rootDir: '/project', phase: 'planning', sequence: 5 },
     );
 
     expect(projected).toBeNull();
@@ -268,7 +292,7 @@ describe('projectRunnerCallEvent', () => {
           channel: 'stderr',
           text: 'benign progress',
         },
-        { phase: 'planning', sequence: 5 },
+        { rootDir: '/project', phase: 'planning', sequence: 5 },
       ),
     ).toEqual([]);
   });
@@ -288,7 +312,7 @@ describe('projectRunnerCallEvent', () => {
           message: 'retrying request at 2026-06-21T10:00:00.000Z after 23ms',
         }),
       },
-      { phase: 'planning', sequence: 5 },
+      { rootDir: '/project', phase: 'planning', sequence: 5 },
     );
 
     expect(EngineEventSchema.safeParse(projected).success).toBe(true);
@@ -322,7 +346,7 @@ describe('projectRunnerCallEvent', () => {
           upstreamType: 'future',
         },
       },
-      { phase: 'planning', sequence: 5 },
+      { rootDir: '/project', phase: 'planning', sequence: 5 },
     );
 
     expect(projected).toMatchObject({
@@ -356,7 +380,7 @@ describe('projectRunnerCallEvent', () => {
         usage: null,
         nativeSessionId: null,
       },
-      { phase: 'planning', sequence: 5 },
+      { rootDir: '/project', phase: 'planning', sequence: 5 },
     );
 
     expect(EngineEventSchema.safeParse(projected).success).toBe(true);

@@ -12,6 +12,7 @@ import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { REVIEW_DOCUMENT_HINTS } from '../../../src/features/workflow/prompt-rows/approval.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
+import { App } from '../../../src/app/root.js';
 import { mountWorkflowScreen, prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { sessionDir } from '../../../src/core/paths.js';
 
@@ -26,6 +27,7 @@ const { terminalSizeStore } = await import('../../../src/stores/ui/terminal-size
 const { routerStore } = await import('../../../src/stores/navigation/router.js');
 const { lifecycleStore } = await import('../../../src/stores/workflow/lifecycle.js');
 const { editorStore } = await import('../../../src/stores/ui/editor.js');
+const { overlayStore } = await import('../../../src/stores/ui/overlay.js');
 const { reviewStore } = await import('../../../src/stores/workflow/review.js');
 const { externalEditRequestStore } = await import(
   '../../../src/stores/ui/external-edit-request.js'
@@ -204,7 +206,21 @@ describe('WorkflowScreen review editing', () => {
         await opts.callbacks.onApprovalNeeded('plan', planPath, []);
         return makeSummary();
       });
-      const ui = mountWorkflow(projectDir);
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        projectDir,
+        feature: 'screen test feature',
+        config,
+      });
+      const viewport = { cols: 120, rows: 60 };
+      configStore.__testReset({ config, projectDir });
+      terminalSizeStore.__testReset({ ...viewport, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord({ ref: prepared.session.ref }),
+        execution: { kind: 'local', prepared },
+      });
+      const ui = renderFeature(<App workflowDeps={workflowDeps} />, viewport);
 
       await vi.waitFor(() => {
         expect(ui.lastFrame() ?? '').toContain('Inline shortcut plan');
@@ -221,12 +237,21 @@ describe('WorkflowScreen review editing', () => {
       await vi.waitFor(() => {
         expect(editorStore.get().status).toBe('open');
       });
+      await flushEffects();
+      expect(overlayStore.get()).toMatchObject({ active: 'editor', exclusive: true, stack: [] });
       const session = editorStore.get();
-      expect(session.status === 'open' ? session.filePath : null).toBe(join(dir, 'plan.json'));
-      expect(session.status === 'open' ? session.value : null).toContain('inline plan json');
+      if (session.status !== 'open') throw new Error('Plan editor did not open');
+      expect(session.filePath).toBe(join(dir, 'plan.json'));
+      expect(session.value).toContain('inline plan json');
+      ui.stdin.write('x');
+      await vi.waitFor(() => {
+        const edited = editorStore.get();
+        expect(edited.status === 'open' ? edited.value : null).toBe(`x${session.value}`);
+      });
       // The overlay is the editor: the fake $EDITOR is never spawned.
       expect(existsSync(logPath)).toBe(false);
 
+      overlayStore.close();
       editorStore.close();
       ui.unmount();
     } finally {

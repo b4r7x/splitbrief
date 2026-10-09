@@ -453,6 +453,7 @@ export async function runFinalReviewPhase(opts: {
     });
     const scope = reviewScopeFor(state, opts.scope ?? 'final');
     let reviewChecksSection: string | undefined;
+    let dischargedReviewCommands: string[] = [];
     if (opts.reviewChecks === true) {
       const changedFiles =
         opts.scope === 'task'
@@ -485,6 +486,7 @@ export async function runFinalReviewPhase(opts: {
         throw checks.error;
       }
       reviewChecksSection = checks.section;
+      dischargedReviewCommands = checks.discharged;
     }
     // A run planned on one session agreed on its plan; only an older run wrote a spec.
     const spec = readSpecFileOrEmpty(
@@ -833,6 +835,15 @@ export async function runFinalReviewPhase(opts: {
       type: 'RECORD_REVIEW',
       review: record,
     });
+    const pendingCommands = (state.pendingReviewCommands ?? []).filter(
+      (command) => !dischargedReviewCommands.includes(command),
+    );
+    if (pendingCommands.length !== (state.pendingReviewCommands ?? []).length) {
+      state = transitionAndSave({ projectDir, sessionId }, state, {
+        type: 'SET_PENDING_REVIEW_COMMANDS',
+        commands: pendingCommands,
+      });
+    }
     if (
       fixWork.fixTasks.length > 0 ||
       fixWork.verify.length > 0 ||

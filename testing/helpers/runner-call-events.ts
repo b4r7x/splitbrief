@@ -32,7 +32,11 @@ export function replayRunnerCallEventsIntoOperations(
   resetWorkflow();
   let sequence = 0;
   for (const event of events) {
-    const projected = projectRunnerCallEvent(event, { phase, sequence: ++sequence });
+    const projected = projectRunnerCallEvent(event, {
+      rootDir: '/project',
+      phase,
+      sequence: ++sequence,
+    });
     if (projected) addEvent(projected);
   }
   return operationsStore.get();

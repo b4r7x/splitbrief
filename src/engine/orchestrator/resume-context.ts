@@ -55,7 +55,10 @@ export async function autoCompactResumeContext(
       format,
       ...(opts.signal !== undefined && { signal: opts.signal }),
       onCallEvent: (event) =>
-        publishRunnerCallEvent({ bus: opts.bus, phase: opts.state.phase }, event),
+        publishRunnerCallEvent(
+          { bus: opts.bus, phase: opts.state.phase, rootDir: opts.projectDir },
+          event,
+        ),
       onFallback: () =>
         publishWarning({
           bus: opts.bus,

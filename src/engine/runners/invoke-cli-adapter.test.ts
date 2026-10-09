@@ -174,7 +174,9 @@ function rateLimitFrame(opts: {
 
 function activityRows(events: readonly RunnerCallEvent[]) {
   return events
-    .flatMap((event) => projectRunnerCallEvents(event, { phase: 'implementing', sequence: 0 }))
+    .flatMap((event) =>
+      projectRunnerCallEvents(event, { rootDir: '/project', phase: 'implementing', sequence: 0 }),
+    )
     .flatMap((event) => (event.type === 'runner_call_activity' ? [event] : []));
 }
 
@@ -299,7 +301,9 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
       lines: claudeCaptureWithSystemFrames(['Done.']),
     });
     const activity = events
-      .flatMap((event) => projectRunnerCallEvents(event, { phase: 'implementing', sequence: 0 }))
+      .flatMap((event) =>
+        projectRunnerCallEvents(event, { rootDir: '/project', phase: 'implementing', sequence: 0 }),
+      )
       .flatMap((event) => (event.type === 'runner_call_activity' ? [event] : []));
 
     expect(activity.map((event) => event.label)).not.toContain('system activity');
@@ -319,7 +323,7 @@ describe('invokeCliAdapter streaming a Claude Code capture', () => {
     });
     const heartbeats = events.filter((event) => event.type === 'call_heartbeat');
     const projected = heartbeats.flatMap((event) =>
-      projectRunnerCallEvents(event, { phase: 'implementing', sequence: 0 }),
+      projectRunnerCallEvents(event, { rootDir: '/project', phase: 'implementing', sequence: 0 }),
     );
 
     expect(heartbeats.length).toBeGreaterThan(0);

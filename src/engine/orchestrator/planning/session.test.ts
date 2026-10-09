@@ -229,6 +229,9 @@ describe('a planner that reads no files of its own', () => {
     expect(run.prompts).toEqual([]);
     expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
     expect(run.result.state.pendingRecovery?.facts?.apiContextCode).toBe('insufficient-context');
+    expect(run.result.state.pendingRecovery?.details).toContain(
+      'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
+    );
   });
 });
 

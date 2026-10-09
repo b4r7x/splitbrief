@@ -110,9 +110,11 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 `DEFAULT_LOCAL_RETRIES` is 1 (`src/core/pipeline-spec/retries.ts`); `workflow.max_retries` is retired and loads with one notice. The old `HINT_SUCCESS`, `HINT_FAIL` and `FULL_SUCCESS` transitions are gone from the reducer; old `escalated-hint`, `escalated-intermediate` and `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
+Before final review, `runPreReviewChecks` runs every plan and task check separately. The collection prepares its validation context once and each test command once. Running and settled rows use that prepared command. Each publishes `full_suite` at `moment: plan` in the review phase, first `running`, then `done`, `not-run` or `refused`. A render alone carries `scenario`, and its row reads `Render <scenario>` with `rendered` or `failed` and its duration. The rail shows Review during collection. The byline and build block use each check's own clock. Plan rows preserve existing required-check triage and add no reviewer-check reds.
+
 **Review fix cycles.** The review seat answers with a typed `ReviewAnswer` (one stateless, read-only call through `requestTyped`). SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from its verdict (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` runs its registered checks through `runChecks`; a `render` check stays unverified, and an unverified criterion blocks pass. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
 
-The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every check result, every reviewer check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built. Without an ask, every blocking finding that is not unverified and every pending input has exactly one fix, rejection or verification. Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The reviewer checks and the reviewer run again after the fixes.
+The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every check result, every reviewer check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built. Without an ask, every blocking finding that is not unverified and every pending input has exactly one fix, rejection or verification. Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The reviewer checks and the reviewer run again after the fixes. A reviewer command a fix check ran leaves the pending list only after it passes or fails and the review records a verdict. The plan call must choose the pending commands first, with the same text. The plan holds at most 6 commands. The review section names each remaining command as not run; it stays pending.
 
 A red at the final review never reopens a finished brief. The reviewer writes the fix work. Each fix finding carries its check ids, commands by id, own failure keys and original red keys by id, file and output. Its brief gate runs those checks again.
 
@@ -230,6 +232,8 @@ Older runs without `state.workspace` keep their status rules. A passed run stays
 **Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). It is the only call the reviewer makes; every other model call in this state machine, escalation included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseTokenRole()` is still `implementer` — those classifications did not move, so per-phase token attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
 
 **Planner markdown headers** — only `escalating` planner markdown gets a header (`Escalation`, `plannerPhaseHeader`). No other phase, live or replayed, gets a phase label. The planning session streams no narration of its own, because its answer is typed JSON; its question rounds and warnings show as plain rows.
+
+A resumable stop publishes `turn_interrupted`. The operations reducer clears command stages as it does for `workflow_cancelled`. The events store settles unfinished `full_suite` and older running `validate` rows as `stopped` in the dim tone. Live continuation and hydration apply the same rule; the engine publishes no command settlement for the cut. The next command starts a new clock.
 
 **Where a stop is recorded:** `interruptedStep` names the step the stop cut and whether it landed mid-call or at a brief boundary. It does not change the phase, and it does not make a run more or less continuable — it only tells the run where to pick up.
 
@@ -568,6 +572,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          and chooses at most 6 reviewer checks (V1, V2, …) with a reason each,
          names each related test it declines, or gives the reason it chose none.
          A task review chooses only the tests related to the task's changed files.
+         A reviewer command a fix check ran leaves the pending list only after
+         it passes or fails and the review records a verdict.
+         The plan call must choose the pending commands first, with the same text.
+         The review section names each command over the limit as not run;
+         it stays pending.
          A failed plan call (a transport error or a protocol error) halts the
          review the same way a failed verdict call does; it is never a pass.
          With validation.approve_checks: ask, one card shows the chosen commands
@@ -597,7 +606,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     Every new or not verified red becomes a pending input. No brief reopens.
     The input carries the red check's id, its command and its output.
     A re-review of the same candidate (after an answer or a correction) runs
-    no new reviewer checks. validation.end_checks: false skips steps 1 and 2;
+    no new reviewer checks. A review after a fix cycle is never such a re-review,
+    even when the run stopped inside it. validation.end_checks: false skips steps 1 and 2;
     plan and task checks still run.
 
 13. final-review → REVIEW_DONE → complete

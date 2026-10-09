@@ -16,6 +16,38 @@ function collect(events: EngineEvent[]): string[] {
 const ts = 1;
 
 describe('createStdoutTextSink', () => {
+  it('prints plan checks and render scenarios, with no new line for stopped commands', () => {
+    const render: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      id: 'R1',
+      moment: 'plan',
+      scenario: 'workflow-x',
+      command: 'npm run tui-shots -- --scenario workflow-x --output /tmp/render',
+      status: 'done',
+      passed: true,
+      duration: 14_200,
+    };
+    expect(
+      collect([
+        { ...render, status: 'running' },
+        render,
+        { ...render, passed: false },
+        { ...render, status: 'not-run', detail: 'validation.render is not set' },
+        { ...render, status: 'refused', detail: 'invalid scenario' },
+        { ...render, status: 'stopped' },
+        { ...render, scenario: undefined, id: 'K1', command: 'npm test' },
+      ]),
+    ).toEqual([
+      'phase: final-review',
+      'Render workflow-x: rendered · 14.2s',
+      'Render workflow-x: failed · 14.2s',
+      'Render workflow-x: not run (validation.render is not set)',
+      'Render workflow-x: refused (invalid scenario)',
+      'plan check K1: passed · 14.2s (npm test)',
+    ]);
+  });
   it('writes one line per phase change, task, review and completion', () => {
     const lines = collect([
       { type: 'workflow_started', ts, phase: 'researching', feature: 'add a widget' },
@@ -347,10 +379,10 @@ describe('createStdoutTextSink', () => {
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',
-      'fix check V1: your 2 failures gone · 3 others left (npm test)',
-      'fix check V1: 1 of your 2 failures remains (npm test)',
-      'fix check V1: your 2 failures not shown · not proven fixed (npm test)',
-      'fix check V1: your 2 failures gone (npm test)',
+      'fix check V1: your 2\u00a0failures gone · 3\u00a0others left (npm test)',
+      'fix check V1: 1\u00a0of your 2\u00a0failures remains (npm test)',
+      'fix check V1: your 2\u00a0failures not shown · not\u00a0proven\u00a0fixed (npm test)',
+      'fix check V1: your 2\u00a0failures gone (npm test)',
       'base re-run V3: 1\u00a0new, 1\u00a0pre-existing, 1\u00a0not verified at the run base · the run base re-run timed out',
     ]);
   });

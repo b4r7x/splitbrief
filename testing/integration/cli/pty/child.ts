@@ -1,13 +1,16 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { createElement, type ReactElement } from 'react';
 import { App, type AppProps } from '../../../../src/app/root.js';
 import { createDefaultConfig } from '../../../../src/core/config/load/defaults.js';
 import { createInitialState, transition } from '../../../../src/core/state/machine.js';
 import { PlanSchema } from '../../../../src/core/schemas/plan.js';
-import { ensureSessionDir } from '../../../../src/core/paths-io.js';
+import type { Summary } from '../../../../src/core/schemas/summary.js';
+import { PLAN_FILE, PLAN_JSON_FILE, sessionDir } from '../../../../src/core/paths.js';
+import { ensureSessionDir, writeSpecFile } from '../../../../src/core/paths-io.js';
 import { resumeStep } from '../../../../src/core/sessions/run-status.js';
 import { saveState } from '../../../../src/core/state/persistence.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
@@ -16,7 +19,7 @@ import {
   rebaseOnPersistedWorkflowState,
   transitionAndSave,
 } from '../../../../src/engine/orchestrator/state-ops.js';
-import { throwIfAborted } from '../../../../src/utils/abort.js';
+import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
 import { prepareExecution } from '../../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparationPolicy } from '../../../../src/engine/runners/prepare-execution/types.js';
 import type { PreparedExecution } from '../../../../src/engine/runners/prepared-execution.js';
@@ -107,12 +110,7 @@ export async function runPtyChild(
   try {
     mkdirSync(configuredProjectDir);
     const projectDir = configuredProjectDir;
-    const reviewPath = join(projectDir, 'supporting-spec.md');
-    writeFileSync(
-      reviewPath,
-      `# ${PTY_ACTIVE_REVIEW_MARKER}\n\nApprove this deterministic contract.\n`,
-      'utf8',
-    );
+    const reviewPath = join(sessionDir(projectDir, PTY_REVIEW_SESSION_ID), PLAN_FILE);
 
     resetAllStores();
     const defaults = createDefaultConfig();
@@ -145,7 +143,8 @@ export async function runPtyChild(
     });
 
     let result: { approved: boolean } | undefined;
-    const runWorkflow = async (options: RunWorkflowOptions): Promise<never> => {
+    const runWorkflow: RunWorkflowFn = async (options): Promise<Summary> => {
+      const summary = makeSummary({ feature: PTY_FEATURE });
       publishEvent(options, {
         type: 'workflow_started',
         ts: Date.now(),
@@ -157,8 +156,7 @@ export async function runPtyChild(
         options.callbacks.onApprovalNeeded('plan', reviewPath, []),
       );
       if (approval === APP_ABORTED) {
-        throwIfAborted(options.signal);
-        throw new Error('PTY review exited before approval');
+        return summary;
       }
       result = approval;
       if (approval.approved !== true || Object.keys(approval).length !== 1) {
@@ -172,7 +170,6 @@ export async function runPtyChild(
       try {
         process.stdout.write(`${PTY_APPROVED_MARKER}\n`);
         await whileAppLives(options, interrupted.promise);
-        throwIfAborted(options.signal);
         const cut = options.sinks.consumeBoundaryInterrupt?.() === true ? 'boundary' : 'mid-step';
         const ref = { projectDir, sessionId: PTY_REVIEW_SESSION_ID };
         const current = rebaseOnPersistedWorkflowState(ref, reviewingPlanState());
@@ -189,12 +186,12 @@ export async function runPtyChild(
           source: 'user',
           at: cut,
         });
+        if (options.signal?.aborted) return summary;
         await whileAppLives(
           options,
           Promise.resolve(options.callbacks.onContinuationNeeded?.('', cut) ?? ''),
         );
-        throwIfAborted(options.signal);
-        throw new Error('PTY fixture run ended at the continuation park');
+        return summary;
       } finally {
         options.sinks.setAbortHandler(null);
       }
@@ -231,6 +228,12 @@ async function preparePtyExecution(
   const resumeState = reviewingPlanState();
   const ref = { projectDir, sessionId: PTY_REVIEW_SESSION_ID };
   ensureSessionDir(ref.projectDir, ref.sessionId);
+  writeSpecFile(
+    ref,
+    PLAN_FILE,
+    `# ${PTY_ACTIVE_REVIEW_MARKER}\n\nApprove this deterministic contract.\n`,
+  );
+  writeSpecFile(ref, PLAN_JSON_FILE, JSON.stringify(makePlanProposal(), null, 2));
   // A gate is a durable wait: the phase it parks at is on disk before the run
   // mounts, so the app hydrates it and the resume is real.
   saveState(ref, resumeState);

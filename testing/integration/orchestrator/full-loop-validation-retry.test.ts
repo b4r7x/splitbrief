@@ -210,7 +210,14 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         reason: NO_REVIEW_CHECKS.reason,
       });
     }
-    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
+    const checks = events.filter((event) => event.type === 'full_suite');
+    expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
+    expect(
+      checks.map((event) => [event.moment, event.id, event.status, event.command, event.passed]),
+    ).toEqual([
+      ['plan', 'K-retry', 'running', 'node validate.mjs', undefined],
+      ['plan', 'K-retry', 'done', 'node validate.mjs', true],
+    ]);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'task_retry',

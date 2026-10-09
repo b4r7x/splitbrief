@@ -184,7 +184,9 @@ it('keeps the frames Claude Code keeps for itself out of the reply and the activ
   }
   const result = finishClaudeStream(state);
   const activity = events
-    .flatMap((event) => projectRunnerCallEvents(event, { phase: 'planning', sequence: 0 }))
+    .flatMap((event) =>
+      projectRunnerCallEvents(event, { rootDir: '/project', phase: 'planning', sequence: 0 }),
+    )
     .flatMap((event) => (event.type === 'runner_call_activity' ? [event] : []));
 
   expect(output.join('')).toBe('Reading the fixture readers.');
@@ -443,9 +445,10 @@ describe('Claude stream tool lifecycle', () => {
     });
     const toolStages = () =>
       events
-        .flatMap((event) => projectRunnerCallEvents(event, { phase: 'planning', sequence: 0 }))
-        .filter((event) => event.type === 'runner_call_activity' && event.kind !== 'session')
-        .map((event) => (event.type === 'runner_call_activity' ? event.stage : null));
+        .flatMap((event) =>
+          projectRunnerCallEvents(event, { rootDir: '/project', phase: 'planning', sequence: 0 }),
+        )
+        .flatMap((event) => (event.type === 'runner_call_activity' ? [event.stage] : []));
 
     handleLine(
       streamEvent({

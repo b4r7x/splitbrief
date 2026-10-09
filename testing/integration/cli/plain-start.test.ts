@@ -27,6 +27,7 @@ import { buildRetryExhaustedRecoveryIssue } from '../../../src/engine/orchestrat
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { PLAIN_LINE } from '../../e2e/helpers/run-dir-assertions.js';
 
 const mocks = vi.hoisted(() => ({
   runWorkflow: vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>(),
@@ -44,10 +45,6 @@ vi.mock('../../../src/engine/orchestrator/run/workflow.js', async (importOrigina
 });
 
 const TARGET_FILE = 'src/loop.ts';
-
-/** The four line shapes `createStdoutTextSink` writes, and nothing else. */
-const PLAIN_LINE =
-  /^(?:phase|review|done|reviewer checks): \S|^task \S+: (?:done|failed) \(|^reviewer check \S+/;
 
 function isNdjsonRecord(line: string): boolean {
   try {
@@ -134,6 +131,9 @@ describe('splitbrief start --plain', { timeout: 90_000 }, () => {
     const stdout = chunks.join('');
     expect(stdout).toContain('phase: planning');
     expect(stdout).toContain('task T001: done');
+    expect(stdout).toContain(
+      'plan check T001-K1: not run (no test command for an unrecognised stack)',
+    );
 
     const lines = stdout.trimEnd().split('\n').filter(Boolean);
     expect(lines.length).toBeGreaterThan(0);

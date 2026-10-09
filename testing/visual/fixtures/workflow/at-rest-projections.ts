@@ -1155,7 +1155,10 @@ function atRestProjection(input: {
 }
 
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
-  atRestProjection({ id: 'workflow-at-rest-paused', route: { record: AT_REST_PAUSED } }),
+  atRestProjection({
+    id: 'workflow-at-rest-paused',
+    route: { record: AT_REST_PAUSED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-long-park',
     route: { record: AT_REST_LONG_PARK, log: LONG_PARK_LOG },

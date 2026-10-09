@@ -266,7 +266,7 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       model: 'opencode/test-cheap-model',
     });
     expect(events.find((event) => event.type === 'validate')).toBeUndefined();
-    // The fake reviewer chooses no command, so the review names its reason and nothing runs.
+    // The fake reviewer chooses no command, so the review names its reason and runs no reviewer check.
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([
       expect.objectContaining({
         status: 'planned',
@@ -274,7 +274,14 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
         reason: NO_REVIEW_CHECKS.reason,
       }),
     ]);
-    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
+    const checks = events.filter((event) => event.type === 'full_suite');
+    expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
+    expect(
+      checks.map((event) => [event.moment, event.id, event.status, event.command, event.passed]),
+    ).toEqual([
+      ['plan', 'T001-K1', 'running', 'node validate.mjs', undefined],
+      ['plan', 'T001-K1', 'done', 'node validate.mjs', true],
+    ]);
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining([
         'implementer_generate_running',

@@ -18,6 +18,7 @@ import {
 } from '../../providers/api-context-diagnostic.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
+import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -62,7 +63,7 @@ export async function handlePlanningFailure(opts: {
         ...(contextDiagnostic.missingSections.length > 0
           ? [`Missing: ${contextDiagnostic.missingSections.join(', ')}`]
           : []),
-        'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+        `Pick a plan seat with a larger context in /crew plan, then choose ${recoveryActionLabel('retry-same-worker')}.`,
       ],
       // The estimates stay in facts: `details[]` renders inline and truncates.
       facts: apiContextRecoveryFacts(contextDiagnostic),

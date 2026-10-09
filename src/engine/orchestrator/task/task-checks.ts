@@ -123,6 +123,18 @@ export async function runTaskChecks(opts: {
     if (run.status === 'fail' && fresh.length === 0) settled.add(id);
     runs.push(run);
   }
+  const ranReviewCommands = runs.flatMap((run) => {
+    const command = reviewCommands.get(run.checkId);
+    return command !== undefined && (run.status === 'pass' || run.status === 'fail')
+      ? [command]
+      : [];
+  });
+  if (ranReviewCommands.length > 0) {
+    state = transitionAndSave({ projectDir: wctx.projectDir, sessionId: wctx.sessionId }, state, {
+      type: 'SET_PENDING_REVIEW_COMMANDS',
+      commands: [...new Set([...(state.pendingReviewCommands ?? []), ...ranReviewCommands])],
+    });
+  }
   state = await recordTaskCheckRuns({
     wctx,
     state,

@@ -12,9 +12,11 @@ import {
   PTY_CHILD_PROJECT_ENV,
   PTY_EDIT_INPUT,
   PTY_EDITOR_FINISHED_MARKER,
+  PTY_EDITOR_OVERLAY_FOOTER,
   PTY_EDITOR_SENTINEL_ENV,
   PTY_EDITOR_STARTED_MARKER,
   PTY_EXIT_INPUT,
+  PTY_EXTERNAL_EDIT_INPUT,
   PTY_SUBMIT_INPUT,
 } from './pty/contract.js';
 import { runPtySmoke, safeChildEnvironment } from './pty/run.js';
@@ -72,6 +74,8 @@ function fakeCapability(mode: 'success' | 'silent' | 'early-exit' | 'missing-fin
         if (data === PTY_APPROVAL_PREFIX) {
           emitData(`› ${PTY_APPROVAL_PREFIX}`);
         } else if (data === PTY_EDIT_INPUT) {
+          emitData(`ctrl+s save · ${PTY_EDITOR_OVERLAY_FOOTER} · esc cancel`);
+        } else if (data === PTY_EXTERNAL_EDIT_INPUT) {
           emitData(
             `${PTY_EDITOR_STARTED_MARKER}:2147483647\n${PTY_EDITOR_FINISHED_MARKER}:2147483647\n`,
           );
@@ -386,6 +390,7 @@ describe('PTY behavior smoke', () => {
     expect(fake.state.writes).toEqual([
       PTY_APPROVAL_PREFIX,
       PTY_EDIT_INPUT,
+      PTY_EXTERNAL_EDIT_INPUT,
       PTY_APPROVAL_SUFFIX,
       PTY_SUBMIT_INPUT,
       PTY_EXIT_INPUT,
