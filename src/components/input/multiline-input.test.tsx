@@ -434,6 +434,38 @@ describe('MultilineInput astral-plane editing', () => {
       { timeout: 5000 },
     );
   });
+
+  it('runs an explicit shortcut inside the suppression window that follows Ctrl+U', async () => {
+    const shortcut = vi.fn();
+    const ui = renderFeature(
+      <Harness
+        keyBindings={{ shortcut: (input, key) => key.ctrl && input === 'e' }}
+        onShortcut={shortcut}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+
+    ui.stdin.write('ab');
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('value:ab'), { timeout: 5000 });
+
+    // A frozen clock holds the window that Ctrl+U opens, so every later key arrives inside it.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(Date.now());
+    try {
+      await flushEffects();
+      ui.stdin.write(CTRL_U);
+      await flushEffects();
+      ui.stdin.write('x');
+      await flushEffects();
+      ui.stdin.write(CTRL_E);
+      await vi.waitFor(() => expect(shortcut).toHaveBeenCalledTimes(1), { timeout: 5000 });
+      expect(ui.lastFrame() ?? '').toContain('value:');
+      expect(ui.lastFrame() ?? '').not.toContain('value:ab');
+      expect(ui.lastFrame() ?? '').not.toContain('value:x');
+    } finally {
+      now.mockRestore();
+    }
+  });
 });
 
 // The atom is the input's half of the draft contract: the parent says where the indivisible spans
