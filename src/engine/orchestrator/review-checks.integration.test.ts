@@ -738,6 +738,49 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
     });
   });
 
+  // C3 review: a base commit Git could not check out crashed the review and left the base row
+  // running.
+  it('marks a red not verified with the Git error when the run base cannot be checked out', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-checkout' }, async (run) => {
+      const unreachable = 'f'.repeat(40);
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        state: {
+          workspace: { ...run.workspace, base: { ...run.workspace.base, head: unreachable } },
+        },
+        answer: (_command, at) => (at === 'workspace' ? { red: NEW_RED } : 'pass'),
+      });
+
+      expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+      expect(
+        rows(events)
+          .filter((row) => row.moment === 'base')
+          .map((row) => [row.status, row.passed, row.newFailures, row.notVerified]),
+      ).toEqual([
+        ['running', undefined, undefined, undefined],
+        ['done', false, 0, 1],
+      ]);
+      const settled = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+      expect(settled?.detail).toContain('the run base could not be checked out');
+      expect(settled?.detail).toContain(unreachable);
+      expect(sectionOf(outcome)).toContain(
+        '- V1 `npm test`: failed (' +
+          NEW_RED +
+          '), not verified at the run base (the run base could not be checked out',
+      );
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'SPLITBRIEF could not re-run it at the run base (the run base could not be checked out',
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(
+        'failed at the run base too',
+      );
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')).toBeDefined();
+      expect(logged.find((entry) => entry.id === 'V1')).not.toHaveProperty('base');
+    });
+  });
+
   // L4: the base re-run of a live run was red for reasons nobody could read; its output was dropped.
   it('records the base re-run output on the check evidence beside the workspace output', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-base-output' }, async (run) => {

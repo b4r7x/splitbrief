@@ -502,6 +502,7 @@ type EvidenceLedger = {
       exitCode?: number;
       output?: string;           // bounded, redacted tail
       preExisting?: string[];    // failure keys the same reviewer command also shows at the run base
+      base?: { exitCode?: number; output?: string };  // the run base re-run of a red reviewer check: its exit code and bounded output
       artifacts?: Array<{ path: string; sha256: string }>;
       workspaceSnapshotId?: string;
       ts: string;

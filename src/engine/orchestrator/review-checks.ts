@@ -33,6 +33,7 @@ import { buildReviewChecksPrompt, type ProjectFileText } from '../spec/prompts/r
 import { recordCheckRuns } from './evidence/record-checks.js';
 import { publishReviewCheck, publishReviewChecksPlan } from './events.js';
 import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.js';
+import { runBaseTreeError } from './isolation/errors.js';
 import { runReviewerCall } from './review-call.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
@@ -150,7 +151,8 @@ function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
  * The keys of a red command that the same command text also shows at the run base, or why the
  * re-run at the run base could not tell. A red base re-run proves a pre-existing failure only when
  * both runs name their failures: with a placeholder on either side nothing is pre-existing, and
- * `notVerified` says why.
+ * `notVerified` says why. A run base that Git cannot check out leaves every key not verified, with
+ * the Git error as the reason.
  */
 async function preExistingKeys(input: {
   id: string;
@@ -172,15 +174,33 @@ async function preExistingKeys(input: {
     command: input.command,
     moment: 'base',
   });
-  const atBase = await withRunBaseTree(input.base, async ({ dir, incomplete }) => {
-    const [run] = await runChecks([input.id], {
-      ...input.checkOptions,
-      projectDir: dir,
-      base: undefined,
-      checkoutDir: undefined,
+  let atBase: { run: CheckRunResult; incomplete: string | undefined } | undefined;
+  try {
+    atBase = await withRunBaseTree(input.base, async ({ dir, incomplete }) => {
+      const [run] = await runChecks([input.id], {
+        ...input.checkOptions,
+        projectDir: dir,
+        base: undefined,
+        checkoutDir: undefined,
+      });
+      return run === undefined ? undefined : { run, incomplete };
     });
-    return run === undefined ? undefined : { run, incomplete };
-  });
+  } catch (err) {
+    if (!runBaseTreeError.isCheckoutFailed(err)) throw err;
+    publishReviewCheck(input.notices, {
+      status: 'done',
+      id: input.id,
+      command: input.command,
+      moment: 'base',
+      passed: false,
+      detail: err.message,
+      duration: Date.now() - startedAt,
+      newFailures: 0,
+      preExisting: 0,
+      notVerified: input.failure.keys.length,
+    });
+    return { keys: [], notVerified: err.message };
+  }
   if (atBase === undefined || (atBase.run.status !== 'pass' && atBase.run.status !== 'fail')) {
     publishReviewCheck(input.notices, {
       status: atBase?.run.status === 'refused' ? 'refused' : 'not-run',
@@ -584,7 +604,9 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         text: `Reviewer check ${chosen.id} (${chosen.command}) failed ${
           notVerified === undefined
             ? `with new failures: ${fresh.join('; ')}.`
-            : `(${fresh.join('; ')}) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
+            : run.base === undefined
+              ? `(${fresh.join('; ')}) and SPLITBRIEF could not re-run it at the run base (${notVerified}); the reviewer decides.`
+              : `(${fresh.join('; ')}) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
         } ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
         checkIds: [chosen.id],
         command: chosen.command,
@@ -613,7 +635,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const section = [
     '## Reviewer checks',
     '',
-    'Before this review SPLITBRIEF ran the commands you chose, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. A failure marked not verified at the run base is red at the run base too, but SPLITBRIEF could not show it is the same failure: decide from the output. Each new or not verified failure is a pending input.',
+    'Before this review SPLITBRIEF ran the commands you chose, in the run workspace; their output is in the Checks Log. A failure marked pre-existing also fails at the run base: raise no finding for it. A failure marked not verified at the run base is red at the run base too, but SPLITBRIEF could not show it is the same failure, or SPLITBRIEF could not re-run it there: decide from the output. Each new or not verified failure is a pending input.',
     '',
     ...lines,
     ...waitingLines,

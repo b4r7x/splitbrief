@@ -1,4 +1,6 @@
-import { error } from '../../../utils/error.js';
+import { error, matches } from '../../../utils/error.js';
+import { labelError } from '../../../utils/format-errors.js';
+import { redactSecrets } from '../../../utils/redact.js';
 
 export const worktreeError = {
   nameRequired: () => error('worktree-name-required', 'Worktree name is required.'),
@@ -47,6 +49,23 @@ export const worktreeError = {
       'worktree-isolation-path-overlap',
       'Isolation worktree directory overlaps the project root or repository git root.',
     ),
+} as const;
+
+export const runBaseTreeError = {
+  checkoutFailed: (cause: unknown) =>
+    error(
+      'run-base-checkout-failed',
+      redactSecrets(
+        labelError('the run base could not be checked out', cause)
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== '')
+          .join('; '),
+      ),
+      undefined,
+      cause,
+    ),
+  isCheckoutFailed: matches('run-base-checkout-failed'),
 } as const;
 
 export const attemptCleanupError = {
