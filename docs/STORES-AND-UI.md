@@ -116,6 +116,10 @@ Runtime state of the active workflow run.
 
 Promise-based gates. `openApprovalPrompt(request)` returns a promise. The store holds the pending request and its `resolve` function. The UI renders the prompt, the user acts, the component calls `closeApprovalPrompt(response)`, and the promise resolves. The engine continues.
 
+### Reviewer checks card -- `src/stores/review-checks-prompt/`
+
+The same promise-based gate for `validation.approve_checks: ask`. `openReviewChecksPrompt(request)` holds the reviewer's chosen commands. The workflow screen renders `ReviewChecksCard` (`src/features/workflow/review-checks/card.tsx`) above the composer, and `⏎` on **Run all** or **Skip all** calls `closeReviewChecksPrompt('run' | 'skip')`. A stop or a teardown closes the card with no answer: a stop aborts the review, and a card closed in any other way runs none of the commands and records `the reviewer checks card closed without an answer`.
+
 ---
 
 ## The multi-store hook

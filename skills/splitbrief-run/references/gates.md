@@ -21,8 +21,8 @@ Record the command and its source in plan.json and the plan block. Run commands 
 - At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, an ordinary brief runs no check: only a caller that names checks runs them, such as a consult `verify`.
 - Before each review, with End-of-run checks on, the reviewer reads the project in the plan call and chooses at most 6 reviewer checks (`V1`, `V2`, …) that verify the change, each with a reason, plus the related tests it declines and why. A task-cadence review chooses the tests related to the changed files.
 - A failed plan call halts the review the same way a failed verdict call does. It is never a pass.
-- Run each reviewer check in the run workspace under the command policy. Refuse a reviewer check whose package script or task file the run changed; a plan or task check is never refused for that.
-- Stop at the first reviewer check with new failures; every later one is recorded `not run`. Re-run a red reviewer check at the run base with the same text: a failure also red there is pre-existing. Plan checks, task checks and the Apply re-check never re-run at the run base.
+- Run each reviewer check in the run workspace under the reviewer command policy: any installed program of any language, but no shell syntax, program run by path, inline code, `npx` without `--no-install`, download-and-run launcher or setup command. Refuse a reviewer check whose package script, task file or interpreter script the run changed; a plan or task check is never refused for that. Name each refused reviewer check with its reason.
+- Stop at the first reviewer check with new failures; every later one is recorded `not run`. Re-run a red reviewer check at the run base with the same text: a failure also red there is pre-existing. A timeout, or a red with no failure keys, is never pre-existing: report it as not verified at the run base and send it to the reviewer. Plan checks, task checks and the Apply re-check never re-run at the run base.
 - A red required check, or a reviewer check with new failures, becomes a pending input; triage turns it into fix tasks, and no completed brief reopens. The fix task carries the red it answers: the check id, its command, its output and its file.
 - The brief gate of a fix task runs the check of its red again under the same command policy; a red reviewer check also re-runs at the run base, as at review. A still-red fix fails its gate and retries through its ladder before the next review.
 - With End-of-run checks off, no reviewer check runs and one row says so. Plan and task checks still run.
@@ -117,12 +117,12 @@ End-of-run checks are on by default (`validation.end_checks`). Before each revie
 - When the reviewer chooses no reviewer check, it gives the reason. Record the reason; never skip in silence.
 - A failed plan call halts the review the same way a failed verdict call does. It is never a pass.
 
-Run the reviewer checks in order, in the run workspace, under the command policy:
+Run the reviewer checks in order, in the run workspace, under the reviewer command policy. It admits any installed program of any language, for example `mvn test`, `bundle exec rspec` or `make check`:
 
-- Refuse a reviewer check that breaks the command policy, and a reviewer check whose package script or task file this run changed. Name each refused reviewer check with its reason. A plan or task check is never refused for a changed script: a plan may add a script and check it.
-- When a reviewer check is red, re-run it on the run base copy with the same command text. A failure also red there is pre-existing: report it, and route no task to it. Only reviewer checks re-run at the run base. Plan checks, task checks and the Apply re-check do not.
+- Refuse a reviewer check that breaks a rule of the reviewer command policy: shell syntax or an environment prefix, a program run by path (`./mvnw`), a shell or a wrapper, inline code, `npx` without `--no-install`, a download-and-run launcher, a setup command (`npm ci`, `pip install`, `go generate`), or a program that does not verify a change. Refuse a reviewer check whose package script, task file or interpreter script this run changed. Name each refused reviewer check with its reason. A plan or task check is never refused for a changed script: a plan may add a script and check it.
+- When a reviewer check is red, re-run it on the run base copy with the same command text. A failure also red there is pre-existing: report it, and route no task to it. A timeout, or a red with no failing test name and no diagnostic line, is never pre-existing: report it as not verified at the run base, and the reviewer decides. Only reviewer checks re-run at the run base. Plan checks, task checks and the Apply re-check do not.
 - Stop at the first reviewer check with new failures. Record each later reviewer check as `not run: <id> failed`.
-- Each new failure becomes a pending input. The review answer must address every pending input.
+- Each new or not verified failure becomes a pending input. The review answer must address every pending input.
 
 With End-of-run checks off, no reviewer check runs before a review. Record one row that says so. Plan and task checks still run.
 No completed task reopens. Triage each red into appended fix tasks with new ids.

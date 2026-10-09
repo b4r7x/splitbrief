@@ -13,12 +13,17 @@ import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import { saveState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
 import * as commandRunner from '../../lib/process/spawn/run-command.js';
 import type { EngineEvent, EngineEventOf } from '../events/types.js';
 import { recordLocalTaskEvidence } from './evidence/task.js';
-import { runReviewChecks, type ReviewChecksOutcome } from './review-checks.js';
+import {
+  REVIEW_CHECKS_SKIP_REASON,
+  runReviewChecks,
+  type ReviewChecksOptions,
+  type ReviewChecksOutcome,
+} from './review-checks.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -50,6 +55,8 @@ async function reviewChecks(
     scope?: 'final' | 'task';
     taskIds?: string[];
     changedFiles?: string[];
+    onApproval?: ReviewChecksOptions['onApproval'];
+    signal?: AbortSignal;
   },
 ) {
   const tasks = opts.tasks ?? [
@@ -99,6 +106,8 @@ async function reviewChecks(
     scope: opts.scope ?? 'final',
     taskIds: opts.taskIds ?? tasks.map((task) => task.id),
     changedFiles: opts.changedFiles ?? ['src/a.ts'],
+    onApproval: opts.onApproval,
+    signal: opts.signal,
   });
   return { outcome, events, commands, checksCall, prompts, ref };
 }
@@ -246,6 +255,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         }),
         expect.objectContaining({ id: 'V2', moment: 'pre-review', passed: true }),
       ]);
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).not.toHaveProperty('detail');
       expect(outcome.state.pendingTriage).toBeUndefined();
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
@@ -338,18 +350,150 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
     });
   });
 
-  it('marks a timeout at both the workspace and the run base pre-existing', async () => {
+  it('marks a timeout at both the workspace and the run base not verified, never pre-existing', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-timeout-old' }, async (run) => {
-      const { outcome } = await reviewChecks(run, {
-        plan: plan([['V1', 'npm test']]),
-        answer: (command) => ({
-          throws: processError.timeout({ command, timeoutMs: 1000, output: '' }),
-        }),
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        plan: plan([
+          ['V1', 'npm test'],
+          ['V2', 'npx --no-install vitest run'],
+        ]),
+        answer: (command) =>
+          command === 'npm test'
+            ? { throws: processError.timeout({ command, timeoutMs: 1000, output: '' }) }
+            : 'pass',
       });
 
-      expect(outcome.state.pendingTriage).toBeUndefined();
+      expect(commands.map((entry) => `${entry.command} @ ${entry.at}`)).toEqual([
+        'npm test @ workspace',
+        'npm test @ base',
+      ]);
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).toMatchObject({
+        id: 'V1',
+        passed: false,
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+        detail: 'both runs timed out',
+      });
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({ id: 'V1.1', file: null, checkIds: ['V1'] }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'failed (timed out) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs timed out); the reviewer decides.',
+      );
       expect(sectionOf(outcome)).toContain(
-        'failed, 0 new failure(s); 1 pre-existing (also red at the run base): timed out',
+        '- V1 `npm test`: failed (timed out), not verified at the run base (both runs timed out); the reviewer decides',
+      );
+      expect(sectionOf(outcome)).toContain(
+        '- V2 `npx --no-install vitest run`: not run, V1 failed',
+      );
+      expect(sectionOf(outcome)).toContain('A failure marked not verified at the run base');
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('marks two reds without diagnostics and the same exit code not verified, never pre-existing', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-silent-both' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: () => ({ red: '' }),
+      });
+
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+      expect(sectionOf(outcome)).toContain(
+        '- V1 `npm test`: failed (exited with code 1), not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides',
+      );
+    });
+  });
+
+  it.each([
+    {
+      name: 'an npm script banner',
+      command: 'npm test',
+      files: FILES,
+      red: '> x@1.0.0 test\n> node -e "process.exit(1)"',
+    },
+    {
+      name: 'a make error summary',
+      command: 'make check',
+      files: { ...FILES, Makefile: 'check:\n\t@exit 1\n' },
+      red: 'make: *** [Makefile:2: check] Error 1',
+    },
+  ])('marks two reds that print only $name not verified, never pre-existing', async (red) => {
+    await withApplyRun(red.files, { sessionId: 'sess-checks-runner-lines' }, async (run) => {
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        plan: plan([['V1', red.command]]),
+        answer: () => ({ red: red.red }),
+      });
+
+      expect(commands).toEqual([
+        { command: red.command, at: 'workspace' },
+        { command: red.command, at: 'base' },
+      ]);
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).toMatchObject({
+        id: 'V1',
+        passed: false,
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+        detail: 'both runs exited with code 1 without diagnostics',
+      });
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({ id: 'V1.1', file: null, checkIds: ['V1'], output: red.red }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'failed (exited with code 1) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs exited with code 1 without diagnostics); the reviewer decides.',
+      );
+      expect(sectionOf(outcome)).toContain(
+        `- V1 \`${red.command}\`: failed (exited with code 1), not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides`,
+      );
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('marks a red with diagnostics not verified when the run base re-run times out', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-timeout' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (command, at) =>
+          at === 'workspace'
+            ? { red: OLD_RED }
+            : { throws: processError.timeout({ command, timeoutMs: 1000, output: '' }) },
+      });
+
+      expect(sectionOf(outcome)).toContain(
+        'not verified at the run base (the run base re-run timed out); the reviewer decides',
+      );
+      expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1 });
+    });
+  });
+
+  it('runs a reviewer check of any stack, and a package script without plan approval', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-any-stack' }, async (run) => {
+      const { outcome, commands } = await reviewChecks(run, {
+        plan: plan([
+          ['V1', 'mvn test'],
+          ['V2', 'npm run lint'],
+          ['V3', './gradlew test'],
+        ]),
+        state: { approve: 'none' },
+      });
+
+      expect(commands).toEqual([
+        { command: 'mvn test', at: 'workspace' },
+        { command: 'npm run lint', at: 'workspace' },
+      ]);
+      expect(sectionOf(outcome)).toContain(
+        '- V3 `./gradlew test`: refused, runs a program by path',
       );
     });
   });
@@ -593,6 +737,152 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(prompt).toContain('m'.repeat(8_000));
       expect(prompt).not.toContain('### go.mod');
       expect(prompt).not.toContain('example.test/late');
+    });
+  });
+});
+
+describe('runReviewChecks with validation.approve_checks', { timeout: 60_000 }, () => {
+  const ASK = makeConfig({ validation: { approveChecks: 'ask' } });
+  const CHOSEN = plan([
+    ['V1', 'npm test'],
+    ['V2', 'npx --no-install vitest run'],
+  ]);
+
+  it('runs every chosen command without asking under auto', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-auto' }, async (run) => {
+      const onApproval = vi.fn(async () => 'skip' as const);
+      const { outcome, commands } = await reviewChecks(run, { plan: CHOSEN, onApproval });
+
+      expect(onApproval).not.toHaveBeenCalled();
+      expect(commands.map((entry) => entry.command)).toEqual([
+        'npm test',
+        'npx --no-install vitest run',
+      ]);
+      expect(outcome.state.reviewChecks?.skipped).toBeUndefined();
+    });
+  });
+
+  it('shows the chosen commands once and runs them on Run all', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-run' }, async (run) => {
+      const onApproval = vi.fn(async () => 'run' as const);
+      const { outcome, commands } = await reviewChecks(run, {
+        plan: CHOSEN,
+        config: ASK,
+        onApproval,
+      });
+
+      expect(onApproval).toHaveBeenCalledOnce();
+      expect(onApproval).toHaveBeenCalledWith({ scope: 'final', commands: CHOSEN.commands });
+      expect(commands).toHaveLength(2);
+      expect(outcome.state.reviewChecks?.skipped).toBeUndefined();
+      expect(sectionOf(outcome)).not.toContain('SPLITBRIEF ran none');
+    });
+  });
+
+  it('runs none of the commands on Skip all, records the skip and tells the verdict call', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-skip' }, async (run) => {
+      const { outcome, events, commands, ref } = await reviewChecks(run, {
+        plan: CHOSEN,
+        config: ASK,
+        onApproval: async () => 'skip',
+        state: {
+          pendingTriage: {
+            inputs: [
+              {
+                id: 'V1.1',
+                kind: 'defect',
+                source: 'check',
+                file: null,
+                text: 'an earlier red',
+                checkIds: ['V1'],
+              },
+            ],
+          },
+        },
+      });
+
+      expect(commands).toEqual([]);
+      expect(rows(events)).toEqual([]);
+      expect(planned(events).map((event) => [event.status, event.reason])).toEqual([
+        ['planned', null],
+        ['skipped', REVIEW_CHECKS_SKIP_REASON.user],
+      ]);
+      expect(planned(events)[1]?.commands?.map((command) => command.id)).toEqual(['V1', 'V2']);
+      expect(outcome.state.reviewChecks?.skipped).toEqual({
+        reason: REVIEW_CHECKS_SKIP_REASON.user,
+      });
+      expect(loadState(ref)?.reviewChecks?.skipped).toEqual({
+        reason: REVIEW_CHECKS_SKIP_REASON.user,
+      });
+      // The earlier run's inputs named commands this review chose again and did not run.
+      expect(outcome.state.pendingTriage?.inputs ?? []).toEqual([]);
+      const section = sectionOf(outcome);
+      expect(section).toContain(
+        `SPLITBRIEF ran none of the commands you chose before this review because ${REVIEW_CHECKS_SKIP_REASON.user}. No command below is a pass.`,
+      );
+      expect(section).toContain('unverified');
+      expect(section).toContain(
+        `- V2 \`npx --no-install vitest run\`: not run, ${REVIEW_CHECKS_SKIP_REASON.user}`,
+      );
+    });
+  });
+
+  it('runs none of the commands in a run with no screen to ask on, and says why', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-headless' }, async (run) => {
+      const { outcome, events, commands } = await reviewChecks(run, { plan: CHOSEN, config: ASK });
+
+      expect(commands).toEqual([]);
+      expect(planned(events).at(-1)).toMatchObject({
+        status: 'skipped',
+        reason: 'validation.approve_checks is ask and this run has no screen to ask on',
+      });
+      expect(outcome.state.reviewChecks?.skipped?.reason).toBe(REVIEW_CHECKS_SKIP_REASON.noScreen);
+      expect(sectionOf(outcome)).toContain(REVIEW_CHECKS_SKIP_REASON.noScreen);
+    });
+  });
+
+  it('never reads a card closed without an answer as Run all', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-closed' }, async (run) => {
+      const { outcome, commands } = await reviewChecks(run, {
+        plan: CHOSEN,
+        config: ASK,
+        onApproval: async () => undefined,
+      });
+
+      expect(commands).toEqual([]);
+      expect(outcome.state.reviewChecks?.skipped?.reason).toBe(REVIEW_CHECKS_SKIP_REASON.noAnswer);
+    });
+  });
+
+  it('stops the review when the run is stopped while the card waits', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-abort' }, async (run) => {
+      const controller = new AbortController();
+      await expect(
+        reviewChecks(run, {
+          plan: CHOSEN,
+          config: ASK,
+          signal: controller.signal,
+          onApproval: async () => {
+            controller.abort();
+            return undefined;
+          },
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  it('shows no card for a plan that chose no command', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-approve-none' }, async (run) => {
+      const onApproval = vi.fn(async () => 'skip' as const);
+      const { outcome, events } = await reviewChecks(run, {
+        plan: { commands: [], declined: [], reason: 'the change edits only a comment' },
+        config: ASK,
+        onApproval,
+      });
+
+      expect(onApproval).not.toHaveBeenCalled();
+      expect(planned(events).map((event) => event.status)).toEqual(['planned']);
+      expect(outcome.state.reviewChecks?.skipped).toBeUndefined();
     });
   });
 });

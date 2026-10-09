@@ -165,9 +165,10 @@ Two separate communication mechanisms serve different purposes.
 - `onPlannerReply(reply)` — the planner asked a round of typed questions; the session waits for the answers
 - `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
 - `onTieredApproval(request)` — a declared implementer write to a protected path needs confirmation
+- `onReviewChecksApproval(request)` — with `validation.approve_checks: ask`, the reviewer checks wait for Run all (`'run'`) or Skip all (`'skip'`); `undefined` is a card closed without an answer
 - `onComplete(summary)` — workflow finished
 
-In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, recovery exits non-zero, and a protected write is denied with `APPROVAL_REQUIRED`.
+In **interactive mode**, the TUI fulfills callbacks by switching input mode (e.g., showing an approval prompt) and resolving the promise when the user acts. In **headless mode**, the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, recovery exits non-zero, a protected write is denied with `APPROVAL_REQUIRED`, and with `validation.approve_checks: ask` no reviewer check runs (`review_checks` with `status: 'skipped'`).
 
 The split exists because events and callbacks solve different problems. Events push state outward (anyone can listen). Callbacks pull decisions inward (the workflow needs an answer before it can proceed). Merging them would mean either every event blocks until consumed, or every callback becomes lossy.
 
@@ -351,27 +352,31 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // No live run publishes it on the bus; sessions saved before the reviewer checks keep it.
 // The pre_validation hook payload takes this shape without `stages`.
 
-{ type: 'review_checks'; scope: 'final' | 'task'; status: 'planned' | 'off';
+{ type: 'review_checks'; scope: 'final' | 'task'; status: 'planned' | 'off' | 'skipped';
   commands?: { id: string; command: string; reason: string }[];
   declined?: { target: string; reason: string }[];
   reason?: string | null }
 // One per review that runs reviewer checks. `planned` carries the reviewer's choice:
 // the reviewer checks (ids V1, V2, …), each related test it declined, and the reason
 // when it chose none. `off` means validation.end_checks is false: no reviewer check
-// ran, and plan and task checks still ran.
+// ran, and plan and task checks still ran. `skipped` follows `planned` when
+// validation.approve_checks is ask and none of the chosen commands ran: it carries
+// the commands and the reason (Skip all, a card closed without an answer, or no screen).
 
 { type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused';
   id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;
   moment: 'pre-review' | 'base' | 'brief';
   passed?: boolean; detail?: string; duration?: number;
-  newFailures?: number; preExisting?: number }
+  newFailures?: number; preExisting?: number; notVerified?: number }
 // One command run before a review. `id` names the reviewer check (V1, …); an event
 // without `id` comes from an older session and carries its full-suite `stage`.
 // `passed` and `duration` are set on the done event. `detail` says why a command
 // did not run (`V1 failed`) or was refused. `moment: 'base'` is the re-run of a red
 // command at the run base with the same command text; its done event counts the
-// failures that are new and pre-existing. `moment: 'brief'` is a fix brief running
-// the reviewer check it answers again, with the command the finding carries.
+// failures that are new, pre-existing and not verified at the run base, and a red
+// base done event's `detail` says why a failure is not verified. `moment: 'brief'`
+// is a fix brief running the reviewer check it answers again, with the command the
+// finding carries, under the reviewer command policy.
 
 // Recovery
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;

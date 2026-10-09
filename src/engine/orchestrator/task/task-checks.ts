@@ -18,7 +18,10 @@ import { recordCheckRuns } from '../evidence/record-checks.js';
 export type TaskChecksResult = Readonly<{
   state: WorkflowState;
   runs: CheckRunResult[];
-  /** The red reviewer checks whose every failure is also red at the run base. */
+  /**
+   * The red reviewer checks whose every failure is also red at the run base. A red the run base
+   * re-run cannot verify (a timeout, or no diagnostics) keeps its keys fresh and is never settled.
+   */
   settled: ReadonlySet<string>;
 }>;
 

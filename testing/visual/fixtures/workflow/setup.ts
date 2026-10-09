@@ -9,6 +9,10 @@ import {
   closeApprovalPrompt,
   openApprovalPrompt,
 } from '../../../../src/stores/approval-prompt/prompt.js';
+import {
+  closeReviewChecksPrompt,
+  openReviewChecksPrompt,
+} from '../../../../src/stores/review-checks-prompt/prompt.js';
 import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { questionPromptStore } from '../../../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../../../src/stores/ui/controls.js';
@@ -35,6 +39,7 @@ function getReviewFilePath(review: NonNullable<WorkflowFixtureProjection['review
 
 function teardownWorkflowFixture(): void {
   closeApprovalPrompt();
+  closeReviewChecksPrompt();
   teardownVisualFixture();
 }
 
@@ -72,6 +77,10 @@ function applyProjection(projection: WorkflowFixtureProjection): void {
       phase: 'reviewing-plan',
     });
   }
+
+  if (projection.reviewChecksPrompt !== undefined) {
+    void openReviewChecksPrompt(projection.reviewChecksPrompt);
+  }
 }
 
 async function setupProjection(
@@ -84,6 +93,7 @@ async function setupProjection(
     );
   }
   closeApprovalPrompt();
+  closeReviewChecksPrompt();
   await createWorkflowBaseFixture(
     projection.feature,
     projection.resumeState,

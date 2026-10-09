@@ -781,6 +781,12 @@ const createSettingsEndChecksOffFixture: FixtureFactory = () =>
     seed: seedConfig({ validation: { endChecks: false } }),
     focus: 'validation.endChecks',
   });
+const createSettingsApproveChecksAskFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: seedConfig({ validation: { approveChecks: 'ask' } }),
+    focus: 'validation.approveChecks',
+  });
 const createSettingsIsolationCheckoutFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -1724,6 +1730,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
   [scenarioId('overlay-settings-end-checks'), createSettingsEndChecksFixture],
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
+  [scenarioId('overlay-settings-approve-checks-ask'), createSettingsApproveChecksAskFixture],
   [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
   [scenarioId('overlay-planner-picker-catalog'), createPlannerPickerCatalogFixture],

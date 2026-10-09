@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { REVIEWER_COMMAND_RULES } from '../../orchestrator/validation/reviewer-command-policy.js';
 import { buildReviewChecksPrompt, type ReviewChecksPromptInput } from './review-checks.js';
 
 function prompt(overrides: Partial<ReviewChecksPromptInput> = {}): string {
@@ -6,8 +7,6 @@ function prompt(overrides: Partial<ReviewChecksPromptInput> = {}): string {
     scope: 'final',
     taskIds: ['T001', 'T002'],
     changedFiles: ['src/a.ts', 'src/a.test.ts'],
-    npmScriptsApproved: true,
-    programs: ['cargo', 'npm', 'pytest'],
     workspaceInstructions: 'The run workspace is `/ws`.',
     ...overrides,
   });
@@ -31,15 +30,13 @@ describe('buildReviewChecksPrompt', () => {
     expect(prompt({ changedFiles: [] })).toContain('## Changed files\n\nNo file changed.');
   });
 
-  it('names the programs the command policy starts', () => {
-    expect(prompt()).toContain('starts only these programs: `cargo`, `npm`, `pytest`.');
-  });
-
-  it('admits package scripts only when the plan approved them', () => {
-    expect(prompt()).toContain('A package script runs as `npm run <script>`');
-    const refused = prompt({ npmScriptsApproved: false });
-    expect(refused).toContain('Package scripts (`npm run <script>`) are refused in this run');
-    expect(refused).not.toContain('A package script runs as `npm run <script>`');
+  it('admits any installed program and states every rule of the reviewer command policy', () => {
+    const text = prompt();
+    expect(text).toContain("Any installed program of the project's stack can run");
+    for (const rule of REVIEWER_COMMAND_RULES) expect(text).toContain(`  - ${rule}`);
+    expect(text).toContain('Reviewer package scripts need no plan approval.');
+    expect(text).toContain('checks every reviewer `npm run` script against the run base.');
+    expect(text).not.toContain('starts only these programs');
   });
 
   it('tells a workspace reader where to read, and fences the files of a seat that reads none', () => {

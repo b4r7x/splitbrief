@@ -15,6 +15,10 @@ function checksSummary(event: Extract<EngineEvent, { type: 'checks_run' }>): str
 
 function reviewChecksLines(event: Extract<EngineEvent, { type: 'review_checks' }>): string[] {
   if (event.status === 'off') return ['reviewer checks: off'];
+  if (event.status === 'skipped') {
+    const ids = (event.commands ?? []).map((command) => command.id).join(', ');
+    return [`reviewer checks: not run ${ids} (${event.reason ?? 'no reason given'})`];
+  }
   const lines =
     (event.commands ?? []).length === 0
       ? [`reviewer checks: none (${event.reason ?? 'no reason given'})`]
@@ -43,7 +47,12 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
       event.newFailures !== undefined &&
       event.preExisting !== undefined
     ) {
-      const split = baseSplit({ newFailures: event.newFailures, preExisting: event.preExisting });
+      const split = baseSplit({
+        newFailures: event.newFailures,
+        preExisting: event.preExisting,
+        notVerified: event.notVerified,
+        reason: event.detail,
+      });
       const why = split.why === null ? '' : `${SOFT_SEP}${split.why}`;
       return `${label} ${event.id}: ${split.verdict}${why}`;
     }
@@ -69,6 +78,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   reviewer check V1: refused (<detail>) | not run (<detail>)
  *   base re-run V1: passes | fails
  *   base re-run V1: <M> new, <N> pre-existing
+ *   base re-run V1: [<M> new, <N> pre-existing, ]<K> not verified at the run base · <reason>
  *   base re-run V1: pre-existing · all <N> failures also fail before this run's changes
  *   base re-run V1: pre-existing · the failure also fails before this run's changes
  *   base re-run V1: refused (<detail>) | not run (<detail>)

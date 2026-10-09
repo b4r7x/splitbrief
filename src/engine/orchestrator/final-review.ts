@@ -476,6 +476,7 @@ export async function runFinalReviewPhase(opts: {
         taskIds: scope.taskIds,
         changedFiles,
         signal: opts.signal,
+        onApproval: callbacks.onReviewChecksApproval,
       });
       state = checks.state;
       opts.setTrackedState?.(state);

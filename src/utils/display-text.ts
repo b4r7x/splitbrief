@@ -71,6 +71,16 @@ export function sanitizeTerminalDisplayText(
 }
 
 /**
+ * Text on one row: each run of line breaks and tabs is one space, so the words they separated stay
+ * apart, then other controls are stripped, secrets redacted and spaces made single.
+ */
+export function oneLineDisplayText(text: string): string {
+  return sanitizeTerminalDisplayText(text.replace(/[\t\n\v\f\r]+/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * A one-line label with its invisible format characters (`\p{Cf}`) removed and its spaces
  * single. `stripTerminalControls` keeps them, because a ZWJ binds an emoji sequence in prose.
  */

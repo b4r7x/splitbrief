@@ -21,9 +21,11 @@ export function fileFromFailureKey(key: string): string | null {
 export function failingFilesFromOutput(output: string, workspaceDir: string): string[] {
   const files: string[] = [];
   const seen = new Set<string>();
-  for (const key of extractFailureKeys(output)) {
+  const { keys, diagnostics } = extractFailureKeys(output);
+  for (const key of keys) {
     const named = fileFromFailureKey(key);
-    if (named === null) continue;
+    // An output line that is no diagnostic names a file only when the whole line is its path.
+    if (named === null || (!diagnostics && named !== normalizeProjectRelativePath(key))) continue;
     const file = isAbsolute(named)
       ? normalizeProjectRelativePath(relative(workspaceDir, named))
       : named;

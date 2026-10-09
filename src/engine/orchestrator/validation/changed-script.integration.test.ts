@@ -159,6 +159,67 @@ describe('changedDefinitionRefusal', { timeout: 60_000 }, () => {
     );
   });
 
+  it('refuses an interpreter script this run changed or created, through a forwarder too', async () => {
+    await withApplyRun(
+      { 'manage.py': 'print("test")\n', artisan: '<?php\n' },
+      { sessionId: 'sess-script-interpreter' },
+      async (run) => {
+        expect(await refusal(run, 'python manage.py test')).toBeNull();
+        writeFileSync(join(run.ws, 'manage.py'), 'print("ok")\n');
+        writeFileSync(join(run.ws, 'check.js'), 'process.exit(0)\n');
+
+        expect(await refusal(run, 'python manage.py test')).toBe(
+          'runs manage.py, which this run changed',
+        );
+        expect(await refusal(run, 'uv run python ./manage.py test')).toBe(
+          'runs manage.py, which this run changed',
+        );
+        expect(await refusal(run, 'node check.js')).toBe('runs check.js, which this run changed');
+        expect(await refusal(run, 'php artisan test')).toBeNull();
+        expect(await refusal(run, 'python -m pytest')).toBeNull();
+      },
+    );
+  });
+
+  it('admits a test file this run created or changed: it is a test, not a check definition', async () => {
+    await withApplyRun(
+      { 'test/old_test.rb': 'puts 1\n', 'lib/a.rb': 'A = 1\n' },
+      { sessionId: 'sess-script-test-file' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'test/old_test.rb'), 'puts 2\n');
+        writeFileSync(join(run.ws, 'test/new_test.rb'), 'puts 3\n');
+        writeFileSync(join(run.ws, 'test/new.test.js'), 'process.exit(0)\n');
+        writeFileSync(join(run.ws, 'lib/check.rb'), 'exit 0\n');
+
+        expect(await refusal(run, 'ruby -Ilib test/new_test.rb')).toBeNull();
+        expect(await refusal(run, 'ruby -Ilib test/old_test.rb')).toBeNull();
+        expect(await refusal(run, 'node --test test/new.test.js')).toBeNull();
+        expect(await refusal(run, 'ruby lib/check.rb')).toBe(
+          'runs lib/check.rb, which this run changed',
+        );
+      },
+    );
+  });
+
+  it('refuses a bun or deno script file this run created', async () => {
+    await withApplyRun(
+      { 'src/a.ts': 'export {};\n' },
+      { sessionId: 'sess-script-bun-deno' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'check.ts'), 'Deno.exit(0);\n');
+
+        expect(await refusal(run, 'bun check.ts')).toBe('runs check.ts, which this run changed');
+        expect(await refusal(run, 'bun run check.ts')).toBe(
+          'runs check.ts, which this run changed',
+        );
+        expect(await refusal(run, 'deno run -A check.ts')).toBe(
+          'runs check.ts, which this run changed',
+        );
+        expect(await refusal(run, 'deno test')).toBeNull();
+      },
+    );
+  });
+
   it('compares with the package.json the run base itself holds, not the checkout baseline', async () => {
     await withApplyRun(
       { 'package.json': PACKAGE },

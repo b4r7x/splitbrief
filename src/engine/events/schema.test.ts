@@ -486,6 +486,15 @@ describe('parseEngineEvent', () => {
     expect(parseEngineEvent({ ...event, moment: 'base', newFailures: 1, preExisting: 2 })).toEqual(
       expect.objectContaining({ moment: 'base', newFailures: 1, preExisting: 2 }),
     );
+    expect(
+      parseEngineEvent({
+        ...event,
+        moment: 'base',
+        newFailures: 0,
+        preExisting: 0,
+        notVerified: 1,
+      }),
+    ).toEqual(expect.objectContaining({ moment: 'base', notVerified: 1 }));
   });
 
   it('accepts a full_suite done event and rejects an unknown moment', () => {

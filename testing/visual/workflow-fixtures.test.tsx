@@ -90,7 +90,10 @@ describe('workflow visual fixtures', () => {
     teardownVisualFixture();
   });
 
-  it('renders every checkpoint through the production App without starting live work', async () => {
+  // One render per projection: the walk grows with the gallery, so it gets the time a walk needs.
+  it('renders every checkpoint through the production App without starting live work', {
+    timeout: 60_000,
+  }, async () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
 

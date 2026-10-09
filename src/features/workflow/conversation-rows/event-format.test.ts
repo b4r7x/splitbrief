@@ -229,7 +229,7 @@ describe('fullSuiteRow', () => {
     } as const;
 
     expect(fullSuiteRow({ ...rerun, passed: false })).toBe(
-      'Base re-run · npm test -- src/legacy.test.ts · fails at the run base too · 2.0s',
+      'Base re-run · npm test -- src/legacy.test.ts · red at the run base too · 2.0s',
     );
     expect(fullSuiteRow({ ...rerun, passed: true })).toBe(
       'Base re-run · npm test -- src/legacy.test.ts · passes at the run base · 2.0s',
@@ -291,8 +291,20 @@ describe('fullSuiteRow for a reviewer check', () => {
       'Base re-run V1 · npm test · passes at the run base · 2.0s',
     );
     expect(fullSuiteRow({ ...base, passed: false })).toBe(
-      'Base re-run V1 · npm test · fails at the run base too · 2.0s',
+      'Base re-run V1 · npm test · red at the run base too · 2.0s',
     );
+    const unverified = {
+      ...base,
+      passed: false,
+      newFailures: 0,
+      preExisting: 0,
+      notVerified: 1,
+      detail: 'both runs timed out',
+    };
+    expect(fullSuiteRow(unverified)).toBe(
+      'Base re-run V1 · npm test · 1 not verified at the run base · 2.0s · both runs timed out',
+    );
+    expect(fullSuiteTone(unverified)).toBe('warning');
     expect(
       fullSuiteRow(
         reviewCheck({ moment: 'base', status: 'refused', detail: 'npm is not on the path' }),
@@ -338,6 +350,23 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteRow(mixed)).toBe('Base re-run V1 · npm test · 1 new, 2 pre-existing · 2.0s');
     expect(fullSuiteTone(allOld)).toBe('warning');
     expect(fullSuiteTone(mixed)).toBe('error');
+  });
+
+  // A red the run base cannot verify as the same failure is neither new nor pre-existing.
+  it('names the failures not verified at the run base as their own part of the split', () => {
+    const base = reviewCheck({ moment: 'base', status: 'done', passed: false, duration: 2_000 });
+    const all = {
+      ...base,
+      newFailures: 1,
+      preExisting: 1,
+      notVerified: 1,
+      detail: 'the run base re-run timed out',
+    };
+
+    expect(fullSuiteRow(all)).toBe(
+      'Base re-run V1 · npm test · 1 new, 1 pre-existing, 1 not verified at the run base · 2.0s · the run base re-run timed out',
+    );
+    expect(fullSuiteTone(all)).toBe('error');
   });
 
   it('paints a red check as an error, a red base re-run and a refusal as warnings, the rest dim', () => {
@@ -419,6 +448,20 @@ describe('reviewChecksRow', () => {
       status: 'off',
     };
     expect(reviewChecksRow(event)).toBe('End-of-run checks · off · no reviewer check ran');
+    expect(reviewChecksDeclinedRows(event)).toEqual([]);
+    expect(reviewChecksTone(event)).toBe('warning');
+  });
+
+  it('names, as a warning, every chosen command that did not run and why', () => {
+    const event = reviewChecksEvent({
+      status: 'skipped',
+      commands: CHOSEN,
+      declined: undefined,
+      reason: 'validation.approve_checks is ask and this run has no screen to ask on',
+    });
+    expect(reviewChecksRow(event)).toBe(
+      'Reviewer checks · not run V1, V2 · validation.approve_checks is ask and this run has no screen to ask on',
+    );
     expect(reviewChecksDeclinedRows(event)).toEqual([]);
     expect(reviewChecksTone(event)).toBe('warning');
   });

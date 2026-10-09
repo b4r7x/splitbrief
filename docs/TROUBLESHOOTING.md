@@ -561,34 +561,31 @@ A commit, a branch switch or a pull in your checkout does not halt the brief: a 
 
 ### Symptom: the run halted with "Tool recipe rejected by Claude Code CLI" and `sandbox required but unavailable`
 
-**Likely cause:** A managed Claude Code policy sets `sandbox.failIfUnavailable` to `true`, and the sandbox cannot start. The Claude Code implementer runs its shell commands in Claude Code's own sandbox. SPLITBRIEF sets `failIfUnavailable` to `false`. Without a managed policy, a sandbox that cannot start does not halt the run: Claude Code prints this warning on stderr and runs the commands without the sandbox.
-
-```text
-⚠ Sandbox disabled: <reason>
-  Commands will run WITHOUT sandboxing. Network and filesystem restrictions will NOT be enforced.
-```
-
-A managed policy wins over SPLITBRIEF's settings. Claude Code then stops at startup and prints this on stderr:
+**Likely cause:** The sandbox of the Claude Code implementer cannot start. The Claude Code implementer runs its shell commands in Claude Code's own sandbox, and SPLITBRIEF sets `sandbox.failIfUnavailable` to `true`. A sandbox that cannot start therefore stops the seat at startup; the seat never runs its commands without the sandbox. Claude Code prints this on stderr:
 
 ```text
 Error: sandbox required but unavailable: <reason>
   sandbox.failIfUnavailable is set — refusing to start without a working sandbox.
 ```
 
-On Linux and WSL2 without `bubblewrap` or `socat`, `<reason>` reads `sandbox is enabled but dependencies are missing: … · install missing tools (e.g. apt install bubblewrap socat) …`. On WSL1 it reads `sandbox is enabled but WSL1 is not supported (requires WSL2)`. SPLITBRIEF halts the brief on the `sandbox required but unavailable` line and spends no retries. The warning line never halts the brief.
+On Linux and WSL2 without `bubblewrap` or `socat`, `<reason>` reads `sandbox is enabled but dependencies are missing: … · install missing tools (e.g. apt install bubblewrap socat) …`. On WSL1 it reads `sandbox is enabled but WSL1 is not supported (requires WSL2)`. SPLITBRIEF halts the brief on the `sandbox required but unavailable` line and spends no retries.
+
+Readiness finds the usual cause before the run starts. On Linux, when an implementer profile is `cli` `claude-code`, the check `runners.sandbox.claude-code` looks for `bwrap` and `socat` on the absolute `PATH` entries, as the seat does, and names each missing program: `Claude Code sandbox cannot start: socat is not on PATH.` It is a blocker when that profile is the default implementer, and a warning for any other profile. The check does not start the sandbox, so a `bwrap` that AppArmor refuses passes readiness and still reaches the startup halt.
+
+Without `failIfUnavailable`, Claude Code prints `⚠ Sandbox disabled: <reason>` and runs the commands without the sandbox. SPLITBRIEF no longer lets the implementer run that way. That warning line never halts the brief.
 
 A related case does not halt at startup. When SPLITBRIEF itself runs inside another sandbox on macOS, for example from a sandboxed agent session, Claude Code starts, but every shell command of the implementer fails with exit 71 (`sandbox_apply: Operation not permitted`). The implementer then cannot run its own checks.
 
 **Fix:**
-1. On Linux or WSL2, install both packages (`sudo apt-get install bubblewrap socat` on Debian and Ubuntu), then choose **Try again**.
+1. On Linux or WSL2, install both packages (`sudo apt-get install bubblewrap socat` on Debian and Ubuntu). Run `splitbrief doctor` to confirm the `runners.sandbox.claude-code` check, then choose **Try again**.
 2. If the packages are installed and shell commands still fail, check the AppArmor restriction on Ubuntu 24.04 and later. [Set up Linux and WSL2](https://code.claude.com/docs/en/sandboxing#set-up-linux-and-wsl2) gives the check and the `bwrap` profile.
 3. On WSL1, move the project to a WSL2 distribution.
 4. On macOS, start SPLITBRIEF from an ordinary terminal, not from inside another sandbox.
 5. To finish the run on another implementer, choose **Change BUILD tool**.
 
-**Prevention:** Run `claude` once in the project and open `/sandbox`: on Linux its panel names a missing package.
+**Prevention:** Run `splitbrief doctor` before the first run: on Linux the `runners.sandbox.claude-code` check names a missing `bwrap` or `socat`. Run `claude` once in the project and open `/sandbox`: its panel also names a missing package.
 
-**See also:** [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth), `src/engine/runners/cli-tools/claude-code.ts`, `src/core/pipeline-spec/halts.ts`.
+**See also:** [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth), `src/engine/runners/cli-tools/claude-code.ts`, `src/core/readiness/checks/claude-sandbox.ts`, `src/core/pipeline-spec/halts.ts`.
 
 ---
 
@@ -657,6 +654,54 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ---
 
+### Symptom: A check fails because an environment variable is missing
+
+**Likely cause:** The variable has a credential name, or it selects a credential file, profile or helper. SPLITBRIEF drops these variables from plan checks, reviewer checks, base re-runs, fix checks, `render` checks and the formatter. Examples include provider API keys, cloud tokens, `AWS_PROFILE`, `SSH_AUTH_SOCK`, `GIT_ASKPASS` and npm userconfig selectors. Other defined variables reach checks, including `NODE_OPTIONS`, `DATABASE_URL`, `DISPLAY`, `XDG_RUNTIME_DIR` and project settings. The real `HOME` and `USERPROFILE` stay; `PATH` keeps only absolute entries. See [CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach) for the environment rule and its limits.
+
+**Fix:**
+1. Read the check's output in `evidence.json`. Find the variable the test reads.
+2. Rename the variable to an ordinary name, and update the test to read that name.
+3. Or let the test read the value from a project file, such as a test `.env` file.
+4. Or run that test yourself, and tell the reviewer the result in a note on the review.
+
+**Prevention:** Keep the tests that need a secret or a live service out of the commands the reviewer can choose, or give them a local default.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#what-a-check-can-reach), `src/lib/process/spawn/child-env.ts`.
+
+---
+
+### Symptom: A reviewer check is `refused`
+
+**Likely cause:** The reviewer command policy refused the command. Any installed program of any language can run if it follows the policy. Each `refused` row names the rule.
+
+The policy refuses these forms:
+
+- Shell syntax, control characters, environment prefixes, `cd`, URLs and paths outside the run workspace.
+- Programs run by path, such as `./mvnw` and `./gradlew`.
+- Shells and wrappers, including `bash`, `env`, `sudo`, `busybox`, `toybox`, `nix-shell`, `nix` and `npm explore`. This also applies through `npx --no-install` and `pnpm exec`.
+- Inline interpreter code, including `node -e`, `python -c`, `deno eval`, `elixir -e`, `elixir --erl`, `iex -e`, `groovy -e`, `scala -e` and `kotlin -e`. This includes `erl -eval`, `erl -s`, `erl -run`, `php -r`, `php -B`, `php -R`, `php -F` and `php -E`.
+- Inline task code, including `make --eval`, `rake -e`, `rake --require`, `gradle --init-script`, `just --command`, `mvn exec:*`, `mvn antrun:*`, `rails runner` and `rails r`. `mix run -e`, `mix run --eval` and `mix eval` are refused too. `mvn` refuses the exec and antrun plugins also by coordinate (`mvn org.codehaus.mojo:exec-maven-plugin:*`). `mix do` checks each task it chains as its own `mix` command.
+- `npx` or `npm exec` without `--no-install`, or with `--yes` or `-y`. Download launchers include `bunx`, `uvx`, `pnpx`, `pipx run`, `pnpm dlx`, `yarn dlx`, `bun x`, `uv tool run` and `go run <package>@<version>`. Every `corepack` command, `pnpm env` and `yarn set` is refused. `uv run --with`, `--with-editable`, `--with-requirements` and `-w` are refused, including attached values.
+- Setup commands, including `npm ci`, `pip install`, `go generate`, `bundle install`, `pnpm up`, `yarn up`, `poetry lock`, `uv lock` and `bundle lock`. This includes `cargo generate-lockfile`, `gradle wrapper`, `npm dedupe`, `pnpm dedupe`, `yarn dedupe`, `npm prune`, `pnpm prune`, `npm shrinkwrap` and `pnpm shrinkwrap`. These added verbs apply only to their named tools.
+- Every `config`, `pkg` or `version` subcommand of `npm`, `pnpm` and `yarn`, including `config get` and `config list`. The policy also refuses their `audit` commands with `fix` or `--fix`.
+- Programs that do not verify a change, including `git`, `rm`, `osascript`, `sed`, `tar` and `docker`. Refused network tools include `curl`, `wget`, `ssh`, `scp`, `nc`, `ncat`, `socat`, `telnet`, `ftp` and `sftp`.
+- `find` with `-delete`, `-exec`, `-execdir`, `-ok` or `-okdir`.
+- Other task files or directories for `make` and `just`, such as `make -f`, `make -C`, `make -I` and `just -f`. A `make` operand cannot change its shell or definition variables, or assign with `!=`.
+- Package scripts, task files or interpreter scripts that this run changed. Test files that this run wrote or changed can run.
+
+Verification targets such as `make lock` and package scripts such as `npm run lock` can run. Reviewer package scripts need no plan approval. Every reviewer `npm run` still gets the changed-definition check. Interpreter option values are not code. For example, `perl -Mstrict t/x.t`, `php -c php.ini vendor/bin/phpunit` and `php -dmemory_limit=1G vendor/bin/phpunit` can run.
+
+The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, `mix ecto.drop`, `python manage.py flush --noinput` and `dotnet ef database drop -f`. Checks run with your permissions and can act on databases outside the workspace. See [What a check can reach](./CONFIGURATION.md#what-a-check-can-reach).
+
+**Fix:**
+1. Read the reason on the row, for example `runs a program by path`.
+2. Correct the review with a note that names an allowed command, for example `mvn test` in place of `./mvnw test`.
+3. When a setup step is missing, run it yourself in the run workspace; SPLITBRIEF never runs a setup command as a check.
+
+**See also:** [CONFIGURATION.md §Reviewer checks](./CONFIGURATION.md#reviewer-checks), `src/engine/orchestrator/validation/reviewer-command-policy.ts`.
+
+---
+
 ### Symptom: Every task fails validation because the tree was already red
 
 **Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task`, a consult `verify` or a fix task. A brief check, plan check or task check never re-runs at the run base. Its failure retries the brief once with the exact errors, then consults the planner, even when the same failure occurs at the run base. Only a red reviewer check re-runs there, with the same command text.
@@ -665,11 +710,12 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 1. Run the failing command in your checkout to confirm the failure.
 2. Make the tree green first, or plan a task that repairs it.
-3. For a reviewer check, read the `Base re-run` rows. Read the Checks Log's `pre-existing (also red at the run base)` line. Its pre-existing failures start no fix.
+3. For a reviewer check, read the `Base re-run` rows. A row that reads `<m> new, <n> pre-existing` counts the failures that also occur at the run base. Read the Checks Log's `pre-existing (also red at the run base)` line. Its pre-existing failures start no fix.
+4. A base row that reads `<k> not verified at the run base · <reason>`, or a Checks Log line that reads `not verified at the run base (<reason>)`, is red at the run base too, but SPLITBRIEF could not show the same failure: a timeout, or a red with no failing test name and no diagnostic line, for example a red that prints only an `npm` script banner or a `make` error summary. Such a red is never exempt. It reaches the reviewer as a pending input, and the reviewer decides from the output. A fix check with such a red does not pass its gate. To make it comparable, make the command print its failing tests, or raise `validation.timeout_ms`.
 
 To measure the project before a run, run its own commands directly. `doctor` runs no validation command.
 
-**Prevention:** Maintain passing validation commands. The reviewer check's base comparison excludes pre-existing failures from fixes and still blocks failures the run causes.
+**Prevention:** Maintain passing validation commands. The reviewer check's base comparison excludes pre-existing failures from fixes and still blocks failures the run causes. A failure it cannot compare goes to the reviewer, never to the pre-existing list.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 
@@ -677,7 +723,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ### Symptom: a planner `test` check is `not-runnable` with `no test command for an unrecognised stack`
 
-**Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A required `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the command policy runs only programs on its allowlist.
+**Likely cause:** The check could not resolve a test command. That happens when the project carries none of the five stack markers (`Cargo.toml`, `go.mod`, `pyproject.toml`/`setup.py`/`setup.cfg`/`requirements.txt`/`Pipfile`, `tsconfig.json` or a `typescript` dependency, `package.json`), and there is no `validation.test_command`, no `package.json` `test` script / `Makefile` or `justfile` `test` target, and nothing the planner discovered. SPLITBRIEF deliberately does not guess `npm test` at that point — a fabricated check that passes is worse than a stated absence. A required `test` check in this state halts the run with `required-checks-unrunnable`. The reviewer checks do not resolve through the stack: the reviewer still chooses them from the project itself, and the reviewer command policy runs any installed program of any language.
 
 **Fix:**
 1. If the repo does have a stack SPLITBRIEF knows, pin it: `validation.stack: python` (or `go`, `rust`, `typescript`, `javascript`). Detection order is rust → go → python → typescript → javascript, so a pin is also the fix when the wrong marker wins in a polyglot repo.
@@ -698,7 +744,7 @@ To measure the project before a run, run its own commands directly. `doctor` run
 **Fix:**
 
 1. Read the byline and transcript for `Reviewer check V1 · <command>` or `Base re-run V1 · <command>` and the elapsed time.
-2. Set `validation.timeout_ms` to the time the command needs, with a minimum of 1000 ms. A timeout is pre-existing only if the base re-run also times out.
+2. Set `validation.timeout_ms` to the time the command needs, with a minimum of 1000 ms. A timeout is never pre-existing: when the base re-run is red too, the row reads `not verified at the run base`, and the reviewer decides.
 3. Correct the review with a note that names a faster command, or set `validation.end_checks: false` and run the commands yourself. No check runs before a run's first task.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/WORKFLOW.md](./WORKFLOW.md).

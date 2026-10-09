@@ -15,6 +15,15 @@ export type TieredApprovalRequest = {
   phase: Phase;
 };
 
+/** The commands the reviewer chose before one review, shown to the user before any of them runs. */
+export type ReviewChecksApprovalRequest = {
+  scope: 'final' | 'task';
+  commands: readonly { id: string; command: string; reason: string }[];
+};
+
+/** `run` runs every chosen command, `skip` runs none; undefined is a prompt closed without an answer. */
+export type ReviewChecksApprovalAnswer = 'run' | 'skip';
+
 export type TieredApprovalResponse =
   | { decision: 'deny'; reason: string }
   | { decision: 'confirm'; phrase: string; reason: string };

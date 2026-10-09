@@ -4,6 +4,9 @@ import { StopMenu } from '../../features/workflow/stop/menu.js';
 import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
 import { resultMenuHeight } from '../../features/workflow/result/options.js';
+import { ReviewChecksCard } from '../../features/workflow/review-checks/card.js';
+import { reviewChecksCardLayout } from '../../features/workflow/review-checks/options.js';
+import { reviewChecksPromptStore } from '../../stores/review-checks-prompt/prompt.js';
 import { showRunDiff } from '../../features/workflow/result/show-diff.js';
 import { filesView } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
@@ -216,6 +219,17 @@ export function WorkflowScreen({
   }, [resultFocusKey, resultMenuOpen]);
   const resultMenuFocused =
     resultMenuOpen && (resultFocus?.key !== resultFocusKey || resultFocus.menu);
+  // One card per review: the reviewer's chosen commands wait here for Run all or Skip all.
+  const checksRequest = reviewChecksPromptStore.use((state) =>
+    state.status === 'pending' ? state.request : null,
+  );
+  const checksCardOpen = checksRequest !== null && !stopMenuOpen && !resultMenuOpen;
+  const [checksFocus, setChecksFocus] = useState<{
+    request: typeof checksRequest;
+    menu: boolean;
+  } | null>(null);
+  const checksCardFocused =
+    checksCardOpen && (checksFocus?.request !== checksRequest || checksFocus.menu);
   const override =
     ready !== undefined && ready.status.kind === 'ready-to-apply' ? ready.status.override : false;
   const findings =
@@ -232,20 +246,22 @@ export function WorkflowScreen({
     ? stopMenuLayout(readStopMenuRows(), cols).height
     : resultMenuOpen
       ? resultMenuHeight({ override, findings, confirming, files: changedFiles }, cols)
-      : getWorkflowPromptRows({
-          approvalState: model.approvalPromptState,
-          questionHint,
-          review: {
-            artifact: reviewArtifact,
-            confirms: reviewConfirms,
-            budgetRows: reviewBudgetRows,
-          },
-          recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
-          questions: plannerQuestions,
-          questionIndex: questionState.index,
-          questionWriting: questionState.focus === 'answer',
-          cols,
-        });
+      : checksCardOpen
+        ? reviewChecksCardLayout(checksRequest, cols).height
+        : getWorkflowPromptRows({
+            approvalState: model.approvalPromptState,
+            questionHint,
+            review: {
+              artifact: reviewArtifact,
+              confirms: reviewConfirms,
+              budgetRows: reviewBudgetRows,
+            },
+            recoveryIssue: recoveryPromptOpen ? recoveryIssue : null,
+            questions: plannerQuestions,
+            questionIndex: questionState.index,
+            questionWriting: questionState.focus === 'answer',
+            cols,
+          });
   const progressRows = getProgressRows({
     phase: model.phase,
     cols,
@@ -337,7 +353,7 @@ export function WorkflowScreen({
         <Box flexDirection="column" width="100%" flexShrink={0}>
           <Divider width={cols} tone="textDim" label={scrollBelowLabel} />
           <WorkflowFooter
-            compactInput={stopMenuOpen || resultMenuOpen}
+            compactInput={stopMenuOpen || resultMenuOpen || checksCardOpen}
             beforeComposer={
               stopMenuOpen ? (
                 <StopMenu height={promptBoxRows} />
@@ -358,6 +374,15 @@ export function WorkflowScreen({
                     if (ready !== undefined) void showRunDiff(ready);
                   }}
                 />
+              ) : checksCardOpen ? (
+                <ReviewChecksCard
+                  request={checksRequest}
+                  height={promptBoxRows}
+                  focused={
+                    checksCardFocused && !model.hasOverlay && !model.promptPending && !covered
+                  }
+                  onFocusChange={(menu) => setChecksFocus({ request: checksRequest, menu })}
+                />
               ) : undefined
             }
             handleInput={handleFooterInput}
@@ -366,7 +391,9 @@ export function WorkflowScreen({
             onEmptySubmit={
               resultMenuOpen
                 ? () => setResultFocus({ key: resultFocusKey, menu: true })
-                : model.onEmptySubmit
+                : checksCardOpen
+                  ? () => setChecksFocus({ request: checksRequest, menu: true })
+                  : model.onEmptySubmit
             }
             onRuntimeCommand={model.handleRuntimeCommand}
             commands={commands}
@@ -391,7 +418,9 @@ export function WorkflowScreen({
             questionEpoch={model.questionEpoch}
             feedbackHint={legend}
             commandsOnly={model.commandsOnly}
-            waitingForUser={model.inputMode.mode !== 'normal' || model.promptPending}
+            waitingForUser={
+              model.inputMode.mode !== 'normal' || model.promptPending || checksCardOpen
+            }
             buildBlockShown={progressRows > 0}
             {...(recoveryPromptOpen
               ? {
@@ -408,7 +437,14 @@ export function WorkflowScreen({
                       setResultFocus({ key: resultFocusKey, menu: !resultMenuFocused });
                     },
                   }
-                : {})}
+                : checksCardOpen
+                  ? {
+                      menuFocused: checksCardFocused,
+                      onToggleMenu: () => {
+                        setChecksFocus({ request: checksRequest, menu: !checksCardFocused });
+                      },
+                    }
+                  : {})}
             onReviewBoundaryNavigate={handleReviewBoundaryNavigate}
             {...(byline !== undefined && { byline })}
             {...(reviewArtifact !== null
@@ -436,7 +472,7 @@ export function WorkflowScreen({
         {...(transcriptTail !== undefined && { transcriptTail })}
       />
       <Box
-        height={stopMenuOpen || resultMenuOpen ? 0 : promptBoxRows}
+        height={stopMenuOpen || resultMenuOpen || checksCardOpen ? 0 : promptBoxRows}
         overflow="hidden"
         flexDirection="column"
         flexShrink={0}

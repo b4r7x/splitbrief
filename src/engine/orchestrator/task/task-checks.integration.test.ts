@@ -15,6 +15,7 @@ import { validateAndCommit } from '../escalation/validate-and-commit.js';
 import type { EscalationContext } from '../escalation/types.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { EngineEventOf } from '../../events/types.js';
@@ -23,6 +24,7 @@ import { runTaskChecks } from './task-checks.js';
 const dirs: string[] = [];
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -133,6 +135,62 @@ describe('runTaskChecks', () => {
     expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
     const retryChecks = recordedChecks(projectDir, sessionId).filter((entry) => entry.id === 'K1');
     expect(retryChecks).toHaveLength(1);
+  });
+
+  it('never settles a reviewer check red at both sides when the run base cannot verify it', {
+    timeout: 60_000,
+  }, async () => {
+    await withApplyRun(
+      { 'src/a.ts': 'export const a = 1;\n' },
+      { sessionId: 'sess-task-checks-not-verified' },
+      async (run) => {
+        const task = makeTask({
+          id: 'T001',
+          fix: {
+            cycle: 1,
+            findings: [
+              {
+                id: 'V1.1',
+                text: 'Reviewer check V1 (npm test) failed.',
+                acceptance: null,
+                checkIds: ['V1'],
+                commands: { V1: 'npm test' },
+              },
+            ],
+          },
+        });
+        const state = makeImplState([task], { workspace: run.workspace });
+        const red = (output: string) => () =>
+          processError.exitCode({ command: 'npm test', code: 1, stderr: '', output });
+        const silent = red('');
+        const npmBanner = red('> x@1.0.0 test\n> node -e "process.exit(1)"');
+        const makeSummary = red('make: *** [Makefile:2: check] Error 1');
+        const timedOut = () =>
+          processError.timeout({ command: 'npm test', timeoutMs: 1000, output: '' });
+        const wctx = makeWctx({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          workspaceDir: run.ws,
+          config: makeConfig(),
+        });
+
+        for (const fails of [silent, npmBanner, makeSummary, timedOut]) {
+          const runner = makeCommandRunner(fails(), fails());
+          const result = await runTaskChecks({
+            wctx,
+            state,
+            task,
+            checkIds: ['V1'],
+            runCommand: runner,
+          });
+
+          expect(runner.calls.map((call) => call.options?.cwd === run.ws)).toEqual([true, false]);
+          expect(result.settled.has('V1')).toBe(false);
+          expect(result.runs).toEqual([expect.objectContaining({ checkId: 'V1', status: 'fail' })]);
+          expect(result.runs[0]?.preExisting).toBeUndefined();
+        }
+      },
+    );
   });
 });
 
@@ -256,6 +314,103 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
       expect(
         recordedChecks(run.dir, run.sessionId).find((check) => check.id === 'V1'),
       ).toMatchObject({ exitCode: 1, output: OLD_RED });
+    });
+  });
+
+  it('runs a fix check with the real HOME and without the host secrets', async () => {
+    const probe = [
+      'const secrets = ["OPENAI_API_KEY", "GITHUB_TOKEN", "SSH_AUTH_SOCK"];',
+      'const seen = secrets.filter((name) => process.env[name] !== undefined);',
+      'console.log("home " + process.env.HOME);',
+      'console.log("seen " + (seen.length === 0 ? "none" : seen.join(" ")));',
+    ].join('\n');
+    const files = {
+      'package.json': JSON.stringify({ scripts: { test: 'node probe.cjs' } }),
+      'probe.cjs': probe,
+    };
+    await withApplyRun(files, { sessionId: 'sess-fix-check-env' }, async (run) => {
+      vi.stubEnv('OPENAI_API_KEY', 'sk-fix-check-canary');
+      vi.stubEnv('GITHUB_TOKEN', 'ghp-fix-check-canary');
+      vi.stubEnv('SSH_AUTH_SOCK', '/tmp/fix-check-canary.sock');
+      const task = makeTask({
+        id: 'T002',
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'V1.1',
+              text: 'Reviewer check V1 (npm test) failed.',
+              acceptance: null,
+              checkIds: ['V1'],
+              commands: { V1: 'npm test' },
+            },
+          ],
+        },
+      });
+      const result = await runTaskChecks({
+        wctx: makeWctx({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          workspaceDir: run.ws,
+          config: makeConfig(),
+        }),
+        state: makeImplState([task], { workspace: run.workspace }),
+        task,
+        checkIds: ['V1'],
+      });
+
+      expect(result.runs).toEqual([expect.objectContaining({ checkId: 'V1', status: 'pass' })]);
+      expect(result.runs[0]?.output).toContain(`home ${process.env.HOME}`);
+      expect(result.runs[0]?.output).toContain('seen none');
+    });
+  });
+
+  it('refuses a fix check the reviewer command policy refuses and runs nothing', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-policy' }, async (run) => {
+      const task = makeTask({
+        id: 'T002',
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'V1.1',
+              text: 'Reviewer check V1 failed.',
+              acceptance: null,
+              checkIds: ['V1'],
+              commands: { V1: 'npm install' },
+            },
+          ],
+        },
+      });
+      const runner = makeCommandRunner();
+      const { bus, events } = makeBusRecorder();
+      const result = await runTaskChecks({
+        wctx: makeWctx({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          workspaceDir: run.ws,
+          bus,
+          config: makeConfig(),
+        }),
+        state: makeImplState([task], { workspace: run.workspace }),
+        task,
+        checkIds: ['V1'],
+        runCommand: runner,
+      });
+
+      expect(runner.calls).toEqual([]);
+      expect(result.runs).toEqual([
+        expect.objectContaining({ checkId: 'V1', status: 'refused', command: 'npm install' }),
+      ]);
+      expect(result.settled.has('V1')).toBe(false);
+      expect(
+        events
+          .filter((event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite')
+          .map((row) => [row.id, row.moment, row.status]),
+      ).toEqual([
+        ['V1', 'brief', 'running'],
+        ['V1', 'brief', 'refused'],
+      ]);
     });
   });
 

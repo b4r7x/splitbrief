@@ -25,6 +25,7 @@ import type { RunBase } from '../isolation/base-tree.js';
 import { checkCommandRefusal } from '../planning/sanitize-discovered-validation.js';
 import { changedDefinitionRefusal } from './changed-script.js';
 import type { ValidationResult } from './result.js';
+import { reviewerCommandRefusal } from './reviewer-command-policy.js';
 import { buildStageContext, planTestCheck } from './run.js';
 import { boundedOutputTail, runValidationStep } from './stage.js';
 import type { ValidationCommandRunner } from './types.js';
@@ -85,12 +86,12 @@ export function reviewCheckList(record: ReviewChecksRecord | undefined): Check[]
   }));
 }
 
-/** The reviewer checks a run may name: none while End-of-run checks are off. */
+/** The reviewer checks a run may name: none while End-of-run checks are off or the plan was skipped. */
 export function enabledReviewChecks(
   config: Config,
   record: ReviewChecksRecord | undefined,
 ): Check[] {
-  return resolveEndChecks(config) ? reviewCheckList(record) : [];
+  return resolveEndChecks(config) && record?.skipped === undefined ? reviewCheckList(record) : [];
 }
 
 export function checkRegistry(
@@ -175,12 +176,15 @@ async function runCommandCheck(
   packageScripts: PackageScriptsReadinessInput,
   reviewCheck: boolean,
 ): Promise<CheckRunResult> {
-  // Only a reviewer check is refused for a changed script: a plan may add a script and check it.
+  // A reviewer check runs under the reviewer policy, any stack's program, and is refused for a
+  // changed script; a plan check keeps the plan policy, and a plan may add a script and check it.
   const refusal =
-    checkCommandRefusal(check.value, {
-      npmScriptsApproved: opts.npmScriptsApproved,
-      packageScripts,
-    }) ??
+    (reviewCheck
+      ? reviewerCommandRefusal(check.value)
+      : checkCommandRefusal(check.value, {
+          npmScriptsApproved: opts.npmScriptsApproved,
+          packageScripts,
+        })) ??
     (!reviewCheck || opts.base === undefined
       ? null
       : await changedDefinitionRefusal({

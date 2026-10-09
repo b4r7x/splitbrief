@@ -34,6 +34,7 @@ type FullSuiteEvent = {
   moment: 'pre-review' | 'base' | 'brief';
   passed?: boolean;
   newFailures?: number;
+  notVerified?: number;
 };
 type ChecksRunEvent = { type: 'checks_run'; results: { passed: boolean }[] };
 type ReviewFixStartedEvent = { type: 'review_fix_started'; taskIds: string[] };
@@ -321,12 +322,19 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   const failedCommands = new Set<string>();
   let failedChecks = 0;
   let fixes: string[] = [];
-  // A red pre-review command counts as failed. A red base re-run with zero new failures removes
-  // it because every failure is pre-existing and the run continued. Older base rows keep the count.
+  // A red pre-review command counts as failed. A red base re-run with zero new failures and none
+  // not verified at the run base removes it because every failure is pre-existing and the run
+  // continued. Older base rows keep the count.
   for (const event of items) {
     if (isFullSuiteEvent(event) && event.status === 'done' && event.passed === false) {
       if (event.moment === 'pre-review') failedCommands.add(event.command);
-      if (event.moment === 'base' && event.newFailures === 0) failedCommands.delete(event.command);
+      if (
+        event.moment === 'base' &&
+        event.newFailures === 0 &&
+        (event.notVerified === undefined || event.notVerified === 0)
+      ) {
+        failedCommands.delete(event.command);
+      }
     }
     if (isChecksRunEvent(event)) {
       failedChecks += event.results.filter((result) => result.passed === false).length;

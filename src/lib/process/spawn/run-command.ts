@@ -1,6 +1,7 @@
 import type { BoundedOutputMetadata } from '../bounded-output.js';
 import { createBoundedOutput } from '../bounded-output.js';
 import { processError } from '../errors.js';
+import { createCommandEnv } from './child-env.js';
 import {
   DEFAULT_PROCESS_OUTPUT_MAX_BYTES,
   DEFAULT_PROCESS_STDERR_MAX_BYTES,
@@ -47,6 +48,7 @@ export async function runCommand(
       command,
       args,
       cwd: options?.cwd,
+      env: createCommandEnv(),
       detached: true,
       // Short-lived probe/validation/git commands skip the runner-pid ledger: at
       // dozens of spawns per validation pipeline, the per-spawn sync `ps` exec and

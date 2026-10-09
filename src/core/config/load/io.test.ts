@@ -214,6 +214,23 @@ describe('config loading', () => {
       expect(() => loadConfig(dir)).toThrow('codebase.cacheDir: Unknown config key');
     });
 
+    it('loads validation.approve_checks and leaves it unset when the file names none', () => {
+      const asks = join(TMP, 'approve-checks-ask');
+      writeConfigYaml(asks, { validation: { approve_checks: 'ask' } });
+      const unset = join(TMP, 'approve-checks-unset');
+      writeConfigYaml(unset, { validation: { end_checks: true } });
+
+      expect(loadConfig(asks).config.validation.approveChecks).toBe('ask');
+      expect(loadConfig(unset).config.validation.approveChecks).toBeUndefined();
+    });
+
+    it('rejects a validation.approve_checks value other than ask or auto', () => {
+      const dir = join(TMP, 'approve-checks-invalid');
+      writeConfigYaml(dir, { validation: { approve_checks: 'always' } });
+
+      expect(() => loadConfig(dir)).toThrow(/validation\.approveChecks/);
+    });
+
     it('rejects the removed sessions.scope global value', () => {
       const dir = join(TMP, 'removed-sessions-scope-global');
       writeConfigYaml(dir, { sessions: { scope: 'global' } });

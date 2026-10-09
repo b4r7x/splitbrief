@@ -5,6 +5,10 @@ import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
+import {
+  closeReviewChecksPrompt,
+  reviewChecksPromptStore,
+} from '../../stores/review-checks-prompt/prompt.js';
 
 function makeInputMode(answers: string | string[]): UseInputModeResult {
   const queue = Array.isArray(answers) ? [...answers] : [answers];
@@ -229,5 +233,38 @@ describe('buildPromptCallbacks onPlannerReply', () => {
     });
 
     await expect(callbacks.onPlannerReply?.(reply)).resolves.toBeUndefined();
+  });
+});
+
+describe('buildPromptCallbacks onReviewChecksApproval', () => {
+  const request = {
+    scope: 'final' as const,
+    commands: [{ id: 'V1', command: 'npm test', reason: 'covers the change' }],
+  };
+
+  afterEach(() => {
+    reviewChecksPromptStore.reset();
+  });
+
+  it('opens the reviewer checks card and answers with the choice made on it', async () => {
+    const answer = makeCallbacks('').onReviewChecksApproval?.(request);
+
+    expect(reviewChecksPromptStore.get()).toMatchObject({ status: 'pending', request });
+    closeReviewChecksPrompt('skip');
+    await expect(answer).resolves.toBe('skip');
+    expect(reviewChecksPromptStore.get().status).toBe('idle');
+  });
+
+  it('answers nothing once the run is stopped, and opens no card', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const callbacks = buildPromptCallbacks({
+      inputMode: makeInputMode(''),
+      abortedRef: { current: false },
+      controller,
+    });
+
+    await expect(callbacks.onReviewChecksApproval?.(request)).resolves.toBeUndefined();
+    expect(reviewChecksPromptStore.get().status).toBe('idle');
   });
 });

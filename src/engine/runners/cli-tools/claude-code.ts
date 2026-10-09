@@ -126,8 +126,8 @@ function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
 /**
  * The implementer's shell runs in Claude Code's own sandbox: writes stay in the working
  * directory and Claude's session temp, and a blocked command is never retried unsandboxed.
- * `failIfUnavailable: false` is Claude Code's default: a sandbox that cannot start prints a
- * warning and the commands run unconfined, unless a managed policy forces the hard stop.
+ * `failIfUnavailable: true` makes a sandbox that cannot start stop the seat at startup
+ * instead of running its commands unconfined; readiness names the missing dependency first.
  * `blockReadsOutsideWorkingDirectories` fences the file tools' reads, and the sandbox's reads
  * under home directories, to the working directory, and the run's global skills with it.
  */
@@ -141,7 +141,7 @@ function sandboxSettings(input: {
   return JSON.stringify({
     sandbox: {
       enabled: true,
-      failIfUnavailable: false,
+      failIfUnavailable: true,
       allowUnsandboxedCommands: false,
       ...(readable.length > 0 && {
         filesystem: {

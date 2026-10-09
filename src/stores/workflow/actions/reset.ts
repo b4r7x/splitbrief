@@ -1,5 +1,6 @@
 import { stopStore } from '../stop.js';
 import { closeApprovalPrompt } from '../../approval-prompt/prompt.js';
+import { closeReviewChecksPrompt } from '../../review-checks-prompt/prompt.js';
 import { eventsStore } from '../events.js';
 import { tasksStore } from '../tasks.js';
 import { tokensStore } from '../tokens.js';
@@ -16,6 +17,7 @@ import { clearSectionsCache } from './sections.js';
 export function resetWorkflow(): void {
   stopStore.reset();
   closeApprovalPrompt();
+  closeReviewChecksPrompt();
   eventsStore.reset();
   tasksStore.reset();
   tokensStore.reset();

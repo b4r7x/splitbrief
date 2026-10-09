@@ -128,6 +128,22 @@ describe('runCommand', () => {
     }
   });
 
+  it('hands the command the real HOME and none of the host secrets', {
+    timeout: 60_000,
+  }, async () => {
+    vi.stubEnv('OPENAI_API_KEY', 'sk-command-env-canary');
+    vi.stubEnv('SSH_AUTH_SOCK', '/tmp/command-env-canary.sock');
+    try {
+      const result = await runCommand(process.execPath, [
+        '-e',
+        'const e = process.env; process.stdout.write([e.HOME, e.OPENAI_API_KEY ?? "absent", e.SSH_AUTH_SOCK ?? "absent"].join("|"))',
+      ]);
+      expect(result.stdout).toBe(`${process.env.HOME}|absent|absent`);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it('resolves with stdout, stderr, and exit code', { timeout: 60_000 }, async () => {
     const result = await runCommand('echo', ['hello']);
     expect(result.stdout.trim()).toBe('hello');

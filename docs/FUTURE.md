@@ -130,7 +130,7 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 **What was built.**
 
-- Before each review the reviewer reads the project and chooses the reviewer checks that verify the change. SPLITBRIEF runs them under its command policy, which runs only programs on its allowlist: the package managers, `make` and `just` on a bare `typecheck`, `lint` or `test` target, and the tools of the five registry stacks. Every refused command gets a named row. A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`; with none it is `not-runnable`.
+- Before each review the reviewer reads the project and chooses the reviewer checks that verify the change. SPLITBRIEF runs them under the reviewer command policy, which runs any installed program of any language and refuses only what breaks a danger rule (shell syntax, a program run by path, inline code, a download-and-run launcher, a setup command, a script this run changed). Every refused command gets a named row. Plan `cmd` checks keep the allowlist of the five registry stacks. A planner `test` check resolves its command through `config → manifest → discovered → stack default → none`; with none it is `not-runnable`.
 - Heuristic detection reads project marker files (`Cargo.toml`, `go.mod`, `pyproject.toml`, `package.json`) to infer language and validation tools.
 - The planning session asks the planner to identify the project's test toolchain (`language`, `test`, `testPattern`), which is persisted to `WorkflowState.discoveredValidation`.
 - Planner and implementer prompts are language-aware: TypeScript keeps ESM-with-`.js` guidance, while Python, Go, Rust, JavaScript, and generic contexts avoid TypeScript-specific wording.
@@ -138,6 +138,31 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 - Default TS projects (`package.json` with `typescript` devDependency) preserve identical behavior to before.
 
 **Remaining.** Deeper language-specific planning heuristics can still be added as usage patterns emerge.
+
+---
+
+## **[Won't]** Confinement for checks and seats, and per-action approval
+
+Owner decision, 2026-10-09. Today a check runs the project's own code with your user's permissions in the run workspace. SPLITBRIEF isolates its working directory, its environment (secrets dropped), its time, its output and its process group, but not the file system, the network or other processes ([CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach)). The `claude-code` implementer runs its shell in Claude Code's own sandbox and stops when that sandbox cannot start. The other seats are as [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth) says.
+
+**Why we want it.** A reviewer check, a base re-run or a fix check runs test files and scripts the implementer wrote. Only an OS boundary stops such code from reading `~/.ssh` or calling the network.
+
+**What it would look like.** These items are out of scope for now:
+
+- An OS sandbox or confinement for checks or seats (research report R3, B-1 and B-2): for example bubblewrap or Seatbelt around each check, or a container per run.
+- A network proxy that limits what checks and seats can reach (R3, B-3).
+- `workflow.approve: each` or `yolo` (R3, A-1): an approval for each brief, or none at all.
+- Per-action approval inside a seat: the Agent Client Protocol (ACP), a bridge to Claude Code's permission prompts, or the Codex app-server.
+
+**Why deferred.** The minimal leak fixes shipped first: a sanitized environment for every command SPLITBRIEF runs itself, `sandbox.failIfUnavailable: true` for the `claude-code` implementer, and `validation.approve_checks: ask`. A sandbox for checks must keep every language's toolchain, cache and registry working; that needs its own design and measurements on macOS and Linux.
+
+Decided 2026-10-09: checks inherit defined environment variables and drop credential names, selectors and helpers. No pass-through option is needed.
+
+The changed-definition refusal compares only `package.json` scripts, `Makefile`, `justfile` and interpreter scripts with the run base. SPLITBRIEF does not compare build manifests (`pom.xml`, `build.gradle`, `composer.json`, `Gemfile`, `mix.exs`, `build.rs`). A dependency change edits these files, and a refusal would block the check that verifies it. The refusal guards against a swapped check definition. It does not establish trusted execution.
+
+**Where to start when we do it.**
+
+- `runCommand` (`src/lib/process/spawn/run-command.ts`) is the one function every check routes through; a sandbox wraps its spawn there.
 
 ---
 

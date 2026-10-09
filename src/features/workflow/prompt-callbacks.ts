@@ -1,4 +1,5 @@
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { openReviewChecksPrompt } from '../../stores/review-checks-prompt/prompt.js';
 import { markWorkflowPaused } from '../../stores/workflow/actions/pause.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
@@ -63,6 +64,12 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       });
     },
     onTieredApproval: (request) => openApprovalPrompt(request),
+    // The screen is what makes `validation.approve_checks: ask` answerable; a run without this
+    // callback runs none of the reviewer checks.
+    onReviewChecksApproval: async (request) => {
+      if (controller.signal.aborted || abortedRef.current) return undefined;
+      return openReviewChecksPrompt(request);
+    },
     onPlannerReply: async (reply: PlannerConversation) => {
       if (controller.signal.aborted || abortedRef.current) return undefined;
       // One promise owns this turn, including the whole batch of structured answers.
