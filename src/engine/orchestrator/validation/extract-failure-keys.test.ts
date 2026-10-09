@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractFailureKeys } from './extract-failure-keys.js';
+import { extractFailureKeys, fileFromFailureKey } from './extract-failure-keys.js';
 
 function keysOf(output: string): string[] {
   const extracted = extractFailureKeys(output);
@@ -93,5 +93,37 @@ describe('extractFailureKeys', () => {
 
   it('normalizes backslash separators', () => {
     expect(keysOf('src\\x.ts(12,5): error TS2322')).toEqual(['src/x.ts(12,5)']);
+  });
+
+  it('finds no diagnostic in a version or a duration', () => {
+    expect(extractFailureKeys('node 22.1.0:1\n1.5:3').diagnostics).toBe(false);
+  });
+});
+
+describe('fileFromFailureKey', () => {
+  it('reads the file of each diagnostic key shape', () => {
+    expect(fileFromFailureKey('src/a.ts(12,3)')).toBe('src/a.ts');
+    expect(fileFromFailureKey('src/a.ts:12')).toBe('src/a.ts');
+    expect(fileFromFailureKey('tests/test_x.py::test_y[a')).toBe('tests/test_x.py');
+    expect(fileFromFailureKey('x_test.go:12')).toBe('x_test.go');
+  });
+
+  it('reads an output line that is one whole path', () => {
+    expect(fileFromFailureKey('src/a.ts')).toBe('src/a.ts');
+    expect(fileFromFailureKey('./src/a.ts')).toBe('src/a.ts');
+  });
+
+  it('reads no file from an npm script banner', () => {
+    expect(fileFromFailureKey('> pkg@1.0.0 test')).toBeNull();
+    expect(fileFromFailureKey('> tsx scripts/x.ts')).toBeNull();
+    expect(fileFromFailureKey('> tsx scripts/check-invariants.ts')).toBeNull();
+  });
+
+  it('reads no file from command text, a runner summary or a version', () => {
+    expect(fileFromFailureKey('Error: Command failed: tsx scripts/x.ts')).toBeNull();
+    expect(fileFromFailureKey('make: *** [Makefile:2: check] Error 1')).toBeNull();
+    expect(fileFromFailureKey('Duration  6.93s')).toBeNull();
+    expect(fileFromFailureKey('1.0.0')).toBeNull();
+    expect(fileFromFailureKey('src/a.ts:')).toBeNull();
   });
 });
