@@ -169,6 +169,28 @@ describe('failureKeys', () => {
     });
   });
 
+  it('keeps the assertion message of each failing test, never a stack frame', () => {
+    const output = [
+      ' FAIL  src/a.test.ts > adds',
+      'AssertionError: expected 1 to be 2',
+      ' FAIL  src/b.test.ts > fails',
+      ' ❯ src/b.test.ts:4:2',
+    ].join('\n');
+    expect(
+      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo').messages,
+    ).toEqual(new Map([['src/a.test.ts::adds', 'AssertionError: expected 1 to be 2']]));
+  });
+
+  it('keeps no message that is a key itself', () => {
+    const output = '--- FAIL: TestX (0.00s)\n    x_test.go:12: got 1, want 2';
+    const failure = failureKeys(
+      { capture: { text: output, complete: true }, exitCode: 1 },
+      '/repo',
+    );
+    expect(failure.keys).toEqual(['TestX', 'x_test.go:12: got 1, want 2']);
+    expect(failure.messages).toBeUndefined();
+  });
+
   it('excludes stack frames but keeps compiler diagnostics in test files', () => {
     const diagnostic = 'src/b.test.ts(3,3): error TS2304: Cannot find name x.';
     const output = [

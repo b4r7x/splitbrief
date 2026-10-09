@@ -25,6 +25,7 @@ import {
   type CheckRunResult,
   type RunChecksOptions,
 } from '../validation/run-checks.js';
+import { checkFailureText } from '../validation/failure-text.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 
@@ -74,7 +75,7 @@ export function buildPreReviewInputs(input: {
         kind: 'defect',
         source: 'check',
         file,
-        text: `Required check ${run.checkId} failed: ${run.output} ${
+        text: `Required ${checkFailureText(run)} ${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
         }`,
         checkIds: [run.checkId],
