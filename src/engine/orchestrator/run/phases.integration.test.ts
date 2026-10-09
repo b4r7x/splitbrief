@@ -357,6 +357,73 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
     ).toBeDefined();
   });
 
+  it('a review timeout publishes one error event', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makePassingTask('T001');
+    task.status = 'done';
+    const executionState = persistReadyExecutionState(
+      { projectDir, sessionId },
+      makeImplState([task], {
+        changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+      }),
+    );
+    const planner = makePlanner({
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'strict-native',
+        canResume: false,
+        invoke: async () => {
+          throw new Error('CLI invocation timed out');
+        },
+      }),
+    });
+    const { callbacks } = makeCallbacks();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTasksAndReview({
+      wctx: {
+        projectDir,
+        workspaceDir: projectDir,
+        sessionId,
+        isolation: makeCopyingIsolation({ projectDir, sessionId }),
+        config: makeNoValidationConfig({ workflow: {} }),
+        callbacks,
+        bus,
+        planner,
+        reviewer: planner,
+        context: defaultContext,
+        implementer: makeImplementer(),
+        metadata: { plannerTool: 'claude-code', implementerTool: 'ollama' },
+        sinks: TEST_SINKS,
+        validator: createValidator(),
+      },
+      state: executionState,
+      planning: {
+        disposition: 'ready-for-tasks' as const,
+        state: executionState,
+        tasks: executionState.tasks ?? [],
+      },
+      summaryBase: {
+        feature: 'feat',
+        startTime: Date.now(),
+        plannerTool: 'claude-code',
+        implementerTool: 'ollama',
+      },
+      phaseTimings: {},
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.state.pendingRecovery).toMatchObject({ reason: 'review-failed', seat: 'review' });
+    const errors = events.filter((event) => event.type === 'error');
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      category: 'recovery',
+      code: 'review_failed',
+      message: expect.stringContaining('CLI invocation timed out'),
+    });
+  });
+
   it('runs only the remaining tasks when resuming past the first task', async () => {
     const { projectDir, sessionId } = setupProject();
     const done = makePassingTask('T001');

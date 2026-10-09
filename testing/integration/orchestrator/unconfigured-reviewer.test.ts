@@ -184,18 +184,13 @@ describe('run with no reviewer configured', () => {
       // End-of-run checks are off in this config: one row says so, and no command runs.
       'review_checks',
       'drift_report',
-      'planner_text',
       'cost_update',
       'planner_status',
       'workflow_complete',
     ]);
 
-    const plannerTexts = events.filter(
-      (event): event is Extract<EngineEvent, { type: 'planner_text' }> =>
-        event.type === 'planner_text',
-    );
-    expect(plannerTexts).toHaveLength(1);
-    expect(plannerTexts[0]?.text).toContain(REVIEW_TEXT);
+    // A typed-answer call streams no seat text: the verdict is recorded in review.json and review.md.
+    expect(events.filter((event) => event.type === 'planner_text')).toHaveLength(0);
 
     // Seat resolution happens at init, so a reviewer seat would surface here.
     const workflowConfig = events.find(

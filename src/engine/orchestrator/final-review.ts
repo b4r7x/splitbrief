@@ -909,7 +909,18 @@ export async function runFinalReviewPhase(opts: {
           ? { kind: 'call-failed', code: errorKind(err) ?? REVIEW_UNAVAILABLE, message }
           : { kind: 'seat-blocked', diagnosis };
     }
-    publishError({ bus: bus, phase: state.phase, message, resetAt });
+    // The one error row for this failure: the halt that follows raises the
+    // recovery and publishes nothing of its own.
+    publishError({
+      bus: bus,
+      phase: state.phase,
+      message,
+      resetAt,
+      safety: {
+        category: 'recovery',
+        code: failure.kind === 'input-too-large' ? 'review_input_too_large' : 'review_failed',
+      },
+    });
     writeStatus = 'failed';
   }
   if (opts.signal?.aborted) return interrupted();

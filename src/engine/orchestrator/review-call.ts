@@ -4,7 +4,6 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
-import { createBusTextHandler } from './events.js';
 import { addUsageAndSave } from './state-ops.js';
 
 export type RunReviewerCallOptions<T> = {
@@ -42,7 +41,7 @@ export async function runReviewerCall<T>(
     projectDir: workspaceDir,
     seat: 'reviewer',
     callbacks: {
-      onOutput: createBusTextHandler({ bus, phase: opts.state.phase }, { content: 'markdown' }),
+      onOutput: () => {},
       signal: opts.signal,
     },
     ...(opts.images !== undefined && { images: [...opts.images] }),
