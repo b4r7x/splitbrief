@@ -1,17 +1,19 @@
 import type { StepCut, StepRef } from '../../../core/schemas/run-step.js';
+import type { Phase } from '../../../core/schemas/enums.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
-import { formatStageElapsed } from '../display/live-activity.js';
-import { suiteStageText } from '../display/phase-verb.js';
+import { formatElapsedClock } from '../../../utils/format-time.js';
+import { suiteStatusText } from '../display/phase-verb.js';
 
 const PARKED_HINT = `⏎ resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`;
 
 export interface StopBylineInput {
   readonly intent: StopIntent;
   readonly phase: StopPhase;
+  readonly workflowPhase: Phase;
   readonly parked: { readonly kind: StopParkKind; readonly taskId: string | null } | null;
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;
@@ -62,9 +64,11 @@ export function stepWord(step: StepRef): string {
  * brief a stop between briefs holds back, else at the step it stopped on.
  */
 export function stopPoint(step: StepRef, at: StepCut | undefined): string {
-  return at === 'boundary' && step.kind === 'brief'
-    ? `before ${step.taskId}`
-    : `at ${stepWord(step)}`;
+  if (at === 'boundary') {
+    if (step.kind === 'brief') return `before ${step.taskId}`;
+    if (step.kind === 'review') return 'before the review';
+  }
+  return `at ${stepWord(step)}`;
 }
 
 /** The run names its own brief where it has one, and says "the run" rather than nothing. */
@@ -80,7 +84,15 @@ function stoppedLead(input: StopBylineInput): string {
   const status = input.record?.status;
   if (status?.kind !== 'open') {
     const brief = input.parked?.taskId ?? input.currentTaskId;
-    return brief === null ? 'Stopped' : `Stopped at ${brief}${SOFT_SEP}Partial changes kept`;
+    if (brief === null) return 'Stopped';
+    const cut: StepCut | undefined =
+      input.parked?.kind === 'boundary'
+        ? 'boundary'
+        : input.parked?.kind === 'mid-brief'
+          ? 'mid-step'
+          : undefined;
+    const lead = `Stopped ${stopPoint({ kind: 'brief', taskId: taskId(brief), attempt: 0 }, cut)}`;
+    return cut === 'mid-step' ? `${lead}${SOFT_SEP}Partial changes kept` : lead;
   }
   const at = status.stop.on.kind === 'paused' ? status.stop.on.at : undefined;
   const lead = `Stopped ${stopPoint(status.resumeAt, at)}`;
@@ -132,8 +144,8 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     const hint = 'Pause requested; no next brief will start';
     if (input.suite === null) return { lead: `Finishing ${name}`, hint };
     return {
-      lead: suiteStageText(input.suite),
-      clock: formatStageElapsed(input.suite.elapsedMs),
+      lead: suiteStatusText(input.workflowPhase, input.suite),
+      clock: formatElapsedClock(input.suite.elapsedMs),
       hint,
     };
   }
@@ -147,7 +159,7 @@ export function stopByline(input: StopBylineInput): StopByline | null {
       ? 'Waiting for processes to exit'
       : 'Finishing cleanup and saving';
   return {
-    lead: `${lead}${SOFT_SEP}${progress}${SOFT_SEP}${formatStageElapsed(input.elapsedMs)}`,
+    lead: `${lead}${SOFT_SEP}${progress}${SOFT_SEP}${formatElapsedClock(input.elapsedMs)}`,
     hint: `esc back after stop${SOFT_SEP}ctrl+c quit after stop`,
   };
 }

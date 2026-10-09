@@ -10,7 +10,7 @@ import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
-import { renderCheckNotes } from '../../../../src/engine/spec/plan-checks.js';
+import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../../../src/engine/spec/prompts/plan-session.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../../src/core/pipeline-spec/retries.js';
 import { BOUNDS } from '../../../../src/core/pipeline-spec/bounds.js';
@@ -1582,6 +1582,42 @@ const answeredQuestionsProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const consultQuestionProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-consult-answer-default'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+    {
+      type: 'task_started',
+      ts: FIXED_TS + 100,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: 'Choose the store',
+      action: 'modify',
+      index: 0,
+      total: 1,
+      file: 'src/store.ts',
+    },
+    {
+      type: 'consult_answered',
+      ts: FIXED_TS + 200,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      reason: 'failed',
+      action: 'ask-user',
+      diagnosis: 'Only the operator knows the deployment.',
+      newTaskIds: null,
+    },
+  ],
+  question: {
+    prompt: 'Reply to the planner…',
+    answer: '',
+    questions: [{ id: 'consult-store', type: 'input', text: 'Which store?', default: 'memory' }],
+  },
+};
+
 const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
   feature: WORKFLOW_FEATURE,
@@ -2275,7 +2311,10 @@ const planChecksRecoveryProjection: WorkflowFixtureProjection = {
         publishWarning({
           bus,
           phase: 'planning',
-          message: 'The plan failed 2 checks; it goes back to the planner once.',
+          ...planRepairWarning([
+            { code: 'uncovered-criterion', message: 'Criterion C2 is served by no task.' },
+            { code: 'dependency-cycle', message: 'Tasks T002 and T003 depend on each other.' },
+          ]),
         }),
       ),
     ];
@@ -3098,6 +3137,57 @@ const reviewChecksApproveProjection: WorkflowFixtureProjection = {
   },
 };
 
+const reviewPauseRequestedProjection: WorkflowFixtureProjection = {
+  ...reviewCheckRunningProjection,
+  scenarioId: scenarioId('workflow-review-pause-requested'),
+  stop: { intent: 'pause-after-brief', phase: 'requested' },
+};
+
+const reviewCorrectedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-corrected'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+    { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
+    { ...FIXTURE_TASKS_PLANNED, ts: FIXED_TS + 60 },
+    orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 100),
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 200),
+    {
+      type: 'warning',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      message: 'pre_task blocked: already covered',
+    },
+    {
+      type: 'task_skipped',
+      ts: FIXED_TS + 300,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID_2,
+      title: FIXTURE_PLANNED_BRIEFS[1].title,
+      reason: 'already covered',
+    },
+    orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[2], FIXED_TS + 400),
+    fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], FIXED_TS + 500),
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 1_000,
+      phase: 'final-review',
+      text: 'Check the fixture.',
+    },
+    { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'final-review', review: 'failed' },
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 9_000,
+      phase: 'final-review',
+      text: 'The fixture is updated.',
+    },
+    { type: 'planner_text', ts: FIXED_TS + 10_000, phase: 'final-review', text: 'Checking again.' },
+    { type: 'workflow_complete', ts: FIXED_TS + 14_000, phase: 'complete', review: 'passed' },
+  ],
+};
+
 // The user chose Skip all: one row names every command that did not run and why.
 const reviewChecksSkippedProjection: WorkflowFixtureProjection = {
   ...reviewCheckRunningProjection,
@@ -3521,6 +3611,51 @@ const projections = [
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,
+  reviewCorrectedProjection,
+  ...(['passed', 'failed'] as const).map(
+    (review): WorkflowFixtureProjection => ({
+      scenarioId: scenarioId(`workflow-review-settled-${review}`),
+      feature: WORKFLOW_FEATURE,
+      inputMode: 'normal',
+      sidebarVisible: false,
+      events: [
+        { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+        { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
+        { ...FIXTURE_TASKS_PLANNED, ts: FIXED_TS + 60 },
+        ...FIXTURE_PLANNED_BRIEFS.flatMap((brief, index) => [
+          orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
+          fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
+        ]),
+        {
+          type: 'planner_text',
+          ts: FIXED_TS + 1_000,
+          phase: 'final-review',
+          text: 'Checking the diff before the verdict.',
+        },
+        { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'complete', review },
+      ],
+    }),
+  ),
+  ...(['summary', 'compaction'] as const).map(
+    (role): WorkflowFixtureProjection => ({
+      ...finalReviewProjection,
+      scenarioId: scenarioId(`workflow-review-${role}`),
+      events: finalReviewProjection.events.map(
+        (event): EngineEvent =>
+          event.type === 'runner_call_started'
+            ? { ...event, role }
+            : event.type === 'planner_text'
+              ? {
+                  ...event,
+                  text:
+                    role === 'summary'
+                      ? 'Preparing the run summary.'
+                      : 'Compacting the run context.',
+                }
+              : event,
+      ),
+    }),
+  ),
   reviewChecksOffProjection,
   implementationEscalatedProjection,
   implementationNarrationProjection,
@@ -3540,6 +3675,16 @@ const projections = [
   questionInputProjection,
   plannerReplyProjection,
   answeredQuestionsProjection,
+  consultQuestionProjection,
+  {
+    ...consultQuestionProjection,
+    scenarioId: scenarioId('workflow-consult-answer-typed'),
+    question: {
+      prompt: 'Reply to the planner…',
+      answer: '',
+      questions: [{ id: 'consult-store', type: 'input', text: 'Which store?' }],
+    },
+  },
   pausedMidBriefProjection,
   pausedBoundaryProjection,
   stoppingProjection,
@@ -3575,6 +3720,7 @@ const projections = [
   implementationToolRunningProjection,
   implementationSilentBareProjection,
   reviewCheckRunningProjection,
+  reviewPauseRequestedProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,
   reviewChecksSkippedProjection,

@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { createElement, Fragment } from 'react';
+import { ConversationRowView } from '../components/conversation-flow/row-view.js';
+import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { groupEventsIntoSections, type Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
@@ -49,6 +53,38 @@ function activity(
 }
 
 describe('buildConversationRows', () => {
+  it.each(['passed', 'failed'] as const)(
+    'materializes one terminal %s Review row with its own duration',
+    (review) => {
+      const events: EngineEvent[] = [
+        makeTaskStart(),
+        makeTaskComplete(),
+        { type: 'planner_text', ts: 3_000, phase: 'final-review', text: 'Checking the diff.' },
+        { type: 'workflow_complete', ts: 8_000, phase: 'complete', review },
+      ];
+      const { rows } = buildConversationRows({
+        sections: groupEventsIntoSections(events),
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 60,
+        viewportHeight: 18,
+        streaming,
+      });
+      expect(rows).toHaveLength(2);
+      const ui = renderFeature(
+        createElement(
+          Fragment,
+          null,
+          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+        ),
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(`Review 1 ${review}`);
+      expect(frame).toContain('5.0s');
+      expect(frame).not.toContain('Checking the diff.');
+      ui.unmount();
+    },
+  );
   it('strips the planner H1 that echoes the user prompt so the title renders once', () => {
     const sections: Section<EngineEvent>[] = [
       {
@@ -794,6 +830,41 @@ describe('buildConversationRows', () => {
     const secondText = secondExpanded.rows.map(rowText).join('\n');
     expect(secondText).toContain('second line');
     expect(secondText).not.toContain('first line');
+  });
+
+  it('ten done briefs all appear as rows in the transcript projection', () => {
+    const tasks = Array.from({ length: 10 }, (_, i) => {
+      const id = taskId(`T${String(i + 1).padStart(3, '0')}`);
+      return [
+        makeTaskStart({ taskId: id, title: `Brief ${id}`, index: i, total: 10 }),
+        makeTaskComplete({ taskId: id, method: 'local', retries: 0, duration: 1000 }),
+      ];
+    }).flat();
+    const sections = groupEventsIntoSections(tasks);
+    const { rows, renderableCount } = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 100,
+      viewportHeight: 30,
+      streaming,
+    });
+    expect(rows).toHaveLength(10);
+    expect(renderableCount).toBe(10);
+    expect(rows.every((row) => row.node !== undefined)).toBe(true);
+    const ui = renderFeature(
+      createElement(
+        Fragment,
+        null,
+        ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+      ),
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    for (let index = 0; index < 10; index++) {
+      const id = `T${String(index + 1).padStart(3, '0')}`;
+      expect(lines[index]).toContain(`${id} Brief ${id}`);
+    }
+    ui.unmount();
   });
 });
 

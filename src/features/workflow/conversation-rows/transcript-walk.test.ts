@@ -1,0 +1,114 @@
+import { describe, expect, it } from 'vitest';
+import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
+import { taskId } from '../../../core/schemas/task.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
+import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
+import { walkTranscript } from './transcript-walk.js';
+
+describe('walkTranscript', () => {
+  it.each(['passed', 'failed'] as const)(
+    'yields one settled terminal %s Review after the brief',
+    (review) => {
+      const events: EngineEvent[] = [
+        makeTaskStart(),
+        makeTaskComplete(),
+        { type: 'planner_text', ts: 3_000, phase: 'final-review', text: 'Checking the diff.' },
+        { type: 'workflow_complete', ts: 8_000, phase: 'complete', review },
+      ];
+      const steps = [...walkTranscript(groupEventsIntoSections(events))];
+      expect(steps.map((step) => step.kind)).toEqual(['settled', 'settled']);
+      const final = steps[1];
+      if (final?.kind !== 'settled') throw new Error('Expected settled review');
+      expect(final.section).toMatchObject({
+        type: 'settled-stage',
+        summary: { stage: 'review', outcome: review, duration: 5_000 },
+      });
+    },
+  );
+  it('yields settled plan, settled T001, then T002 events in order', () => {
+    const planEvents: EngineEvent[] = [
+      { type: 'workflow_started', ts: 1000, phase: 'planning', feature: 'Add dark mode' },
+      { type: 'user_message', ts: 1000, phase: 'planning', text: 'Add dark mode' },
+      { type: 'plan_approved', ts: 2000, phase: 'reviewing-plan' },
+    ];
+    const t001Start = makeTaskStart({
+      taskId: taskId('T001'),
+      title: 'Wire theme',
+      index: 0,
+      total: 2,
+      ts: 3000,
+    });
+    const t001Generate = makeImplementerGenerate({
+      status: 'done',
+      file: 'src/theme.ts',
+      ts: 4000,
+    });
+    const t001Complete = makeTaskComplete({
+      taskId: taskId('T001'),
+      method: 'local',
+      retries: 0,
+      duration: 2000,
+      ts: 5000,
+    });
+    const t002Start = makeTaskStart({
+      taskId: taskId('T002'),
+      title: 'Add toggle',
+      index: 1,
+      total: 2,
+      ts: 6000,
+    });
+    const t002Generate = makeImplementerGenerate({
+      status: 'running',
+      file: 'src/toggle.ts',
+      ts: 7000,
+    });
+
+    const events: EngineEvent[] = [
+      ...planEvents,
+      t001Start,
+      t001Generate,
+      t001Complete,
+      t002Start,
+      t002Generate,
+    ];
+    const sections = groupEventsIntoSections(events);
+    const steps = [...walkTranscript(sections)];
+
+    expect(steps.map((step) => step.kind)).toEqual(['settled', 'settled', 'event', 'event']);
+
+    const first = steps[0];
+    expect(first?.kind).toBe('settled');
+    if (first?.kind === 'settled') {
+      expect(first.section.type).toBe('settled-stage');
+      if (first.section.type === 'settled-stage') {
+        expect(first.section.summary.stage).toBe('plan');
+        if (first.section.summary.stage === 'plan') {
+          expect(first.section.summary.feature).toBe('Add dark mode');
+        }
+      }
+    }
+
+    const second = steps[1];
+    expect(second?.kind).toBe('settled');
+    if (second?.kind === 'settled') {
+      expect(second.section.type).toBe('completed-task');
+      if (second.section.type === 'completed-task') {
+        expect(second.section.summary.id).toBe('T001');
+        expect(second.section.summary.title).toBe('Wire theme');
+      }
+    }
+
+    const third = steps[2];
+    expect(third?.kind).toBe('event');
+    if (third?.kind === 'event') {
+      expect(third.event).toBe(t002Start);
+    }
+
+    const fourth = steps[3];
+    expect(fourth?.kind).toBe('event');
+    if (fourth?.kind === 'event') {
+      expect(fourth.event).toBe(t002Generate);
+    }
+  });
+});

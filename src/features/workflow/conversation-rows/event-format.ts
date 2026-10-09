@@ -19,6 +19,8 @@ import { formatUsageTokens } from '../usage-details-model.js';
 import { suiteStageText } from '../display/phase-verb.js';
 import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
+const NOT_RUN = 'not\u00a0run';
+
 export function formatTaskStartedValue(
   event: Extract<EngineEvent, { type: 'task_started' }>,
 ): string {
@@ -124,7 +126,7 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
   // Why a command did not run or was refused; a session from before reviewer checks has none.
   const detail = event.detail === undefined ? '' : `${SOFT_SEP}${firstLine(event.detail)}`;
   if (event.status === 'running') return `${label}${SOFT_SEP}running`;
-  if (event.status === 'not-run') return `${label}${SOFT_SEP}not run${detail}`;
+  if (event.status === 'not-run') return `${label}${SOFT_SEP}${NOT_RUN}${detail}`;
   if (event.status === 'refused') return `${label}${SOFT_SEP}refused${detail}`;
   if (
     event.moment === 'brief' &&
@@ -196,16 +198,18 @@ export function reviewChecksRow(event: Extract<EngineEvent, { type: 'review_chec
   if (event.status === 'skipped') {
     return [
       'Reviewer checks',
-      `not run ${(event.commands ?? []).map((command) => command.id).join(', ')}`,
+      `${NOT_RUN} ${(event.commands ?? []).map((command) => command.id).join(', ')}`,
       firstLine(event.reason ?? 'no reason given'),
     ].join(SOFT_SEP);
   }
   const chosen = event.commands?.length ?? 0;
   const declined = event.declined?.length ?? 0;
   if (chosen === 0) {
-    return ['Reviewer checks', 'chose none', firstLine(event.reason ?? 'no reason given')].join(
-      SOFT_SEP,
-    );
+    return [
+      'Reviewer checks',
+      'chose\u00a0none',
+      firstLine(event.reason ?? 'no reason given'),
+    ].join(SOFT_SEP);
   }
   const counts = [`chose ${chosen}`, ...(declined > 0 ? [`declined ${declined}`] : [])];
   return ['Reviewer checks', ...counts].join(SOFT_SEP);

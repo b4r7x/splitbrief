@@ -1,6 +1,5 @@
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { isImplementerPhase } from '../../../core/phases.js';
-import { buildProgressRowCount } from '../display/build-progress.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { glyph, type GlyphTier, resolveGlyphTier } from '../../../lib/glyphs.js';
@@ -100,6 +99,10 @@ export function getProgressRows(input: {
 // row, the build block, the boxes and the rows flanking the composer all paint into.
 export function getChromeContentWidth(cols: number): number {
   return Number.isFinite(cols) ? Math.max(1, Math.floor(cols) - WORKFLOW_GUTTER_X * 2) : 1;
+}
+
+export function buildProgressRowCount(contentWidth: number): number {
+  return contentWidth >= getChromeContentWidth(120) ? 2 : 3;
 }
 
 export function getChromeHeight(inputRows: number, progressRows = 0): number {

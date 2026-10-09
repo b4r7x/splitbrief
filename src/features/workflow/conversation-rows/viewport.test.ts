@@ -25,7 +25,6 @@ describe('splitConversationViewport', () => {
     });
     expect(split.transcriptViewportHeight).toBe(10);
     expect(split.queuedRows).toBe(0);
-    expect(split.completedRows).toBe(0);
   });
 });
 
@@ -66,8 +65,7 @@ describe('splitConversationViewport — bookend budget', () => {
     });
 
     expect(split.queuedRows).toBe(3);
-    expect(split.completedRows).toBe(3);
-    expect(split.transcriptViewportHeight).toBe(10);
+    expect(split.transcriptViewportHeight).toBe(15);
   });
 
   it('charges each bookend its own header and blank, so the split always reconciles', () => {
@@ -78,9 +76,7 @@ describe('splitConversationViewport — bookend budget', () => {
         pendingTaskCount: 22,
       });
       const painted =
-        split.transcriptViewportHeight +
-        (split.completedRows > 0 ? split.completedRows + 2 : 0) +
-        (split.queuedRows > 0 ? split.queuedRows + 2 : 0);
+        split.transcriptViewportHeight + (split.queuedRows > 0 ? split.queuedRows + 2 : 0);
 
       expect(painted, `viewport ${viewportHeight}`).toBe(viewportHeight);
     }
@@ -98,7 +94,6 @@ describe('splitConversationViewport — bookend budget', () => {
       pendingTaskCount: 22,
     });
 
-    expect(at60.completedRows).toBe(at20.completedRows);
     expect(at60.queuedRows).toBe(at20.queuedRows);
     expect(at60.transcriptViewportHeight - at20.transcriptViewportHeight).toBe(40);
   });
@@ -122,6 +117,5 @@ describe('splitConversationViewport — bookend budget', () => {
     });
     expect(split.transcriptViewportHeight).toBe(scroll.viewportHeight);
     expect(scroll.scrollOffset).toBe(scroll.maxOffset);
-    expect(split.stickyLeadingRows).toBe(split.completedRows + 2);
   });
 });

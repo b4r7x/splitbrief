@@ -192,7 +192,7 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     expect(rows.map((row) => row.segments.map((segment) => segment.text).join(''))).toEqual([
       'Answered · 1 question',
       '1. Which module should change?',
-      'src/auth.ts; preserve the public API.',
+      'You → src/auth.ts; preserve the public API.',
     ]);
   });
 

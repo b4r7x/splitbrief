@@ -8,6 +8,8 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
+import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import type { EngineEvent } from '../../events/types.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -22,6 +24,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
+import type { OrchestratorCallbacks } from '../types.js';
 import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
 
 const dirs: string[] = [];
@@ -47,6 +50,7 @@ function contextFor(
   sessionId: string,
   task: Task,
   plan?: Plan,
+  callbacks?: Partial<OrchestratorCallbacks>,
 ): { ctx: ConsultApplyContext; states: WorkflowState[]; events: EngineEvent[] } {
   const state: WorkflowState = {
     ...transition(createInitialState('Fix the greeting'), { type: 'START' }),
@@ -68,7 +72,7 @@ function contextFor(
       bus,
       config: makeConfig({}),
       validator: createValidator(),
-      callbacks: makeCallbacks().callbacks,
+      callbacks: makeCallbacks(callbacks).callbacks,
       sinks: TEST_SINKS,
       state,
       onStateChange: (next) => states.push(next),
@@ -149,6 +153,125 @@ describe('applyConsultAnswer', () => {
       action: 'guidance',
       instructions: 'memory',
       context: null,
+    });
+  });
+
+  it("an ask-user consult with an empty reply publishes one user_message whose qa answer is the question's default", async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
+    const { ctx, events } = contextFor(projectDir, sessionId, task, undefined, {
+      onPlannerReply: async () => '',
+    });
+    ctx.bus.subscribe(createJsonlSink({ projectDir, sessionId }));
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      {
+        answer: {
+          diagnosis: 'Only the user knows',
+          action: 'ask-user',
+          question: 'Which store?',
+          whyOnlyUserCanAnswer: 'It changes the deployment',
+          choices: ['redis', 'memory'],
+          default: 'memory',
+        },
+      },
+      attempt,
+    );
+
+    expect(result).toEqual({
+      action: 'guidance',
+      instructions: 'memory',
+      context: null,
+    });
+    const userMessages = events.filter((event) => event.type === 'user_message');
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({
+      type: 'user_message',
+      phase: 'escalating',
+      text: 'memory',
+      qa: [{ question: 'Which store?', answer: 'memory' }],
+    });
+    const log = readFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), 'utf-8');
+    expect(log.trim().split('\n')).toHaveLength(1);
+    expect(JSON.parse(log)).toMatchObject({
+      type: 'user_message',
+      phase: 'escalating',
+      data: { text: 'memory', qa: [{ question: 'Which store?', answer: 'memory' }] },
+    });
+  });
+
+  it.each(['memory', 'redis'])(
+    'records only the %s answer from the production structured reply',
+    async (answer) => {
+      const { projectDir, sessionId } = setupRepo(dirs);
+      const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
+      const { ctx, events } = contextFor(projectDir, sessionId, task, undefined, {
+        onPlannerReply: async () => ({
+          text: `1. Which store?\n${answer}`,
+          qa: [{ question: 'Which store?', answer }],
+        }),
+      });
+      const result = await applyConsultAnswer(
+        ctx,
+        task,
+        {
+          answer: {
+            diagnosis: 'Only the user knows',
+            action: 'ask-user',
+            question: 'Which store?',
+            whyOnlyUserCanAnswer: 'It changes the deployment',
+            choices: ['redis', 'memory'],
+            default: 'memory',
+          },
+        },
+        null,
+      );
+      expect(result).toEqual({ action: 'guidance', instructions: answer, context: null });
+      expect(events.filter((event) => event.type === 'user_message')).toEqual([
+        expect.objectContaining({ text: answer, qa: [{ question: 'Which store?', answer }] }),
+      ]);
+    },
+  );
+
+  it('an ask-user consult with a typed reply publishes one user_message with that text', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
+    const { ctx, events } = contextFor(projectDir, sessionId, task, undefined, {
+      onPlannerReply: async () => 'redis',
+    });
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      {
+        answer: {
+          diagnosis: 'Only the user knows',
+          action: 'ask-user',
+          question: 'Which store?',
+          whyOnlyUserCanAnswer: 'It changes the deployment',
+          choices: ['redis', 'memory'],
+          default: 'memory',
+        },
+      },
+      attempt,
+    );
+
+    expect(result).toEqual({
+      action: 'guidance',
+      instructions: 'redis',
+      context: null,
+    });
+    const userMessages = events.filter((event) => event.type === 'user_message');
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({
+      type: 'user_message',
+      phase: 'escalating',
+      text: 'redis',
+      qa: [{ question: 'Which store?', answer: 'redis' }],
     });
   });
 

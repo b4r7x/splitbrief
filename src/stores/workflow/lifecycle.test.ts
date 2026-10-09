@@ -506,6 +506,119 @@ describe('runner call stall', () => {
     expect(lifecycleStore.get().attemptStartedTs).toBe(4_000);
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
   });
+
+  it('updates lastRunnerEventTs on check, suite, validate, and review_checks events', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBeNull();
+
+    addEvent({
+      type: 'full_suite',
+      ts: 2_000,
+      phase: 'final-review',
+      status: 'running',
+      command: 'npm test',
+      moment: 'pre-review',
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(2_000);
+
+    addEvent({
+      type: 'checks_run',
+      ts: 3_000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      results: [],
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
+
+    addEvent({
+      type: 'validate',
+      ts: 4_000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      status: 'done',
+      passed: true,
+      stages: { typecheck: true, lint: true, test: true },
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(4_000);
+
+    addEvent({
+      type: 'review_checks',
+      ts: 5_000,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(5_000);
+
+    addEvent({
+      type: 'full_suite',
+      ts: 6_000,
+      phase: 'final-review',
+      status: 'done',
+      command: 'npm test',
+      moment: 'base',
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(6_000);
+
+    addEvent({
+      type: 'full_suite',
+      ts: 7_000,
+      phase: 'implementing',
+      status: 'running',
+      command: 'npm test',
+      moment: 'brief',
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(7_000);
+  });
+
+  it('moves lastRunnerEventTs from null for each check and suite event type', () => {
+    resetWorkflow();
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'full_suite',
+      ts: 2_000,
+      phase: 'final-review',
+      status: 'running',
+      command: 'npm test',
+      moment: 'pre-review',
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(2_000);
+
+    resetWorkflow();
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'checks_run',
+      ts: 3_000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      results: [],
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(3_000);
+
+    resetWorkflow();
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'validate',
+      ts: 4_000,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      status: 'done',
+      passed: true,
+      stages: { typecheck: true, lint: true, test: true },
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(4_000);
+
+    resetWorkflow();
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'review_checks',
+      ts: 5_000,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+    });
+    expect(lifecycleStore.get().lastRunnerEventTs).toBe(5_000);
+  });
 });
 
 describe('the run clock', () => {

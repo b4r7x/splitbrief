@@ -30,7 +30,7 @@ const HOME_RECENT_SESSIONS_VIEWPORTS: readonly Viewport[] = Object.freeze([
   viewport({ cols: 80, rows: 24 }),
 ]);
 
-// The build-progress block collapses onto two rows above 120 columns, and the sidebar only paints
+// The build-progress block collapses onto two rows at 120 columns and wider, and the sidebar only paints
 // past that breakpoint. One wide capture is what proves the two share the row budget.
 export const WIDE_VIEWPORTS: readonly Viewport[] = Object.freeze([
   ...REQUIRED_VIEWPORTS,
@@ -483,6 +483,72 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-settled-passed',
+      title: 'Workflow · terminal Review passed',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-settled-passed',
+        title: 'Settled terminal Review',
+        kind: 'implementation',
+        marker: 'Review 1 passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Settled Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-settled-failed',
+      title: 'Workflow · terminal Review failed',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-settled-failed',
+        title: 'Settled terminal Review',
+        kind: 'implementation',
+        marker: 'Review 1 failed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Settled Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-corrected',
+      title: 'Workflow · skipped brief and a corrected review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-corrected',
+        title: 'Each finished brief and review has its own row',
+        kind: 'implementation',
+        marker: 'Review 2 passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Settled brief and review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    ...(['summary', 'compaction'] as const).map((role) =>
+      defineScenario({
+        id: `workflow-review-${role}`,
+        title: `Workflow · ${role} during Review`,
+        surface: screenSurface('workflow'),
+        checkpoint: {
+          id: `review-${role}`,
+          title: 'Actual running step',
+          kind: 'implementation',
+          marker: role === 'summary' ? 'Review · Summary' : 'Review · Compaction',
+        },
+        elements: [
+          { id: 'header', title: 'Workflow header' },
+          { id: 'transcript', title: 'Review transcript' },
+          { id: 'composer', title: 'Workflow composer' },
+        ],
+      }),
+    ),
+    defineScenario({
       id: 'workflow-review-checks-off',
       title: 'Workflow · final review with End-of-run checks off',
       surface: screenSurface('workflow'),
@@ -814,6 +880,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Answered questions transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-consult-answer-default',
+      title: 'Workflow · consult default accepted with Enter',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'consult-answer-default',
+        title: 'Consult answer in its brief',
+        kind: 'question',
+        marker: 'You → memory',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Consult answer transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-consult-answer-typed',
+      title: 'Workflow · typed consult answer',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'consult-answer-typed',
+        title: 'Consult answer in its brief',
+        kind: 'question',
+        marker: 'You → redis',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Consult answer transcript' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
@@ -1724,6 +1822,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-pause-requested',
+      title: 'Workflow · pause requested during a reviewer check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-pause-requested',
+        title: 'The pause keeps the review stage, command and clock',
+        kind: 'review',
+        marker: 'Review · Reviewer check V2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-check-long-command',
       title: 'Workflow · a reviewer check with a command longer than the byline',
       surface: screenSurface('workflow'),
@@ -1761,7 +1874,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-checks-skipped',
         title: 'One row names every command that did not run and why',
         kind: 'review',
-        marker: 'not run V1, V2',
+        marker: 'not\u00a0run V1, V2',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

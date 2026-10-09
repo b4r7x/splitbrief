@@ -7,6 +7,7 @@ import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { findingCounts, type CopyTone } from './copy.js';
+import { stopPoint } from '../stop/copy.js';
 
 // The transcript's leading: the shared one-cell pad the hover bar paints into, then the outcome mark
 // and its trailing space. The mark lands on column 1 with the sentence on column 3, matching a
@@ -66,7 +67,9 @@ function outcomeSegments(view: SummaryView): string[] {
   return [
     ENDED_LEAD,
     stage === '' ? briefFraction(view) : `${stage} ${view.briefs.passed}/${view.briefs.total}`,
-    ...(stoppedId === null ? [] : [`stopped in ${stoppedId}`]),
+    ...(stoppedId === null
+      ? []
+      : [`stopped ${stopPoint({ kind: 'brief', taskId: stoppedId, attempt: 0 }, undefined)}`]),
     haltedDisposition(view),
   ];
 }

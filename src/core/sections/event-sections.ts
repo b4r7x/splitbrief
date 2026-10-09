@@ -5,6 +5,7 @@ export interface SectionableEvent {
   type: string;
   ts?: number;
   phase?: Phase;
+  taskId?: string | null | undefined;
 }
 
 type TaskStartedEvent = {
@@ -20,7 +21,7 @@ type TaskCompletedEvent = {
   retries: number;
   duration: number;
 };
-type TaskSkippedEvent = { type: 'task_skipped'; taskId: string; reason: string };
+type TaskSkippedEvent = { type: 'task_skipped'; taskId: string; title: string; reason: string };
 type TaskFullFailEvent = { type: 'task_full_fail'; taskId: string };
 type TaskResetEvent = { type: 'task_reset'; taskId: string };
 type DiffEvent = { type: 'implementer_generate_done'; diff?: string | undefined };
@@ -38,12 +39,16 @@ type FullSuiteEvent = {
 };
 type ChecksRunEvent = { type: 'checks_run'; results: { passed: boolean }[] };
 type ReviewFixStartedEvent = { type: 'review_fix_started'; taskIds: string[] };
+type WorkflowCompleteEvent = {
+  type: 'workflow_complete';
+  review?: 'passed' | 'failed' | undefined;
+};
 
 interface TaskRange<TEvent extends SectionableEvent> {
   taskId: string;
   startIdx: number;
   endIdx: number;
-  startEvent: TEvent & TaskStartedEvent;
+  startEvent: { title: string; file?: string | undefined };
   endEvent?: (TEvent & TaskEndEvent) | undefined;
   abandoned: boolean;
 }
@@ -98,6 +103,12 @@ function isReviewFixStartedEvent<TEvent extends SectionableEvent>(
   return event.type === 'review_fix_started';
 }
 
+function isWorkflowCompleteEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & WorkflowCompleteEvent {
+  return event.type === 'workflow_complete';
+}
+
 // The diff's stable identity is its global render index, not its timestamp: publishers stamp events
 // with `Date.now()`, so two diffs produced in the same millisecond would collide on a type+ts key and
 // expand/collapse together. The global index is unique per rendered event and survives appends.
@@ -127,6 +138,7 @@ export type StageSummary =
   | {
       stage: 'review';
       ordinal: number;
+      outcome: 'passed' | 'failed';
       failedCommands: string[];
       failedChecks: number;
       fixes: string[];
@@ -198,6 +210,15 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
         range.endEvent = ev;
         range.abandoned = false;
         openTasks.delete(ev.taskId);
+      } else if (ev.type === 'task_skipped') {
+        taskRanges.push({
+          taskId: ev.taskId,
+          startIdx: i,
+          endIdx: i,
+          startEvent: ev,
+          endEvent: ev,
+          abandoned: false,
+        });
       }
     }
   }
@@ -208,7 +229,22 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   let cursor = 0;
   let reviewStages = 0;
 
+  function appendCompletedReviews(endIndex: number): void {
+    for (let index = cursor; index < endIndex; index++) {
+      const event = events[index];
+      if (event === undefined || !(isWorkflowCompleteEvent(event) && event.review !== undefined))
+        continue;
+      const items = events.slice(cursor, index + 1);
+      const summary = settledStageSummary(items, reviewStages + 1);
+      if (summary?.stage !== 'review') continue;
+      sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
+      reviewStages++;
+      cursor = index + 1;
+    }
+  }
+
   for (const range of taskRanges) {
+    appendCompletedReviews(range.startIdx);
     if (cursor < range.startIdx) {
       const items = events.slice(cursor, range.startIdx);
       const summary = settledStageSummary(items, reviewStages + 1);
@@ -240,7 +276,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
             method: endEvent.method,
             retries: endEvent.retries,
             duration: endEvent.duration,
-            file: range.startEvent.file,
+            ...(range.startEvent.file !== undefined && { file: range.startEvent.file }),
           },
         });
       } else if (endEvent.type === 'task_skipped') {
@@ -268,7 +304,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
             method: 'failed',
             retries: 0,
             duration: 0,
-            file: range.startEvent.file,
+            ...(range.startEvent.file !== undefined && { file: range.startEvent.file }),
           },
         });
       }
@@ -284,6 +320,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     }
   }
 
+  appendCompletedReviews(events.length);
   if (cursor < events.length) {
     sections.push({ type: 'events', items: events.slice(cursor), startIndex: cursor });
   }
@@ -304,7 +341,13 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   ordinal: number,
 ): StageSummary | null {
   const stages = items.map((event) => (event.phase === undefined ? null : phaseStage(event.phase)));
-  const stage = stages.includes('review') ? 'review' : stages.includes('plan') ? 'plan' : null;
+  const verdict = items.findLast(isWorkflowCompleteEvent)?.review;
+  const stage =
+    verdict !== undefined || stages.includes('review')
+      ? 'review'
+      : stages.includes('plan')
+        ? 'plan'
+        : null;
   if (stage === null) return null;
 
   let firstTs: number | undefined;
@@ -341,7 +384,17 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     }
     if (isReviewFixStartedEvent(event)) fixes = event.taskIds;
   }
-  return { stage, ordinal, failedCommands: [...failedCommands], failedChecks, fixes, duration };
+  const outcome = verdict ?? (fixes.length > 0 ? 'failed' : null);
+  if (outcome === null) return null;
+  return {
+    stage,
+    ordinal,
+    outcome,
+    failedCommands: [...failedCommands],
+    failedChecks,
+    fixes,
+    duration,
+  };
 }
 
 // A build row between two briefs joins the brief that closed before it; the build rows left before a
@@ -358,15 +411,26 @@ function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
     const hasReviewStage = events
       .slice(gapStart, range.startIdx)
       .some((event) => event.phase !== undefined && phaseStage(event.phase) === 'review');
+    const consultIdx = events.findIndex(
+      (event, idx) =>
+        idx >= gapStart &&
+        idx < range.startIdx &&
+        event?.type === 'consult_answered' &&
+        event.taskId === range.taskId,
+    );
+    const gapEnd = consultIdx >= 0 ? consultIdx : range.startIdx;
     if (previous?.endEvent) {
       while (
-        gapStart < range.startIdx &&
+        gapStart < gapEnd &&
         events[gapStart]?.type !== 'review_fix_started' &&
         isBuildRow(events[gapStart], hasReviewStage)
       ) {
         gapStart++;
       }
       previous.endIdx = gapStart - 1;
+    }
+    if (consultIdx >= 0) {
+      range.startIdx = consultIdx;
     }
     while (range.startIdx > gapStart && isBuildRow(events[range.startIdx - 1], hasReviewStage)) {
       range.startIdx--;

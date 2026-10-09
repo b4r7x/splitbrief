@@ -84,11 +84,13 @@ export function answeredQuestionsRowBlock(input: {
     if (pair.answer.trim() === '') return;
     pair.answer
       .split('\n')
-      .flatMap((answerLine) =>
-        wrappedLines(answerLine, bodyWidth).map((line, lineOffset) => ({
-          line,
-          continuation: lineOffset > 0,
-        })),
+      .flatMap((answerLine, answerIndex) =>
+        wrappedLines(answerIndex === 0 ? `You → ${answerLine}` : answerLine, bodyWidth).map(
+          (line, lineOffset) => ({
+            line,
+            continuation: lineOffset > 0,
+          }),
+        ),
       )
       .forEach(({ line, continuation }, offset) => {
         const text = continuation ? continuationHead(line) : line;

@@ -13,9 +13,10 @@ import type {
   OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
-import { inlineActiveVerb, suiteStageText } from './phase-verb.js';
-import { formatStageElapsed, stallRunnerHint } from './live-activity.js';
+import { inlineActiveVerb, suiteStatusText, reviewActivityText } from './phase-verb.js';
+import { stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
+import { buildProgressRowCount } from '../layout/chrome-rows.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,
@@ -80,20 +81,30 @@ function runnerLabel(
 // What the run is doing, not what it has spent: usage is reported where a reader asks for it,
 // through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
 function activityLine(input: DeriveBuildProgressInput): string {
-  const command = runningCommand(input.operations);
+  const command = runningCommand(input.operations, input.lifecycle.phase);
   if (command !== null) return command.label;
   const operation = input.operations.active;
+  if (input.lifecycle.phase === 'final-review') {
+    return reviewActivityText(
+      operation,
+      operation === null
+        ? null
+        : (runnerLabel(operation.backendKind, operation.runnerName) ?? null),
+    );
+  }
   // Between calls there is no seat and no operation to name, and printing the phase twice would
   // read as two facts. The phase alone is the whole truth at that moment.
-  if (operation === null) return inlineActiveVerb(input.lifecycle.phase);
+  if (operation === null) {
+    return inlineActiveVerb(input.lifecycle.phase);
+  }
   // The runner is named on this line already, so naming its seat too says it twice
   // ("implementer implementing"): the phase's own verb is what the seat is doing. A side call is
   // the exception — its role is the fact the phase cannot tell.
   const doing = SIDE_CALL_ROLES.has(operation.role)
     ? operation.role
     : inlineActiveVerb(operation.phase);
-  return [runnerLabel(operation.backendKind, operation.runnerName) ?? input.lifecycle.phase, doing]
-    .filter((part) => part !== '')
+  return [runnerLabel(operation.backendKind, operation.runnerName), doing]
+    .filter((part): part is string => part !== undefined && part !== '')
     .join(SOFT_SEP);
 }
 
@@ -102,9 +113,13 @@ function activityLine(input: DeriveBuildProgressInput): string {
  * session's gate stage. No seat speaks while it runs, so its own clock is the block's proof of
  * life, and the age of a seat's last word would only contradict it.
  */
-function runningCommand(operations: OperationsState): { label: string; startedTs: number } | null {
+function runningCommand(
+  operations: OperationsState,
+  phase: LifecycleState['phase'],
+): { label: string; startedTs: number } | null {
   const suite = operations.suiteStage ?? null;
-  if (suite !== null) return { label: suiteStageText(suite), startedTs: suite.stageStartedTs };
+  if (suite !== null)
+    return { label: suiteStatusText(phase, suite), startedTs: suite.stageStartedTs };
   const stage = operations.validationStage ?? null;
   if (stage === null) return null;
   return { label: stage.command ?? stage.stage, startedTs: stage.stageStartedTs };
@@ -160,10 +175,10 @@ export function silenceText(silentMs: number, tail: string | null): string {
 // only what the seat is doing through it. The clock runs on: the watchdog warns and never ends the
 // call, so the line states no stop time.
 function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'freshness' | 'silent'> {
-  const command = runningCommand(input.operations);
+  const command = runningCommand(input.operations, input.lifecycle.phase);
   if (command !== null) {
     return {
-      freshness: `running ${formatStageElapsed(input.now - command.startedTs)}`,
+      freshness: `running ${formatElapsedClock(input.now - command.startedTs)}`,
       silent: false,
     };
   }
@@ -176,7 +191,12 @@ function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'fres
     };
   }
   const lastTs = input.lifecycle.lastRunnerEventTs ?? null;
-  if (lastTs === null) return { freshness: 'no update yet', silent: false };
+  if (lastTs === null) {
+    return {
+      freshness: input.lifecycle.phase === 'final-review' ? '' : 'no update yet',
+      silent: false,
+    };
+  }
   return { freshness: `last event ${formatTime(input.now - lastTs)} ago`, silent: false };
 }
 
@@ -207,14 +227,6 @@ function countsText(progress: BuildProgress): string {
 }
 
 /**
- * How many rows the block occupies at a width. The chrome budgets from this without knowing the
- * rest of the run's state, so the block never paints over the body it was measured around.
- */
-export function buildProgressRowCount(width: number): number {
-  return width >= 120 ? 2 : 3;
-}
-
-/**
  * The same facts at every width, regrouped rather than dropped. Where the activity and freshness
  * share a row, the activity gives way: a long command is cut, never the clock that follows it. A
  * silence leads with its clock and ends with the tool it names, so that row is cut from its end.
@@ -222,7 +234,7 @@ export function buildProgressRowCount(width: number): number {
 export function buildProgressLines(progress: BuildProgress, width: number): string[] {
   const counts = countsText(progress);
   if (buildProgressRowCount(width) === 2) {
-    const tail = `${SOFT_SEP}${progress.freshness}`;
+    const tail = progress.freshness.length > 0 ? `${SOFT_SEP}${progress.freshness}` : '';
     return [
       counts,
       progress.silent

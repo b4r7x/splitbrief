@@ -40,6 +40,7 @@ interface PublishOperationalMessageOptions extends BusContext {
   safety?: OperationalMessageSafety | undefined;
   /** An error's usage-limit reset, as the halt's `resetAt` names it; the row spells it when read. */
   resetAt?: string | undefined;
+  planCheck?: { code: string; message: string } | undefined;
 }
 
 type PlannerTextOptions = Pick<Partial<EngineEventOf<'planner_text'>>, 'role' | 'content'>;
@@ -401,7 +402,7 @@ export function publishError(options: PublishOperationalMessageOptions): void {
 }
 
 export function publishWarning(options: PublishOperationalMessageOptions): void {
-  const { bus, phase, message, taskId, safety } = options;
+  const { bus, phase, message, taskId, safety, planCheck } = options;
   bus.publish({
     type: 'warning',
     ts: Date.now(),
@@ -412,6 +413,7 @@ export function publishWarning(options: PublishOperationalMessageOptions): void 
       category: safety.category,
       code: safety.code,
     }),
+    ...(planCheck !== undefined && { planCheck }),
   });
 }
 

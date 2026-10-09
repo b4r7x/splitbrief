@@ -1,10 +1,11 @@
+import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus } from '../../../core/sessions/run-status.js';
 import { describe, expect, it } from 'vitest';
 import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary-view.js';
-import type { SummaryView } from './view-model.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { bylineText, legendText, openRunByline } from './byline.js';
+import { stopPoint } from '../stop/copy.js';
 
 describe('bylineText', () => {
   it('offers the undo on an applied run', () => {
@@ -85,10 +86,6 @@ describe('bylineText', () => {
   it('points at the scope deviations when nothing is blocking', () => {
     const view = makeView({
       outcome: { kind: 'needs-attention' },
-      review: {
-        ...makeView().review,
-        counts: { critical: 0, warning: 1, note: 0 },
-      } as SummaryView['review'],
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
     expect(bylineText(view, WIDE)).toBe(
@@ -208,6 +205,65 @@ describe('openRunByline', () => {
         },
       }),
     ).toBe('Stopped before T003 · type a correction or ⏎ to continue');
+  });
+
+  it('names the review when a run stopped before it at a boundary with no brief left', () => {
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+          resumeAt: { kind: 'review', cycle: 0 },
+        },
+      }),
+    ).toBe('Stopped before the review · type a correction or ⏎ to continue');
+  });
+
+  it('names the brief an interrupted run resumes without inventing a boundary cut', () => {
+    const status: RunStatus = {
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+      resumeAt: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
+    };
+    expect(
+      openRunByline({
+        ...OPEN,
+        status,
+      }),
+    ).toBe('Stopped at T003 · ⏎ to continue');
+  });
+
+  it('gives the same phrase from stopPoint and the at-rest byline for a boundary stop before a brief', () => {
+    const step: StepRef = { kind: 'brief', taskId: taskId('T003'), attempt: 0 };
+    const phrase = stopPoint(step, 'boundary');
+    expect(phrase).toBe('before T003');
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+          resumeAt: step,
+        },
+      }),
+    ).toBe(`Stopped ${phrase} · type a correction or ⏎ to continue`);
+  });
+
+  it('gives before the review from stopPoint and the at-rest byline for a boundary stop with no brief left', () => {
+    const step: StepRef = { kind: 'review', cycle: 0 };
+    const phrase = stopPoint(step, 'boundary');
+    expect(phrase).toBe('before the review');
+    expect(
+      openRunByline({
+        ...OPEN,
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+          resumeAt: step,
+        },
+      }),
+    ).toBe(`Stopped ${phrase} · type a correction or ⏎ to continue`);
   });
 
   it('reopens the plan card a run with a typed plan is parked at', () => {

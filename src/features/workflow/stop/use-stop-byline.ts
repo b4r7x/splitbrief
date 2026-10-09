@@ -43,6 +43,7 @@ export function useStopByline(): StopByline | null {
   return stopByline({
     intent: stop.intent,
     phase: stop.phase,
+    workflowPhase: phase,
     parked: stop.parked,
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: next?.id ?? null,

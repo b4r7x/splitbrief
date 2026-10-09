@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildProgressLines,
-  buildProgressRowCount,
   deriveBuildProgress,
   UI_IDLE_WARN_MS,
   type DeriveBuildProgressInput,
 } from './build-progress.js';
+import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
@@ -266,7 +266,7 @@ describe('deriveBuildProgress', () => {
     const progress = deriveBuildProgress(input());
 
     expect(progress.attempt).toBeNull();
-    for (const width of [120, 80, 60]) {
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
       expect(buildProgressLines(progress, width).join('\n')).not.toContain('attempt');
     }
   });
@@ -286,7 +286,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress).not.toHaveProperty('eta');
-    for (const width of [120, 80, 60]) {
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
       expect(buildProgressLines(progress, width).join('\n')).not.toContain('ETA');
     }
   });
@@ -301,7 +301,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.attempt).toEqual({ current: 2, max: BOUNDS.attemptsPerLineage });
-    expect(buildProgressLines(progress, 120)[0]).toContain(
+    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain(
       `attempt 2 of ${BOUNDS.attemptsPerLineage}`,
     );
   });
@@ -314,7 +314,7 @@ describe('deriveBuildProgress', () => {
 
     const resumed = deriveBuildProgress(input({ tasks: tasksStore.get() }));
     expect(resumed.attempt).toEqual({ current: 6, max: 12 });
-    expect(buildProgressLines(resumed, 120)[0]).toContain('attempt 6 of 12');
+    expect(buildProgressLines(resumed, getChromeContentWidth(120))[0]).toContain('attempt 6 of 12');
 
     addEvent(
       makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7, attemptAllowance: 12 }),
@@ -410,7 +410,53 @@ describe('deriveBuildProgress', () => {
     expect(deriveBuildProgress(input()).activity).toBe('implementing');
     expect(
       deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'final-review' }) })).activity,
-    ).toBe('review');
+    ).toBe('Review · waiting for the verdict');
+  });
+
+  it('says waiting for the verdict and shows no "no update yet" in final review between calls', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review', lastRunnerEventTs: null }),
+        operations: operationsState({ active: null }),
+      }),
+    );
+    expect(progress.activity).toBe('Review · waiting for the verdict');
+    expect(progress.freshness).toBe('');
+    expect(progress.freshness).not.toContain('no update yet');
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
+      const block = buildProgressLines(progress, width).join('\n');
+      expect(block).not.toContain('no update yet');
+      expect(block).not.toContain('final-review');
+    }
+  });
+
+  it('shows only the phase verb when an operation has no runnerName', () => {
+    const unnamed = runningOperation();
+    delete unnamed.runnerName;
+    const buildProg = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: unnamed,
+        }),
+      }),
+    );
+    expect(buildProg.activity).toBe('implementing');
+    expect(buildProg.activity).not.toContain('final-review');
+
+    const reviewProg = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          active: {
+            ...unnamed,
+            role: 'review',
+            phase: 'final-review',
+          },
+        }),
+      }),
+    );
+    expect(reviewProg.activity).toBe('Review · reviewing');
+    expect(reviewProg.activity).not.toContain('final-review');
   });
 
   it('names the side call the phase cannot tell, and still no usage', () => {
@@ -419,6 +465,21 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('OpenAI Codex CLI · summary');
+  });
+
+  it.each([
+    ['summary', 'Summary'],
+    ['compaction', 'Compaction'],
+  ] as const)('names %s during Review without a reviewer seat', (role, label) => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          active: runningOperation({ role, phase: 'final-review', runnerName: 'codex' }),
+        }),
+      }),
+    );
+    expect(progress.activity).toBe(`Review · ${label}`);
   });
 
   it('names the running gate command instead of the seat', () => {
@@ -447,7 +508,9 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(buildProgressLines(progress, 120)[1]).toBe('npm test · running 1:30');
+    expect(buildProgressLines(progress, getChromeContentWidth(120))[1]).toBe(
+      'npm test · running 1:30',
+    );
     expect(progress.silent).toBe(false);
   });
 
@@ -471,9 +534,9 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('running 10:02');
   });
 
-  // The byline leads with the same check clock (`formatStageElapsed`); past an hour both read
-  // whole minutes, never `1:00:02` in the block beside `60:02` in the byline.
-  it('counts a check past an hour in minutes, as the byline does', () => {
+  // The byline leads with the same check clock (`formatElapsedClock`); past an hour both read
+  // `1:00:02`, never one clock in the block and another in the byline.
+  it('counts a check past an hour in the clock the byline reads', () => {
     const progress = deriveBuildProgress(
       input({
         operations: operationsState({
@@ -487,7 +550,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.freshness).toBe('running 60:02');
+    expect(progress.freshness).toBe('running 1:00:02');
   });
 
   // Render of workflow-review-check-running: `last event 14m 7s ago` sat under `running 10:02`,
@@ -507,10 +570,10 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Reviewer check V2 · npm test');
+    expect(progress.activity).toBe('Review · Reviewer check V2 · npm test');
     expect(progress.freshness).toBe('running 10:02');
     expect(progress.silent).toBe(false);
-    for (const width of [160, 120, 80, 60]) {
+    for (const width of [160, getChromeContentWidth(120), 80, 60]) {
       expect(buildProgressLines(progress, width).join('\n')).not.toContain('last event');
     }
   });
@@ -561,10 +624,10 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    for (const width of [120, 140]) {
+    for (const width of [getChromeContentWidth(120), 140]) {
       const line = buildProgressLines(progress, width)[1] ?? '';
       expect(line.endsWith(' · running 0:40')).toBe(true);
-      expect(line.startsWith('Base re-run V2 · npm test -- ')).toBe(true);
+      expect(line.startsWith('Review · Base re-run V2 · npm test -- ')).toBe(true);
       expect(line).toContain('…');
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
     }
@@ -590,6 +653,14 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.freshness).toBe('No output for 5:12');
+  });
+});
+
+describe('buildProgressRowCount', () => {
+  it('2 rows at 120 terminal columns and wider, 3 below', () => {
+    expect(buildProgressRowCount(getChromeContentWidth(120))).toBe(2);
+    expect(buildProgressRowCount(getChromeContentWidth(121))).toBe(2);
+    expect(buildProgressRowCount(getChromeContentWidth(119))).toBe(3);
   });
 });
 
@@ -624,7 +695,9 @@ describe('buildProgressLines', () => {
   });
 
   it('2 lines at 120 columns', () => {
-    expect(buildProgressLines(deriveBuildProgress(input()), 120)).toHaveLength(2);
+    expect(
+      buildProgressLines(deriveBuildProgress(input()), getChromeContentWidth(120)),
+    ).toHaveLength(2);
   });
 
   it('3 lines at 80 and at 60 columns, with or without an attempt to state', () => {
@@ -650,7 +723,7 @@ describe('buildProgressLines', () => {
       }),
     );
 
-    for (const width of [120, 80, 60]) {
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
       const block = buildProgressLines(progress, width).join('\n');
       expect(block).toContain('OpenAI Codex CLI · implementing');
       expect(block).toContain('last event 5s ago');
@@ -671,9 +744,11 @@ describe('buildProgressLines', () => {
       }),
     );
 
-    expect(buildProgressLines(progress, 120)[0]).toContain('1/3 briefs passed');
-    expect(buildProgressLines(progress, 120)[0]).toContain('1 escalated');
-    expect(buildProgressLines(progress, 120)[0]).toContain('1 failed');
+    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain(
+      '1/3 briefs passed',
+    );
+    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain('1 escalated');
+    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain('1 failed');
   });
 });
 
@@ -699,7 +774,7 @@ describe('the build block during the final review', () => {
   it('states no attempt', () => {
     const progress = deriveBuildProgress(review());
     expect(progress.attempt).toBeNull();
-    for (const width of [120, 80, 60]) {
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
       const block = buildProgressLines(progress, width).join('\n');
       expect(block).toContain('2/2 briefs passed');
       expect(block).not.toContain('attempt');
@@ -708,7 +783,7 @@ describe('the build block during the final review', () => {
 
   it('paints exactly the rows the chrome budgets for it', () => {
     const progress = deriveBuildProgress(review());
-    for (const width of [120, 80, 60]) {
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
       expect(buildProgressLines(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
   });
@@ -721,7 +796,7 @@ describe('the build block during the final review', () => {
         }),
       }),
     );
-    for (const width of [120, 80, 60]) {
+    for (const width of [getChromeContentWidth(120), 80, 60]) {
       expect(buildProgressLines(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
     expect(progress.attempt).not.toBeNull();

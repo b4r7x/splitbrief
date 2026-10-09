@@ -868,10 +868,10 @@ describe('event row dispatch', () => {
       'Answered · 2 questions',
       '1. What should be refactored? Give a file/module/feature ',
       '   name or area of the codebase.',
-      'I want you to first review the changes and then after ',
-      'review make tasks of fixes for implementer',
+      'You → I want you to first review the changes and then ',
+      'after review make tasks of fixes for implementer',
       '2. What kind of refactor?',
-      'Simplify/clean up existing code',
+      'You → Simplify/clean up existing code',
     ]);
     expect(rows[0]?.kind).toBe('prompt');
     expect(rows[0]?.segments[0]?.tone).toBe('textDim');
@@ -924,10 +924,10 @@ describe('event row dispatch', () => {
       'Answered · 2 questions',
       '1. What should be refactored? Give a file/module/feature',
       '   name or area of the codebase.',
-      'I want you to first review the changes and then after',
-      'review make tasks of fixes for implementer',
+      'You → I want you to first review the changes and then',
+      'after review make tasks of fixes for implementer',
       '2. What kind of refactor?',
-      'Simplify/clean up existing code',
+      'You → Simplify/clean up existing code',
     ]);
   });
 
@@ -945,7 +945,11 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText)).toEqual(['Answered · 1 question', '1. Which module?', 'src/auth.ts']);
+    expect(rows.map(rowText)).toEqual([
+      'Answered · 1 question',
+      '1. Which module?',
+      'You → src/auth.ts',
+    ]);
   });
 
   it('pulls a stranded wrap word down so no line ends the block as one lone word', () => {
@@ -972,7 +976,7 @@ describe('event row dispatch', () => {
       'Answered · 1 question',
       '1. What should be refactored? Give a file/module/feature name or area of',
       '   the codebase.',
-      'Review',
+      'You → Review',
     ]);
   });
 
@@ -1001,8 +1005,8 @@ describe('event row dispatch', () => {
       'Answered · 11 questions',
       ...Array.from({ length: 11 }, (_, index) =>
         index === 0
-          ? ['1.  Question 1?', 'Answer 1']
-          : [`${`${index + 1}.`.padEnd(4)}Question ${index + 1}?`, `Answer ${index + 1}`],
+          ? ['1.  Question 1?', 'You → Answer 1']
+          : [`${`${index + 1}.`.padEnd(4)}Question ${index + 1}?`, `You → Answer ${index + 1}`],
       ).flat(),
     ];
     expect(rows.map(rowText)).toEqual(expected);

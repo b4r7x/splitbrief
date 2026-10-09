@@ -139,7 +139,7 @@ export function ConversationRowView({
   if (row.node !== undefined) {
     return (
       <Box height={1} overflow="hidden" flexShrink={0}>
-        {row.node}
+        {typeof row.node === 'function' ? row.node(focused) : row.node}
       </Box>
     );
   }

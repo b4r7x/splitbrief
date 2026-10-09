@@ -208,6 +208,61 @@ describe('reviewDocumentForm', () => {
     }
   });
 
+  it('moves the first command intact below the introduction at 60 columns', () => {
+    expect(
+      reviewDocumentForm({
+        artifact: 'plan',
+        confirms: ['npm run check:invariants -- --strict', 'npm run typecheck'],
+        cols: 60,
+        budgetRows: Number.POSITIVE_INFINITY,
+      }).confirmsText,
+    ).toBe('Approving also confirms:\nnpm run check:invariants -- --strict,\nnpm run typecheck');
+  });
+
+  it('counts operations at 60 columns when the separating comma exceeds the line width', () => {
+    const operations = [
+      'npm run check:invariants -- --strict --reporter=dots',
+      'npm run typecheck',
+    ];
+    expect(
+      reviewDocumentForm({
+        artifact: 'plan',
+        confirms: operations,
+        cols: 60,
+        budgetRows: Number.POSITIVE_INFINITY,
+      }),
+    ).toEqual({
+      framed: false,
+      legend: true,
+      confirmsText: 'Approving also confirms 2 protected operations',
+    });
+    expect(getReviewDocumentPromptRows('plan', operations, 60, Number.POSITIVE_INFINITY)).toBe(
+      1 + 4 + 1,
+    );
+  });
+
+  it('counts operations at 60 columns when a command cannot fit on one line', () => {
+    const operations = [
+      'npm run typecheck',
+      'npm run test:integration -- --project workflow-screen --reporter verbose',
+    ];
+    expect(
+      reviewDocumentForm({
+        artifact: 'plan',
+        confirms: operations,
+        cols: 60,
+        budgetRows: Number.POSITIVE_INFINITY,
+      }),
+    ).toEqual({
+      framed: false,
+      legend: true,
+      confirmsText: 'Approving also confirms 2 protected operations',
+    });
+    expect(getReviewDocumentPromptRows('plan', operations, 60, Number.POSITIVE_INFINITY)).toBe(
+      1 + 4 + 1,
+    );
+  });
+
   it('keeps every option when even the fewest rows do not fit', () => {
     const form = reviewDocumentForm({ artifact: 'plan', confirms, cols: 60, budgetRows: 0 });
 

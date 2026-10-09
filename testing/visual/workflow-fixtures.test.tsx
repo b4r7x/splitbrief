@@ -10,7 +10,7 @@ import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js'
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
-import { findVisualScenario, WIDE_VIEWPORTS } from './catalog.js';
+import { findVisualScenario, REQUIRED_VIEWPORTS, WIDE_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
 import type { FixtureLifecycle } from './fixtures/common.js';
@@ -55,7 +55,11 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
     if (projection.atRest === undefined) {
       // A resumed halt republishes its own prompt through the recovery driver, so
       // that one event belongs to production, not to the projection's event list.
-      const drivenEvents = projection.resumeState?.pendingRecovery === undefined ? 0 : 1;
+      const consultAnswer =
+        projection.scenarioId === 'workflow-consult-answer-default' ||
+        projection.scenarioId === 'workflow-consult-answer-typed';
+      const drivenEvents =
+        (projection.resumeState?.pendingRecovery === undefined ? 0 : 1) + (consultAnswer ? 1 : 0);
       expect(eventsStore.get().events).toHaveLength(
         mergeEventLog([...projection.events]).length + drivenEvents,
       );
@@ -81,6 +85,69 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it.each(['default', 'typed'] as const)(
+    'renders the %s consult answer beneath its question in the brief section',
+    async (kind) => {
+      const scenario = findVisualScenario(`workflow-consult-answer-${kind}`);
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing consult scenario');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint());
+        const answer = kind === 'default' ? 'memory' : 'redis';
+        expect(
+          ui
+            .frameHistory()
+            .some((frame) => stripTerminalControls(frame).includes('Question 1 of 1')),
+        ).toBe(true);
+        expect(frame.indexOf(`You → ${answer}`)).toBeGreaterThan(frame.indexOf('Which store?'));
+        expect(frame.indexOf('Which store?')).toBeGreaterThan(frame.indexOf('T901'));
+        expect(eventsStore.get().events.filter((event) => event.type === 'user_message')).toEqual([
+          expect.objectContaining({ text: answer, qa: [{ question: 'Which store?', answer }] }),
+        ]);
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
+  it('uses the production named-check warning with metadata and the additional-check count', () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-recovery-plan-checks'));
+    expect(projection?.events.find((event) => event.type === 'warning')).toMatchObject({
+      message:
+        'The plan failed check uncovered-criterion: Criterion C2 is served by no task (+1 more); it goes back to the planner once.',
+      planCheck: { code: 'uncovered-criterion', message: 'Criterion C2 is served by no task.' },
+    });
+  });
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps the settled review and fix brief reachable by scrolling at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-review-fix-cycles');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing fix-cycle scenario');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const live = await ui.waitForCheckpoint();
+        expect(live).toContain('Review · Reviewer check V2');
+        ui.stdin.write('\u001b[H');
+        await ui.waitForCheckpoint({
+          predicate: ({ output }) => stripTerminalControls(output).includes('✓ Plan'),
+        });
+        const reached = [stripTerminalControls(ui.lastFrame() ?? '')];
+        for (let row = 0; row < 10; row++) {
+          ui.stdin.write('\u001b[1;2B');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          reached.push(stripTerminalControls(ui.lastFrame() ?? ''));
+        }
+        const history = reached.join('\n');
+        expect(history).toContain('Review 1 failed');
+        expect(history).toContain('fixes T904');
+        expect(history).toContain('T904');
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
   beforeEach(() => {
     forceUnicodeGlyphs();
   });

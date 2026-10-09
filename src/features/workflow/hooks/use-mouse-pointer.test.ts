@@ -440,11 +440,7 @@ describe('workflow pointer handling', () => {
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(false);
 
     dispatchWorkflowPointer(
-      pointerEvent(
-        'press',
-        snapshot.contentRect.left,
-        snapshot.contentRect.top + snapshot.stickyLeadingRows + windowIndex,
-      ),
+      pointerEvent('press', snapshot.contentRect.left, snapshot.contentRect.top + windowIndex),
     );
 
     expect(conversationScrollStore.get().expandedActivityBatches.has(batchKey)).toBe(true);

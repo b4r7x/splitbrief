@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { wrapHard } from '../../../utils/wrap.js';
 import {
   formatTaskStartedValue,
   fullSuiteRow,
@@ -170,7 +171,7 @@ describe('fullSuiteRow', () => {
         moment: 'pre-review',
         status: 'not-run',
       }),
-    ).toBe(`Pre-review suite · ${stage === 'lint' ? 'npm run lint' : 'npm test'} · not run`);
+    ).toBe(`Pre-review suite · ${stage === 'lint' ? 'npm run lint' : 'npm test'} · not\u00a0run`);
   });
 
   // S8 run 18:06–18:58: the transcript read `Suite test (npm test) running` beside a block and a
@@ -281,9 +282,27 @@ describe('fullSuiteRow for a reviewer check', () => {
       'Reviewer check V2 · npm run lint · refused · runs the package script lint, and this run changed package.json',
     );
     expect(fullSuiteRow(reviewCheck({ id: 'V3', status: 'not-run', detail: 'V2 failed' }))).toBe(
-      'Reviewer check V3 · npm test · not run · V2 failed',
+      'Reviewer check V3 · npm test · not\u00a0run · V2 failed',
     );
   });
+
+  it.each(['pre-review', 'base', 'brief'] as const)(
+    'keeps not run whole at 60 columns for a %s check',
+    (moment) => {
+      const row = fullSuiteRow(
+        reviewCheck({
+          id: 'V2',
+          command: 'npm test -- src/legacy.test.ts',
+          moment,
+          status: 'not-run',
+          detail: 'V1 failed',
+        }),
+      );
+      const lines = wrapHard(row, 60).split('\n');
+      expect(lines.some((line) => line.includes('not\u00a0run'))).toBe(true);
+      for (const line of lines) expect(line).not.toMatch(/\bnot\s*$/u);
+    },
+  );
 
   it('names the re-run at the run base with the same id and command text', () => {
     const base = reviewCheck({ moment: 'base', status: 'done', duration: 2_000 });
@@ -302,7 +321,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       detail: 'both runs timed out',
     };
     expect(fullSuiteRow(unverified)).toBe(
-      'Base re-run V1 · npm test · 1 not verified at the run base · 2.0s · both runs timed out',
+      'Base re-run V1 · npm test · 1\u00a0not verified at the run base · 2.0s · both runs timed out',
     );
     expect(fullSuiteTone(unverified)).toBe('warning');
     expect(
@@ -312,7 +331,7 @@ describe('fullSuiteRow for a reviewer check', () => {
     ).toBe('Base re-run V1 · npm test · refused · npm is not on the path');
     expect(
       fullSuiteRow(reviewCheck({ moment: 'base', status: 'not-run', detail: 'no check V1' })),
-    ).toBe('Base re-run V1 · npm test · not run · no check V1');
+    ).toBe('Base re-run V1 · npm test · not\u00a0run · no check V1');
   });
 
   // Q2 review B2: a fix brief re-ran V1 with no row of its own.
@@ -408,7 +427,9 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteRow(oneOld)).toBe(
       "Base re-run V1 · npm test · pre-existing · 2.0s · the failure also fails before this run's changes",
     );
-    expect(fullSuiteRow(mixed)).toBe('Base re-run V1 · npm test · 1 new, 2 pre-existing · 2.0s');
+    expect(fullSuiteRow(mixed)).toBe(
+      'Base re-run V1 · npm test · 1\u00a0new, 2\u00a0pre-existing · 2.0s',
+    );
     expect(fullSuiteTone(allOld)).toBe('warning');
     expect(fullSuiteTone(mixed)).toBe('error');
   });
@@ -425,9 +446,31 @@ describe('fullSuiteRow for a reviewer check', () => {
     };
 
     expect(fullSuiteRow(all)).toBe(
-      'Base re-run V1 · npm test · 1 new, 1 pre-existing, 1 not verified at the run base · 2.0s · the run base re-run timed out',
+      'Base re-run V1 · npm test · 1\u00a0new, 1\u00a0pre-existing, 1\u00a0not verified at the run base · 2.0s · the run base re-run timed out',
     );
     expect(fullSuiteTone(all)).toBe('error');
+  });
+
+  it('never ends a wrapped row with a bare number at 60 cells', () => {
+    for (const command of [
+      'npm test -- src/legacy.test.ts',
+      'npm test -- src/legacy/long-path/file.test.ts',
+      'npm test',
+    ]) {
+      const base = reviewCheck({
+        moment: 'base',
+        status: 'done',
+        passed: false,
+        newFailures: 2,
+        preExisting: 1,
+        duration: 2_000,
+        command,
+      });
+      const lines = wrapHard(fullSuiteRow(base), 60).split('\n');
+      for (const line of lines) {
+        expect(line).not.toMatch(/\b\d+\s*$/);
+      }
+    }
   });
 
   it('paints a red check as an error, a red base re-run and a refusal as warnings, the rest dim', () => {
@@ -489,14 +532,14 @@ describe('reviewChecksRow', () => {
       reason: 'The project has no test command.\nNor a CI config.',
     });
     expect(reviewChecksRow(event)).toBe(
-      'Reviewer checks · chose none · The project has no test command.',
+      'Reviewer checks · chose\u00a0none · The project has no test command.',
     );
     expect(reviewChecksTone(event)).toBe('textDim');
   });
 
   it('names the missing reason of an event the schema let through without one', () => {
     expect(reviewChecksRow(reviewChecksEvent({ reason: undefined }))).toBe(
-      'Reviewer checks · chose none · no reason given',
+      'Reviewer checks · chose\u00a0none · no reason given',
     );
   });
 
@@ -521,7 +564,7 @@ describe('reviewChecksRow', () => {
       reason: 'validation.approve_checks is ask and this run has no screen to ask on',
     });
     expect(reviewChecksRow(event)).toBe(
-      'Reviewer checks · not run V1, V2 · validation.approve_checks is ask and this run has no screen to ask on',
+      'Reviewer checks · not\u00a0run V1, V2 · validation.approve_checks is ask and this run has no screen to ask on',
     );
     expect(reviewChecksDeclinedRows(event)).toEqual([]);
     expect(reviewChecksTone(event)).toBe('warning');

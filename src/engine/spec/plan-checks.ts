@@ -7,7 +7,7 @@ import { topoSort } from '../../core/state/topo-sort.js';
 import { isPathConfined } from '../../lib/path-confinement.js';
 import { isENOENT } from '../../lib/process/errors.js';
 import { matches } from '../../utils/error.js';
-import { pluralize } from '../../utils/pluralize.js';
+import { countNoun, pluralize } from '../../utils/pluralize.js';
 import { protectedWriteClass } from '../orchestrator/approval/action-classifier.js';
 
 export type PlanCheckCode =
@@ -42,6 +42,22 @@ export type PlanCheckCode =
 export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | undefined }>;
 
 export type PlanCheckError = Readonly<{ code: PlanCheckCode; message: string }>;
+
+export function planRepairWarning(errors: readonly PlanCheckError[]): {
+  message: string;
+  planCheck?: PlanCheckError;
+} {
+  const first = errors.find(blocksPlan) ?? errors[0];
+  const more = errors.length > 1 ? ` (+${errors.length - 1} more)` : '';
+  return first === undefined
+    ? {
+        message: `The plan failed ${countNoun(errors.length, 'check')}; it goes back to the planner once.`,
+      }
+    : {
+        message: `The plan failed check ${first.code}: ${first.message.replace(/\.$/, '')}${more}; it goes back to the planner once.`,
+        planCheck: first,
+      };
+}
 
 const isCycle = matches('topo-circular-dependency');
 

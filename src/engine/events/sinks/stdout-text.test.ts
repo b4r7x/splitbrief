@@ -302,7 +302,7 @@ describe('createStdoutTextSink', () => {
       'base re-run V5: passes',
       'base re-run V6: refused (names no program)',
       'reviewer check V7: failed (npm run e2e)',
-      'base re-run V7: 1 not verified at the run base · both runs timed out',
+      'base re-run V7: 1\u00a0not verified at the run base · both runs timed out',
     ]);
   });
 
@@ -343,7 +343,7 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: final-review',
       "base re-run V1: pre-existing · all 2 failures also fail before this run's changes",
-      'base re-run V2: 1 new, 1 pre-existing',
+      'base re-run V2: 1\u00a0new, 1\u00a0pre-existing',
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',
@@ -351,7 +351,7 @@ describe('createStdoutTextSink', () => {
       'fix check V1: 1 of your 2 failures remains (npm test)',
       'fix check V1: your 2 failures not shown · not proven fixed (npm test)',
       'fix check V1: your 2 failures gone (npm test)',
-      'base re-run V3: 1 new, 1 pre-existing, 1 not verified at the run base · the run base re-run timed out',
+      'base re-run V3: 1\u00a0new, 1\u00a0pre-existing, 1\u00a0not verified at the run base · the run base re-run timed out',
     ]);
   });
 

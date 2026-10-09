@@ -18,9 +18,9 @@ export function baseSplit(counts: {
   if (counts.newFailures > 0 || notVerified > 0) {
     const parts =
       counts.newFailures + counts.preExisting > 0
-        ? [`${counts.newFailures} new`, `${counts.preExisting} pre-existing`]
+        ? [`${counts.newFailures}\u00a0new`, `${counts.preExisting}\u00a0pre-existing`]
         : [];
-    if (notVerified > 0) parts.push(`${notVerified} not verified at the run base`);
+    if (notVerified > 0) parts.push(`${notVerified}\u00a0not verified at the run base`);
     return { verdict: parts.join(', '), why: notVerified > 0 ? (counts.reason ?? null) : null };
   }
   const failures =

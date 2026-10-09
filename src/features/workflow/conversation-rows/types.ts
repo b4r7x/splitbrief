@@ -76,10 +76,10 @@ export interface ConversationRow {
   codeBg?: true;
   /**
    * A row the transcript paints as given, marker and segments both skipped. It is how a block that
-   * already has its own single-line renderer — the closed run's ledger — joins the one scroller
-   * instead of opening a second.
+   * already has its own single-line renderer joins the one scroller. Settled summaries receive
+   * focus through a renderer; the closed run's ledger carries prebuilt nodes.
    */
-  node?: ReactNode;
+  node?: ReactNode | ((focused?: boolean) => ReactNode);
 }
 
 export interface ConversationRowsResult {

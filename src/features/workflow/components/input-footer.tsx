@@ -7,13 +7,10 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { getActiveRailStage } from '../../../core/rail-stages.js';
-import {
-  deriveLiveStatus,
-  formatStageElapsed,
-  PAUSED_LIVE_STATUS_VERB,
-} from '../display/live-activity.js';
+import { deriveLiveStatus, PAUSED_LIVE_STATUS_VERB } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
 import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
+import { formatElapsedClock } from '../../../utils/format-time.js';
 import {
   selectRunningBrief,
   selectTaskListView,
@@ -110,6 +107,7 @@ export function InputFooter({
           plannerCall: lifecycle.plannerCall ?? null,
           plannerCallStartedTs: lifecycle.plannerCallStartedTs ?? null,
           suiteStage: operations.suiteStage ?? null,
+          activeOperation: operations.active,
         });
   const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
 
@@ -121,7 +119,7 @@ export function InputFooter({
   ]);
   const elapsed =
     liveStatus !== null && liveStatus.stageStart > 0
-      ? formatStageElapsed(Date.now() - liveStatus.stageStart - liveStatus.waitedMs)
+      ? formatElapsedClock(Date.now() - liveStatus.stageStart - liveStatus.waitedMs)
       : '';
   const liveLead =
     liveStatus !== null

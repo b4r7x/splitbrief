@@ -36,7 +36,7 @@ function resolveWorkflowHit(
   if (railIndex !== null) return { surface: 'rail', index: railIndex };
   // The review owns the body; nothing under it is a transcript row.
   if (controlsStore.get().inputMode === 'review') return null;
-  const visibleCount = hoverSnapshot.stickyLeadingRows + hoverSnapshot.viewportHeight;
+  const visibleCount = hoverSnapshot.viewportHeight;
   const index = hitTranscriptRow({
     rect: hoverSnapshot.contentRect,
     sgrX,
@@ -97,11 +97,7 @@ function activateConversationRow(windowIndex: number): void {
     renderableCountAtScroll: scroll.renderableCountAtScroll,
     heightAtScroll: scroll.heightAtScroll,
   });
-  // The transcript paints below the sticky completed-task summary (header + rows + trailing blank);
-  // its height is the only part the scroll viewport reserves, so deriving the leading offset from it
-  // keeps the click aligned with the rows the user sees.
-  const transcriptIndex = windowIndex - snapshot.stickyLeadingRows;
-  const clickedRow = transcriptIndex >= 0 ? computed.rows[transcriptIndex] : undefined;
+  const clickedRow = windowIndex >= 0 ? computed.rows[windowIndex] : undefined;
   if (clickedRow === undefined) return;
   const action = buildConversationRowActions({
     ...inputs,

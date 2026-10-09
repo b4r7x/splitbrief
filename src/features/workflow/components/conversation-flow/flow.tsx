@@ -1,8 +1,6 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
-import { TaskSummary } from '../../../../components/task-summary.js';
-import { isSettledSection } from '../../../../core/sections/event-sections.js';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
 import { getWorkflowSidebarWidth } from '../../layout/rect.js';
 import { controlsStore } from '../../../../stores/ui/controls.js';
@@ -14,12 +12,7 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
-import {
-  selectRunningBrief,
-  selectTaskListView,
-  tasksStore,
-} from '../../../../stores/workflow/tasks.js';
-import type { TaskListView } from '../../../../stores/workflow/tasks.js';
+import { selectRunningBrief, tasksStore } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';
@@ -30,11 +23,7 @@ import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
-import { stageSummaryRow } from './stage-summary.js';
-import {
-  CompletedTaskSummariesWithHover,
-  ConversationTranscriptRows,
-} from './conversation-hover-rows.js';
+import { ConversationTranscriptRows } from './conversation-hover-rows.js';
 
 interface ConversationFlowProps {
   height: number;
@@ -44,16 +33,6 @@ interface ConversationFlowProps {
   onScrollBelow?: ((label: string) => void) | undefined;
   /** Blocks appended after the run's own events, inside this one scroller. */
   tail?: readonly ConversationRowBlock[] | undefined;
-}
-
-// Without a sidebar this header is the only place the transcript states how far the run has got, so
-// it carries the counts rather than the bare word "completed". Bare of any marker, like the
-// sidebar's own headings: a heading whose first character is a letter, above rows whose first
-// character is a symbol, differs in kind rather than in shape, and no glyph tier can collapse that.
-function taskListLabel(view: TaskListView): string {
-  return view.total > 0
-    ? `Completed${SOFT_SEP}${view.passed}/${view.total} briefs passed`
-    : 'Completed';
 }
 
 function computeScrollBannerLabel(
@@ -111,8 +90,6 @@ export function ConversationFlow({
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
-  const completedItems = sections.filter(isSettledSection);
-  const taskListView = selectTaskListView(tasks);
   // The sidebar is the persistent list and the transcript is the narrative, so the queued block
   // stands down while the sidebar renders rather than printing the same pending titles twice, side
   // by side. Below the sidebar's column breakpoint it is the only place pending work appears.
@@ -149,11 +126,6 @@ export function ConversationFlow({
       row({ key: `queued-${task.id}`, text: task.title, tone: 'textDim', kind: 'task-header' }),
     );
   const transcriptViewportHeight = viewportSplit.transcriptViewportHeight;
-  const completedRows = viewportSplit.completedRows;
-  const shownCompleted =
-    completedItems.length > completedRows && completedRows > 1 ? completedRows - 1 : completedRows;
-  const hiddenCompleted = completedRows > 1 ? completedItems.length - shownCompleted : 0;
-  const visibleCompletedItems = shownCompleted > 0 ? completedItems.slice(-shownCompleted) : [];
   const {
     newEventCount,
     rows,
@@ -191,10 +163,9 @@ export function ConversationFlow({
       : '';
   const belowLabel = [below, newEventsLabel].filter((part) => part !== '').join(SOFT_SEP);
 
-  const stickyLeadingLines = viewportSplit.stickyLeadingRows;
   // The transcript pane sizes to its rows so a short run does not leave a hole above whatever
   // follows it. The empty-state line is a row too, and a zero-height pane would clip it.
-  const showsEmptyState = rows.length === 0 && completedItems.length === 0;
+  const showsEmptyState = rows.length === 0;
 
   // The keyboard measures the transcript from the stores, so what the tail adds has to reach it
   // or `home` and `end` stop at the last event the run wrote.
@@ -223,66 +194,6 @@ export function ConversationFlow({
       overflow="hidden"
       flexShrink={0}
     >
-      {visibleCompletedItems.length > 0 ? (
-        <CompletedTaskSummariesWithHover
-          conversationWidth={conversationWidth}
-          summaryCount={completedRows}
-        >
-          {(focusedSummaryIndex) => (
-            <>
-              <Box
-                height={1}
-                width={conversationWidth}
-                overflow="hidden"
-                flexShrink={0}
-                marginLeft={rowLeadingCells('message')}
-              >
-                <Text color={t.textDim}>{taskListLabel(taskListView)}</Text>
-              </Box>
-              {hiddenCompleted > 0 && (
-                <Box
-                  height={1}
-                  width={conversationWidth}
-                  overflow="hidden"
-                  flexShrink={0}
-                  marginLeft={rowLeadingCells('message')}
-                >
-                  <Text color={t.textDim}>{`+${hiddenCompleted} earlier`}</Text>
-                </Box>
-              )}
-              {visibleCompletedItems.map((section, position) => (
-                <Box
-                  key={`completed-${section.startIndex}`}
-                  height={1}
-                  width={conversationWidth}
-                  flexShrink={0}
-                >
-                  {section.type === 'completed-task' ? (
-                    <TaskSummary
-                      width={conversationWidth}
-                      id={section.summary.id}
-                      title={section.summary.title}
-                      state={{ kind: 'settled', method: section.summary.method }}
-                      retries={section.summary.retries}
-                      duration={section.summary.duration}
-                      file={section.summary.file}
-                      reason={section.summary.reason}
-                      focused={focusedSummaryIndex === position + (hiddenCompleted > 0 ? 1 : 0)}
-                    />
-                  ) : (
-                    <TaskSummary
-                      {...stageSummaryRow(section.summary)}
-                      width={conversationWidth}
-                      focused={focusedSummaryIndex === position + (hiddenCompleted > 0 ? 1 : 0)}
-                    />
-                  )}
-                </Box>
-              ))}
-              <Box height={1} width={conversationWidth} flexShrink={0} />
-            </>
-          )}
-        </CompletedTaskSummariesWithHover>
-      ) : null}
       <Box
         width={conversationWidth}
         height={Math.min(innerHeight, showsEmptyState ? 1 : rows.length)}
@@ -296,11 +207,7 @@ export function ConversationFlow({
               <Text color={t.textDim}>no events yet</Text>
             </Box>
           )}
-          <ConversationTranscriptRows
-            rows={rows}
-            stickyLeadingLines={stickyLeadingLines}
-            visibleActiveRowKey={visibleActiveRowKey}
-          />
+          <ConversationTranscriptRows rows={rows} visibleActiveRowKey={visibleActiveRowKey} />
         </Box>
       </Box>
       {viewportSplit.queuedRows > 0 && (

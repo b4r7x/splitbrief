@@ -17,6 +17,9 @@ import { routerStore } from '../../../../src/stores/navigation/router.js';
 import { questionPromptStore } from '../../../../src/stores/question-prompt/prompt.js';
 import { controlsStore } from '../../../../src/stores/ui/controls.js';
 import { addEvent } from '../../../../src/stores/workflow/actions/event.js';
+import { createEventBus } from '../../../../src/engine/events/bus.js';
+import { publishUserMessage } from '../../../../src/engine/orchestrator/events.js';
+import { consultReplyAnswer } from '../../../../src/engine/orchestrator/consult/apply.js';
 import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
@@ -141,10 +144,10 @@ async function seedRunLog(route: FixtureAtRestRoute): Promise<void> {
   await writeFile(target, await readFile(source, 'utf8'));
 }
 
-function activateFixtureInputMode(
+async function activateFixtureInputMode(
   projection: WorkflowFixtureProjection,
   options: Parameters<RunWorkflowFn>[0],
-): void {
+): Promise<void> {
   if (projection.review !== undefined) {
     void options.callbacks.onApprovalNeeded(
       'plan',
@@ -155,7 +158,7 @@ function activateFixtureInputMode(
   // A halt is not a planner conversation: the recovery driver sets question mode with the prompt
   // itself, so only the fixture's explicit question scenario needs this callback.
   if (projection.question !== undefined) {
-    void options.callbacks.onPlannerReply?.({
+    const answer = await options.callbacks.onPlannerReply?.({
       call: 'research',
       text: '',
       questions:
@@ -165,6 +168,20 @@ function activateFixtureInputMode(
       answers: [],
       answered: false,
     });
+    if (
+      projection.scenarioId === 'workflow-consult-answer-default' ||
+      projection.scenarioId === 'workflow-consult-answer-typed'
+    ) {
+      if (answer === undefined) throw new Error('Consult fixture requires an answer');
+      const question = projection.question.questions?.[0];
+      if (question === undefined) throw new Error('Consult fixture requires a question');
+      const text = consultReplyAnswer(question, answer);
+      const bus = createEventBus();
+      bus.subscribe(addEvent);
+      publishUserMessage({ bus, phase: 'escalating' }, text, [
+        { question: 'Which store?', answer: text },
+      ]);
+    }
   }
 }
 
@@ -199,10 +216,10 @@ export function createWorkflowFixtureAppDeps(
   projection?: WorkflowFixtureProjection,
   sessionSelect?: SessionSelectDeps,
 ): WorkflowScreenDeps {
-  const runWorkflow: RunWorkflowFn = (options) => {
+  const runWorkflow: RunWorkflowFn = async (options) => {
     if (projection !== undefined) {
       applyProjection(projection);
-      activateFixtureInputMode(projection, options);
+      await activateFixtureInputMode(projection, options);
     }
     return waitForFixtureAbort(options.signal);
   };
