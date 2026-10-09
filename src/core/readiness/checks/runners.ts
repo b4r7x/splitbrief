@@ -4,7 +4,6 @@ import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
-import { RUNNER_IDLE_KILL_MS } from '../../schemas/runner-fields.js';
 import type { ReadinessCheck } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -196,24 +195,22 @@ function watchdogTimeoutCheck(opts: {
   if (opts.runner.kind === 'api') return [];
 
   const { timeout, idleKillMs } = opts.runner;
-  if (timeout === undefined) return [];
-
-  const effectiveIdleKillMs = idleKillMs ?? RUNNER_IDLE_KILL_MS;
-  if (timeout > effectiveIdleKillMs) return [];
+  if (timeout === undefined || idleKillMs === undefined) return [];
+  if (timeout > idleKillMs) return [];
 
   return [
     {
       id: opts.id,
       severity: 'warning',
-      summary: `${opts.label} timeout (${timeout}ms) is at or below the idle-kill threshold (${effectiveIdleKillMs}ms); the watchdog kill-and-retry never gets a chance to fire.`,
+      summary: `${opts.label} timeout (${timeout}ms) is at or below the idle-kill threshold (${idleKillMs}ms); the watchdog kill-and-retry never gets a chance to fire.`,
       details: [
         `Configured timeout: ${timeout}ms.`,
-        `Effective idle-kill threshold: ${effectiveIdleKillMs}ms.`,
+        `Configured idle-kill threshold: ${idleKillMs}ms.`,
         'Raise timeout above the idle-kill threshold, or remove it, to let a stalled call be killed and retried instead of failing outright.',
       ],
       metadata: {
         timeout,
-        idleKillMs: effectiveIdleKillMs,
+        idleKillMs,
       },
     },
   ];

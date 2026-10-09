@@ -1,5 +1,7 @@
 import { baseSplit } from '../../../core/review/base-split.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { formatElapsedClock } from '../../../utils/format-time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
 
@@ -27,6 +29,19 @@ function reviewChecksLines(event: Extract<EngineEvent, { type: 'review_checks' }
     lines.push(`reviewer check declined: ${entry.target} (${entry.reason})`);
   }
   return lines;
+}
+
+/**
+ * The watchdog's warn: the call runs on, so the line states the silence and no outcome. A CLI call
+ * names its tool by id (`claude` runs as `claude-code`); a call with no runner name names its role.
+ */
+function stalledLine(event: Extract<EngineEvent, { type: 'runner_call_stalled' }>): string {
+  const name = event.runnerName;
+  const tool =
+    name === undefined
+      ? ''
+      : ` (${event.backendKind === 'cli' ? (cliToolIdForCommand(name) ?? name) : name})`;
+  return `stalled: ${event.role}${tool}${SOFT_SEP}no output for ${formatElapsedClock(event.silentMs)}`;
 }
 
 function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): string | null {
@@ -84,6 +99,7 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   base re-run V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: passed (<command>) | failed (<command>)
  *   fix check V1: refused (<detail>) | not run (<detail>)
+ *   stalled: implementer (opencode) · no output for 5:00
  *   review: passed
  *   done: 3 tasks
  */
@@ -125,6 +141,9 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
         if (line !== null) write(line);
         return;
       }
+      case 'runner_call_stalled':
+        write(stalledLine(bounded));
+        return;
       case 'task_completed':
         write(`task ${bounded.taskId}: done (${checks.get(bounded.taskId) ?? 'no checks'})`);
         return;

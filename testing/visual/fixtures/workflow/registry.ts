@@ -215,8 +215,15 @@ const checkpointPredicates = [
     checkpointId('planning-claude-frames'),
     includesAll(WORKFLOW_FIXTURE_TEXT.planningReply, 'retry 2 of 10'),
   ],
-  [checkpointId('implementation-silent'), includesAll('Still working', 'a tool is running')],
-  [checkpointId('implementation-tool-running'), includesAll('running npx vitest run')],
+  [
+    checkpointId('implementation-silent'),
+    includesAll('Implementing…', 'No output for', 'tools report when done'),
+  ],
+  [
+    checkpointId('implementation-tool-running'),
+    includesAll('No output for', 'running npx vitest run'),
+  ],
+  [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [checkpointId('review-check-running'), includesAll('Reviewer check V2')],
   [checkpointId('review-check-long-command'), includesAll('Reviewer check V2 · npx vitest')],
   [checkpointId('review-checks-approve'), includesAll('Run all', 'Skip all', 'V1')],

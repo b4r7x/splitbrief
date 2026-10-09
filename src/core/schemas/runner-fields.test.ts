@@ -639,7 +639,7 @@ describe('createRunnerConfigSchema', () => {
     ).toBe(true);
   });
 
-  it('a lone threshold is validated against the other default: a kill below the default warn is rejected', () => {
+  it('a lone idleKillMs below the default warn is rejected; a lone idleWarnMs of any size is valid', () => {
     const schema = createRunnerConfigSchema(GenerationCommonFields);
 
     // idleKillMs alone below the 5min default warn would kill the runner before
@@ -653,16 +653,15 @@ describe('createRunnerConfigSchema', () => {
     expect(killBelowDefaultWarn.success).toBe(false);
     expect(killBelowDefaultWarn.error?.issues[0]?.message).toContain('idleKillMs must be at least');
 
-    // idleWarnMs alone above the 30min default kill arms a warning that can
-    // never fire before the default kill.
+    // An unset idleKillMs means no kill, so no warn size can be out of order.
     expect(
       schema.safeParse({
         kind: 'shell',
         command: './run',
         model: 'local-shell',
-        idleWarnMs: 2_000_000,
+        idleWarnMs: 3_600_000,
       }).success,
-    ).toBe(false);
+    ).toBe(true);
 
     expect(
       schema.safeParse({

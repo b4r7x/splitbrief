@@ -25,7 +25,10 @@ export interface StreamParseResult {
   isError?: boolean | undefined;
   usage?: TokenDelta | undefined;
   usageSemantics?: ParsedUsageSemantics | undefined;
+  /** Tools a `user` record's `tool_result` closed: the tool ran and answered. */
   toolUse?: ToolUseInfo[] | undefined;
+  /** Tools an `assistant` record gave their whole input; each stays open until its result. */
+  toolUseInput?: ToolUseInfo[] | undefined;
   toolUseStart?: ToolUseInfo[] | undefined;
   toolUseDelta?: ToolUseDeltaInfo[] | undefined;
   warning?: ParsedWarningInfo[] | undefined;
@@ -45,6 +48,8 @@ export const EMPTY_RESULT: StreamParseResult = Object.freeze({});
 
 type MessageUsage = z.infer<typeof BackendTokenUsageSchema>;
 type CollectMessageUsage = (event: Record<string, unknown>) => TokenDelta | undefined;
+/** The open tools by `tool_use_id`, so a `tool_result` closes a tool with its name and input. */
+type OpenTools = Map<string, ToolUseInfo>;
 
 /** A delta with no message_start behind it still reports real usage. */
 const ORPHAN_MESSAGE_DELTA_ID = 'message-delta-without-message-start';
@@ -52,6 +57,7 @@ const ORPHAN_MESSAGE_DELTA_ID = 'message-delta-without-message-start';
 /** One parser per invocation: message snapshots replace, distinct messages add. */
 export function createStreamParser(): (line: string) => StreamParseResult {
   const messages = new Map<string, MessageUsage>();
+  const openTools: OpenTools = new Map();
   let activeMessage: string | undefined;
 
   const collect: CollectMessageUsage = (event) => {
@@ -106,7 +112,7 @@ export function createStreamParser(): (line: string) => StreamParseResult {
       ...(allOutputsKnown && { providerTotals: { output: outputTotal } }),
     };
   };
-  return (line) => parseLine(line, collect);
+  return (line) => parseLine(line, collect, openTools);
 }
 
 const TextBlock = z.object({ type: z.literal('text'), text: z.string() });
@@ -117,8 +123,16 @@ const ToolUseBlock = z.object({
   input: z.record(z.string(), z.unknown()).optional(),
 });
 
+const ToolResultBlock = z.object({ type: z.literal('tool_result'), tool_use_id: z.string() });
+
 const AssistantEvent = z.object({
   type: z.literal('assistant'),
+  session_id: z.string().optional(),
+  message: z.object({ content: z.array(z.unknown()) }),
+});
+
+const UserEvent = z.object({
+  type: z.literal('user'),
   session_id: z.string().optional(),
   message: z.object({ content: z.array(z.unknown()) }),
 });
@@ -415,7 +429,31 @@ export function parseStreamLine(line: string): StreamParseResult {
   return parseLine(line);
 }
 
-function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamParseResult {
+function rememberTools(openTools: OpenTools | undefined, tools: readonly ToolUseInfo[]): void {
+  for (const tool of tools) if (tool.id !== undefined) openTools?.set(tool.id, tool);
+}
+
+/**
+ * A `tool_result` block is the tool's answer, so it closes the tool its `tool_use_id` names.
+ * With no memory of that tool (a one-line parse), the tool closes under the placeholder name.
+ */
+function closedTools(content: readonly unknown[], openTools: OpenTools | undefined): ToolUseInfo[] {
+  const closed: ToolUseInfo[] = [];
+  for (const raw of content) {
+    const block = ToolResultBlock.safeParse(raw);
+    if (!block.success) continue;
+    const id = block.data.tool_use_id;
+    closed.push(openTools?.get(id) ?? { id, name: 'tool_use', input: {} });
+    openTools?.delete(id);
+  }
+  return closed;
+}
+
+function parseLine(
+  line: string,
+  collectUsage?: CollectMessageUsage,
+  openTools?: OpenTools,
+): StreamParseResult {
   if (!line.trim()) return EMPTY_RESULT;
 
   try {
@@ -443,6 +481,7 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
           });
         }
       }
+      rememberTools(openTools, tools);
       return {
         text: texts.length > 0 ? texts.join('') : undefined,
         channel: texts.length > 0 ? 'assistant' : undefined,
@@ -450,7 +489,8 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
         // present, restates streamed deltas rather than appending to them.
         textSemantics: 'final',
         sessionId: assistant.data.session_id ?? undefined,
-        toolUse: tools.length > 0 ? tools : undefined,
+        // The input is whole, but the tool has not run yet: its `tool_result` closes it.
+        toolUseInput: tools.length > 0 ? tools : undefined,
         ...(usage !== undefined && { usage, usageSemantics: 'cumulative' }),
         ...(isSubagent && { isSubagent }),
       };
@@ -472,9 +512,22 @@ function parseLine(line: string, collectUsage?: CollectMessageUsage): StreamPars
       };
     }
 
+    const user = UserEvent.safeParse(event);
+    if (user.success) {
+      const closed = closedTools(user.data.message.content, openTools);
+      if (closed.length > 0) {
+        return {
+          sessionId: user.data.session_id ?? undefined,
+          toolUse: closed,
+          ...(isSubagent && { isSubagent }),
+        };
+      }
+    }
+
     if (record) {
       const streamEvent = parseStreamEvent(record);
       if (streamEvent) {
+        rememberTools(openTools, streamEvent.toolUseStart ?? []);
         const scoped = isSubagent ? { ...streamEvent, isSubagent } : streamEvent;
         if (collectUsage === undefined) return scoped;
         const { usage: _messageUsage, usageSemantics: _semantics, ...rest } = scoped;

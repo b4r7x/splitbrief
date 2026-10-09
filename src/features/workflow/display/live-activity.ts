@@ -26,9 +26,9 @@ const RAIL_GATE_PHASES: ReadonlySet<Phase> = new Set([
 ]);
 
 // OpenCode's `run --format json` reports a tool only once it finishes and never
-// forwards child-session events, so minutes of silence are routine there and the
-// stall warning alone reads as a hang.
-const QUIET_STREAM_RUNNERS: ReadonlySet<string> = new Set<CliToolId>(['opencode']);
+// forwards child-session events, and Kilo Code, built on it, streams the same way,
+// so minutes of silence are routine there and the stall warning alone reads as a hang.
+const QUIET_STREAM_RUNNERS: ReadonlySet<string> = new Set<CliToolId>(['opencode', 'kilo-code']);
 
 /**
  * The hint explains a CLI behavior, so only a CLI call earns it: an API call

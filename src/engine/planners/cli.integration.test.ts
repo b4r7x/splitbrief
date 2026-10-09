@@ -12,7 +12,6 @@ import { processError } from '../../lib/process/errors.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
-import { CLI_NO_DEADLINE_MS } from '../runners/invoke-cli-adapter.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerFactoryOptions } from './types.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
@@ -29,7 +28,7 @@ import { saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { runPlanningPhase } from '../orchestrator/planning/run.js';
 
-const invokeCliAdapterDeadlines = vi.hoisted(() => [] as number[]);
+const invokeCliAdapterDeadlines = vi.hoisted(() => [] as Array<number | undefined>);
 
 vi.mock('../runners/invoke-cli-adapter.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../runners/invoke-cli-adapter.js')>();
@@ -1197,7 +1196,7 @@ Create \`src/text.test.ts\` with vitest tests for the \`titleCase\` function cre
 
 describe('seat deadlines', () => {
   itUnix(
-    'reviewer seat defaults its deadline to 600000 ms; planner seat keeps no deadline',
+    'neither the reviewer nor the planner seat has a default deadline; a configured timeout reaches both',
     async () => {
       installShim('opencode', [
         JSON.stringify({
@@ -1211,7 +1210,7 @@ describe('seat deadlines', () => {
       invokeCliAdapterDeadlines.length = 0;
       await planner.review('prompt', projectDir, { onOutput: vi.fn() });
 
-      expect(invokeCliAdapterDeadlines).toEqual([600_000]);
+      expect(invokeCliAdapterDeadlines).toEqual([undefined]);
 
       invokeCliAdapterDeadlines.length = 0;
       await callPlanner(planner, {
@@ -1220,7 +1219,20 @@ describe('seat deadlines', () => {
         callbacks: { onOutput: vi.fn() },
       });
 
-      expect(invokeCliAdapterDeadlines).toEqual([CLI_NO_DEADLINE_MS]);
+      expect(invokeCliAdapterDeadlines).toEqual([undefined]);
+
+      const bounded = createCliPlanner(
+        makeConfig({ planner: { kind: 'cli', tool: 'opencode', timeout: 45_000 } }),
+      );
+      invokeCliAdapterDeadlines.length = 0;
+      await bounded.review('prompt', projectDir, { onOutput: vi.fn() });
+      await callPlanner(bounded, {
+        prompt: 'plan a change',
+        projectDir,
+        callbacks: { onOutput: vi.fn() },
+      });
+
+      expect(invokeCliAdapterDeadlines).toEqual([45_000, 45_000]);
     },
   );
 });

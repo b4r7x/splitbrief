@@ -162,7 +162,9 @@ describe('runClaudePlannerStream', () => {
   it('emits tool-use events without writing tool summaries to output text', async () => {
     installClaudeShim(shimDir, [
       '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-read","name":"Read","input":{"file_path":"/etc/hosts"}}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-read"}]}}',
       '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"tool-bash","name":"Bash","input":{"command":"ls -la"}}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"tool-bash"}]}}',
       '{"type":"result","result":""}',
     ]);
 

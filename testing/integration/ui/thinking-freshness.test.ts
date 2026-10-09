@@ -79,7 +79,7 @@ describe('build block freshness while Claude Code thinks', () => {
         runnerName: 'claude-code',
       }),
     );
-    expect(freshness(T0 + 161_000)).toBe('No update for 1m 1s');
+    expect(freshness(T0 + 161_000)).toBe('No output for 1:01');
   });
 
   it('moves the stores once for a burst of bookkeeping frames', () => {

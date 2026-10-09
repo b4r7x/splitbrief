@@ -4,7 +4,7 @@ import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
-import { formatTime } from '../../../utils/format-time.js';
+import { formatElapsedClock, formatTime } from '../../../utils/format-time.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   ActiveOperation,
@@ -14,7 +14,7 @@ import type {
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { inlineActiveVerb, suiteStageText } from './phase-verb.js';
-import { stallRunnerHint } from './live-activity.js';
+import { formatStageElapsed, stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
 
 /**
@@ -37,8 +37,9 @@ export interface BuildProgress {
   /** What the run is doing: the seat and its operation, or the command it is inside. */
   activity: string;
   /**
-   * The proof of life: how long the command in `activity` has run, else how long ago a seat last
-   * said something, or the tool it runs through a silence.
+   * The proof of life: how long the command in `activity` has run, else the silence warning —
+   * `No output for <clock>`, then the open tool or the stream hint — else how long ago a seat
+   * last said something.
    */
   freshness: string;
   /** True when the watchdog's stall makes freshness the silence warning, not the ordinary age. */
@@ -128,34 +129,49 @@ function openToolText(tool: OpenTool): string {
   return item.label === 'RUN' ? `running ${item.value}` : `${item.groupLabel} ${item.value}`;
 }
 
+/**
+ * What the seat is doing through a silence, after the silence clock: the tool the stream opened
+ * and has not closed, else the hint for a stream that reports a tool only once it ends. `null`
+ * when the stream says nothing more than the silence itself.
+ */
+export function silenceTail(
+  call: ActiveOperation | null,
+  stall: LifecycleState['stall'],
+): string | null {
+  const tool = call?.openTools?.at(-1);
+  if (tool !== undefined) return openToolText(tool);
+  // The call in flight names its runner; the stall's own name stands in between calls.
+  if (call?.runnerName !== undefined) {
+    return stallRunnerHint(runnerTool(call.runnerName), call.backendKind);
+  }
+  if (stall === null || stall.runnerName === null) return null;
+  return stallRunnerHint(runnerTool(stall.runnerName), stall.backendKind);
+}
+
+/** The silence warning the block and the byline share: `No output for 12:30`, then its tail. */
+export function silenceText(silentMs: number, tail: string | null): string {
+  const head = `No output for ${formatElapsedClock(silentMs)}`;
+  return tail === null ? head : `${head}${SOFT_SEP}${tail}`;
+}
+
 // Silence is a seat's. While a command runs, its clock is the freshness. With no call running — the
 // step between two calls — no one is expected to speak, and the quiet is only how long ago the last
-// word was. The seat's name is
-// already on the activity line beside this one, so the silence names only itself. A tool the
-// stream opened and has not closed is what the seat is doing through that silence, so the line
-// names it; a stream that reports a tool only once it ends cannot name it, only say one runs.
+// word was. The seat's name is already on the activity line beside this one, so the silence names
+// only what the seat is doing through it. The clock runs on: the watchdog warns and never ends the
+// call, so the line states no stop time.
 function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'freshness' | 'silent'> {
   const command = runningCommand(input.operations);
   if (command !== null) {
-    return { freshness: `running ${formatTime(input.now - command.startedTs)}`, silent: false };
+    return {
+      freshness: `running ${formatStageElapsed(input.now - command.startedTs)}`,
+      silent: false,
+    };
   }
   const call = input.operations.active;
   const silentMs = call === null ? null : runnerSilenceMs(input.lifecycle, input.now);
-  if (call !== null && silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
-    const tool = call.openTools?.at(-1);
-    if (tool !== undefined) {
-      return {
-        freshness: `${openToolText(tool)}${SOFT_SEP}${formatTime(input.now - tool.since)}`,
-        silent: false,
-      };
-    }
-    const quietStream =
-      call.runnerName !== undefined &&
-      stallRunnerHint(runnerTool(call.runnerName), call.backendKind) !== null;
+  if (silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
     return {
-      freshness: quietStream
-        ? `a tool is running${SOFT_SEP}${formatTime(silentMs)}`
-        : `No update for ${formatTime(silentMs)}`,
+      freshness: silenceText(silentMs, silenceTail(call, input.lifecycle.stall)),
       silent: true,
     };
   }
@@ -200,12 +216,19 @@ export function buildProgressRowCount(width: number): number {
 
 /**
  * The same facts at every width, regrouped rather than dropped. Where the activity and freshness
- * share a row, the activity gives way: a long command is cut, never the clock that follows it.
+ * share a row, the activity gives way: a long command is cut, never the clock that follows it. A
+ * silence leads with its clock and ends with the tool it names, so that row is cut from its end.
  */
 export function buildProgressLines(progress: BuildProgress, width: number): string[] {
   const counts = countsText(progress);
   if (buildProgressRowCount(width) === 2) {
-    return [counts, fitBeforeTail(progress.activity, `${SOFT_SEP}${progress.freshness}`, width)];
+    const tail = `${SOFT_SEP}${progress.freshness}`;
+    return [
+      counts,
+      progress.silent
+        ? truncateTerminalDisplayText(`${progress.activity}${tail}`, width)
+        : fitBeforeTail(progress.activity, tail, width),
+    ];
   }
   return [counts, progress.activity, progress.freshness];
 }

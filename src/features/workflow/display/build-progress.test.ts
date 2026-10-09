@@ -7,7 +7,7 @@ import {
   type DeriveBuildProgressInput,
 } from './build-progress.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
-import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore, type LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   OperationsState,
   RunningOperation,
@@ -120,7 +120,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('OpenAI Codex CLI · implementing');
-    expect(progress.freshness).toBe('No update for 1m 0s');
+    expect(progress.freshness).toBe('No output for 1:00');
     expect(progress.silent).toBe(true);
   });
 
@@ -137,7 +137,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.freshness).toBe('No update for 5m 10s');
+    expect(progress.freshness).toBe('No output for 5:10');
     expect(progress.silent).toBe(true);
   });
 
@@ -155,7 +155,7 @@ describe('deriveBuildProgress', () => {
       since: NOW - 342_000,
     } as const;
 
-    it('names the tool the stream opened and how long it has run', () => {
+    it('names the tool the stream opened after the silence clock', () => {
       const progress = deriveBuildProgress(
         input({
           operations: operationsState({
@@ -165,11 +165,11 @@ describe('deriveBuildProgress', () => {
         }),
       );
 
-      expect(progress.freshness).toBe('running npx vitest run src/features · 5m 42s');
-      expect(progress.silent).toBe(false);
+      expect(progress.freshness).toBe('No output for 5:42 · running npx vitest run src/features');
+      expect(progress.silent).toBe(true);
     });
 
-    it('says a tool is running when a quiet stream reports tools only once they end', () => {
+    it('gives the hint when a quiet stream reports tools only once they end', () => {
       const progress = deriveBuildProgress(
         input({
           operations: operationsState({
@@ -179,19 +179,77 @@ describe('deriveBuildProgress', () => {
         }),
       );
 
-      expect(progress.freshness).toBe('a tool is running · 5m 42s');
+      expect(progress.freshness).toBe('No output for 5:42 · tools report when done');
+      expect(progress.silent).toBe(true);
     });
 
-    it('keeps the silence warning for a stream that reports its tools as they start', () => {
+    it('states the bare silence for a stream that reports its tools as they start', () => {
       const progress = deriveBuildProgress(
         input({
           operations: operationsState({ active: runningOperation({ runnerName: 'codex' }) }),
-          lifecycle: silent,
+          lifecycle: lifecycleState({
+            stall: { since: NOW - 282_000, silentMs: 60_000, runnerName: 'codex' },
+          }),
         }),
       );
 
-      expect(progress.freshness).toBe('No update for 5m 42s');
+      expect(progress.freshness).toBe('No output for 5:42');
       expect(progress.silent).toBe(true);
+    });
+
+    it('runs the clock on past an hour and states no stop time', () => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({ active: runningOperation({ runnerName: 'codex' }) }),
+          lifecycle: lifecycleState({
+            stall: { since: NOW - 4_440_000, silentMs: 60_000, runnerName: 'codex' },
+          }),
+        }),
+      );
+
+      expect(progress.freshness).toBe('No output for 1:15:00');
+      expect(progress.freshness).not.toMatch(/ends|until|left|hang|stuck|of \d/i);
+    });
+
+    it('clears the warning once the seat speaks again', () => {
+      resetWorkflow();
+      const call = {
+        phase: 'implementing',
+        callId: 'call-1',
+        role: 'implementer',
+        backendKind: 'cli',
+        runnerName: 'opencode',
+      } as const;
+      addEvent({
+        type: 'workflow_started',
+        ts: NOW - 400_000,
+        phase: 'implementing',
+        feature: 'f',
+      });
+      addEvent({
+        type: 'runner_call_stalled',
+        ts: NOW - 10_000,
+        ...call,
+        sequence: 1,
+        silentMs: 300_000,
+      });
+      const stalled = deriveBuildProgress(
+        input({
+          operations: operationsState({ active: runningOperation({ runnerName: 'opencode' }) }),
+          lifecycle: lifecycleStore.get(),
+        }),
+      );
+      expect(stalled.freshness).toBe('No output for 5:10 · tools report when done');
+
+      addEvent({ type: 'runner_call_stall_cleared', ts: NOW - 1_000, ...call, sequence: 2 });
+      const cleared = deriveBuildProgress(
+        input({
+          operations: operationsState({ active: runningOperation({ runnerName: 'opencode' }) }),
+          lifecycle: lifecycleStore.get(),
+        }),
+      );
+      expect(cleared.silent).toBe(false);
+      expect(cleared.freshness).not.toContain('No output');
     });
   });
 
@@ -287,7 +345,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('Claude Code CLI · implementing');
-    expect(progress.freshness).toBe('No update for 1m 0s');
+    expect(progress.freshness).toBe('No output for 1:00');
   });
 
   it('shows a shell command named claude literally, as the shell, not the CLI', () => {
@@ -303,7 +361,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('claude · implementing');
-    expect(progress.freshness).toBe('No update for 1m 0s');
+    expect(progress.freshness).toBe('No output for 1:00');
   });
 
   it('shows a custom API name literally even when it matches a CLI name', () => {
@@ -333,7 +391,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('Ollama · implementing');
-    expect(progress.freshness).toBe('No update for 1m 0s');
+    expect(progress.freshness).toBe('No output for 1:00');
   });
 
   it('keeps the Claude Code CLI display for a cli call named by its command', () => {
@@ -374,7 +432,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('npm test');
-    expect(progress.freshness).toBe('running 1m 30s');
+    expect(progress.freshness).toBe('running 1:30');
   });
 
   // No seat is on a call while a gate command runs, so a long command is no one's silence: its own
@@ -389,7 +447,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(buildProgressLines(progress, 120)[1]).toBe('npm test · running 1m 30s');
+    expect(buildProgressLines(progress, 120)[1]).toBe('npm test · running 1:30');
     expect(progress.silent).toBe(false);
   });
 
@@ -410,10 +468,29 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('Pre-review suite · npm test');
-    expect(progress.freshness).toBe('running 10m 2s');
+    expect(progress.freshness).toBe('running 10:02');
   });
 
-  // Render of workflow-review-check-running: `last event 14m 7s ago` sat under `running 10m 2s`,
+  // The byline leads with the same check clock (`formatStageElapsed`); past an hour both read
+  // whole minutes, never `1:00:02` in the block beside `60:02` in the byline.
+  it('counts a check past an hour in minutes, as the byline does', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          suiteStage: {
+            id: 'V1',
+            command: 'npm test',
+            moment: 'pre-review',
+            stageStartedTs: NOW - 3_602_000,
+          },
+        }),
+      }),
+    );
+
+    expect(progress.freshness).toBe('running 60:02');
+  });
+
+  // Render of workflow-review-check-running: `last event 14m 7s ago` sat under `running 10:02`,
   // the age of the last seat word beside a command that had spoken for ten minutes.
   it('lets the running check clock stand as freshness, never the age of the last seat word', () => {
     const progress = deriveBuildProgress(
@@ -431,7 +508,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('Reviewer check V2 · npm test');
-    expect(progress.freshness).toBe('running 10m 2s');
+    expect(progress.freshness).toBe('running 10:02');
     expect(progress.silent).toBe(false);
     for (const width of [160, 120, 80, 60]) {
       expect(buildProgressLines(progress, width).join('\n')).not.toContain('last event');
@@ -455,7 +532,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.activity).toBe('Fix check V1 · npm test');
-    expect(progress.freshness).toBe('running 42s');
+    expect(progress.freshness).toBe('running 0:42');
   });
 
   // Render of workflow-review-base-rerun at 60 columns: `… legacy.test.ts · running…` lost its clock.
@@ -486,7 +563,7 @@ describe('deriveBuildProgress', () => {
 
     for (const width of [120, 140]) {
       const line = buildProgressLines(progress, width)[1] ?? '';
-      expect(line.endsWith(' · running 40s')).toBe(true);
+      expect(line.endsWith(' · running 0:40')).toBe(true);
       expect(line.startsWith('Base re-run V2 · npm test -- ')).toBe(true);
       expect(line).toContain('…');
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
@@ -494,11 +571,11 @@ describe('deriveBuildProgress', () => {
     for (const width of [60, 80]) {
       const lines = buildProgressLines(progress, width);
       expect(lines).toHaveLength(buildProgressRowCount(width));
-      expect(lines[2]).toBe('running 40s');
+      expect(lines[2]).toBe('running 0:40');
     }
   });
 
-  it('spells a long silence the way every other elapsed span in the block reads', () => {
+  it('spells a long silence as a clock', () => {
     const progress = deriveBuildProgress(
       input({
         operations: operationsState({ active: runningOperation() }),
@@ -512,11 +589,40 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.freshness).toBe('No update for 5m 12s');
+    expect(progress.freshness).toBe('No output for 5:12');
   });
 });
 
 describe('buildProgressLines', () => {
+  it('cuts a silence that names a long tool from its end, keeping the seat and the clock', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({
+            openTools: [
+              {
+                activityId: 'call-1:tool:bash-1',
+                kind: 'command',
+                label: 'bash',
+                target: `npm test -- ${'src/features/workflow/'.repeat(8)}`,
+                since: NOW - 400_000,
+              },
+            ],
+          }),
+        }),
+        lifecycle: lifecycleState({
+          stall: { since: NOW - 10_000, silentMs: 300_000, runnerName: 'codex' },
+        }),
+      }),
+    );
+
+    const [, row] = buildProgressLines(progress, 120);
+    expect(
+      row?.startsWith('OpenAI Codex CLI · implementing · No output for 5:10 · running npm test'),
+    ).toBe(true);
+    expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(120);
+  });
+
   it('2 lines at 120 columns', () => {
     expect(buildProgressLines(deriveBuildProgress(input()), 120)).toHaveLength(2);
   });

@@ -291,6 +291,29 @@ describe('runWithApiDeadlines deadlines', () => {
     await expect(run).rejects.toSatisfy(isApiDeadlineError);
   });
 
+  it('ends a stream that never goes idle at the default implementer total', async () => {
+    vi.useFakeTimers();
+    const stream = scriptedStream({ gapMs: 30_000 });
+    const chunks: number[] = [];
+    const run = drain(
+      runWithApiDeadlines<number>({
+        policy: resolveApiDeadlinePolicy({ role: 'implementer' }),
+        createStream: async () => stream.iterable,
+      }),
+      chunks,
+    );
+    const tracked = track(run);
+
+    await vi.advanceTimersByTimeAsync(TIMEOUTS.implementerMs - 1);
+    expect(tracked.settled()).toBe(false);
+    expect(chunks).toHaveLength(TIMEOUTS.implementerMs / 30_000 - 1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    expect(kindOf(tracked.error())).toBe('api_total_timeout');
+    await expect(run).rejects.toSatisfy(isApiDeadlineError);
+    expect(stream.returnCalls()).toBe(1);
+  });
+
   it('completes normally and closes the iterator once', async () => {
     const values = [10, 20];
     let returnCalls = 0;

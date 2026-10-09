@@ -105,7 +105,8 @@ export type CliInvocation = Readonly<{
   promptTransport: CliPromptTransport;
   environment: Readonly<Record<string, string>>;
   cwd: string;
-  timeoutMs: number;
+  /** The seat's opt-in total; unset, the call has no deadline. */
+  timeoutMs?: number | undefined;
   signal: AbortSignal | undefined;
 }>;
 

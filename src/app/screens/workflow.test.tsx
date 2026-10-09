@@ -1042,25 +1042,28 @@ describe('WorkflowScreen stating a silent seat', () => {
     await flushEffects();
 
     const beside = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(beside).toContain('a tool is running · 5m 10s');
-    expect(beside).toContain('Still working · tools report when done');
+    expect(beside).toContain('No output for 5:10 · tools report when done');
+    expect(beside).toContain('Implementing…');
+    expect(beside.match(/No output for/g)).toHaveLength(1);
     expect(beside).not.toContain('silent 5m');
 
     vi.advanceTimersByTime(3_000);
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('a tool is running · 5m 13s');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'No output for 5:13 · tools report when done',
+    );
 
     overlayStore.open('stop-sheet');
     await flushEffects();
 
     const menuOpen = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(menuOpen).toContain('Stop options');
-    expect(menuOpen).not.toContain('a tool is running');
-    expect(menuOpen).toContain('Still working — silent 5m 13s · tools report when done');
+    expect(menuOpen.match(/No output for 5:13/g)).toHaveLength(1);
+    expect(menuOpen).toContain('No output for 5:13 · tools report when done');
 
     vi.advanceTimersByTime(2_000);
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Still working — silent 5m 15s');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('No output for 5:15');
 
     ui.unmount();
   });

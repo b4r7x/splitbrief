@@ -16,6 +16,7 @@ import {
   type RunnerFactoryAuthority,
 } from './factory-gates.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 
 export type PlannerCreationOptions = PlannerFactoryOptions &
   RunnerFactoryAuthority &
@@ -103,7 +104,12 @@ export async function createPlanner(
       role: 'planner',
     });
     const mod = await loadConfiguredCustomPlanner();
-    planner = mod.createConfiguredCustomPlanner(configured, runtime, invocation);
+    planner = mod.createConfiguredCustomPlanner(
+      configured,
+      runtime,
+      invocation,
+      readActiveRunner({ config, role: 'planner' }).timeout,
+    );
   } else {
     const admission = admitPlannerBackend({ config, authority, seat: 'planner' });
     planner = await loadPlanner(config, 'planner', options.initialSessionId, {
@@ -141,7 +147,12 @@ export async function createReviewer(
       role: 'reviewer',
     });
     const mod = await loadConfiguredCustomPlanner();
-    reviewer = mod.createConfiguredCustomPlanner(configured, runtime, invocation);
+    reviewer = mod.createConfiguredCustomPlanner(
+      configured,
+      runtime,
+      invocation,
+      readActiveRunner({ config, role: 'reviewer' }).timeout,
+    );
   } else {
     // `loadPlanner` reads `config.planner` by contract, so the review seat reaches
     // the planner backends as a config whose planner slot holds the reviewer.
@@ -179,6 +190,7 @@ export async function createImplementer(
     return mod.createConfiguredCustomImplementer({
       runtime,
       admission: invocation,
+      timeoutMs: readActiveRunner({ config: effectiveConfig, role: 'implementer' }).timeout,
       factoryOptions: options,
     });
   }

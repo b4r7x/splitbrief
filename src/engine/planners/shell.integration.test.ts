@@ -6,6 +6,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { z } from 'zod';
 import { requestTyped } from '../runners/typed-output.js';
+import { processError } from '../../lib/process/errors.js';
 
 let projectDir: string;
 
@@ -66,5 +67,16 @@ describe('createShellPlanner', () => {
     });
 
     expect(events.some((event) => event.type === 'call_stalled')).toBe(true);
+  });
+
+  it('ends a review call at a configured timeout', async () => {
+    const config = makeConfig({
+      planner: { kind: 'shell', command: 'bash', args: ['-c', 'sleep 5'], timeout: 150 },
+    });
+    const planner = createShellPlanner(config);
+
+    await expect(planner.review('prompt', projectDir, { onOutput: vi.fn() })).rejects.toSatisfy(
+      processError.isTimeout,
+    );
   });
 });

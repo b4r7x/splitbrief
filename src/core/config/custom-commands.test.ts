@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from './load/defaults.js';
 import { ConfigSchema } from '../schemas/config.js';
-import { RUNNER_IDLE_KILL_MS } from '../schemas/runner-fields.js';
 import {
   CustomCommandDefinitionSchema,
   CustomCommandsConfigSchema,
@@ -120,7 +119,6 @@ describe('custom command catalog schema', () => {
         argv: [],
         outputFormat: 'text',
         idleWarnMs: 300_000,
-        idleKillMs: RUNNER_IDLE_KILL_MS,
         env: [],
       }),
     );
@@ -261,6 +259,22 @@ describe('custom command catalog schema', () => {
     expect(CustomCommandDefinitionSchema.safeParse(definition).success).toBe(true);
     const normalized = normalizeCustomCommand('review', definition);
     expect(NormalizedCustomCommandSchema.safeParse(normalized).success).toBe(true);
+  });
+
+  it('accepts a lone idleWarnMs of any size and keeps an unset idleKillMs absent', () => {
+    const { idleKillMs: _idleKillMs, ...withoutKill } = safeDefinition;
+    const definition = { ...withoutKill, idleWarnMs: 3_600_000 };
+    expect(CustomCommandDefinitionSchema.safeParse(definition).success).toBe(true);
+    const normalized = normalizeCustomCommand('review', definition);
+    expect(normalized).not.toHaveProperty('idleKillMs');
+    expect(NormalizedCustomCommandSchema.safeParse(normalized).success).toBe(true);
+  });
+
+  it('rejects a lone idleKillMs below the default idle warning', () => {
+    const { idleWarnMs: _idleWarnMs, ...withoutWarn } = safeDefinition;
+    const result = CustomCommandDefinitionSchema.safeParse({ ...withoutWarn, idleKillMs: 30_000 });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(['idleKillMs']);
   });
 });
 

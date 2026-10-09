@@ -904,7 +904,7 @@ describe('spawnAndCollect', () => {
         status: 'failed',
         error: {
           code: 'no-progress-cut',
-          message: expect.stringContaining('produced no output for 1s'),
+          message: expect.stringContaining('sent no output for 0:01; SPLITBRIEF stopped it'),
         },
       });
     } finally {

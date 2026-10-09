@@ -16,7 +16,6 @@ import {
   type RunnerRole,
 } from '../runners/seat-roles.js';
 import { includes, narrowRecord } from '../../utils/type-guards.js';
-import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { isAutomaticModel, normalizeConfiguredModel } from '../providers/automatic-model.js';
 import { hasAutomaticModelDefault } from '../providers/model-selection.js';
 import { isOllamaLocalCredentialReference } from '../providers/ollama-credential.js';
@@ -86,9 +85,6 @@ const PlannerCapabilitiesSchema = z.strictObject({
 });
 
 export const RUNNER_IDLE_WARN_MS = 300_000;
-// The idle kill is the no-progress cut: 20 minutes with no output and no live
-// descendant, after a 5-minute warning.
-export const RUNNER_IDLE_KILL_MS = BOUNDS.noProgressCutMs;
 export const DEFAULT_IMPLEMENTER_TEMPERATURE = 0.3;
 
 const WatchdogFields = {
@@ -96,20 +92,19 @@ const WatchdogFields = {
   idleKillMs: z.number().int().positive().optional(),
 };
 
-// The kill threshold must not fire before the warn threshold, or the runner is
-// silently killed without ever warning. Unset fields take the runtime defaults
-// above, so the mixed cases are validated too: a lone idleKillMs below the
-// default warn (killed before the default warn timer fires) and a lone
-// idleWarnMs above the default kill are both rejected.
+// A set kill threshold must not fire before the warn threshold, or the runner
+// is silently killed without ever warning. An unset idleWarnMs takes the
+// default warn, so a lone idleKillMs below it is rejected. An unset idleKillMs
+// means no kill, so a lone idleWarnMs of any size is valid.
 function idleThresholdsOrdered(runner: Record<string, unknown>): boolean {
   const { idleWarnMs, idleKillMs } = runner;
+  if (typeof idleKillMs !== 'number') return true;
   const warn = typeof idleWarnMs === 'number' ? idleWarnMs : RUNNER_IDLE_WARN_MS;
-  const kill = typeof idleKillMs === 'number' ? idleKillMs : RUNNER_IDLE_KILL_MS;
-  return kill >= warn;
+  return idleKillMs >= warn;
 }
 
 const IDLE_THRESHOLD_ORDER = {
-  message: `idleKillMs must be at least idleWarnMs (the warning fires before the kill); an unset field takes its default (${RUNNER_IDLE_WARN_MS} warn / ${RUNNER_IDLE_KILL_MS} kill)`,
+  message: `idleKillMs must be at least idleWarnMs (the warning fires before the kill); an unset idleWarnMs takes its default (${RUNNER_IDLE_WARN_MS})`,
   path: ['idleKillMs'],
 };
 

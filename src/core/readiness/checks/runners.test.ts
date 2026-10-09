@@ -393,28 +393,25 @@ describe('buildRunnerChecks availability guidance', () => {
   it.each([
     ['below idle-kill threshold', 200_000, 300_000],
     ['equal to idle-kill threshold', 300_000, 300_000],
-  ])(
-    'warns when timeout is at or below the effective idleKillMs (%s)',
-    (_label, timeout, idleKillMs) => {
-      const config = makeConfig({
-        implementer: {
-          kind: 'cli',
-          tool: 'claude-code',
-          timeout,
-          idleKillMs,
-        },
-      });
+  ])('warns when timeout is at or below the set idleKillMs (%s)', (_label, timeout, idleKillMs) => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        timeout,
+        idleKillMs,
+      },
+    });
 
-      const check = buildRunnerChecks(config).find(
-        (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
-      );
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
+    );
 
-      expect(check).toMatchObject({
-        severity: 'warning',
-        metadata: { timeout, idleKillMs },
-      });
-    },
-  );
+    expect(check).toMatchObject({
+      severity: 'warning',
+      metadata: { timeout, idleKillMs },
+    });
+  });
 
   it('does not warn when timeout leaves room above the idle-kill threshold', () => {
     const config = makeConfig({
@@ -424,6 +421,18 @@ describe('buildRunnerChecks availability guidance', () => {
         timeout: 400_000,
         idleKillMs: 300_000,
       },
+    });
+
+    const check = buildRunnerChecks(config).find(
+      (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
+    );
+
+    expect(check).toBeUndefined();
+  });
+
+  it('does not warn about a timeout when idleKillMs is unset: no idle kill exists', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', timeout: 1000 },
     });
 
     const check = buildRunnerChecks(config).find(
@@ -488,7 +497,7 @@ describe('buildRunnerChecks reviewer seat', () => {
     const checks = buildRunnerChecks(
       makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
-        reviewer: { kind: 'cli', tool: 'codex', timeout: 1000 },
+        reviewer: { kind: 'cli', tool: 'codex', timeout: 1000, idleKillMs: 300_000 },
       }),
     );
 

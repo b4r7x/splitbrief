@@ -10,12 +10,10 @@ import { getActiveRailStage } from '../../../core/rail-stages.js';
 import {
   deriveLiveStatus,
   formatStageElapsed,
-  stallRunnerHint,
   PAUSED_LIVE_STATUS_VERB,
 } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
-import { runnerSilenceMs } from '../display/build-progress.js';
-import { formatTime } from '../../../utils/format-time.js';
+import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
 import {
   selectRunningBrief,
   selectTaskListView,
@@ -146,18 +144,15 @@ export function InputFooter({
   const stoppedWord = userCancelled ? 'Stopped by you' : 'Build failed';
   const stoppedLead = joinBylineParts([`${stoppedGlyph} ${stoppedWord}`, stageCore]);
   const recoveryStoppedLead = `${glyph('statusFailed')} Run stopped`;
-  // A tool the stream opened and has not closed is work, not silence: the build block names it.
-  const toolOpen = (operations.active?.openTools?.length ?? 0) > 0;
-  const stall = lifecycle.status === 'running' && !toolOpen ? lifecycle.stall : null;
-  // The silence span comes from the same derivation the block's freshness line reads, so the two
-  // surfaces state one number; the block prints it while it is on screen, this lead otherwise.
-  const stalledFor = stall === null ? '' : formatTime(runnerSilenceMs(lifecycle, Date.now()) ?? 0);
+  // The silence span and what the seat does through it come from the derivation the block's
+  // freshness line reads, so the two surfaces state one fact in one wording; the block prints it
+  // while it is on screen, this lead otherwise.
+  const stall = lifecycle.status === 'running' && !buildBlockShown ? lifecycle.stall : null;
   const stalledLead =
     stall === null
       ? ''
-      : buildBlockShown
-        ? `${glyph('statusWarning')} Still working`
-        : `${glyph('statusWarning')} Still working — silent ${stalledFor}`;
+      : `${glyph('statusWarning')} ${silenceText(runnerSilenceMs(lifecycle, Date.now()) ?? 0, null)}`;
+  const stalledHint = stall === null ? null : silenceTail(operations.active, stall);
 
   // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
@@ -186,7 +181,7 @@ export function InputFooter({
                   ? {
                       lead: stalledLead,
                       leadColor: t.warning,
-                      hintText: stallRunnerHint(stall.runnerName, stall.backendKind),
+                      hintText: stalledHint,
                     }
                   : liveStatus !== null
                     ? {

@@ -73,7 +73,7 @@ export type InvokeProcessCliContext = Readonly<{
    * Liveness is measured from process output, not from recorded events: a
    * runner can think for minutes while emitting frames that record nothing.
    */
-  idle?: Readonly<{ warnMs: number; killMs: number }> | undefined;
+  idle?: Readonly<{ warnMs: number; killMs?: number | undefined }> | undefined;
   onEvent?: ((event: RunnerCallEvent) => void) | undefined;
   toolUseGuard?: ToolUseGuard | undefined;
   /**
@@ -200,11 +200,17 @@ export async function invokeProcessCli(
   let stderr = '';
   let terminalSeen = false;
   timeoutController = new AbortController();
-  const timeout = setTimeout(
-    () => timeoutController?.abort(new DOMException('CLI invocation timed out', 'TimeoutError')),
-    context.invocation.timeoutMs,
-  );
-  timeout.unref?.();
+  // A seat call has no default total: only a configured `timeout` arms one.
+  const timeoutMs = context.invocation.timeoutMs;
+  const timeout =
+    timeoutMs === undefined
+      ? undefined
+      : setTimeout(
+          () =>
+            timeoutController?.abort(new DOMException('CLI invocation timed out', 'TimeoutError')),
+          timeoutMs,
+        );
+  timeout?.unref?.();
   const guardController = new AbortController();
   let guardFailure: ReturnType<ToolUseGuard> = null;
   const inspectedInputs = new Map<string, string>();
@@ -531,9 +537,9 @@ export async function invokeProcessCli(
       });
     }
     if (processError.isIdleTimeout(cause)) {
-      // A call the watchdog cut made no progress. The code keeps it an ordinary
-      // failed attempt on the ladder (retry, then consult), never the
-      // consecutive-timeouts halt.
+      // A call cut by its opt-in `idleKillMs` made no progress. It stays a
+      // failed attempt with the `no-progress-cut` code, which the ladder counts
+      // toward the consecutive-timeouts halt the same way as `timeout`.
       return finishFailureSafely({
         recorder,
         context: context.callContext,

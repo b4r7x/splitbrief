@@ -249,6 +249,11 @@ describe('invokeCommandBasedRunner with timeout', () => {
         },
       }),
       JSON.stringify({
+        type: 'user',
+        session_id: 'sess-timeout-structured',
+        message: { content: [{ type: 'tool_result', tool_use_id: 'tool-timeout' }] },
+      }),
+      JSON.stringify({
         type: 'result',
         result: 'done',
         session_id: 'sess-timeout-structured',

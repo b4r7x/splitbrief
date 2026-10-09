@@ -4,7 +4,6 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
-import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -437,17 +436,20 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
 
   it('a no-progress cut spends the ordinary retry and records the cut in the session log', async () => {
     const { projectDir, sessionId } = setupProject();
+    const config = makeNoValidationConfig({
+      implementer: { kind: 'cli', tool: 'opencode', idleKillMs: 1_200_000 },
+    });
     const retry = vi.fn().mockResolvedValue({
       success: false,
       output: '',
-      error: 'opencode produced no output for 1200s and was terminated',
+      error: 'opencode sent no output for 20:00; SPLITBRIEF stopped it',
       outcome: 'no-progress-cut',
     });
     const implementer = makeImplementer({ retry });
     const { bus, events } = makeBusRecorder();
 
     const outcome = await runLocalRetries({
-      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus }),
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus, config }),
       task: makeTask(),
       state: makeValidatingState(),
       lastError: 'type error',
@@ -463,12 +465,12 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
         type: 'no_progress_cut',
         taskId: 'T001',
         seat: 'build',
-        silentMs: BOUNDS.noProgressCutMs,
+        silentMs: 1_200_000,
       }),
     ]);
   });
 
-  it("records the failing runner's own idle limit when it is not the default", async () => {
+  it("two consecutive cuts halt as repeated and record the runner's own idle limit", async () => {
     const { projectDir, sessionId } = setupProject();
     const config = makeNoValidationConfig({
       implementer: { kind: 'cli', tool: 'opencode', idleKillMs: 600_000 },
@@ -476,7 +478,7 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     const retry = vi.fn().mockResolvedValue({
       success: false,
       output: '',
-      error: 'opencode produced no output for 600s and was terminated',
+      error: 'opencode sent no output for 10:00; SPLITBRIEF stopped it',
       outcome: 'no-progress-cut',
     });
     const implementer = makeImplementer({ retry });
@@ -492,46 +494,80 @@ describe('runLocalRetries — outcomes no further attempt can fix', () => {
     });
 
     expect(retry).toHaveBeenCalledTimes(DEFAULT_LOCAL_RETRIES);
-    expect(outcome.lastFailure?.outcome).toBe('no-progress-cut');
+    expect(outcome.lastFailure?.outcome).toBe('runner-timeout-repeated');
+    expect(outcome.result).toBeUndefined();
     expect(events.filter((e) => e.type === 'no_progress_cut')).toEqual([
       expect.objectContaining({ silentMs: 600_000 }),
       expect.objectContaining({ silentMs: 600_000 }),
     ]);
   });
 
+  it('a cut followed by an ordinary failure resets the repeated count', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const config = makeNoValidationConfig({
+      implementer: { kind: 'cli', tool: 'opencode', idleKillMs: 600_000 },
+    });
+    const cut = 'opencode sent no output for 10:00; SPLITBRIEF stopped it';
+    // The answer attempt spends no retry, so the ordinary failure sits between
+    // the initial cut and the retry's cut; only the reset keeps them apart.
+    const retry = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
+      .mockResolvedValueOnce({
+        success: false,
+        output: '',
+        error: cut,
+        outcome: 'no-progress-cut',
+      });
+    const implementer = makeImplementer({ retry });
+    const { bus } = makeBusRecorder();
+
+    const outcome = await runLocalRetries({
+      ctx: makeLocalRetriesCtx({ projectDir, sessionId, implementer, bus, config }),
+      task: makeTask(),
+      state: makeValidatingState(),
+      lastError: cut,
+      lastDiagnosis: cut,
+      initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
+      answer: 'use the existing helper',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(outcome.lastFailure?.outcome).toBe('no-progress-cut');
+    expect(outcome.lastError).toBe(cut);
+  });
+
   it('records the first attempt cut, retries once, then consults the planner', async () => {
     const { projectDir, sessionId } = setupProject();
     const retry = vi
       .fn()
-      .mockResolvedValueOnce({
-        success: false,
-        output: '',
-        error: 'opencode produced no output for 1200s and was terminated',
-        outcome: 'no-progress-cut',
-      })
+      .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
       .mockResolvedValueOnce({ success: true, output: 'fixed', usage: null });
     const implementer = makeImplementer({ retry });
     const { bus, events } = makeBusRecorder();
     const planner = makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) });
+    const config = makeNoValidationConfig({
+      implementer: { kind: 'cli', tool: 'opencode', idleKillMs: 1_200_000 },
+    });
 
     const { result } = await handleRetryAndEscalation({
       taskStartTime: Date.now(),
       wctx: makeWctx({
         projectDir,
         sessionId,
-        config: makeNoValidationConfig(),
+        config,
         planner,
         implementer,
         bus,
       }),
       task: makeTask(),
-      initialError: 'opencode produced no output for 1200s and was terminated',
+      initialError: 'opencode sent no output for 20:00; SPLITBRIEF stopped it',
       currentState: makeValidatingState(),
-      initialFailure: { outcome: 'no-progress-cut', runner: makeNoValidationConfig().implementer },
+      initialFailure: { outcome: 'no-progress-cut', runner: config.implementer },
     });
 
     expect(retry).toHaveBeenCalledTimes(2);
-    expect(events.filter((e) => e.type === 'no_progress_cut')).toHaveLength(2);
+    expect(events.filter((e) => e.type === 'no_progress_cut')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'task_escalating')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'consult_answered')).toHaveLength(1);
     expect(result).toMatchObject({ completed: true, method: 'consulted' });

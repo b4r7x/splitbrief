@@ -13,7 +13,7 @@ import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../..
 import { createRunnerCallDeltaLimiter } from '../../calls/output-limit.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { SpawnIdleOptions } from '../../../lib/process/spawn/lifecycle.js';
-import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../../core/schemas/runner-fields.js';
 import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { redactSecrets } from '../../../utils/redact.js';
@@ -227,6 +227,17 @@ export function createStreamHandler(callbacks: StreamHandlerCallbacks) {
       }
     }
 
+    if (parsed.toolUseInput) {
+      for (const toolUse of parsed.toolUseInput) {
+        state.recorder.toolUseDelta({
+          toolUseId: toolUse.id ?? null,
+          name: toolUse.name,
+          inputDelta: JSON.stringify(toolUse.input),
+          stage: 'started',
+        });
+      }
+    }
+
     if (parsed.toolUseStart) {
       for (const toolUse of parsed.toolUseStart) {
         state.activeToolUse = {
@@ -325,7 +336,8 @@ export function buildClaudeIdleOptions(
 ): SpawnIdleOptions {
   return {
     warnMs: opts.idleWarnMs ?? RUNNER_IDLE_WARN_MS,
-    killMs: opts.idleKillMs ?? RUNNER_IDLE_KILL_MS,
+    // No default cut: the watchdog only warns unless the seat opts into a kill.
+    killMs: opts.idleKillMs,
     onWarn: (silentMs) => state.recorder.stalled({ silentMs }),
     onClear: () => state.recorder.stallCleared(),
   };

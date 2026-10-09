@@ -1,4 +1,4 @@
-import { RUNNER_IDLE_KILL_MS, RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
+import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type {
   CliImplementerAdapter,
@@ -8,9 +8,6 @@ import type {
 import { onlyAddsLineBreaks, reconcileFinalText } from '../streaming/final-text.js';
 import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
-
-/** The process executor owns explicit runner timeouts; this is its no-deadline sentinel. */
-export const CLI_NO_DEADLINE_MS = 2_147_000_000;
 
 type InvokeCliOptions = {
   adapter: CliPlannerAdapter | CliImplementerAdapter;
@@ -99,7 +96,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
     callContext: opts.callContext,
     idle: {
       warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
-      killMs: opts.idle?.killMs ?? RUNNER_IDLE_KILL_MS,
+      killMs: opts.idle?.killMs,
     },
     toolUseGuard: opts.toolUseGuard,
     onEvent: (event) => {

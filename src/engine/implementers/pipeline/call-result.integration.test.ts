@@ -76,7 +76,8 @@ describe('createImplementerBase — invoke and runner-call projection', () => {
     });
 
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.error).toContain('produced no output for 300s');
+    if (!result.success)
+      expect(result.error).toContain('sent no output for 5:00; SPLITBRIEF stopped it');
   });
 
   it('passes a fresh runner call context to each invoke attempt', async () => {
