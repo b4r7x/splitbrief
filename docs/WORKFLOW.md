@@ -114,15 +114,21 @@ Verified against the `transition()` reducer in `src/core/state/machine.ts` and t
 
 The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every check result, every reviewer check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built. Without an ask, every blocking finding that is not unverified and every pending input has exactly one fix, rejection or verification. Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The reviewer checks and the reviewer run again after the fixes.
 
-A red at the final review never reopens a finished brief. The reviewer writes the fix work. Each fix finding carries its check ids, commands by id, file and output. Its brief gate runs those checks again.
+A red at the final review never reopens a finished brief. The reviewer writes the fix work. Each fix finding carries its check ids, commands by id, own failure keys and original red keys by id, file and output. Its brief gate runs those checks again.
 
-A red fix fails the task and takes the local retry with the exact errors, then the consult. This happens before the next round of reviewer checks and review. The fix task keeps a targeted recheck without reopening a finished brief.
+A fix check fails the task when a carried failure remains. The task takes the local retry with the exact errors, then the consult. This happens before the next round of reviewer checks and review.
 
-The fields live on each finding of `task.fix` (`file`, `checkIds`, `commands`, `output`). Each `commands` entry maps a check id to the exact command text it ran. SPLITBRIEF copies a pending input's single command under its check id. A verdict finding carries every reviewer command its check ids name. A verdict finding assigned to a fix task must name only registered checks. An unknown id sends the answer back for its one schema repair.
+The fields live on each finding of `task.fix` (`file`, `checkIds`, `commands`, `failureKeys`, `redKeys`, `output`). Each `commands` entry maps a check id to the exact command text it ran. SPLITBRIEF copies a pending input's command and failure keys under its check ids. A verdict finding carries every reviewer command its check ids name. It takes the union of pending input keys for the same check id and file. Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. The command must pass. Each `redKeys` entry contains every key the original red showed, before the run-base split. A verdict finding takes their union across all inputs for that check id and all files. A verdict finding assigned to a fix task must name only registered checks. An unknown id sends the answer back for its one schema repair.
 
-The brief gate (`runBriefGate`, `src/engine/orchestrator/task/brief-gate.ts`) adds those checks to the checks its cadence runs. `runTaskChecks` (`src/engine/orchestrator/task/task-checks.ts`) builds each carried reviewer check from `commands[id]`. It runs under the same command policy as the review. Any result other than `pass` rejects the brief unless the run base settles it as pre-existing. This includes `fail`, `refused`, `unknown` and a `not-runnable` re-run. A settled fix check records `passed: true` in `checkResults`; its command evidence keeps the failure.
+The brief gate (`runBriefGate`, `src/engine/orchestrator/task/brief-gate.ts`) adds those checks to the checks its cadence runs. `runTaskChecks` (`src/engine/orchestrator/task/task-checks.ts`) builds each carried reviewer check from `commands[id]`. It runs under the same command policy as the review. For each check id, the task carries the union of its findings' failure keys, with repeats removed. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass.
 
-The gate runs carried plan and task checks by id. A failure rejects the brief even when the check is optional. Only a red reviewer check re-runs at the run base, with the same command text. The fix brief names each command by check id and shows each distinct failing output once (`fixBriefDescription`).
+A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly. Every unmatched re-run key counts as another failure.
+
+Other failures belong to other fix tasks or the next review. A check with no carried keys must pass. This includes older saved fix tasks. A timeout or a red with no named failure fails the gate. Results of `refused`, `unknown` and `not-runnable` also reject the brief. A settled fix check records `passed: true` in `checkResults`; its command evidence keeps the failure.
+
+The same rule covers carried reviewer, plan and task checks, even when a check is optional. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. A fix check runs once. It never re-runs at the run base. The run base still supplies changed-script refusal for reviewer checks.
+
+The fix brief names each command by check id and shows each distinct failing output once (`fixBriefDescription`).
 
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
 
@@ -532,7 +538,14 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       brief-gate selects checks by workflow.review:
         end → no checks (only the checks a caller names, e.g. a consult verify)
         task → the task's checks and the checks due when this task completes
-        a fix task also runs again the check of the red it answers
+        a fix task also runs each carried check once, with no base re-run
+        full capture → keys; incomplete capture → placeholder → command must pass
+        diagnostics pair by exact key, then message identity; tests match exactly
+        each unmatched re-run key counts as another failure
+        no own failure left + an original other key remains → pass
+        no original other key, no own keys or a placeholder → command must pass
+        each judged re-run gets a verdict row, including green re-runs
+        plan and task checks get only a done row
       The project formatter runs on this brief's changed files first.
         pass → VALIDATION_PASS → implementing (next task)
         fail → VALIDATION_FAIL → implementing (attempt++, one retry)
@@ -595,8 +608,17 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     The same review answer supplies the fix tasks. They are appended
     with new ids and batch = highest plan batch + cycle, one fix cycle is spent,
     and implementing runs them (START_FIX_CYCLE) up to the review cycle cap.
-    Each fix task carries its red check; its brief gate runs that check again,
-    so a still-red fix retries and consults before the next review. The cap is
+    Each fix task carries own failure keys and all original red keys per check. Its brief gate runs each check
+    once, with no base re-run. Full capture supplies the keys.
+    Incomplete capture → placeholder → command must pass.
+    Diagnostics pair by exact key, then message identity. Tests match exactly.
+    Each unmatched re-run key counts as another failure.
+    No own failure left + an original other key remains → pass.
+    No original other key remains → command must pass.
+    Each judged re-run gets a verdict row, including green re-runs.
+    Plan and task checks get only a done row.
+    A carried failure that remains retries and consults.
+    With no carried keys or no named failure, the command must pass. The cap is
     2. After the cap the run halts on review-failed: fix again with a note
     (+1 cycle), Accept as is when no red check or Apply input blocks it, or end.
 ```

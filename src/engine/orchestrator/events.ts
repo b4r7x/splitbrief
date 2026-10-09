@@ -211,6 +211,10 @@ export function publishReviewCheck(
     newFailures?: number | undefined;
     preExisting?: number | undefined;
     notVerified?: number | undefined;
+    own?: number | undefined;
+    ownLeft?: number | undefined;
+    others?: number | undefined;
+    proven?: boolean | undefined;
     detail?: string | undefined;
     duration?: number | undefined;
   },
@@ -227,6 +231,10 @@ export function publishReviewCheck(
     ...(opts.newFailures !== undefined && { newFailures: opts.newFailures }),
     ...(opts.preExisting !== undefined && { preExisting: opts.preExisting }),
     ...(opts.notVerified !== undefined && { notVerified: opts.notVerified }),
+    ...(opts.own !== undefined && { own: opts.own }),
+    ...(opts.ownLeft !== undefined && { ownLeft: opts.ownLeft }),
+    ...(opts.others !== undefined && { others: opts.others }),
+    ...(opts.proven !== undefined && { proven: opts.proven }),
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });

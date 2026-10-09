@@ -1,5 +1,15 @@
 <!--
 Sync Impact Report
+- Version change: 4.2.0 → 4.3.0. MINOR: Principle V expands. A fix check judges only the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly. Other failures belong to other fix tasks or the next review. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. A check with no carried keys, or a re-run with no named failure, must pass. Fix checks never re-run at the run base. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass. Older saved fix tasks still load and must pass their commands.
+- Modified principles: V.
+- Updated sections: Governance.
+- Templates checked: plan-template.md, spec-template.md and tasks-template.md remain compatible. They set no fix-check failure rule.
+- Docs and skills: workflow, features, CLI reference, troubleshooting, task contract, how-it-works, engine, architecture, recovery, changelog and the canonical skill gates reference updated.
+- Follow-up TODOs: none.
+-->
+
+<!--
+Sync Impact Report
 - Version change: 4.1.0 → 4.2.0. MINOR: Principle V expands. The reviewer command policy runs any installed program of any language and refuses only what breaks a named danger rule; plan checks keep the allowlist. A red that the run base re-run cannot compare (a timeout, or no failure keys) is never pre-existing. With `validation.approve_checks: ask` the user runs or skips the reviewer checks, and a skipped check is never a pass.
 - Modified principles: V.
 - Updated sections: Technical Constraints (Project languages), Governance.
@@ -322,7 +332,7 @@ Run all or Skip all first, and a skipped reviewer check MUST NOT count as a
 pass. A task review chooses
 only the reviewer checks that run the related tests. With
 `validation.end_checks` off, no reviewer check runs; plan and task checks
-still run. Only a red reviewer check MUST be re-run at the run base, with
+still run. Only a red reviewer check at review MUST be re-run at the run base, with
 the same command text. Plan checks, task checks and the Apply re-check
 MUST NOT run at the run base. SPLITBRIEF MUST refuse a reviewer check whose
 package script, task file or interpreter script this run changed. A red that
@@ -333,16 +343,31 @@ protocol error) halts the review the same way a failed verdict call does; it
 is never a pass. Every new red MUST reach the reviewer as a pending input. The same
 review answer returns the verdict and the fix tasks. Fix work MUST spend
 one fix cycle. A fix task MUST carry the red check it answers: its id, its
-command, its output and its file. Its brief gate MUST run that check again
-through the same check runner and command policy, so the task's retry ladder
-sees a still-red check before the next review. A red reviewer check there is
-compared with the run base as at review. Completed briefs MUST stay done. The
-final review MUST rerun the reviewer checks after fixes.
+command, its output, its file, its own failure keys and all original red keys
+per check id. Keys MUST come from the full process capture. An incomplete
+capture MUST give one placeholder key and require a passing command.
+Its brief gate MUST run each check once through the same check runner and
+command policy. It MUST NOT re-run a fix check at the run base.
+Exact keys MUST pair first. Unmatched diagnostics MUST then pair by message
+identity, with only the position removed. Each key MUST pair at most once.
+Test keys and keys with no file MUST match exactly.
+Every unmatched re-run key MUST count as another failure.
+A red MUST settle only when no own failure remains and the re-run still shows
+a key the original red showed that is not the task's own. Otherwise, the
+command MUST pass. A check with no own keys or original red keys, or a re-run
+with a placeholder, MUST pass its command. Older saved fix tasks MUST load
+and follow that rule.
+This rule covers reviewer, plan and task checks. Each judged re-run MUST get
+a fix check verdict row. A green re-run MUST show all own failures gone.
+Plan and task checks MUST get only a done row, with no duration.
+The retry ladder MUST see a carried failure that remains before the next review.
+Completed briefs MUST stay done. The final review MUST rerun the reviewer checks
+after fixes.
 
 Worktree and staged-copy runs validate in the run workspace. The pipeline
 writes the reviewed result to the user's project only at Apply. Checkout runs
 and older runs without a workspace validate in the user's project.
-A red reviewer check MUST be compared with the same command at the run base,
+A red reviewer check at review MUST be compared with the same command at the run base,
 by its parsed failing test names or its diagnostic lines. Retry prompts MUST carry
 the exact check errors.
 The project formatter MUST run on each brief's changed files.
@@ -495,6 +520,8 @@ red check it answers again before the next review.
 The 4.2.0 amendment expands Principle V. The reviewer command policy has no program
 allowlist, an uncomparable red at the run base is never pre-existing, and the user
 may approve the reviewer checks before they run.
+The 4.3.0 amendment expands Principle V. A fix check answers only its carried
+failure keys and runs once, with no base re-run.
 
 **Amendment procedure**:
 1. Propose changes via `/speckit.constitution` with rationale
@@ -511,4 +538,4 @@ MUST be documented in the plan.md Complexity Tracking table with:
 the violation, why it is needed, and why the simpler alternative
 was rejected.
 
-**Version**: 4.2.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-09
+**Version**: 4.3.0 | **Ratified**: 2026-03-25 | **Last Amended**: 2026-10-09

@@ -20,6 +20,7 @@ import type { EngineEvent, EngineEventOf } from '../events/types.js';
 import { recordLocalTaskEvidence } from './evidence/task.js';
 import {
   REVIEW_CHECKS_SKIP_REASON,
+  runReviewCheck,
   runReviewChecks,
   type ReviewChecksOptions,
   type ReviewChecksOutcome,
@@ -142,6 +143,115 @@ function sectionOf(outcome: ReviewChecksOutcome): string {
   return outcome.section;
 }
 
+describe('runReviewCheck at the brief gate', () => {
+  it.each([
+    {
+      name: 'mixed compiler and test failures',
+      output: `${NEW_RED}\n FAIL  src/b.test.ts > fails`,
+      complete: true,
+      ownLeft: 1,
+      fresh: [NEW_RED],
+    },
+    {
+      name: 'a carried compiler failure after character 4000',
+      output: `${OLD_RED}\n${' '.repeat(4100)}\n${NEW_RED}`,
+      complete: true,
+      ownLeft: 1,
+      fresh: [NEW_RED],
+    },
+    {
+      name: 'an incomplete process capture',
+      output: OLD_RED,
+      complete: false,
+      ownLeft: undefined,
+      fresh: ['output over the capture limit'],
+    },
+    {
+      name: 'a new stage-1 failure that skips stage 2',
+      output: 'src/first.ts(1,1): error TS2322: New failure.',
+      complete: true,
+      ownLeft: 0,
+      fresh: ['src/first.ts(1,1): error TS2322: New failure.'],
+    },
+    {
+      name: 'a passing smoke row before a new compiler failure skips the carried test',
+      output: `tests/test_smoke.py::test_ok PASSED [ 50%]\n${NEW_RED}`,
+      complete: true,
+      ownLeft: 0,
+      fresh: [NEW_RED],
+      carried: {
+        failureKeys: ['tests/test_later.py::test_fails'],
+        redKeys: ['tests/test_later.py::test_fails', 'tests/test_smoke.py::test_ok'],
+      },
+    },
+  ])('rejects $name', async ({ output, complete, ownLeft, fresh, carried }) => {
+    await withApplyRun(FILES, { sessionId: 'sess-brief-red' }, async (run) => {
+      const { bus, events } = makeBusRecorder();
+      vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+        processError.exitCode({
+          command: 'npm test',
+          code: 1,
+          stderr: '',
+          output,
+          truncated: !complete,
+        }),
+      );
+      const result = await runReviewCheck({
+        check: { id: 'V1', command: 'npm test' },
+        moment: 'brief',
+        carried: carried ?? { failureKeys: [NEW_RED], redKeys: [NEW_RED, OLD_RED] },
+        checkOptions: {
+          projectDir: run.ws,
+          config: makeConfig(),
+          bus,
+          phase: 'implementing',
+          npmScriptsApproved: false,
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test', required: true }],
+        },
+      });
+      expect(result.run.status).toBe('fail');
+      expect([...result.fresh].sort()).toEqual([...fresh].sort());
+      expect(rows(events).at(-1)).toMatchObject({ passed: false });
+      if (ownLeft === undefined) expect(rows(events).at(-1)).not.toHaveProperty('own');
+      else expect(rows(events).at(-1)).toMatchObject({ ownLeft });
+      if (ownLeft === 0) expect(rows(events).at(-1)).toMatchObject({ proven: false });
+      expect(commandRunner.runCommand).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('publishes the ownership verdict when the command passes', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-brief-green' }, async (run) => {
+      const { bus, events } = makeBusRecorder();
+      vi.spyOn(commandRunner, 'runCommand').mockResolvedValue({
+        stdout: 'ok',
+        stderr: '',
+        code: 0,
+      });
+      const result = await runReviewCheck({
+        check: { id: 'V1', command: 'npm test' },
+        moment: 'brief',
+        carried: { failureKeys: [NEW_RED], redKeys: [NEW_RED, OLD_RED] },
+        checkOptions: {
+          projectDir: run.ws,
+          config: makeConfig(),
+          bus,
+          phase: 'implementing',
+          npmScriptsApproved: false,
+          reviewChecks: [{ id: 'V1', kind: 'cmd', value: 'npm test', required: true }],
+        },
+      });
+      expect(result.fresh).toEqual([]);
+      expect(rows(events).at(-1)).toMatchObject({
+        passed: true,
+        own: 1,
+        ownLeft: 0,
+        others: 0,
+        proven: true,
+      });
+    });
+  });
+});
+
 describe('runReviewChecks', { timeout: 60_000 }, () => {
   it('with End-of-run checks off publishes one off row, asks the reviewer nothing and runs nothing', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-off' }, async (run) => {
@@ -221,6 +331,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           checkIds: ['V1'],
           command: 'npm test',
           output: NEW_RED,
+          failureKeys: [NEW_RED],
+          redKeys: [NEW_RED],
         }),
       ]);
       expect(state.pendingTriage?.inputs[0]?.text).toContain('Reviewer check V1 (npm test)');
@@ -266,7 +378,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.state.pendingTriage).toBeUndefined();
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
-        preExisting: ['src/legacy.ts(3,7)'],
+        preExisting: [OLD_RED],
       });
       expect(sectionOf(outcome)).toContain(
         'failed, 0 new failure(s); 1 pre-existing (also red at the run base): src/legacy.ts(3,7)',
@@ -414,6 +526,29 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
     });
   });
 
+  it('marks incomplete captures at both runs not verified and never pre-existing', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-incomplete' }, async (run) => {
+      const { outcome, events } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (command) => ({
+          throws: processError.exitCode({
+            command,
+            code: 1,
+            output: NEW_RED,
+            stderr: '',
+            truncated: true,
+          }),
+        }),
+      });
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).toMatchObject({ preExisting: 0, notVerified: 1 });
+      expect(outcome.state.pendingTriage?.inputs[0]?.redKeys).toEqual([
+        'output over the capture limit',
+      ]);
+    });
+  });
+
   it.each([
     {
       name: 'an npm script banner',
@@ -501,7 +636,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
 
   // L4 review B1: a long red kept only its first 4000 characters and its last 4096, so a vitest
   // failure list at the end was lost and both sides matched on the same stderr notice.
-  it('keys a long red by its whole output, not by a stderr notice it shares with the run base', async () => {
+  it('keys a long red by its whole output, so a stderr notice it shares with the run base is its only pre-existing key', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-long-red' }, async (run) => {
       const passing = Array.from({ length: 200 }, (_, i) => ` ✓ src/x.test.ts > passes ${i} 2ms`);
       const red = (failing: string) => ({
@@ -516,10 +651,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
 
       expect(
         rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
-      ).toMatchObject({ newFailures: 1, preExisting: 0 });
+      ).toMatchObject({ newFailures: 1, preExisting: 1 });
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('src/new.test.ts::adds');
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
-      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toEqual([
+        'biome.json:38: the key files.ignore is deprecated',
+      ]);
     });
   });
 
@@ -536,7 +673,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         const reason =
           'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks';
         expect(sectionOf(outcome)).toContain(
-          `- V1 \`npm test\`: failed (src/legacy.ts(3,7)), not verified at the run base (${reason}); the reviewer decides`,
+          `- V1 \`npm test\`: failed (src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.), not verified at the run base (${reason}); the reviewer decides`,
         );
         expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
         expect(
@@ -626,6 +763,59 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         expect(inputs[1]?.text).toContain('Last changed by T002.');
       },
     );
+  });
+
+  // Live run 2026-10-09: a fix task must know which failures of the red command are its own.
+  it('queues an input only for a file with new failures, carrying the new keys that name it', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-own-keys' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (_command, at) => ({
+          red: at === 'workspace' ? `${NEW_RED}\n${OLD_RED}` : OLD_RED,
+        }),
+      });
+
+      expect(
+        (outcome.state.pendingTriage?.inputs ?? []).map((input) => [
+          input.id,
+          input.file,
+          input.failureKeys,
+        ]),
+      ).toEqual([['V1.1', 'src/a.ts', [NEW_RED]]]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.redKeys).toEqual([NEW_RED, OLD_RED]);
+    });
+  });
+
+  it('names a new failure that only the head of a long output shows', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-long-red' }, async (run) => {
+      const noise = Array.from(
+        { length: 200 },
+        (_, index) => `    Type 'Section<${index}>' is not assignable to type 'Section<never>'.`,
+      ).join('\n');
+      const { outcome } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (_command, at) =>
+          at === 'workspace' ? { red: `${NEW_RED}\n${noise}\n${OLD_RED}` } : { red: OLD_RED },
+      });
+
+      expect(
+        (outcome.state.pendingTriage?.inputs ?? []).map((input) => [input.file, input.failureKeys]),
+      ).toEqual([['src/a.ts', [NEW_RED]]]);
+    });
+  });
+
+  it('carries no failure keys on an input whose red names no failure', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-no-keys' }, async (run) => {
+      const { outcome } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (_command, at) => (at === 'workspace' ? { red: '' } : 'pass'),
+      });
+
+      expect(outcome.state.pendingTriage?.inputs).toEqual([
+        expect.objectContaining({ id: 'V1.1', file: null }),
+      ]);
+      expect(outcome.state.pendingTriage?.inputs[0]).not.toHaveProperty('failureKeys');
+    });
   });
 
   it('queues the failure when the base re-run cannot start, and says why', async () => {

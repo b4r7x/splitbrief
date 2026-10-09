@@ -200,10 +200,29 @@ function findingFor(
   const finding = review?.verdict.findings.find((candidate) => candidate.id === id);
   if (finding !== undefined) {
     const commands: Record<string, string> = {};
+    const failureKeys: Record<string, string[]> = {};
+    const redKeys: Record<string, string[]> = {};
     for (const id of finding.checkIds ?? []) {
-      if (!REVIEW_CHECK_ID.test(id)) continue;
-      const check = reviewChecks?.plan.commands.find((check) => check.id === id);
-      if (check !== undefined) commands[id] = check.command;
+      if (REVIEW_CHECK_ID.test(id)) {
+        const check = reviewChecks?.plan.commands.find((check) => check.id === id);
+        if (check !== undefined) commands[id] = check.command;
+      }
+      const keys = [
+        ...new Set(
+          inputs
+            .filter((input) => input.file === finding.file && input.checkIds?.includes(id))
+            .flatMap((input) => input.failureKeys ?? []),
+        ),
+      ];
+      if (keys.length > 0) failureKeys[id] = keys;
+      const red = [
+        ...new Set(
+          inputs
+            .filter((input) => input.checkIds?.includes(id))
+            .flatMap((input) => input.redKeys ?? []),
+        ),
+      ];
+      if (red.length > 0) redKeys[id] = red;
     }
     return {
       id: finding.id,
@@ -212,13 +231,23 @@ function findingFor(
       ...(finding.file !== null && { file: finding.file }),
       ...(finding.checkIds !== null && { checkIds: finding.checkIds }),
       ...(Object.keys(commands).length > 0 && { commands }),
+      ...(Object.keys(failureKeys).length > 0 && { failureKeys }),
+      ...(Object.keys(redKeys).length > 0 && { redKeys }),
     };
   }
   const input = inputs.find((candidate) => candidate.id === id);
   if (input === undefined) return undefined;
   const commands: Record<string, string> = {};
+  const failureKeys: Record<string, string[]> = {};
+  const redKeys: Record<string, string[]> = {};
   if (input.command !== undefined) {
     for (const id of input.checkIds ?? []) commands[id] = input.command;
+  }
+  if (input.failureKeys !== undefined && input.failureKeys.length > 0) {
+    for (const id of input.checkIds ?? []) failureKeys[id] = input.failureKeys;
+  }
+  if (input.redKeys !== undefined && input.redKeys.length > 0) {
+    for (const id of input.checkIds ?? []) redKeys[id] = input.redKeys;
   }
   return {
     id: input.id,
@@ -227,6 +256,8 @@ function findingFor(
     ...(input.file !== null && { file: input.file }),
     ...(input.checkIds !== undefined && { checkIds: input.checkIds }),
     ...(Object.keys(commands).length > 0 && { commands }),
+    ...(Object.keys(failureKeys).length > 0 && { failureKeys }),
+    ...(Object.keys(redKeys).length > 0 && { redKeys }),
     ...(input.output !== undefined && { output: input.output }),
   };
 }

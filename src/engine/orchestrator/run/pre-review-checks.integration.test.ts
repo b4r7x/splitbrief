@@ -16,7 +16,7 @@ import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtu
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders/checks.js';
-import { failingFilesFromOutput } from '../task/file-owner.js';
+import { failingFilesFromKeys } from '../task/file-owner.js';
 import {
   classifyRequiredChecks,
   runPreReviewChecks,
@@ -223,15 +223,23 @@ describe('pre-review checks', () => {
     );
 
     expect(result.defects).toHaveLength(1);
-    expect(result.defects[0]).toMatchObject({ file: 'src/a.ts', source: 'check' });
+    expect(result.defects[0]).toMatchObject({
+      file: 'src/a.ts',
+      source: 'check',
+      failureKeys: ['src/a.ts(1,1): error TS1005'],
+      redKeys: ['src/a.ts(1,1): error TS1005'],
+    });
     expect(result.defects[0]?.text).toContain('Last changed by T001.');
   });
 
-  it('reads the files a check output names relative to the workspace', () => {
+  it('reads the files a check failure key names relative to the workspace', () => {
     expect(
-      failingFilesFromOutput('src/a.ts(1,1): error TS1005\nsrc/b.ts:2: boom', projectDir),
+      failingFilesFromKeys(
+        ['src/a.ts(1,1)', `${projectDir}/src/b.ts:2`, 'src/a.ts(9,2)', '../outside.ts:1'],
+        projectDir,
+      ),
     ).toEqual(['src/a.ts', 'src/b.ts']);
-    expect(failingFilesFromOutput('--- FAIL: TestFetch/site.example (0.00s)', projectDir)).toEqual(
+    expect(failingFilesFromKeys(['--- FAIL: TestFetch/site.example (0.00s)'], projectDir)).toEqual(
       [],
     );
   });
@@ -240,13 +248,31 @@ describe('pre-review checks', () => {
     expect(
       classifyRequiredChecks([
         { checkId: 'K1', status: 'pass', output: '' },
-        { checkId: 'K2', status: 'fail', output: 'boom' },
+        {
+          checkId: 'K2',
+          status: 'fail',
+          output: 'boom',
+          failure: {
+            keys: ['failed without diagnostics'],
+            placeholder: 'failed without diagnostics',
+          },
+        },
         { checkId: 'K3', status: 'not-runnable', output: 'no render' },
         { checkId: 'K4', status: 'refused', output: 'no' },
         { checkId: 'K5', status: 'unknown', output: 'no check' },
       ]),
     ).toEqual({
-      failed: [{ checkId: 'K2', status: 'fail', output: 'boom' }],
+      failed: [
+        {
+          checkId: 'K2',
+          status: 'fail',
+          output: 'boom',
+          failure: {
+            keys: ['failed without diagnostics'],
+            placeholder: 'failed without diagnostics',
+          },
+        },
+      ],
       unrunnable: [
         { checkId: 'K3', output: 'no render' },
         { checkId: 'K4', output: 'no' },

@@ -368,6 +368,8 @@ describe('review fix work', () => {
         checkIds: ['V1'],
         command: 'npm test',
         output: 'FAIL src/shared/widget.test.ts > rethrows',
+        failureKeys: ['src/shared/widget.test.ts::rethrows'],
+        redKeys: ['src/shared/widget.test.ts::rethrows', 'src/other.test.ts::fails'],
       },
       {
         id: 'P2',
@@ -399,6 +401,8 @@ describe('review fix work', () => {
         checkIds: ['V1'],
         commands: { V1: 'npm test' },
         output: 'FAIL src/shared/widget.test.ts > rethrows',
+        failureKeys: { V1: ['src/shared/widget.test.ts::rethrows'] },
+        redKeys: { V1: ['src/shared/widget.test.ts::rethrows', 'src/other.test.ts::fails'] },
       },
       { id: 'P2', text: inputs[1]?.text, acceptance: null, checkIds: ['K1'], output: 'broken' },
     ]);
@@ -410,5 +414,52 @@ describe('review fix work', () => {
     );
     expect(applied.tasks[0]?.description).toContain('Failing output:\n```\nbroken\n```');
     expect(loadState(ref)?.tasks[1]?.fix?.findings).toEqual(applied.tasks[0]?.fix?.findings);
+  });
+  // Live run 2026-10-09: the reviewer's own findings cited V1 and carried none of its failures.
+  it('gives a verdict finding the failure keys of the pending inputs of its check and file', () => {
+    const ref = setupProject(dirs);
+    const base = triageState();
+    const review = reviewRecord();
+    const state: WorkflowState = {
+      ...base,
+      reviewChecks: REVIEW_CHECKS,
+      review: {
+        ...review,
+        verdict: { ...review.verdict, findings: [{ ...FAILING_FINDING, checkIds: ['V1', 'K1'] }] },
+      },
+    };
+    saveState(ref, state);
+    const input = (id: string, file: string, keys: string[]) => ({
+      id,
+      kind: 'defect' as const,
+      source: 'check' as const,
+      file,
+      text: `Reviewer check V1 (node --version) failed: ${keys.join('; ')}.`,
+      checkIds: ['V1'],
+      command: 'node --version',
+      output: keys.join('\n'),
+      failureKeys: keys,
+      redKeys: keys,
+    });
+    const applied = applyTriage(
+      {
+        ...ref,
+        workspaceDir: ref.projectDir,
+        metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+      },
+      state,
+      state.review,
+      [
+        input('V1.1', FAILING_FINDING.file, ['src/shared/widget.ts(3,1)']),
+        input('V1.2', 'src/other.ts', ['src/other.ts(9,9)']),
+      ],
+      fixResult(),
+    );
+    expect(applied.tasks[0]?.fix?.findings[0]?.failureKeys).toEqual({
+      V1: ['src/shared/widget.ts(3,1)'],
+    });
+    expect(applied.tasks[0]?.fix?.findings[0]?.redKeys).toEqual({
+      V1: ['src/shared/widget.ts(3,1)', 'src/other.ts(9,9)'],
+    });
   });
 });

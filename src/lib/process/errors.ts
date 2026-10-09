@@ -37,6 +37,18 @@ export interface ExitCodeErrorOptions {
   stderr: string;
   output?: string | undefined;
   detail?: string | undefined;
+  /** True when the spawner cut either stream to its byte cap. */
+  truncated?: boolean | undefined;
+}
+
+export type ProcessOutputCapture = { text: string; complete: boolean };
+
+/** The joined output and stderr of a red process; a stream its spawner cut makes it incomplete. */
+export function processOutputCapture(data: ProcessOutputErrorData): ProcessOutputCapture {
+  return {
+    text: [data.output, data.stderr].filter((part) => part.trim().length > 0).join('\n'),
+    complete: data.truncated !== true,
+  };
 }
 
 export type ProcessTerminationTarget = 'process' | 'process-group';
@@ -114,6 +126,7 @@ export const processError = {
       code: opts.code,
       stderr,
       output,
+      ...(opts.truncated === true && { truncated: true as const }),
     });
   },
 
@@ -146,6 +159,7 @@ export interface ProcessOutputErrorData {
   code: number | null;
   stderr: string;
   output: string;
+  truncated?: true | undefined;
 }
 
 export type ProcessOutputError = Error & {

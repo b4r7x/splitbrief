@@ -445,12 +445,57 @@ describe('runChecks', () => {
         checkId: 'K1',
         status: 'fail',
         output: 'src/a.ts(1,1): error TS1005',
-        failure: { keys: ['src/a.ts(1,1)'] },
+        failure: { keys: ['src/a.ts(1,1): error TS1005'] },
         command: 'tsc --noEmit',
         exitCode: 1,
       },
     ]);
   });
+
+  it.each(['cmd', 'test', 'render'] as const)(
+    'extracts full capture keys for a %s check',
+    async (kind) => {
+      const diagnostic = 'src/a.ts(1,1): error TS2322: Type mismatch.';
+      const output = `${'x'.repeat(4100)}\n${diagnostic}`;
+      const task = taskWith([
+        {
+          id: 'K1',
+          kind,
+          value:
+            kind === 'cmd' ? 'tsc --noEmit' : kind === 'test' ? 'src/a.test.ts' : 'overlay-picker',
+          required: true,
+        },
+      ]);
+      for (const complete of [true, false]) {
+        const runner = makeCommandRunner(
+          processError.exitCode({
+            command: 'check',
+            code: 1,
+            output,
+            stderr: '',
+            truncated: !complete,
+          }),
+        );
+        const results = await runChecks(
+          ['K1'],
+          options({
+            task,
+            runCommand: runner,
+            config: makeConfig({ render: 'render {id} {out}' }),
+          }),
+        );
+        expect(results[0]).toMatchObject({
+          status: 'fail',
+          failure: complete
+            ? { keys: [diagnostic] }
+            : {
+                keys: ['output over the capture limit'],
+                placeholder: 'output over the capture limit',
+              },
+        });
+      }
+    },
+  );
 
   it('refuses a cmd check the policy rejects and never runs it', async () => {
     const task = taskWith([

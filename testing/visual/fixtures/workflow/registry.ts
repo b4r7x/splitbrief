@@ -244,6 +244,18 @@ const checkpointPredicates = [
   [checkpointId('review-base-mixed'), includesAll('2 new,', 'V1 failed')],
   [checkpointId('fix-check-running'), includesAll('Fix check V2 · npm test')],
   [
+    checkpointId('fix-check-done'),
+    // The verdict wraps at narrow widths; the earlier red row scrolls out of a 60x18 transcript.
+    (context) =>
+      includesAll(
+        'your 2 failures gone',
+        ...(context.viewport.cols >= 120 ? ['not proven fixed'] : []),
+      )({
+        ...context,
+        output: context.output.replace(/\s+/g, ' '),
+      }),
+  ],
+  [
     checkpointId('review-base-not-verified'),
     // The reason wraps at narrow widths; the last row settles the transcript.
     includesAll('Base re-run V1', 'npm test · not run'),

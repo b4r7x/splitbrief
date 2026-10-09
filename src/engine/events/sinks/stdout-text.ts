@@ -1,4 +1,5 @@
 import { baseSplit } from '../../../core/review/base-split.js';
+import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
@@ -56,6 +57,20 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
   const detail = event.detail ?? 'no detail given';
   if (event.status === 'refused') return `${label} ${event.id}: refused (${detail})`;
   if (event.status === 'not-run') return `${label} ${event.id}: not run (${detail})`;
+  if (
+    event.moment === 'brief' &&
+    event.own !== undefined &&
+    event.ownLeft !== undefined &&
+    event.others !== undefined
+  ) {
+    const verdict = fixCheckVerdict({
+      own: event.own,
+      ownLeft: event.ownLeft,
+      others: event.others,
+      proven: event.proven ?? true,
+    }).join(SOFT_SEP);
+    return `${label} ${event.id}: ${verdict} (${event.command})`;
+  }
   if (event.moment === 'base') {
     if (
       event.passed === false &&
@@ -98,6 +113,9 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   base re-run V1: pre-existing · the failure also fails before this run's changes
  *   base re-run V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: passed (<command>) | failed (<command>)
+ *   fix check V1: your <N> failures gone · <M> others left (<command>)
+ *   fix check V1: <K> of your <N> failures remain (<command>)
+ *   fix check V1: your <N> failures not shown · not proven fixed (<command>)
  *   fix check V1: refused (<detail>) | not run (<detail>)
  *   stalled: implementer (opencode) · no output for 5:00
  *   review: passed

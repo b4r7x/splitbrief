@@ -74,6 +74,7 @@ export async function runCommand(
             code,
             stderr: stderrSnapshot.text,
             output: stdoutSnapshot.text,
+            truncated: stdoutSnapshot.truncated || stderrSnapshot.truncated,
           });
         }
         return {

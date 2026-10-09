@@ -1,5 +1,6 @@
 import { formatToolModel } from '../../../core/model-display.js';
 import { baseSplit } from '../../../core/review/base-split.js';
+import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
@@ -109,6 +110,11 @@ function stageTone(state: ValidationStageState): ConversationRowTone {
   return 'textDim';
 }
 
+// A wrap never splits a clock: `3m 0s` keeps its space as a no-break space.
+function rowDuration(ms: number): string {
+  return formatDuration(ms).replaceAll(' ', '\u00a0');
+}
+
 export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
   const label = suiteStageText({
     id: event.id,
@@ -120,6 +126,23 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
   if (event.status === 'running') return `${label}${SOFT_SEP}running`;
   if (event.status === 'not-run') return `${label}${SOFT_SEP}not run${detail}`;
   if (event.status === 'refused') return `${label}${SOFT_SEP}refused${detail}`;
+  if (
+    event.moment === 'brief' &&
+    event.own !== undefined &&
+    event.ownLeft !== undefined &&
+    event.others !== undefined
+  ) {
+    return [
+      label,
+      ...fixCheckVerdict({
+        own: event.own,
+        ownLeft: event.ownLeft,
+        others: event.others,
+        proven: event.proven ?? true,
+      }),
+      ...(event.duration === undefined ? [] : [rowDuration(event.duration)]),
+    ].join(SOFT_SEP);
+  }
   const split =
     event.moment === 'base' &&
     event.passed === false &&
@@ -141,7 +164,7 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
       : event.passed === true
         ? 'passed'
         : 'failed');
-  const dur = event.duration === undefined ? '' : `${SOFT_SEP}${formatDuration(event.duration)}`;
+  const dur = event.duration === undefined ? '' : `${SOFT_SEP}${rowDuration(event.duration)}`;
   // The clock follows the verdict, as on every other row; the reason a red is pre-existing, or not
   // verified at the run base, follows it.
   const why = split === null || split.why === null ? '' : `${SOFT_SEP}${split.why}`;

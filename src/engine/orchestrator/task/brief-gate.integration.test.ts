@@ -229,6 +229,7 @@ describe('brief gate', () => {
 
   describe('a fix task that answers a reviewer check', { timeout: 60_000 }, () => {
     const NEW_RED = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
+    const NEW_KEY = NEW_RED;
     const OLD_RED =
       'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.';
 
@@ -236,6 +237,8 @@ describe('brief gate', () => {
       /** The command the newest review recorded as V1; a later review may have chosen another. */
       recorded?: string;
       config?: ReturnType<typeof makeConfig>;
+      /** The failure keys the finding carries for V1; null is an older fix task saved without them. */
+      keys?: string[] | null;
     };
 
     /** Runs the fix task's gate on a real run workspace and run base; `red` answers each place. */
@@ -257,6 +260,10 @@ describe('brief gate', () => {
               checkIds: ['V1'],
               commands: { V1: 'npm test' },
               output: NEW_RED,
+              ...(options.keys !== null && {
+                failureKeys: { V1: options.keys ?? [NEW_KEY] },
+                redKeys: { V1: [...(options.keys ?? [NEW_KEY]), OLD_RED] },
+              }),
             },
           ],
         },
@@ -307,24 +314,38 @@ describe('brief gate', () => {
       return { result, places, commands };
     }
 
-    it('fails the gate while the command still shows a failure the run base does not', async () => {
+    it('fails the gate while a failure the finding carries remains, and runs nothing at the run base', async () => {
       await withApplyRun(FILES, { sessionId: 'sess-fix-new-red' }, async (run) => {
-        const { result, places } = await gate(run, (at) => (at === 'workspace' ? NEW_RED : null));
+        const { result, places } = await gate(run, (at) =>
+          at === 'workspace' ? `${NEW_RED}\n${OLD_RED}` : null,
+        );
 
-        expect(places).toEqual(['workspace', 'base']);
+        expect(places).toEqual(['workspace']);
         expect(result.acceptance.accepted).toBe(false);
         expect(result.error).toMatch(/^check V1 did not pass \(fail\): .*TS2322/s);
         expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: false }]);
       });
     });
 
-    it('accepts the gate when every failure left is also red at the run base', async () => {
-      await withApplyRun(FILES, { sessionId: 'sess-fix-old-red' }, async (run) => {
+    // Live run 2026-10-09: T013 retried on the errors T014-T017 own.
+    it('accepts the gate once the failures the finding carries are gone, whatever else stays red', async () => {
+      await withApplyRun(FILES, { sessionId: 'sess-fix-own-gone' }, async (run) => {
         const { result, places } = await gate(run, () => OLD_RED);
 
-        expect(places).toEqual(['workspace', 'base']);
+        expect(places).toEqual(['workspace']);
         expect(result.acceptance.accepted).toBe(true);
         expect(result.error).toBe('');
+        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: true }]);
+      });
+    });
+
+    it('holds an older fix task saved without failure keys to a passing command', async () => {
+      await withApplyRun(FILES, { sessionId: 'sess-fix-no-keys' }, async (run) => {
+        const { result, places } = await gate(run, () => OLD_RED, { keys: null });
+
+        expect(places).toEqual(['workspace']);
+        expect(result.acceptance.accepted).toBe(false);
+        expect(result.error).toMatch(/^check V1 did not pass \(fail\): .*legacy/s);
       });
     });
 
@@ -336,8 +357,8 @@ describe('brief gate', () => {
           { recorded: 'node --version' },
         );
 
-        expect(places).toEqual(['workspace', 'base']);
-        expect(commands).toEqual(['npm test', 'npm test']);
+        expect(places).toEqual(['workspace']);
+        expect(commands).toEqual(['npm test']);
         expect(result.acceptance.accepted).toBe(false);
         expect(result.error).toMatch(/^check V1 did not pass \(fail\): .*TS2322/s);
       });
@@ -351,7 +372,7 @@ describe('brief gate', () => {
           { config: makeConfig({ validation: { endChecks: false } }) },
         );
 
-        expect(commands).toEqual(['npm test', 'npm test']);
+        expect(commands).toEqual(['npm test']);
         expect(result.acceptance.accepted).toBe(false);
       });
     });

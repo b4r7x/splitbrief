@@ -367,16 +367,26 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;
   moment: 'pre-review' | 'base' | 'brief';
   passed?: boolean; detail?: string; duration?: number;
-  newFailures?: number; preExisting?: number; notVerified?: number }
-// One command run before a review. `id` names the reviewer check (V1, …); an event
+  newFailures?: number; preExisting?: number; notVerified?: number;
+  own?: number; ownLeft?: number; others?: number; proven?: boolean }
+// One reviewer command run, or a judged plan or task check in a fix brief.
+// `id` names the check (V1, K1, …); an event
 // without `id` comes from an older session and carries its full-suite `stage`.
-// `passed` and `duration` are set on the done event. `detail` says why a command
+// `passed` is set on the done event. Reviewer checks also set `duration`.
+// `detail` says why a command
 // did not run (`V1 failed`) or was refused. `moment: 'base'` is the re-run of a red
 // command at the run base with the same command text; its done event counts the
 // failures that are new, pre-existing and not verified at the run base, and a red
 // base done event's `detail` says why a failure is not verified. `moment: 'brief'`
-// is a fix brief running the reviewer check it answers again, with the command the
-// finding carries, under the reviewer command policy.
+// is a fix brief's check, run once with no base re-run. A reviewer check uses the
+// command the finding carries, under the reviewer command policy. A fix check
+// done event counts `own` carried failures, `ownLeft` failures still present and
+// `others` every unmatched re-run key. `proven` is true on green, or when the
+// red still shows an original other key. Diagnostics pair by exact key, then
+// message identity. Test keys match exactly. Keys come from the full capture.
+// An incomplete capture is a placeholder and requires a passing command.
+// A red without proof must pass its command. Green re-runs show the verdict too.
+// Plan and task checks a fix finding carries also get a done row when judged. They get no running row or duration.
 
 // Recovery
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;

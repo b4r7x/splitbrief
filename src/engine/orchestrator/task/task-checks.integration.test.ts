@@ -137,7 +137,7 @@ describe('runTaskChecks', () => {
     expect(retryChecks).toHaveLength(1);
   });
 
-  it('never settles a reviewer check red at both sides when the run base cannot verify it', {
+  it('never settles a red fix check that names no failure, and runs nothing at the run base', {
     timeout: 60_000,
   }, async () => {
     await withApplyRun(
@@ -184,7 +184,7 @@ describe('runTaskChecks', () => {
             runCommand: runner,
           });
 
-          expect(runner.calls.map((call) => call.options?.cwd === run.ws)).toEqual([true, false]);
+          expect(runner.calls.map((call) => call.options?.cwd === run.ws)).toEqual([true]);
           expect(result.settled.has('V1')).toBe(false);
           expect(result.runs).toEqual([expect.objectContaining({ checkId: 'V1', status: 'fail' })]);
           expect(result.runs[0]?.preExisting).toBeUndefined();
@@ -199,11 +199,20 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
     'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
     'src/a.ts': 'export const a = 1;\n',
   };
-  const NEW_RED = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
-  const OLD_RED = 'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.';
+  const OWN_RED = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
+  const OWN_KEY = OWN_RED;
+  const OTHER_RED = 'src/b.ts(3,7): error TS2322: Type number is not assignable to type string.';
+  const OTHER_RED_2 = 'src/c.ts(9,1): error TS2304: Cannot find name x.';
 
-  /** Runs the fix task's K1 and the V1 it answers; `red` answers `npm test` in each place. */
-  async function fixChecks(run: ApplyRun, red: (at: 'workspace' | 'base') => string | null) {
+  /**
+   * Runs the fix task's K1 and the V1 it answers; `red` answers `npm test` in each place. `keys` are
+   * the failure keys the finding carries for V1; null is an older fix task saved without them.
+   */
+  async function fixChecks(
+    run: ApplyRun,
+    red: (at: 'workspace' | 'base') => string | null,
+    keys: string[] | null = [OWN_KEY],
+  ) {
     const task = makeTask({
       id: 'T002',
       checks: versionCheck(),
@@ -217,7 +226,11 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
             file: 'src/a.ts',
             checkIds: ['V1'],
             commands: { V1: 'npm test' },
-            output: NEW_RED,
+            output: OWN_RED,
+            ...(keys !== null && {
+              failureKeys: { V1: keys },
+              redKeys: { V1: [...keys, OTHER_RED, OTHER_RED_2] },
+            }),
           },
         ],
       },
@@ -225,12 +238,19 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
     const state = makeImplState([task], { workspace: run.workspace });
     const ref = { projectDir: run.dir, sessionId: run.sessionId };
     saveState(ref, state);
+    const places: Array<'workspace' | 'base'> = [];
     const runCommand: ValidationCommandRunner = async (cmd, args, options) => {
       const command = [cmd, ...args].join(' ');
-      const output =
-        command === 'npm test' ? red(options?.cwd === run.ws ? 'workspace' : 'base') : null;
+      const at = options?.cwd === run.ws ? 'workspace' : 'base';
+      if (command === 'npm test') places.push(at);
+      const output = command === 'npm test' ? red(at) : null;
       if (output === null) return { stdout: 'ok', stderr: '', code: 0 };
-      throw processError.exitCode({ command, code: 1, stderr: '', output });
+      throw processError.exitCode({
+        command,
+        code: 1,
+        stderr: '',
+        output,
+      });
     };
     const { bus, events } = makeBusRecorder();
     const result = await runTaskChecks({
@@ -243,61 +263,91 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
     const rows = events.filter(
       (event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite',
     );
-    return { result, rows, events };
+    return { result, rows, events, places };
   }
 
-  // Q2 review B2: the re-run had no row and no clock, and only an orphan base row showed.
-  it('gives the fix check its own row and clock, then splits its red at the run base', async () => {
-    await withApplyRun(FILES, { sessionId: 'sess-fix-check-rows' }, async (run) => {
-      const { result, rows } = await fixChecks(run, (at) =>
-        at === 'workspace' ? `${NEW_RED}\n${OLD_RED}` : OLD_RED,
-      );
+  // Live run 2026-10-09: T013 fixed its own errors and stayed red on the errors T014-T017 own.
+  it('settles a fix check once the failures it carries are gone, when an original other failure stays red', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-own-gone' }, async (run) => {
+      const { result, rows, places } = await fixChecks(run, () => `${OTHER_RED}\n${OTHER_RED_2}`);
 
-      expect(
-        rows.map((row) => [
-          row.id,
-          row.moment,
-          row.status,
-          row.passed,
-          row.newFailures,
-          row.preExisting,
-        ]),
-      ).toEqual([
-        ['V1', 'brief', 'running', undefined, undefined, undefined],
-        ['V1', 'brief', 'done', false, undefined, undefined],
-        ['V1', 'base', 'running', undefined, undefined, undefined],
-        ['V1', 'base', 'done', false, 1, 1],
+      expect(places).toEqual(['workspace']);
+      expect(rows.map((row) => [row.id, row.moment, row.status, row.passed])).toEqual([
+        ['V1', 'brief', 'running', undefined],
+        ['V1', 'brief', 'done', true],
       ]);
-      expect(rows.every((row) => row.phase === 'implementing' && row.command === 'npm test')).toBe(
-        true,
-      );
+      expect(rows[1]).toMatchObject({ own: 1, ownLeft: 0, others: 2 });
       expect(rows[1]?.duration).toEqual(expect.any(Number));
       expect(result.runs.map((entry) => [entry.checkId, entry.status])).toEqual([
         ['K1', 'pass'],
         ['V1', 'fail'],
       ]);
+      expect(result.settled.has('V1')).toBe(true);
+    });
+  });
+
+  it('does not settle a fix check while a failure it carries remains, and runs nothing at the run base', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-own-left' }, async (run) => {
+      const { result, rows, places } = await fixChecks(run, () => `${OWN_RED}\n${OTHER_RED}`);
+
+      expect(places).toEqual(['workspace']);
+      expect(rows.map((row) => [row.moment, row.status, row.passed])).toEqual([
+        ['brief', 'running', undefined],
+        ['brief', 'done', false],
+      ]);
+      expect(rows[1]).toMatchObject({ own: 1, ownLeft: 1, others: 1 });
       expect(result.settled.has('V1')).toBe(false);
     });
   });
 
-  it('settles a fix check whose every failure is also red at the run base', async () => {
-    await withApplyRun(FILES, { sessionId: 'sess-fix-check-settled' }, async (run) => {
-      const { result, rows } = await fixChecks(run, () => OLD_RED);
+  it('keeps a carried failure that only the head of a long output names', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-long' }, async (run) => {
+      const noise = Array.from(
+        { length: 200 },
+        (_, index) => `    Type 'Section<${index}>' is not assignable to type 'Section<never>'.`,
+      ).join('\n');
+      const { result, rows } = await fixChecks(run, () => `${OWN_RED}\n${noise}\n${OTHER_RED}`);
 
+      expect(rows.at(-1)).toMatchObject({ moment: 'brief', passed: false, own: 1, ownLeft: 1 });
+      expect(result.settled.has('V1')).toBe(false);
+    });
+  });
+
+  it('does not settle a fix check when a carried diagnostic moves to another line', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-line-moved' }, async (run) => {
+      const moved = OWN_RED.replace('(1,14)', '(2,14)');
+      const { result, rows, places } = await fixChecks(run, () => `${moved}\n${OTHER_RED}`);
+
+      expect(places).toEqual(['workspace']);
       expect(rows.at(-1)).toMatchObject({
-        moment: 'base',
+        moment: 'brief',
         status: 'done',
         passed: false,
-        newFailures: 0,
-        preExisting: 1,
+        own: 1,
+        ownLeft: 1,
+        others: 1,
       });
-      expect(result.settled.has('V1')).toBe(true);
+      expect(result.settled.has('V1')).toBe(false);
+    });
+  });
+
+  it('holds an older fix task that carries no failure keys to a passing command', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-no-keys' }, async (run) => {
+      const { result, rows, places } = await fixChecks(run, () => OTHER_RED, null);
+
+      expect(places).toEqual(['workspace']);
+      expect(rows.map((row) => [row.moment, row.status, row.passed])).toEqual([
+        ['brief', 'running', undefined],
+        ['brief', 'done', false],
+      ]);
+      expect(rows[1]).not.toHaveProperty('own');
+      expect(result.settled.has('V1')).toBe(false);
     });
   });
 
   it('records a settled fix check as passed while preserving its red command evidence', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-fix-check-recorded' }, async (run) => {
-      const { result, events } = await fixChecks(run, () => OLD_RED);
+      const { result, events } = await fixChecks(run, () => OTHER_RED);
 
       expect(result.state.tasks[0]?.checkResults).toEqual([
         { id: 'K1', passed: true },
@@ -313,9 +363,156 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
       ]);
       expect(
         recordedChecks(run.dir, run.sessionId).find((check) => check.id === 'V1'),
-      ).toMatchObject({ exitCode: 1, output: OLD_RED });
+      ).toMatchObject({ exitCode: 1, output: OTHER_RED });
     });
   });
+
+  it('settles a plan check a fix finding carries by the same keys and says so on a fix check row', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-plan-check' }, async (run) => {
+      const typecheck: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true };
+      const task = makeTask({
+        id: 'T002',
+        checks: [typecheck],
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'P1',
+              text: 'Required check K2 failed.',
+              acceptance: null,
+              file: 'src/a.ts',
+              checkIds: ['K2'],
+              commands: { K2: 'tsc --noEmit' },
+              output: OWN_RED,
+              failureKeys: { K2: [OWN_KEY] },
+              redKeys: { K2: [OWN_KEY, OTHER_RED] },
+            },
+          ],
+        },
+      });
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      const state = makeImplState([task], { workspace: run.workspace });
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+      const settledFor = async (output: string) =>
+        runTaskChecks({
+          wctx: makeWctx({ ...ref, workspaceDir: run.ws, bus, config: makeConfig() }),
+          state,
+          task,
+          checkIds: ['K2'],
+          runCommand: makeCommandRunner(
+            processError.exitCode({ command: 'tsc --noEmit', code: 2, stderr: '', output }),
+          ),
+        });
+
+      expect((await settledFor(OTHER_RED)).settled.has('K2')).toBe(true);
+      expect((await settledFor(`${OWN_RED}\n${OTHER_RED}`)).settled.has('K2')).toBe(false);
+      expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+        {
+          type: 'full_suite',
+          ts: expect.any(Number),
+          phase: state.phase,
+          status: 'done',
+          id: 'K2',
+          command: 'tsc --noEmit',
+          moment: 'brief',
+          passed: true,
+          own: 1,
+          ownLeft: 0,
+          others: 1,
+          proven: true,
+        },
+        {
+          type: 'full_suite',
+          ts: expect.any(Number),
+          phase: state.phase,
+          status: 'done',
+          id: 'K2',
+          command: 'tsc --noEmit',
+          moment: 'brief',
+          passed: false,
+          own: 1,
+          ownLeft: 1,
+          others: 1,
+          proven: true,
+        },
+      ]);
+    });
+  });
+
+  it('does not settle a red that only shows new failures', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-not-proven' }, async (run) => {
+      const fresh = 'src/first.ts(1,1): error TS2322: New first-stage error.';
+      const { result, rows } = await fixChecks(run, () => fresh);
+      expect(result.settled.has('V1')).toBe(false);
+      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'V1', passed: false });
+      expect(rows.at(-1)).toMatchObject({
+        passed: false,
+        own: 1,
+        ownLeft: 0,
+        others: 1,
+        proven: false,
+      });
+    });
+  });
+
+  it.each(['plan', 'task'] as const)(
+    'publishes a green %s check ownership verdict',
+    async (origin) => {
+      await withApplyRun(FILES, { sessionId: 'sess-green-fix-check' }, async (run) => {
+        const check: Check = { id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true };
+        const task = makeTask({
+          checks: origin === 'task' ? [check] : [],
+          fix: {
+            cycle: 1,
+            findings: [
+              {
+                id: 'P1',
+                text: 'Red check',
+                acceptance: null,
+                checkIds: ['K2'],
+                failureKeys: { K2: [OWN_RED] },
+                redKeys: { K2: [OWN_RED] },
+              },
+            ],
+          },
+        });
+        const state = makeImplState([task], {
+          workspace: run.workspace,
+          plan:
+            origin === 'plan'
+              ? { summary: 'Fix', decisions: [], criteria: [], checks: [check], validation: null }
+              : undefined,
+        });
+        const { bus, events } = makeBusRecorder();
+        const result = await runTaskChecks({
+          wctx: makeWctx({
+            projectDir: run.dir,
+            sessionId: run.sessionId,
+            workspaceDir: run.ws,
+            bus,
+            config: makeConfig(),
+          }),
+          state,
+          task,
+          checkIds: ['K2'],
+          runCommand: makeCommandRunner(),
+        });
+        expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K2', passed: true });
+        expect(events.filter((event) => event.type === 'full_suite')).toEqual([
+          expect.objectContaining({
+            id: 'K2',
+            status: 'done',
+            moment: 'brief',
+            own: 1,
+            ownLeft: 0,
+            others: 0,
+            proven: true,
+          }),
+        ]);
+      });
+    },
+  );
 
   it('runs a fix check with the real HOME and without the host secrets', async () => {
     const probe = [

@@ -706,7 +706,13 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task`, a consult `verify` or a fix task. A brief check, plan check or task check never re-runs at the run base. Its failure retries the brief once with the exact errors, then consults the planner, even when the same failure occurs at the run base. Only a red reviewer check re-runs there, with the same command text.
+**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults the planner. Only a red reviewer check at review re-runs at the run base, with the same command text.
+
+A fix check runs once and never re-runs there. It judges the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
+
+Test failures match by name. Keys with no file match exactly. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. Other failures belong to other fix tasks or the next review.
+
+A check with no carried keys, or a re-run with no named failure, must pass. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass. Older saved fix tasks without own keys or original red keys must pass their commands.
 
 **Fix:**
 
