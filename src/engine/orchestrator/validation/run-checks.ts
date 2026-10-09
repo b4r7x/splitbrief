@@ -145,9 +145,8 @@ async function runTestCheck(
   check: Check,
   opts: RunChecksOptions,
   run: ValidationCommandRunner,
-  stageContext: ReturnType<typeof buildStageContext>,
+  planned: ReturnType<typeof planTestCheck>,
 ): Promise<CheckRunResult> {
-  const planned = planTestCheck(check.value, stageContext);
   if (planned.kind === 'skip') {
     return { checkId: check.id, status: 'not-runnable', output: planned.reason };
   }
@@ -368,10 +367,10 @@ async function runRenderCheck(
   };
 }
 
-export async function runChecks(
-  checkIds: readonly string[],
-  opts: RunChecksOptions,
-): Promise<CheckRunResult[]> {
+export function createCheckRunner(opts: RunChecksOptions): (check: Check) => {
+  command: string;
+  run: () => Promise<CheckRunResult>;
+} {
   const run = opts.runCommand ?? runCommand;
   const stageContext = buildStageContext({
     projectDir: opts.projectDir,
@@ -380,8 +379,31 @@ export async function runChecks(
     notices: { bus: opts.bus, phase: opts.phase },
   });
   const packageScripts = readPackageScripts(opts.projectDir);
-  const registry = checkRegistry(opts);
   const reviewIds = new Set((opts.reviewChecks ?? []).map((check) => check.id));
+  return (check) => {
+    if (check.kind === 'render') {
+      return { command: '', run: () => runRenderCheck(check, opts, run) };
+    }
+    if (check.kind === 'cmd') {
+      return {
+        command: check.value,
+        run: () => runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id)),
+      };
+    }
+    const planned = planTestCheck(check.value, stageContext);
+    return {
+      command: planned.kind === 'run' ? planned.command : '',
+      run: () => runTestCheck(check, opts, run, planned),
+    };
+  };
+}
+
+export async function runChecks(
+  checkIds: readonly string[],
+  opts: RunChecksOptions,
+): Promise<CheckRunResult[]> {
+  const prepare = createCheckRunner(opts);
+  const registry = checkRegistry(opts);
   const results: CheckRunResult[] = [];
   const seen = new Set<string>();
   for (const checkId of checkIds) {
@@ -390,14 +412,8 @@ export async function runChecks(
     const check = registry.get(checkId);
     if (check === undefined) {
       results.push({ checkId, status: 'unknown', output: `no check ${checkId}` });
-    } else if (check.kind === 'render') {
-      results.push(await runRenderCheck(check, opts, run));
-    } else if (check.kind === 'cmd') {
-      results.push(
-        await runCommandCheck(check, opts, run, packageScripts, reviewIds.has(check.id)),
-      );
     } else {
-      results.push(await runTestCheck(check, opts, run, stageContext));
+      results.push(await prepare(check).run());
     }
   }
   return results;

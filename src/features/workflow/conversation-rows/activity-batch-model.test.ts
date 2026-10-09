@@ -39,6 +39,32 @@ function activity(
 }
 
 describe('buildActivityBatchViewModel', () => {
+  it('omits historical session activity from rows, counts and disclosure', () => {
+    const session = activity({ kind: 'session', label: 'session captured' });
+    const read = activity({ kind: 'read', label: 'reading docs/TESTING.md' });
+    for (const expanded of [false, true]) {
+      const model = buildActivityBatchViewModel({
+        batchKey: 'old-call',
+        events: [session, read],
+        expanded,
+      });
+      expect(model.headerCount).toBe(1);
+      expect(model.headerText).toContain('1 update');
+      expect(model.visibleItems.map((item) => item.value)).toEqual(['docs/TESTING.md']);
+      expect(model.renderableUnits).toBe(1);
+      expect(model.hiddenCount).toBe(0);
+
+      const onlySession = buildActivityBatchViewModel({
+        batchKey: 'old-call',
+        events: [session],
+        expanded,
+      });
+      expect(onlySession.headerText).toBeNull();
+      expect(onlySession.visibleItems).toEqual([]);
+      expect(onlySession.renderableUnits).toBe(0);
+    }
+  });
+
   it('keeps collapsed rows bounded while summarizing latest deduped severity', () => {
     const events = [
       activity({

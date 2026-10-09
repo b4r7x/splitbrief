@@ -662,6 +662,8 @@ The run directory is content-addressed from the normalized selection. Repeating 
 
 The at-rest fixtures go through the production path: the fixture copies a real log into the session dir, calls `hydrateRun`, and inits the route at rest. Nothing is staged into the stores by hand. `workflow-plan-compiled` shows the planning session's two cards, `plan.md` and `tasks.md`, both rendered from `plan.json`; `workflow-at-rest-quick` is an old quick run at rest, which continues as one planning session.
 
+`workflow-at-rest-paused` replays T001 and T002 passing, T003 starting, and a mid-step `turn_interrupted` from `paused-mid-brief.jsonl`. `workflow-review-base-mixed` shows the three completed brief rows before its reviewer checks. Both answered consult scenarios carry the planner call's start and completion, so the progress block shows a runner and recent event time.
+
 ### Artifact layout
 
 A successful filtered run has this shape:
@@ -735,7 +737,7 @@ The terminal-boundary behavior harness lives under `testing/integration/cli/pty/
 npm run tui-shots:pty
 ```
 
-The harness spawns at fixed `100x30` dimensions and mounts the production `App` through `renderApp` in an active `reviewing-plan` state. It types the approval prefix, invokes a one-shot real editor child through `VISUAL`, returns to the review, completes `approve`, and submits the real approval callback before sending Ctrl+Q. It checks terminal restoration, child exit, and process-group reaping. The isolated child environment uses an allowlist and temporary home and project roots; it does not contact a provider.
+The harness spawns at fixed `100x30` dimensions and mounts the production `App` through `renderApp` in an active `reviewing-plan` state. It types the approval prefix and presses Ctrl+E to open the run's `plan.json` in the editor overlay. Ctrl+O hands `plan.json` to a one-shot real editor child through `VISUAL`. The harness returns to the review, completes `approve`, submits the real approval callback, and sends Ctrl+Q. It checks terminal restoration, child exit, and process-group reaping. The isolated child environment uses an allowlist and temporary home and project roots; it does not contact a provider.
 
 PTY teardown awaits child reaping before listeners, timers, and temporary roots are disposed.
 

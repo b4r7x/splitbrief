@@ -105,10 +105,14 @@ describe('invocation identity on runner call records', () => {
 
       const append = createSessionLogAppender(ref());
       const projected = events.flatMap((event, sequence) =>
-        projectRunnerCallEvents(event, { phase: 'planning', sequence }),
+        projectRunnerCallEvents(event, { rootDir: projectDir, phase: 'planning', sequence }),
       );
       for (const [sequence, event] of events.entries()) {
-        const entry = runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence });
+        const entry = runnerCallEventToSessionLogEntry(event, {
+          rootDir: projectDir,
+          phase: 'planning',
+          sequence,
+        });
         if (entry !== null) append(entry);
       }
       for (const event of projected) {
@@ -188,7 +192,11 @@ describe('invocation identity on runner call records', () => {
 
     const append = createSessionLogAppender(ref());
     for (const [sequence, event] of events.entries()) {
-      const entry = runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence });
+      const entry = runnerCallEventToSessionLogEntry(event, {
+        rootDir: projectDir,
+        phase: 'planning',
+        sequence,
+      });
       if (entry !== null) append(entry);
     }
     const replayed = (await readRunEvents(ref())).events.filter((event) =>

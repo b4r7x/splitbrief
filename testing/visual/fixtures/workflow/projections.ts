@@ -352,6 +352,7 @@ const wideCommandActivity = projectRunnerCallActivity(
     }),
   },
   4,
+  VISUAL_FIXTURE_PROJECT_DIR,
 );
 if (wideCommandActivity === null) throw new Error('Missing wide command fixture activity');
 
@@ -521,6 +522,25 @@ const implementationProjection: WorkflowFixtureProjection = {
   streaming: {
     lines: ['Reading fixture contract', 'Projecting bounded activity'],
   },
+};
+
+const buildConsultProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-build-consult'),
+  events: [
+    ...implementationProjection.events.slice(0, 3),
+    {
+      type: 'runner_call_started',
+      ts: FIXED_TS + 400,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: 'visual-build-consult',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'claude',
+      sequence: 0,
+    },
+  ],
 };
 
 // A session from before reviewer checks: a brief gate whose red stages are also red at the run base
@@ -723,7 +743,7 @@ const FIXTURE_PLANNED_BRIEFS = [
 
 // The plan announced each brief, so a completion alone marks it passed and times it.
 function fixtureBriefPassed(
-  brief: (typeof FIXTURE_PLANNED_BRIEFS)[number],
+  brief: Pick<TasksPlannedEvent['tasks'][number], 'id' | 'title' | 'index'>,
   ts: number,
 ): EngineEvent {
   return {
@@ -740,18 +760,19 @@ function fixtureBriefPassed(
   };
 }
 
-function everyBriefPassed(): EngineEvent[] {
+function everyBriefPassed(briefs = FIXTURE_TASKS_PLANNED.tasks): EngineEvent[] {
   return [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
-    FIXTURE_TASKS_PLANNED,
-    ...FIXTURE_PLANNED_BRIEFS.map((brief, index) =>
-      fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1)),
-    ),
+    { ...FIXTURE_TASKS_PLANNED, tasks: briefs },
+    ...briefs.flatMap((brief, index) => [
+      orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
+      fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
+    ]),
   ];
 }
 
 function orphanBriefStarted(
-  brief: (typeof FIXTURE_PLANNED_BRIEFS)[number],
+  brief: Pick<TasksPlannedEvent['tasks'][number], 'id' | 'title' | 'index'> & { file?: string },
   ts: number,
 ): EngineEvent {
   return {
@@ -762,7 +783,7 @@ function orphanBriefStarted(
     title: brief.title,
     index: brief.index,
     total: 3,
-    file: WORKFLOW_FIXTURE_REVIEW_FILE,
+    file: brief.file ?? WORKFLOW_FIXTURE_REVIEW_FILE,
     action: 'modify',
     tool: 'ollama',
     model: FIXED_RUNNER_MODEL,
@@ -1601,8 +1622,42 @@ const consultQuestionProjection: WorkflowFixtureProjection = {
       file: 'src/store.ts',
     },
     {
+      type: 'runner_call_started',
+      ts: FIXED_TS + 35_000,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: 'visual-consult-call-001',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'claude-code',
+      model: 'claude-sonnet-4',
+      attempt: 1,
+      sequence: 0,
+    },
+    {
+      type: 'runner_call_completed',
+      ts: FIXED_TS + 38_000,
+      phase: 'escalating',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      callId: 'visual-consult-call-001',
+      role: 'planner',
+      backendKind: 'cli',
+      runnerName: 'claude-code',
+      model: 'claude-sonnet-4',
+      attempt: 1,
+      sequence: 1,
+      durationMs: 3_000,
+      startedAt: FIXED_TS + 35_000,
+      endedAt: FIXED_TS + 38_000,
+      status: 'completed',
+      error: null,
+      partial: false,
+      usage: null,
+      nativeSessionId: null,
+    },
+    {
       type: 'consult_answered',
-      ts: FIXED_TS + 200,
+      ts: FIXED_TS + 38_100,
       phase: 'escalating',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       reason: 'failed',
@@ -1902,6 +1957,42 @@ const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const reviewContextRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-review-context-insufficient'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    phase: 'final-review',
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_review_context',
+      failure: {
+        kind: 'insufficient-context',
+        diagnostic: {
+          code: 'insufficient-context',
+          seat: 'review',
+          cause: 'input-budget',
+          missingSections: [],
+        },
+      },
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
+const reviewCallFailedRecoveryProjection: WorkflowFixtureProjection = {
+  ...reviewFailedRecoveryProjection,
+  scenarioId: scenarioId('workflow-review-call-failed'),
+  resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
+    feature: WORKFLOW_FEATURE,
+    phase: 'final-review',
+    pendingRecovery: buildReviewFailedRecoveryIssue({
+      id: 'rec_visual_review_call_failed',
+      failure: { kind: 'call-failed', code: 'timeout', message: 'Review call timed out.' },
+      createdAt: new Date(FIXED_TS).toISOString(),
+    }),
+  }),
+};
+
 /**
  * The halt `buildLeftIsolationRecoveryIssue` writes when agy searched the whole home directory
  * from its scratch directory: the evidence rides in the message, and another ready tool is on
@@ -2082,7 +2173,7 @@ const apiContextRecoveryIssue: RecoveryIssue = {
   message: 'The planning seat was not given the context this call needs.',
   details: [
     'Missing: evidence.json, drift-report.json',
-    'Adjust the plan seat with /crew plan or Settings, then /resume and choose retry.',
+    'Pick a plan seat with a larger context in /crew plan, then choose Try again.',
   ],
   facts: {
     apiContextCode: 'insufficient-context',
@@ -2814,7 +2905,7 @@ function claudePlanFrameEvents(): EngineEvent[] {
       events.push(
         ...projectRunnerCallEvents(
           { ...event, ts: stamp() },
-          { phase: 'planning', sequence: events.length },
+          { rootDir: VISUAL_FIXTURE_PROJECT_DIR, phase: 'planning', sequence: events.length },
         ),
       );
     },
@@ -2869,7 +2960,10 @@ function codexPlanCall(callId: string, attempt: number) {
 function planningCallActivity(ts: number, events: readonly RunnerCallEvent[]): EngineEvent[] {
   return events
     .flatMap((event, index) =>
-      projectRunnerCallEvents({ ...event, ts: ts + index }, { phase: 'planning', sequence: index }),
+      projectRunnerCallEvents(
+        { ...event, ts: ts + index },
+        { rootDir: VISUAL_FIXTURE_PROJECT_DIR, phase: 'planning', sequence: index },
+      ),
     )
     .filter((event) => event.type === 'runner_call_activity');
 }
@@ -3091,9 +3185,15 @@ const reviewCheckRunningProjection: WorkflowFixtureProjection = {
       feature: WORKFLOW_FEATURE,
     },
     { ...FIXTURE_TASKS_PLANNED, ts: PRE_REVIEW_TEST_STARTED_TS - 890_000 },
-    ...FIXTURE_PLANNED_BRIEFS.slice(0, 2).map((brief, index) =>
-      fixtureBriefPassed(brief, PRE_REVIEW_TEST_STARTED_TS - 600_000 + 180_000 * index),
-    ),
+    ...FIXTURE_TASKS_PLANNED.tasks
+      .slice(0, 2)
+      .flatMap((brief, index) => [
+        orphanBriefStarted(brief, PRE_REVIEW_TEST_STARTED_TS - 720_000 + 180_000 * index),
+        fixtureBriefPassed(brief, PRE_REVIEW_TEST_STARTED_TS - 600_000 + 180_000 * index),
+      ]),
+    ...FIXTURE_TASKS_PLANNED.tasks
+      .slice(2)
+      .map((brief) => orphanBriefStarted(brief, LAST_BRIEF_PASSED_TS - 120_000)),
     {
       type: 'runner_call_started',
       ts: LAST_BRIEF_PASSED_TS - 115_000,
@@ -3122,6 +3222,50 @@ const reviewCheckRunningProjection: WorkflowFixtureProjection = {
       duration: 18_000,
     }),
     reviewCheck(PRE_REVIEW_TEST_STARTED_TS, REVIEW_CHECK_TEST, { status: 'running' }),
+  ],
+};
+
+const reviewRenderRunningProjection: WorkflowFixtureProjection = {
+  ...reviewCheckRunningProjection,
+  scenarioId: scenarioId('workflow-review-render-running'),
+  events: [
+    ...reviewCheckRunningProjection.events.filter(
+      (event) => event.type !== 'review_checks' && event.type !== 'full_suite',
+    ),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 14_300,
+      phase: 'final-review',
+      moment: 'plan',
+      id: 'R1',
+      scenario: 'workflow-plan-compiled',
+      command: 'npm run tui-shots -- --scenario workflow-plan-compiled --output /tmp/render-r1',
+      status: 'done',
+      passed: true,
+      duration: 14_200,
+    },
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 25_500,
+      phase: 'final-review',
+      moment: 'plan',
+      id: 'R2',
+      scenario: 'workflow-implementation',
+      command: 'npm run tui-shots -- --scenario workflow-implementation --output /tmp/render-r2',
+      status: 'done',
+      passed: false,
+      duration: 11_000,
+    },
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 30_000,
+      phase: 'final-review',
+      moment: 'plan',
+      id: 'R3',
+      scenario: 'workflow-review',
+      command: 'npm run tui-shots -- --scenario workflow-review --output /tmp/render-r3',
+      status: 'running',
+    },
   ],
 };
 
@@ -3410,7 +3554,12 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: true,
   events: [
-    ...everyBriefPassed(),
+    ...everyBriefPassed(
+      FIXTURE_TASKS_PLANNED.tasks.map((brief, index) => ({
+        ...brief,
+        id: taskId(`T00${index + 1}`),
+      })),
+    ),
     {
       type: 'review_checks',
       ts: FIXED_TS + 900,
@@ -3476,6 +3625,46 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
       ),
     ];
   },
+};
+
+const fixCheckStoppedContinuedProjection: WorkflowFixtureProjection = {
+  ...fixCheckRunningProjection,
+  scenarioId: scenarioId('workflow-fix-check-stopped-continued'),
+  events: [
+    ...fixCheckRunningProjection.events,
+    {
+      type: 'turn_interrupted',
+      ts: FIXED_TS + 3_000,
+      phase: 'implementing',
+      source: 'user',
+      step: { kind: 'brief', taskId: WORKFLOW_FIXTURE_FIX_TASK_ID, attempt: 0 },
+    },
+    { type: 'workflow_resumed', ts: FIXED_TS + 30_000, phase: 'implementing' },
+    {
+      type: 'task_retry',
+      ts: FIXED_TS + 30_000,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+      lineageAttempt: 2,
+      attemptAllowance: 8,
+      attempt: 1,
+      maxRetries: 1,
+      error: 'Continue after Stop',
+    },
+    {
+      type: 'runner_call_started',
+      ts: FIXED_TS + 30_000,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+      callId: 'visual-fix-continued',
+      role: 'implementer',
+      backendKind: 'api',
+      sequence: 0,
+      runnerName: FIXED_RUNNER_NAME,
+      model: FIXED_RUNNER_MODEL,
+      attempt: 2,
+    },
+  ],
 };
 
 // Live run 2026-10-09: a fix brief's check says which of the failures it carries remain; the
@@ -3605,6 +3794,7 @@ const projections = [
   planCompiledProjection,
   firstBriefAfterPlanProjection,
   implementationProjection,
+  buildConsultProjection,
   implementationRetryProjection,
   reviewFixProjection,
   reviewFixCyclesProjection,
@@ -3701,6 +3891,8 @@ const projections = [
   },
   reviewFailedRecoveryProjection,
   reviewUnverifiedRecoveryProjection,
+  reviewContextRecoveryProjection,
+  reviewCallFailedRecoveryProjection,
   leftIsolationRecoveryProjection,
   leftIsolationInPlaceRecoveryProjection,
   checkoutChangedRecoveryProjection,
@@ -3720,6 +3912,7 @@ const projections = [
   implementationToolRunningProjection,
   implementationSilentBareProjection,
   reviewCheckRunningProjection,
+  reviewRenderRunningProjection,
   reviewPauseRequestedProjection,
   reviewCheckLongCommandProjection,
   reviewChecksApproveProjection,
@@ -3728,6 +3921,7 @@ const projections = [
   reviewBaseRerunProjection,
   reviewBaseMixedProjection,
   fixCheckRunningProjection,
+  fixCheckStoppedContinuedProjection,
   fixCheckDoneProjection,
   reviewBaseNotVerifiedProjection,
   reviewRedGateProjection,

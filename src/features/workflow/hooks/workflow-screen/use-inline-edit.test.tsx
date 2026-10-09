@@ -26,7 +26,7 @@ function makeEditor() {
 }
 
 function Host({ open }: { open: ReviewInputEffects['openExternalEditor'] }) {
-  useWorkflowInlineEdit({ promptPending: false, inputMode, openExternalEditor: open });
+  useWorkflowInlineEdit({ inputMode, openExternalEditor: open });
   return <Text>host</Text>;
 }
 

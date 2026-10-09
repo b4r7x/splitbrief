@@ -1,11 +1,13 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type { ReactElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { AppProps } from '../../../src/app/root.js';
 import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
+import { PLAN_FILE, PLAN_JSON_FILE, sessionDir } from '../../../src/core/paths.js';
+import { PlanProposalSchema, PlanSchema } from '../../../src/core/schemas/plan.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import type {
@@ -26,6 +28,7 @@ import { loadState } from '../../../src/core/state/persistence.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { PTY_REVIEW_SESSION_ID, parsePtyChildArgs, runPtyChild } from './pty/child.js';
 import {
+  PTY_ACTIVE_REVIEW_MARKER,
   PTY_APPROVED_MARKER,
   PTY_CHILD_PROJECT_ENV,
   PTY_EDITOR_FINISHED_MARKER,
@@ -86,7 +89,7 @@ describe('PTY behavior child', () => {
       return true;
     });
     try {
-      runEditorChild(['/tmp/supporting-spec.md'], {
+      runEditorChild(['/tmp/plan.json'], {
         [PTY_EDITOR_SENTINEL_ENV]: sentinel,
       });
 
@@ -95,7 +98,7 @@ describe('PTY behavior child', () => {
         `${PTY_EDITOR_STARTED_MARKER}:${process.pid}\n${PTY_EDITOR_FINISHED_MARKER}:${process.pid}\n`,
       );
       expect(() =>
-        runEditorChild(['/tmp/supporting-spec.md'], {
+        runEditorChild(['/tmp/plan.json'], {
           [PTY_EDITOR_SENTINEL_ENV]: sentinel,
         }),
       ).toThrow('PTY editor must run exactly once');
@@ -173,7 +176,22 @@ describe('PTY behavior child', () => {
               workflowOptions(
                 projectDir,
                 {
-                  onApprovalNeeded: async () => ({ approved: true }),
+                  onApprovalNeeded: async (phase, reviewInput) => {
+                    expect(phase).toBe('plan');
+                    const reviewPath = join(
+                      sessionDir(projectDir, PTY_REVIEW_SESSION_ID),
+                      PLAN_FILE,
+                    );
+                    expect(reviewInput).toBe(reviewPath);
+                    expect(readFileSync(reviewPath, 'utf8')).toContain(
+                      `# ${PTY_ACTIVE_REVIEW_MARKER}`,
+                    );
+                    const plan = PlanProposalSchema.parse(
+                      JSON.parse(readFileSync(join(dirname(reviewPath), PLAN_JSON_FILE), 'utf8')),
+                    );
+                    expect(PlanSchema.parse(plan)).toEqual(saved?.plan);
+                    return { approved: true };
+                  },
                   onContinuationNeeded: async (_partial, at) => {
                     // The approval gate runs inside the step's continuation loop now, so a user
                     // interrupt there cuts mid-step while the pickup point stays the plan gate.
@@ -206,7 +224,7 @@ describe('PTY behavior child', () => {
                 events,
               ),
             );
-            await expect(running).rejects.toThrow('PTY fixture run ended at the continuation park');
+            await expect(running).resolves.toMatchObject({ feature: 'PTY behavior contract' });
           },
         },
         { [PTY_CHILD_PROJECT_ENV]: projectDir },
@@ -280,6 +298,76 @@ describe('PTY behavior child', () => {
     }
   });
 
+  it.each(['approved wait', 'continuation park'] as const)(
+    'returns a summary and preserves the cut step when the app aborts at the %s',
+    async (at) => {
+      const environmentRoot = createTempDir('pty-child-abort-approved');
+      const projectDir = join(environmentRoot, 'project');
+      const controller = new AbortController();
+      const events: EngineEvent[] = [];
+      const output: string[] = [];
+      const onContinuationNeeded = vi.fn(() => new Promise<string>(() => {}));
+      vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+        output.push(String(chunk));
+        return true;
+      });
+
+      try {
+        const pending = runPtyChild(
+          [],
+          {
+            renderApp: async (element) => {
+              const running = renderedWorkflow(element)(
+                workflowOptions(
+                  projectDir,
+                  {
+                    onApprovalNeeded: async () => ({ approved: true }),
+                    onContinuationNeeded,
+                    onComplete: () => {},
+                  },
+                  {
+                    setAbortHandler: createAbortHandlerScope(),
+                    setQueueHandler,
+                    consumeBoundaryInterrupt,
+                  },
+                  controller.signal,
+                  events,
+                ),
+              );
+              await vi.waitFor(() => expect(output.join('')).toContain(PTY_APPROVED_MARKER));
+              if (at === 'continuation park') {
+                expect(abortTurn()).toBe(true);
+                await vi.waitFor(() => expect(onContinuationNeeded).toHaveBeenCalledOnce());
+              }
+              controller.abort();
+              await expect(running).resolves.toMatchObject({ feature: 'PTY behavior contract' });
+            },
+          },
+          { [PTY_CHILD_PROJECT_ENV]: projectDir },
+        );
+
+        await expect(pending).resolves.toEqual({ approved: true });
+        expect(onContinuationNeeded).toHaveBeenCalledTimes(at === 'continuation park' ? 1 : 0);
+        expect(events[1]).toMatchObject({
+          type: 'turn_interrupted',
+          source: 'user',
+          at: 'mid-step',
+        });
+        const parked = loadState({ projectDir, sessionId: PTY_REVIEW_SESSION_ID });
+        expect(parked?.interruptedStep).toMatchObject({
+          step: { kind: 'gate', gate: 'plan' },
+          cut: 'mid-step',
+          source: 'user',
+        });
+        expect(parked?.awaitingContinue).toBe(true);
+        expect(parked?.closed).toBeUndefined();
+        expect(abortTurn()).toBe(false);
+      } finally {
+        cleanupTempDir(environmentRoot);
+      }
+    },
+  );
+
   it('ends the pending fixture when the app aborts before approval', async () => {
     const environmentRoot = createTempDir('pty-child-abort');
     const projectDir = join(environmentRoot, 'project');
@@ -304,7 +392,7 @@ describe('PTY behavior child', () => {
               ),
             );
             controller.abort();
-            await expect(running).rejects.toThrow();
+            await expect(running).resolves.toMatchObject({ feature: 'PTY behavior contract' });
           },
         },
         { [PTY_CHILD_PROJECT_ENV]: projectDir },

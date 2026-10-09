@@ -1,12 +1,10 @@
 import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
-import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
+import type { EngineEvent } from '../../../engine/events/types.js';
 import {
   COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT,
   runnerActivityDisplayKey,
 } from './activity-batch-model.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
-
-type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
 
 interface ActivityBatchScan {
   callId: string;
@@ -39,6 +37,7 @@ export function findLatestExpandableActivityBatchKey(
 
     for (const [index, event] of section.items.entries()) {
       const globalIndex = section.startIndex + index;
+      if (isTranscriptRowlessEvent(event)) continue;
       if (event.type === 'runner_call_activity') {
         if (batch === null || batch.callId !== event.callId) {
           flushBatch();
@@ -48,11 +47,12 @@ export function findLatestExpandableActivityBatchKey(
             itemKeys: new Set(),
           };
         }
-        batch.itemKeys.add(activityItemKey(event));
+        const key = runnerActivityDisplayKey(event);
+        if (key !== null) batch.itemKeys.add(key);
         continue;
       }
 
-      if (batch !== null && !isTranscriptRowlessEvent(event)) {
+      if (batch !== null) {
         flushBatch();
       }
     }
@@ -60,8 +60,4 @@ export function findLatestExpandableActivityBatchKey(
 
   flushBatch();
   return latestKey;
-}
-
-function activityItemKey(event: RunnerActivityEvent): string {
-  return runnerActivityDisplayKey(event);
 }

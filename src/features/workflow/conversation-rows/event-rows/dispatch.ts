@@ -330,9 +330,8 @@ export function eventRowBlock(options: {
     case 'turn_interrupted':
       return calloutRowsBlock({
         keyPrefix,
-        label: 'Stopped',
-        // The row states where the run stopped; the byline under the composer says what continues it.
-        value: event.step === undefined ? 'mid-turn' : stopPoint(event.step, event.at),
+        label: `Stopped ${event.step === undefined ? 'mid-turn' : stopPoint(event.step, event.at)}`,
+        value: undefined,
         width: ctx.width,
         severity: 'warning',
       });

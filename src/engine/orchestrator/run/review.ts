@@ -365,6 +365,7 @@ export async function runScheduledReview(args: {
     });
     setTrackedState(state);
   }
+  let reviewAgain = false;
   for (;;) {
     const answered = await answerPendingReviewQuestion({
       wctx,
@@ -376,6 +377,7 @@ export async function runScheduledReview(args: {
     if (answered !== undefined) {
       state = answered.state;
       if (answered.stopped) return { state, status: 'stopped' };
+      reviewAgain = true;
     }
     const review = await runFinalReviewPhase({
       projectDir: wctx.projectDir,
@@ -394,7 +396,7 @@ export async function runScheduledReview(args: {
         skillsContext: wctx.context.skillsContext,
       }),
       scope: 'task',
-      reviewChecks: true,
+      reviewChecks: !reviewAgain,
       setTrackedState,
     });
     state = review.state;
@@ -422,6 +424,7 @@ export async function runScheduledReview(args: {
     });
     state = followed.state;
     if (followed.stopped) return { state, status: 'stopped' };
-    if (!followed.reviewAgain) return { state, status: 'continue' };
+    reviewAgain = followed.reviewAgain;
+    if (!reviewAgain) return { state, status: 'continue' };
   }
 }

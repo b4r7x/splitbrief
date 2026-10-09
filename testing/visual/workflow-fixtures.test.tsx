@@ -7,6 +7,7 @@ import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js'
 import { controlsStore } from '../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
+import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
@@ -105,11 +106,43 @@ describe('workflow visual fixtures', () => {
         expect(eventsStore.get().events.filter((event) => event.type === 'user_message')).toEqual([
           expect.objectContaining({ text: answer, qa: [{ question: 'Which store?', answer }] }),
         ]);
+        expect(frame).toContain('Claude Code CLI · answering the consult on T901');
+        expect(frame).toMatch(/last event \d+s ago/);
+        expect(frame).not.toContain('no update yet');
+        expect(operationsStore.get().byCallId.get('visual-consult-call-001')).toMatchObject({
+          status: 'completed',
+          role: 'planner',
+          taskId: 'T901',
+        });
       } finally {
         await ui.unmount();
       }
     },
   );
+
+  it('shows three completed briefs before the mixed base review checks', async () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-review-base-mixed'));
+    if (projection === undefined) throw new Error('Missing mixed base review scenario');
+    const frame = stripTerminalControls(await renderProjection(projection));
+    expect(frame).toContain('3/3 briefs passed');
+    const review = frame.indexOf('Reviewer checks');
+    for (const id of ['T001', 'T002', 'T003']) {
+      const brief = frame.indexOf(`✓ ${id}`);
+      expect(brief).toBeGreaterThanOrEqual(0);
+      expect(brief).toBeLessThan(review);
+    }
+  });
+
+  it('replays the completed briefs and the mid-step stop at T003 in the paused run', async () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-at-rest-paused'));
+    if (projection === undefined) throw new Error('Missing paused run scenario');
+    const frame = stripTerminalControls(await renderProjection(projection));
+    expect(frame).toContain('✓ T001');
+    expect(frame).toContain('✓ T002');
+    expect(frame).toContain('◉ T003 Add signup route tests');
+    expect(frame).toContain('│ Stopped at T003');
+    expect(frame).not.toContain('no events yet');
+  });
 
   it('uses the production named-check warning with metadata and the additional-check count', () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-recovery-plan-checks'));

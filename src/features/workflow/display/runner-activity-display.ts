@@ -19,7 +19,7 @@ export type RunnerActivitySeverity = 'info' | 'warning' | 'error';
 
 export interface RunnerActivityDisplayInput {
   stage: EngineEventOf<'runner_call_activity'>['stage'];
-  kind: EngineEventOf<'runner_call_activity'>['kind'];
+  kind: Exclude<EngineEventOf<'runner_call_activity'>['kind'], 'session'>;
   label: string;
   target?: string | undefined;
   textPartial?: string | undefined;
@@ -66,7 +66,6 @@ export type RunnerActivityLedgerLabel =
   | 'FIND'
   | 'CALL'
   | 'PLAN'
-  | 'SESS'
   | 'ART'
   | 'WARN'
   | 'ERR'
@@ -262,8 +261,6 @@ function runnerActivityLedgerLabel(
     case 'plan':
     case 'task':
       return 'PLAN';
-    case 'session':
-      return 'SESS';
     case 'artifact':
       return 'ART';
     default:
@@ -399,7 +396,6 @@ function stripActivityVerb(text: string): string {
     'matching ',
     'calling ',
     'planning ',
-    'session ',
     'artifact ',
     'warning ',
     'failed ',

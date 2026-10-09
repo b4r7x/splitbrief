@@ -337,6 +337,7 @@ describe('runImplementation configured custom contracts', () => {
         capabilities: { writesFiles: 'extracted-code' },
         implement: async (opts: ImplementerOptions) => {
           receivedDirs.push(opts.projectDir);
+          expect(opts.lineageAttempts).toEqual({ used: 0, allowance: 8 });
           writeFileSync(join(opts.projectDir, file), 'export const value = 2;\n');
           return { success: true, output: 'updated value' };
         },

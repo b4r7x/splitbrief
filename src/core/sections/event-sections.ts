@@ -29,10 +29,10 @@ type TaskEndEvent = TaskCompletedEvent | TaskSkippedEvent | TaskFullFailEvent;
 type WorkflowStartedEvent = { type: 'workflow_started'; feature: string };
 type FullSuiteEvent = {
   type: 'full_suite';
-  status: 'running' | 'done' | 'not-run' | 'refused';
+  status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
   id?: string;
   command: string;
-  moment: 'pre-review' | 'base' | 'brief';
+  moment: 'pre-review' | 'base' | 'brief' | 'plan';
   passed?: boolean;
   newFailures?: number;
   notVerified?: number;

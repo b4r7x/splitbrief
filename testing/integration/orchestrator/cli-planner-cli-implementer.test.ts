@@ -343,6 +343,20 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
         })),
     ).toEqual([
       {
+        id: 'K1',
+        status: 'running',
+        moment: 'plan',
+        command: 'node --version',
+        passed: undefined,
+      },
+      {
+        id: 'K1',
+        status: 'done',
+        moment: 'plan',
+        command: 'node --version',
+        passed: true,
+      },
+      {
         id: 'V1',
         status: 'running',
         moment: 'pre-review',
@@ -368,14 +382,21 @@ describe('CLI planner to CLI implementer workflow', { timeout: 90_000 }, () => {
     ).toContain('### Verdict\n\npass');
   }, 90_000);
 
-  it('runs no command before the review when End-of-run checks are off, and says so once', async () => {
+  it('runs plan checks and no reviewer checks when End-of-run checks are off, and says so once', async () => {
     const { projectDir, sessionId, events, summary, codexRunLogPath } = await runCliWorkflow(false);
 
     expect(summary).toMatchObject({ totalTasks: 1, completedByLocal: 1, failed: 0 });
     expect(events.filter((event) => event.type === 'review_checks')).toEqual([
       expect.objectContaining({ type: 'review_checks', status: 'off', scope: 'final' }),
     ]);
-    expect(events.filter((event) => event.type === 'full_suite')).toEqual([]);
+    const checks = events.filter((event) => event.type === 'full_suite');
+    expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
+    expect(
+      checks.map((event) => [event.moment, event.id, event.status, event.command, event.passed]),
+    ).toEqual([
+      ['plan', 'K1', 'running', 'node --version', undefined],
+      ['plan', 'K1', 'done', 'node --version', true],
+    ]);
     // The reviewer was never asked to choose a command.
     expect(readFileSync(codexRunLogPath, 'utf-8')).not.toContain('reviewChecks');
     expect(readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8')).toContain(

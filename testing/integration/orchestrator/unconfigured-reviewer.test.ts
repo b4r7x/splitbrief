@@ -178,15 +178,25 @@ describe('run with no reviewer configured', () => {
       'task_completed',
       'task_tokens',
       'snapshot_created',
+      'full_suite',
+      'full_suite',
       'checks_run',
       'planner_status',
       'all_tasks_done',
-      // End-of-run checks are off in this config: one row says so, and no command runs.
+      // End-of-run checks are off: one row says so, and no reviewer check runs.
       'review_checks',
       'drift_report',
       'cost_update',
       'planner_status',
       'workflow_complete',
+    ]);
+    const checks = events.filter((event) => event.type === 'full_suite');
+    expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
+    expect(
+      checks.map((event) => [event.moment, event.id, event.status, event.command, event.passed]),
+    ).toEqual([
+      ['plan', 'T001-K1', 'running', 'node validate.mjs', undefined],
+      ['plan', 'T001-K1', 'done', 'node validate.mjs', true],
     ]);
 
     // A typed-answer call streams no seat text: the verdict is recorded in review.json and review.md.

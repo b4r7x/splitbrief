@@ -33,6 +33,36 @@ function streamingReviewer(): Reviewer {
 }
 
 describe('call publishing', () => {
+  it('uses the review call directory for file activity paths', async () => {
+    const { bus, events } = makeBusRecorder();
+    const reviewer = withReviewerCallPublishing(
+      {
+        ...streamingReviewer(),
+        review: async (_prompt, projectDir, callbacks) => {
+          callbacks.onCallEvent?.({
+            type: 'call_tool_use_delta',
+            ts: 0,
+            callId: 'review-read',
+            role: 'review',
+            backendKind: 'cli',
+            channel: 'tool',
+            toolUseId: 'read-doc',
+            name: 'Read',
+            inputDelta: JSON.stringify({ file_path: `${projectDir}/docs/TESTING.md` }),
+          });
+          return { text: 'pass', usage: null };
+        },
+      },
+      { bus, getPhase: () => 'final-review' },
+    );
+
+    await reviewer.review('review', '/state/trees/app/review-workspace', { onOutput: () => {} });
+
+    expect(events.filter((event) => event.type === 'runner_call_activity')).toEqual([
+      expect.objectContaining({ target: 'docs/TESTING.md', label: 'reading docs/TESTING.md' }),
+    ]);
+  });
+
   it('streams no text from a wrapped reviewer typed call', async () => {
     const { bus, events } = makeBusRecorder();
     const reviewer = withReviewerCallPublishing(streamingReviewer(), {

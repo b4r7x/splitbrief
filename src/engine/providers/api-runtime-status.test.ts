@@ -161,6 +161,7 @@ describe('runtime status through the installed SDK and operations', () => {
         onCallEvent: (event) => {
           events.push(event);
           for (const projected of projectRunnerCallEvents(event, {
+            rootDir: '/project',
             phase: 'planning',
             sequence: events.length,
           })) {

@@ -236,5 +236,9 @@ export function updateTaskCounts(
     currentAttempt = event.lineageAttempt ?? event.attempt + 1;
     attemptAllowance = event.attemptAllowance ?? BOUNDS.attemptsPerLineage;
   }
+  if (event.type === 'implementer_generate_running') {
+    currentAttempt = event.lineageAttempt ?? currentAttempt;
+    attemptAllowance = event.attemptAllowance ?? attemptAllowance;
+  }
   return { currentTask, currentAttempt, attemptAllowance, totalTasks };
 }

@@ -295,6 +295,8 @@ const WorkflowStateFields = {
   fixCycles: FixCyclesSchema.optional(),
   review: ReviewRecordSchema.optional(),
   reviewChecks: ReviewChecksRecordSchema.optional(),
+  /** Reviewer commands a fix check ran that no review has run since; the next reviewer-checks plan must choose them first. */
+  pendingReviewCommands: z.array(z.string()).optional(),
   triage: z.array(TriageRecordSchema).optional(),
   pendingTriage: PendingTriageSchema.optional(),
   pendingScheduledReview: z.object({ afterTaskId: TaskIdSchema }).optional(),

@@ -79,7 +79,8 @@ export async function dispatchNativeInjection(
       projectDir,
       ...(signal !== undefined && { signal }),
       callbacks: {
-        onCallEvent: (event) => publishRunnerCallEvent({ bus, phase: getState().phase }, event),
+        onCallEvent: (event) =>
+          publishRunnerCallEvent({ bus, phase: getState().phase, rootDir: projectDir }, event),
       },
     });
     throwIfAborted(signal);

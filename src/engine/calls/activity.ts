@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { redactSecretsWithMetadata } from '../../utils/redact.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { sha256Hex } from '../../utils/sha256.js';
+import { projectRelativePathLabel } from '../../utils/path-links.js';
 import { assertNever, isRecord } from '../../utils/type-guards.js';
 import type { RunnerCallActivityKindSchema, RunnerCallActivityStageSchema } from './schema.js';
 import type { RunnerCallEvent, RunnerCallWarning } from './types.js';
@@ -9,10 +10,9 @@ import { normalizeRunnerCallWarning, showsRunnerCallWarningOnPrimarySurface } fr
 
 const RUNNER_ACTIVITY_MAX_LENGTH = 512;
 const RUNNER_ACTIVITY_TARGET_MAX_LENGTH = 2048;
-const SESSION_ACTIVITY_LABEL = 'session captured';
 
 type RunnerCallActivityStage = z.infer<typeof RunnerCallActivityStageSchema>;
-type RunnerCallActivityKind = z.infer<typeof RunnerCallActivityKindSchema>;
+type RunnerCallActivityKind = Exclude<z.infer<typeof RunnerCallActivityKindSchema>, 'session'>;
 
 export interface RunnerCallActivityProjection {
   activityId: string;
@@ -48,6 +48,7 @@ interface ActivityDetails {
 export function projectRunnerCallActivity(
   event: RunnerCallEvent,
   sequence: number,
+  rootDir: string,
 ): RunnerCallActivityProjection | null {
   switch (event.type) {
     case 'call_text_delta':
@@ -70,6 +71,7 @@ export function projectRunnerCallActivity(
         toolUseId: event.toolUseId,
         name,
         input: parseToolInputDelta(event.inputDelta),
+        rootDir,
       });
     }
     case 'call_tool_use_done':
@@ -80,14 +82,10 @@ export function projectRunnerCallActivity(
         toolUseId: event.toolUse.id,
         name: event.toolUse.name,
         input: event.toolUse.input,
+        rootDir,
       });
     case 'call_session_id':
-      return buildActivity({
-        activityId: `${event.callId}:session`,
-        stage: 'completed',
-        kind: 'session',
-        label: SESSION_ACTIVITY_LABEL,
-      });
+      return null;
     case 'call_artifact':
       return buildActivity({
         activityId: `${event.callId}:artifact:${event.artifact.id}`,
@@ -139,8 +137,9 @@ function toolActivity(opts: {
   toolUseId: string | null;
   name: string;
   input: Record<string, unknown> | null;
+  rootDir: string;
 }): RunnerCallActivityProjection | null {
-  const details = toolUseDetails(opts.name, opts.input);
+  const details = toolUseDetails(opts.name, opts.input, opts.rootDir);
   return buildActivity({
     activityId: `${opts.callId}:tool:${opts.toolUseId ?? opts.name ?? opts.sequence}`,
     stage: opts.stage,
@@ -250,13 +249,21 @@ function parseToolInputDelta(inputDelta: string | undefined): Record<string, unk
   }
 }
 
-function toolUseDetails(name: string, input: Record<string, unknown> | null): ActivityDetails {
+function toolUseDetails(
+  name: string,
+  input: Record<string, unknown> | null,
+  rootDir: string,
+): ActivityDetails {
   const normalized = name.toLowerCase();
-  const filePath =
+  const rawFilePath =
     stringInput(input, 'file_path') ??
     stringInput(input, 'path') ??
     stringInput(input, 'AbsolutePath') ??
     stringInput(input, 'TargetFile');
+  const filePath =
+    rawFilePath === undefined
+      ? undefined
+      : projectRelativePathLabel({ path: rawFilePath, rootDir });
   const command =
     stringInput(input, 'command') ?? stringInput(input, 'cmd') ?? stringInput(input, 'CommandLine');
   const pattern =

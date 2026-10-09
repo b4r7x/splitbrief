@@ -8,7 +8,7 @@ import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { fileFromFailureKey } from '../../../core/review/fix-task.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishError } from '../events.js';
+import { publishError, publishReviewCheck } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { recordTaskCheckRuns } from '../task/task-checks.js';
 import {
@@ -21,9 +21,11 @@ import { failingFilesFromKeys, lastTaskChangingFile } from '../task/file-owner.j
 import {
   checkRegistry,
   planApprovesNpmScripts,
-  runChecks,
+  createCheckRunner,
   type CheckRunResult,
+  type RunChecksOptions,
 } from '../validation/run-checks.js';
+import { throwIfAborted } from '../../../utils/abort.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 
 /** A required check that did not pass: `fail` is a defect, everything else cannot run. */
@@ -117,26 +119,51 @@ export async function runPreReviewChecks(
   opts: RunPreReviewChecksOptions,
 ): Promise<PreReviewChecks> {
   const registry = checkRegistry({ plan: opts.state.plan, tasks: opts.state.tasks });
-  const ids = [...registry.keys()];
-  const runs =
-    ids.length === 0
-      ? []
-      : await runChecks(ids, {
-          plan: opts.state.plan,
-          tasks: opts.state.tasks,
-          projectDir: opts.workspaceDir,
-          sessionId: opts.sessionId,
-          checkoutDir: opts.projectDir,
-          config: opts.config,
-          bus: opts.bus,
-          phase: opts.phase,
-          npmScriptsApproved: opts.npmScriptsApproved,
-          ...(opts.state.discoveredValidation !== undefined && {
-            discoveredValidation: opts.state.discoveredValidation,
+  const checkOptions: RunChecksOptions = {
+    plan: opts.state.plan,
+    tasks: opts.state.tasks,
+    projectDir: opts.workspaceDir,
+    sessionId: opts.sessionId,
+    checkoutDir: opts.projectDir,
+    config: opts.config,
+    bus: opts.bus,
+    phase: opts.phase,
+    npmScriptsApproved: opts.npmScriptsApproved,
+    discoveredValidation: opts.state.discoveredValidation,
+    signal: opts.signal,
+    runCommand: opts.runCommand,
+  };
+  const notices = { bus: opts.bus, phase: opts.phase };
+  const prepare = createCheckRunner(checkOptions);
+  const runs: CheckRunResult[] = [];
+  for (const check of registry.values()) {
+    throwIfAborted(opts.signal);
+    const prepared = prepare(check);
+    const identity = {
+      id: check.id,
+      command: prepared.command,
+      moment: 'plan' as const,
+      ...(check.kind === 'render' && { scenario: check.value }),
+    };
+    const startedAt = Date.now();
+    publishReviewCheck(notices, { ...identity, status: 'running' });
+    const run = await prepared.run();
+    runs.push(run);
+    publishReviewCheck(notices, {
+      ...identity,
+      command: run.command ?? prepared.command,
+      ...(run.status === 'pass' || run.status === 'fail'
+        ? {
+            status: 'done',
+            passed: run.status === 'pass',
+            duration: Date.now() - startedAt,
+          }
+        : {
+            status: run.status === 'refused' ? 'refused' : 'not-run',
+            detail: run.output,
           }),
-          ...(opts.signal !== undefined && { signal: opts.signal }),
-          ...(opts.runCommand !== undefined && { runCommand: opts.runCommand }),
-        });
+    });
+  }
   const { failed, unrunnable } = classifyRequiredChecks(
     runs.filter((run) => registry.get(run.checkId)?.required === true),
   );

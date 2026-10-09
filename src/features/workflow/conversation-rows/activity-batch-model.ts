@@ -14,12 +14,16 @@ import {
   type RunnerActivityLedgerItem,
   type RunnerActivityLedgerLabel,
   type RunnerActivitySeverity,
+  type RunnerActivityDisplayInput,
 } from '../display/runner-activity-display.js';
 import type { ConversationRowTone } from './types.js';
 
 export const COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT = 3;
 
 export type RunnerActivityEvent = EngineEventOf<'runner_call_activity'>;
+type VisibleRunnerActivityEvent = RunnerActivityEvent & {
+  kind: RunnerActivityDisplayInput['kind'];
+};
 
 export interface ActivityDisplayItem {
   key: string;
@@ -75,15 +79,14 @@ export function buildActivityBatchViewModel(input: {
   expanded?: boolean;
 }): ActivityBatchViewModel {
   const expanded = input.expanded === true;
-  const projection = expanded
-    ? expandedActivityItemsProjection(input.events)
-    : collapsedActivityItemsProjection(input.events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
-  const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
-  const headerText = activityBatchHeader(
-    input.events,
-    projection.headerCount,
-    projection.severityCounts,
+  const events = input.events.filter(
+    (event): event is VisibleRunnerActivityEvent => event.kind !== 'session',
   );
+  const projection = expanded
+    ? expandedActivityItemsProjection(events)
+    : collapsedActivityItemsProjection(events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
+  const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
+  const headerText = activityBatchHeader(events, projection.headerCount, projection.severityCounts);
 
   return {
     batchKey: input.batchKey,
@@ -92,8 +95,8 @@ export function buildActivityBatchViewModel(input: {
     hiddenCount,
     headerCount: projection.headerCount,
     headerText,
-    headerRunner: activityBatchRunner(input.events),
-    tone: activityBatchTone(input.events),
+    headerRunner: activityBatchRunner(events),
+    tone: activityBatchTone(events),
     renderableUnits: projection.headerCount,
     expandableKey: hiddenCount > 0 ? input.batchKey : null,
     severityCounts: projection.severityCounts,
@@ -102,11 +105,14 @@ export function buildActivityBatchViewModel(input: {
   };
 }
 
-export function runnerActivityDisplayKey(event: RunnerActivityEvent): string {
-  return runnerActivityLedgerItem(event).visibleKey;
+export function runnerActivityDisplayKey(event: RunnerActivityEvent): string | null {
+  if (event.kind === 'session') return null;
+  return runnerActivityLedgerItem({ ...event, kind: event.kind }).visibleKey;
 }
 
-function activityLedgerItems(events: readonly RunnerActivityEvent[]): RunnerActivityLedgerItem[] {
+function activityLedgerItems(
+  events: readonly VisibleRunnerActivityEvent[],
+): RunnerActivityLedgerItem[] {
   const items = new Map<string, RunnerActivityLedgerItem>();
   for (const event of events) {
     const item = runnerActivityLedgerItem(event);
@@ -117,7 +123,7 @@ function activityLedgerItems(events: readonly RunnerActivityEvent[]): RunnerActi
 }
 
 function expandedActivityItemsProjection(
-  events: readonly RunnerActivityEvent[],
+  events: readonly VisibleRunnerActivityEvent[],
 ): ActivityItemsProjection {
   const items = activityLedgerItems(events);
   const summaries = items.map(activityItemSummary);
@@ -131,7 +137,7 @@ function expandedActivityItemsProjection(
 }
 
 function collapsedActivityItemsProjection(
-  events: readonly RunnerActivityEvent[],
+  events: readonly VisibleRunnerActivityEvent[],
   maxItems: number,
 ): ActivityItemsProjection {
   const summaries = new Map<string, ActivityItemSummary>();
@@ -290,7 +296,6 @@ function activityLabelTone(
       return 'accent';
     case 'PLAN':
       return 'planner';
-    case 'SESS':
     case 'ART':
       return 'info';
     case 'READ':

@@ -4,6 +4,7 @@ import type { Implementer, RetryOptions } from '../../implementers/types.js';
 import type { LanguageContext } from '../../spec/prompts/language-context.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import { briefCorrections } from '../../../core/state/machine.js';
+import { lineageAttemptsOf } from '../../../core/schemas/workflow.js';
 import type { SeatAttempt } from '../../runners/transient.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { implementerSeatAttempt, runSeatCall } from './seat-wait.js';
@@ -48,6 +49,7 @@ export function makeImplementerRetryInvoker(opts: {
         onOutput: opts.onOutput,
         sessionId: opts.sessionId,
         phase: opts.phase,
+        lineageAttempts: lineageAttemptsOf(seat.state, task),
         signal: attemptSignal,
         sandboxEnv,
         fileIgnoreProjectDir,

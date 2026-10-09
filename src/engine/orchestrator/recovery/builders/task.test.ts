@@ -926,15 +926,39 @@ describe('buildReviewFailedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
-  it('offers a retry on the review seat when the review reached no verdict', () => {
+  it.each(['exit-1', 'timeout', 'transport-error'])(
+    'offers a retry without a seat remedy after %s',
+    (code) => {
+      const issue = buildReviewFailedRecoveryIssue({
+        createdAt,
+        failure: { kind: 'call-failed', code, message: 'Review call failed.' },
+      });
+
+      expect(issue.seat).toBe('review');
+      expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
+      expect(issue.recommendedAction).toBe('retry-same-worker');
+      expect(issue.details).toEqual([]);
+      expectValidRecoveryIssue(issue);
+    },
+  );
+
+  it('offers more context only when the review was not given enough context', () => {
     const issue = buildReviewFailedRecoveryIssue({
       createdAt,
-      failure: { kind: 'call-failed', code: 'exit-1', message: 'Review call failed.' },
+      failure: {
+        kind: 'insufficient-context',
+        diagnostic: {
+          code: 'insufficient-context',
+          seat: 'review',
+          cause: 'input-budget',
+          missingSections: [],
+        },
+      },
     });
 
-    expect(issue.seat).toBe('review');
-    expect(issue.availableActions).toEqual(['retry-same-worker', 'end-run']);
-    expect(issue.recommendedAction).toBe('retry-same-worker');
+    expect(issue.details).toEqual([
+      'Pick a review seat with a larger context in /crew review, then choose Try again.',
+    ]);
     expectValidRecoveryIssue(issue);
   });
 });

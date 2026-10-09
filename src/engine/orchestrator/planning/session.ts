@@ -388,7 +388,7 @@ export async function runPlanningSession(
                   compose(turn, onSession, interruptSteer, prior),
                 onCallEvent: (event) => {
                   if (event.type === 'call_started') heartbeat.updateCallId(event.callId);
-                  publishRunnerCallEvent({ bus, phase: state.phase }, event);
+                  publishRunnerCallEvent({ bus, phase: state.phase, rootDir: projectDir }, event);
                 },
               },
             );

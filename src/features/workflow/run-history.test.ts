@@ -9,7 +9,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRows } from './conversation-rows/build.js';
@@ -20,6 +20,7 @@ import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
+import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
 
 let projectDir = '';
@@ -90,6 +91,61 @@ afterEach(() => {
 });
 
 describe('hydrateRun', () => {
+  it('settles a fix check cut by Stop before a replayed retry and an in-place continuation', async () => {
+    const fix: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts: 4_000,
+      phase: 'implementing',
+      id: 'V1',
+      moment: 'brief',
+      command: 'npm run test-ci',
+      status: 'running',
+    };
+    const log: EngineEvent[] = [
+      ...RUN,
+      fix,
+      { type: 'turn_interrupted', ts: 5_000, phase: 'implementing', source: 'user' },
+      {
+        type: 'task_retry',
+        ts: 3_000_000,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        attempt: 2,
+        maxRetries: 3,
+        error: 'retry after Stop',
+      },
+    ];
+    writeLog(log);
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    expect(operationsStore.get().suiteStage).toBeNull();
+    expect(operationsStore.get().validationStage).toBeNull();
+    expect(eventsStore.get().events).toContainEqual({ ...fix, status: 'stopped' });
+    const rows = eventsStore.get().events.flatMap((event, globalIndex) =>
+      eventRows({
+        event,
+        globalIndex,
+        expanded: false,
+        ctx: {
+          width: 120,
+          viewportRows: 40,
+          streaming: { taskId: null, lines: [], active: false },
+        },
+      }),
+    );
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain('Fix check V1 · npm run test-ci · stopped');
+    expect(text).not.toContain('Fix check V1 · npm run test-ci · running');
+    addEvent({ type: 'workflow_resumed', ts: 3_001_000, phase: 'implementing' });
+    expect(operationsStore.get().suiteStage).toBeNull();
+    addEvent({ ...fix, ts: 3_002_000 });
+    expect(operationsStore.get().suiteStage?.stageStartedTs).toBe(3_002_000);
+  });
+
   it('puts the stores where a live run of the same log would have left them', async () => {
     writeLog(RUN);
     for (const event of RUN) addEvent(event);

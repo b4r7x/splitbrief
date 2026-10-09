@@ -16,7 +16,7 @@ import type { EscalationContext } from '../escalation/types.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 import { makeConfig, makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeCommandRunner } from '#testing/helpers/validation-fixtures.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { EngineEventOf } from '../../events/types.js';
 import { runTaskChecks } from './task-checks.js';
@@ -203,6 +203,58 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
   const OWN_KEY = OWN_RED;
   const OTHER_RED = 'src/b.ts(3,7): error TS2322: Type number is not assignable to type string.';
   const OTHER_RED_2 = 'src/c.ts(9,1): error TS2304: Cannot find name x.';
+
+  it('keeps a reviewer command pending once across fix tasks from an earlier cycle', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-fix-check-pending' }, async (run) => {
+      const task = makeTask({
+        id: 'T002',
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'V1.1',
+              text: 'Reviewer check V1 failed.',
+              acceptance: null,
+              checkIds: ['V1'],
+              commands: { V1: 'npm test' },
+            },
+          ],
+        },
+      });
+      const secondTask = makeTask({ ...task, id: 'T003' });
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      const wctx = makeWctx({ ...ref, workspaceDir: run.ws, config: makeConfig() });
+      const setTrackedState = vi.fn();
+      const first = await runTaskChecks({
+        wctx,
+        state: makeImplState([task, secondTask], {
+          workspace: run.workspace,
+          fixCycles: { used: 2, allowance: 2, notes: [] },
+          pendingReviewCommands: ['node --version'],
+        }),
+        task,
+        checkIds: ['V1'],
+        runCommand: makeCommandRunner(),
+        setTrackedState,
+      });
+      expect(first.runs[0]?.status).toBe('pass');
+      expect(first.state.pendingReviewCommands).toEqual(['node --version', 'npm test']);
+      const second = await runTaskChecks({
+        wctx,
+        state: first.state,
+        task: secondTask,
+        checkIds: ['V1'],
+        runCommand: makeCommandRunner(
+          processError.exitCode({ command: 'npm test', code: 1, stderr: '', output: OWN_RED }),
+        ),
+        setTrackedState,
+      });
+      expect(second.runs[0]?.status).toBe('fail');
+      expect(second.state.pendingReviewCommands).toEqual(['node --version', 'npm test']);
+      expect(loadState(ref)?.pendingReviewCommands).toEqual(['node --version', 'npm test']);
+      expect(setTrackedState).toHaveBeenLastCalledWith(second.state);
+    });
+  });
 
   /**
    * Runs the fix task's K1 and the V1 it answers; `red` answers `npm test` in each place. `keys` are
@@ -600,6 +652,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
         expect.objectContaining({ checkId: 'V1', status: 'refused', command: 'npm install' }),
       ]);
       expect(result.settled.has('V1')).toBe(false);
+      expect(result.state.pendingReviewCommands).toBeUndefined();
       expect(
         events
           .filter((event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite')

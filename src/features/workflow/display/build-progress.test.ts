@@ -22,6 +22,36 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 
 const NOW = 1_000_000;
 
+it('names a scheduled review during the build as reviewing', () => {
+  const progress = deriveBuildProgress(
+    input({
+      operations: operationsState({
+        active: runningOperation({ role: 'review', taskId: taskId('T003') }),
+      }),
+    }),
+  );
+  expect(progress.activity).toBe('OpenAI Codex CLI · reviewing');
+});
+
+it('names the plan render in Review and uses its clock for freshness', () => {
+  const progress = deriveBuildProgress(
+    input({
+      lifecycle: lifecycleState({ phase: 'final-review' }),
+      operations: operationsState({
+        suiteStage: {
+          id: 'R1',
+          moment: 'plan',
+          scenario: 'workflow-x',
+          command: 'npm run tui-shots -- --scenario workflow-x --output /tmp/render',
+          stageStartedTs: NOW - 12_000,
+        },
+      }),
+    }),
+  );
+  expect(progress.activity).toBe('Review · Render workflow-x');
+  expect(progress.freshness).toBe('running 0:12');
+});
+
 function tasksState(tasks: WorkflowTask[], overrides: Partial<TasksState> = {}): TasksState {
   return {
     currentTask: 1,
@@ -38,7 +68,7 @@ function lifecycleState(
   overrides: {
     lastRunnerEventTs?: number | null;
     stall?: LifecycleState['stall'];
-    phase?: 'implementing' | 'final-review';
+    phase?: Extract<LifecycleState, { status: 'running' }>['phase'];
   } = {},
 ): LifecycleState {
   const state: LifecycleState = {
@@ -119,7 +149,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('OpenAI Codex CLI · implementing');
+    expect(progress.activity).toBe('OpenAI Codex CLI · working');
     expect(progress.freshness).toBe('No output for 1:00');
     expect(progress.silent).toBe(true);
   });
@@ -321,6 +351,26 @@ describe('deriveBuildProgress', () => {
     );
     const retried = deriveBuildProgress(input({ tasks: tasksStore.get() }));
     expect(retried.attempt).toEqual({ current: 7, max: 12 });
+    addEvent({
+      type: 'implementer_generate_running',
+      ts: NOW,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      lineageAttempt: 8,
+      attemptAllowance: 12,
+    });
+    const consulted = deriveBuildProgress(input({ tasks: tasksStore.get() }));
+    expect(consulted.attempt).toEqual({ current: 8, max: 12 });
+    expect(buildProgressLines(consulted, getChromeContentWidth(120))[0]).toContain(
+      'attempt 8 of 12',
+    );
+    addEvent({
+      type: 'implementer_generate_running',
+      ts: NOW + 1,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+    });
+    expect(tasksStore.get()).toMatchObject({ currentAttempt: 8, attemptAllowance: 12 });
     resetWorkflow();
   });
 
@@ -329,7 +379,40 @@ describe('deriveBuildProgress', () => {
       input({ operations: operationsState({ active: runningOperation() }) }),
     );
 
-    expect(progress.activity).toBe('OpenAI Codex CLI · implementing');
+    expect(progress.activity).toBe('OpenAI Codex CLI · working');
+  });
+
+  it('names the brief from the call, and uses working when the call has no brief', () => {
+    for (const [task, words] of [
+      [taskId('T003'), 'working on T003'],
+      [undefined, 'working'],
+    ] as const) {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({
+              runnerName: 'antigravity',
+              ...(task === undefined ? {} : { taskId: task }),
+            }),
+          }),
+        }),
+      );
+      expect(progress.activity).toBe(`Google Antigravity CLI · ${words}`);
+    }
+  });
+
+  it('names a planner consult and its brief during the build', () => {
+    for (const role of ['planner', 'escalation'] as const) {
+      const progress = deriveBuildProgress(
+        input({
+          lifecycle: lifecycleState({ phase: 'escalating' }),
+          operations: operationsState({
+            active: runningOperation({ role, taskId: 'T003', runnerName: 'claude' }),
+          }),
+        }),
+      );
+      expect(progress.activity).toBe('Claude Code CLI · answering the consult on T003');
+    }
   });
 
   it('names the tool by its display name, whichever name its runner gave the call', () => {
@@ -344,7 +427,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Claude Code CLI · implementing');
+    expect(progress.activity).toBe('Claude Code CLI · answering the consult');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -360,7 +443,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('claude · implementing');
+    expect(progress.activity).toBe('claude · working');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -374,7 +457,7 @@ describe('deriveBuildProgress', () => {
         }),
       );
 
-      expect(progress.activity).toBe(`${runnerName} · implementing`);
+      expect(progress.activity).toBe(`${runnerName} · working`);
     }
   });
 
@@ -390,7 +473,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Ollama · implementing');
+    expect(progress.activity).toBe('Ollama · working');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -403,11 +486,18 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Claude Code CLI · implementing');
+    expect(progress.activity).toBe('Claude Code CLI · working');
   });
 
-  it('names the phase alone between calls', () => {
-    expect(deriveBuildProgress(input()).activity).toBe('implementing');
+  it('names the build state between calls', () => {
+    expect(deriveBuildProgress(input()).activity).toBe('Between calls');
+    expect(
+      deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'validating-task' }) }))
+        .activity,
+    ).toBe('Between calls');
+    expect(
+      deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'escalating' }) })).activity,
+    ).toBe('Consulting the planner');
     expect(
       deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'final-review' }) })).activity,
     ).toBe('Review · waiting for the verdict');
@@ -430,7 +520,7 @@ describe('deriveBuildProgress', () => {
     }
   });
 
-  it('shows only the phase verb when an operation has no runnerName', () => {
+  it('shows the work when an operation has no runnerName', () => {
     const unnamed = runningOperation();
     delete unnamed.runnerName;
     const buildProg = deriveBuildProgress(
@@ -440,7 +530,7 @@ describe('deriveBuildProgress', () => {
         }),
       }),
     );
-    expect(buildProg.activity).toBe('implementing');
+    expect(buildProg.activity).toBe('working');
     expect(buildProg.activity).not.toContain('final-review');
 
     const reviewProg = deriveBuildProgress(
@@ -459,12 +549,12 @@ describe('deriveBuildProgress', () => {
     expect(reviewProg.activity).not.toContain('final-review');
   });
 
-  it('names the side call the phase cannot tell, and still no usage', () => {
+  it.each(['summary', 'compaction'] as const)('names the %s side call without usage', (role) => {
     const progress = deriveBuildProgress(
-      input({ operations: operationsState({ active: runningOperation({ role: 'summary' }) }) }),
+      input({ operations: operationsState({ active: runningOperation({ role }) }) }),
     );
 
-    expect(progress.activity).toBe('OpenAI Codex CLI · summary');
+    expect(progress.activity).toBe(`OpenAI Codex CLI · ${role}`);
   });
 
   it.each([
@@ -689,7 +779,7 @@ describe('buildProgressLines', () => {
 
     const [, row] = buildProgressLines(progress, 120);
     expect(
-      row?.startsWith('OpenAI Codex CLI · implementing · No output for 5:10 · running npm test'),
+      row?.startsWith('OpenAI Codex CLI · working · No output for 5:10 · running npm test'),
     ).toBe(true);
     expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(120);
   });
@@ -725,7 +815,7 @@ describe('buildProgressLines', () => {
 
     for (const width of [getChromeContentWidth(120), 80, 60]) {
       const block = buildProgressLines(progress, width).join('\n');
-      expect(block).toContain('OpenAI Codex CLI · implementing');
+      expect(block).toContain('OpenAI Codex CLI · working');
       expect(block).toContain('last event 5s ago');
       expect(block).toContain('1/2 briefs passed');
       expect(block).not.toMatch(/token/i);

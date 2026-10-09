@@ -14,7 +14,13 @@ describe('runnerCallEventToSessionLogEntry', () => {
       text: 'hello',
     };
 
-    expect(runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: 1 })).toEqual({
+    expect(
+      runnerCallEventToSessionLogEntry(event, {
+        rootDir: '/project',
+        phase: 'planning',
+        sequence: 1,
+      }),
+    ).toEqual({
       kind: 'event',
       ts: '2026-01-01T00:00:00.000Z',
       type: 'runner_call_text_delta',
@@ -42,6 +48,12 @@ describe('runnerCallEventToSessionLogEntry', () => {
       text: 'helper output',
     };
 
-    expect(runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: 1 })).toBeNull();
+    expect(
+      runnerCallEventToSessionLogEntry(event, {
+        rootDir: '/project',
+        phase: 'planning',
+        sequence: 1,
+      }),
+    ).toBeNull();
   });
 });

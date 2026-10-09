@@ -15,8 +15,10 @@ import {
   PTY_APPROVED_MARKER,
   PTY_EDIT_INPUT,
   PTY_EDITOR_FINISHED_MARKER,
+  PTY_EDITOR_OVERLAY_FOOTER,
   PTY_EDITOR_STARTED_MARKER,
   PTY_EXIT_INPUT,
+  PTY_EXTERNAL_EDIT_INPUT,
   PTY_SUBMIT_INPUT,
 } from './contract.js';
 
@@ -27,6 +29,7 @@ const MAX_RAW_IO_CODE_UNITS = 1_048_576;
 type ContractStep =
   | 'await-active'
   | 'await-draft'
+  | 'await-editor-overlay'
   | 'await-editor-start'
   | 'await-editor-finish'
   | 'await-return'
@@ -52,6 +55,7 @@ export async function monitorPtyContract(input: {
   let rawIo = '';
   const contract: { step: ContractStep } = { step: 'await-active' };
   let draftOffset = 0;
+  let editorOverlayOffset = 0;
   let completedDraftOffset = 0;
   let returnOffset = 0;
   let editorPid: number | undefined;
@@ -95,8 +99,20 @@ export async function monitorPtyContract(input: {
           break;
         case 'await-draft':
           if (hasComposerDraft(rawIo.slice(draftOffset))) {
-            contract.step = 'await-editor-start';
+            contract.step = 'await-editor-overlay';
+            editorOverlayOffset = rawIo.length;
             write(PTY_EDIT_INPUT);
+            progressed = true;
+          }
+          break;
+        case 'await-editor-overlay':
+          if (
+            stripTerminalControls(rawIo.slice(editorOverlayOffset), {
+              preserveLineBreaks: true,
+            }).includes(PTY_EDITOR_OVERLAY_FOOTER)
+          ) {
+            contract.step = 'await-editor-start';
+            write(PTY_EXTERNAL_EDIT_INPUT);
             progressed = true;
           }
           break;

@@ -30,6 +30,22 @@ function plainStdout(): string {
     'task T001: done (no checks)',
     'task T002: done (no checks)',
     'phase: final-review',
+    'plan check K1: passed · 0.1s (npm test)',
+    'plan check T001-K1: failed · 1m 0s (npm run lint)',
+    'plan check K-retry: passed · 1h 2m 3s (node validate.mjs)',
+    'plan check K2: passed (npm test)',
+    'plan check K3: not run (no test command for an unrecognised stack)',
+    'plan check K4: refused (names no program)',
+    'plan check K5: not run',
+    'plan check K6: refused',
+    'Render workflow: rendered · 0.1s',
+    'Render workflow-review: failed · 1m 0s',
+    'Render workflow-plan: rendered · 1h 2m 3s',
+    'Render home: rendered',
+    'Render settings: not run (validation.render is not set)',
+    'Render overlay: refused (names no program)',
+    'Render setup: not run',
+    'Render help: refused',
     'reviewer check declined: test/server.test.mjs (covered by V1)',
     'reviewer check V1: refused (runs the package script lint, which this run changed)',
     'reviewer check V2: failed (npm test)',
@@ -178,12 +194,12 @@ describe('assertPlainStdout', () => {
     const stdout = [
       plainStdout(),
       'fix check V1: failed (npm test)',
-      'fix check V1: your 2 failures gone · 3 others left (npm test)',
-      'fix check V1: your 1 failure gone · 1 other left (npm test)',
-      'fix check V1: your 1 failure gone (npm test)',
-      'fix check V1: 1 of your 2 failures remains (npm test)',
-      'fix check V1: 2 of your 3 failures remain (npm test)',
-      'fix check V1: your 1 failure remains (npm test)',
+      'fix check V1: your 2\u00a0failures gone · 3\u00a0others left (npm test)',
+      'fix check V1: your 1\u00a0failure gone · 1\u00a0other left (npm test)',
+      'fix check V1: your 1\u00a0failure gone (npm test)',
+      'fix check V1: 1\u00a0of your 2\u00a0failures remains (npm test)',
+      'fix check V1: 2\u00a0of your 3\u00a0failures remain (npm test)',
+      'fix check V1: your 1\u00a0failure remains (npm test)',
       'base re-run V1: passes',
       'base re-run V1: fails',
       'base re-run V1: 1 new, 2 pre-existing',
@@ -196,8 +212,16 @@ describe('assertPlainStdout', () => {
   });
 
   it('rejects a line outside the grammar', () => {
-    const stdout = `${plainStdout()}Implementation complete.\n`;
-    expect(() => assertPlainStdout(stdout)).toThrow();
+    for (const line of [
+      'Implementation complete.',
+      'plan check K1: rendered · 0.1s (npm test)',
+      'plan check K1: passed · 0.1s',
+      'plan check K1: passed · soon (npm test)',
+      'Render workflow: passed · 0.1s',
+      'Render workflow: rendered · 0.1s (npm run render)',
+    ]) {
+      expect(() => assertPlainStdout(`${plainStdout()}${line}\n`)).toThrow();
+    }
   });
 
   it('accepts the reviewer-check lines of a run whose End-of-run checks are off or chose none', () => {

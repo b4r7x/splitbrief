@@ -1045,9 +1045,60 @@ describe('event row dispatch', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     });
 
-    expect(rows.map(rowText).join('\n')).toContain('mid-turn');
-    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.map((row) => rowText(row).trimEnd())).toEqual(['Stopped mid-turn']);
     expect(rows.every((rowValue) => rowValue.markerTone === 'warning')).toBe(true);
+  });
+
+  it('wraps fix-check rows between whole counts and verdict phrases', () => {
+    for (const ownLeft of [0, 2]) {
+      const event: EngineEventOf<'full_suite'> = {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'implementing',
+        moment: 'brief',
+        id: 'V2',
+        command: 'npm run test-ci',
+        status: 'done',
+        passed: ownLeft === 0,
+        duration: 180_000,
+        own: 2,
+        ownLeft,
+        others: 3,
+      };
+      const rows = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      }).map(rowText);
+      const text = rows.join('\n');
+      expect(text).toContain('2\u00a0failures');
+      expect(rows.some((row) => row.includes('3m\u00a00s'))).toBe(true);
+      if (ownLeft === 0) expect(rows.some((row) => row.includes('3\u00a0others'))).toBe(true);
+      else expect(rows.some((row) => row.includes('2\u00a0of'))).toBe(true);
+    }
+    const event: EngineEventOf<'full_suite'> = {
+      type: 'full_suite',
+      ts: 0,
+      phase: 'implementing',
+      moment: 'brief',
+      id: 'V2',
+      command: 'npm run test-ci',
+      status: 'done',
+      passed: false,
+      duration: 180_000,
+      own: 2,
+      ownLeft: 0,
+      others: 3,
+      proven: false,
+    };
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    }).map(rowText);
+    expect(rows.some((row) => row.includes('not\u00a0proven\u00a0fixed'))).toBe(true);
   });
 
   it('turn_interrupted at a gate names the gate and never offers a retry', () => {
@@ -1119,7 +1170,7 @@ describe('event row dispatch', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('at T002');
+    expect(text.trimEnd()).toBe('Stopped at T002');
   });
 
   it('task_retry counts attempts the way the build block does', () => {

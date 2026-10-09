@@ -17,15 +17,15 @@ export type PlannerCallPublisherContext = {
 };
 
 function publishPlannerRunnerCall(
-  ctx: PlannerCallPublisherContext,
+  ctx: PlannerCallPublisherContext & { rootDir: string },
   event: Parameters<typeof publishRunnerCallEvent>[1],
 ): void {
-  publishRunnerCallEvent({ bus: ctx.bus, phase: ctx.getPhase() }, event);
+  publishRunnerCallEvent({ bus: ctx.bus, phase: ctx.getPhase(), rootDir: ctx.rootDir }, event);
 }
 
 function withPlannerOutputCallbacks(
   callbacks: PlannerOutputCallbacks,
-  ctx: PlannerCallPublisherContext,
+  ctx: PlannerCallPublisherContext & { rootDir: string },
 ): PlannerOutputCallbacks {
   if (callbacks.onCallEvent !== undefined) return callbacks;
   return {
@@ -37,14 +37,14 @@ function withPlannerOutputCallbacks(
 /** A typed-answer call's text is its answer, which the caller validates and records, so none of it reaches the transcript. */
 function withTypedAnswerCallbacks(
   callbacks: PlannerOutputCallbacks,
-  ctx: PlannerCallPublisherContext,
+  ctx: PlannerCallPublisherContext & { rootDir: string },
 ): PlannerOutputCallbacks {
   return { ...withPlannerOutputCallbacks(callbacks, ctx), onOutput: () => {} };
 }
 
 function withPlannerCallEventCallbacks(
   callbacks: PlannerCallEventCallbacks | undefined,
-  ctx: PlannerCallPublisherContext,
+  ctx: PlannerCallPublisherContext & { rootDir: string },
 ): PlannerCallEventCallbacks {
   if (callbacks?.onCallEvent !== undefined) return callbacks;
   return {
@@ -59,7 +59,10 @@ function withPlannerSummaryOptions(
 ): PlannerSummaryOptions {
   return {
     ...opts,
-    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, ctx),
+    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, {
+      ...ctx,
+      rootDir: opts?.projectDir ?? process.cwd(),
+    }),
   };
 }
 
@@ -69,7 +72,10 @@ function withPlannerStructuredSummaryOptions(
 ): PlannerStructuredSummaryOptions {
   return {
     ...opts,
-    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, ctx),
+    callbacks: withPlannerCallEventCallbacks(opts?.callbacks, {
+      ...ctx,
+      rootDir: opts?.projectDir ?? process.cwd(),
+    }),
   };
 }
 
@@ -79,7 +85,7 @@ function withPlannerUserTurnOptions(
 ): PlannerUserTurnOptions {
   return {
     ...opts,
-    callbacks: withPlannerCallEventCallbacks(opts.callbacks, ctx),
+    callbacks: withPlannerCallEventCallbacks(opts.callbacks, { ...ctx, rootDir: opts.projectDir }),
   };
 }
 
@@ -95,14 +101,21 @@ export function withPlannerCallPublishing(
     escalateFull: (opts) =>
       planner.escalateFull({
         ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, ctx),
+        callbacks: withPlannerOutputCallbacks(opts.callbacks, { ...ctx, rootDir: opts.projectDir }),
       }),
     review: (prompt, projectDir, callbacks) =>
-      review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+      review(
+        prompt,
+        projectDir,
+        withPlannerOutputCallbacks(callbacks, { ...ctx, rootDir: projectDir }),
+      ),
     typedCall: (typedCtx) =>
       planner.typedCall({
         ...typedCtx,
-        callbacks: withTypedAnswerCallbacks(typedCtx.callbacks, ctx),
+        callbacks: withTypedAnswerCallbacks(typedCtx.callbacks, {
+          ...ctx,
+          rootDir: typedCtx.projectDir,
+        }),
       }),
     summarize: (messages, opts) =>
       planner.summarize(messages, withPlannerSummaryOptions(opts, ctx)),
@@ -132,8 +145,18 @@ export function withReviewerCallPublishing(
   const typedCall = reviewer.typedCall.bind(reviewer);
   return {
     review: (prompt, projectDir, callbacks) =>
-      review(prompt, projectDir, withPlannerOutputCallbacks(callbacks, ctx)),
+      review(
+        prompt,
+        projectDir,
+        withPlannerOutputCallbacks(callbacks, { ...ctx, rootDir: projectDir }),
+      ),
     typedCall: (typedCtx) =>
-      typedCall({ ...typedCtx, callbacks: withTypedAnswerCallbacks(typedCtx.callbacks, ctx) }),
+      typedCall({
+        ...typedCtx,
+        callbacks: withTypedAnswerCallbacks(typedCtx.callbacks, {
+          ...ctx,
+          rootDir: typedCtx.projectDir,
+        }),
+      }),
   };
 }

@@ -19,7 +19,11 @@ const runnerCallBase = {
 } as const;
 
 function addProjectedRunnerEvent(event: RunnerCallEvent, sequence: number): void {
-  const projected = projectRunnerCallEvent(event, { phase: 'planning', sequence });
+  const projected = projectRunnerCallEvent(event, {
+    rootDir: '/project',
+    phase: 'planning',
+    sequence,
+  });
   if (projected !== null) addEvent(projected);
 }
 
@@ -83,7 +87,11 @@ describe('mergeEvent throughput', () => {
     const sessionText = rawRunnerEvents
       .map((event, index) =>
         projectedSessionText(
-          runnerCallEventToSessionLogEntry(event, { phase: 'planning', sequence: index }),
+          runnerCallEventToSessionLogEntry(event, {
+            rootDir: '/project',
+            phase: 'planning',
+            sequence: index,
+          }),
         ),
       )
       .filter((text) => text !== null)

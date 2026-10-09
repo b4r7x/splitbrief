@@ -10,6 +10,7 @@ import type { RunnerCallEvent } from './types.js';
 
 interface RunnerCallEventProjectionOptions {
   phase: Phase;
+  rootDir: string;
   taskId?: TaskId | undefined;
   sequence: number;
 }
@@ -167,7 +168,7 @@ function projectRunnerCallActivityEvent(
   event: RunnerCallEvent,
   opts: RunnerCallEventProjectionOptions,
 ): RunnerCallActivityEvent | null {
-  const activity = projectRunnerCallActivity(event, opts.sequence);
+  const activity = projectRunnerCallActivity(event, opts.sequence, opts.rootDir);
   if (activity === null) return null;
   return {
     type: 'runner_call_activity',

@@ -67,6 +67,10 @@ export function* walkTranscript(
     }
     for (const [index, event] of section.items.entries()) {
       const globalIndex = section.startIndex + index;
+      if (isTranscriptRowlessEvent(event)) {
+        yield { kind: 'event', event, globalIndex };
+        continue;
+      }
       if (event.type === 'runner_call_activity') {
         if (activityBatch !== null && activityBatch.callId === event.callId) {
           activityBatch.events.push(event);
@@ -85,10 +89,6 @@ export function* walkTranscript(
       }
 
       if (recovery !== null && joinsRecovery(recovery, event)) continue;
-      if (isTranscriptRowlessEvent(event)) {
-        yield { kind: 'event', event, globalIndex };
-        continue;
-      }
       yield* flush();
       if (event.type === 'recovery_prompted' && restatesHalt(lastRowEvent, event)) continue;
       if (

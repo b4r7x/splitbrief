@@ -9,8 +9,9 @@ import {
 } from './events.js';
 import { addEvent } from './actions/event.js';
 import { resetWorkflow } from './actions/reset.js';
+import { markCancellationRequested } from './actions/interrupt.js';
 import { taskId } from '../../core/schemas/task.js';
-import type { EngineEventOf } from '../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { parseEngineEvent } from '../../engine/events/schema.js';
 import type { RunnerCallWarningInput } from '../../engine/calls/types.js';
 import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
@@ -348,16 +349,7 @@ describe('eventsStore — append via addEvent', () => {
     addEvent(makeRunnerError({ error: { code: 'failed', message: `failed ${rawSentinel}` } }));
 
     const events = eventsStore.get().events;
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: 'runner_call_activity',
-      label: 'session captured',
-      redacted: false,
-    });
-    expect(events[0]).not.toHaveProperty('target');
-    expect(events[0]).not.toHaveProperty('diagnosticPartial');
-    expect(events[0]).not.toHaveProperty('rawAvailable');
-    expect(events[0]).not.toHaveProperty('expandId');
+    expect(events).toEqual([]);
     expect(JSON.stringify(events)).not.toContain(rawSentinel);
 
     expect(operationsStore.get().last).toMatchObject({
@@ -505,6 +497,121 @@ describe('eventsStore — append via addEvent', () => {
   });
 
   describe('full_suite coalescing', () => {
+    it('replays 40k alternating running and done command events into capped settled rows', () => {
+      const log = Array.from({ length: 40_000 }, (_, index) =>
+        makeFullSuite({
+          ts: index,
+          status: index % 2 === 0 ? 'running' : 'done',
+          passed: index % 2 !== 0,
+        }),
+      );
+
+      const events = mergeEventLog(log);
+
+      expect(events).toHaveLength(MAX_EVENTS);
+      expect(events.every((event) => event.type === 'full_suite' && event.status === 'done')).toBe(
+        true,
+      );
+      expect(events[0]?.ts).toBe(20_001);
+      expect(events.at(-1)?.ts).toBe(39_999);
+    });
+
+    it.each([
+      ['full_suite', makeFullSuite({ id: 'K1', moment: 'plan', ts: 1_000 })],
+      ['validate', makeValidate({ taskId: taskId('T001'), status: 'running', ts: 1_000 })],
+    ] as const)('settles %s across a warning before Stop in live and replay logs', (_, running) => {
+      const done: EngineEvent = { ...running, status: 'done', passed: true, ts: 2_000 };
+      const warning: EngineEvent = {
+        type: 'warning',
+        ts: 1_500,
+        phase: running.phase,
+        message: 'The test pattern was refused.',
+      };
+      const stop: EngineEvent = { type: 'turn_interrupted', ts: 3_000, phase: running.phase };
+      const log: EngineEvent[] = [running, warning, done, stop];
+      for (const event of log) addEvent(event);
+      const expected = [done, warning, stop];
+      expect(eventsStore.get().events).toEqual(expected);
+      expect(log.reduce(mergeEvent, [])).toEqual(expected);
+      expect(mergeEventLog(log)).toEqual(expected);
+      expect(running.status).toBe('running');
+    });
+
+    it('keeps one gate row as running stages update across a warning', () => {
+      const gate = makeValidate({ taskId: taskId('T001'), status: 'running', ts: 1_000 });
+      const done = { ...gate, status: 'done' as const, passed: true, ts: 3_000 };
+      const warning: EngineEvent = {
+        type: 'warning',
+        ts: 1_500,
+        phase: gate.phase,
+        message: 'The test pattern was refused.',
+      };
+      const stop: EngineEvent = { type: 'turn_interrupted', ts: 4_000, phase: gate.phase };
+      const log: EngineEvent[] = [
+        gate,
+        warning,
+        { ...gate, activeStage: 'test', ts: 2_000 },
+        done,
+        stop,
+      ];
+      expect(log.reduce(mergeEvent, [])).toEqual([done, warning, stop]);
+      expect(mergeEventLog(log)).toEqual([done, warning, stop]);
+    });
+
+    it('merges each plan render into its own settled row', () => {
+      for (const id of ['R1', 'R2']) {
+        const render = makeFullSuite({ id, moment: 'plan', scenario: `workflow-${id}` });
+        addEvent(render);
+        addEvent({ ...render, status: 'done', passed: true, duration: 14_200 });
+      }
+      expect(eventsStore.get().events).toHaveLength(2);
+      expect(eventsStore.get().events).toEqual([
+        expect.objectContaining({ id: 'R1', status: 'done' }),
+        expect.objectContaining({ id: 'R2', status: 'done' }),
+      ]);
+    });
+
+    it.each(['turn_interrupted', 'workflow_cancelled'] as const)(
+      '%s settles every unfinished command in live and batch logs, preserving settled checks',
+      (type) => {
+        const settled = makeFullSuite({ id: 'V1', moment: 'brief', status: 'running', ts: 1_000 });
+        const fix = makeFullSuite({ id: 'V2', moment: 'brief', ts: 3_000 });
+        const render = makeFullSuite({
+          id: 'R1',
+          moment: 'plan',
+          scenario: 'workflow-x',
+          ts: 4_000,
+        });
+        const gate = makeValidate({ status: 'running', activeStage: 'test', ts: 5_000 });
+        const log = [
+          settled,
+          makePlannerText({ ts: 1_100 }),
+          { ...settled, status: 'done' as const, passed: false, ts: 2_000 },
+          fix,
+          render,
+          gate,
+          { type, ts: 6_000, phase: 'implementing' as const },
+        ];
+        for (const event of log) addEvent(event);
+        const live = eventsStore.get().events;
+        expect(live).toEqual(mergeEventLog(log));
+        expect(live).toContainEqual({ ...fix, status: 'stopped' });
+        expect(live).toContainEqual({ ...render, status: 'stopped' });
+        expect(live).toContainEqual({ ...gate, status: 'stopped' });
+        expect(live[0]).toEqual({ ...settled, status: 'done', passed: false, ts: 2_000 });
+        expect(fix.status).toBe('running');
+        expect(render.status).toBe('running');
+      },
+    );
+
+    it('accepts the durable interruption after local stop intent to settle the transcript', () => {
+      const fix = makeFullSuite({ id: 'V1', moment: 'brief', ts: 1_000 });
+      addEvent(fix);
+      markCancellationRequested({ ts: 2_000 });
+      addEvent({ type: 'turn_interrupted', ts: 3_000, phase: 'implementing' });
+      expect(eventsStore.get().events[0]).toEqual({ ...fix, status: 'stopped' });
+    });
+
     it('replaces a running stage entry with its settled verdict', () => {
       addEvent(makeFullSuite({ status: 'running' }));
       addEvent(makeFullSuite({ status: 'done', passed: true, duration: 12_000 }));

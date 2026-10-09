@@ -1,5 +1,6 @@
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { formatTaskHeading } from '../../../components/task-summary.js';
 import { taskTargetLabel } from '../../../stores/workflow/tasks.js';
 import { formatTaskStartedParts } from './event-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
@@ -68,7 +69,9 @@ export function taskStartedRowBlock(input: {
   width: number;
 }): ConversationRowBlock | null {
   const idText = sanitizeRowDisplayText(input.taskId);
-  const titleText = sanitizeRowDisplayText(` ${input.title}`);
+  const titleText = sanitizeRowDisplayText(
+    formatTaskHeading({ id: idText, title: input.title }).slice(idText.length),
+  );
   const labels = input.metadata.map((label) => sanitizeRowDisplayText(label));
   const placeholder = unusedSpacePlaceholder(`${idText}${titleText}${labels.join(' ')}`);
   const metadataText =

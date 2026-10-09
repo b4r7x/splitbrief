@@ -21,6 +21,25 @@ const base = {
   activeOperation: null,
 };
 
+it('leads the review byline with the render scenario and its own clock', () => {
+  const status = deriveLiveStatus({
+    ...base,
+    phase: 'final-review',
+    suiteStage: {
+      id: 'R1',
+      moment: 'plan',
+      scenario: 'workflow-x',
+      command: 'npm run tui-shots -- --scenario workflow-x --output /tmp/render',
+      stageStartedTs: 90_000,
+    },
+  });
+  expect(status).toMatchObject({
+    verb: 'Review · Render workflow-x',
+    stageStart: 90_000,
+    waitedMs: 0,
+  });
+});
+
 describe('deriveLiveStatus', () => {
   it('is null when idle, complete, cancelled, or at a review gate', () => {
     expect(deriveLiveStatus({ ...base, phase: 'idle' })).toBeNull();

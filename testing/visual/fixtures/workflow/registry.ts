@@ -113,6 +113,7 @@ const checkpointPredicates = [
   [checkpointId('planning'), includesAll('Keep the public API?', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
+  [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
   // The build-progress block is the fact the implementation checkpoint must carry at every width;
   // the task header scrolls out of a 60x18 transcript, so pinning it would pin the viewport too.
   [
@@ -148,6 +149,15 @@ const checkpointPredicates = [
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
   [checkpointId('final-review'), includesAll('3/3 briefs passed')],
+  [
+    checkpointId('review-render-running'),
+    includesAll(
+      '3/3 briefs passed',
+      'Review · Render workflow-review',
+      'running 0:12',
+      'Render workflow-review 0:12',
+    ),
+  ],
   [checkpointId('review-settled-passed'), includesAll('✓ Review 1 passed', '7.0s')],
   [checkpointId('review-settled-failed'), includesAll('✗ Review 1 failed', '7.0s')],
   [checkpointId('review-corrected'), includesAll('T902', 'Review 1 failed', 'Review 2 passed')],
@@ -247,6 +257,8 @@ const checkpointPredicates = [
   [checkpointId('gates-approved'), includesAll()],
   [checkpointId('gate-stopped'), includesAll()],
   [checkpointId('api-context'), includesAll(WORKFLOW_FIXTURE_TEXT.apiContext, 'Try again')],
+  [checkpointId('review-context'), includesAll('Nothing was sent to REVIEW', 'Try again')],
+  [checkpointId('review-call-failed'), includesAll('Review call timed out', 'Try again')],
   [
     checkpointId('planning-claude-frames'),
     includesAll(WORKFLOW_FIXTURE_TEXT.planningReply, 'retry 2 of 10'),
@@ -280,6 +292,10 @@ const checkpointPredicates = [
   [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],
   [checkpointId('review-base-mixed'), includesAll('2\u00a0new,', 'V1 failed')],
   [checkpointId('fix-check-running'), includesAll('Fix check V2 · npm test')],
+  [
+    checkpointId('fix-check-stopped-continued'),
+    includesAll('Fix check V2 · npm test · stopped', 'working on T904'),
+  ],
   [
     checkpointId('fix-check-done'),
     // The verdict wraps at narrow widths; the earlier red row scrolls out of a 60x18 transcript.

@@ -181,6 +181,14 @@ async function activateFixtureInputMode(
       publishUserMessage({ bus, phase: 'escalating' }, text, [
         { question: 'Which store?', answer: text },
       ]);
+      const consultCall = projection.events.find((event) => event.type === 'runner_call_started');
+      if (consultCall === undefined) throw new Error('Consult fixture requires a planner call');
+      bus.publish({
+        ...consultCall,
+        callId: 'visual-consult-answer-call-001',
+        ts: Date.now(),
+        sequence: 0,
+      });
     }
   }
 }

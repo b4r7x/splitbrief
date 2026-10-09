@@ -54,12 +54,15 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'runner_call_heartbeat',
 ] as const satisfies readonly EngineEvent['type'][];
 
-type TranscriptRowlessEventType = (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number];
+type TranscriptRowlessEvent =
+  | Extract<EngineEvent, { type: (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number] }>
+  | (Extract<EngineEvent, { type: 'runner_call_activity' }> & { kind: 'session' });
 
 const transcriptRowlessEventTypes: ReadonlySet<string> = new Set(TRANSCRIPT_ROWLESS_EVENT_TYPES);
 
-export function isTranscriptRowlessEvent(
-  event: EngineEvent,
-): event is Extract<EngineEvent, { type: TranscriptRowlessEventType }> {
-  return transcriptRowlessEventTypes.has(event.type);
+export function isTranscriptRowlessEvent(event: EngineEvent): event is TranscriptRowlessEvent {
+  return (
+    transcriptRowlessEventTypes.has(event.type) ||
+    (event.type === 'runner_call_activity' && event.kind === 'session')
+  );
 }

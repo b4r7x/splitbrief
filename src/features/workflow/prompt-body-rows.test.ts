@@ -81,7 +81,7 @@ describe('promptBodyRows', () => {
   });
 
   it('hangs a wrapped fact under its own first line', () => {
-    const sentence = 'Adjust the plan seat with /crew plan or Settings, then /resume and retry.';
+    const sentence = 'Pick a plan seat with a larger context in /crew plan, then choose Try again.';
     const prompt = ['recovery needed', '', sentence].join('\n');
     const rows = promptBodyRows(prompt, 48);
     const factLines = rows.filter((row) => row.kind === 'facts-line');

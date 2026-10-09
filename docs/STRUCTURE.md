@@ -262,7 +262,7 @@ features/workflow/
 ├── hooks/                    # feature-local hooks
 │   ├── workflow-screen/      # screen model split by intent
 │   │   ├── use-model.ts      # public useWorkflowScreen + WorkflowScreenDeps
-│   │   └── use-inline-edit.ts # ctrl+e plan.json editor opener + external-edit handoff
+│   │   └── use-inline-edit.ts # external-edit handoff
 │   ├── use-run-loop.ts       # runWorkflow + the recovery loop + the process-registry stop watcher
 │   ├── use-run-continue.ts   # how the run is re-entered: the state, the steer, continueRun
 │   └── use-keys.ts

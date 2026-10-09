@@ -44,6 +44,12 @@ function stageTone(
 }
 
 describe('validationSummarySegments', () => {
+  it('renders an interrupted older gate as stopped in the dim tone', () => {
+    const event = validateEvent({ status: 'stopped', activeStage: 'test', passed: false });
+    expect(validationSummarySegments(event)).toEqual([
+      { text: 'Validate · stopped', tone: 'textDim' },
+    ]);
+  });
   it('tones a passing stage apart from a stage that never ran', () => {
     const event = validateEvent({ stages: { typecheck: true, lint: false, test: false } });
 
@@ -256,6 +262,40 @@ function reviewCheck(overrides: Partial<ReviewCheckEvent>): ReviewCheckEvent {
 }
 
 describe('fullSuiteRow for a reviewer check', () => {
+  it('names plan checks and renders without displaying render commands', () => {
+    const plan = reviewCheck({ id: 'K1', moment: 'plan' });
+    expect(fullSuiteRow(plan)).toBe('Plan check K1 · npm test · running');
+    expect(fullSuiteRow({ ...plan, status: 'done', passed: true })).toBe(
+      'Plan check K1 · npm test · passed',
+    );
+    const render = {
+      ...plan,
+      scenario: 'workflow-x',
+      command: 'npm run tui-shots -- --scenario workflow-x --output /tmp/long-path',
+    };
+    expect(fullSuiteRow(render)).toBe('Render workflow-x · running');
+    expect(fullSuiteRow({ ...render, status: 'done', passed: true, duration: 14_200 })).toBe(
+      'Render workflow-x · rendered · 14.2s',
+    );
+    expect(fullSuiteRow({ ...render, status: 'done', passed: false, duration: 14_200 })).toBe(
+      'Render workflow-x · failed · 14.2s',
+    );
+    expect(
+      fullSuiteRow({ ...render, status: 'not-run', detail: 'validation.render is not set' }),
+    ).toBe('Render workflow-x · not\u00a0run · validation.render is not set');
+    expect(fullSuiteRow({ ...render, status: 'refused', detail: 'invalid scenario' })).toBe(
+      'Render workflow-x · refused · invalid scenario',
+    );
+  });
+
+  it.each(['pre-review', 'base', 'brief', 'plan'] as const)(
+    'renders a stopped %s check in the dim tone',
+    (moment) => {
+      const event = reviewCheck({ moment, status: 'stopped' });
+      expect(fullSuiteRow(event)).toMatch(/ · stopped$/u);
+      expect(fullSuiteTone(event)).toBe('textDim');
+    },
+  );
   it('names the check by its id while it runs and once it passed or failed', () => {
     expect(fullSuiteRow(reviewCheck({ status: 'running' }))).toBe(
       'Reviewer check V1 · npm test · running',
@@ -364,30 +404,30 @@ describe('fullSuiteRow for a reviewer check', () => {
     });
     const gone = { ...fix, passed: true, own: 2, ownLeft: 0, others: 3 };
     expect(fullSuiteRow(gone)).toBe(
-      'Fix check V1 · npm run test-ci · your 2 failures gone · 3 others left · 4.0s',
+      'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 3\u00a0others left · 4.0s',
     );
     expect(fullSuiteTone(gone)).toBe('textDim');
     expect(fullSuiteRow({ ...fix, passed: true, own: 1, ownLeft: 0, others: 1 })).toBe(
-      'Fix check V1 · npm run test-ci · your 1 failure gone · 1 other left · 4.0s',
+      'Fix check V1 · npm run test-ci · your 1\u00a0failure gone · 1\u00a0other left · 4.0s',
     );
     const remains = { ...fix, passed: false, own: 2, ownLeft: 1, others: 3 };
     expect(fullSuiteRow(remains)).toBe(
-      'Fix check V1 · npm run test-ci · 1 of your 2 failures remains · 4.0s',
+      'Fix check V1 · npm run test-ci · 1\u00a0of your 2\u00a0failures remains · 4.0s',
     );
     expect(fullSuiteTone(remains)).toBe('error');
     const notProven = { ...gone, passed: false, proven: false };
     expect(fullSuiteRow(notProven)).toBe(
-      'Fix check V1 · npm run test-ci · your 2 failures not shown · not proven fixed · 4.0s',
+      'Fix check V1 · npm run test-ci · your 2\u00a0failures not shown · not\u00a0proven\u00a0fixed · 4.0s',
     );
     expect(fullSuiteTone(notProven)).toBe('error');
     expect(fullSuiteRow({ ...gone, others: 0, proven: true })).toBe(
-      'Fix check V1 · npm run test-ci · your 2 failures gone · 4.0s',
+      'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: false, own: 1, ownLeft: 1, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · your 1 failure remains · 4.0s',
+      'Fix check V1 · npm run test-ci · your 1\u00a0failure remains · 4.0s',
     );
     expect(fullSuiteRow({ ...fix, passed: false, own: 3, ownLeft: 2, others: 0 })).toBe(
-      'Fix check V1 · npm run test-ci · 2 of your 3 failures remain · 4.0s',
+      'Fix check V1 · npm run test-ci · 2\u00a0of your 3\u00a0failures remain · 4.0s',
     );
   });
 
@@ -407,7 +447,7 @@ describe('fullSuiteRow for a reviewer check', () => {
       }),
     );
     expect(row).toBe(
-      'Fix check V1 · npm run test-ci · your 2 failures gone · 3 others left · 3m 0s',
+      'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 3\u00a0others left · 3m 0s',
     );
     expect(fullSuiteRow(reviewCheck({ status: 'done', passed: false, duration: 61_000 }))).toBe(
       'Reviewer check V1 · npm test · failed · 1m 1s',

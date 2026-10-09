@@ -590,6 +590,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('implementer_generate_running').extend({
     taskId: TaskIdSchema,
     file: z.string().optional(),
+    lineageAttempt: z.number().int().positive().optional(),
+    attemptAllowance: z.number().int().positive().optional(),
   }),
   phaseEvent('implementer_generate_done').extend({
     taskId: TaskIdSchema,
@@ -609,7 +611,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('validate').extend({
     taskId: TaskIdSchema,
-    status: z.enum(['running', 'done']),
+    status: z.enum(['running', 'done', 'stopped']),
     passed: z.boolean(),
     exempt: z.boolean().optional(),
     stages: validationStagesSchema,
@@ -637,14 +639,16 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   /**
    * One command run before a review: a reviewer check (`id`) or, in a session from before the
    * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base;
-   * `brief` is a fix brief's reviewer check. It runs once, with no base re-run.
+   * `brief` is a fix brief's reviewer check, with no base re-run. `plan` is a plan check before review.
    */
   phaseEvent('full_suite').extend({
-    status: z.enum(['running', 'done', 'not-run', 'refused']),
+    /** The transcript settles a command a stop cut; the engine publishes no settle for it. */
+    status: z.enum(['running', 'done', 'not-run', 'refused', 'stopped']),
     stage: z.enum(['typecheck', 'lint', 'test']).optional(),
     id: z.string().optional(),
     command: z.string(),
-    moment: z.enum(['pre-review', 'base', 'brief']),
+    moment: z.enum(['pre-review', 'base', 'brief', 'plan']),
+    scenario: z.string().optional(),
     passed: z.boolean().optional(),
     /**
      * On base done events, the red run's failure keys that are new, also red at the run base, or

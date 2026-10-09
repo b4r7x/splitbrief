@@ -28,6 +28,7 @@ export interface StopBylineInput {
   readonly suite: {
     readonly id?: string | undefined;
     readonly moment: RunningSuiteStage['moment'];
+    readonly scenario?: string | undefined;
     readonly command: string;
     readonly elapsedMs: number;
   } | null;

@@ -11,7 +11,7 @@ import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
-import type { ReviewChecksPlan } from '../../core/schemas/review.js';
+import { MAX_REVIEW_CHECKS, type ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
@@ -46,7 +46,7 @@ type CommandAnswer = 'pass' | { red: string; stderr?: string } | { throws: unkno
 async function reviewChecks(
   run: ApplyRun,
   opts: {
-    plan: ReviewChecksPlan | null;
+    plan: ReviewChecksPlan | ((prompt: string, call: number) => ReviewChecksPlan) | null;
     answer?: (command: string, at: 'workspace' | 'base') => CommandAnswer;
     config?: Config;
     tasks?: Task[];
@@ -88,6 +88,7 @@ async function reviewChecks(
   const prompts: string[] = [];
   const checksCall = vi.fn((prompt: string) => {
     prompts.push(prompt);
+    if (typeof opts.plan === 'function') return opts.plan(prompt, prompts.length);
     return opts.plan ?? { commands: [], declined: [], reason: null };
   });
   const reviewer = makePlanner({
@@ -253,11 +254,122 @@ describe('runReviewCheck at the brief gate', () => {
 });
 
 describe('runReviewChecks', { timeout: 60_000 }, () => {
+  it('names the pending command and accepts its repair before running it first', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-fix-repair' }, async (run) => {
+      const { outcome, prompts, checksCall, commands } = await reviewChecks(run, {
+        state: { pendingReviewCommands: ['npm test'] },
+        plan: (_prompt, call) =>
+          call === 1
+            ? plan([['V1', 'node --version']])
+            : plan([
+                ['V1', 'npm test'],
+                ['V2', 'node --version'],
+              ]),
+      });
+
+      expect(prompts[0]).toContain('## Commands a fix check ran\n\n- `npm test`');
+      expect(prompts[1]).toContain('choose `npm test` among the first 1 commands');
+      expect(checksCall).toHaveBeenCalledTimes(2);
+      expect(outcome.kind).toBe('ran');
+      expect(commands[0]).toEqual({ command: 'npm test', at: 'workspace' });
+      expect(outcome.state.pendingReviewCommands).toEqual(['npm test']);
+      expect(outcome).toMatchObject({ kind: 'ran', discharged: ['npm test'] });
+    });
+  });
+
+  it.each([
+    { name: 'missing', chosen: plan([['V1', 'node --version']]) },
+    {
+      name: 'after another command',
+      chosen: plan([
+        ['V1', 'node --version'],
+        ['V2', 'npm test'],
+      ]),
+    },
+    { name: 'with different text', chosen: plan([['V1', 'npm run test']]) },
+  ])('returns a protocol error when the fix command stays $name', async ({ chosen }) => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-fix-protocol' }, async (run) => {
+      const { outcome, prompts, checksCall, commands } = await reviewChecks(run, {
+        state: { pendingReviewCommands: ['npm test'] },
+        plan: chosen,
+      });
+
+      expect(outcome.kind).toBe('protocol-error');
+      expect(checksCall).toHaveBeenCalledTimes(2);
+      expect(prompts[1]).toContain('choose `npm test` among the first 1 commands');
+      expect(commands).toEqual([]);
+      expect(outcome.state.pendingReviewCommands).toEqual(['npm test']);
+    });
+  });
+
+  it('accepts either order among the required commands before other commands', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-fix-order' }, async (run) => {
+      const { outcome, checksCall, commands, ref } = await reviewChecks(run, {
+        state: { pendingReviewCommands: ['npm test', 'npx --no-install vitest run'] },
+        plan: plan([
+          ['V1', 'npx --no-install vitest run'],
+          ['V2', 'npm test'],
+          ['V3', 'node --version'],
+        ]),
+      });
+
+      expect(outcome.kind).toBe('ran');
+      expect(checksCall).toHaveBeenCalledTimes(1);
+      expect(commands.map((entry) => entry.command)).toEqual([
+        'npx --no-install vitest run',
+        'npm test',
+        'node --version',
+      ]);
+      expect(outcome.state.pendingReviewCommands).toEqual([
+        'npm test',
+        'npx --no-install vitest run',
+      ]);
+      expect(loadState(ref)?.pendingReviewCommands).toEqual(outcome.state.pendingReviewCommands);
+      expect(outcome).toMatchObject({
+        kind: 'ran',
+        discharged: ['npx --no-install vitest run', 'npm test'],
+      });
+    });
+  });
+
+  it.each(['run', 'skip'] as const)(
+    'names pending commands beyond the plan limit when the checks %s',
+    async (approval) => {
+      await withApplyRun(FILES, { sessionId: 'sess-checks-pending-limit' }, async (run) => {
+        const pending = Array.from(
+          { length: MAX_REVIEW_CHECKS + 1 },
+          (_, index) => `npm test -- suite-${index + 1}`,
+        );
+        const chosen = pending.slice(0, MAX_REVIEW_CHECKS);
+        const { outcome, prompts, commands, ref } = await reviewChecks(run, {
+          state: { pendingReviewCommands: pending },
+          plan: plan(chosen.map((command, index) => [`V${index + 1}`, command])),
+          config: makeConfig({ validation: { approveChecks: 'ask' } }),
+          onApproval: async () => approval,
+        });
+
+        expect(outcome.kind).toBe('ran');
+        expect(commands.map((entry) => entry.command)).toEqual(approval === 'run' ? chosen : []);
+        expect(outcome.state.pendingReviewCommands).toEqual(pending);
+        expect(loadState(ref)?.pendingReviewCommands).toEqual(pending);
+        expect(outcome).toMatchObject({
+          kind: 'ran',
+          discharged: approval === 'run' ? chosen : [],
+        });
+        expect(prompts[0]).not.toContain(pending[MAX_REVIEW_CHECKS]);
+        expect(sectionOf(outcome)).toContain(
+          '- `npm test -- suite-7`: not run, a fix check ran it and the plan holds at most 6 commands; it stays pending',
+        );
+      });
+    },
+  );
+
   it('with End-of-run checks off publishes one off row, asks the reviewer nothing and runs nothing', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-off' }, async (run) => {
       const { outcome, events, commands, checksCall } = await reviewChecks(run, {
         plan: plan([['V1', 'npm test']]),
         config: makeConfig({ validation: { endChecks: false } }),
+        state: { pendingReviewCommands: ['npm test'] },
       });
 
       expect(planned(events)).toEqual([
@@ -269,6 +381,8 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(sectionOf(outcome)).toContain('End-of-run checks are off');
       expect(sectionOf(outcome)).toContain('SPLITBRIEF ran no reviewer check before this review');
       expect(outcome.state.reviewChecks).toBeUndefined();
+      expect(outcome.state.pendingReviewCommands).toEqual(['npm test']);
+      expect(outcome).toMatchObject({ kind: 'ran', discharged: [] });
     });
   });
 
@@ -296,9 +410,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
     });
   });
 
-  it('stops at the first command with new failures, queues them and records the run', async () => {
+  it('stops at the first required command with new failures and leaves the second pending', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-red' }, async (run) => {
       const { outcome, events, commands, ref } = await reviewChecks(run, {
+        state: { pendingReviewCommands: ['npm test', 'npx --no-install vitest run'] },
         plan: plan([
           ['V1', 'npm test'],
           ['V2', 'npx --no-install vitest run'],
@@ -321,6 +436,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ['V2', 'pre-review', 'not-run', undefined, 'V1 failed'],
       ]);
       const state = outcome.state;
+      expect(state.pendingReviewCommands).toEqual(['npm test', 'npx --no-install vitest run']);
+      expect(loadState(ref)?.pendingReviewCommands).toEqual(state.pendingReviewCommands);
+      expect(outcome).toMatchObject({ kind: 'ran', discharged: ['npm test'] });
       expect(state.reviewChecks).toMatchObject({ scope: 'final', plan: { reason: null } });
       expect(state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({
@@ -421,10 +539,13 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
   it('refuses a command the policy rejects, names it in the section and never runs it', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-refused' }, async (run) => {
       const { outcome, events, commands } = await reviewChecks(run, {
+        state: { pendingReviewCommands: ['npm test && rm -rf src'] },
         plan: plan([['V1', 'npm test && rm -rf src']]),
       });
 
       expect(commands).toEqual([]);
+      expect(outcome.state.pendingReviewCommands).toEqual(['npm test && rm -rf src']);
+      expect(outcome).toMatchObject({ kind: 'ran', discharged: [] });
       expect(rows(events).at(-1)).toMatchObject({
         id: 'V1',
         status: 'refused',
@@ -917,9 +1038,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       );
       const { outcome, events, commands } = await reviewChecks(run, {
         plan: plan([['V1', 'npm test']]),
+        state: { pendingReviewCommands: ['npm test'] },
       });
 
       expect(commands).toEqual([]);
+      expect(outcome.state.pendingReviewCommands).toEqual(['npm test']);
+      expect(outcome).toMatchObject({ kind: 'ran', discharged: [] });
       expect(rows(events).at(-1)).toMatchObject({
         id: 'V1',
         moment: 'pre-review',
@@ -1047,6 +1171,7 @@ describe('runReviewChecks with validation.approve_checks', { timeout: 60_000 }, 
         config: ASK,
         onApproval: async () => 'skip',
         state: {
+          pendingReviewCommands: ['npm test', 'npx --no-install vitest run'],
           pendingTriage: {
             inputs: [
               {
@@ -1064,6 +1189,12 @@ describe('runReviewChecks with validation.approve_checks', { timeout: 60_000 }, 
 
       expect(commands).toEqual([]);
       expect(rows(events)).toEqual([]);
+      expect(outcome.state.pendingReviewCommands).toEqual([
+        'npm test',
+        'npx --no-install vitest run',
+      ]);
+      expect(loadState(ref)?.pendingReviewCommands).toEqual(outcome.state.pendingReviewCommands);
+      expect(outcome).toMatchObject({ kind: 'ran', discharged: [] });
       expect(planned(events).map((event) => [event.status, event.reason])).toEqual([
         ['planned', null],
         ['skipped', REVIEW_CHECKS_SKIP_REASON.user],

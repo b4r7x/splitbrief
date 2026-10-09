@@ -39,6 +39,7 @@ function claudeBuildCall(): (frame: Record<string, unknown>) => void {
     onOutput: () => {},
     onCallEvent: (event) => {
       for (const projected of projectRunnerCallEvents(event, {
+        rootDir: '/project',
         phase: 'implementing',
         sequence: sequence++,
       })) {

@@ -359,6 +359,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-build-consult',
+      title: 'Workflow · planner consult during the build',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'build-consult',
+        title: 'The planner answers a consult on the running brief',
+        kind: 'implementation',
+        marker: 'answering the consult on T901',
+      },
+      elements: [
+        { id: 'header', title: 'Build progress' },
+        { id: 'transcript', title: 'Running brief' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-narration',
       title: 'Workflow · a Claude Code build call narrating between tool calls',
       surface: screenSurface('workflow'),
@@ -1683,6 +1698,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-review-context-insufficient',
+      title: 'Workflow · review context recovery',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-context',
+        title: 'The review seat needs more context',
+        kind: 'question',
+        marker: 'Nothing was sent to REVIEW',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-call-failed',
+      title: 'Workflow · review call recovery',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-call-failed',
+        title: 'A review timeout offers Try again without a seat remedy',
+        kind: 'question',
+        marker: 'Review call timed out',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     // Re-entering a run at rest: the run keeps the screen and its byline row states the check.
     defineScenario({
       id: 'workflow-continuing',
@@ -1802,6 +1849,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-render-running',
+      title: 'Workflow · plan renders collected before the review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-render-running',
+        title: 'Two settled renders and a third render running for twelve seconds',
+        kind: 'review',
+        marker: 'Render workflow-review',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Passed briefs and plan render checks' },
+        { id: 'composer', title: 'Review stage, render scenario and clock' },
       ],
     }),
     // S8 run 18:06–18:58: the ten-minute pre-review `npm test` read `Implementing… 10:02`.
@@ -1992,6 +2055,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Fix brief transcript' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-fix-check-stopped-continued',
+      title: 'Workflow · a stopped fix check after continuation',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'fix-check-stopped-continued',
+        title: 'The interrupted check stays stopped while the implementer retries the brief',
+        kind: 'implementation',
+        marker: 'Fix check V2 · npm test · stopped',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stopped check and brief retry' },
+        { id: 'composer', title: 'Continued build status' },
       ],
     }),
   ],

@@ -11,10 +11,8 @@ import { runnerActivityRoleLabel } from './runner-activity-display.js';
 
 export const REVIEW_WAITING_VERDICT = 'Review · waiting for the verdict';
 
-// One vocabulary for what the run is doing right now: the byline says it as a heading, the build
-// block says it inside a sentence. Both read it here. The plan stage is one planning session, and
-// only an older run's briefs call has a verb of its own. A gate that rewrites its document from a
-// change request names that call with the verb it has outside the gate.
+// The plan stage is one planning session. Only an older run's briefs call has its own verb.
+// A gate that rewrites its document after a change request uses that call's verb outside the gate.
 export function activeVerb(
   phase: Phase,
   reviewerLabel: string | null,
@@ -59,12 +57,6 @@ export function activeVerb(
   }
 }
 
-/** The same verb inside a sentence: no capital, no ellipsis, no reviewer name. */
-export function inlineActiveVerb(phase: Phase): string {
-  if (phase === 'final-review') return 'review';
-  return activeVerb(phase, null, null).replace('…', '').toLowerCase();
-}
-
 export function reviewActivityText(
   operation: ActiveOperation | null | undefined,
   reviewerLabel: string | null,
@@ -91,25 +83,28 @@ export function reviewActivityText(
 
 export function suiteStatusText(
   phase: Phase,
-  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command'>,
+  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command' | 'scenario'>,
 ): string {
   const text = suiteStageText(suite);
   return phaseStage(phase) === 'review' ? `Review${SOFT_SEP}${text}` : text;
 }
 
 /**
- * The command run before a review, or its re-run at the run base, and its command text. A reviewer
- * check carries its id; a full-suite stage from an older session keeps the words it had.
+ * A check's id and command, or a render's scenario without command text. A full-suite stage from
+ * an older session keeps the words it had.
  */
 export function suiteStageText(
-  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command'>,
+  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command' | 'scenario'>,
 ): string {
+  if (suite.scenario !== undefined) return `Render ${suite.scenario}`;
   return `${suiteMomentLabel(suite)}${SOFT_SEP}${suite.command}`;
 }
 
 function suiteMomentLabel(suite: Pick<RunningSuiteStage, 'id' | 'moment'>): string {
   const id = suite.id === undefined ? '' : ` ${suite.id}`;
   switch (suite.moment) {
+    case 'plan':
+      return `Plan check${id}`;
     case 'base':
       return `Base re-run${id}`;
     case 'brief':

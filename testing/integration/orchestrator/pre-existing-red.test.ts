@@ -224,6 +224,7 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
     expect(
       checksDone.map((event) => [event.moment, event.id, event.command, event.passed]),
     ).toEqual([
+      ['plan', 'T001-K1', 'node validate.mjs', false],
       ['pre-review', 'V1', 'npm test', false],
       ['base', 'V1', 'npm test', false],
     ]);

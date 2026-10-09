@@ -5,15 +5,15 @@ import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { formatElapsedClock, formatTime } from '../../../utils/format-time.js';
+import { assertNever } from '../../../utils/type-guards.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   ActiveOperation,
   OpenTool,
-  OperationRole,
   OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
-import { inlineActiveVerb, suiteStatusText, reviewActivityText } from './phase-verb.js';
+import { suiteStatusText, reviewActivityText } from './phase-verb.js';
 import { stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
 import { buildProgressRowCount } from '../layout/chrome-rows.js';
@@ -54,12 +54,6 @@ export interface DeriveBuildProgressInput {
   now: number;
 }
 
-// Calls the run makes beside the seat's own work; the phase names the seat's work, never theirs.
-const SIDE_CALL_ROLES: ReadonlySet<OperationRole> = new Set<OperationRole>([
-  'summary',
-  'compaction',
-]);
-
 /** The tool a call ran on: the Claude runner names its calls `claude`, its command, not its id. */
 function runnerTool(runnerName: string): string {
   return cliToolIdForCommand(runnerName) ?? runnerName;
@@ -92,17 +86,29 @@ function activityLine(input: DeriveBuildProgressInput): string {
         : (runnerLabel(operation.backendKind, operation.runnerName) ?? null),
     );
   }
-  // Between calls there is no seat and no operation to name, and printing the phase twice would
-  // read as two facts. The phase alone is the whole truth at that moment.
   if (operation === null) {
-    return inlineActiveVerb(input.lifecycle.phase);
+    return input.lifecycle.phase === 'escalating' ? 'Consulting the planner' : 'Between calls';
   }
-  // The runner is named on this line already, so naming its seat too says it twice
-  // ("implementer implementing"): the phase's own verb is what the seat is doing. A side call is
-  // the exception — its role is the fact the phase cannot tell.
-  const doing = SIDE_CALL_ROLES.has(operation.role)
-    ? operation.role
-    : inlineActiveVerb(operation.phase);
+  const task = operation.taskId === undefined ? '' : ` on ${operation.taskId}`;
+  let doing: string;
+  switch (operation.role) {
+    case 'summary':
+    case 'compaction':
+      doing = operation.role;
+      break;
+    case 'implementer':
+      doing = `working${task}`;
+      break;
+    case 'review':
+      doing = 'reviewing';
+      break;
+    case 'planner':
+    case 'escalation':
+      doing = `answering the consult${task}`;
+      break;
+    default:
+      return assertNever(operation.role);
+  }
   return [runnerLabel(operation.backendKind, operation.runnerName), doing]
     .filter((part): part is string => part !== undefined && part !== '')
     .join(SOFT_SEP);

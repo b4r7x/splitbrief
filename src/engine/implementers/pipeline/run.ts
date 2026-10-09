@@ -562,6 +562,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         phase,
         taskId: task.id,
         file: task.suggestedFiles[0],
+        lineageAttempts: opts.lineageAttempts,
       });
     const startTime = Date.now();
     const callContext = createImplementerCallContext({
@@ -585,7 +586,13 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         ...(temperature !== undefined && { temperature }),
         signal: opts.signal,
         onCallEvent: (event) => {
-          if (phase) baseConfig.publisher?.publishCallEvent({ phase, taskId: task.id, event });
+          if (phase)
+            baseConfig.publisher?.publishCallEvent({
+              phase,
+              taskId: task.id,
+              rootDir: projectDir,
+              event,
+            });
         },
         sandboxEnv: opts.sandboxEnv,
         ...(opts.changeDetection !== undefined && { changeDetection: opts.changeDetection }),

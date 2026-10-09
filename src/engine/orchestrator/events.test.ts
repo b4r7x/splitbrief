@@ -61,6 +61,40 @@ describe('createBusTextHandler', () => {
   });
 });
 
+describe('implementer call activity', () => {
+  it('spells workspace files relatively and keeps outside files absolute', () => {
+    const { bus, events } = makeBusRecorder();
+    const publisher = createImplementerPublisher(bus);
+    const rootDir = '/state/trees/project/session';
+    for (const field of ['file_path', 'path', 'AbsolutePath', 'TargetFile']) {
+      for (const path of [`${rootDir}/src/features/login.ts`, '/other/src/login.ts']) {
+        publisher.publishCallEvent({
+          phase: 'implementing',
+          taskId: TASK,
+          rootDir,
+          event: {
+            type: 'call_tool_use_done',
+            ts: 0,
+            callId: 'implementer-path',
+            role: 'implementer',
+            backendKind: 'cli',
+            channel: 'tool',
+            toolUse: { id: field, name: 'Read', input: { [field]: path } },
+          },
+        });
+      }
+    }
+
+    const activities = events.filter((event) => event.type === 'runner_call_activity');
+    expect(activities.map((event) => [event.target, event.label])).toEqual(
+      Array.from({ length: 4 }, () => [
+        ['src/features/login.ts', 'reading src/features/login.ts'],
+        ['/other/src/login.ts', 'reading /other/src/login.ts'],
+      ]).flat(),
+    );
+  });
+});
+
 describe('publishPlannerStatus', () => {
   it('falls back to plannerTool / plannerModel from state when extra is not provided', () => {
     const { bus, events } = makeBusRecorder();

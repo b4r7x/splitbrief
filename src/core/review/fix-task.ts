@@ -124,15 +124,18 @@ export function fixCheckVerdict(input: {
   if (ownLeft > 0) {
     return [
       own === 1
-        ? 'your 1 failure remains'
-        : `${ownLeft} of your ${own} failures ${ownLeft === 1 ? 'remains' : 'remain'}`,
+        ? 'your 1\u00a0failure remains'
+        : `${ownLeft}\u00a0of your ${own}\u00a0failures ${ownLeft === 1 ? 'remains' : 'remain'}`,
     ];
   }
   if (!proven)
-    return [`your ${own} ${own === 1 ? 'failure' : 'failures'} not shown`, 'not proven fixed'];
+    return [
+      `your ${own}\u00a0${own === 1 ? 'failure' : 'failures'} not shown`,
+      'not\u00a0proven\u00a0fixed',
+    ];
   return [
-    `your ${own} ${own === 1 ? 'failure' : 'failures'} gone`,
-    ...(others > 0 ? [`${others} ${others === 1 ? 'other' : 'others'} left`] : []),
+    `your ${own}\u00a0${own === 1 ? 'failure' : 'failures'} gone`,
+    ...(others > 0 ? [`${others}\u00a0${others === 1 ? 'other' : 'others'} left`] : []),
   ];
 }
 

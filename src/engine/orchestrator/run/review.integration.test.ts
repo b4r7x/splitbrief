@@ -339,6 +339,7 @@ describe('runScheduledReview saved recovery', () => {
         return 'Keep the API';
       }),
     }).callbacks;
+    const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
     const planner = makePlanner({
       typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
@@ -350,17 +351,73 @@ describe('runScheduledReview saved recovery', () => {
             rejected: [{ findingId: 'A1', reason: 'The answer keeps the approved API' }],
           };
         },
+        undefined,
+        checks,
       ),
     });
     const result = await runScheduledReview({
-      wctx: makeWctx({ ...ref, callbacks, planner, config: makeNoValidationConfig() }),
+      wctx: makeWctx({
+        ...ref,
+        callbacks,
+        planner,
+        config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      }),
       state,
       callbacks,
       setTrackedState: vi.fn(),
     });
     expect(result.status).toBe('continue');
     expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
+    expect(checks).not.toHaveBeenCalled();
     expect(result.state.pendingTriage).toBeUndefined();
+  });
+
+  it('re-reviews an answer without another reviewer-checks plan call', async () => {
+    const ref = setupProject();
+    const state = scheduledReviewState();
+    saveState(ref, state);
+    const callbacks = makeCallbacks({
+      onPlannerReply: vi.fn(async () => 'Keep the API'),
+    }).callbacks;
+    const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
+    const reviewPrompts: string[] = [];
+    const planner = makePlanner({
+      typedCall: typedCallPlanAndReview(
+        () => planFromTasks(state.tasks),
+        (prompt, call) => {
+          reviewPrompts.push(prompt);
+          return call === 1
+            ? {
+                ...passingReviewVerdict(prompt),
+                ask: { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' },
+              }
+            : {
+                ...passingReviewVerdict(prompt),
+                rejected: [{ findingId: 'A1', reason: 'The answer keeps the approved API' }],
+              };
+        },
+        undefined,
+        checks,
+      ),
+    });
+    const result = await runScheduledReview({
+      wctx: makeWctx({
+        ...ref,
+        callbacks,
+        planner,
+        config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+    });
+    expect(result.status).toBe('continue');
+    expect(reviewPrompts).toHaveLength(2);
+    expect(reviewPrompts[1]).toContain('Keep the API');
+    expect(checks).toHaveBeenCalledOnce();
+    expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
+    expect(result.state.pendingTriage).toBeUndefined();
+    expect(result.state.pendingScheduledReview).toBeUndefined();
   });
 
   it('halts a scheduled review at its cap and resumes triage with pending tasks intact', async () => {

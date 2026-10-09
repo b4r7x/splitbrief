@@ -2,7 +2,7 @@ import { baseSplit } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { formatElapsedClock } from '../../../utils/format-time.js';
+import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
 
@@ -47,7 +47,21 @@ function stalledLine(event: Extract<EngineEvent, { type: 'runner_call_stalled' }
 
 function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): string | null {
   // A `full_suite` without an id is a full-suite stage of a session from before the reviewer chose its checks.
-  if (event.id === undefined || event.status === 'running') return null;
+  if (event.id === undefined || event.status === 'running' || event.status === 'stopped')
+    return null;
+  if (event.moment === 'plan') {
+    const label =
+      event.scenario === undefined ? `plan check ${event.id}` : `Render ${event.scenario}`;
+    const detail = event.detail === undefined ? '' : ` (${event.detail})`;
+    if (event.status === 'refused') return `${label}: refused${detail}`;
+    if (event.status === 'not-run') return `${label}: not run${detail}`;
+    const verdict =
+      event.passed === true ? (event.scenario === undefined ? 'passed' : 'rendered') : 'failed';
+    const duration =
+      event.duration === undefined ? '' : `${SOFT_SEP}${formatDuration(event.duration)}`;
+    const command = event.scenario === undefined ? ` (${event.command})` : '';
+    return `${label}: ${verdict}${duration}${command}`;
+  }
   const label =
     event.moment === 'base'
       ? 'base re-run'
