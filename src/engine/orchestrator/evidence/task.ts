@@ -30,6 +30,11 @@ function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): E
   if (run.command !== undefined) entry.command = run.command;
   if (run.exitCode !== undefined) entry.exitCode = run.exitCode;
   if (run.output.trim() !== '') entry.output = run.output;
+  if (run.base !== undefined) {
+    entry.base = {};
+    if (run.base.exitCode !== undefined) entry.base.exitCode = run.base.exitCode;
+    if (run.base.output.trim() !== '') entry.base.output = run.base.output;
+  }
   if (run.preExisting !== undefined && run.preExisting.length > 0) {
     entry.preExisting = [...run.preExisting];
   }

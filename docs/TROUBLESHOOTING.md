@@ -751,6 +751,20 @@ To measure the project before a run, run its own commands directly. `doctor` run
 
 ---
 
+### Symptom: The base re-run is red although the same commit passes in your checkout
+
+**Likely cause:** The run base copy differs from your checkout. A run that started from a commit gets a detached Git worktree at that commit with the run's starting snapshot on top (`withRunBaseTree`, `src/engine/orchestrator/isolation/base-tree.ts`). That copy has the Git history, file modes and symlinks. It does not have ignored files that only your checkout holds, such as `.env` or a build output. A run that recorded no base commit (a staged-copy run, or a repository with no commit) gets only the snapshot copy, without Git history, file modes or symlinks. There a red base re-run reads `not verified at the run base · the run recorded no base commit, …`, and the reviewer decides.
+
+**Fix:**
+
+1. Open `.splitbrief/sessions/<session>/evidence.json`. Find the reviewer check entry by its id (`V1`, …). Its `output` is the run workspace output. Its `base.output` and `base.exitCode` are the base re-run output, bounded like the workspace output.
+2. Find the first failing stage in `base.output`. A failure that names a missing ignored file means the gate needs a file that Git does not track. Track the file, or make the gate create it.
+3. Run the command in a clean worktree of the commit to confirm: `git worktree add --detach <dir> <commit>`, link `node_modules` if the project uses it, run the command, then `git worktree remove --force <dir>`.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#pre-existing-failures), [docs/WORKFLOW.md](./WORKFLOW.md).
+
+---
+
 ## Workflow issues
 
 ### Symptom: `Still working` sits in the byline for minutes with OpenCode

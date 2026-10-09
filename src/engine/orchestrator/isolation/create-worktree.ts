@@ -32,7 +32,7 @@ async function propagateSplitbriefState(projectDir: string, wtPath: string): Pro
   }
 }
 
-async function initWorktreeSubmodules(
+export async function initWorktreeSubmodules(
   projectDir: string,
   wtPath: string,
   git: GitClient,

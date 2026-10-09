@@ -1,5 +1,8 @@
 import { error, matches } from '../../utils/error.js';
-import { sanitizeTerminalDiagnosticText } from '../../utils/display-text.js';
+import {
+  sanitizeTerminalDiagnosticText,
+  sanitizeTerminalDisplayText,
+} from '../../utils/display-text.js';
 
 export const spawnError = {
   streamsUnavailable: () => error('process-streams-unavailable', 'Process streams not available'),
@@ -97,8 +100,8 @@ export const processError = {
     const subject = label ?? command;
     // Tool output is column-structured (formatter diffs, test reports); losing the
     // line breaks here flattens it into unreadable soup before any renderer sees it.
-    const stderr = sanitizeTerminalDiagnosticText(opts.stderr, { preserveLineBreaks: true });
-    const output = sanitizeTerminalDiagnosticText(opts.output ?? opts.detail ?? opts.stderr, {
+    const stderr = sanitizeTerminalDisplayText(opts.stderr, { preserveLineBreaks: true });
+    const output = sanitizeTerminalDisplayText(opts.output ?? opts.detail ?? opts.stderr, {
       preserveLineBreaks: true,
     });
     const detail = stderr.trim() || sanitizeTerminalDiagnosticText(opts.detail ?? '').trim();

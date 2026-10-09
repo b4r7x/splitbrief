@@ -566,8 +566,12 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          syntax, program by path, inline code, download-and-run launcher, setup
          command, or script, task file or interpreter script this run changed.
          Each refused command is a named row. A red reviewer check re-runs at
-         the run base with the same text; failures red there too are
-         pre-existing. A timeout or a red without failure keys is never
+         the run base with the same text, in a detached Git worktree at the
+         base commit with the base snapshot on top (withRunBaseTree); failures
+         red there too are pre-existing. With no base commit the copy has no
+         Git history, file modes or symlinks: a red there is "not verified at
+         the run base". The base output goes to the check's base field in
+         evidence.json. A timeout or a red without failure keys is never
          pre-existing: with a red base re-run it is "not verified at the run
          base", stays new, and the reviewer decides. The first reviewer check
          with new failures stops the list; each later one is not run (<id> failed).

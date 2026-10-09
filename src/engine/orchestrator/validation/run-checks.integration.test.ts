@@ -445,6 +445,7 @@ describe('runChecks', () => {
         checkId: 'K1',
         status: 'fail',
         output: 'src/a.ts(1,1): error TS1005',
+        failure: { keys: ['src/a.ts(1,1)'] },
         command: 'tsc --noEmit',
         exitCode: 1,
       },

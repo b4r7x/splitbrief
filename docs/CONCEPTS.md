@@ -174,7 +174,7 @@ A **stack** is the language toolchain a planner `test` check takes its command f
 
 A test check that resolves to no command is `not-runnable` (not a pass); a required one halts with `required-checks-unrunnable`.
 
-A red reviewer check whose failures are also red on a disposable run base copy, with the same command text, is *failed but pre-existing*. The base check runs only after a red. The evidence ledger carries `preExisting` keys in check entries. The Checks Log reports these keys to the reviewer, and only new failures become pending inputs. A timeout, or a red with no failing test name and no diagnostic line, has no key to compare. When the base re-run is red too, such a red is *not verified at the run base*: it stays new, becomes a pending input, and the reviewer decides.
+A red reviewer check whose failures are also red on a disposable run base copy, with the same command text, is *failed but pre-existing*. The base check runs only after a red. The evidence ledger carries `preExisting` keys in check entries, and the base re-run's exit code and output in `base`. The Checks Log reports these keys to the reviewer, and only new failures become pending inputs. A timeout, or a red with no failing test name and no diagnostic line, has no key to compare. When the base re-run is red too, such a red is *not verified at the run base*: it stays new, becomes a pending input, and the reviewer decides.
 
 ---
 

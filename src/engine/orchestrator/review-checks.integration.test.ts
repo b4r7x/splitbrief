@@ -36,7 +36,7 @@ const FILES = {
 const NEW_RED = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
 const OLD_RED = 'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.';
 
-type CommandAnswer = 'pass' | { red: string } | { throws: unknown };
+type CommandAnswer = 'pass' | { red: string; stderr?: string } | { throws: unknown };
 
 /**
  * Runs the reviewer checks on a real run workspace and run base. `answer` decides each command by
@@ -77,7 +77,12 @@ async function reviewChecks(
     const answer = opts.answer?.(command, at) ?? 'pass';
     if (answer === 'pass') return { stdout: 'ok', stderr: '', code: 0 };
     if ('throws' in answer) throw answer.throws;
-    throw processError.exitCode({ command, code: 1, stderr: '', output: answer.red });
+    throw processError.exitCode({
+      command,
+      code: 1,
+      stderr: answer.stderr ?? '',
+      output: answer.red,
+    });
   });
   const prompts: string[] = [];
   const checksCall = vi.fn((prompt: string) => {
@@ -475,6 +480,72 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
       ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1 });
     });
+  });
+
+  // L4: the base re-run of a live run was red for reasons nobody could read; its output was dropped.
+  it('records the base re-run output on the check evidence beside the workspace output', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-output' }, async (run) => {
+      const { ref } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (_command, at) => ({ red: at === 'workspace' ? NEW_RED : OLD_RED }),
+      });
+
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
+        exitCode: 1,
+        output: NEW_RED,
+        base: { exitCode: 1, output: OLD_RED },
+      });
+    });
+  });
+
+  // L4 review B1: a long red kept only its first 4000 characters and its last 4096, so a vitest
+  // failure list at the end was lost and both sides matched on the same stderr notice.
+  it('keys a long red by its whole output, not by a stderr notice it shares with the run base', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-long-red' }, async (run) => {
+      const passing = Array.from({ length: 200 }, (_, i) => ` ✓ src/x.test.ts > passes ${i} 2ms`);
+      const red = (failing: string) => ({
+        red: [...passing, ` FAIL  ${failing}`].join('\n'),
+        stderr: 'biome.json:38: the key files.ignore is deprecated',
+      });
+      const { outcome, events, ref } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (_command, at) =>
+          red(at === 'workspace' ? 'src/new.test.ts > adds' : 'src/old.test.ts > keeps'),
+      });
+
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).toMatchObject({ newFailures: 1, preExisting: 0 });
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('src/new.test.ts::adds');
+      const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+      expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+    });
+  });
+
+  it('marks a red at a run base copy with no base commit not verified, even when its keys match', async () => {
+    await withApplyRun(
+      FILES,
+      { sessionId: 'sess-checks-base-incomplete', strategy: 'staged-copy' },
+      async (run) => {
+        const { outcome, events, ref } = await reviewChecks(run, {
+          plan: plan([['V1', 'npm test']]),
+          answer: () => ({ red: OLD_RED }),
+        });
+
+        const reason =
+          'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks';
+        expect(sectionOf(outcome)).toContain(
+          `- V1 \`npm test\`: failed (src/legacy.ts(3,7)), not verified at the run base (${reason}); the reviewer decides`,
+        );
+        expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+        expect(
+          rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+        ).toMatchObject({ newFailures: 0, preExisting: 0, notVerified: 1, detail: reason });
+        const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+        expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
+      },
+    );
   });
 
   it('runs a reviewer check of any stack, and a package script without plan approval', async () => {
