@@ -1,14 +1,13 @@
+import { fixReviewChecks } from '../../../core/review/fix-task.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { publishChecksRun } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runBaseOf } from '../isolation/base-tree.js';
-import { splitAtRunBase } from '../review-checks.js';
+import { runReviewCheck } from '../review-checks.js';
 import {
-  enabledReviewChecks,
   planApprovesNpmScripts,
-  reviewCheckList,
   runChecks,
   type CheckRunResult,
   type RunChecksOptions,
@@ -29,8 +28,8 @@ type TaskChecksContext = Pick<
 >;
 
 /**
- * The options a brief's checks run under. They name the last review's reviewer checks, so a fix
- * task can run the reviewer check it answers again, under the same command policy and run base.
+ * The options a brief's checks run under. Reviewer commands come from the fix task's findings,
+ * under the same command policy and run base.
  */
 function taskCheckOptions(opts: {
   wctx: TaskChecksContext;
@@ -43,7 +42,7 @@ function taskCheckOptions(opts: {
     task,
     plan: state.plan,
     tasks: state.tasks,
-    reviewChecks: enabledReviewChecks(wctx.config, state.reviewChecks),
+    reviewChecks: fixReviewChecks(task),
     base: runBaseOf(wctx, state),
     runCommand: opts.runCommand,
     projectDir: wctx.workspaceDir,
@@ -61,8 +60,9 @@ function taskCheckOptions(opts: {
 }
 
 /**
- * Runs the brief's checks and records them. A red reviewer check runs again at the run base, as at
- * review: `settled` names each one whose every failure is also red there.
+ * Runs the brief's checks and records them. Each fix reviewer check gets its own row and clock;
+ * its command comes from the fix task's findings.
+ * A red runs again at the run base: `settled` names each one whose every failure is also red there.
  */
 export async function runTaskChecks(opts: {
   wctx: TaskChecksContext;
@@ -78,24 +78,29 @@ export async function runTaskChecks(opts: {
   if (opts.checkIds.length === 0) return { state, runs: [], settled };
   const checkOptions = taskCheckOptions(opts);
   const reviewCommands = new Map(
-    reviewCheckList(checkOptions.reviewChecks).map((check) => [check.id, check.value]),
+    (checkOptions.reviewChecks ?? []).map((check) => [check.id, check.value]),
   );
-  const runs: CheckRunResult[] = [];
-  for (const run of await runChecks(opts.checkIds, checkOptions)) {
-    const command = reviewCommands.get(run.checkId);
-    if (run.status !== 'fail' || command === undefined) {
-      runs.push(run);
-      continue;
-    }
-    const { fresh, preExisting } = await splitAtRunBase({ run, command, checkOptions });
-    if (fresh.length === 0) settled.add(run.checkId);
-    runs.push(preExisting.length > 0 ? { ...run, preExisting } : run);
+  const runs = await runChecks(
+    opts.checkIds.filter((id) => !reviewCommands.has(id)),
+    checkOptions,
+  );
+  for (const id of new Set(opts.checkIds)) {
+    const command = reviewCommands.get(id);
+    if (command === undefined) continue;
+    const { run, fresh } = await runReviewCheck({
+      check: { id, command },
+      moment: 'brief',
+      checkOptions,
+    });
+    if (run.status === 'fail' && fresh.length === 0) settled.add(id);
+    runs.push(run);
   }
   state = await recordTaskCheckRuns({
     wctx,
     state,
     task,
     runs,
+    settled,
     setTrackedState: opts.setTrackedState,
   });
   return { state, runs, settled };
@@ -107,10 +112,14 @@ export async function recordTaskCheckRuns(opts: {
   state: WorkflowState;
   task: Task;
   runs: readonly CheckRunResult[];
+  settled?: ReadonlySet<string> | undefined;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
 }): Promise<WorkflowState> {
   const { wctx, task, runs } = opts;
-  const checkResults = runs.map((run) => ({ id: run.checkId, passed: run.status === 'pass' }));
+  const checkResults = runs.map((run) => ({
+    id: run.checkId,
+    passed: run.status === 'pass' || opts.settled?.has(run.checkId) === true,
+  }));
   const state = transitionAndSave(
     { projectDir: wctx.projectDir, sessionId: wctx.sessionId },
     opts.state,

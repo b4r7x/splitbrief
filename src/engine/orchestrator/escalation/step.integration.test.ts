@@ -576,7 +576,6 @@ describe('runRetryStep', () => {
       completed: true,
       method: 'local',
       attempts: 1,
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
       durationMs: expect.any(Number),
     });
     expect(events.find((event) => event.type === 'task_completed')).toMatchObject({
@@ -694,7 +693,6 @@ describe('runRetryStep', () => {
       completed: true,
       method: 'local',
       attempts: 1,
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
       durationMs: expect.any(Number),
     });
   });

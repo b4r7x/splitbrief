@@ -33,7 +33,7 @@ function plainStdout(): string {
     'reviewer check declined: test/server.test.mjs (covered by V1)',
     'reviewer check V1: refused (runs the package script lint, which this run changed)',
     'reviewer check V2: failed (npm test)',
-    'reviewer check V2 at base: not run (this run recorded no run base)',
+    'base re-run V2: not run (this run recorded no run base)',
     'reviewer check V3: not run (V2 failed)',
     'review: passed',
     'done: 2 tasks',
@@ -172,6 +172,21 @@ afterEach(() => {
 describe('assertPlainStdout', () => {
   it('accepts the --plain grammar and the required lines', () => {
     expect(() => assertPlainStdout(plainStdout())).not.toThrow();
+  });
+
+  it('accepts fix checks and base re-runs with each failure split', () => {
+    const stdout = [
+      plainStdout(),
+      'fix check V1: failed (npm test)',
+      'base re-run V1: passes',
+      'base re-run V1: fails',
+      'base re-run V1: 1 new, 2 pre-existing',
+      "base re-run V1: pre-existing · all 2 failures also fail before this run's changes",
+      "base re-run V1: pre-existing · the failure also fails before this run's changes",
+      'base re-run V1: refused (names no program)',
+    ].join('\n');
+
+    expect(() => assertPlainStdout(stdout)).not.toThrow();
   });
 
   it('rejects a line outside the grammar', () => {

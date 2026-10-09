@@ -52,8 +52,8 @@ export type RunChecksOptions = {
   task?: Task | undefined;
   tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
-  /** The commands the last review chose: checks `V1…`. */
-  reviewChecks?: ReviewChecksRecord | undefined;
+  /** The reviewer checks as required `cmd` checks: a red one splits at the run base; a script the run changed refuses it. */
+  reviewChecks?: readonly Check[] | undefined;
   /** The run base: a reviewer check whose script this run changed is refused against it. */
   base?: RunBase | undefined;
   projectDir: string;
@@ -89,8 +89,8 @@ export function reviewCheckList(record: ReviewChecksRecord | undefined): Check[]
 export function enabledReviewChecks(
   config: Config,
   record: ReviewChecksRecord | undefined,
-): ReviewChecksRecord | undefined {
-  return resolveEndChecks(config) ? record : undefined;
+): Check[] {
+  return resolveEndChecks(config) ? reviewCheckList(record) : [];
 }
 
 export function checkRegistry(
@@ -101,7 +101,7 @@ export function checkRegistry(
       ...(opts.plan?.checks ?? []),
       ...(opts.tasks ?? []).flatMap((task) => task.checks ?? []),
       ...(opts.task?.checks ?? []),
-      ...reviewCheckList(opts.reviewChecks),
+      ...(opts.reviewChecks ?? []),
     ].map((check) => [check.id, check]),
   );
 }
@@ -340,7 +340,7 @@ export async function runChecks(
   });
   const packageScripts = readPackageScripts(opts.projectDir);
   const registry = checkRegistry(opts);
-  const reviewIds = new Set(reviewCheckList(opts.reviewChecks).map((check) => check.id));
+  const reviewIds = new Set((opts.reviewChecks ?? []).map((check) => check.id));
   const results: CheckRunResult[] = [];
   const seen = new Set<string>();
   for (const checkId of checkIds) {

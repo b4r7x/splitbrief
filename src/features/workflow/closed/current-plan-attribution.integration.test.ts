@@ -200,7 +200,7 @@ describe('independent closed attribution proof', () => {
           details: {
             status: 'done',
             method: 'local',
-            validation: [],
+
             changedFiles: task.suggestedFiles,
           },
         });

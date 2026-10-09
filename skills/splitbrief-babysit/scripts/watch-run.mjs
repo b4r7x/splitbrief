@@ -14,7 +14,7 @@ import { setTimeout } from 'node:timers/promises';
 const [sessionArg, cursorArg, secondsArg = '30'] = process.argv.slice(2);
 const seconds = Number(secondsArg);
 const attention =
-  /error|warning|fail|retry|escalat|stall|recovery|paused|input_required|artifact_written|task_completed|task_skipped|workflow_complete|^validate$/u;
+  /error|warning|fail|retry|escalat|stall|recovery|paused|input_required|artifact_written|task_completed|task_skipped|workflow_complete|^checks_run$/u;
 const maxLineBytes = 1024 * 1024;
 
 async function watch() {
@@ -84,7 +84,12 @@ async function watch() {
           pending = pending.subarray(newline + 1);
           const type = row?.type ?? row?.kind;
           if (typeof type !== 'string') throw new Error('Session log entry has no event kind');
-          if (attention.test(type)) {
+          const data = row.data ?? row;
+          const needsAttention =
+            type === 'full_suite'
+              ? data.status === 'refused' || (data.status === 'done' && data.passed === false)
+              : attention.test(type);
+          if (needsAttention) {
             event = row;
             eventOffset = offset;
             break;

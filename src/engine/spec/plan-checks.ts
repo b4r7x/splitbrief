@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { TaskContextFit } from '../../core/schemas/enums.js';
 import type { PlanProposal, TaskSpec } from '../../core/schemas/plan.js';
+import { REVIEW_CHECK_ID } from '../../core/schemas/review.js';
 import { topoSort } from '../../core/state/topo-sort.js';
 import { isPathConfined } from '../../lib/path-confinement.js';
 import { isENOENT } from '../../lib/process/errors.js';
@@ -43,9 +44,6 @@ export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | und
 export type PlanCheckError = Readonly<{ code: PlanCheckCode; message: string }>;
 
 const isCycle = matches('topo-circular-dependency');
-
-/** The ids the reviewer gives the commands it chooses before a review. */
-const REVIEW_CHECK_ID = /^V\d+$/;
 
 function duplicates(ids: readonly string[]): string[] {
   return [...new Set(ids.filter((id, index) => ids.indexOf(id) !== index))];

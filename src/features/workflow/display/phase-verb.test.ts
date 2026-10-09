@@ -72,4 +72,10 @@ describe('suiteStageText', () => {
       'Base re-run V2 · npm test',
     );
   });
+
+  it('names a reviewer check a fix brief runs again as a fix check', () => {
+    expect(suiteStageText({ id: 'V2', moment: 'brief', command: 'npm test' })).toBe(
+      'Fix check V2 · npm test',
+    );
+  });
 });

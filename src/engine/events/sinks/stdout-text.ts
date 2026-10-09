@@ -1,3 +1,5 @@
+import { baseSplit } from '../../../core/review/base-split.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
 
@@ -26,16 +28,30 @@ function reviewChecksLines(event: Extract<EngineEvent, { type: 'review_checks' }
 function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): string | null {
   // A `full_suite` without an id is a full-suite stage of a session from before the reviewer chose its checks.
   if (event.id === undefined || event.status === 'running') return null;
-  const at = event.moment === 'base' ? ' at base' : '';
+  const label =
+    event.moment === 'base'
+      ? 'base re-run'
+      : event.moment === 'brief'
+        ? 'fix check'
+        : 'reviewer check';
   const detail = event.detail ?? 'no detail given';
-  if (event.status === 'refused') return `reviewer check ${event.id}${at}: refused (${detail})`;
-  if (event.status === 'not-run') return `reviewer check ${event.id}${at}: not run (${detail})`;
+  if (event.status === 'refused') return `${label} ${event.id}: refused (${detail})`;
+  if (event.status === 'not-run') return `${label} ${event.id}: not run (${detail})`;
   if (event.moment === 'base') {
-    return `reviewer check ${event.id} at base: ${event.passed === true ? 'passes' : 'fails'}`;
+    if (
+      event.passed === false &&
+      event.newFailures !== undefined &&
+      event.preExisting !== undefined
+    ) {
+      const split = baseSplit({ newFailures: event.newFailures, preExisting: event.preExisting });
+      const why = split.why === null ? '' : `${SOFT_SEP}${split.why}`;
+      return `${label} ${event.id}: ${split.verdict}${why}`;
+    }
+    return `${label} ${event.id}: ${event.passed === true ? 'passes' : 'fails'}`;
   }
   return event.passed === true
-    ? `reviewer check ${event.id}: passed (${event.command})`
-    : `reviewer check ${event.id}: failed (${event.command})`;
+    ? `${label} ${event.id}: passed (${event.command})`
+    : `${label} ${event.id}: failed (${event.command})`;
 }
 
 /**
@@ -51,8 +67,13 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   reviewer check declined: <target> (<reason>)
  *   reviewer check V1: passed (<command>) | failed (<command>)
  *   reviewer check V1: refused (<detail>) | not run (<detail>)
- *   reviewer check V1 at base: passes | fails
- *   reviewer check V1 at base: refused (<detail>) | not run (<detail>)
+ *   base re-run V1: passes | fails
+ *   base re-run V1: <M> new, <N> pre-existing
+ *   base re-run V1: pre-existing · all <N> failures also fail before this run's changes
+ *   base re-run V1: pre-existing · the failure also fails before this run's changes
+ *   base re-run V1: refused (<detail>) | not run (<detail>)
+ *   fix check V1: passed (<command>) | failed (<command>)
+ *   fix check V1: refused (<detail>) | not run (<detail>)
  *   review: passed
  *   done: 3 tasks
  */

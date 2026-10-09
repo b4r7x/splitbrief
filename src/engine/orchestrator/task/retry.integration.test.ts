@@ -92,7 +92,7 @@ describe('retryAndRecord — retry budget', () => {
     expect(taskBreakdowns[0]?.method).toBe('local');
   });
 
-  it('keeps the initial failure evidence and the changed files of both attempts', async () => {
+  it('keeps the changed files of both attempts', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/task.ts'] });
     let state = implementingState([task]);
@@ -124,7 +124,6 @@ describe('retryAndRecord — retry budget', () => {
       }),
       task,
       initialError: 'test failed',
-      initialValidation: [{ stage: 'test', passed: false, error: 'initial failed' }],
       initialChangedFiles: ['src/initial.ts'],
       state,
       taskStartTime: Date.now(),
@@ -134,15 +133,6 @@ describe('retryAndRecord — retry budget', () => {
     });
 
     expect(result.completed).toBe(true);
-    expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.validation).toEqual([
-      {
-        stage: 'test',
-        passed: false,
-        errorSummary: 'initial failed',
-        retryState: 'initial-failure',
-        changedFiles: ['src/initial.ts'],
-      },
-    ]);
     expect(readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.changedFiles).toEqual([
       'src/initial.ts',
       'src/task.ts',
@@ -295,8 +285,6 @@ describe('retryAndRecord — retry budget', () => {
 });
 
 describe('retryAndRecord — the exhaustion issue', () => {
-  const lintFailure = { stage: 'lint' as const, passed: false, error: 'lint: unexpected any' };
-
   function stubLadder(result: RetryResult, pendingRecovery?: RecoveryIssue) {
     vi.mocked(handleRetryAndEscalation).mockImplementationOnce(async ({ currentState }) => ({
       state: pendingRecovery === undefined ? currentState : { ...currentState, pendingRecovery },
@@ -317,7 +305,6 @@ describe('retryAndRecord — the exhaustion issue', () => {
       wctx,
       task,
       initialError: 'lint: unexpected any',
-      initialValidation: [lintFailure],
       state,
       taskStartTime: Date.now(),
       tokensBefore: { ...state.tokenUsage },
@@ -327,8 +314,8 @@ describe('retryAndRecord — the exhaustion issue', () => {
     return { res, events, wctx };
   }
 
-  it('shows the error the brief actually died on and still records the first one', async () => {
-    const { res, wctx } = await exhaust(
+  it('shows the error the brief actually died on', async () => {
+    const { res } = await exhaust(
       failedRetry(3, { lastError: 'tsc: Type X is not assignable to Y' }),
     );
 
@@ -339,20 +326,13 @@ describe('retryAndRecord — the exhaustion issue', () => {
       'tsc: Type X is not assignable to Y',
     );
     expect(JSON.stringify(res.state.pendingRecovery)).not.toContain('lint: unexpected any');
-    expect(readEvidenceLedger(wctx)?.tasks[0]?.validation?.[0]).toMatchObject({
-      stage: 'lint',
-      errorSummary: 'lint: unexpected any',
-      retryState: 'initial-failure',
-    });
   });
 
-  it('falls back to the initial validation when the ladder names no last error', async () => {
+  it('falls back to the initial error when the ladder names no last error', async () => {
     const { res } = await exhaust(failedRetry(2));
 
-    expect(res.state.pendingRecovery?.details[0]).toBe(
-      'Last error: lint failed: lint: unexpected any',
-    );
-    expect(res.state.pendingRecovery?.facts?.validationStage).toBe('lint');
+    expect(res.state.pendingRecovery?.details[0]).toBe('Last error: lint: unexpected any');
+    expect(res.state.pendingRecovery?.facts).not.toHaveProperty('validationStage');
   });
 
   it('hands the builder the implementer voice', async () => {

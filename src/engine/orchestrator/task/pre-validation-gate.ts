@@ -1,7 +1,7 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import type { EngineEvent } from '../../events/types.js';
+import type { HookPayload } from '../../hooks/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { publishTaskSkipped, publishWarning } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -23,14 +23,13 @@ export async function runPreValidationGate(opts: {
 
   if (!wctx.config.hooks) return { proceed: true, state };
 
-  const preValidationPayload: EngineEvent = {
+  const preValidationPayload: HookPayload = {
     type: 'validate',
     ts: Date.now(),
     phase: state.phase,
     taskId: task.id,
     status: 'running',
     passed: false,
-    stages: { typecheck: false, lint: false, test: false },
   };
   const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, {
     projectDir,

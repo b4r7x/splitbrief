@@ -103,8 +103,6 @@ describe('validateAndCommit', () => {
     expect(result).toMatchObject({
       completed: false,
       blockedReason: 'aborted',
-      validationResults: [],
-      acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
     });
   });
 
@@ -137,7 +135,6 @@ describe('validateAndCommit', () => {
 
     expect(result).toMatchObject({
       completed: false,
-      acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
       diagnosis: 'check K1 failed',
     });
   });

@@ -1,4 +1,4 @@
-import type { EngineEvent } from '../events/types.js';
+import type { HookPayload } from './types.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 
 const PLACEHOLDER_RE = /\$\{event\.([a-zA-Z_][\w.]*)\}/g;
@@ -8,7 +8,7 @@ export function startsWithEventPlaceholder(template: string): boolean {
   return LEADING_PLACEHOLDER_RE.test(template);
 }
 
-export function substituteEventFields(template: string, event: EngineEvent): string {
+export function substituteEventFields(template: string, event: HookPayload): string {
   return template.replace(PLACEHOLDER_RE, (_match, path: string) => {
     const value = readPath(event as unknown as Record<string, unknown>, path.split('.'));
     if (value === undefined || value === null) return '';

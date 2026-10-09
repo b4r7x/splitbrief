@@ -659,18 +659,17 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: Every task fails validation because the tree was already red
 
-**Likely cause:** A command has a failure the run started with. SPLITBRIEF checks this only after a command is red. It re-runs the same command text on a disposable run base copy outside the checkout.
+**Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task`, a consult `verify` or a fix task. A brief check, plan check or task check never re-runs at the run base. Its failure retries the brief once with the exact errors, then consults the planner, even when the same failure occurs at the run base. Only a red reviewer check re-runs there, with the same command text.
 
 **Fix:**
 
-1. Read the `Base re-run` rows. They name the command and say whether it fails at the run base too.
-2. Read the Checks Log's `pre-existing (also red at the run base)` line for the matching keys.
-3. Only new failures reach the reviewer as pending inputs. A pre-existing failure starts no fix.
-4. Fix the pre-existing failure separately to turn the whole tree green. SPLITBRIEF reports it without reopening, retrying or creating a brief for it.
+1. Run the failing command in your checkout to confirm the failure.
+2. Make the tree green first, or plan a task that repairs it.
+3. For a reviewer check, read the `Base re-run` rows. Read the Checks Log's `pre-existing (also red at the run base)` line. Its pre-existing failures start no fix.
 
 To measure the project before a run, run its own commands directly. `doctor` runs no validation command.
 
-**Prevention:** Maintain passing validation commands. The base comparison excludes pre-existing failures from fixes and still blocks failures the run causes.
+**Prevention:** Maintain passing validation commands. The reviewer check's base comparison excludes pre-existing failures from fixes and still blocks failures the run causes.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) (§4 `validation`), [docs/APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md).
 

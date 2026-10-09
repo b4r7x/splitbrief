@@ -237,7 +237,13 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       ]);
       expect(rows(events).filter((row) => row.status === 'done')).toEqual([
         expect.objectContaining({ id: 'V1', moment: 'pre-review', passed: false }),
-        expect.objectContaining({ id: 'V1', moment: 'base', passed: false }),
+        expect.objectContaining({
+          id: 'V1',
+          moment: 'base',
+          passed: false,
+          newFailures: 0,
+          preExisting: 1,
+        }),
         expect.objectContaining({ id: 'V2', moment: 'pre-review', passed: true }),
       ]);
       expect(outcome.state.pendingTriage).toBeUndefined();
@@ -248,6 +254,38 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(sectionOf(outcome)).toContain(
         'failed, 0 new failure(s); 1 pre-existing (also red at the run base): src/legacy.ts(3,7)',
       );
+    });
+  });
+
+  // Q2 review B3: the base row read `fails at the run base too` whether the run stopped or went on.
+  it('counts the new and the pre-existing failures of a mixed red on its base row', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-mixed-red' }, async (run) => {
+      const { events } = await reviewChecks(run, {
+        plan: plan([
+          ['V1', 'npm test'],
+          ['V2', 'npx --no-install vitest run'],
+        ]),
+        answer: (command, at) =>
+          command !== 'npm test'
+            ? 'pass'
+            : { red: at === 'workspace' ? `${NEW_RED}\n${OLD_RED}` : OLD_RED },
+      });
+
+      expect(
+        rows(events).map((row) => [
+          row.id,
+          row.moment,
+          row.status,
+          row.newFailures,
+          row.preExisting,
+        ]),
+      ).toEqual([
+        ['V1', 'pre-review', 'running', undefined, undefined],
+        ['V1', 'pre-review', 'done', undefined, undefined],
+        ['V1', 'base', 'running', undefined, undefined],
+        ['V1', 'base', 'done', 1, 1],
+        ['V2', 'pre-review', 'not-run', undefined, undefined],
+      ]);
     });
   });
 
@@ -351,7 +389,6 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
             task,
             status: 'done',
             changedFiles: [file],
-            validation: [],
           });
         }
         writeEvidenceLedger({ projectDir: run.dir, sessionId: run.sessionId }, ledger);

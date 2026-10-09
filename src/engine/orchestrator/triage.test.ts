@@ -77,7 +77,10 @@ const REVIEW_CHECKS: ReviewChecksRecord = {
   scope: 'final',
   cycle: 0,
   plan: {
-    commands: [{ id: 'V1', command: 'node --version', reason: 'the runtime answers' }],
+    commands: [
+      { id: 'V1', command: 'node --version', reason: 'the runtime answers' },
+      { id: 'V2', command: 'npm test', reason: 'the tests pass' },
+    ],
     declined: [],
     reason: null,
   },
@@ -170,6 +173,20 @@ describe('triageContractErrors', () => {
     expect(triageContractErrors(result, plan, findings, [])).toEqual([
       'Verify for F1 names unknown check K404.',
     ]);
+  });
+
+  it('refuses a fix for a verdict finding that names an unknown reviewer check', () => {
+    const reviewChecks = enabledReviewChecks(makeConfig({}), REVIEW_CHECKS);
+    expect(
+      triageContractErrors(
+        fixResult(),
+        plan,
+        [{ ...FAILING_FINDING, checkIds: ['V1', 'V3'] }],
+        [],
+        triageState().tasks,
+        reviewChecks,
+      ),
+    ).toEqual(['Finding F1 names unknown check V3.']);
   });
 
   it('accepts a verify naming a reviewer check only while End-of-run checks are on', () => {
@@ -295,6 +312,48 @@ describe('review fix work', () => {
     for (const task of applied.state.tasks) expect(tasksMarkdown).toContain(task.id);
   });
 
+  it.each([
+    { checkIds: ['V1'], commands: { V1: 'node --version' } },
+    { checkIds: ['V1', 'V2'], commands: { V1: 'node --version', V2: 'npm test' } },
+  ])(
+    'carries every reviewer command a finding names onto its fix: $checkIds',
+    ({ checkIds, commands }) => {
+      const ref = setupProject(dirs);
+      const base = triageState();
+      const review = reviewRecord();
+      const state: WorkflowState = {
+        ...base,
+        reviewChecks: REVIEW_CHECKS,
+        review: {
+          ...review,
+          verdict: { ...review.verdict, findings: [{ ...FAILING_FINDING, checkIds }] },
+        },
+      };
+      saveState(ref, state);
+      const applied = applyTriage(
+        {
+          ...ref,
+          workspaceDir: ref.projectDir,
+          metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+        },
+        state,
+        state.review,
+        [],
+        fixResult(),
+      );
+      expect(applied.tasks[0]?.fix?.findings).toEqual([
+        {
+          id: 'F1',
+          text: FAILING_FINDING.text,
+          acceptance: FAILING_FINDING.acceptance,
+          file: FAILING_FINDING.file,
+          checkIds,
+          commands,
+        },
+      ]);
+    },
+  );
+
   it('carries the red check an input answers onto the fix task and its brief', () => {
     const ref = setupProject(dirs);
     const state = triageState();
@@ -338,13 +397,13 @@ describe('review fix work', () => {
         acceptance: null,
         file: 'src/shared/widget.test.ts',
         checkIds: ['V1'],
-        command: 'npm test',
+        commands: { V1: 'npm test' },
         output: 'FAIL src/shared/widget.test.ts > rethrows',
       },
       { id: 'P2', text: inputs[1]?.text, acceptance: null, checkIds: ['K1'], output: 'broken' },
     ]);
     expect(applied.tasks[0]?.description).toContain(
-      `**V1.1**: ${inputs[0]?.text}\nCommand: npm test`,
+      `**V1.1**: ${inputs[0]?.text}\nCommand V1: npm test`,
     );
     expect(applied.tasks[0]?.description).toContain(
       'Failing output:\n```\nFAIL src/shared/widget.test.ts > rethrows\n```',

@@ -221,14 +221,47 @@ describe('createStdoutTextSink', () => {
       'phase: final-review',
       'reviewer check declined: e2e/app.spec.ts (needs a browser)',
       'reviewer check V1: failed (npm test)',
-      'reviewer check V1 at base: fails',
+      'base re-run V1: fails',
       'reviewer check V2: refused (runs make on Makefile, which this run changed)',
       'reviewer check V3: not run (V1 failed)',
       'reviewer check V4: passed (go test ./...)',
-      'reviewer check V4 at base: not run (no check V4)',
+      'base re-run V4: not run (no check V4)',
       'reviewer check V5: failed (pytest)',
-      'reviewer check V5 at base: passes',
-      'reviewer check V6 at base: refused (names no program)',
+      'base re-run V5: passes',
+      'base re-run V6: refused (names no program)',
+    ]);
+  });
+
+  // Q2 review B3 and B2: the base line said `fails` for a red the run went on from, and a fix
+  // brief's re-run had no line.
+  it('writes how a red splits at the run base and each fix check a brief runs again', () => {
+    const check = (fields: Partial<EngineEventOf<'full_suite'>>): EngineEventOf<'full_suite'> => ({
+      type: 'full_suite',
+      ts,
+      phase: 'final-review',
+      status: 'done',
+      id: 'V1',
+      command: 'npm test',
+      moment: 'base',
+      passed: false,
+      ...fields,
+    });
+    const lines = collect([
+      check({ newFailures: 0, preExisting: 2 }),
+      check({ id: 'V2', newFailures: 1, preExisting: 1 }),
+      check({ moment: 'brief', status: 'running' }),
+      check({ moment: 'brief', duration: 3 }),
+      check({ newFailures: 0, preExisting: 1 }),
+      check({ moment: 'brief', status: 'refused', detail: 'names no program' }),
+    ]);
+
+    expect(lines).toEqual([
+      'phase: final-review',
+      "base re-run V1: pre-existing · all 2 failures also fail before this run's changes",
+      'base re-run V2: 1 new, 1 pre-existing',
+      'fix check V1: failed (npm test)',
+      "base re-run V1: pre-existing · the failure also fails before this run's changes",
+      'fix check V1: refused (names no program)',
     ]);
   });
 

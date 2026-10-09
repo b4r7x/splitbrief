@@ -420,17 +420,13 @@ function narrowingLabel(narrowing: TestNarrowing): string {
   }
 }
 
-// Every `Stack` command is a probe of the project, not a string: the defaults table is
-// rendered by running the probes against a synthetic project that carries every config
-// the registry knows, so each stage resolves to the command its first branch names.
+// The defaults table probes each stack's `test` command in a synthetic project.
+// The project carries the files that select the first test command branch.
 const STACK_PROBE_FILES: ReadonlyArray<readonly [string, string]> = [
   ['tsconfig.json', '{}'],
   ['package.json', '{"scripts":{"test":"vitest run"},"devDependencies":{"typescript":"*"}}'],
-  ['biome.json', '{}'],
-  ['pyproject.toml', '[tool.mypy]\n[tool.ruff]\n'],
   ['uv.lock', ''],
   ['go.mod', 'module probe\n'],
-  ['.golangci.yml', ''],
   ['Cargo.toml', ''],
 ];
 

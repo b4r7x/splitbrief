@@ -628,7 +628,7 @@ describe('reviewer checks in the run registry', () => {
     ]);
     const registry = checkRegistry({
       plan: makePlan([{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: false }]),
-      reviewChecks: record,
+      reviewChecks: reviewCheckList(record),
     });
     expect([...registry.keys()]).toEqual(['K1', 'V1', 'V2']);
     expect(registry.get('V2')).toMatchObject({ kind: 'cmd', value: 'make test', required: true });
@@ -648,7 +648,7 @@ describe('reviewer checks in the run registry', () => {
         );
         const runner = makeCommandRunner();
         const results = await runChecks(['V1'], {
-          reviewChecks: reviewChecks([{ id: 'V1', command: 'npm test' }]),
+          reviewChecks: reviewCheckList(reviewChecks([{ id: 'V1', command: 'npm test' }])),
           base: runBaseOf({ projectDir: run.dir, sessionId: run.sessionId }, run),
           projectDir: run.ws,
           checkoutDir: run.dir,

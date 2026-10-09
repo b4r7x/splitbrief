@@ -72,6 +72,8 @@ function suiteMomentLabel(suite: Pick<RunningSuiteStage, 'id' | 'moment'>): stri
   switch (suite.moment) {
     case 'base':
       return `Base re-run${id}`;
+    case 'brief':
+      return `Fix check${id}`;
     case 'pre-review':
       return suite.id === undefined ? 'Pre-review suite' : `Reviewer check${id}`;
     default:

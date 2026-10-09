@@ -313,11 +313,7 @@ async function runRetryStepAttempt(
         completed: true,
         method,
         attempts,
-        acceptance: commitResult.acceptance,
         durationMs: commitResult.durationMs,
-        ...(commitResult.validationResults.length > 0 && {
-          validationResults: commitResult.validationResults,
-        }),
         ...(actualChangedFiles.length > 0 && { changedFiles: actualChangedFiles }),
         ...(resultTool !== undefined && { tool: resultTool }),
         ...(resultModel !== undefined && { model: resultModel }),

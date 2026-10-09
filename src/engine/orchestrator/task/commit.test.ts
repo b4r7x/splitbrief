@@ -32,8 +32,6 @@ vi.mock('simple-git', () => ({
 
 const acceptedAcceptance: ValidationAcceptance = {
   accepted: true,
-  exemptStages: [],
-  blockingStages: [],
 };
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -131,7 +129,7 @@ describe('validateCommitAndAdvance', () => {
     const result = await validateCommitAndAdvance({
       taskStartTime: Date.now(),
       task: firstCommitTask(state),
-      acceptance: { accepted: false, exemptStages: [], blockingStages: [] },
+      acceptance: { accepted: false },
       projectDir,
       sessionId,
       config: makeConfig(),
@@ -146,47 +144,10 @@ describe('validateCommitAndAdvance', () => {
     expect(events.find((e) => e.type === 'task_completed')).toBeUndefined();
     expect(events.find((e) => e.type === 'git_commit')).toBeUndefined();
     expect(events.find((e) => e.type === 'git_checkpoint')).toBeUndefined();
-    expect(
-      events.find((e) => e.type === 'warning' && e.code === 'validation_baseline_exempt'),
-    ).toBeUndefined();
+    expect(events.find((e) => e.type === 'warning')).toBeUndefined();
   });
 
-  it('advances when accepted despite a failed result, publishing exactly one exemption warning', async () => {
-    const { projectDir, sessionId } = setupProject();
-    const state = makeCommitState();
-    const { bus, events } = makeBusRecorder();
-
-    const result = await validateCommitAndAdvance({
-      taskStartTime: Date.now(),
-      task: firstCommitTask(state),
-      acceptance: { accepted: true, exemptStages: ['typecheck'], blockingStages: [] },
-      projectDir,
-      sessionId,
-      config: makeConfig(),
-      state,
-      bus,
-      method: 'local',
-      transitionType: 'VALIDATION_PASS',
-    });
-
-    expect(result.completed).toBe(true);
-    expect(result.state.phase).not.toBe(state.phase);
-    const exemptWarnings = events.filter(
-      (e) => e.type === 'warning' && e.code === 'validation_baseline_exempt',
-    );
-    expect(exemptWarnings).toHaveLength(1);
-    expect(exemptWarnings[0]).toMatchObject({
-      type: 'warning',
-      taskId: 'T001',
-      code: 'validation_baseline_exempt',
-    });
-    if (exemptWarnings[0] !== undefined && exemptWarnings[0].type === 'warning') {
-      expect(exemptWarnings[0].message).toContain('T001');
-      expect(exemptWarnings[0].message).toContain('typecheck');
-    }
-  });
-
-  it('publishes no exemption warning when accepted without exempt stages', async () => {
+  it('publishes no warning when accepted', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = makeCommitState();
     const { bus, events } = makeBusRecorder();
@@ -204,9 +165,7 @@ describe('validateCommitAndAdvance', () => {
       transitionType: 'VALIDATION_PASS',
     });
 
-    expect(
-      events.find((e) => e.type === 'warning' && e.code === 'validation_baseline_exempt'),
-    ).toBeUndefined();
+    expect(events.find((e) => e.type === 'warning')).toBeUndefined();
   });
 
   it('returns completed: true and advances phase when all validations pass', async () => {

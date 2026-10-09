@@ -54,8 +54,6 @@ vi.mock('simple-git', () => ({
 
 const acceptedAcceptance: ValidationAcceptance = {
   accepted: true,
-  exemptStages: [],
-  blockingStages: [],
 };
 
 afterEach(() => {

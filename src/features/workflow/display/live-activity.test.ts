@@ -115,6 +115,7 @@ describe('deriveLiveStatus', () => {
   it.each([
     ['pre-review', 'Reviewer check V1 · npm test'],
     ['base', 'Base re-run V1 · npm test'],
+    ['brief', 'Fix check V1 · npm test'],
   ] as const)('names the %s reviewer check by its id on its own clock', (moment, verb) => {
     const status = deriveLiveStatus({
       ...base,

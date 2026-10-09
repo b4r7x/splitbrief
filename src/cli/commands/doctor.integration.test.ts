@@ -276,7 +276,7 @@ describe('doctor command', () => {
     expect(output).toContain('Run readiness:');
     expect(output).toContain('Config:');
     expect(output).toContain('Repository:');
-    expect(output).toContain('warning validation.disabled');
+    expect(output).toContain('info validation.configured: End-of-run checks: on.');
     expect(readFileSync(configFile, 'utf-8')).toBe(beforeConfig);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
@@ -328,21 +328,18 @@ describe('doctor command', () => {
     initGitRepo(tmp);
     writeConfig(
       tmp,
-      validConfigYaml().replace(
-        '  testCommand: npm test',
-        '  testCommand: node -e "process.exit(1)"',
-      ),
+      validConfigYaml().replace('  testCommand: npm test', '  testCommand: touch doctor-ran'),
     );
     const writes = captureStdout();
 
     await runDoctor(['--project', tmp, '--json']);
 
     const parsed = JSON.parse(writes.join('').trim()) as {
-      report?: { checks?: Array<{ id: string }> };
+      report?: { checks?: Array<{ id: string; details?: string[] }> };
     };
-    expect(parsed.report?.checks?.map((check) => check.id)).not.toContain(
-      'validation.already-failing',
-    );
+    const configured = parsed.report?.checks?.find((check) => check.id === 'validation.configured');
+    expect(configured?.details).toContain('Test check command: touch doctor-ran');
+    expect(existsSync(join(tmp, 'doctor-ran'))).toBe(false);
   });
 
   it('offers no --probe-validation in help', async () => {

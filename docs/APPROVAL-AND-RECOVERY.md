@@ -360,7 +360,7 @@ A task's `suggestedFiles`, `scope.inBounds` and `scope.approvedOutOfBounds` are 
 - **Missing expected files** — A task reached `done` or `escalated` but none of its suggested files was changed. `warning`.
 - **Failed task with diff** — A task failed but left changes in its suggested files. `error`.
 - **Orphan diff** — Changed files exist but every task is failed or skipped. `error`.
-- **Missing evidence** — A completed task expected evidence (from the evidence ledger) but none was observed, or its `test` check was `not-runnable`. `warning`.
+- **Missing evidence** — No current run produces `missing_evidence`. An older saved report that has it still loads. `warning`.
 
 The report has no score: it passes if it has no `error` finding. An older run's `out_of_bounds_text_match` finding is dropped when its report is read.
 

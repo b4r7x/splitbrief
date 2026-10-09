@@ -350,6 +350,9 @@ describe('deriveBuildProgress', () => {
 
   it('names the phase alone between calls', () => {
     expect(deriveBuildProgress(input()).activity).toBe('implementing');
+    expect(
+      deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'final-review' }) })).activity,
+    ).toBe('review');
   });
 
   it('names the side call the phase cannot tell, and still no usage', () => {
@@ -433,6 +436,26 @@ describe('deriveBuildProgress', () => {
     for (const width of [160, 120, 80, 60]) {
       expect(buildProgressLines(progress, width).join('\n')).not.toContain('last event');
     }
+  });
+
+  // Q2 review B2: while a fix brief re-ran V1 the block named no command.
+  it('names the fix check a brief runs again and its own clock', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'implementing' }),
+        operations: operationsState({
+          suiteStage: {
+            id: 'V1',
+            command: 'npm test',
+            moment: 'brief',
+            stageStartedTs: NOW - 42_000,
+          },
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Fix check V1 · npm test');
+    expect(progress.freshness).toBe('running 42s');
   });
 
   // Render of workflow-review-base-rerun at 60 columns: `… legacy.test.ts · running…` lost its clock.

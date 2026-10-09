@@ -232,6 +232,8 @@ const checkpointPredicates = [
     ),
   ],
   [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],
+  [checkpointId('review-base-mixed'), includesAll('2 new,', 'V1 failed')],
+  [checkpointId('fix-check-running'), includesAll('Fix check V2 · npm test')],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 

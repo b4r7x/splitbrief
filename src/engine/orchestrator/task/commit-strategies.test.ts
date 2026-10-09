@@ -45,8 +45,6 @@ vi.mock('../state-ops.js', async (importOriginal) => {
 
 const acceptedAcceptance: ValidationAcceptance = {
   accepted: true,
-  exemptStages: [],
-  blockingStages: [],
 };
 
 const strategies: Array<CommitStrategy | undefined> = [undefined, 'none', 'per-task', 'checkpoint'];
@@ -108,7 +106,7 @@ describe('validateCommitAndAdvance — legacy commit strategies', () => {
     const result = await validateCommitAndAdvance({
       taskStartTime: Date.now(),
       task: firstCommitTask(state),
-      acceptance: { accepted: false, exemptStages: [], blockingStages: ['test'] },
+      acceptance: { accepted: false },
       projectDir,
       sessionId,
       config: makeLegacyCommitConfig({ commitStrategy: 'per-task' }),

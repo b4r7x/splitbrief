@@ -148,7 +148,7 @@ node "$SKILL_DIR/scripts/watch-run.mjs" "$SESSION_DIR" "$WATCH_CURSOR" 30
 Read its event and state summary, then inspect the terminal and stderr. A watcher failure is a supervision blocker: park, then supervise from a copy of the watcher outside the checkout, then resume. The watcher fix in the checkout waits until the run ends.
 Never discard the cursor to suppress a finding. Record each event's disposition. Do not read the entire log into agent context.
 
-Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `validate{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.
+Events worth acting on: `artifact_written`, `recovery_prompted{reason}`, `task_retry{attempt}`, `task_escalating`, `checks_run{results}`, `full_suite{status:"done",passed}`, `runner_call_stalled`, `workflow_complete{review}`.
 
 A stalled-call event requires inspection of the terminal and the child's activity. Silence alone does not prove a tool defect.
 Do not wait through repeated identical failures without classification. If the cause is uncertain, park and diagnose it.
@@ -213,7 +213,7 @@ A catalog or model claim is verified by set equality, never by a count — "exit
 
 Record every trigger and its resolution in `<session-dir>/babysit.md`, with `file:line` evidence and commands actually run.
 
-A brief runs only its own checks. Before each review the reviewer chooses the end-of-run commands (with `workflow.review: task`, the tests related to the changed files); only those commands see a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
+With `workflow.review: task`, a brief runs its own checks and its due checks. With `end`, an ordinary brief runs no check. A fix brief runs the red it answers again. Before each review the reviewer chooses the end-of-run commands (with `workflow.review: task`, the tests related to the changed files); only those commands see a break outside the declared files. After any deletion of an exported name, grep `src/`, `testing/` **and** `scripts/` for consumers and run those suites yourself.
 
 ## Usage limits
 

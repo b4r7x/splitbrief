@@ -145,10 +145,10 @@ export const TaskSchema = z.preprocess(
             id: z.string(),
             text: z.string(),
             acceptance: z.string().nullable(),
-            /** The red this finding answers; the fix task's brief gate runs it again. */
+            /** The red this finding answers; the brief gate runs its checks again, each reviewer check by `commands[id]`. */
             file: z.string().optional(),
             checkIds: z.array(z.string()).optional(),
-            command: z.string().optional(),
+            commands: z.record(z.string(), z.string()).optional(),
             output: z.string().optional(),
           }),
         ),

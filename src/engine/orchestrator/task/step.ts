@@ -536,7 +536,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   }
   state = gated.state;
   if (gated.stop !== undefined) return state;
-  const { validationResults, acceptance } = gated;
+  const { acceptance } = gated;
 
   const commitResult = await validateCommitAndAdvance({
     task,
@@ -586,9 +586,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
         method: 'local',
         retries: 0,
         durationMs: commitResult.durationMs,
-        validation: validationResults,
         changedFiles: taskChangedFiles,
-        exemptStages: acceptance.exemptStages,
       },
     });
     return state;
@@ -607,9 +605,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     tokensBefore,
     taskBreakdowns,
     setTrackedState,
-    initialValidation: validationResults,
     initialChangedFiles: taskChangedFiles,
-    initialExemptStages: acceptance.exemptStages,
   });
   if (consultHandedBackToLoop(retry.state, task)) {
     const rerun = await rerunReplacedTask(opts, retry.state);

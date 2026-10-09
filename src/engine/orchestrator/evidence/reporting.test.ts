@@ -7,12 +7,6 @@ import {
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { recordLocalTaskEvidence } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import type { ValidationResult } from '../validation/result.js';
-
-function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {
-  return { passed: true, stage };
-}
-
 describe('recordFinalReviewEvidence', () => {
   it('marks final review as written', () => {
     const task = makeTask();
@@ -21,7 +15,6 @@ describe('recordFinalReviewEvidence', () => {
       ledger,
       task,
       status: 'done',
-      validation: [passing('typecheck')],
     });
     const updated = recordFinalReviewEvidence({ ledger: local, status: 'written' });
     expect(updated.finalReview?.status).toBe('written');
@@ -34,7 +27,6 @@ describe('recordFinalReviewEvidence', () => {
       ledger,
       task,
       status: 'done',
-      validation: [passing('typecheck')],
     });
     const updated = recordFinalReviewEvidence({ ledger: local, status: 'failed' });
     expect(updated.finalReview?.status).toBe('failed');
@@ -85,8 +77,8 @@ describe('buildEvidenceSummary', () => {
       ledger,
       task,
       status: 'done',
-      validation: [passing('typecheck')],
     });
+    local.tasks[0]?.validation.push({ stage: 'typecheck', passed: true });
     const summary = buildEvidenceSummary(local);
     expect(summary.totalTasks).toBe(1);
     expect(summary.tasksWithValidationEvidence).toBe(1);
