@@ -3,7 +3,6 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import { dueCriterionIds } from '../../../core/review/verdict.js';
 import type { WorkflowContext } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
-import type { ValidationResult } from '../validation/result.js';
 import { checkRegistry, type CheckRunResult } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
@@ -68,7 +67,6 @@ export async function runBriefGate(opts: {
     signal: wctx.signal,
     changedFiles,
   });
-  const validationResults: ValidationResult[] = [];
   let runs: CheckRunResult[] = [];
   let settled: ReadonlySet<string> = new Set();
   if (checkIds.length > 0) {
@@ -85,12 +83,7 @@ export async function runBriefGate(opts: {
       return {
         state,
         stop: 'skipped' as const,
-        validationResults,
-        acceptance: {
-          accepted: false,
-          exemptStages: [],
-          blockingStages: [],
-        } satisfies ValidationAcceptance,
+        acceptance: { accepted: false } satisfies ValidationAcceptance,
         error: '',
         diagnosis: '',
       };
@@ -109,22 +102,19 @@ export async function runBriefGate(opts: {
   const registry = checkRegistry({ task, tasks: state.tasks, plan: state.plan });
   const selected = new Set(opts.checkIds ?? []);
   const failedChecks = runs.filter((run) =>
-    selected.has(run.checkId)
+    selected.has(run.checkId) || fixCheckIds.has(run.checkId)
       ? run.status !== 'pass' && !settled.has(run.checkId)
       : run.status === 'fail' &&
         !settled.has(run.checkId) &&
-        (fixCheckIds.has(run.checkId) || registry.get(run.checkId)?.required === true),
+        registry.get(run.checkId)?.required === true,
   );
   const acceptance: ValidationAcceptance = {
     accepted: failedChecks.length === 0 && !wctx.signal?.aborted,
-    exemptStages: [],
-    blockingStages: [],
   };
   const firstFailedCheck = failedChecks[0];
   return {
     state,
     stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
-    validationResults,
     acceptance,
     error: verifyFailures(failedChecks).join('\n\n'),
     diagnosis: firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`,

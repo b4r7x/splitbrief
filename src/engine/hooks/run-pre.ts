@@ -1,7 +1,6 @@
 import type { HookEvent, HooksConfig } from '../../core/schemas/hooks.js';
-import type { EngineEvent } from '../events/types.js';
 import { hookTrustRefusal, runTrustedHook } from './dispatch.js';
-import type { HookContext } from './types.js';
+import type { HookContext, HookPayload } from './types.js';
 
 export interface PreHookResult {
   allow: boolean;
@@ -12,7 +11,7 @@ export interface PreHookResult {
 export async function runPreHooks(
   hooks: HooksConfig | undefined,
   event: HookEvent,
-  eventPayload: EngineEvent,
+  eventPayload: HookPayload,
   ctx: HookContext,
 ): Promise<PreHookResult> {
   const warnings: string[] = [];

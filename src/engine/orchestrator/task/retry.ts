@@ -1,8 +1,7 @@
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskTokenUsage, TokenUsage } from '../../../core/schemas/tokens.js';
-import type { ValidationResult } from '../validation/result.js';
-import type { TaskStatus, ValidationStage } from '../../../core/schemas/enums.js';
+import type { TaskStatus } from '../../../core/schemas/enums.js';
 import type { WorkflowContext } from '../types.js';
 import type { RetryAttemptFailure } from '../escalation/types.js';
 
@@ -41,9 +40,7 @@ export type RetryAndRecordOptions = {
   state: WorkflowState;
   taskStartTime: number;
   taskStartSnapshot?: ChangedFilesSnapshot;
-  initialValidation?: ValidationResult[] | undefined;
   initialChangedFiles?: string[] | undefined;
-  initialExemptStages?: readonly ValidationStage[] | undefined;
   /** How the first attempt ended, when it ended on a machine outcome. */
   initialFailure?: RetryAttemptFailure | undefined;
   /** The first attempt's blocked report, when it stopped asking for a decision. */
@@ -77,12 +74,7 @@ export function consultHandedBackToLoop(state: WorkflowState, task: Task): boole
 
 type TaskFailureContext = Pick<
   RetryAndRecordOptions,
-  | 'wctx'
-  | 'task'
-  | 'taskStartTime'
-  | 'initialValidation'
-  | 'initialChangedFiles'
-  | 'initialExemptStages'
+  'wctx' | 'task' | 'taskStartTime' | 'initialChangedFiles'
 >;
 
 function recordFailedTask(
@@ -100,9 +92,7 @@ function recordFailedTask(
       method: 'failed',
       retries: attempts,
       durationMs: Date.now() - opts.taskStartTime,
-      initialValidation: opts.initialValidation,
       initialChangedFiles: opts.initialChangedFiles,
-      initialExemptStages: opts.initialExemptStages,
     },
   });
 }
@@ -147,7 +137,6 @@ export async function handleTaskPlannerCallFailure(
       ? buildRetryExhaustedRecoveryIssue({
           task,
           phase: recoveryBaseState.phase,
-          validationResults: opts.initialValidation,
           validationSummary: diagnosis.message,
           attempts: recoveryBaseState.attempt,
           maxAttempts: DEFAULT_LOCAL_RETRIES,
@@ -246,12 +235,7 @@ export async function retryAndRecord(
       const issue = buildRetryExhaustedRecoveryIssue({
         task,
         phase: nextState.phase,
-        ...(result.lastError === undefined
-          ? {
-              validationResults: opts.initialValidation,
-              validationSummary: opts.initialValidation ? undefined : initialError,
-            }
-          : { validationSummary: result.lastError }),
+        validationSummary: result.lastError ?? initialError,
         attempts: result.attempts,
         maxAttempts: DEFAULT_LOCAL_RETRIES,
         allowRetryOverride: true,
@@ -298,12 +282,8 @@ export async function retryAndRecord(
       retries: result.attempts,
       durationMs: result.durationMs,
       escalated,
-      initialValidation: opts.initialValidation,
       initialChangedFiles: opts.initialChangedFiles,
-      initialExemptStages: opts.initialExemptStages,
-      validation: result.validationResults,
       changedFiles: result.changedFiles,
-      exemptStages: result.acceptance.exemptStages,
     },
   });
   return { state: nextState, completed: true };

@@ -17,37 +17,17 @@ import {
 } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import type { ValidationResult } from '../validation/result.js';
-
-function passing(stage: 'typecheck' | 'lint' | 'test'): ValidationResult {
-  return { passed: true, stage };
-}
-// A skipped stage as an older run recorded it.
-function skipped(stage: 'typecheck' | 'lint' | 'test', reason: string): ValidationResult {
-  return {
-    passed: true,
-    stage,
-    skipped: true,
-    skippedReason: reason,
-    output: `skipped ${stage}: ${reason}`,
-  };
-}
-function failing(stage: 'typecheck' | 'lint' | 'test', error: string): ValidationResult {
-  return { passed: false, stage, error };
-}
-
 describe('recordLocalTaskEvidence', () => {
-  it('records legacy validation without adding to the checks log', () => {
+  it('records completion without adding stage entries or checks', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const updated = recordLocalTaskEvidence({
       ledger,
       task,
       status: 'done',
-      validation: [passing('typecheck'), passing('lint')],
     });
     expect(updated.tasks[0]?.status).toBe('done');
-    expect(updated.tasks[0]?.validation.map((entry) => entry.stage)).toEqual(['typecheck', 'lint']);
+    expect(updated.tasks[0]?.validation).toEqual([]);
     expect(updated.tasks[0]?.checks).toEqual([]);
   });
 
@@ -107,77 +87,13 @@ describe('recordLocalTaskEvidence', () => {
     expect(entries[2]).not.toHaveProperty('preExisting');
   });
 
-  it('keeps the validation command and recorded output so the review can quote them', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({
-      ledger,
-      task,
-      status: 'done',
-      validation: [
-        {
-          passed: true,
-          stage: 'test',
-          command: 'npm test',
-          output: 'Tests  4 passed (4)',
-        },
-        { passed: true, stage: 'typecheck', command: 'npm run typecheck', output: '   \n' },
-      ],
-    });
-
-    const [test, typecheck] = updated.tasks[0]?.validation ?? [];
-    expect(test).toMatchObject({
-      stage: 'test',
-      command: 'npm test',
-      output: 'Tests  4 passed (4)',
-    });
-    expect(typecheck?.command).toBe('npm run typecheck');
-    expect(typecheck?.output).toBeUndefined();
-  });
-
-  it('flags a failing stage as baseline-exempt when its stage is exempt, and only then', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({
-      ledger,
-      task,
-      status: 'done',
-      validation: [failing('typecheck', 'error'), failing('lint', 'error')],
-      exemptStages: ['typecheck'],
-    });
-    expect(updated.tasks[0]?.validation[0]).toMatchObject({ passed: false, baselineExempt: true });
-    expect(updated.tasks[0]?.validation[1]).toEqual({
-      stage: 'lint',
-      passed: false,
-      errorSummary: 'error',
-    });
-  });
-
-  it('skipped stage records skipped, not passed', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({
-      ledger,
-      task,
-      status: 'done',
-      validation: [skipped('test', 'no affected test file found')],
-    });
-
-    expect(updated.tasks[0]?.validation[0]).toMatchObject({
-      stage: 'test',
-      skipped: true,
-      skippedReason: 'no affected test file found',
-    });
-    expect(updated.tasks[0]?.checks).toEqual([]);
-  });
-
   it('appends a fix task the ledger does not yet know instead of dropping it', () => {
     const t1 = makeTask({ id: 'T001', status: 'done' });
     const t2 = makeTask({ id: 'T002', status: 'done' });
     const fix = makeTask({ id: 'T003', status: 'pending' });
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [t1, t2] });
 
-    const updated = recordLocalTaskEvidence({ ledger, task: fix, status: 'done', validation: [] });
+    const updated = recordLocalTaskEvidence({ ledger, task: fix, status: 'done' });
 
     expect(updated.tasks.map((entry) => entry.id)).toEqual(['T001', 'T002', 'T003']);
     expect(updated.validationSummary).toEqual({ passed: 3, failed: 0, skipped: 0, escalated: 0 });
@@ -186,42 +102,41 @@ describe('recordLocalTaskEvidence', () => {
   it('records the changed files without a prose diff label', () => {
     const task = makeTask({ suggestedFiles: ['src/a.ts', 'src/a.test.ts'] });
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({ ledger, task, status: 'done', validation: [] });
+    const updated = recordLocalTaskEvidence({ ledger, task, status: 'done' });
 
     expect(updated.tasks[0]?.changedFiles).toEqual(['src/a.ts', 'src/a.test.ts']);
     expect(updated.tasks[0]?.checks).toEqual([]);
   });
 
-  it('exhausted task records failed status and keeps every validation attempt', () => {
+  it('records failed status and keeps the changed files of each attempt', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     const afterFirst = recordLocalTaskEvidence({
       ledger,
       task,
       status: 'in_progress',
-      validation: [failing('test', 'attempt one')],
+      changedFiles: ['src/first.ts'],
     });
     const afterRetry = recordRetryOrEscalationEvidence({
       ledger: afterFirst,
       task,
       status: 'failed',
       escalated: false,
-      validation: [failing('test', 'attempt two')],
+      changedFiles: ['src/second.ts'],
     });
     const exhausted = recordRetryOrEscalationEvidence({
       ledger: afterRetry,
       task,
       status: 'failed',
       escalated: false,
-      validation: [failing('test', 'attempt three')],
+      changedFiles: ['src/third.ts'],
     });
 
     expect(exhausted.tasks[0]?.status).toBe('failed');
-    expect(exhausted.tasks[0]?.validation).toHaveLength(3);
-    expect(exhausted.tasks[0]?.validation.map((entry) => entry.errorSummary)).toEqual([
-      'attempt one',
-      'attempt two',
-      'attempt three',
+    expect(exhausted.tasks[0]?.changedFiles).toEqual([
+      'src/first.ts',
+      'src/second.ts',
+      'src/third.ts',
     ]);
   });
 
@@ -232,8 +147,11 @@ describe('recordLocalTaskEvidence', () => {
       ledger,
       task,
       status: 'done',
-      validation: [failing('typecheck', 'error'), passing('lint')],
     });
+    updated.tasks[0]?.validation.push(
+      { stage: 'typecheck', passed: false, errorSummary: 'error' },
+      { stage: 'lint', passed: true },
+    );
     expect(EvidenceLedgerSchema.parse(updated)).toEqual(updated);
     expect(updated.tasks[0]?.validation[0]).toEqual({
       stage: 'typecheck',
@@ -252,10 +170,9 @@ describe('recordRetryOrEscalationEvidence', () => {
       task,
       status: 'escalated',
       escalated: true,
-      validation: [failing('typecheck', 'error')],
     });
     expect(updated.tasks[0]?.escalated).toBe(true);
-    expect(updated.tasks[0]?.validation[0]).toMatchObject({ stage: 'typecheck', passed: false });
+    expect(updated.tasks[0]?.status).toBe('escalated');
   });
 
   it('records an escalated task without changed-file evidence when no files changed', () => {
@@ -269,21 +186,6 @@ describe('recordRetryOrEscalationEvidence', () => {
     });
 
     expect(updated.tasks[0]?.changedFiles).toEqual([]);
-    expect(updated.tasks[0]?.checks).toEqual([]);
-  });
-
-  it('flags and reports an exempt stage on the escalation path too', () => {
-    const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordRetryOrEscalationEvidence({
-      ledger,
-      task,
-      status: 'escalated',
-      escalated: true,
-      validation: [failing('lint', 'error')],
-      exemptStages: ['lint'],
-    });
-    expect(updated.tasks[0]?.validation[0]).toMatchObject({ passed: false, baselineExempt: true });
     expect(updated.tasks[0]?.checks).toEqual([]);
   });
 });

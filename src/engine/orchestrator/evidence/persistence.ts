@@ -16,11 +16,10 @@ import {
 } from './task.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { recordApprovalEvidence, recordRejectionEvidence } from './approval.js';
-import type { ValidationResult } from '../validation/result.js';
 import type { ActionClass, TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import type { GateDecision } from '../approval/types.js';
-import type { EvidenceLedger, EvidenceValidationEntry } from '../../../core/schemas/evidence.js';
+import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { revertedDir } from '../isolation/entry-snapshot.js';
@@ -50,14 +49,10 @@ export async function persistTaskEvidence(opts: {
     method?: TaskCompletionMethod | undefined;
     retries?: number | undefined;
     durationMs?: number | undefined;
-    initialValidation?: ValidationResult[] | undefined;
     initialChangedFiles?: string[] | undefined;
-    initialExemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
-    validation?: ValidationResult[] | undefined;
     escalated?: boolean | undefined;
     reason?: string | undefined;
     changedFiles?: string[] | undefined;
-    exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
   };
 }): Promise<void> {
   const { wctx, state, task, recordKind, details } = opts;
@@ -72,45 +67,19 @@ export async function persistTaskEvidence(opts: {
           method: details.method,
           retries: details.retries,
           durationMs: details.durationMs,
-          validation: details.validation ?? [],
           changedFiles: details.changedFiles,
-          validationRetryState: details.status === 'failed' ? 'failed' : undefined,
-          exemptStages: details.exemptStages,
         });
       }
       if (recordKind === 'retry') {
-        let updated = ledger;
-        if (details.initialValidation && details.initialValidation.length > 0) {
-          updated = recordRetryOrEscalationEvidence({
-            ledger: updated,
-            task,
-            status: details.status,
-            method: details.method,
-            retries: details.retries,
-            durationMs: details.durationMs,
-            validation: details.initialValidation,
-            escalated: details.escalated ?? false,
-            changedFiles: details.initialChangedFiles,
-            validationRetryState: 'initial-failure',
-            exemptStages: details.initialExemptStages,
-          });
-        }
         return recordRetryOrEscalationEvidence({
-          ledger: updated,
+          ledger,
           task,
           status: details.status,
           method: details.method,
           retries: details.retries,
           durationMs: details.durationMs,
-          validation: details.validation,
           escalated: details.escalated ?? false,
-          changedFiles: details.changedFiles,
-          validationRetryState: details.escalated
-            ? 'escalated'
-            : details.status === 'failed'
-              ? 'failed'
-              : undefined,
-          exemptStages: details.exemptStages,
+          changedFiles: [...(details.initialChangedFiles ?? []), ...(details.changedFiles ?? [])],
         });
       }
       return recordSkippedTaskEvidence({

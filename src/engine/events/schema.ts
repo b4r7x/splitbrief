@@ -626,15 +626,19 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   /**
    * One command run before a review: a reviewer check (`id`) or, in a session from before the
-   * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base.
+   * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base;
+   * `brief` is a reviewer check that a fix brief runs again at its brief gate.
    */
   phaseEvent('full_suite').extend({
     status: z.enum(['running', 'done', 'not-run', 'refused']),
     stage: z.enum(['typecheck', 'lint', 'test']).optional(),
     id: z.string().optional(),
     command: z.string(),
-    moment: z.enum(['pre-review', 'base']),
+    moment: z.enum(['pre-review', 'base', 'brief']),
     passed: z.boolean().optional(),
+    /** On base done events, the red run's failure keys that are new or also red at the run base. */
+    newFailures: z.number().int().nonnegative().optional(),
+    preExisting: z.number().int().nonnegative().optional(),
     /** Why the command did not run or was refused. */
     detail: z.string().optional(),
     duration: z.number().optional(),

@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -40,8 +42,7 @@ describe('brief gate', () => {
       changedFiles: ['src/own.ts'],
       taskStartSnapshot: null,
     });
-    expect(result.acceptance.accepted).toBe(true);
-    expect(result.validationResults).toEqual([]);
+    expect(result.acceptance).toEqual({ accepted: true });
     expect(validator.formatChangedFiles).toHaveBeenCalledWith(
       expect.objectContaining({ changedFiles: ['src/own.ts'] }),
     );
@@ -112,9 +113,7 @@ describe('brief gate', () => {
         taskStartSnapshot: null,
         runCommand,
       });
-      expect(result.acceptance.accepted).toBe(!required);
-      expect(result.validationResults).toEqual([]);
-      expect(result.acceptance.blockingStages).toEqual([]);
+      expect(result.acceptance).toEqual({ accepted: !required });
       expect(result.error).toMatch(required ? /^check K1 did not pass \(fail\): .*broken/s : /^$/);
       expect(result.diagnosis).toBe(required ? 'check K1 failed' : '');
       expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: false }]);
@@ -132,7 +131,7 @@ describe('brief gate', () => {
             text: 'Required check K1 failed: broken No task changed it.',
             acceptance: null,
             checkIds: ['K1'],
-            command: 'node --version',
+            commands: { K1: 'node --version' },
             output: 'broken',
           },
         ],
@@ -162,13 +161,89 @@ describe('brief gate', () => {
     expect(result.diagnosis).toBe('check K1 failed');
   });
 
+  it('fails the gate on a fix check that does not pass, whatever its status', async () => {
+    const ref = setup();
+    const missing = Object.assign(new Error('spawn nope ENOENT'), { code: 'ENOENT' });
+    const cases = [
+      { finding: { checkIds: ['V2'] }, status: 'unknown' },
+      { finding: { checkIds: ['V1'], commands: { V1: 'node --version' } }, status: 'not-runnable' },
+    ];
+    for (const { finding, status } of cases) {
+      const task = makeTask({
+        id: 'T003',
+        fix: {
+          cycle: 1,
+          findings: [{ id: 'F1', text: 'the reviewer check is red', acceptance: null, ...finding }],
+        },
+      });
+      const result = await runBriefGate({
+        wctx: makeWctx(ref),
+        state: makeImplState([task]),
+        task,
+        changedFiles: [],
+        taskStartSnapshot: null,
+        runCommand: vi.fn().mockRejectedValue(missing),
+      });
+      expect(result.acceptance).toEqual({ accepted: false });
+      expect(result.error).toContain(`did not pass (${status})`);
+    }
+  });
+
+  it('accepts a fix finding after both carried reviewer commands pass', async () => {
+    const ref = setup();
+    const task = makeTask({
+      id: 'T003',
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: 'F1',
+            text: 'Both reviewer checks failed',
+            acceptance: null,
+            checkIds: ['V1', 'V2'],
+            commands: { V1: 'node --version', V2: 'tsc --noEmit' },
+          },
+        ],
+      },
+    });
+    const runCommand = vi.fn().mockResolvedValue({ stdout: 'ok', stderr: '', code: 0 });
+    const result = await runBriefGate({
+      wctx: makeWctx(ref),
+      state: makeImplState([task]),
+      task,
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand,
+    });
+
+    expect(runCommand.mock.calls.map(([cmd, args]) => [cmd, ...args].join(' '))).toEqual([
+      'node --version',
+      'tsc --noEmit',
+    ]);
+    expect(result.acceptance).toEqual({ accepted: true });
+    expect(result.state.tasks[0]?.checkResults).toEqual([
+      { id: 'V1', passed: true },
+      { id: 'V2', passed: true },
+    ]);
+  });
+
   describe('a fix task that answers a reviewer check', { timeout: 60_000 }, () => {
     const NEW_RED = 'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.';
     const OLD_RED =
       'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.';
 
+    type GateOptions = {
+      /** The command the newest review recorded as V1; a later review may have chosen another. */
+      recorded?: string;
+      config?: ReturnType<typeof makeConfig>;
+    };
+
     /** Runs the fix task's gate on a real run workspace and run base; `red` answers each place. */
-    async function gate(run: ApplyRun, red: (at: 'workspace' | 'base') => string | null) {
+    async function gate(
+      run: ApplyRun,
+      red: (at: 'workspace' | 'base') => string | null,
+      options: GateOptions = {},
+    ) {
       const task = makeTask({
         id: 'T002',
         fix: {
@@ -180,17 +255,19 @@ describe('brief gate', () => {
               acceptance: null,
               file: 'src/a.ts',
               checkIds: ['V1'],
-              command: 'npm test',
+              commands: { V1: 'npm test' },
               output: NEW_RED,
             },
           ],
         },
       });
       const reviewChecks = {
-        scope: 'final' as const,
-        cycle: 0,
+        scope: 'task' as const,
+        cycle: 1,
         plan: {
-          commands: [{ id: 'V1', command: 'npm test', reason: 'verifies the change' }],
+          commands: [
+            { id: 'V1', command: options.recorded ?? 'npm test', reason: 'verifies the change' },
+          ],
           declined: [],
           reason: null,
         },
@@ -200,9 +277,11 @@ describe('brief gate', () => {
       const ref = { projectDir: run.dir, sessionId: run.sessionId };
       saveState(ref, state);
       const places: Array<'workspace' | 'base'> = [];
+      const commands: string[] = [];
       const runCommand: ValidationCommandRunner = async (cmd, args, options) => {
         const at = options?.cwd === run.ws ? 'workspace' : 'base';
         places.push(at);
+        commands.push([cmd, ...args].join(' '));
         const output = red(at);
         if (output === null) return { stdout: 'ok', stderr: '', code: 0 };
         throw processError.exitCode({
@@ -216,7 +295,7 @@ describe('brief gate', () => {
         wctx: makeWctx({
           ...ref,
           workspaceDir: run.ws,
-          config: makeConfig(),
+          config: options.config ?? makeConfig(),
           validator: { formatChangedFiles: vi.fn().mockResolvedValue(undefined) },
         }),
         state,
@@ -225,7 +304,7 @@ describe('brief gate', () => {
         taskStartSnapshot: null,
         runCommand,
       });
-      return { result, places };
+      return { result, places, commands };
     }
 
     it('fails the gate while the command still shows a failure the run base does not', async () => {
@@ -246,6 +325,49 @@ describe('brief gate', () => {
         expect(places).toEqual(['workspace', 'base']);
         expect(result.acceptance.accepted).toBe(true);
         expect(result.error).toBe('');
+      });
+    });
+
+    it('runs the command the finding carries, not the V1 a later review recorded', async () => {
+      await withApplyRun(FILES, { sessionId: 'sess-fix-carried' }, async (run) => {
+        const { result, places, commands } = await gate(
+          run,
+          (at) => (at === 'workspace' ? NEW_RED : null),
+          { recorded: 'node --version' },
+        );
+
+        expect(places).toEqual(['workspace', 'base']);
+        expect(commands).toEqual(['npm test', 'npm test']);
+        expect(result.acceptance.accepted).toBe(false);
+        expect(result.error).toMatch(/^check V1 did not pass \(fail\): .*TS2322/s);
+      });
+    });
+
+    it('runs the carried command again while End-of-run checks are off', async () => {
+      await withApplyRun(FILES, { sessionId: 'sess-fix-off' }, async (run) => {
+        const { result, commands } = await gate(
+          run,
+          (at) => (at === 'workspace' ? NEW_RED : null),
+          { config: makeConfig({ validation: { endChecks: false } }) },
+        );
+
+        expect(commands).toEqual(['npm test', 'npm test']);
+        expect(result.acceptance.accepted).toBe(false);
+      });
+    });
+
+    it('refuses the carried command and fails the gate when the fix changed its script', async () => {
+      await withApplyRun(FILES, { sessionId: 'sess-fix-script' }, async (run) => {
+        writeFileSync(
+          join(run.ws, 'package.json'),
+          JSON.stringify({ scripts: { test: 'vitest run --passWithNoTests' } }),
+        );
+        const { result, places } = await gate(run, () => null);
+
+        expect(places).toEqual([]);
+        expect(result.acceptance.accepted).toBe(false);
+        expect(result.error).toMatch(/^check V1 did not pass \(refused\): /);
+        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: false }]);
       });
     });
   });

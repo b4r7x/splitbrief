@@ -24,8 +24,12 @@ cat .splitbrief/sessions/*/session.jsonl | jq .
 jq 'select(.type == "task_full_fail" or .type == "error")' \
   .splitbrief/sessions/<id>/session.jsonl
 
-# Validation outcomes
-jq 'select(.type == "validate") | {taskId, passed: .data.passed, stages: .data.stages, error: .data.error}' \
+# Brief, plan and task check results
+jq 'select(.type == "checks_run") | {taskId, results: .data.results}' \
+  .splitbrief/sessions/<id>/session.jsonl
+
+# Reviewer check results
+jq 'select(.type == "full_suite" and .data.status != "running") | .data | {id, command, moment, status, passed, detail}' \
   .splitbrief/sessions/<id>/session.jsonl
 
 # Cost accumulation

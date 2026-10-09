@@ -33,8 +33,6 @@ vi.mock('simple-git', () => ({
 
 const acceptedAcceptance: ValidationAcceptance = {
   accepted: true,
-  exemptStages: [],
-  blockingStages: [],
 };
 
 // Opaque stand-in for an index holding a partial staging split; never parsed or written by git.

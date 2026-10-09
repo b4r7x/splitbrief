@@ -869,19 +869,30 @@ function reviewChecksPlanned(ts: number): EngineEvent {
   };
 }
 
-/** One reviewer check before the final review, or its re-run at the run base. */
+/**
+ * One reviewer check before the final review, its re-run at the run base, or a fix brief running it
+ * again; `newFailures` and `preExisting` split a red base re-run.
+ */
 function reviewCheck(
   ts: number,
   check: { readonly id: string; readonly command: string },
   result:
-    | { status: 'running' | 'not-run' | 'refused'; moment?: 'base'; detail?: string }
-    | { status: 'done'; moment?: 'base'; passed: boolean; duration?: number },
+    | { status: 'running' | 'not-run' | 'refused'; moment?: 'base' | 'brief'; detail?: string }
+    | {
+        status: 'done';
+        moment?: 'base' | 'brief';
+        passed: boolean;
+        duration?: number;
+        newFailures?: number;
+        preExisting?: number;
+      },
+  phase: 'final-review' | 'implementing' = 'final-review',
 ): EngineEvent {
   const { moment = 'pre-review', ...rest } = result;
   return {
     type: 'full_suite',
     ts,
-    phase: 'final-review',
+    phase,
     id: check.id,
     command: check.command,
     moment,
@@ -3222,6 +3233,8 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
       moment: 'base',
       passed: false,
       duration: 13_000,
+      newFailures: 0,
+      preExisting: 3,
     }),
     reviewCheck(FIXED_TS + 1_500, BASE_RERUN_TEST, {
       status: 'done',
@@ -3230,6 +3243,81 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
     }),
     reviewCheck(FIXED_TS + 2_000, BASE_RERUN_TEST, { status: 'running', moment: 'base' }),
   ],
+};
+
+// Q2 review B3: a red with new and pre-existing failures stops the list; its base row says why.
+const reviewBaseMixedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-base-mixed'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...everyBriefPassed(),
+    {
+      type: 'review_checks',
+      ts: FIXED_TS + 900,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+      commands: [BASE_RERUN_TYPECHECK, BASE_RERUN_TEST],
+      declined: [],
+      reason: null,
+    },
+    reviewCheck(FIXED_TS + 1_000, BASE_RERUN_TYPECHECK, {
+      status: 'done',
+      passed: false,
+      duration: 14_000,
+    }),
+    reviewCheck(FIXED_TS + 1_200, BASE_RERUN_TYPECHECK, {
+      status: 'done',
+      moment: 'base',
+      passed: false,
+      duration: 13_000,
+      newFailures: 2,
+      preExisting: 1,
+    }),
+    reviewCheck(FIXED_TS + 1_300, BASE_RERUN_TEST, { status: 'not-run', detail: 'V1 failed' }),
+  ],
+};
+
+// Q2 review B2: the fix brief runs the red V2 again under its own row and clock.
+const fixCheckRunningProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-fix-check-running'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  get events(): EngineEvent[] {
+    const fixBuild = reviewFixProjection.events.slice(everyBriefPassed().length);
+    return [
+      ...everyBriefPassed(),
+      reviewChecksPlanned(FIXED_TS + 350),
+      reviewCheck(FIXED_TS + 360, REVIEW_CHECK_TYPECHECK, {
+        status: 'done',
+        passed: true,
+        duration: 18_000,
+      }),
+      reviewCheck(FIXED_TS + 370, REVIEW_CHECK_TEST, {
+        status: 'done',
+        passed: false,
+        duration: 21_000,
+      }),
+      reviewCheck(FIXED_TS + 380, REVIEW_CHECK_TEST, {
+        status: 'done',
+        moment: 'base',
+        passed: true,
+        duration: 20_000,
+        newFailures: 1,
+        preExisting: 0,
+      }),
+      ...fixBuild,
+      reviewCheck(
+        FIXED_TS + 2_000,
+        REVIEW_CHECK_TEST,
+        { status: 'running', moment: 'brief' },
+        'implementing',
+      ),
+    ];
+  },
 };
 
 const projections = [
@@ -3300,6 +3388,8 @@ const projections = [
   reviewCheckLongCommandProjection,
   reviewLegacySuiteProjection,
   reviewBaseRerunProjection,
+  reviewBaseMixedProjection,
+  fixCheckRunningProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,
 ] as const;

@@ -30,7 +30,6 @@ import {
 } from '../../../providers/api-context-diagnostic.js';
 import type { FinalReviewFailure } from '../../final-review.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import type { ValidationResult } from '../../validation/result.js';
 import type { RoutingDecision } from '../../context-routing/types.js';
 import { runnerAuthDisplayName, runnerLoginInstruction } from '../../../runners/auth-failure.js';
 import { inputTooLargeFigures } from '../../../runners/input-limit.js';
@@ -55,7 +54,6 @@ import { chooseRecommended, haltActions } from './actions.js';
 import { attemptDetails, implementerDetails, summarizeValidation, taskFiles } from './details.js';
 
 export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
-  validationResults?: ValidationResult[] | undefined;
   validationSummary?: string | undefined;
 }
 
@@ -365,9 +363,7 @@ export function runnerHaltRow(issue: RecoveryIssue, toolMessage: string): string
 
 /** The error a retry-exhausted brief stopped on; a denial or a no-change message is not a check result. */
 function lastErrorDetail(validation: ReturnType<typeof summarizeValidation>): string {
-  return validation.stage === undefined
-    ? `Last error: ${validation.summary}`
-    : `Last error: ${validation.stage} failed: ${validation.summary}`;
+  return `Last error: ${validation.summary}`;
 }
 
 /** The end of a hand-back, where an implementer that stopped says why. */
@@ -411,7 +407,6 @@ export function buildRetryExhaustedRecoveryIssue(
     maxAttempts: opts.maxAttempts,
     selectedImplementerProfile: opts.selectedImplementerProfile,
     facts: compactFacts({
-      validationStage: validation.stage,
       validationSummary: validation.summary,
       allowRetryOverride: opts.allowRetryOverride,
       escalationBlockedBy: opts.escalationBlockedBy,

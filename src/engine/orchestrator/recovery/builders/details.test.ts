@@ -3,6 +3,15 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { attemptDetails, summarizeValidation, taskFiles } from './details.js';
 
 describe('summarizeValidation', () => {
+  it('names a missing failing check when validation reports no details', () => {
+    for (const validationSummary of [undefined, '', '  ']) {
+      expect(summarizeValidation({ validationSummary })).toEqual({
+        detail: 'Validation failed without a reported failing check.',
+        summary: 'Validation failed without a reported failing check.',
+      });
+    }
+  });
+
   it('drops npm banner lines and blank lines before summarizing', () => {
     const { summary } = summarizeValidation({
       validationSummary:
@@ -20,21 +29,6 @@ describe('summarizeValidation', () => {
     });
 
     expect(summary).toBe('> splitbrief@0.1.0 lint > biome check .');
-  });
-
-  it('strips the banner from a failing stage result too', () => {
-    const { detail, stage } = summarizeValidation({
-      validationResults: [
-        {
-          stage: 'test',
-          passed: false,
-          error: '> pkg@1.0.0 test\n> vitest run\n\nFAIL src/b.test.ts',
-        },
-      ],
-    });
-
-    expect(detail).toBe('Validation test failed: FAIL src/b.test.ts');
-    expect(stage).toBe('test');
   });
 
   it('drops nested npm banners and retains the diagnostic', () => {

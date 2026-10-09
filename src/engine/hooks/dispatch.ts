@@ -5,11 +5,10 @@ import {
   type HooksConfig,
   type HookCommandResponse,
 } from '../../core/schemas/hooks.js';
-import type { EngineEvent } from '../events/types.js';
 import { spawnWithTimeout } from '../../lib/process/spawn/progress.js';
 import { isENOENT, processError } from '../../lib/process/errors.js';
 import { startsWithEventPlaceholder, substituteEventFields } from './substitute.js';
-import type { HookOutcome, HookContext } from './types.js';
+import type { HookOutcome, HookContext, HookPayload } from './types.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { boundConsumerPayload } from '../../core/payload-bounds.js';
 import { isRecord } from '../../utils/type-guards.js';
@@ -17,7 +16,7 @@ import { hookTrustIneligibility, isHooksConfigTrusted } from '../../core/hooks/t
 
 export async function runTrustedHook(
   entry: HookEntry,
-  event: EngineEvent,
+  event: HookPayload,
   ctx: HookContext,
   hooks: HooksConfig,
 ): Promise<HookOutcome> {
@@ -35,7 +34,7 @@ export function hookTrustRefusal(projectDir: string, hooks: HooksConfig): string
 
 export async function runHook(
   entry: HookCommandEntry,
-  event: EngineEvent,
+  event: HookPayload,
   ctx: HookContext,
 ): Promise<HookOutcome> {
   const args = guardInterpolatedArgs(entry.args, event);
@@ -80,7 +79,7 @@ export async function runHook(
   }
 }
 
-function guardInterpolatedArgs(templates: readonly string[], event: EngineEvent): string[] {
+function guardInterpolatedArgs(templates: readonly string[], event: HookPayload): string[] {
   const out: string[] = [];
   let guarded = false;
   for (const template of templates) {

@@ -1,6 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
 import type { TaskCompletionMethod, TaskStatus } from '../../../core/schemas/enums.js';
-import type { ValidationResult } from '../validation/result.js';
 import type { CheckRunResult } from '../validation/run-checks.js';
 import type {
   EvidenceApiApply,
@@ -9,7 +8,6 @@ import type {
   EvidencePromotedFile,
   EvidencePromotionAttempt,
   EvidenceTask,
-  EvidenceValidationEntry,
 } from '../../../core/schemas/evidence.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import {
@@ -203,55 +201,6 @@ function withTargetWrites(input: {
   };
 }
 
-function isExemptStage(
-  stage: EvidenceValidationEntry['stage'],
-  exemptStages: readonly EvidenceValidationEntry['stage'][] | undefined,
-): boolean {
-  return exemptStages ? exemptStages.includes(stage) : false;
-}
-
-export function validationEntries(
-  results: ValidationResult[],
-  metadata?:
-    | {
-        retryState?: EvidenceValidationEntry['retryState'];
-        changedFiles?: string[] | undefined;
-        exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
-      }
-    | undefined,
-): EvidenceValidationEntry[] {
-  return results.map((r) => {
-    const entry: EvidenceValidationEntry = { stage: r.stage, passed: r.passed };
-    // The final review must quote validation output instead of summarising
-    // it, so the recorded command and its output are part of the evidence.
-    if (r.command !== undefined) entry.command = r.command;
-    if (r.output !== undefined && r.output.trim() !== '') entry.output = r.output;
-    if (r.error && !r.passed) entry.errorSummary = r.error.split('\n').slice(0, 5).join('\n');
-    if (r.skipped === true) {
-      entry.skipped = true;
-      if (r.skippedReason !== undefined) entry.skippedReason = r.skippedReason;
-    }
-    if (!r.passed && isExemptStage(r.stage, metadata?.exemptStages)) entry.baselineExempt = true;
-    if (metadata?.retryState) entry.retryState = metadata.retryState;
-    if (metadata?.changedFiles && metadata.changedFiles.length > 0) {
-      entry.changedFiles = [...metadata.changedFiles];
-    }
-    return entry;
-  });
-}
-
-export function appendValidationEntries(
-  target: EvidenceValidationEntry[],
-  entries: EvidenceValidationEntry[],
-): void {
-  for (const entry of entries) {
-    target.push({
-      ...entry,
-      ...(entry.changedFiles ? { changedFiles: [...entry.changedFiles] } : {}),
-    });
-  }
-}
-
 export type RecordLocalTaskEvidenceInput = {
   ledger: EvidenceLedger;
   task: Task;
@@ -259,10 +208,7 @@ export type RecordLocalTaskEvidenceInput = {
   method?: TaskCompletionMethod | undefined;
   retries?: number | undefined;
   durationMs?: number | undefined;
-  validation: ValidationResult[];
   changedFiles?: string[] | undefined;
-  validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
-  exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
 };
 
 export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): EvidenceLedger {
@@ -274,14 +220,6 @@ export function recordLocalTaskEvidence(input: RecordLocalTaskEvidenceInput): Ev
   for (const file of input.changedFiles ?? observedChangedFiles(next, input.task)) {
     if (file) uniquePush(next.changedFiles, file);
   }
-  appendValidationEntries(
-    next.validation,
-    validationEntries(input.validation, {
-      retryState: input.validationRetryState,
-      changedFiles: input.changedFiles,
-      exemptStages: input.exemptStages,
-    }),
-  );
   return upsertEvidenceTask(input.ledger, next);
 }
 
@@ -292,11 +230,8 @@ export type RecordRetryOrEscalationEvidenceInput = {
   method?: TaskCompletionMethod | undefined;
   retries?: number | undefined;
   durationMs?: number | undefined;
-  validation?: ValidationResult[] | undefined;
   changedFiles?: string[] | undefined;
   escalated: boolean;
-  validationRetryState?: EvidenceValidationEntry['retryState'] | undefined;
-  exemptStages?: readonly EvidenceValidationEntry['stage'][] | undefined;
 };
 
 export function recordRetryOrEscalationEvidence(
@@ -310,18 +245,6 @@ export function recordRetryOrEscalationEvidence(
   next.escalated = input.escalated || next.escalated;
   for (const file of input.changedFiles ?? []) {
     if (file) uniquePush(next.changedFiles, file);
-  }
-  if (input.validation) {
-    appendValidationEntries(
-      next.validation,
-      validationEntries(input.validation, {
-        retryState:
-          input.validationRetryState ??
-          (input.escalated ? 'escalated' : input.status === 'failed' ? 'failed' : 'retry'),
-        changedFiles: input.changedFiles,
-        exemptStages: input.exemptStages,
-      }),
-    );
   }
   return upsertEvidenceTask(input.ledger, next);
 }

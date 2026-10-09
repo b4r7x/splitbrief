@@ -44,7 +44,6 @@ const EvidenceValidationEntrySchema = z.object({
   skipped: z.boolean().optional(),
   skippedReason: z.string().optional(),
 });
-export type EvidenceValidationEntry = z.infer<typeof EvidenceValidationEntrySchema>;
 
 const EvidenceCheckEntrySchema = z.object({
   id: z.string(),

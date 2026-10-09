@@ -618,6 +618,42 @@ describe('groupEventsIntoSections', () => {
       });
     });
 
+    // Q2 review B3: a red whose every failure also fails at the run base counted as a failed command.
+    it('counts a red whose every failure is pre-existing as no failed command', () => {
+      const check = (ts: number, id: string, fields: Record<string, unknown>) =>
+        at('full_suite', 'final-review', ts, { id, moment: 'pre-review', ...fields });
+      const sections = groupEventsIntoSections([
+        start('T001', 0),
+        complete('T001'),
+        at('review_checks', 'final-review', 19_000, { scope: 'final', status: 'planned' }),
+        check(20_000, 'V1', { status: 'done', command: 'npm test', passed: false }),
+        check(20_500, 'V1', {
+          status: 'done',
+          command: 'npm test',
+          moment: 'base',
+          passed: false,
+          newFailures: 0,
+          preExisting: 2,
+        }),
+        check(21_000, 'V2', { status: 'done', command: 'make test', passed: false }),
+        check(21_500, 'V2', {
+          status: 'done',
+          command: 'make test',
+          moment: 'base',
+          passed: false,
+          newFailures: 1,
+          preExisting: 1,
+        }),
+        at('review_fix_started', 'implementing', 22_000, { taskIds: ['T002'] }),
+        start('T002', 1),
+      ]);
+
+      expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
+        stage: 'review',
+        failedCommands: ['make test'],
+      });
+    });
+
     it('ignores untimed rows and uses zero duration when a stage has only one timestamp', () => {
       const sections = groupEventsIntoSections([
         { type: 'planner_text', phase: 'planning' } as const,

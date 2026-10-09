@@ -761,7 +761,7 @@ phase: final-review
 reviewer check declined: src/legacy/old.test.ts (the run did not touch the legacy module)
 reviewer check V1: passed (npm test)
 reviewer check V2: failed (npm run lint)
-reviewer check V2 at base: fails
+base re-run V2: pre-existing · all 2 failures also fail before this run's changes
 phase: complete
 review: passed
 done: 3 tasks
@@ -775,7 +775,10 @@ done: 3 tasks
 - `reviewer check <id>: passed (<command>)` or `reviewer check <id>: failed (<command>)` — the result of one reviewer check (`V1`, `V2`, …) in the run workspace.
 - `reviewer check <id>: refused (<detail>)` — the command policy refused the reviewer check, for example a script this run changed.
 - `reviewer check <id>: not run (<detail>)` — the reviewer check did not run. An earlier reviewer check with new failures stops the later ones: `not run (V1 failed)`.
-- `reviewer check <id> at base: passes|fails` — the re-run of a red reviewer check at the run base, with the same command text. `fails` marks the failures that also occur at the run base as pre-existing. A re-run that is refused or does not run reads `reviewer check <id> at base: refused (<detail>)` or `reviewer check <id> at base: not run (<detail>)`.
+- `base re-run <id>: passes` — the re-run of a red reviewer check at the run base, with the same command text, passed: every failure is new.
+- `base re-run <id>: <m> new, <n> pre-existing` — the re-run is red too, and `<m>` failures do not occur at the run base. New failures stop the later reviewer checks.
+- `base re-run <id>: pre-existing · all <n> failures also fail before this run's changes` — every failure also occurs at the run base, so the run goes on (`the failure also fails …` for one). A session from before these counts reads `fails`. A re-run that is refused or does not run reads `base re-run <id>: refused (<detail>)` or `base re-run <id>: not run (<detail>)`.
+- `fix check <id>: passed (<command>)`, `failed (<command>)`, `refused (<detail>)` or `not run (<detail>)` — a fix brief ran the red reviewer check it answers again, with the command the finding carries. A red fix check re-runs at the run base and prints the `base re-run` line above.
 - `review: passed|failed [(<n> blocking)]` — the final review verdict. `failed` means the reviewer still reported blocking findings after its fix cycles and carries their count. Without an Accept as is override, the command exits `1` even though every task reached `done`. A checkout run accepted as is exits `0` and keeps the failed verdict.
 - `done: <n> tasks` — the closing line, written on completion whatever the review said. `<n>` is the run's completed tasks, read from its state when it completes (`completedTasks` on `workflow_complete`): a task a review-fix cycle completes again counts once, a `continue` counts the tasks an earlier process completed, and a task that did not complete does not count, so `<n>` can be less than the length of the task list. The line carries no token count: token and money figures belong to the run's own record and `/usage`, not to the plain stream.
 

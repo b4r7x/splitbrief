@@ -1,4 +1,5 @@
 import { formatToolModel } from '../../../core/model-display.js';
+import { baseSplit } from '../../../core/review/base-split.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../core/schemas/enums.js';
 import type { TaskContextFit } from '../../../core/schemas/enums.js';
@@ -119,27 +120,38 @@ export function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>
   if (event.status === 'running') return `${label}${SOFT_SEP}running`;
   if (event.status === 'not-run') return `${label}${SOFT_SEP}not run${detail}`;
   if (event.status === 'refused') return `${label}${SOFT_SEP}refused${detail}`;
+  const split =
+    event.moment === 'base' &&
+    event.passed === false &&
+    event.newFailures !== undefined &&
+    event.preExisting !== undefined
+      ? baseSplit({ newFailures: event.newFailures, preExisting: event.preExisting })
+      : null;
   const verdict =
-    event.moment === 'base'
+    split?.verdict ??
+    (event.moment === 'base'
       ? event.passed === true
         ? 'passes at the run base'
         : 'fails at the run base too'
       : event.passed === true
         ? 'passed'
-        : 'failed';
-  const dur = event.duration === undefined ? '' : ` ${formatDuration(event.duration)}`;
-  return `${label}${SOFT_SEP}${verdict}${dur}`;
+        : 'failed');
+  const dur = event.duration === undefined ? '' : `${SOFT_SEP}${formatDuration(event.duration)}`;
+  // The clock follows the verdict, as on every other row; the reason a red is pre-existing follows it.
+  const why = split === null || split.why === null ? '' : `${SOFT_SEP}${split.why}`;
+  return `${label}${SOFT_SEP}${verdict}${dur}${why}`;
 }
 
-// A red command is the run's own failure; the same red at the run base is pre-existing, the warning
-// a pre-existing validation failure wears. A refused command is the policy's call, not a red one.
-// Every other state stays dim, so `failed` never reads like `not run`.
+// A red reviewer or fix check is an error. A red base re-run is an error when new failures remain;
+// all-pre-existing failures and older base rows stay warning. Refused commands also stay warning.
 export function fullSuiteTone(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
 ): ConversationRowTone {
   if (event.status === 'refused') return 'warning';
   if (event.status !== 'done' || event.passed === true) return 'textDim';
-  return event.moment === 'base' ? 'warning' : 'error';
+  return event.moment === 'base' && (event.newFailures === undefined || event.newFailures === 0)
+    ? 'warning'
+    : 'error';
 }
 
 /** The headline of the commands the reviewer chose before a review, or of the checks being off. */

@@ -3,14 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { runBriefGate } from '../task/brief-gate.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { EscalationContext } from './types.js';
-
-const NOT_ACCEPTED_ACCEPTANCE: ValidationAcceptance = {
-  accepted: false,
-  exemptStages: [],
-  blockingStages: [],
-};
 
 export type ValidateAndCommitOptions = {
   ctx: EscalationContext;
@@ -31,9 +24,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     return {
       state,
       completed: false,
-      validationResults: [],
       blockedReason: 'aborted',
-      acceptance: NOT_ACCEPTED_ACCEPTANCE,
     };
   }
 
@@ -45,9 +36,8 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     taskStartSnapshot: ctx.taskStartSnapshot,
   });
   state = gated.state;
-  const { validationResults, acceptance } = gated;
-  if (gated.stop !== undefined)
-    return { state, completed: false, validationResults, acceptance, blockedReason: gated.stop };
+  const { acceptance } = gated;
+  if (gated.stop !== undefined) return { state, completed: false, blockedReason: gated.stop };
   const result = await validateCommitAndAdvance({
     task,
     projectDir: ctx.projectDir,
@@ -66,8 +56,6 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
   });
   return {
     ...result,
-    validationResults,
-    acceptance,
     error: gated.error,
     diagnosis: gated.diagnosis,
   };

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   makeCallbacks,
@@ -53,7 +53,12 @@ describe('runSingleTask — pre_validation hooks', () => {
 
     writeFileSync(
       join(projectDir, 'deny-validation.mjs'),
-      "console.log(JSON.stringify({ decision: 'deny', message: 'policy: validation gated' }));\n",
+      [
+        "import { readFileSync, writeFileSync } from 'node:fs';",
+        "writeFileSync('pre-validation-payload.json', readFileSync(0, 'utf8'));",
+        "console.log(JSON.stringify({ decision: 'deny', message: 'policy: validation gated' }));",
+        '',
+      ].join('\n'),
     );
 
     const implementer = makeImplementer({
@@ -107,6 +112,11 @@ describe('runSingleTask — pre_validation hooks', () => {
     });
 
     expect(runCommand).not.toHaveBeenCalled();
+    const payload = JSON.parse(
+      readFileSync(join(projectDir, 'pre-validation-payload.json'), 'utf8'),
+    ) as { event: Record<string, unknown> };
+    expect(payload.event).toMatchObject({ type: 'validate', taskId: 'T001', status: 'running' });
+    expect(payload.event).not.toHaveProperty('stages');
     expect(result.tasks[0]?.status).toBe('skipped');
     expect(result.currentTaskIndex).toBe(1);
     expect(result.pendingRecovery).toBeUndefined();

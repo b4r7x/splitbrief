@@ -238,7 +238,7 @@ describe('partial evidence and resume', () => {
       state: implState.state,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      acceptance: { accepted: true, exemptStages: [], blockingStages: [] },
+      acceptance: { accepted: true },
       applyResult: implState.implResult.applyResult,
     });
 

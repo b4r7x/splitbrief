@@ -176,7 +176,7 @@ type Task = {
       id: string; text: string; acceptance: string | null;  // the finding or input, verbatim
       file?: string;                 // the file the red or finding names
       checkIds?: string[];           // the check that was red (`V1`, a plan or task check), or the finding's checks
-      command?: string;              // the exact command text of the red check
+      commands?: Record<string, string>;  // check id -> the exact command text it ran
       output?: string;               // the captured failing output
     }>;                              // the brief gate runs those checks again
   };
@@ -261,9 +261,17 @@ type TriageResult = {
 };
 ```
 
-Unless `ask` is set, the answer covers every blocking finding except an unverified finding. It also covers every pending input. Each id appears exactly once in `fixTasks[].findingIds`, `rejected[].findingId` or `verify[].findingId`. Rejections name pending inputs only. Unverified and minor findings never create fix tasks. A verification names registered plan or task checks. A fix task names only known criteria.
+Unless `ask` is set, the answer covers every blocking finding except an unverified finding. It also covers every pending input. Each id appears exactly once in `fixTasks[].findingIds`, `rejected[].findingId` or `verify[].findingId`. Rejections name pending inputs only.
 
-SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`. A finding that answers a red check also carries its `checkIds`, `command`, `file` and `output`, from the pending input. The fix task's brief gate runs those checks again through the same check runner and command policy, so a red fix fails the brief and enters the retry ladder. A red reviewer check there re-runs at the run base, and a red that is only pre-existing does not fail the brief. An older fix task that carries a `stage` loads without it. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
+Unverified and minor findings never create fix tasks. A verification names registered plan or task checks. A fix task names only known criteria. A verdict finding assigned to a fix task names only registered checks. An unknown check id sends the answer back for its one schema repair.
+
+SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`.
+
+A finding that answers a red check also carries its `checkIds`, `commands`, `file` and `output`. Each `commands` entry maps a check id to the exact command text it ran. A verdict finding carries every reviewer command its `checkIds` name. A pending input supplies its single command for its named check.
+
+The fix task's brief gate runs those checks again through the same check runner and command policy. A red fix fails the brief and enters the retry ladder. A red reviewer check there re-runs at the run base. A red that is only pre-existing does not fail the brief and records `passed: true` in `checkResults`. Its command evidence keeps the failure.
+
+An older fix task that carries a `stage` loads without it. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
 
 A missing `touchedNotSuggested` reason never overturns a passing check. These reasons inform the reviewer. Rejected inputs reach the next review packet. SPLITBRIEF runs `verify` checks before it starts fix work.
 
@@ -477,13 +485,14 @@ type EvidenceLedger = {
     retries: number;
     durationMs?: number;        // the same value as the brief's task_completed.duration
     changedFiles: string[];
-    validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean;
+    validation: Array<{ stage: 'typecheck' | 'lint' | 'test'; passed: boolean; // only an older ledger writes stages; a new entry writes []
                         skipped?: boolean; skippedReason?: string; errorSummary?: string }>;
-    checks?: Array<{             // one entry per check run: a stage, the suite, or a registered check
-      id: string;                // the stage name or the registered check id
+    checks?: Array<{             // one entry per brief check, plan check, task check or reviewer check run
+      id: string;                // the check id, such as V1; only an older ledger holds stage ids
       command?: string;
       exitCode?: number;
       output?: string;           // bounded, redacted tail
+      preExisting?: string[];    // failure keys the same reviewer command also shows at the run base
       artifacts?: Array<{ path: string; sha256: string }>;
       workspaceSnapshotId?: string;
       ts: string;
@@ -577,7 +586,7 @@ An older report may carry a `score` and `out_of_bounds_text_match` findings. The
 | `missing_expected_file` | warning | Task is `done` / `escalated` but none of its suggested files is in the diff. |
 | `failed_task_with_diff` | error | Task is `failed` but one of its suggested files appears in the diff. |
 | `orphan_diff` | error | Diff contains files but every task is `failed` or `skipped`. |
-| `missing_evidence` | warning | Task `done`/`escalated` declared expected evidence but the ledger observed none — or observed its `test` check as `not-runnable`, which is absence of proof, not proof. |
+| `missing_evidence` | warning | No current run produces it. An older saved report that has it still loads. |
 
 ### Event
 

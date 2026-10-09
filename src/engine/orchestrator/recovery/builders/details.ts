@@ -1,5 +1,4 @@
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
-import type { ValidationResult } from '../../validation/result.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
 import { summarizeText } from './issue.js';
@@ -22,30 +21,18 @@ function stripBannerLines(input: string): string {
   return kept.length > 0 ? kept.join('\n') : input;
 }
 
-export function summarizeValidation(opts: {
-  validationResults?: ValidationResult[] | undefined;
-  validationSummary?: string | undefined;
-}): { detail: string; summary: string; stage?: ValidationResult['stage'] | undefined } {
+export function summarizeValidation(opts: { validationSummary?: string | undefined }): {
+  detail: string;
+  summary: string;
+} {
   if (opts.validationSummary !== undefined && opts.validationSummary.trim().length > 0) {
     const summary = summarizeText(stripBannerLines(opts.validationSummary));
     return { detail: `Validation: ${summary}`, summary };
   }
 
-  const failed = opts.validationResults?.find((result) => !result.passed);
-  if (!failed) {
-    return {
-      detail: 'Validation failed without a reported failing stage.',
-      summary: 'Validation failed without a reported failing stage.',
-    };
-  }
-
-  const summary = summarizeText(
-    stripBannerLines(failed.error || failed.output || `${failed.stage} failed`),
-  );
   return {
-    detail: `Validation ${failed.stage} failed: ${summary}`,
-    summary,
-    stage: failed.stage,
+    detail: 'Validation failed without a reported failing check.',
+    summary: 'Validation failed without a reported failing check.',
   };
 }
 

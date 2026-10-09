@@ -5,7 +5,7 @@ import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
-import { publishWarning, publishTaskComplete } from '../events.js';
+import { publishTaskComplete } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -72,18 +72,6 @@ export async function validateCommitAndAdvance(opts: ValidateCommitOptions): Pro
   }
   if (!acceptance.accepted) {
     return { state, completed: false };
-  }
-  if (acceptance.exemptStages.length > 0) {
-    publishWarning({
-      bus: bus,
-      phase: state.phase,
-      taskId: task.id,
-      message: `Task ${task.id} accepted over pre-existing failures in ${acceptance.exemptStages.join(', ')} (already failing before this run; not attributed to this task).`,
-      safety: {
-        category: 'workflow',
-        code: 'validation_baseline_exempt',
-      },
-    });
   }
 
   const durationMs = Date.now() - taskStartTime;

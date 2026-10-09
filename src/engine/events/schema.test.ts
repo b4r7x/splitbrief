@@ -470,6 +470,24 @@ describe('parseEngineEvent', () => {
     expect(parseEngineEvent({ ...event, phase: 'implementing', moment: 'baseline' })).toBeNull();
   });
 
+  it('accepts a fix check a brief runs again and the split of a red at the run base', () => {
+    const event = {
+      type: 'full_suite',
+      ts: 1,
+      phase: 'implementing',
+      status: 'done',
+      id: 'V1',
+      command: 'npm test',
+      passed: false,
+    };
+    expect(parseEngineEvent({ ...event, moment: 'brief' })).toEqual(
+      expect.objectContaining({ type: 'full_suite', moment: 'brief' }),
+    );
+    expect(parseEngineEvent({ ...event, moment: 'base', newFailures: 1, preExisting: 2 })).toEqual(
+      expect.objectContaining({ moment: 'base', newFailures: 1, preExisting: 2 }),
+    );
+  });
+
   it('accepts a full_suite done event and rejects an unknown moment', () => {
     expect(
       parseEngineEvent({

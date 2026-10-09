@@ -9,8 +9,6 @@ import type { ChangeDetectionKind } from '../../change-detection.js';
 import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
 import type { UsageCategory } from '../tokens.js';
 import type { IsolationRole } from '../isolation/types.js';
-import type { ValidationResult } from '../validation/result.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { HAND_BACK_MAX_CHARS } from '../../../core/pipeline-spec/ladder.js';
 
@@ -26,10 +24,8 @@ export type RetryResult =
       completed: true;
       method: Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
       attempts: number;
-      acceptance: ValidationAcceptance;
       /** The brief's duration its completion event published. */
       durationMs: number;
-      validationResults?: ValidationResult[] | undefined;
       changedFiles?: string[] | undefined;
       tool?: string | undefined;
       model?: string | undefined;

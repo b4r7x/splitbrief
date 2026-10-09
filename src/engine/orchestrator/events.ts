@@ -201,8 +201,10 @@ export function publishReviewCheck(
     status: 'running' | 'done' | 'not-run' | 'refused';
     id: string;
     command: string;
-    moment: 'pre-review' | 'base';
+    moment: 'pre-review' | 'base' | 'brief';
     passed?: boolean | undefined;
+    newFailures?: number | undefined;
+    preExisting?: number | undefined;
     detail?: string | undefined;
     duration?: number | undefined;
   },
@@ -216,6 +218,8 @@ export function publishReviewCheck(
     command: opts.command,
     moment: opts.moment,
     ...(opts.passed !== undefined && { passed: opts.passed }),
+    ...(opts.newFailures !== undefined && { newFailures: opts.newFailures }),
+    ...(opts.preExisting !== undefined && { preExisting: opts.preExisting }),
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });

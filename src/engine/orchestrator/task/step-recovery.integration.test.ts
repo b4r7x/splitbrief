@@ -29,6 +29,8 @@ import { createValidator } from '../validation/run.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import { runSingleTask } from './step.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import * as escalationHandle from '../escalation/handle.js';
+import { failedRetry } from '../escalation/types.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -393,6 +395,58 @@ describe('runSingleTask — the consult-bound halt names the last failure', () =
     // The config notice that opens the output does not crowd out the brief's own diagnostic.
     expect(String(result.pendingRecovery?.facts?.['failingOutput'])).toContain(
       'src/main.ts format',
+    );
+  });
+});
+
+describe('runSingleTask — the retry-exhausted halt keeps the check output', () => {
+  it('quotes the failing check when the ladder names no last error', {
+    timeout: 90_000,
+  }, async () => {
+    const { projectDir, sessionId } = setupProject({ 'src/main.ts': 'export const main = 0;\n' });
+    const task = makeTask({
+      id: 'T001',
+      action: 'modify',
+      suggestedFiles: ['src/main.ts'],
+      scope: { inBounds: ['src/main.ts'] },
+      checks: BRIEF_CHECKS,
+    });
+    const implementer = makeImplementer({
+      implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
+        writeFileSync(join(runDir, 'src/main.ts'), 'export const main = 1;\n');
+        return { success: true, output: 'ok', usage: { inputTokens: 10, outputTokens: 5 } };
+      }),
+    });
+    failBriefChecks();
+    vi.spyOn(escalationHandle, 'handleRetryAndEscalation').mockImplementation(
+      async ({ currentState }) => ({ state: currentState, result: failedRetry(1) }),
+    );
+    const wctx = await openRunWorkspace(
+      makeWorkflowContext({
+        projectDir,
+        sessionId,
+        isolation: makeWorktreeIsolation({ projectDir, sessionId }),
+        callbacks: makeCallbacks().callbacks,
+        implementer,
+        bus: makeBusRecorder().bus,
+        config: makeConfig({ workflow: { review: 'task' } }),
+      }),
+    );
+
+    const result = await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    expect(result.pendingRecovery?.reason).toBe('retry-exhausted');
+    expect(result.pendingRecovery?.details[0]).toBe(
+      'Last error: check K1 did not pass (fail): test failed',
     );
   });
 });

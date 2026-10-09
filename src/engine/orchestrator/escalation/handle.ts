@@ -4,7 +4,6 @@ import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
-import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
 import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
@@ -68,13 +67,6 @@ type HandleRetryOptions = {
   initialBlocked?: BlockedReport | undefined;
   /** The user's answer to a change of what the first attempt reported. */
   initialAnswer?: string | undefined;
-};
-
-/** A consult-run verify already committed the task; the run records a plain accepted completion. */
-const CONSULT_COMPLETION_ACCEPTANCE: ValidationAcceptance = {
-  accepted: true,
-  exemptStages: [],
-  blockingStages: [],
 };
 
 function handBackOf(outcome: RetryStepOutcome): string | undefined {
@@ -596,7 +588,6 @@ export async function handleRetryAndEscalation(
           completed: true,
           method: 'consulted',
           attempts,
-          acceptance: CONSULT_COMPLETION_ACCEPTANCE,
           durationMs: applied.durationMs,
           ...(changedFiles.length > 0 && { changedFiles: [...changedFiles] }),
         },

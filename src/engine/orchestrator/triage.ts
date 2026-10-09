@@ -1,10 +1,9 @@
 import { fixBriefDescription, type FixFinding } from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Plan } from '../../core/schemas/plan.js';
-import type { TriageInput } from '../../core/schemas/review.js';
-import type { TriageResult } from '../../core/schemas/review.js';
+import { REVIEW_CHECK_ID, type TriageInput, type TriageResult } from '../../core/schemas/review.js';
 import type { SpecMetadata } from '../../core/paths-io.js';
-import type { Task, TaskId } from '../../core/schemas/task.js';
+import type { Check, Task, TaskId } from '../../core/schemas/task.js';
 import {
   fixCyclesOf,
   type ReviewChecksRecord,
@@ -64,7 +63,7 @@ export function triageContractErrors(
   findings: readonly Finding[],
   inputs: readonly TriageInput[],
   tasks: readonly Task[] = [],
-  reviewChecks?: ReviewChecksRecord | undefined,
+  reviewChecks?: readonly Check[] | undefined,
 ): string[] {
   const errors: string[] = [];
   const blocking = findings.filter(
@@ -115,6 +114,7 @@ export function triageContractErrors(
       tasks.map((task) => ({ ...task, batch: task.batch ?? 1 })),
     ).map((error) => error.message),
   );
+  const checks = checkRegistry({ plan, tasks, reviewChecks });
   for (const task of result.fixTasks) {
     for (const id of task.findingIds) {
       const finding = findings.find((finding) => finding.id === id);
@@ -123,6 +123,11 @@ export function triageContractErrors(
         (finding.kind === 'unverified' || finding.severity === 'minor')
       ) {
         errors.push(`Finding ${id} cannot be assigned to a fix task.`);
+      }
+      for (const checkId of finding?.checkIds ?? []) {
+        if (!checks.has(checkId)) {
+          errors.push(`Finding ${id} names unknown check ${checkId}.`);
+        }
       }
     }
   }
@@ -134,7 +139,6 @@ export function triageContractErrors(
       }
     }
   }
-  const checks = checkRegistry({ plan, tasks, reviewChecks });
   for (const entry of result.verify) {
     for (const checkId of entry.checkIds) {
       if (!checks.has(checkId)) {
@@ -191,26 +195,38 @@ function findingFor(
   id: string,
   review: ReviewRecord | undefined,
   inputs: readonly TriageInput[],
+  reviewChecks: ReviewChecksRecord | undefined,
 ): FixFinding | undefined {
   const finding = review?.verdict.findings.find((candidate) => candidate.id === id);
   if (finding !== undefined) {
+    const commands: Record<string, string> = {};
+    for (const id of finding.checkIds ?? []) {
+      if (!REVIEW_CHECK_ID.test(id)) continue;
+      const check = reviewChecks?.plan.commands.find((check) => check.id === id);
+      if (check !== undefined) commands[id] = check.command;
+    }
     return {
       id: finding.id,
       text: finding.text,
       acceptance: finding.acceptance,
       ...(finding.file !== null && { file: finding.file }),
       ...(finding.checkIds !== null && { checkIds: finding.checkIds }),
+      ...(Object.keys(commands).length > 0 && { commands }),
     };
   }
   const input = inputs.find((candidate) => candidate.id === id);
   if (input === undefined) return undefined;
+  const commands: Record<string, string> = {};
+  if (input.command !== undefined) {
+    for (const id of input.checkIds ?? []) commands[id] = input.command;
+  }
   return {
     id: input.id,
     text: input.text,
     acceptance: null,
     ...(input.file !== null && { file: input.file }),
     ...(input.checkIds !== undefined && { checkIds: input.checkIds }),
-    ...(input.command !== undefined && { command: input.command }),
+    ...(Object.keys(commands).length > 0 && { commands }),
     ...(input.output !== undefined && { output: input.output }),
   };
 }
@@ -242,7 +258,7 @@ export function applyTriage(
   const converted = insertTasks(result.fixTasks, state.tasks, (spec) => {
     const task = taskFromSpec(spec, ctx.workspaceDir);
     const findings = spec.findingIds.flatMap((id) => {
-      const finding = findingFor(id, review, inputs);
+      const finding = findingFor(id, review, inputs, state.reviewChecks);
       return finding === undefined ? [] : [finding];
     });
     return {

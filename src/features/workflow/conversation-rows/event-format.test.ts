@@ -196,7 +196,7 @@ describe('fullSuiteRow', () => {
         passed: false,
         duration: 3_000,
       }),
-    ).toBe('Pre-review suite · npm test · failed 3.0s');
+    ).toBe('Pre-review suite · npm test · failed · 3.0s');
   });
 
   // Review render (red gate): `failed 16.0s` wore the same dim as the `not run` rows under it.
@@ -229,10 +229,10 @@ describe('fullSuiteRow', () => {
     } as const;
 
     expect(fullSuiteRow({ ...rerun, passed: false })).toBe(
-      'Base re-run · npm test -- src/legacy.test.ts · fails at the run base too 2.0s',
+      'Base re-run · npm test -- src/legacy.test.ts · fails at the run base too · 2.0s',
     );
     expect(fullSuiteRow({ ...rerun, passed: true })).toBe(
-      'Base re-run · npm test -- src/legacy.test.ts · passes at the run base 2.0s',
+      'Base re-run · npm test -- src/legacy.test.ts · passes at the run base · 2.0s',
     );
     expect(fullSuiteTone({ ...rerun, passed: false })).toBe('warning');
     expect(fullSuiteTone({ ...rerun, passed: true })).toBe('textDim');
@@ -260,10 +260,10 @@ describe('fullSuiteRow for a reviewer check', () => {
       'Reviewer check V1 · npm test · running',
     );
     expect(fullSuiteRow(reviewCheck({ status: 'done', passed: true, duration: 1_000 }))).toBe(
-      'Reviewer check V1 · npm test · passed 1.0s',
+      'Reviewer check V1 · npm test · passed · 1.0s',
     );
     expect(fullSuiteRow(reviewCheck({ status: 'done', passed: false, duration: 3_000 }))).toBe(
-      'Reviewer check V1 · npm test · failed 3.0s',
+      'Reviewer check V1 · npm test · failed · 3.0s',
     );
   });
 
@@ -288,10 +288,10 @@ describe('fullSuiteRow for a reviewer check', () => {
   it('names the re-run at the run base with the same id and command text', () => {
     const base = reviewCheck({ moment: 'base', status: 'done', duration: 2_000 });
     expect(fullSuiteRow({ ...base, passed: true })).toBe(
-      'Base re-run V1 · npm test · passes at the run base 2.0s',
+      'Base re-run V1 · npm test · passes at the run base · 2.0s',
     );
     expect(fullSuiteRow({ ...base, passed: false })).toBe(
-      'Base re-run V1 · npm test · fails at the run base too 2.0s',
+      'Base re-run V1 · npm test · fails at the run base too · 2.0s',
     );
     expect(
       fullSuiteRow(
@@ -301,6 +301,43 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(
       fullSuiteRow(reviewCheck({ moment: 'base', status: 'not-run', detail: 'no check V1' })),
     ).toBe('Base re-run V1 · npm test · not run · no check V1');
+  });
+
+  // Q2 review B2: a fix brief re-ran V1 with no row of its own.
+  it('names a reviewer check a fix brief runs again as a fix check, by its id', () => {
+    const fix = reviewCheck({ phase: 'implementing', moment: 'brief' });
+    expect(fullSuiteRow({ ...fix, status: 'running' })).toBe('Fix check V1 · npm test · running');
+    expect(fullSuiteRow({ ...fix, status: 'done', passed: false, duration: 3_000 })).toBe(
+      'Fix check V1 · npm test · failed · 3.0s',
+    );
+    expect(
+      fullSuiteRow({
+        ...fix,
+        status: 'refused',
+        detail: 'runs the package script test, which this run changed',
+      }),
+    ).toBe(
+      'Fix check V1 · npm test · refused · runs the package script test, which this run changed',
+    );
+    expect(fullSuiteTone({ ...fix, status: 'done', passed: false })).toBe('error');
+  });
+
+  // Q2 review B3: one warning row stood for a red the run went on from and one it stopped at.
+  it('says how a red splits at the run base: all pre-existing as a warning, any new one as an error', () => {
+    const base = reviewCheck({ moment: 'base', status: 'done', passed: false, duration: 2_000 });
+    const allOld = { ...base, newFailures: 0, preExisting: 2 };
+    const oneOld = { ...base, newFailures: 0, preExisting: 1 };
+    const mixed = { ...base, newFailures: 1, preExisting: 2 };
+
+    expect(fullSuiteRow(allOld)).toBe(
+      "Base re-run V1 · npm test · pre-existing · 2.0s · all 2 failures also fail before this run's changes",
+    );
+    expect(fullSuiteRow(oneOld)).toBe(
+      "Base re-run V1 · npm test · pre-existing · 2.0s · the failure also fails before this run's changes",
+    );
+    expect(fullSuiteRow(mixed)).toBe('Base re-run V1 · npm test · 1 new, 2 pre-existing · 2.0s');
+    expect(fullSuiteTone(allOld)).toBe('warning');
+    expect(fullSuiteTone(mixed)).toBe('error');
   });
 
   it('paints a red check as an error, a red base re-run and a refusal as warnings, the rest dim', () => {

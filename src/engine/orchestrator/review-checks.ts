@@ -32,6 +32,7 @@ import { failingFilesFromOutput, lastTaskChangingFile } from './task/file-owner.
 import { extractFailureKeys } from './validation/extract-failure-keys.js';
 import {
   planApprovesNpmScripts,
+  reviewCheckList,
   runChecks,
   type CheckRunResult,
   type RunChecksOptions,
@@ -178,6 +179,15 @@ async function preExistingKeys(input: {
       unavailable: `${atBase?.run.status === 'refused' ? 'refused' : 'not run'}: ${atBase?.run.output ?? `no check ${input.id}`}`,
     };
   }
+  let keys: string[] = [];
+  if (atBase.run.status === 'fail') {
+    if (input.run.timedOut === true || atBase.run.timedOut === true) {
+      if (input.run.timedOut === true && atBase.run.timedOut === true) keys = [...input.keys];
+    } else {
+      const known = new Set(atBase.keys);
+      keys = input.keys.filter((key) => known.has(key));
+    }
+  }
   publishReviewCheck(input.notices, {
     status: 'done',
     id: input.id,
@@ -185,15 +195,10 @@ async function preExistingKeys(input: {
     moment: 'base',
     passed: atBase.run.status === 'pass',
     duration: Date.now() - startedAt,
+    newFailures: input.keys.length - keys.length,
+    preExisting: keys.length,
   });
-  if (atBase.run.status !== 'fail') return { keys: [] };
-  if (input.run.timedOut === true || atBase.run.timedOut === true) {
-    return {
-      keys: input.run.timedOut === true && atBase.run.timedOut === true ? [...input.keys] : [],
-    };
-  }
-  const known = new Set(atBase.keys);
-  return { keys: input.keys.filter((key) => known.has(key)) };
+  return { keys };
 }
 
 function noRunBase(
@@ -213,10 +218,9 @@ function noRunBase(
 
 /**
  * The failures of a red reviewer check split by the run base: `preExisting` are the keys the same
- * command text also shows there, `fresh` the rest. A brief gate that runs a reviewer check again
- * splits its red the same way.
+ * command text also shows there, `fresh` the rest.
  */
-export async function splitAtRunBase(input: {
+async function splitAtRunBase(input: {
   run: CheckRunResult;
   command: string;
   checkOptions: RunChecksOptions;
@@ -240,6 +244,54 @@ export async function splitAtRunBase(input: {
     fresh: keys.filter((key) => !atBase.keys.includes(key)),
     preExisting: atBase.keys,
     unavailable: atBase.unavailable,
+  };
+}
+
+/** Runs one reviewer check under its own row and clock, then splits a red at the run base. */
+export async function runReviewCheck(input: {
+  check: { id: string; command: string };
+  moment: 'pre-review' | 'brief';
+  checkOptions: RunChecksOptions;
+}): Promise<{ run: CheckRunResult; fresh: string[]; unavailable?: string | undefined }> {
+  const { moment, checkOptions } = input;
+  const { id, command } = input.check;
+  const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
+  const startedAt = Date.now();
+  publishReviewCheck(notices, { status: 'running', id, command, moment });
+  const [result] = await runChecks([id], checkOptions);
+  const run: CheckRunResult = result ?? {
+    checkId: id,
+    status: 'unknown',
+    output: `no result for ${id}`,
+  };
+  if (run.status !== 'pass' && run.status !== 'fail') {
+    publishReviewCheck(notices, {
+      status: run.status === 'refused' ? 'refused' : 'not-run',
+      id,
+      command,
+      moment,
+      detail: run.output,
+    });
+    return { run, fresh: [] };
+  }
+  publishReviewCheck(notices, {
+    status: 'done',
+    id,
+    command,
+    moment,
+    passed: run.status === 'pass',
+    duration: Date.now() - startedAt,
+  });
+  if (run.status === 'pass') return { run, fresh: [] };
+  const { fresh, preExisting, unavailable } = await splitAtRunBase({
+    run,
+    command,
+    checkOptions,
+  });
+  return {
+    run: preExisting.length > 0 ? { ...run, preExisting } : run,
+    fresh,
+    unavailable,
   };
 }
 
@@ -311,7 +363,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const checkOptions: RunChecksOptions = {
     plan: state.plan,
     tasks: state.tasks,
-    reviewChecks: record,
+    reviewChecks: reviewCheckList(record),
     base,
     projectDir: opts.workspaceDir,
     sessionId: opts.sessionId,
@@ -341,57 +393,21 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       lines.push(`- ${label}: not run, ${stoppedBy} failed`);
       continue;
     }
-    const startedAt = Date.now();
-    publishReviewCheck(notices, {
-      status: 'running',
-      id: chosen.id,
-      command: chosen.command,
+    const { run, fresh, unavailable } = await runReviewCheck({
+      check: chosen,
       moment: 'pre-review',
+      checkOptions,
     });
-    const [run] = await runChecks([chosen.id], checkOptions);
-    if (run === undefined) {
-      const detail = `no result for ${chosen.id}`;
-      publishReviewCheck(notices, {
-        status: 'not-run',
-        id: chosen.id,
-        command: chosen.command,
-        moment: 'pre-review',
-        detail,
-      });
-      lines.push(`- ${label}: not run, ${detail}`);
-      continue;
-    }
+    runs.push(run);
     if (run.status !== 'pass' && run.status !== 'fail') {
-      publishReviewCheck(notices, {
-        status: run.status === 'refused' ? 'refused' : 'not-run',
-        id: chosen.id,
-        command: chosen.command,
-        moment: 'pre-review',
-        detail: run.output,
-      });
-      runs.push(run);
       lines.push(`- ${label}: ${run.status === 'refused' ? 'refused' : 'not run'}, ${run.output}`);
       continue;
     }
-    publishReviewCheck(notices, {
-      status: 'done',
-      id: chosen.id,
-      command: chosen.command,
-      moment: 'pre-review',
-      passed: run.status === 'pass',
-      duration: Date.now() - startedAt,
-    });
     if (run.status === 'pass') {
-      runs.push(run);
       lines.push(`- ${label}: passed`);
       continue;
     }
-    const { fresh, preExisting, unavailable } = await splitAtRunBase({
-      run,
-      command: chosen.command,
-      checkOptions,
-    });
-    runs.push(preExisting.length > 0 ? { ...run, preExisting } : run);
+    const preExisting = run.preExisting ?? [];
     lines.push(
       `- ${label}: failed, ${fresh.length} new failure(s)${fresh.length > 0 ? `: ${fresh.join('; ')}` : ''}${
         preExisting.length > 0

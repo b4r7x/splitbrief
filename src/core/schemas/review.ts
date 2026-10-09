@@ -74,6 +74,9 @@ export const TriageInputSchema = z.object({
 });
 export type TriageInput = z.infer<typeof TriageInputSchema>;
 
+/** The ids the reviewer gives the commands it chooses before a review. */
+export const REVIEW_CHECK_ID = /^V\d+$/;
+
 /** The most reviewer checks one plan call may choose. */
 export const MAX_REVIEW_CHECKS = 6;
 
@@ -100,7 +103,7 @@ export const ReviewChecksPlanSchema = ReviewChecksPlanObjectSchema.superRefine((
     ctx.addIssue({ code: 'custom', message: 'reason: say why no command verifies this change' });
   }
   const ids = plan.commands.map((command) => command.id);
-  if (ids.some((id) => !/^V\d+$/.test(id))) {
+  if (ids.some((id) => !REVIEW_CHECK_ID.test(id))) {
     ctx.addIssue({ code: 'custom', message: 'commands: every id is V1, V2, …' });
   }
   if (new Set(ids).size !== ids.length) {

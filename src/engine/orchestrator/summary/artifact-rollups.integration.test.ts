@@ -52,7 +52,6 @@ describe('buildSummary session artifact rollups', () => {
         task,
         status: 'done',
         method: 'local',
-        validation: [{ passed: true, stage: 'typecheck' }],
       });
       writeEvidenceLedger({ projectDir, sessionId }, ledger);
 
@@ -90,14 +89,14 @@ describe('buildSummary session artifact rollups', () => {
         task: first,
         status: 'done',
         method: 'local',
-        validation: [{ passed: true, stage: 'typecheck' }],
+
         changedFiles: ['src/first.ts'],
       });
       ledger = recordLocalTaskEvidence({
         ledger,
         task: stopped,
         status: 'in_progress',
-        validation: [],
+
         changedFiles: ['src/stopped.ts'],
       });
       writeEvidenceLedger({ projectDir, sessionId }, ledger);
@@ -177,7 +176,7 @@ describe('buildSummary session artifact rollups', () => {
         state,
         task: stopped,
         recordKind: 'local',
-        details: { status: 'in_progress', validation: [], changedFiles: ['src/stopped.ts'] },
+        details: { status: 'in_progress', changedFiles: ['src/stopped.ts'] },
       });
       state = transition(state, {
         type: 'INSERT_TASKS',
@@ -221,7 +220,7 @@ describe('buildSummary session artifact rollups', () => {
         task: oldTask,
         status: 'done',
         method: 'local',
-        validation: [],
+
         changedFiles: ['src/old.ts'],
       });
       writeEvidenceLedger({ projectDir, sessionId }, ledger);

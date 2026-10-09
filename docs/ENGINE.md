@@ -138,7 +138,7 @@ Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditi
 
 **Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`.
 
-**Hook sink** (`src/engine/hooks/sink.ts`) — maps events to workflow hook triggers and dispatches matching hooks fire-and-forget. Only five event types trigger hooks: `task_completed` maps to `post_task`, `checks_run` (a brief's checks ran) maps to `post_validation`, `recovery_prompted` maps to `on_halt`, `workflow_complete` maps to `on_complete`, `error` maps to `on_error`. All other events are ignored.
+**Hook sink** (`src/engine/hooks/sink.ts`) maps events to workflow hook triggers and dispatches matching hooks without waiting. Only five event types trigger hooks. `task_completed` maps to `post_task`. `checks_run` maps to `post_validation`. It fires after brief gate checks and after plan and task checks before the final review, once per task that owns them. Its payload has `taskId` and `results` (`{ id, passed }[]`). `recovery_prompted` maps to `on_halt`. `workflow_complete` maps to `on_complete`. `error` maps to `on_error`. The sink ignores all other events.
 
 **Logger sink** (`src/engine/events/sinks/logger.ts`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
@@ -349,7 +349,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'validate'; taskId: TaskId; status: 'running' | 'done';
   passed: boolean; stages: ValidationStages; error?: string; duration?: number }
 // No live run publishes it on the bus; sessions saved before the reviewer checks keep it.
-// The pre_validation hook payload still takes this shape (`stages` all false).
+// The pre_validation hook payload takes this shape without `stages`.
 
 { type: 'review_checks'; scope: 'final' | 'task'; status: 'planned' | 'off';
   commands?: { id: string; command: string; reason: string }[];
@@ -362,13 +362,16 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 
 { type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused';
   id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;
-  moment: 'pre-review' | 'base';
-  passed?: boolean; detail?: string; duration?: number }
+  moment: 'pre-review' | 'base' | 'brief';
+  passed?: boolean; detail?: string; duration?: number;
+  newFailures?: number; preExisting?: number }
 // One command run before a review. `id` names the reviewer check (V1, …); an event
 // without `id` comes from an older session and carries its full-suite `stage`.
 // `passed` and `duration` are set on the done event. `detail` says why a command
 // did not run (`V1 failed`) or was refused. `moment: 'base'` is the re-run of a red
-// command at the run base with the same command text.
+// command at the run base with the same command text; its done event counts the
+// failures that are new and pre-existing. `moment: 'brief'` is a fix brief running
+// the reviewer check it answers again, with the command the finding carries.
 
 // Recovery
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;

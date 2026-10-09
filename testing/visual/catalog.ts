@@ -1771,6 +1771,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-review-base-mixed',
+      title: 'Workflow · a red with new and pre-existing failures stops the reviewer checks',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-base-mixed',
+        title: 'The base row counts the new and the pre-existing failures',
+        kind: 'review',
+        marker: 'pre-existing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Reviewer checks transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-fix-check-running',
+      title: 'Workflow · a fix brief runs the red reviewer check again',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'fix-check-running',
+        title: 'The fix check, its command and its clock in the transcript and the build block',
+        kind: 'implementation',
+        marker: 'Fix check V2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Fix brief transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
   ],
   setup: [
     defineScenario({

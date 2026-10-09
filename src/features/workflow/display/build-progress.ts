@@ -84,7 +84,7 @@ function activityLine(input: DeriveBuildProgressInput): string {
   const operation = input.operations.active;
   // Between calls there is no seat and no operation to name, and printing the phase twice would
   // read as two facts. The phase alone is the whole truth at that moment.
-  if (operation === null) return input.lifecycle.phase;
+  if (operation === null) return inlineActiveVerb(input.lifecycle.phase);
   // The runner is named on this line already, so naming its seat too says it twice
   // ("implementer implementing"): the phase's own verb is what the seat is doing. A side call is
   // the exception — its role is the fact the phase cannot tell.

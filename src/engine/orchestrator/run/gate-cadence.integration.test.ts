@@ -300,6 +300,97 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
     reason: null,
   };
 
+  it('keeps each fix command across reviewer re-plans that reuse V1', async () => {
+    const { projectDir, sessionId, head } = setupProject(TS_PROJECT);
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/alpha.ts'],
+        criteria: ['C1'],
+        fix: {
+          cycle: 1,
+          findings: [
+            {
+              id: 'V1.1',
+              text: 'The type check failed',
+              acceptance: null,
+              checkIds: ['V1'],
+              commands: { V1: 'tsc --noEmit' },
+            },
+          ],
+        },
+      }),
+      makeTask({
+        id: 'T002',
+        suggestedFiles: ['src/beta.ts'],
+        criteria: ['C2'],
+        fix: {
+          cycle: 2,
+          findings: [
+            {
+              id: 'V1.2',
+              text: 'The tests failed',
+              acceptance: null,
+              checkIds: ['V1'],
+              commands: { V1: 'npm test' },
+            },
+          ],
+        },
+      }),
+    ];
+    const latestChecks: ReviewChecksPlan = {
+      commands: [{ id: 'V1', command: 'node --version', reason: 'the runtime answers' }],
+      declined: [],
+      reason: null,
+    };
+    const harness = runHarness({
+      projectDir,
+      sessionId,
+      state: {
+        ...gateState(tasks, head),
+        fixCycles: { used: 2, allowance: 2, notes: [] },
+        reviewChecks: {
+          scope: 'task',
+          cycle: 2,
+          plan: latestChecks,
+          at: '2026-10-08T00:00:00.000Z',
+        },
+      },
+      config: makeConfig({ workflow: { review: 'task' } }),
+      checks: latestChecks,
+      runCommand: () => {},
+    });
+
+    const result = await runTasksAndReview(harness.options);
+
+    expect(result.completed).toBe(true);
+    expect(harness.implemented).toEqual(['T001', 'T002']);
+    expect(harness.retries).toEqual([]);
+    expect(
+      harness.events.flatMap((event) =>
+        event.type === 'full_suite' && event.moment === 'brief' && event.status === 'done'
+          ? [[event.id, event.command, event.passed]]
+          : [],
+      ),
+    ).toEqual([
+      ['V1', 'tsc --noEmit', true],
+      ['V1', 'npm test', true],
+    ]);
+    const betweenFixes = harness.log.slice(
+      harness.log.indexOf('implement:T001'),
+      harness.log.indexOf('implement:T002'),
+    );
+    expect(betweenFixes.filter((entry) => entry.startsWith('cmd:'))).toEqual([
+      'cmd:tsc --noEmit',
+      'cmd:node --version',
+    ]);
+    expect(betweenFixes).toContain('checks:task:planned');
+    expect(result.state.tasks.map((task) => task.checkResults)).toEqual([
+      [{ id: 'V1', passed: true }],
+      [{ id: 'V1', passed: true }],
+    ]);
+  });
+
   it("runs the related test the reviewer chose before the task's scheduled review, and names the one it declined", async () => {
     const { projectDir, sessionId, head } = setupProject(TS_PROJECT);
     const tasks = [

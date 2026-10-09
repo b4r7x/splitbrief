@@ -39,6 +39,20 @@ function append(type: string, data: object = {}) {
 }
 
 describe('standalone babysit watcher', () => {
+  it('wakes only for failed or refused reviewer checks', async () => {
+    append('full_suite', { status: 'running' });
+    append('full_suite', { status: 'done', passed: true });
+    append('full_suite', { status: 'not-run', detail: 'V1 failed' });
+    append('full_suite', { status: 'done' });
+    append('full_suite', { status: 'done', passed: false });
+    append('full_suite', { status: 'running', moment: 'base' });
+    append('full_suite', { status: 'refused', detail: 'the script changed' });
+
+    expect((await watch()).event.detail).toContain('"passed":false');
+    expect((await watch()).event.detail).toContain('"status":"refused"');
+    expect((await watch()).status).toBe('tick');
+  });
+
   it('reports the first error and preserves errors written between calls', async () => {
     append('runner_call_text_delta', { text: 'progress' });
     append('runner_call_error', { message: 'adapter failed' });
@@ -46,9 +60,9 @@ describe('standalone babysit watcher', () => {
     expect(first.event.type).toBe('runner_call_error');
     expect(first.event.detail).toContain('adapter failed');
 
-    append('validate', { status: 'done', passed: false });
+    append('checks_run', { taskId: 'T001', results: [{ id: 'C1', passed: false }] });
     append('task_retry', { attempt: 2 });
-    expect((await watch()).event.type).toBe('validate');
+    expect((await watch()).event.type).toBe('checks_run');
     expect((await watch()).event.type).toBe('task_retry');
     expect((await watch()).status).toBe('tick');
   });
