@@ -1,19 +1,23 @@
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, relative } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { basename, isAbsolute, join, relative } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
+import { runBaseTreesRoot } from '../../../core/paths.js';
 import { runBaseOf, withRunBaseTree } from './base-tree.js';
+import { runBaseTreeError } from './errors.js';
 
 const FILES = {
   'src/legacy.ts': 'export const legacy = 1;\n',
@@ -121,6 +125,61 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       expect(tree).not.toBe('');
       expect(existsSync(tree)).toBe(false);
       expect(git(run.dir, 'worktree list --porcelain')).toBe(worktrees);
+    });
+  });
+
+  // C3 review: an unreachable base commit crashed the review and left the base row running.
+  it('throws checkoutFailed with the Git error when the base commit cannot be checked out, and leaves nothing behind', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-tree-unreachable' }, async (run) => {
+      const worktrees = git(run.dir, 'worktree list --porcelain');
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const before = readdirSync(runBaseTreesRoot());
+      const use = vi.fn();
+      const failed = await withRunBaseTree({ ...baseOf(run), head: 'f'.repeat(40) }, use).then(
+        () => undefined,
+        (err: unknown) => err,
+      );
+
+      expect(runBaseTreeError.isCheckoutFailed(failed)).toBe(true);
+      expect(failed).toHaveProperty(
+        'message',
+        expect.stringContaining('the run base could not be checked out'),
+      );
+      expect(failed).toHaveProperty('message', expect.stringContaining('f'.repeat(40)));
+      expect(use).not.toHaveBeenCalled();
+      expect(readdirSync(runBaseTreesRoot())).toEqual(before);
+      expect(git(run.dir, 'worktree list --porcelain')).toBe(worktrees);
+    });
+  });
+
+  // C3 review: a SIGKILL during a base re-run left its tree and its `.git/worktrees/base-*`
+  // registration forever.
+  it('removes the base trees of a process that is gone and their registrations, and keeps a live process tree', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-tree-sweep' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const gone = spawnSync(process.execPath, ['-e', '']).pid;
+      const stale = join(runBaseTreesRoot(), `base-${gone}-stale`);
+      const live = join(runBaseTreesRoot(), `base-${process.pid}-live`);
+      const unowned = join(runBaseTreesRoot(), 'base-unowned');
+      git(run.dir, `worktree add --detach ${JSON.stringify(stale)} HEAD`);
+      git(run.dir, `worktree add --detach ${JSON.stringify(live)} HEAD`);
+      // Git names a registration after the tree's directory, whatever path form it prints.
+      const registered = (tree: string) =>
+        existsSync(join(run.dir, '.git', 'worktrees', basename(tree)));
+      expect(registered(stale)).toBe(true);
+      mkdirSync(unowned);
+      try {
+        await withRunBaseTree(baseOf(run), async () => undefined);
+
+        expect(existsSync(stale)).toBe(false);
+        expect(registered(stale)).toBe(false);
+        expect(existsSync(live)).toBe(true);
+        expect(registered(live)).toBe(true);
+        expect(existsSync(unowned)).toBe(true);
+      } finally {
+        git(run.dir, `worktree remove --force ${JSON.stringify(live)}`);
+        rmSync(unowned, { recursive: true, force: true });
+      }
     });
   });
 

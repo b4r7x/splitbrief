@@ -595,7 +595,9 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
          base commit with the base snapshot on top (withRunBaseTree); failures
          red there too are pre-existing. With no base commit the copy has no
          Git history, file modes or symlinks: a red there is "not verified at
-         the run base". The base output goes to the check's base field in
+         the run base". A failed step that checks out the run base gives
+         "not verified at the run base" with the Git error; the keys stay new.
+         The base output goes to the check's base field in
          evidence.json. A timeout or a red without failure keys is never
          pre-existing: with a red base re-run it is "not verified at the run
          base", stays new, and the reviewer decides. The first reviewer check

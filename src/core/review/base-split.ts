@@ -2,7 +2,7 @@
  * How the failures of a red command split at the run base, in the words every surface uses: the
  * verdict, and why when every failure is pre-existing or some are not verified at the run base.
  * `notVerified` counts the failures that are red at the run base too without proof that they are the
- * same failure; `reason` says why. They are neither new nor pre-existing: the reviewer decides. The
+ * same failure, or that SPLITBRIEF could not re-run there; `reason` says why. They are neither new nor pre-existing: the reviewer decides. The
  * new and pre-existing counts are left out when both are zero.
  */
 export function baseSplit(counts: {
