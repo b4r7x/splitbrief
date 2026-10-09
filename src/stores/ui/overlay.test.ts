@@ -56,6 +56,17 @@ describe('overlayStore', () => {
     expect(overlayStore.get().focus).toBeUndefined();
   });
 
+  it('keeps an active exclusive overlay as it is when the same overlay opens again', () => {
+    overlayStore.open('editor');
+    overlayStore.setExclusive(true);
+    const before = overlayStore.get();
+
+    overlayStore.open('editor');
+
+    expect(overlayStore.get()).toBe(before);
+    expect(overlayStore.get()).toEqual({ active: 'editor', exclusive: true, stack: [] });
+  });
+
   it('closes a directly opened seat picker back to the screen, not into settings', () => {
     // The /crew hop opens the seat picker with no overlay beneath it,
     // so Esc must land on the previous screen — never on Settings.

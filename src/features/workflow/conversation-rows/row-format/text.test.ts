@@ -55,6 +55,26 @@ describe('wrappedProseTexts', () => {
     expect(wrappedProseTexts('aaaa bbbb cccc', 9)).toEqual(['aaaa bbbb', 'cccc']);
   });
 
+  it('breaks before a separator dot, never after it', () => {
+    // The plain wrapper takes the space after the dot as its break and leaves the dot trailing.
+    expect(wrappedRowTexts('aaa · bbb · ccc', 11)).toEqual(['aaa · bbb ·', ' ccc']);
+    expect(wrappedProseTexts('aaa · bbb · ccc', 11)).toEqual(['aaa · bbb ', '· ccc']);
+    expect(wrappedProseTexts('aaa · bbb · ccc', 12)).toEqual(['aaa · bbb ', '· ccc']);
+    expect(wrappedProseTexts('aaa · bbb · ccc', 9)).toEqual(['aaa · bbb', '· ccc']);
+  });
+
+  it('keeps a fix check verdict whole and ends no line on a separator at 80 columns', () => {
+    const row = 'Fix check V2 · npm run test-ci · your 2 failures gone · 3 others left · 3m 0s';
+
+    const lines = wrappedProseTexts(row, 74);
+
+    expect(lines).toEqual([
+      'Fix check V2 · npm run test-ci · your 2 failures gone · 3 others left ',
+      '· 3m 0s',
+    ]);
+    for (const line of lines) expect(line.trimEnd().endsWith('·')).toBe(false);
+  });
+
   it('leaves the first row and a trailing break space as the wrapper wrote them', () => {
     expect(wrappedProseTexts('  indented', 20)).toEqual(['  indented']);
     expect(wrappedProseTexts('aaaa bbbb cccc', 10)).toEqual(wrappedRowTexts('aaaa bbbb cccc', 10));

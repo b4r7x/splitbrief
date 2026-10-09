@@ -1,8 +1,10 @@
 import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
 
 const MIN_ROW_WIDTH = 1;
+const BOUND_SEP_DOT = `${SOFT_SEP.trim()} `;
 const LINE_BREAK_PLACEHOLDER_PREFIX = `\ue000${SPLITBRIEF_IDENTITY.slug}-line-break`;
 
 // Printable ASCII has one cell per character and carries no escape sequence a wrapper must track,
@@ -45,8 +47,15 @@ export function wrappedRowTexts(text: string, width: number): string[] {
 // when the word before the break fills the row exactly, the space leads the continuation instead
 // and starts it one cell off its row's column. Prose continues from the break, never from the space
 // in it, so a continuation drops that one cell.
+//
+// A row joins its parts with SOFT_SEP, and a break after its dot leaves the dot trailing the line
+// above. A no-break space binds the dot to the part it introduces while the row wraps, so the row
+// breaks before the dot; each wrapped line then gets its plain space back.
 export function wrappedProseTexts(text: string, width: number): string[] {
-  return wrappedRowTexts(text, width).map((line, index) =>
-    index > 0 && line.startsWith(' ') ? line.slice(1) : line,
+  return wrappedRowTexts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map((line, index) =>
+    (index > 0 && line.startsWith(' ') ? line.slice(1) : line).replaceAll(
+      BOUND_SEP_DOT,
+      `${SOFT_SEP.trim()} `,
+    ),
   );
 }

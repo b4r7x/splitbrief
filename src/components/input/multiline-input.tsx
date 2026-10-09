@@ -269,6 +269,12 @@ export function MultilineInput({
     const currentValue = valueRef.current;
     const currentCursor = cursorRef.current;
     if (shouldHandleInput !== undefined && !shouldHandleInput(input, key)) return;
+    // The suppression window drops the tail bytes of a multi-byte delete, never a key the caller
+    // bound explicitly: Ctrl+E right after Ctrl+U still opens the editor.
+    if (keyBindings?.shortcut?.(input, key)) {
+      onShortcut?.();
+      return;
+    }
     if (Date.now() < suppressUntilRef.current) return;
 
     if (key.shift && (key.upArrow || key.downArrow)) return;
@@ -286,11 +292,6 @@ export function MultilineInput({
         currentValue.slice(0, currentCursor) + '\n' + currentValue.slice(currentCursor),
         currentCursor + 1,
       );
-      return;
-    }
-
-    if (keyBindings?.shortcut?.(input, key)) {
-      onShortcut?.();
       return;
     }
 
