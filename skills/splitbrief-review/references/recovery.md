@@ -37,7 +37,9 @@ Keep the consult read-only. The planner chooses the next action and never edits 
 Use the same planning session and record the answer with its diagnosis.
 
 <!-- generated: consult-table -->
-Attempt → 1 local retry with the exact errors → a planner consult.
+Attempt → 1 local retry with the exact errors → a consult.
+A plan task consults the planner. A fix task the reviewer wrote consults the reviewer, also after a rewrite or a split.
+Every decision-confirm stays with the planner.
 
 | Action | Next step |
 |---|---|
@@ -49,7 +51,7 @@ Attempt → 1 local retry with the exact errors → a planner consult.
 | `confirm` | Decision-confirm only: record the accepted decisions, then run the brief gate. |
 
 Keep lineage counters across splits and resume: 2 consults and 8 attempts.
-Keep the run counter: 10 planner decisions after planning, including consults and triage.
+Keep the run counter: 10 planner decisions after planning, including the consults of both seats and triage.
 Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.
 A stale consult spends no run planner decision. A blocked report consults at once.
 A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).

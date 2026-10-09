@@ -114,6 +114,10 @@ const checkpointPredicates = [
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
+  [
+    checkpointId('build-review-consult'),
+    includesAll('REVIEW → T904', 'Claude Code CLI', 'answering the consult on T904'),
+  ],
   // The build-progress block is the fact the implementation checkpoint must carry at every width;
   // the task header scrolls out of a 60x18 transcript, so pinning it would pin the viewport too.
   [

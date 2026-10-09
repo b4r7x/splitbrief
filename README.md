@@ -52,7 +52,8 @@ You: "add user authentication with JWT"
                 │
                 still failing
                 │
-            the planner is consulted, read-only:
+            a seat is consulted, read-only
+            (planner; reviewer for a fix task):
               guidance · rewrite-task · split-task
               verify · ask-user
               a spent bound asks you to continue

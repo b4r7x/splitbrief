@@ -17,13 +17,13 @@ import {
   publishWarningFromError,
 } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
-import { requestConsult } from '../consult/request.js';
+import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
 import { formatMessage } from '../queue/prompt.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { captureWorkspaceSnapshot, revertedDir } from '../isolation/entry-snapshot.js';
-import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
+import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import {
   buildConsultBoundRecoveryIssue,
   consultBoundSpent,
@@ -40,7 +40,11 @@ import { classifySeatFailure, type SeatFailureClassification } from '../../runne
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { consultAttemptError, guidanceInstructions } from './consult-guidance.js';
+import {
+  consultAttemptError,
+  consultSeatRunner,
+  guidanceInstructions,
+} from './consult-guidance.js';
 import type {
   EscalationContext,
   RetryAttemptFailure,
@@ -76,7 +80,7 @@ function handBackOf(outcome: RetryStepOutcome): string | undefined {
 /**
  * A seat that cannot work halts the ladder at once: a signed-out or
  * quota-exhausted runner reproduces the same failure on every further attempt,
- * and the next rung would spend a planner call on a brief no retry can land.
+ * and the next rung would spend a consult on a brief no retry can land.
  * The one seat-down halt is raised on the attempt that failed — no retry, no
  * consult — and carries the fallback the seat can move to automatically.
  */
@@ -139,7 +143,7 @@ async function seatDownHalt(
 /**
  * An outcome the recovery builders recognise as a runner defect halts the
  * ladder for the same reason the seat-down halt does — the next rung would
- * pay a planner call to hint around the same defect.
+ * pay a consult to hint around the same defect.
  */
 async function runnerDefectHalt(
   ctx: EscalationContext,
@@ -199,7 +203,7 @@ async function attemptChangedFiles(
   }
 }
 
-/** The planner could not be reached; the seat is the halt, not the brief. */
+/** The consult seat answered against its contract; the seat is the halt, not the brief. */
 async function seatProtocolHalt(
   ctx: EscalationContext,
   state: WorkflowState,
@@ -207,16 +211,11 @@ async function seatProtocolHalt(
   attempts: number,
   handBack: string | undefined,
 ): Promise<{ state: WorkflowState; result: RetryResult }> {
-  const seatSwap = await loadSeatSwapContext({
+  const issue = await seatProtocolHaltIssue({
     projectDir: ctx.projectDir,
-    seat: 'plan',
-    runner: ctx.config.planner,
-  });
-  const issue = buildSeatProtocolErrorRecoveryIssue({
+    config: ctx.config,
     error,
     phase: state.phase,
-    ...(seatSwap !== undefined && { seatSwap }),
-    createdAt: nowIso(),
   });
   publishError({ bus: ctx.bus, phase: state.phase, message: issue.message });
   return {
@@ -275,11 +274,11 @@ function consultBoundHalt(
 /**
  * The ladder: one local rung with the exact errors, then the consult loop. A
  * guidance, ask-user or confirm answer spends one more implementer attempt with
- * the planner's instructions in its error block; a rewrite or a split replaces
+ * the consult seat's instructions in its error block; a rewrite or a split replaces
  * the brief and hands back to the task loop; verify completes in place. The
  * user's answer to a change of what an attempt reported is delivered by the
  * next attempt, with no retry rung and no consult. Every consult and attempt
- * is counted against the lineage and the run's planner calls, and a spent
+ * is counted against the lineage and the run's consult allowance, and a spent
  * bound halts for the operator's grant quoting the diagnosis of the failure
  * that raised it.
  */
@@ -324,7 +323,7 @@ export async function handleRetryAndEscalation(
   if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
 
   // An implementation that stopped to ask for a decision is not retried with
-  // the same brief: the planner answers the question.
+  // the same brief: the consult seat answers the question.
   if (blocked === undefined) {
     const retries = await runLocalRetries({
       ctx,
@@ -387,7 +386,7 @@ export async function handleRetryAndEscalation(
   }
 
   // The local rung is over: the brief is escalating, and every answer from here
-  // is the planner's or the operator's.
+  // is the consult seat's or the operator's.
   wctx.bus.publish({
     type: 'task_escalating',
     ts: Date.now(),
@@ -484,6 +483,7 @@ export async function handleRetryAndEscalation(
     const snapshot = attemptSnapshot ?? taskStartSnapshot;
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
+    const seat = consultSeat(task, reason);
     const queued = readQueueForConsult({
       projectDir: ctx.projectDir,
       sessionId: ctx.sessionId,
@@ -498,6 +498,7 @@ export async function handleRetryAndEscalation(
         sessionId: ctx.sessionId,
         bus: ctx.bus,
         planner: ctx.planner,
+        reviewer: ctx.reviewer,
         state,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         onStateChange: (next) => {
@@ -538,6 +539,7 @@ export async function handleRetryAndEscalation(
         callbacks: ctx.callbacks,
         sinks: ctx.sinks,
         state,
+        seat,
         taskStartTime: ctx.taskStartTime,
         ...(ctx.signal !== undefined && { signal: ctx.signal }),
         changedFiles,
@@ -562,6 +564,7 @@ export async function handleRetryAndEscalation(
           callbacks: ctx.callbacks,
           sinks: ctx.sinks,
           state,
+          seat,
           taskStartTime: ctx.taskStartTime,
           ...(ctx.signal !== undefined && { signal: ctx.signal }),
           onStateChange: (next) => {
@@ -608,10 +611,10 @@ export async function handleRetryAndEscalation(
         ? guidanceInstructions(applied.instructions, applied.context)
         : applied.action === 'ask-user'
           ? `${applied.question}\n\nWhy only you can answer: ${applied.whyOnlyUserCanAnswer}`
-          : `The planner confirmed the reported decisions:\n${applied.decisions
+          : `The ${consultSeatRunner(seat)} confirmed the reported decisions:\n${applied.decisions
               .map((decision) => `- ${decision.what} — ${decision.why}`)
               .join('\n')}`;
-    const halted = await attempt(consultAttemptError(lastError, instructions));
+    const halted = await attempt(consultAttemptError(lastError, instructions, seat));
     if (halted) return halted;
   }
 }

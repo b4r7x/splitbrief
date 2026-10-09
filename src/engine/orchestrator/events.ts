@@ -9,7 +9,7 @@ import type {
   RecoveryReason,
 } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
-import type { ConsultReason } from '../../core/schemas/consult.js';
+import type { ConsultReason, ConsultSeat } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
@@ -294,6 +294,7 @@ export function publishConsultAnswered(
   opts: {
     taskId: TaskId;
     reason: ConsultReason;
+    seat: ConsultSeat;
     action: ConsultRecord['action'];
     diagnosis: string;
     newTaskIds: readonly TaskId[] | null;
@@ -308,6 +309,7 @@ export function publishConsultAnswered(
     phase: ctx.phase,
     taskId: opts.taskId,
     reason: opts.reason,
+    seat: opts.seat,
     action: opts.action,
     diagnosis: opts.diagnosis,
     newTaskIds: opts.newTaskIds === null ? null : [...opts.newTaskIds],

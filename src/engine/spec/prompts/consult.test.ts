@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import type { Plan } from '../../../core/schemas/plan.js';
-import { taskId } from '../../../core/schemas/task.js';
+import { taskId, type Task } from '../../../core/schemas/task.js';
 import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
 import type { ConsultRecord } from '../../../core/schemas/workflow.js';
 import { buildConsultPrompt, type ConsultPromptInput } from './consult.js';
@@ -59,6 +59,7 @@ const EARLIER_CONSULT: ConsultRecord = {
 function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromptInput {
   return {
     workspaceDir: '/tmp/run-workspace',
+    seat: 'plan',
     reason: 'failed',
     plan,
     task: TASK,
@@ -179,6 +180,43 @@ describe('buildConsultPrompt', () => {
       }
     },
   );
+
+  it('names the planner when the planner answers a plan task', () => {
+    const prompt = buildConsultPrompt(consultInput());
+
+    expect(prompt).toContain("You are the run's planner. SPLITBRIEF asks you");
+    expect(prompt).not.toContain('### Fix findings');
+  });
+
+  it('names the reviewer and lists the fix findings keys on a fix task', () => {
+    const fixTask: Task = {
+      ...TASK,
+      fix: {
+        cycle: 1,
+        findings: [
+          {
+            id: 'F1',
+            text: 'The greeting test is red',
+            acceptance: null,
+            failureKeys: { V1: ['greet > hello', 'greet > empty'] },
+            redKeys: { V1: ['greet > name'] },
+          },
+          { id: 'F2', text: 'A typo in the docs', acceptance: null },
+        ],
+      },
+    };
+    const prompt = buildConsultPrompt(consultInput({ seat: 'review', task: fixTask }));
+
+    expect(prompt).toContain(
+      "You are the run's reviewer: you wrote this fix task at the review, and you decide its repair. SPLITBRIEF asks you",
+    );
+    expect(prompt).not.toContain("You are the run's planner.");
+    expect(prompt).toContain('### Fix findings');
+    expect(prompt).toContain(
+      '- **F1** failure keys: V1: greet > hello, greet > empty; red keys: V1: greet > name',
+    );
+    expect(prompt).not.toContain('- **F2**');
+  });
 
   it('sends the short resumed turn without the static context', () => {
     const full = buildConsultPrompt(consultInput());

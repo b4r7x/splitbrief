@@ -1146,6 +1146,7 @@ describe('consult and split state operations', () => {
         taskId: taskId('T002'),
         revision: 2,
         reason: 'stale',
+        seat: 'plan',
         answer: {
           answer: {
             action: 'guidance',
@@ -1177,6 +1178,7 @@ describe('consult and split state operations', () => {
           context: null,
         },
       },
+      seat: 'plan',
     });
   });
 

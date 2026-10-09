@@ -6,7 +6,7 @@ import { consultAttemptError, guidanceInstructions } from '../escalation/consult
 import { publishWarning } from '../events.js';
 import type { WorkflowContext } from '../types.js';
 import { applyConsultAnswer } from './apply.js';
-import { requestConsult } from './request.js';
+import { consultSeat, requestConsult } from './request.js';
 import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
 import { formatMessage } from '../queue/prompt.js';
 
@@ -47,6 +47,7 @@ export async function confirmAttemptDecisions(opts: {
       phase: state.phase,
       message: `${task.id}'s reported decisions were not confirmed or added to the ledger: ${reason}`,
     });
+  const seat = consultSeat(task, 'deviation');
   const onStateChange = (next: WorkflowState): void => {
     state = next;
     opts.onStateChange?.(next);
@@ -88,6 +89,7 @@ export async function confirmAttemptDecisions(opts: {
     {
       ...wctx,
       state,
+      seat,
       taskStartTime: opts.taskStartTime,
       changedFiles: opts.changedFiles,
       onStateChange,
@@ -103,6 +105,7 @@ export async function confirmAttemptDecisions(opts: {
       answer: consultAttemptError(
         'The planner asked the user about the decisions this attempt reported.',
         guidanceInstructions(applied.instructions, applied.context),
+        seat,
       ),
     };
   }

@@ -1,4 +1,8 @@
-import type { ConsultReason, ImplementerReport } from '../../../core/schemas/consult.js';
+import type {
+  ConsultReason,
+  ConsultSeat,
+  ImplementerReport,
+} from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type { ConsultRecord } from '../../../core/schemas/workflow.js';
@@ -15,6 +19,8 @@ import {
 
 export type ConsultPromptInput = Readonly<{
   workspaceDir: string;
+  /** The seat that answers: the planner, or the reviewer for the fix task it wrote. */
+  seat: ConsultSeat;
   reason: ConsultReason;
   /** The run's plan: the criteria and checks every task serves. */
   plan: Plan | undefined;
@@ -32,8 +38,9 @@ export type ConsultPromptInput = Readonly<{
   /** Text the operator queued during an earlier brief, delivered with the task it concerns. */
   userText?: string | undefined;
   /**
-   * The planner's session already holds this run's plan and brief: send the new attempt's
-   * evidence as a short turn instead of the whole prompt.
+   * Planner consults only: the planner's session already holds this run's plan and brief,
+   * so the new attempt's evidence goes as a short turn instead of the whole prompt. A
+   * reviewer consult holds no session and never sets it.
    */
   resumed?: boolean | undefined;
 }>;
@@ -47,7 +54,13 @@ const REASON_TEXT: Record<ConsultReason, string> = {
     "The implementer reported new decisions. Confirm changes of how that keep every criterion, or ask the user about a change of what. Validation follows confirm; ask-user carries the user's answer into a retry.",
 };
 
-const CONSULT_CONTRACT = `You are the run's planner. SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
+const CONSULT_ROLE: Record<ConsultSeat, string> = {
+  plan: "You are the run's planner.",
+  review:
+    "You are the run's reviewer: you wrote this fix task at the review, and you decide its repair.",
+};
+
+const CONSULT_CONTRACT_BODY = `SPLITBRIEF asks you, not the user, for the decision that unblocks this task. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states what actually went wrong, in one or two sentences, and is always present. Exactly one action follows it:
 - \`guidance\` — \`instructions\` the implementer retries with, and \`context\`: the project file or fact the retry needs attached, or null. The brief is kept.
@@ -57,6 +70,10 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`.`;
+
+function consultContract(seat: ConsultSeat): string {
+  return `${CONSULT_ROLE[seat]} ${CONSULT_CONTRACT_BODY}`;
+}
 
 const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
@@ -107,6 +124,27 @@ function planSection(plan: Plan): PromptPart {
   };
 }
 
+function keyList(keys: Record<string, string[]> | undefined): string | undefined {
+  const entries = Object.entries(keys ?? {}).filter(([, values]) => values.length > 0);
+  if (entries.length === 0) return undefined;
+  return entries.map(([id, values]) => `${id}: ${values.join(', ')}`).join('; ');
+}
+
+/** A fix task's structured red per finding: the failure keys and red keys its checks named. */
+function fixFindingLines(task: Task): string[] {
+  const lines = (task.fix?.findings ?? []).flatMap((finding) => {
+    const failure = keyList(finding.failureKeys);
+    const red = keyList(finding.redKeys);
+    if (failure === undefined && red === undefined) return [];
+    const parts = [
+      ...(failure === undefined ? [] : [`failure keys: ${failure}`]),
+      ...(red === undefined ? [] : [`red keys: ${red}`]),
+    ];
+    return [`- **${finding.id}** ${parts.join('; ')}`];
+  });
+  return lines.length === 0 ? [] : ['', '### Fix findings', ...lines];
+}
+
 function taskBody(task: Task): string {
   return [
     `**Title**: ${task.title}`,
@@ -122,6 +160,7 @@ function taskBody(task: Task): string {
     ...(task.checks === undefined || task.checks.length === 0
       ? []
       : ['', '### Checks', ...task.checks.map((check) => `- ${checkLine(check)}`)]),
+    ...fixFindingLines(task),
   ].join('\n');
 }
 
@@ -285,7 +324,9 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
     sections.push({ heading: 'Other Tasks', body: otherTaskLines(input.otherTasks).join('\n') });
   }
   sections.push(
-    instructionsSection(`${CONSULT_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`),
+    instructionsSection(
+      `${consultContract(input.seat)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+    ),
   );
 
   return buildPrompt({

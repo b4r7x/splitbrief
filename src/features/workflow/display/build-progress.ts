@@ -1,3 +1,4 @@
+import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
 import { isImplementerPhase } from '../../../core/phases.js';
 import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
 import { getProviderDisplayName } from '../../../core/providers/catalog.js';
@@ -87,9 +88,12 @@ function activityLine(input: DeriveBuildProgressInput): string {
     );
   }
   if (operation === null) {
-    return input.lifecycle.phase === 'escalating' ? 'Consulting the planner' : 'Between calls';
+    return input.lifecycle.phase === 'escalating'
+      ? 'Waiting for the consult answer'
+      : 'Between calls';
   }
   const task = operation.taskId === undefined ? '' : ` on ${operation.taskId}`;
+  let seat: string | undefined;
   let doing: string;
   switch (operation.role) {
     case 'summary':
@@ -100,16 +104,25 @@ function activityLine(input: DeriveBuildProgressInput): string {
       doing = `working${task}`;
       break;
     case 'review':
-      doing = 'reviewing';
+      // Only a fix task's consult publishes a review-role call under its task, in any build
+      // phase: a blocked or stale consult runs while implementing. The scheduled task review and
+      // the review-checks call name no task.
+      if (operation.taskId !== undefined) {
+        seat = CREW_SEAT_LABELS.review;
+        doing = `answering the consult${task}`;
+      } else {
+        doing = 'reviewing';
+      }
       break;
     case 'planner':
     case 'escalation':
+      seat = CREW_SEAT_LABELS.plan;
       doing = `answering the consult${task}`;
       break;
     default:
       return assertNever(operation.role);
   }
-  return [runnerLabel(operation.backendKind, operation.runnerName), doing]
+  return [seat, runnerLabel(operation.backendKind, operation.runnerName), doing]
     .filter((part): part is string => part !== undefined && part !== '')
     .join(SOFT_SEP);
 }

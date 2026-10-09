@@ -1,7 +1,7 @@
 import type { CheckResult, Task, TaskId } from '../schemas/task.js';
 import type { QueuedMessage, WorkflowState, PlannerConversation } from '../schemas/workflow.js';
 import type { RecoveryAction, RecoveryReason, ReviewStatus } from '../schemas/enums.js';
-import type { ConsultAnswer, ConsultReason } from '../schemas/consult.js';
+import type { ConsultAnswer, ConsultReason, ConsultSeat } from '../schemas/consult.js';
 import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import type { Plan } from '../schemas/plan.js';
@@ -94,6 +94,8 @@ export type StateAction =
       revision: number;
       reason: ConsultReason;
       answer: ConsultAnswer;
+      /** The seat that answered. */
+      seat: ConsultSeat;
     }
   | { type: 'CONFIRM_DECISIONS'; taskId: TaskId; decisions: { what: string; why: string }[] }
   | { type: 'RECORD_CORRECTION'; taskId: TaskId; text: string }

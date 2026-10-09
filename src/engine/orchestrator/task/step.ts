@@ -29,7 +29,12 @@ import { denialMessage } from './attempt-gate.js';
 import { buildApprovalDeniedRecoveryIssue } from '../recovery/builders/task.js';
 import { isConsultBoundReason } from '../recovery/builders/consult.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { retryAndRecord, consultHandedBackToLoop, handleTaskPlannerCallFailure } from './retry.js';
+import {
+  retryAndRecord,
+  consultFailureLabel,
+  consultHandedBackToLoop,
+  handleTaskPlannerCallFailure,
+} from './retry.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { runImplementation } from './run-implementation.js';
@@ -40,7 +45,7 @@ import { handleFailedImplementation } from './implementation-failure.js';
 import { runBriefGate } from './brief-gate.js';
 import { inputHashesNow, inputsMovedUnexpectedly, taskInputFiles } from './stale-inputs.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
-import { requestConsult } from '../consult/request.js';
+import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
 import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
 import { formatMessage } from '../queue/prompt.js';
@@ -184,6 +189,7 @@ async function refreshStaleTask(
       sessionId: opts.wctx.sessionId,
       bus: opts.wctx.bus,
       planner: opts.wctx.planner,
+      reviewer: opts.wctx.reviewer,
       state,
       ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
       onStateChange: (next) => {
@@ -228,6 +234,7 @@ async function refreshStaleTask(
       callbacks: opts.wctx.callbacks,
       sinks: opts.wctx.sinks,
       state,
+      seat: consultSeat(task, 'stale'),
       taskStartTime,
       ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
       changedFiles: [],
@@ -304,6 +311,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       : consultAttemptError(
           `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
           guidance,
+          consultSeat(task, 'stale'),
         );
 
   setCurrentTask(task);
@@ -492,7 +500,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       initialChangedFiles: taskChangedFiles,
       setTrackedState,
       err,
-      label: `Planner consult for ${task.id} failed`,
+      label: consultFailureLabel('plan', task.id),
     });
   }
   state = confirmed.state;

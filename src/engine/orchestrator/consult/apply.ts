@@ -1,4 +1,4 @@
-import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ConsultAnswer, ConsultSeat } from '../../../core/schemas/consult.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
@@ -13,6 +13,7 @@ import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
+import { consultSeatRunner } from '../escalation/consult-guidance.js';
 import { publishTaskReplaced, publishTasksInserted, publishUserMessage } from '../events.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -34,6 +35,8 @@ export type ConsultApplyContext = Readonly<{
   sinks: WorkflowSinks;
   /** The state the applied answer runs on; every transition it saves is persisted. */
   state: WorkflowState;
+  /** The seat that answered the consult, which the operator's question names. */
+  seat: ConsultSeat;
   /** When the brief started: a verify that completes it books the time since. */
   taskStartTime: number;
   signal?: AbortSignal | undefined;
@@ -100,7 +103,7 @@ function droppedCriteriaChecks(
   );
 }
 
-/** The planner's brief-breaking answer, or null when the replacement keeps the task's contract. */
+/** The consult seat's brief-breaking answer, or null when the replacement keeps the task's contract. */
 function guardViolation(
   task: Task,
   plan: Plan | undefined,
@@ -129,14 +132,16 @@ function guardAskUser(
   task: Task,
   action: RewriteAction | SplitAction,
   reason: string,
+  seat: ConsultSeat,
 ): ConsultApplyOutcome {
+  const runner = consultSeatRunner(seat);
   const specs = action.action === 'rewrite-task' ? [action.task] : action.tasks;
   const dropped = droppedCriteria(task, specs);
   const droppedText = dropped.length > 0 ? dropped.join(', ') : 'none';
   return {
     action: 'ask-user',
-    question: `SPLITBRIEF asked the planner to fix ${task.id}, but ${reason}. Dropped criteria: ${droppedText}. How should ${task.id} proceed?`,
-    whyOnlyUserCanAnswer: `The planner's answer cannot keep every criterion of ${task.id}, and only you can decide how to cover them.`,
+    question: `SPLITBRIEF asked the ${runner} to fix ${task.id}, but ${reason}. Dropped criteria: ${droppedText}. How should ${task.id} proceed?`,
+    whyOnlyUserCanAnswer: `The ${runner}'s answer cannot keep every criterion of ${task.id}, and only you can decide how to cover them.`,
     choices: null,
     default: null,
   };
@@ -309,7 +314,7 @@ export function consultReplyAnswer(
   return answer.trim() === '' ? defaultAnswer(question) : answer;
 }
 
-/** The planner's confirm: the decisions extend the run's ledger on the reporting task. */
+/** The consult seat's confirm: the decisions extend the run's ledger on the reporting task. */
 function applyConfirm(
   ctx: ConsultApplyContext,
   task: Task,
@@ -338,7 +343,10 @@ async function applyAskUser(
   };
   const reply = await waitForPlannerReply(ctx, asked);
   if (reply === undefined && question.default === undefined)
-    return { action: 'failed', reason: 'The planner question remains unanswered.' };
+    return {
+      action: 'failed',
+      reason: `The ${consultSeatRunner(ctx.seat)}'s question remains unanswered.`,
+    };
   const answered = consultReplyAnswer(question, reply);
   const recorded = transitionAndSave(ctx, ctx.state, {
     type: 'SET_PLANNER_CONVERSATION',
@@ -353,10 +361,10 @@ async function applyAskUser(
 }
 
 /**
- * Moves the run on the planner's answer: guidance hands back what the next attempt's error
+ * Moves the run on the consult seat's answer: guidance hands back what the next attempt's error
  * block carries; a rewrite or a split rolls the current attempt back and replaces the task;
  * verify completes the task when its selection covers the criteria and the validation and
- * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the planner's one question to the operator and hands the answer
+ * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the seat's one question to the operator and hands the answer
  * back as guidance; an answer that would drop a criterion or one of its checks becomes ask-user.
  *
  * `attempt` is the current attempt's start snapshot; null means no attempt ran (a stale
@@ -371,7 +379,7 @@ export async function applyConsultAnswer(
   const action = answer.answer;
   if (action.action === 'rewrite-task' || action.action === 'split-task') {
     const violation = guardViolation(task, ctx.state.plan, action);
-    if (violation !== null) return guardAskUser(task, action, violation);
+    if (violation !== null) return guardAskUser(task, action, violation, ctx.seat);
   }
   switch (action.action) {
     case 'guidance':

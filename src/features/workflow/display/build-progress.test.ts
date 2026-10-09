@@ -26,12 +26,28 @@ it('names a scheduled review during the build as reviewing', () => {
   const progress = deriveBuildProgress(
     input({
       operations: operationsState({
-        active: runningOperation({ role: 'review', taskId: taskId('T003') }),
+        active: runningOperation({ role: 'review' }),
       }),
     }),
   );
   expect(progress.activity).toBe('OpenAI Codex CLI · reviewing');
 });
+
+it.each(['implementing', 'validating-task'] as const)(
+  'names the review seat on a fix-task consult that runs while %s',
+  (phase) => {
+    // A blocked report and a stale refresh consult the reviewer before the ladder escalates.
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase }),
+        operations: operationsState({
+          active: runningOperation({ role: 'review', phase, taskId: taskId('T013') }),
+        }),
+      }),
+    );
+    expect(progress.activity).toBe('REVIEW · OpenAI Codex CLI · answering the consult on T013');
+  },
+);
 
 it('names the plan render in Review and uses its clock for freshness', () => {
   const progress = deriveBuildProgress(
@@ -411,8 +427,20 @@ describe('deriveBuildProgress', () => {
           }),
         }),
       );
-      expect(progress.activity).toBe('Claude Code CLI · answering the consult on T003');
+      expect(progress.activity).toBe('PLAN · Claude Code CLI · answering the consult on T003');
     }
+  });
+
+  it('names the review seat when it answers the consult on a fix task', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'escalating' }),
+        operations: operationsState({
+          active: runningOperation({ role: 'review', taskId: 'T013', runnerName: 'codex' }),
+        }),
+      }),
+    );
+    expect(progress.activity).toBe('REVIEW · OpenAI Codex CLI · answering the consult on T013');
   });
 
   it('names the tool by its display name, whichever name its runner gave the call', () => {
@@ -427,7 +455,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Claude Code CLI · answering the consult');
+    expect(progress.activity).toBe('PLAN · Claude Code CLI · answering the consult');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -497,7 +525,7 @@ describe('deriveBuildProgress', () => {
     ).toBe('Between calls');
     expect(
       deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'escalating' }) })).activity,
-    ).toBe('Consulting the planner');
+    ).toBe('Waiting for the consult answer');
     expect(
       deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'final-review' }) })).activity,
     ).toBe('Review · waiting for the verdict');

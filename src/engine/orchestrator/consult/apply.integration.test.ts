@@ -75,6 +75,7 @@ function contextFor(
       callbacks: makeCallbacks(callbacks).callbacks,
       sinks: TEST_SINKS,
       state,
+      seat: 'plan',
       onStateChange: (next) => states.push(next),
     },
     states,
@@ -295,9 +296,35 @@ describe('applyConsultAnswer', () => {
     );
 
     expect(questionOf(result)).toContain('C1');
+    expect(questionOf(result)).toContain('SPLITBRIEF asked the planner to fix T003');
     // The guard runs before the rollback: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
     expect(states).toHaveLength(0);
+  });
+
+  it('a guarded fix-task answer names the reviewer that gave it', async () => {
+    const { projectDir, sessionId } = setupRepo(dirs);
+    const task = makeTask({
+      id: 'T003',
+      suggestedFiles: ['src/greet.ts'],
+      criteria: ['C1', 'C2'],
+      status: 'failed',
+    });
+    const { ctx } = contextFor(projectDir, sessionId, task);
+    const attempt = await getChangedFilesSnapshot(projectDir);
+
+    const result = await applyConsultAnswer(
+      { ...ctx, seat: 'review' },
+      task,
+      rewrite(makeTaskSpec({ id: 'T003', criteria: ['C2'], suggestedFiles: ['src/greet.ts'] })),
+      attempt,
+    );
+
+    expect(result).toMatchObject({
+      action: 'ask-user',
+      question: expect.stringContaining('SPLITBRIEF asked the reviewer to fix T003'),
+      whyOnlyUserCanAnswer: expect.stringContaining("The reviewer's answer cannot keep"),
+    });
   });
 
   it('a split that together misses a criterion becomes ask-user naming it', async () => {

@@ -111,6 +111,10 @@ export type ImplementerReport = z.infer<typeof ImplementerReportSchema>;
 export const CONSULT_REASONS = ['failed', 'blocked', 'stale', 'deviation'] as const;
 export type ConsultReason = (typeof CONSULT_REASONS)[number];
 
+/** The seat that answers a consult: the reviewer for a fix task's repair, the planner for the rest. */
+export const CONSULT_SEATS = ['plan', 'review'] as const;
+export type ConsultSeat = (typeof CONSULT_SEATS)[number];
+
 const { $schema: _consultDraftRef, ...consultAnswerJsonSchema } =
   z.toJSONSchema(ConsultAnswerSchema);
 export const CONSULT_ANSWER_JSON_SCHEMA = consultAnswerJsonSchema;

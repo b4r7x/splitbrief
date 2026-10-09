@@ -546,6 +546,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     taskId: TaskIdSchema,
     reason: ConsultRecordSchema.shape.reason,
     action: ConsultRecordSchema.shape.action,
+    seat: ConsultRecordSchema.shape.seat,
     diagnosis: z.string(),
     newTaskIds: taskIdArray.nullable(),
     revision: z.number().int().optional(),

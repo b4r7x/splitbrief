@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
-import { attemptDetails, summarizeValidation, taskFiles } from './details.js';
+import { taskId } from '../../../../core/schemas/task.js';
+import { attemptDetails, consultHaltDetails, summarizeValidation, taskFiles } from './details.js';
 
 describe('summarizeValidation', () => {
   it('names a missing failing check when validation reports no details', () => {
@@ -114,5 +115,16 @@ describe('taskFiles', () => {
     });
 
     expect(taskFiles(task)).toEqual(['src/main.ts']);
+  });
+});
+
+describe('consultHaltDetails', () => {
+  it('names the seat that could not answer the consult', () => {
+    expect(consultHaltDetails(taskId('T013'), 'plan')).toEqual([
+      'The planner could not answer the consult for T013.',
+    ]);
+    expect(consultHaltDetails(taskId('T013'), 'review')).toEqual([
+      'The reviewer could not answer the consult for T013.',
+    ]);
   });
 });
