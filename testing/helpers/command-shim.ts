@@ -59,7 +59,10 @@ export interface CommandShimOptions {
 
 export function writeCommandShim(opts: CommandShimOptions): string {
   const printfLines = opts.lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`);
+  // A shim that exits before it reads its prompt can close the pipe before
+  // SPLITBRIEF writes the prompt, and spawnPipe then fails the call as stdin-incomplete.
   const script = [
+    'cat > /dev/null',
     ...(opts.sleepSeconds === undefined ? [] : [`sleep ${opts.sleepSeconds}`]),
     ...printfLines,
     '',
