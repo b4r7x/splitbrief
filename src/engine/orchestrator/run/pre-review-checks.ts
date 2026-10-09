@@ -6,6 +6,7 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { fileFromFailureKey } from '../../../core/review/fix-task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -16,7 +17,7 @@ import {
 } from '../recovery/builders/checks.js';
 import type { EventBus } from '../../events/types.js';
 import type { WorkflowContext } from '../types.js';
-import { failingFilesFromOutput, lastTaskChangingFile } from '../task/file-owner.js';
+import { failingFilesFromKeys, lastTaskChangingFile } from '../task/file-owner.js';
 import {
   checkRegistry,
   planApprovesNpmScripts,
@@ -53,7 +54,8 @@ export function buildPreReviewInputs(input: {
   const inputs: TriageInput[] = [];
   for (const run of input.failed) {
     const check = input.registry.get(run.checkId);
-    const named = failingFilesFromOutput(run.output, input.workspaceDir);
+    const keys = run.status === 'fail' ? run.failure.keys : [];
+    const named = failingFilesFromKeys(keys, input.workspaceDir);
     const files =
       named.length > 0
         ? named
@@ -63,6 +65,8 @@ export function buildPreReviewInputs(input: {
     for (const file of files) {
       const owner =
         file === null ? undefined : lastTaskChangingFile(input.ledger, input.tasks, file);
+      const failureKeys =
+        file === null ? [] : keys.filter((key) => fileFromFailureKey(key) === file);
       inputs.push({
         id: `P${inputs.length + 1}`,
         kind: 'defect',
@@ -74,6 +78,8 @@ export function buildPreReviewInputs(input: {
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,
+        ...(failureKeys.length > 0 && { failureKeys }),
+        ...(run.status === 'fail' && { redKeys: run.failure.keys }),
       });
     }
   }

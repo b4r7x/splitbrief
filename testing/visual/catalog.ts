@@ -1865,6 +1865,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-fix-check-done',
+      title: 'Workflow · a fix check shows which carried failures remain',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'fix-check-done',
+        title: 'A fix check with a carried failure left, the retry, then all carried failures gone',
+        kind: 'implementation',
+        marker: 'your 2 failures gone',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Fix brief transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
   ],
   setup: [
     defineScenario({

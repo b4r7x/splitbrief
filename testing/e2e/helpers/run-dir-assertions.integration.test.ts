@@ -174,10 +174,16 @@ describe('assertPlainStdout', () => {
     expect(() => assertPlainStdout(plainStdout())).not.toThrow();
   });
 
-  it('accepts fix checks and base re-runs with each failure split', () => {
+  it('accepts fix checks with carried failures and reviewer base re-runs with each split', () => {
     const stdout = [
       plainStdout(),
       'fix check V1: failed (npm test)',
+      'fix check V1: your 2 failures gone · 3 others left (npm test)',
+      'fix check V1: your 1 failure gone · 1 other left (npm test)',
+      'fix check V1: your 1 failure gone (npm test)',
+      'fix check V1: 1 of your 2 failures remains (npm test)',
+      'fix check V1: 2 of your 3 failures remain (npm test)',
+      'fix check V1: your 1 failure remains (npm test)',
       'base re-run V1: passes',
       'base re-run V1: fails',
       'base re-run V1: 1 new, 2 pre-existing',

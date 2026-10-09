@@ -892,6 +892,10 @@ function reviewCheck(
         newFailures?: number;
         preExisting?: number;
         notVerified?: number;
+        own?: number;
+        ownLeft?: number;
+        others?: number;
+        proven?: boolean;
         detail?: string;
       },
   phase: 'final-review' | 'implementing' = 'final-review',
@@ -3384,6 +3388,77 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
   },
 };
 
+// Live run 2026-10-09: a fix brief's check says which of the failures it carries remain; the
+// other failures of the same red command belong to other fix briefs.
+const fixCheckDoneProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-fix-check-done'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  get events(): EngineEvent[] {
+    const testCi = { ...REVIEW_CHECK_TEST, command: 'npm run test-ci' };
+    return [
+      ...fixCheckRunningProjection.events.slice(0, -1),
+      reviewCheck(
+        FIXED_TS + 2_000,
+        testCi,
+        {
+          status: 'done',
+          moment: 'brief',
+          passed: false,
+          own: 2,
+          ownLeft: 1,
+          others: 3,
+          proven: true,
+          duration: 181_000,
+        },
+        'implementing',
+      ),
+      {
+        type: 'task_retry',
+        lineageAttempt: 2,
+        attemptAllowance: 8,
+        ts: FIXED_TS + 2_100,
+        phase: 'implementing',
+        taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
+        attempt: 1,
+        maxRetries: 1,
+        error: 'check V2 did not pass (fail): src/checkout/total.ts(14,3): error TS2322',
+      },
+      reviewCheck(
+        FIXED_TS + 2_200,
+        testCi,
+        {
+          status: 'done',
+          moment: 'brief',
+          passed: false,
+          own: 2,
+          ownLeft: 0,
+          others: 1,
+          proven: false,
+          duration: 180_000,
+        },
+        'implementing',
+      ),
+      reviewCheck(
+        FIXED_TS + 2_300,
+        testCi,
+        {
+          status: 'done',
+          moment: 'brief',
+          passed: true,
+          own: 2,
+          ownLeft: 0,
+          others: 3,
+          proven: true,
+          duration: 180_000,
+        },
+        'implementing',
+      ),
+    ];
+  },
+};
+
 const BASE_NOT_VERIFIED_E2E = {
   id: 'V1',
   command: 'npm run e2e',
@@ -3507,6 +3582,7 @@ const projections = [
   reviewBaseRerunProjection,
   reviewBaseMixedProjection,
   fixCheckRunningProjection,
+  fixCheckDoneProjection,
   reviewBaseNotVerifiedProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,

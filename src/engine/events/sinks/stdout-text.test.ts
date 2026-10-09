@@ -327,6 +327,10 @@ describe('createStdoutTextSink', () => {
       check({ moment: 'brief', duration: 3 }),
       check({ newFailures: 0, preExisting: 1 }),
       check({ moment: 'brief', status: 'refused', detail: 'names no program' }),
+      check({ moment: 'brief', passed: true, own: 2, ownLeft: 0, others: 3 }),
+      check({ moment: 'brief', own: 2, ownLeft: 1, others: 3 }),
+      check({ moment: 'brief', own: 2, ownLeft: 0, others: 1, proven: false }),
+      check({ moment: 'brief', passed: true, own: 2, ownLeft: 0, others: 0, proven: true }),
       check({
         id: 'V3',
         newFailures: 1,
@@ -343,6 +347,10 @@ describe('createStdoutTextSink', () => {
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',
+      'fix check V1: your 2 failures gone · 3 others left (npm test)',
+      'fix check V1: 1 of your 2 failures remains (npm test)',
+      'fix check V1: your 2 failures not shown · not proven fixed (npm test)',
+      'fix check V1: your 2 failures gone (npm test)',
       'base re-run V3: 1 new, 1 pre-existing, 1 not verified at the run base · the run base re-run timed out',
     ]);
   });

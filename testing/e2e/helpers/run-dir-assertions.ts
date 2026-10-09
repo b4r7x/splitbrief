@@ -25,7 +25,7 @@ import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 
 const PLAIN_LINE =
-  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|(reviewer|fix) check V\d+: (passed|failed|refused|not run) \(.+\)|base re-run V\d+: (passes|fails|refused \(.+\)|not run \(.+\)|\d+ new, \d+ pre-existing|pre-existing · (all \d+ failures|the failure) also fails? before this run's changes))$/;
+  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|(reviewer|fix) check V\d+: (passed|failed|refused|not run) \(.+\)|fix check V\d+: (your \d+ failures? gone( · \d+ others? left)?|your 1 failure remains|\d+ of your \d+ failures remains?) \(.+\)|base re-run V\d+: (passes|fails|refused \(.+\)|not run \(.+\)|\d+ new, \d+ pre-existing|pre-existing · (all \d+ failures|the failure) also fails? before this run's changes))$/;
 
 const DONE_LINE = /^done: (\d+) tasks$/;
 

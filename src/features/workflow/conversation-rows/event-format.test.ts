@@ -334,6 +334,67 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteTone({ ...fix, status: 'done', passed: false })).toBe('error');
   });
 
+  // Live run 2026-10-09: a fix brief's row said `failed` while only other tasks' failures were left.
+  it('says how many of the failures a fix check answers are gone and how many others are left', () => {
+    const fix = reviewCheck({
+      phase: 'implementing',
+      moment: 'brief',
+      command: 'npm run test-ci',
+      status: 'done',
+      duration: 4_000,
+    });
+    const gone = { ...fix, passed: true, own: 2, ownLeft: 0, others: 3 };
+    expect(fullSuiteRow(gone)).toBe(
+      'Fix check V1 · npm run test-ci · your 2 failures gone · 3 others left · 4.0s',
+    );
+    expect(fullSuiteTone(gone)).toBe('textDim');
+    expect(fullSuiteRow({ ...fix, passed: true, own: 1, ownLeft: 0, others: 1 })).toBe(
+      'Fix check V1 · npm run test-ci · your 1 failure gone · 1 other left · 4.0s',
+    );
+    const remains = { ...fix, passed: false, own: 2, ownLeft: 1, others: 3 };
+    expect(fullSuiteRow(remains)).toBe(
+      'Fix check V1 · npm run test-ci · 1 of your 2 failures remains · 4.0s',
+    );
+    expect(fullSuiteTone(remains)).toBe('error');
+    const notProven = { ...gone, passed: false, proven: false };
+    expect(fullSuiteRow(notProven)).toBe(
+      'Fix check V1 · npm run test-ci · your 2 failures not shown · not proven fixed · 4.0s',
+    );
+    expect(fullSuiteTone(notProven)).toBe('error');
+    expect(fullSuiteRow({ ...gone, others: 0, proven: true })).toBe(
+      'Fix check V1 · npm run test-ci · your 2 failures gone · 4.0s',
+    );
+    expect(fullSuiteRow({ ...fix, passed: false, own: 1, ownLeft: 1, others: 0 })).toBe(
+      'Fix check V1 · npm run test-ci · your 1 failure remains · 4.0s',
+    );
+    expect(fullSuiteRow({ ...fix, passed: false, own: 3, ownLeft: 2, others: 0 })).toBe(
+      'Fix check V1 · npm run test-ci · 2 of your 3 failures remain · 4.0s',
+    );
+  });
+
+  // fg review B4: at 80 columns the row wrapped inside `3m 0s`.
+  it('keeps a clock of a minute or more in one piece when the row wraps', () => {
+    const row = fullSuiteRow(
+      reviewCheck({
+        phase: 'implementing',
+        moment: 'brief',
+        command: 'npm run test-ci',
+        status: 'done',
+        passed: true,
+        duration: 180_000,
+        own: 2,
+        ownLeft: 0,
+        others: 3,
+      }),
+    );
+    expect(row).toBe(
+      'Fix check V1 · npm run test-ci · your 2 failures gone · 3 others left · 3m 0s',
+    );
+    expect(fullSuiteRow(reviewCheck({ status: 'done', passed: false, duration: 61_000 }))).toBe(
+      'Reviewer check V1 · npm test · failed · 1m 1s',
+    );
+  });
+
   // Q2 review B3: one warning row stood for a red the run went on from and one it stopped at.
   it('says how a red splits at the run base: all pre-existing as a warning, any new one as an error', () => {
     const base = reviewCheck({ moment: 'base', status: 'done', passed: false, duration: 2_000 });

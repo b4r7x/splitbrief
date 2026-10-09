@@ -177,6 +177,8 @@ type Task = {
       file?: string;                 // the file the red or finding names
       checkIds?: string[];           // the check that was red (`V1`, a plan or task check), or the finding's checks
       commands?: Record<string, string>;  // check id -> the exact command text it ran
+      failureKeys?: Record<string, string[]>;  // check id -> own keys from the full capture
+      redKeys?: Record<string, string[]>;      // check id -> all original red keys before the base split
       output?: string;               // the captured failing output
     }>;                              // the brief gate runs those checks again
   };
@@ -267,9 +269,15 @@ Unverified and minor findings never create fix tasks. A verification names regis
 
 SPLITBRIEF appends fix tasks to `state.tasks` with new `T###` ids. Their `batch` is the highest plan batch plus the fix cycle. Each task carries its cycle and findings in `task.fix`.
 
-A finding that answers a red check also carries its `checkIds`, `commands`, `file` and `output`. Each `commands` entry maps a check id to the exact command text it ran. A verdict finding carries every reviewer command its `checkIds` name. A pending input supplies its single command for its named check.
+A finding that answers a red check also carries its `checkIds`, `commands`, `failureKeys`, `redKeys`, `file` and `output`. Each `commands` entry maps a check id to the exact command text it ran. Each optional `failureKeys` entry maps a check id to its own failure keys from the full capture. Each optional `redKeys` entry holds every failure key of that check's original red, before the base split. A verdict finding takes their union across all input files. An input finding carries its own `redKeys`. An incomplete capture gives one placeholder key and requires a passing command. Older tasks without own keys or original red keys load and must pass their commands. A verdict finding carries every reviewer command its `checkIds` name. A pending input supplies its single command for its named check.
 
-The fix task's brief gate runs those checks again through the same check runner and command policy. A red fix fails the brief and enters the retry ladder. A red reviewer check there re-runs at the run base. A red that is only pre-existing does not fail the brief and records `passed: true` in `checkResults`. Its command evidence keeps the failure.
+The fix task's brief gate runs each check once through the same check runner and command policy. It never re-runs a fix check at the run base. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass.
+
+A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly.
+
+This rule covers reviewer, plan and task checks. Every unmatched re-run key counts as another failure. The red must show an original other key before it can settle. A check with no carried keys, or a re-run with no named failure, must pass its command. A carried failure that remains fails the brief and enters the retry ladder. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration.
+
+A settled check records `passed: true` in `checkResults`. Its command evidence keeps the failure.
 
 An older fix task that carries a `stage` loads without it. Completed tasks stay done. The reviewer supplies every fix task. A fix task may verify existing code and change nothing. Its recorded checks still decide completion.
 

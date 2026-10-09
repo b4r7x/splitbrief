@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { failingFilesFromOutput } from './file-owner.js';
+import { failureKeys } from '../validation/extract-failure-keys.js';
+import { failingFilesFromKeys } from './file-owner.js';
 
 const WORKSPACE = '/ws';
 
 function filesOf(output: string): string[] {
-  return failingFilesFromOutput(output, WORKSPACE);
+  const failure = failureKeys(
+    { capture: { text: output, complete: true }, exitCode: 1 },
+    WORKSPACE,
+  );
+  return failingFilesFromKeys(failure.keys, WORKSPACE);
 }
 
-describe('failingFilesFromOutput', () => {
+describe('failingFilesFromKeys', () => {
   it('names no file from an npm script banner', () => {
     expect(filesOf('> pkg@1.0.0 test\n> tsx scripts/x.ts')).toEqual([]);
     expect(
@@ -29,13 +34,13 @@ describe('failingFilesFromOutput', () => {
     expect(filesOf('src/a.ts:12:3 - error TS2322: Type mismatch.')).toEqual(['src/a.ts']);
   });
 
-  it('names the stack frame file of a vitest failure, not its banner', () => {
+  it('names the failing test file of a vitest failure, not its banner or stack frame', () => {
     expect(
       filesOf('> pkg@1.0.0 test\n> vitest run\n FAIL  src/x.test.ts > x\n   ❯ src/x.ts:12:5'),
-    ).toEqual(['src/x.ts']);
+    ).toEqual(['src/x.test.ts']);
   });
 
-  it('names the stack frame file of a jest failure', () => {
+  it('names the failing test file of a jest failure', () => {
     expect(
       filesOf(' FAIL  src/x.test.ts\n  ● x › y\n      at Object.<anonymous> (src/x.test.ts:12:5)'),
     ).toEqual(['src/x.test.ts']);
@@ -74,5 +79,8 @@ describe('failingFilesFromOutput', () => {
 
   it('names an absolute path relative to the workspace and drops one outside it', () => {
     expect(filesOf('/ws/src/a.ts:3:1: error\n/elsewhere/x.ts:1: error')).toEqual(['src/a.ts']);
+    expect(
+      failingFilesFromKeys(['/ws/src/a.ts:3:1: error', '/elsewhere/x.ts:1: error'], WORKSPACE),
+    ).toEqual(['src/a.ts']);
   });
 });

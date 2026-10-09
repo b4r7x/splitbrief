@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { runCommand } from './run-command.js';
 import { spawnPipe, type SpawnPipeFatalOutcome } from './lifecycle.js';
 import { killProcess, setProcessLedger } from '../registry.js';
-import { processError } from '../errors.js';
+import { processError, processOutputCapture } from '../errors.js';
 
 function isFatalOutcome(value: unknown): value is SpawnPipeFatalOutcome {
   return (
@@ -202,6 +202,20 @@ describe('runCommand', () => {
     });
   });
 
+  it('keeps failure evidence after the display character cap', async () => {
+    const diagnostic = 'src/a.ts(3,3): error TS2322: Type mismatch.';
+    const err = await runCommand('node', [
+      '-e',
+      `process.stdout.write("x".repeat(4100) + "\\n" + ${JSON.stringify(diagnostic)}); process.exitCode = 1;`,
+    ]).catch((caught: unknown) => caught);
+    expect(processError.isExitCode(err)).toBe(true);
+    if (!processError.isExitCode(err)) return;
+    expect(processOutputCapture(err.data)).toEqual({
+      text: `${'x'.repeat(4100)}\n${diagnostic}`,
+      complete: true,
+    });
+  });
+
   it('rejects with a timeout-kinded error when the command exceeds the timeout', {
     timeout: 60_000,
   }, async () => {
@@ -280,6 +294,7 @@ describe('runCommand', () => {
       expect(Buffer.byteLength(err.data.stderr, 'utf8')).toBeLessThanOrEqual(256);
       expect(err.data.output).toContain('output truncated');
       expect(err.data.stderr).toContain('output truncated');
+      expect(processOutputCapture(err.data).complete).toBe(false);
     }
   });
 

@@ -31,8 +31,9 @@ import { captureReviewedCandidate } from '../apply/states.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { fileFromFailureKey } from '../../../core/review/fix-task.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
-import { failingFilesFromOutput, lastTaskChangingFile } from '../task/file-owner.js';
+import { failingFilesFromKeys, lastTaskChangingFile } from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import type { PlanningPhaseResult } from '../planning/types.js';
@@ -171,6 +172,10 @@ async function recheckMergedCandidate(
   ): void => {
     for (const file of files) {
       const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
+      const failureKeys =
+        file === null || run.status !== 'fail'
+          ? []
+          : run.failure.keys.filter((key) => fileFromFailureKey(key) === file);
       inputs.push({
         id: `A${inputs.length + 1}`,
         kind: 'defect',
@@ -180,12 +185,17 @@ async function recheckMergedCandidate(
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,
+        ...(failureKeys.length > 0 && { failureKeys }),
+        ...(run.status === 'fail' && { redKeys: run.failure.keys }),
       });
     }
   };
   const pushRun = (run: CheckRunResult, text: string): void => {
     const check = registry.get(run.checkId);
-    const named = failingFilesFromOutput(run.output, wctx.workspaceDir);
+    const named = failingFilesFromKeys(
+      run.status === 'fail' ? run.failure.keys : [],
+      wctx.workspaceDir,
+    );
     const files =
       named.length > 0
         ? named

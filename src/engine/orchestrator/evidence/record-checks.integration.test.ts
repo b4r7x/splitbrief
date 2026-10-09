@@ -55,7 +55,19 @@ describe('recordCheckRuns', () => {
       workspaceDir: projectDir,
       state: { ...state, tasks: [task, fix] },
       task: fix,
-      runs: [{ checkId: 'V1', status: 'fail', command: 'npm test', exitCode: 1, output: 'red' }],
+      runs: [
+        {
+          checkId: 'V1',
+          status: 'fail',
+          command: 'npm test',
+          exitCode: 1,
+          output: 'red',
+          failure: {
+            keys: ['exited with code 1'],
+            placeholder: 'exited with code 1 without diagnostics',
+          },
+        },
+      ],
     });
 
     const entry = readEvidenceLedger({ projectDir, sessionId })?.tasks.find((t) => t.id === 'T002');
@@ -84,7 +96,16 @@ describe('recordCheckRuns', () => {
       state,
       task,
       runs: [
-        { checkId: 'V1', status: 'fail', output: 'red', preExisting: ['src/old.test.ts > adds'] },
+        {
+          checkId: 'V1',
+          status: 'fail',
+          output: 'red',
+          failure: {
+            keys: ['failed without diagnostics'],
+            placeholder: 'failed without diagnostics',
+          },
+          preExisting: ['src/old.test.ts > adds'],
+        },
         {
           checkId: 'K1',
           status: 'pass',

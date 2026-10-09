@@ -15,7 +15,12 @@ import type {
   ReviewChecksRecord,
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
-import { isENOENT, processError } from '../../../lib/process/errors.js';
+import {
+  isENOENT,
+  processError,
+  processOutputCapture,
+  type ProcessOutputCapture,
+} from '../../../lib/process/errors.js';
 import { runCommand } from '../../../lib/process/spawn/run-command.js';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { sha256Hex } from '../../../utils/sha256.js';
@@ -40,25 +45,29 @@ export type CheckRunArtifact = {
 
 export type CheckRunResult = {
   checkId: string;
-  status: CheckRunStatus;
   output: string;
   command?: string | undefined;
   exitCode?: number | undefined;
   timedOut?: true | undefined;
-  /** The failure keys of a red command, read from its whole captured output; `output` keeps only its tail. */
-  failure?: FailureKeys | undefined;
   artifacts?: CheckRunArtifact[] | undefined;
   /** The failure keys the same command also showed at the run base. */
   preExisting?: readonly string[] | undefined;
   /** The same command's re-run at the run base. */
   base?: { output: string; exitCode?: number | undefined } | undefined;
-};
+} & (
+  | {
+      status: 'fail';
+      /** The failure keys of the red, read from its whole capture; `output` keeps only its tail. */
+      failure: FailureKeys;
+    }
+  | { status: Exclude<CheckRunStatus, 'fail'> }
+);
 
 export type RunChecksOptions = {
   task?: Task | undefined;
   tasks?: readonly Task[] | undefined;
   plan?: Plan | undefined;
-  /** The reviewer checks as required `cmd` checks: a red one splits at the run base; a script the run changed refuses it. */
+  /** The reviewer checks as required `cmd` checks; a script the run changed refuses its check. */
   reviewChecks?: readonly Check[] | undefined;
   /** The run base: a reviewer check whose script this run changed is refused against it. */
   base?: RunBase | undefined;
@@ -112,11 +121,6 @@ export function checkRegistry(
   );
 }
 
-function checkStatus(result: ValidationResult): CheckRunStatus {
-  if (!result.passed) return 'fail';
-  return result.skipped === true ? 'not-runnable' : 'pass';
-}
-
 function checkOutput(result: ValidationResult): string {
   if (result.skipped === true) return result.skippedReason ?? result.output ?? '';
   return result.passed ? (result.output ?? '') : (result.error ?? result.output ?? '');
@@ -167,7 +171,15 @@ async function runTestCheck(
   }
   return {
     checkId: check.id,
-    status: checkStatus(result),
+    ...(result.passed
+      ? { status: result.skipped === true ? ('not-runnable' as const) : ('pass' as const) }
+      : {
+          status: 'fail' as const,
+          failure: failureKeys(
+            { capture: result.capture, timedOut: result.timedOut, exitCode: result.exitCode },
+            opts.projectDir,
+          ),
+        }),
     output: checkOutput(result),
     ...(result.command !== undefined && { command: result.command }),
     ...(result.exitCode !== undefined && { exitCode: result.exitCode }),
@@ -221,14 +233,12 @@ async function runCommandCheck(
     };
   } catch (err: unknown) {
     if (processError.isExitCode(err)) {
-      const output = [err.data.output, err.data.stderr]
-        .filter((part) => part.trim().length > 0)
-        .join('\n');
+      const capture = processOutputCapture(err.data);
       return {
         checkId: check.id,
         status: 'fail',
-        output: boundedOutputTail(output),
-        failure: failureKeys(output, { exitCode: err.data.code ?? undefined }, opts.projectDir),
+        output: boundedOutputTail(capture.text),
+        failure: failureKeys({ capture, exitCode: err.data.code ?? undefined }, opts.projectDir),
         command: check.value,
         ...(err.data.code !== null && { exitCode: err.data.code }),
       };
@@ -238,7 +248,10 @@ async function runCommandCheck(
         checkId: check.id,
         status: 'fail',
         output: boundedOutputTail(err.message),
-        failure: failureKeys('', { timedOut: true }, opts.projectDir),
+        failure: failureKeys(
+          { capture: { text: err.message, complete: true }, timedOut: true },
+          opts.projectDir,
+        ),
         command: check.value,
         timedOut: true,
       };
@@ -287,7 +300,7 @@ async function runRenderCheck(
   });
   const command = [cmd, ...args].join(' ');
   let exitCode: number;
-  let text: string;
+  let capture: ProcessOutputCapture;
   try {
     const { stdout, stderr } = await run(cmd, args, {
       cwd: opts.projectDir,
@@ -296,13 +309,25 @@ async function runRenderCheck(
       signal: opts.signal,
     });
     exitCode = 0;
-    text = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
+    capture = {
+      text: [stdout, stderr].filter((part) => part.trim().length > 0).join('\n'),
+      complete: true,
+    };
   } catch (err: unknown) {
     if (processError.isExitCode(err)) {
       exitCode = err.data.code ?? 1;
-      text = [err.data.output, err.data.stderr].filter((part) => part.trim().length > 0).join('\n');
+      capture = processOutputCapture(err.data);
     } else if (processError.isTimeout(err)) {
-      return { checkId: check.id, status: 'fail', output: boundedOutputTail(err.message), command };
+      return {
+        checkId: check.id,
+        status: 'fail',
+        output: boundedOutputTail(err.message),
+        failure: failureKeys(
+          { capture: { text: err.message, complete: true }, timedOut: true },
+          opts.projectDir,
+        ),
+        command,
+      };
     } else if (isENOENT(err) || processError.isNotFound(err)) {
       return { checkId: check.id, status: 'not-runnable', output: `${cmd} not found`, command };
     } else {
@@ -330,8 +355,13 @@ async function runRenderCheck(
   }
   return {
     checkId: check.id,
-    status: exitCode === 0 ? 'pass' : 'fail',
-    output: boundedOutputTail(text),
+    ...(exitCode === 0
+      ? { status: 'pass' as const }
+      : {
+          status: 'fail' as const,
+          failure: failureKeys({ capture, exitCode }, opts.projectDir),
+        }),
+    output: boundedOutputTail(capture.text),
     command,
     exitCode,
     artifacts,

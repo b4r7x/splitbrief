@@ -149,6 +149,8 @@ export const TaskSchema = z.preprocess(
             file: z.string().optional(),
             checkIds: z.array(z.string()).optional(),
             commands: z.record(z.string(), z.string()).optional(),
+            failureKeys: z.record(z.string(), z.array(z.string())).optional(),
+            redKeys: z.record(z.string(), z.array(z.string())).optional(),
             output: z.string().optional(),
           }),
         ),

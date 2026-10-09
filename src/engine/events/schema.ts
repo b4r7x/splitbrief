@@ -630,7 +630,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   /**
    * One command run before a review: a reviewer check (`id`) or, in a session from before the
    * reviewer chose them, a full-suite stage (`stage`). `base` is its re-run at the run base;
-   * `brief` is a reviewer check that a fix brief runs again at its brief gate.
+   * `brief` is a fix brief's reviewer check. It runs once, with no base re-run.
    */
   phaseEvent('full_suite').extend({
     status: z.enum(['running', 'done', 'not-run', 'refused']),
@@ -646,6 +646,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     newFailures: z.number().int().nonnegative().optional(),
     preExisting: z.number().int().nonnegative().optional(),
     notVerified: z.number().int().nonnegative().optional(),
+    /** On fix check done events: carried failures, those still present, and other re-run failures. */
+    own: z.number().int().nonnegative().optional(),
+    ownLeft: z.number().int().nonnegative().optional(),
+    others: z.number().int().nonnegative().optional(),
+    proven: z.boolean().optional(),
     /**
      * Why the command did not run or was refused; on a red base re-run, why SPLITBRIEF could not
      * verify that it shows the same failure as the run workspace.

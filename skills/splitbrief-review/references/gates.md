@@ -23,11 +23,13 @@ Record the command and its source in plan.json and the plan block. Run commands 
 - A failed plan call halts the review the same way a failed verdict call does. It is never a pass.
 - Run each reviewer check in the run workspace under the reviewer command policy: any installed program of any language, but no shell syntax, program run by path, inline code, `npx` without `--no-install`, download-and-run launcher or setup command. Refuse a reviewer check whose package script, task file, build wrapper or interpreter script the run changed; a plan or task check is never refused for that. Name each refused reviewer check with its reason.
 - Stop at the first reviewer check with new failures; every later one is recorded `not run`. Re-run a red reviewer check at the run base with the same text: a failure also red there is pre-existing. A timeout, or a red with no failure keys, is never pre-existing: report it as not verified at the run base and send it to the reviewer. Plan checks, task checks and the Apply re-check never re-run at the run base.
-- A red required check, or a reviewer check with new failures, becomes a pending input; triage turns it into fix tasks, and no completed brief reopens. The fix task carries the red it answers: the check id, its command, its output and its file.
-- The brief gate of a fix task runs the check of its red again under the same command policy; a red reviewer check also re-runs at the run base, as at review. A still-red fix fails its gate and retries through its ladder before the next review.
+- A red required check, or a reviewer check with new failures, becomes a pending input; triage turns it into fix tasks, and no completed brief reopens. The fix task carries the red it answers: the check id, its command, its output, its file, its own failure keys and all original red keys per check id. Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. The command must pass.
+- The brief gate of a fix task runs each carried check once under the same command policy, with no base re-run. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not owned by the task. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly.
+- Every unmatched re-run key counts as another failure. Other failures belong to other fix tasks or the next review. A check with no carried keys, or a re-run with no named failure, must pass its command. Older saved fix tasks without own keys or original red keys still load and must pass their commands.
+- The rule covers reviewer, plan and task checks. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. A carried failure that remains fails the gate and retries through its ladder before the next review.
 - With End-of-run checks off, no reviewer check runs and one row says so. Plan and task checks still run.
 - Format the brief changed files with the project formatter after every hand-back. A formatter failure records a warning.
-- Capture at most 4096 characters per command, and keep the LAST 40 lines of a test command — runners print the pass/fail summary last.
+- Display at most 4096 characters per command, and keep the LAST 40 lines of a test command — runners print the pass/fail summary last.
 - Narrowing kinds: `path-arg`, `package-arg`, `name-filter`, `none`.
 <!-- /generated -->
 
@@ -126,8 +128,25 @@ Run the reviewer checks in order, in the run workspace, under the reviewer comma
 
 With End-of-run checks off, no reviewer check runs before a review. Record one row that says so. Plan and task checks still run.
 No completed task reopens. Triage each red into appended fix tasks with new ids.
-Each fix task carries its red: the check id, its command, the file and the output.
-At either cadence, a fix task's gate runs that check again under the same command policy. A red reviewer check also re-runs on the run base copy, and only a new failure counts. A red there goes to the fix task's retry ladder.
+Each fix task carries its red: the check id, its command, the file, the output, its own `failureKeys` and all original `redKeys` per check id.
+Keep every original red key before the base split.
+Keys come from the full process capture.
+An incomplete capture gives one placeholder key. The command must pass.
+At either cadence, a fix task's gate runs each carried check once under the same command policy, with no base re-run.
+A red settles only when no own failure remains and the re-run still shows an original red key that is not the task's own.
+Otherwise, the command must pass.
+Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed.
+Pair each key once.
+Test failures match by name. Keys with no file match exactly.
+Every unmatched re-run key counts as another failure.
+Other failures belong to other fix tasks or the next review.
+A check with no carried keys, or a re-run with no named failure, must pass its command.
+Older saved fix tasks without own keys or original red keys still load and must pass their commands.
+The rule covers reviewer, plan and task checks.
+Each judged re-run gets a fix check verdict row. A green re-run shows all own failures gone.
+A red without proof shows `your N failures not shown · not proven fixed`.
+Plan and task checks get only a done row, with no duration.
+A carried failure that remains goes to the fix task's retry ladder.
 The next review chooses and runs its reviewer checks again.
 Log check ids, commands, output, exits and artifact paths in validation.md.
 Re-run checks when the candidate changes. Earlier green output cannot verify changed code.

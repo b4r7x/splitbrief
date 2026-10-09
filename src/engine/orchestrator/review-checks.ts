@@ -3,6 +3,11 @@ import { join } from 'node:path';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveApproveChecks, resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import {
+  fileFromFailureKey,
+  judgeFixCheck,
+  type FixCheckKeys,
+} from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   REVIEW_CHECKS_PLAN_JSON_SCHEMA,
@@ -29,8 +34,8 @@ import { publishReviewCheck, publishReviewChecksPlan } from './events.js';
 import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.js';
 import { runReviewerCall } from './review-call.js';
 import { transitionAndSave } from './state-ops.js';
-import { failingFilesFromOutput, lastTaskChangingFile } from './task/file-owner.js';
-import { failureKeys, type FailureKeys } from './validation/extract-failure-keys.js';
+import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
+import type { FailureKeys } from './validation/extract-failure-keys.js';
 import {
   planApprovesNpmScripts,
   reviewCheckList,
@@ -189,17 +194,17 @@ async function preExistingKeys(input: {
       unavailable: `${atBase?.run.status === 'refused' ? 'refused' : 'not run'}: ${atBase?.run.output ?? `no check ${input.id}`}`,
     };
   }
-  const baseFailure = atBase.run.failure ?? failureKeys('', {}, input.checkOptions.projectDir);
+  const baseFailure = atBase.run.status === 'fail' ? atBase.run.failure : undefined;
   const reason =
-    atBase.run.status === 'fail'
-      ? (atBase.incomplete ??
+    baseFailure === undefined
+      ? undefined
+      : (atBase.incomplete ??
         (input.failure.placeholder !== undefined || baseFailure.placeholder !== undefined
           ? notVerifiedReason(input.failure, baseFailure)
-          : undefined))
-      : undefined;
-  const known = new Set(baseFailure.keys);
+          : undefined));
+  const known = new Set(baseFailure?.keys);
   const keys =
-    atBase.run.status === 'fail' && reason === undefined
+    baseFailure !== undefined && reason === undefined
       ? input.failure.keys.filter((key) => known.has(key))
       : [];
   publishReviewCheck(input.notices, {
@@ -238,7 +243,7 @@ function noRunBase(
  * the run base is not shown to be the same failure; its keys stay fresh.
  */
 async function splitAtRunBase(input: {
-  run: CheckRunResult;
+  run: Extract<CheckRunResult, { status: 'fail' }>;
   command: string;
   checkOptions: RunChecksOptions;
 }): Promise<{
@@ -250,7 +255,7 @@ async function splitAtRunBase(input: {
 }> {
   const { run, command, checkOptions } = input;
   const notices = { bus: checkOptions.bus, phase: checkOptions.phase };
-  const failure = run.failure ?? failureKeys('', {}, checkOptions.projectDir);
+  const failure = run.failure;
   const atBase =
     checkOptions.base === undefined
       ? noRunBase(notices, { id: run.checkId, command })
@@ -271,12 +276,13 @@ async function splitAtRunBase(input: {
   };
 }
 
-/** Runs one reviewer check under its own row and clock, then splits a red at the run base. */
-export async function runReviewCheck(input: {
-  check: { id: string; command: string };
-  moment: 'pre-review' | 'brief';
-  checkOptions: RunChecksOptions;
-}): Promise<{
+/** Runs a reviewer check once; only a pre-review red splits at the run base. */
+export async function runReviewCheck(
+  input: {
+    check: { id: string; command: string };
+    checkOptions: RunChecksOptions;
+  } & ({ moment: 'pre-review' } | { moment: 'brief'; carried: FixCheckKeys }),
+): Promise<{
   run: CheckRunResult;
   fresh: string[];
   unavailable?: string | undefined;
@@ -303,15 +309,28 @@ export async function runReviewCheck(input: {
     });
     return { run, fresh: [] };
   }
+  const judged =
+    input.moment === 'brief' && (run.status === 'fail' || run.status === 'pass')
+      ? judgeFixCheck(input.carried, run.status === 'fail' ? run.failure : null)
+      : null;
   publishReviewCheck(notices, {
     status: 'done',
     id,
     command,
     moment,
-    passed: run.status === 'pass',
+    passed: run.status === 'pass' || (judged?.left.length === 0 && judged.proven),
     duration: Date.now() - startedAt,
+    ...(judged !== null && {
+      own: judged.own,
+      ownLeft: judged.left.length,
+      others: judged.others,
+      proven: judged.proven,
+    }),
   });
-  if (run.status === 'pass') return { run, fresh: [] };
+  if (run.status !== 'fail') return { run, fresh: [] };
+  if (moment === 'brief') {
+    return { run, fresh: judged === null || !judged.proven ? run.failure.keys : judged.left };
+  }
   const { fresh, preExisting, base, unavailable, notVerified } = await splitAtRunBase({
     run,
     command,
@@ -521,9 +540,11 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     );
     if (fresh.length === 0) continue;
     stoppedBy = chosen.id;
-    const named = failingFilesFromOutput(run.output, opts.workspaceDir);
+    const named = failingFilesFromKeys(fresh, opts.workspaceDir);
     for (const file of named.length > 0 ? named : [null]) {
       const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
+      const failureKeys =
+        file === null ? [] : fresh.filter((key) => fileFromFailureKey(key) === file);
       inputs.push({
         id: `${chosen.id}.${inputs.length + 1}`,
         kind: 'defect',
@@ -537,6 +558,8 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         checkIds: [chosen.id],
         command: chosen.command,
         output: run.output,
+        ...(failureKeys.length > 0 && { failureKeys }),
+        ...(run.status === 'fail' && { redKeys: run.failure.keys }),
       });
     }
   }
