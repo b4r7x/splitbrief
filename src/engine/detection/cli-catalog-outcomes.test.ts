@@ -1,156 +1,33 @@
 import { describe, expect, it } from 'vitest';
+import { NATIVE_CLI_CATALOG_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import {
   cloneScopedCliCatalogAttempt,
-  findCliCatalogRuntime,
-  reconcileScopedCliCatalogAttempts,
   scopedCliCatalogConnection,
 } from './cli-catalog-outcomes.js';
 
-const codex = { tool: 'codex' as const, contextKey: 'codex-a' };
 const opencode = { tool: 'opencode' as const, contextKey: 'opencode-a' };
+const executable = {
+  path: '/trusted/codex',
+  fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+  executableIdentity: {
+    canonicalPath: '/trusted/codex',
+    realPath: '/trusted/codex',
+    platformFileId: '1:2',
+    fingerprint: `1:2:3:4:sha256:${'a'.repeat(64)}`,
+    resolvedAt: 1,
+  },
+};
 
 describe('scoped CLI catalog outcomes', () => {
-  it('retains stale models only for the exact failed tool/context connection', () => {
-    const first = reconcileScopedCliCatalogAttempts({
-      previous: [],
-      observedAt: 10,
-      attempts: [
-        { connection: codex, outcome: { kind: 'success', value: [{ id: 'codex-model' }] } },
-        {
-          connection: opencode,
-          outcome: { kind: 'success', value: [{ id: 'opencode-model' }] },
-        },
-      ],
-    });
-    const second = reconcileScopedCliCatalogAttempts({
-      previous: first,
-      observedAt: 20,
-      attempts: [
-        { connection: codex, outcome: { kind: 'offline' } },
-        {
-          connection: opencode,
-          outcome: { kind: 'success', value: [{ id: 'opencode-new-model' }] },
-        },
-      ],
-    });
-
-    expect(findCliCatalogRuntime(second, 'codex')).toMatchObject({
-      state: 'stale',
-      models: [{ id: 'codex-model' }],
-      failure: 'offline',
-    });
-    expect(findCliCatalogRuntime(second, 'opencode')).toMatchObject({
-      state: 'fresh',
-      models: [{ id: 'opencode-new-model' }],
-    });
-  });
-
-  it('treats a valid empty catalog as authoritative for only its own connection', () => {
-    const first = reconcileScopedCliCatalogAttempts({
-      previous: [],
-      observedAt: 10,
-      attempts: [
-        { connection: codex, outcome: { kind: 'success', value: [{ id: 'codex-model' }] } },
-        {
-          connection: opencode,
-          outcome: { kind: 'success', value: [{ id: 'opencode-model' }] },
-        },
-      ],
-    });
-    const second = reconcileScopedCliCatalogAttempts({
-      previous: first,
-      observedAt: 20,
-      attempts: [{ connection: codex, outcome: { kind: 'success', value: [] } }],
-    });
-
-    expect(findCliCatalogRuntime(second, 'codex')).toMatchObject({
-      state: 'fresh',
-      models: [],
-    });
-    expect(findCliCatalogRuntime(second, 'opencode')).toMatchObject({
-      state: 'fresh',
-      models: [{ id: 'opencode-model' }],
-    });
-  });
-
-  it('does not synthesize an empty catalog for a first failure', () => {
-    const runtimes = reconcileScopedCliCatalogAttempts({
-      previous: [],
-      observedAt: 10,
-      attempts: [{ connection: codex, outcome: { kind: 'malformed' } }],
-    });
-
-    expect(findCliCatalogRuntime(runtimes, 'codex')).toMatchObject({
-      state: 'failed',
-      models: null,
-      failure: 'malformed',
-    });
-  });
-
-  it('drops an obsolete executable context instead of reusing its models for a replacement', () => {
-    const first = reconcileScopedCliCatalogAttempts({
-      previous: [],
-      observedAt: 10,
-      attempts: [
-        { connection: codex, outcome: { kind: 'success', value: [{ id: 'old-executable' }] } },
-      ],
-    });
-    const replacement = { ...codex, contextKey: 'codex-replaced-executable' };
-    const second = reconcileScopedCliCatalogAttempts({
-      previous: first,
-      observedAt: 20,
-      attempts: [{ connection: replacement, outcome: { kind: 'offline' } }],
-    });
-
-    expect(second).toEqual([
-      expect.objectContaining({
-        connection: replacement,
-        state: 'failed',
-        models: null,
-        failure: 'offline',
-      }),
-    ]);
-    expect(JSON.stringify(second)).not.toContain('old-executable');
-  });
-
-  it('rejects a tool lookup when two executable contexts are ambiguous', () => {
-    const alternateCodex = { ...codex, contextKey: 'codex-b' };
-    const runtimes = reconcileScopedCliCatalogAttempts({
-      previous: [],
-      observedAt: 10,
-      attempts: [
-        { connection: codex, outcome: { kind: 'success', value: [{ id: 'channel-a' }] } },
-        { connection: alternateCodex, outcome: { kind: 'success', value: [{ id: 'channel-b' }] } },
-        { connection: opencode, outcome: { kind: 'success', value: [{ id: 'opencode-model' }] } },
-      ],
-    });
-
-    expect(findCliCatalogRuntime(runtimes, 'codex')).toBeNull();
-    expect(findCliCatalogRuntime(runtimes, 'opencode')).toMatchObject({
-      state: 'fresh',
-      models: [{ id: 'opencode-model' }],
-    });
-  });
-
   it('binds an opaque public context token to the full digest-bound executable receipt', () => {
     const first = scopedCliCatalogConnection({
       tool: 'codex',
-      runnerContextKey: 'safe-config-context',
-      executable: {
-        path: '/trusted/codex',
-        fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
-        executableIdentity: {
-          canonicalPath: '/trusted/codex',
-          realPath: '/trusted/codex',
-          platformFileId: '1:2',
-          fingerprint: `1:2:3:4:sha256:${'a'.repeat(64)}`,
-          resolvedAt: 1,
-        },
-      },
+      authChannel: 'api-key',
+      executable,
     });
     const replacement = scopedCliCatalogConnection({
       tool: 'codex',
-      runnerContextKey: 'safe-config-context',
+      authChannel: 'api-key',
       executable: {
         path: '/trusted/codex',
         fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
@@ -169,6 +46,38 @@ describe('scoped CLI catalog outcomes', () => {
     expect(JSON.stringify([first, replacement])).not.toContain('a'.repeat(64));
     expect(JSON.stringify([first, replacement])).not.toContain('b'.repeat(64));
   });
+
+  it.each(NATIVE_CLI_CATALOG_TOOL_IDS)(
+    'keeps the %s identity stable while separating executables and auth channels',
+    (tool) => {
+      const first = scopedCliCatalogConnection({ tool, authChannel: 'api-key', executable });
+      const repeated = scopedCliCatalogConnection({
+        tool,
+        authChannel: 'api-key',
+        executable: {
+          ...executable,
+          executableIdentity: { ...executable.executableIdentity, resolvedAt: 2 },
+        },
+      });
+      expect(repeated).toEqual(first);
+      expect(scopedCliCatalogConnection({ tool, authChannel: 'session', executable })).not.toEqual(
+        first,
+      );
+      expect(scopedCliCatalogConnection({ tool, authChannel: undefined, executable })).not.toEqual(
+        first,
+      );
+      expect(
+        scopedCliCatalogConnection({
+          tool,
+          authChannel: 'api-key',
+          executable: {
+            ...executable,
+            executableIdentity: { ...executable.executableIdentity, platformFileId: '1:3' },
+          },
+        }),
+      ).not.toEqual(first);
+    },
+  );
 
   it('carries a failed listing command and its cause through a clone', () => {
     const cause =

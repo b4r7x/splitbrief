@@ -8,8 +8,12 @@ import { cliDetectionFor, PROBE_EXECUTABLE } from '#testing/helpers/factories/de
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import {
+  MAX_CLI_CATALOG_READ_MODELS,
+  mergeCatalogRead,
+} from '../../core/discovery/catalog-read-merge.js';
 import { detectionContextsForCurrentConfig } from './store-publication.js';
-import type { DetectionCacheSnapshot } from './cache.js';
+import type { DetectionCacheSnapshot, RememberedCliCatalog } from './cache.js';
 import type { ConfiguredProviderOutcome } from './provider-outcomes.js';
 import {
   invalidateCache,
@@ -21,6 +25,7 @@ import {
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 const CACHE_CONTEXT = 'readiness-context-v1';
+const PROVIDER_CACHE_LIMIT = 500;
 
 function cacheSnapshot(overrides: Partial<DetectionCacheSnapshot> = {}): DetectionCacheSnapshot {
   return {
@@ -208,7 +213,11 @@ describe('detection cache', () => {
         cliCatalogs: [
           {
             tool: 'claude-code',
-            models: [{ id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true }],
+            models: [
+              { id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true },
+              { id: 'sk-credential-shaped-model' },
+            ],
+            missingOnce: ['claude-fable-5', 'sk-credential-shaped-model'],
             probedAt: 1_786_000_000_500,
           },
         ],
@@ -241,10 +250,277 @@ describe('detection cache', () => {
         {
           tool: 'claude-code',
           models: [{ id: 'claude-fable-5', contextLength: 200_000, nativeDefault: true }],
+          missingOnce: ['claude-fable-5'],
           probedAt: 1_786_000_000_500,
         },
       ],
     });
+  });
+
+  it.each([{ missingOnce: undefined }, { missingOnce: ['model-b'] }])(
+    'round-trips a catalog with optional missing marks ($missingOnce)',
+    async ({ missingOnce }) => {
+      const cliCatalogs = [
+        {
+          tool: 'codex' as const,
+          models: [{ id: 'model-a' }, { id: 'model-b' }],
+          probedAt: 1_786_000_000_500,
+          ...(missingOnce === undefined ? {} : { missingOnce }),
+        },
+      ];
+      await saveDetectionCache({ projectDir: tempDir, snapshot: cacheSnapshot({ cliCatalogs }) });
+      const loaded = await loadDetectionCacheSnapshot({
+        projectDir: tempDir,
+        contextKey: CACHE_CONTEXT,
+      });
+      expect(loaded?.cliCatalogs).toEqual(cliCatalogs);
+      const presentation = await loadRememberedPresentationSnapshot({
+        projectDir: tempDir,
+        contextKey: 'other-context',
+      });
+      expect(presentation?.snapshot.cliCatalogs).toEqual(cliCatalogs);
+    },
+  );
+
+  it('keeps a swapped model at the read bound until a second read confirms its absence', async () => {
+    const cachedModels = Array.from({ length: MAX_CLI_CATALOG_READ_MODELS }, (_, index) => ({
+      id: `model-${index}`,
+    }));
+    const previousCatalog: RememberedCliCatalog = {
+      tool: 'codex',
+      models: cachedModels,
+      probedAt: 1_786_000_000_500,
+    };
+    const cacheDir = join(tempDir, SPLITBRIEF_DIR);
+    const cachePath = join(cacheDir, 'detection-cache.json');
+    await mkdir(cacheDir, { recursive: true });
+    await writeFile(
+      cachePath,
+      JSON.stringify({ version: 6, ...cacheSnapshot({ cliCatalogs: [previousCatalog] }) }),
+      'utf8',
+    );
+    const previous = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(previous?.cliCatalogs).toEqual([previousCatalog]);
+
+    const readModels = [...cachedModels.slice(1), { id: 'model-new' }];
+    const first = mergeCatalogRead({
+      cachedModels: previous?.cliCatalogs?.[0]?.models,
+      missingOnce: previous?.cliCatalogs?.[0]?.missingOnce,
+      readModels,
+    });
+    const firstCatalog: RememberedCliCatalog = {
+      ...previousCatalog,
+      models: first.models,
+      missingOnce: first.missingOnce,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [firstCatalog] }),
+    });
+    const savedFirst = JSON.parse(await readFile(cachePath, 'utf8')).cliCatalogs[0];
+    expect(savedFirst.models).toHaveLength(MAX_CLI_CATALOG_READ_MODELS + 1);
+    expect(savedFirst.missingOnce).toEqual(['model-0']);
+    expect(savedFirst).toEqual(firstCatalog);
+
+    const reloaded = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(reloaded?.cliCatalogs).toEqual([firstCatalog]);
+    const presentation = await loadRememberedPresentationSnapshot({
+      projectDir: tempDir,
+      contextKey: 'other-context',
+    });
+    expect(presentation?.snapshot.cliCatalogs).toEqual([firstCatalog]);
+
+    const second = mergeCatalogRead({
+      cachedModels: reloaded?.cliCatalogs?.[0]?.models,
+      missingOnce: reloaded?.cliCatalogs?.[0]?.missingOnce,
+      readModels,
+    });
+    expect(second.missingOnce).toEqual([]);
+    const secondCatalog: RememberedCliCatalog = {
+      tool: previousCatalog.tool,
+      models: second.models,
+      probedAt: previousCatalog.probedAt + 1,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [secondCatalog] }),
+    });
+    const savedSecond = JSON.parse(await readFile(cachePath, 'utf8')).cliCatalogs[0];
+    expect(savedSecond.models).toHaveLength(MAX_CLI_CATALOG_READ_MODELS);
+    expect(savedSecond.models).toEqual(readModels);
+    expect(savedSecond).not.toHaveProperty('missingOnce');
+    const confirmed = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(confirmed?.cliCatalogs).toEqual([secondCatalog]);
+  });
+
+  it.each([0, MAX_CLI_CATALOG_READ_MODELS / 2, MAX_CLI_CATALOG_READ_MODELS])(
+    'keeps all models and marks at the read bound after their first absence from a %i-row read',
+    async (readSize) => {
+      const cachedModels = Array.from({ length: MAX_CLI_CATALOG_READ_MODELS }, (_, index) => ({
+        id: `old-${index}`,
+      }));
+      const readModels = Array.from({ length: readSize }, (_, index) => ({ id: `new-${index}` }));
+      const read = mergeCatalogRead({ cachedModels, missingOnce: undefined, readModels });
+      const catalog: RememberedCliCatalog = {
+        tool: 'opencode',
+        models: read.models,
+        missingOnce: read.missingOnce,
+        probedAt: 1_786_000_000_500,
+      };
+      await saveDetectionCache({
+        projectDir: tempDir,
+        snapshot: cacheSnapshot({ cliCatalogs: [catalog] }),
+      });
+      const raw = await readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json'), 'utf8');
+      const saved = JSON.parse(raw).cliCatalogs[0];
+      expect(saved.models).toHaveLength(MAX_CLI_CATALOG_READ_MODELS + readSize);
+      expect(saved.missingOnce).toEqual(cachedModels.map((model) => model.id));
+      expect(saved).toEqual(catalog);
+      const reloaded = await loadDetectionCacheSnapshot({
+        projectDir: tempDir,
+        contextKey: CACHE_CONTEXT,
+      });
+      expect(reloaded?.cliCatalogs).toEqual([catalog]);
+    },
+  );
+
+  it('round-trips exactly twice the read bound with a full read of missing marks', async () => {
+    const unmarkedModels = Array.from({ length: MAX_CLI_CATALOG_READ_MODELS }, (_, index) => ({
+      id: `model-${index}`,
+    }));
+    const missingModels = Array.from({ length: MAX_CLI_CATALOG_READ_MODELS }, (_, index) => ({
+      id: `missing-${index}`,
+    }));
+    const missingOnce = missingModels.map((model) => model.id);
+    const catalog: RememberedCliCatalog = {
+      tool: 'codex',
+      models: [...unmarkedModels, ...missingModels],
+      missingOnce,
+      probedAt: 1_786_000_000_500,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [catalog] }),
+    });
+    const reloaded = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(reloaded?.cliCatalogs).toEqual([catalog]);
+  });
+
+  it('remembers 600 absences across a restart and removes them on the second empty read', async () => {
+    const models = Array.from({ length: 600 }, (_, index) => ({ id: `model-${index}` }));
+    const initialCatalog: RememberedCliCatalog = {
+      tool: 'opencode',
+      models: models.slice(0, 500),
+      probedAt: 1_786_000_000_500,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [initialCatalog] }),
+    });
+    const initial = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(initial?.cliCatalogs).toEqual([initialCatalog]);
+
+    const growth = mergeCatalogRead({
+      cachedModels: initial?.cliCatalogs?.[0]?.models,
+      missingOnce: initial?.cliCatalogs?.[0]?.missingOnce,
+      readModels: models,
+    });
+    const grownCatalog: RememberedCliCatalog = {
+      ...initialCatalog,
+      models: growth.models,
+      probedAt: initialCatalog.probedAt + 1,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [grownCatalog] }),
+    });
+    const grown = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(grown?.cliCatalogs).toEqual([grownCatalog]);
+
+    const firstEmpty = mergeCatalogRead({
+      cachedModels: grown?.cliCatalogs?.[0]?.models,
+      missingOnce: grown?.cliCatalogs?.[0]?.missingOnce,
+      readModels: [],
+    });
+    const missingCatalog: RememberedCliCatalog = {
+      ...grownCatalog,
+      models: firstEmpty.models,
+      missingOnce: firstEmpty.missingOnce,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [missingCatalog] }),
+    });
+    const restarted = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(restarted?.cliCatalogs).toEqual([missingCatalog]);
+    expect(restarted?.cliCatalogs?.[0]?.models).toEqual(models);
+    expect(restarted?.cliCatalogs?.[0]?.missingOnce).toEqual(models.map((model) => model.id));
+
+    const secondEmpty = mergeCatalogRead({
+      cachedModels: restarted?.cliCatalogs?.[0]?.models,
+      missingOnce: restarted?.cliCatalogs?.[0]?.missingOnce,
+      readModels: [],
+    });
+    expect(secondEmpty).toEqual({ models: [], missingOnce: [], complete: false });
+    const emptyCatalog: RememberedCliCatalog = {
+      ...grownCatalog,
+      models: secondEmpty.models,
+      missingOnce: secondEmpty.missingOnce,
+    };
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({ cliCatalogs: [emptyCatalog] }),
+    });
+    const confirmed = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(confirmed?.cliCatalogs).toEqual([emptyCatalog]);
+  });
+
+  it('keeps the provider model limit at 500 sanitized rows', async () => {
+    const models = Array.from({ length: PROVIDER_CACHE_LIMIT + 1 }, (_, index) => ({
+      id: `model-${index}`,
+    }));
+    await saveDetectionCache({
+      projectDir: tempDir,
+      snapshot: cacheSnapshot({
+        providers: [
+          {
+            provider: 'ollama',
+            available: true,
+            isLocal: true,
+            models: [{ id: 'sk-credential-shaped-model' }, ...models],
+          },
+        ],
+      }),
+    });
+    const reloaded = await loadDetectionCacheSnapshot({
+      projectDir: tempDir,
+      contextKey: CACHE_CONTEXT,
+    });
+    expect(reloaded?.providers[0]?.models).toEqual(models.slice(0, PROVIDER_CACHE_LIMIT));
   });
 
   it('round-trips an embedding capability fact so a cold start can drop that row', async () => {

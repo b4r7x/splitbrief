@@ -1,7 +1,6 @@
-import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isMap, parseDocument } from 'yaml';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { configPath } from '../../../src/core/config/load/document.js';
@@ -14,8 +13,8 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
-import { spawnCli } from '../helpers/live-cli-harness.js';
 import {
+  cli,
   createStopContinueFixture,
   GREET_FILE,
   GREET_SOURCE,
@@ -24,7 +23,6 @@ import {
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
 
-const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 const PRIMARY_MODEL = 'gpt-5-codex';
 const FALLBACK_MODEL = 'gpt-6.1-sol';
 const BUILD_REPLY = `mkdirSync('src', { recursive: true });
@@ -36,15 +34,8 @@ let fixture: StopContinueFixture | undefined;
 let restorePath: (() => void) | undefined;
 let trustHome: ReturnType<typeof createTrustHome> | undefined;
 
-beforeAll(() => {
-  execFileSync(process.execPath, ['node_modules/typescript/bin/tsc'], {
-    cwd: REPO_ROOT,
-    timeout: 120_000,
-    stdio: 'pipe',
-  });
-}, 120_000);
-
 afterEach(() => {
+  vi.unstubAllEnvs();
   restorePath?.();
   trustHome?.restore();
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
@@ -102,22 +93,12 @@ async function runFixture(target: StopContinueFixture) {
     offlinePreload,
     "globalThis.fetch = async () => { throw new Error('Network disabled in fallback E2E'); };\n",
   );
-  const run = await spawnCli({
-    args: [
-      '--import',
-      offlinePreload,
-      'dist/cli.js',
-      'start',
-      'smoke',
-      '--plain',
-      '--allow-repo-runners',
-      '--project',
-      target.projectDir,
-    ],
-    stateHome: target.stateHome,
+  vi.stubEnv('NODE_OPTIONS', `--import=${offlinePreload}`);
+  const options = {
     timeoutMs: 90_000,
     reapProjectDir: target.projectDir,
-  });
+  };
+  const run = await cli(target, ['start', 'smoke'], options);
   const sessions = readdirSync(sessionsRoot(target.projectDir));
   expect(sessions).toHaveLength(1);
   const state = loadState({ projectDir: target.projectDir, sessionId: sessions[0] ?? '' });
@@ -148,6 +129,7 @@ if (model !== ${JSON.stringify(FALLBACK_MODEL)}) throw new Error('Unexpected mod
 ${BUILD_REPLY}`,
     );
 
+    const gitignore = readFileSync(join(target.projectDir, '.gitignore'));
     const config = loadConfig(target.projectDir).config;
     writeConfig(target.projectDir, {
       ...config,
@@ -159,7 +141,7 @@ ${BUILD_REPLY}`,
         fallback: { tool: 'codex', model: FALLBACK_MODEL },
       },
     });
-    const gitignore = readFileSync(join(target.projectDir, '.gitignore'), 'utf8');
+    expect(readFileSync(join(target.projectDir, '.gitignore'))).toEqual(gitignore);
     const { run, state } = await runFixture(target);
     expect(
       run.exitCode,
@@ -186,7 +168,7 @@ ${BUILD_REPLY}`,
       fallback: { tool: 'codex', model: PRIMARY_MODEL },
     });
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
-    expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).toBe(gitignore);
+    expect(readFileSync(join(target.projectDir, '.gitignore'))).toEqual(gitignore);
   });
 
   it('switches inherited REVIEW using PLAN fallback and preserves the planner YAML bytes', async () => {

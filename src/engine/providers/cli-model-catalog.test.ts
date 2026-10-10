@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
 import { type DetectedModel, DetectedModelSchema } from '../../core/discovery/detection.js';
 import { resolveModelCatalog } from './model/catalog.js';
 import {
@@ -628,14 +629,56 @@ describe('native CLI model catalogs', () => {
     ).toBeNull();
   });
 
-  it('fails closed when the OpenCode listing is help text, drifts in shape, or is empty', () => {
+  it('reads an empty OpenCode JSON list as an empty catalog', () => {
+    const catalog = parseOpenCodeNativeModelCatalog('{"data": []}');
+    expect(catalog).toEqual({ tool: 'opencode', models: [] });
+    if (catalog === null) throw new Error('Expected the empty OpenCode list to parse');
+
+    expect(nativeCliCatalogToDetectedModels(catalog)).toEqual([]);
+  });
+
+  it('accepts OpenCode reads at the bound and rejects larger reads', () => {
+    const entries = Array.from({ length: MAX_CLI_CATALOG_READ_MODELS }, (_, index) => ({
+      id: `model-${index}`,
+      providerID: 'openai',
+    }));
+    expect(parseOpenCodeNativeModelCatalog(JSON.stringify({ data: entries }))?.models).toEqual(
+      entries.map((model, nativeOrder) => ({
+        selectionId: `${model.providerID}/${model.id}`,
+        nativeOrder,
+      })),
+    );
+    expect(
+      parseOpenCodeNativeModelCatalog(
+        JSON.stringify({ data: [...entries, { id: 'model-over-bound', providerID: 'openai' }] }),
+      ),
+    ).toBeNull();
+  });
+
+  it('accepts Kilo reads at the bound and rejects larger reads', () => {
+    const lines = Array.from(
+      { length: MAX_CLI_CATALOG_READ_MODELS },
+      (_, index) => `openai/model-${index}`,
+    ).join('\n');
+    expect(parseKiloNativeModelCatalog(lines)?.models).toHaveLength(MAX_CLI_CATALOG_READ_MODELS);
+    expect(parseKiloNativeModelCatalog(`${lines}\nopenai/model-over-bound`)).toBeNull();
+  });
+
+  it('fails closed when the OpenCode listing is invalid JSON or drifts in shape', () => {
     expect(parseOpenCodeNativeModelCatalog('DESCRIPTION\n  List all available models')).toBeNull();
+    expect(parseOpenCodeNativeModelCatalog('{"data": [')).toBeNull();
+    expect(parseOpenCodeNativeModelCatalog('{"models": []}')).toBeNull();
+    expect(parseOpenCodeNativeModelCatalog('{"data": null}')).toBeNull();
     expect(
       parseOpenCodeNativeModelCatalog(JSON.stringify({ data: [{ modelID: 'mimo-v2.6-flash' }] })),
     ).toBeNull();
-    // opencode 2.0.14 answers a directory it has not indexed with an empty list
-    // and exit 0. An empty catalog is a failed probe, not a tool with no models.
-    expect(parseOpenCodeNativeModelCatalog(JSON.stringify({ data: [] }))).toBeNull();
+  });
+
+  it('keeps empty OpenCode and Kilo text listings unreadable', () => {
+    for (const stdout of ['', '\n  \n', 'Models\n\n']) {
+      expect(parseOpenCodeVerboseModelCatalog(stdout)).toBeNull();
+      expect(parseKiloNativeModelCatalog(stdout)).toBeNull();
+    }
   });
 
   it('parses Cursor id-dash-name rows from the admitted listing fixture', () => {

@@ -130,6 +130,7 @@ import { runReviewChecks } from './review-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
 import type { SteeringPort } from '../calls/steering.js';
 import { settleMidCallDeliveries } from './queue/mid-call.js';
+import { plannerFeature } from './run/planner-callbacks-context.js';
 
 /** The code a failed review carries when the failure names none of its own. */
 export const REVIEW_UNAVAILABLE = 'review-unavailable';
@@ -643,7 +644,7 @@ export async function runFinalReviewPhase(opts: {
       opts.setTrackedState?.(state);
       const queueText = formatDrainedMessages(messagesForReview());
       const promptPrefix = [
-        workspaceReadInstructions(workspaceDir),
+        plannerFeature(workspaceReadInstructions(workspaceDir), state.plannerContext),
         ...(opts.integration !== undefined ? [opts.integration] : []),
         ...(reviewChecksSection !== undefined ? [reviewChecksSection] : []),
         queueText,
