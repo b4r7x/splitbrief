@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
+import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import { buildPromptCallbacks } from './prompt-callbacks.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -17,7 +19,7 @@ function makeInputMode(answers: string | string[]): UseInputModeResult {
     hint: '',
     questionEpoch: 0,
     setReviewMode: async () => ({ approved: false }),
-    setQuestionMode: async () => queue.shift() ?? '',
+    setQuestionMode: async () => plainUserMessage(queue.shift() ?? ''),
     resolve: () => {},
     resetMode: () => {},
   };
@@ -77,7 +79,7 @@ describe('buildPromptCallbacks onApprovalNeeded', () => {
       .fn<UseInputModeResult['setReviewMode']>()
       .mockImplementation(async () => {
         seen.push(reviewStore.get().confirms);
-        return { approved: false, action: 'revise', comment: 'split T002' };
+        return { approved: false, action: 'revise', message: plainUserMessage('split T002') };
       });
     const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setReviewMode });
 
@@ -153,7 +155,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
 
     const result = await callbacks.onContinuationNeeded?.('partial output', 'mid-step');
 
-    expect(result).toBe('');
+    expect(result).toEqual(plainUserMessage(''));
     expect(setQuestionMode).not.toHaveBeenCalled();
     expect(stopStore.get().phase).toBe('idle');
   });
@@ -172,9 +174,9 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
       parked: { kind: 'mid-brief', taskId: 'T002' },
     });
 
-    stopStore.resume('focus on retries');
+    stopStore.resume(plainUserMessage('focus on retries'));
 
-    await expect(pending).resolves.toBe('focus on retries');
+    await expect(pending).resolves.toEqual(plainUserMessage('focus on retries'));
   });
 
   it('resumes with an empty steer when /resume settles the park', async () => {
@@ -182,9 +184,9 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
 
     const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step');
     await Promise.resolve();
-    stopStore.resume('');
+    stopStore.resume(plainUserMessage(''));
 
-    await expect(pending).resolves.toBe('');
+    await expect(pending).resolves.toEqual(plainUserMessage(''));
   });
 
   it('parks a boundary pause on the brief it stopped after', async () => {
@@ -205,8 +207,8 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
       parked: { kind: 'boundary', taskId: 'T001' },
     });
 
-    stopStore.resume('');
-    await expect(pending).resolves.toBe('');
+    stopStore.resume(plainUserMessage(''));
+    await expect(pending).resolves.toEqual(plainUserMessage(''));
   });
 });
 
@@ -228,13 +230,13 @@ describe('buildPromptCallbacks onPlannerReply', () => {
       ...makeInputMode('the cache'),
       setQuestionMode: async (hint) => {
         hints.push(hint);
-        return 'the cache';
+        return plainUserMessage('the cache');
       },
     });
 
-    await expect(callbacks.onPlannerReply?.({ ...reply, seat: 'review', questions })).resolves.toBe(
-      'the cache',
-    );
+    await expect(
+      callbacks.onPlannerReply?.({ ...reply, seat: 'review', questions }),
+    ).resolves.toEqual(plainUserMessage('the cache'));
     expect(hints).toEqual(['Reply to the reviewer…']);
   });
 
@@ -244,7 +246,7 @@ describe('buildPromptCallbacks onPlannerReply', () => {
       ...makeInputMode('the cache'),
       setQuestionMode: async (hint) => {
         hints.push(hint);
-        return 'the cache';
+        return plainUserMessage('the cache');
       },
     });
     await callbacks.onPlannerReply?.(reply);
@@ -252,7 +254,9 @@ describe('buildPromptCallbacks onPlannerReply', () => {
   });
 
   it('hands an empty submit on as an empty reply, not as no reply', async () => {
-    await expect(makeCallbacks('   ').onPlannerReply?.(reply)).resolves.toBe('');
+    await expect(makeCallbacks('   ').onPlannerReply?.(reply)).resolves.toEqual(
+      plainUserMessage('   '),
+    );
   });
 
   it('returns no reply when the workflow is already unwinding', async () => {
@@ -299,4 +303,67 @@ describe('buildPromptCallbacks onReviewChecksApproval', () => {
     await expect(callbacks.onReviewChecksApproval?.(request)).resolves.toBeUndefined();
     expect(reviewChecksPromptStore.get().status).toBe('idle');
   });
+});
+
+it('forwards message-valued planner replies with attached bodies and metadata', async () => {
+  const original: UserMessageInput = {
+    text: '@/outside/a.txt\n\n--- @/outside/a.txt ---\nbody',
+    displayText: '@/outside/a.txt',
+    images: [],
+    attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
+  };
+  const callbacks = makeCallbacksWithInputMode({
+    ...makeInputMode(''),
+    setQuestionMode: async () => original,
+  });
+  await expect(
+    callbacks.onPlannerReply?.({
+      call: 'research',
+      text: '',
+      questions: [],
+      answers: [],
+      answered: false,
+    }),
+  ).resolves.toBe(original);
+});
+
+it('consumes the completed structured batch once without flattening attachment text', async () => {
+  const original: UserMessageInput = {
+    text: '@/outside/a.txt\n\n--- @/outside/a.txt ---\nbody',
+    displayText: '@/outside/a.txt',
+    images: [],
+    attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
+  };
+  const answer = Promise.withResolvers<UserMessageInput>();
+  const callbacks = makeCallbacksWithInputMode({
+    ...makeInputMode(''),
+    setQuestionMode: () => answer.promise,
+  });
+  const pending = callbacks.onPlannerReply?.({
+    call: 'research',
+    text: '',
+    questions: [{ id: 'q1', type: 'input', text: 'Which files?' }],
+    answers: [],
+    answered: false,
+  });
+  const batch = questionPromptStore.answer(original);
+  if (batch === undefined) throw new Error('expected completed batch');
+  questionPromptStore.clearHint();
+  answer.resolve(batch.message);
+  await expect(pending).resolves.toEqual(batch);
+  expect(questionPromptStore.takeAnswerBatch()).toBeUndefined();
+});
+
+it('keeps the full parked continuation payload', async () => {
+  stopStore.reset();
+  const original: UserMessageInput = {
+    text: '@/outside/a.txt\n\n--- @/outside/a.txt ---\nbody',
+    displayText: '@/outside/a.txt',
+    images: [],
+    attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
+  };
+  const pending = makeCallbacks('').onContinuationNeeded?.('', 'mid-step');
+  stopStore.resume(original);
+  await expect(pending).resolves.toBe(original);
+  stopStore.reset();
 });

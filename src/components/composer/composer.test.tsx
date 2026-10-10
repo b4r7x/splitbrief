@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs';
+import * as fs from 'node:fs';
+import { mkdirSync, realpathSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -22,7 +23,349 @@ import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { MAX_ATTACHMENT_BYTES } from '../../core/schemas/attachment.js';
+import type { DraftSubmission } from '../../core/composer/submission.js';
 import { COMMANDS_ONLY_NOTICE, Composer } from './composer.js';
+
+vi.mock('node:fs', async (original) => ({
+  ...(await original<typeof import('node:fs')>()),
+}));
+
+describe('Composer file submission', () => {
+  let projectDir: string;
+  let externalDir: string;
+  let unmount: (() => void) | undefined;
+
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 160, rows: 24 });
+    projectDir = createTempDir('composer-files-');
+    externalDir = createTempDir('composer-outside-');
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+  });
+
+  afterEach(() => {
+    unmount?.();
+    unmount = undefined;
+    vi.restoreAllMocks();
+    cleanupTempDir(projectDir);
+    cleanupTempDir(externalDir);
+  });
+
+  it.each([
+    ['not-found', 'file not found. Check the path and try again.'],
+    ['not-a-file', 'not a regular file. Name a file, not a directory.'],
+    ['too-large', 'file is larger than 10 MiB. Choose a smaller file.'],
+    ['unreadable', 'cannot read the file. Check its permissions.'],
+    ['not-text', 'not a text file. Choose a UTF-8 text file or a supported image.'],
+  ])(
+    'shows one exact %s refusal and preserves the whole draft, history, and pending images',
+    async (reason, copy) => {
+      const file = join(projectDir, 'notes.md');
+      if (reason === 'not-a-file') mkdirSync(file);
+      else if (reason !== 'not-found') writeFileSync(file, 'Body');
+      if (reason === 'too-large') truncateSync(file, MAX_ATTACHMENT_BYTES + 1);
+      if (reason === 'not-text') writeFileSync(file, Buffer.from([0x50, 0x4b, 0x00]));
+      writeFileSync(join(projectDir, 'shot.png'), 'image');
+      const attachment = {
+        id: 'draft-image',
+        kind: 'image' as const,
+        path: realpathSync(join(projectDir, 'shot.png')),
+        mimeType: 'image/png',
+        sizeBytes: 5,
+      };
+      const document = {
+        version: 1 as const,
+        parts: [
+          { kind: 'text' as const, text: 'keep @./notes.md ' },
+          { kind: 'image' as const, attachment },
+          { kind: 'text' as const, text: ' all of this' },
+        ],
+      };
+      attachmentsStore.add({ ...attachment, id: 'pending-image' });
+      inputHistoryStore.hydrate(['Earlier']);
+      const history = inputHistoryStore.get();
+      const pending = attachmentsStore.get();
+      const onSubmit = vi.fn();
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="home"
+          mode="normal"
+          hint=""
+          homeHint="home hint"
+          onSubmit={onSubmit}
+          onRuntimeCommand={() => {}}
+          listProjectFiles={async () => []}
+        />,
+        { cols: 160, rows: 24 },
+      );
+      unmount = ui.unmount;
+      await flushEffects();
+      composerDraftStore.requestDocument(document);
+      await flushEffects();
+      if (reason === 'unreadable') {
+        vi.spyOn(fs, 'accessSync').mockImplementationOnce(() => {
+          throw Object.assign(new Error('Denied'), { code: 'EACCES' });
+        });
+      }
+      ui.stdin.write('\r');
+      await flushEffects();
+
+      const feedback = `Cannot send: ${copy} File: notes.md.`;
+      expect(feedbackStore.get().message).toBe(feedback);
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui.lastFrame() ?? '').split(feedback)).toHaveLength(2);
+      });
+      expect(composerLiveStore.get().document).toEqual(document);
+      expect(inputHistoryStore.get()).toBe(history);
+      expect(attachmentsStore.get()).toBe(pending);
+      expect(onSubmit).not.toHaveBeenCalled();
+      ui.unmount();
+    },
+  );
+
+  it.each([`hello @${'a'.repeat(300)}`, 'see @loop'])(
+    'sends the unresolved bare reference in %s as prose',
+    async (text) => {
+      symlinkSync('loop', join(projectDir, 'loop'));
+      const onSubmit = vi.fn();
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="home"
+          mode="normal"
+          hint=""
+          onSubmit={onSubmit}
+          onRuntimeCommand={() => {}}
+          listProjectFiles={async () => []}
+        />,
+      );
+      unmount = ui.unmount;
+      await flushEffects();
+      composerDraftStore.request(text);
+      await flushEffects();
+      ui.stdin.write('\r');
+      await flushEffects();
+
+      expect(onSubmit).toHaveBeenCalledOnce();
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: true,
+          plannerContext: '',
+          message: { text, displayText: text, images: [], attachedInputs: [] },
+        }),
+      );
+      expect(feedbackStore.get().isError).toBe(false);
+      expect(composerLiveStore.get().empty).toBe(true);
+      expect(inputHistoryStore.get().entries).toEqual([createDraftDocument(text)]);
+    },
+  );
+
+  it('refuses an explicit symlink loop without sending or changing the draft', async () => {
+    symlinkSync('loop', join(projectDir, 'loop'));
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+        listProjectFiles={async () => []}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    composerDraftStore.request('see @./loop');
+    await flushEffects();
+    const history = inputHistoryStore.get();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(feedbackStore.get()).toEqual({
+      isError: true,
+      message: 'Cannot send: file not found. Check the path and try again. File: loop.',
+    });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(composerLiveStore.get().document).toEqual(createDraftDocument('see @./loop'));
+    expect(inputHistoryStore.get()).toBe(history);
+  });
+
+  it('forwards one successful payload, records its document, parks its images, and clears the draft', async () => {
+    writeFileSync(join(projectDir, 'notes.md'), 'File body\n');
+    writeFileSync(join(projectDir, 'shot.png'), 'image');
+    const submissions: Array<Extract<DraftSubmission, { ok: true }>> = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => submissions.push(submission)}
+        onRuntimeCommand={() => {}}
+        listProjectFiles={async () => []}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    composerDraftStore.request('look @shot.png @notes.md');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toHaveLength(1);
+    const submission = submissions[0];
+    if (!submission) throw new Error('Expected a submission.');
+    expect(submission.plannerContext).toBe('--- @notes.md ---\nFile body\n');
+    expect(submission.message.text).toBe(
+      `${submission.message.displayText}\n\n${submission.plannerContext}`,
+    );
+    expect(submission.message.displayText).not.toContain('File body');
+    expect(submission.message.attachedInputs).toEqual([
+      { path: realpathSync(join(projectDir, 'shot.png')), kind: 'image' },
+      { path: realpathSync(join(projectDir, 'notes.md')), kind: 'text' },
+    ]);
+    expect(attachmentsStore.peek()).toEqual(submission.message.images);
+    expect(
+      getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' }).at(-1),
+    ).toEqual(submission.document);
+    expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
+    ui.unmount();
+  });
+
+  it.each(['@shot.png', 'read @outside'])(
+    'pastes %s unchanged and attaches its image on Enter',
+    async (reference) => {
+      const path =
+        reference === '@shot.png' ? join(projectDir, 'shot.png') : join(externalDir, 'shot.png');
+      const text = reference === '@shot.png' ? reference : `read @${path}`;
+      writeFileSync(path, 'image');
+      const onSubmit = vi.fn();
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="home"
+          mode="normal"
+          hint=""
+          onSubmit={onSubmit}
+          onRuntimeCommand={() => {}}
+          listProjectFiles={async () => []}
+        />,
+      );
+      unmount = ui.unmount;
+      await flushEffects();
+      ui.stdin.write(text);
+      await flushEffects();
+
+      expect(composerLiveStore.get().document).toEqual(createDraftDocument(text));
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(attachmentsStore.peek()).toEqual([]);
+      ui.stdin.write('\r');
+      await flushEffects();
+
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            images: [expect.objectContaining({ path: realpathSync(path) })],
+            attachedInputs: [{ kind: 'image', path: realpathSync(path) }],
+          }),
+        }),
+      );
+      expect(attachmentsStore.peek()).toEqual(onSubmit.mock.calls[0]?.[0].message.images);
+      expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
+    },
+  );
+
+  it('keeps a pasted outside image reference, history, and pending images when Enter refuses it', async () => {
+    const path = join(externalDir, 'missing.png');
+    const text = `read @${path}`;
+    writeFileSync(join(projectDir, 'pending.png'), 'image');
+    attachmentsStore.add({
+      id: 'pending-image',
+      kind: 'image',
+      path: realpathSync(join(projectDir, 'pending.png')),
+      mimeType: 'image/png',
+      sizeBytes: 5,
+    });
+    inputHistoryStore.hydrate(['Earlier']);
+    const history = inputHistoryStore.get();
+    const pending = attachmentsStore.get();
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+        listProjectFiles={async () => []}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    ui.stdin.write(text);
+    await flushEffects();
+    expect(composerLiveStore.get().document).toEqual(createDraftDocument(text));
+    expect(feedbackStore.get().isError).toBe(false);
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe(
+      'Cannot send: file not found. Check the path and try again. File: missing.png.',
+    );
+    expect(composerLiveStore.get().document).toEqual(createDraftDocument(text));
+    expect(inputHistoryStore.get()).toBe(history);
+    expect(attachmentsStore.get()).toBe(pending);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'an escaped path', file: 'my shot.png', quoted: false },
+    { name: 'a quoted path with a literal backslash', file: 'my\\ shot.png', quoted: true },
+  ])('resolves and submits an image drop with $name', async ({ file, quoted }) => {
+    const path = join(projectDir, file);
+    writeFileSync(path, 'image');
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    ui.stdin.write(quoted ? `"${path}"` : path.replaceAll(' ', '\\ '));
+    await flushEffects();
+    expect(feedbackStore.get().isError, feedbackStore.get().message ?? ui.lastFrame()).toBe(false);
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().document.parts).toEqual([
+        { kind: 'image', attachment: expect.objectContaining({ path: realpathSync(path) }) },
+      ]);
+    });
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        message: expect.objectContaining({
+          images: [expect.objectContaining({ path: realpathSync(path) })],
+          attachedInputs: [{ path: realpathSync(path), kind: 'image' }],
+        }),
+      }),
+    );
+    ui.unmount();
+  });
+});
 
 describe('Composer blocking-question isolation', () => {
   beforeEach(() => {
@@ -39,7 +382,7 @@ describe('Composer blocking-question isolation', () => {
         currentScreen="workflow"
         mode="question"
         hint="Blocking question"
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -66,7 +409,7 @@ describe('Composer blocking-question isolation', () => {
         currentScreen="workflow"
         mode={mode}
         hint=""
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />
     );
@@ -118,7 +461,7 @@ describe('Composer submit draft retention', () => {
         currentScreen="home"
         mode="normal"
         hint=""
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -141,7 +484,7 @@ describe('Composer submit draft retention', () => {
         currentScreen="home"
         mode="normal"
         hint=""
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -165,7 +508,7 @@ describe('Composer submit draft retention', () => {
         mode="normal"
         hint=""
         submitKeepsDraft
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -204,6 +547,48 @@ describe('Composer submit draft retention', () => {
     ui.unmount();
   });
 
+  it('clears before dispatch, handles Enter once per press, and retains edits during a pending command', async () => {
+    const pending = Promise.withResolvers<void>();
+    const dispatched = vi.fn(async () => pending.promise);
+    const onEmptySubmit = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        commands={COMMANDS}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onRuntimeCommand={dispatched}
+        onEmptySubmit={onEmptySubmit}
+      />,
+    );
+    try {
+      await flushEffects();
+      composerDraftStore.request('/sample first');
+      await flushEffects();
+
+      ui.stdin.write('\r');
+      await flushEffects();
+      expect(composerLiveStore.get().empty).toBe(true);
+      expect(dispatched).toHaveBeenCalledExactlyOnceWith('/sample first');
+      expect(inputHistoryStore.get().entries).toEqual([createDraftDocument('/sample first')]);
+
+      ui.stdin.write('\r');
+      await flushEffects();
+      expect(dispatched).toHaveBeenCalledOnce();
+      expect(onEmptySubmit).toHaveBeenCalledOnce();
+
+      ui.stdin.write('newer edits');
+      await flushEffects();
+      pending.resolve();
+      await flushEffects();
+      expect(composerLiveStore.get().document).toEqual(createDraftDocument('newer edits'));
+      expect(ui.lastFrame()).toContain('newer edits');
+    } finally {
+      pending.resolve();
+      ui.unmount();
+    }
+  });
+
   it('renders the supplied prompt glyph in place of the default marker', async () => {
     const ui = renderFeature(
       <Composer
@@ -237,7 +622,7 @@ describe('Composer submit trimming', () => {
         currentScreen="home"
         mode="normal"
         hint=""
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -262,7 +647,7 @@ describe('Composer submit trimming', () => {
         currentScreen="workflow"
         mode="question"
         hint="Blocking question"
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -284,7 +669,7 @@ describe('Composer submit trimming', () => {
         currentScreen="home"
         mode="normal"
         hint=""
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -418,7 +803,7 @@ describe('Composer image attach gate', () => {
         mode="normal"
         hint=""
         homeHint={HOME_HINT}
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -461,7 +846,7 @@ describe('Composer image attach gate', () => {
         mode="normal"
         hint=""
         homeHint={HOME_HINT}
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={(command) => dispatched.push(command)}
       />,
     );
@@ -507,7 +892,7 @@ describe('Composer image attach gate', () => {
         mode="normal"
         hint=""
         homeHint={HOME_HINT}
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -627,7 +1012,7 @@ describe('Composer image attach gate', () => {
         mode="normal"
         hint=""
         homeHint={HOME_HINT}
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />
     );
@@ -708,7 +1093,7 @@ describe('Composer image attach gate', () => {
         currentScreen="workflow"
         mode="question"
         hint="Which panel?"
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );
@@ -763,7 +1148,7 @@ describe('Composer image attach gate', () => {
         mode="normal"
         hint=""
         homeHint={HOME_HINT}
-        onSubmit={(text) => submissions.push(text)}
+        onSubmit={(submission) => submissions.push(submission.message.text)}
         onRuntimeCommand={() => {}}
       />,
     );

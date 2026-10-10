@@ -1,6 +1,12 @@
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { formatAttachmentFailure } from '../../core/attachments/failure.js';
+import type { DraftSubmission } from '../../core/composer/submission.js';
+import { formatSeatIdentity } from '../../core/crew/identity.js';
+import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { configStore } from '../../stores/project/config.js';
 import {
   fitFeedbackMessage,
   matchKnownFeedbackMessage,
@@ -17,6 +23,26 @@ const DROP_AFFORDANCE = `${SOFT_SEP}drop an image`;
 
 export function noVisionFeedbackMessage(seatIdentity: string): string {
   return `${NO_VISION_PREFIX}${seatIdentity}${NO_VISION_SUFFIX}`;
+}
+
+export function formatSubmissionFailure(
+  submission: Extract<DraftSubmission, { ok: false }>,
+): string {
+  const config = configStore.get().config;
+  return submission.reason === 'no-vision'
+    ? config === null
+      ? 'Cannot send image: the planner cannot see images. Choose a vision model with /crew plan.'
+      : noVisionFeedbackMessage(
+          formatSeatIdentity({
+            seat: config.planner,
+            displayName: resolveSeatDisplayName(config.planner, 'planner', modelCacheStore),
+          }),
+        )
+    : formatAttachmentFailure({
+        action: 'send',
+        reason: submission.reason,
+        path: submission.path,
+      });
 }
 
 function structureKnownFeedbackMessage(message: string): FeedbackMessageInput {

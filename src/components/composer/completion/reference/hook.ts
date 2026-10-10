@@ -70,7 +70,13 @@ function filterFiles(files: string[], query: string): string[] {
 }
 
 function completeToken(value: string, token: ReferenceToken, selected: string): string {
-  return `${value.slice(0, token.start)}@${selected}${value.slice(token.start + token.query.length + 1)}`;
+  const path =
+    /[\s"']/.test(selected) && !selected.includes('"')
+      ? `"${selected}"`
+      : /[\s"']/.test(selected) && !selected.includes("'")
+        ? `'${selected}'`
+        : selected.replace(/[\\\s"']/g, '\\$&');
+  return `${value.slice(0, token.start)}@${path}${value.slice(token.start + token.query.length + 1)}`;
 }
 
 function buildReferenceSelectionKey(token: ReferenceToken | null, filtered: string[]): string {

@@ -47,7 +47,7 @@ describe('composer paste capture', () => {
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
     });
 
@@ -72,7 +72,7 @@ describe('composer paste capture', () => {
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      onSubmit: (value) => submissions.push(value),
+      onSubmit: (submission) => submissions.push(submission.message.displayText),
       onRuntimeCommand: () => {},
     });
     try {
@@ -121,7 +121,7 @@ describe('composer clipboard images', () => {
       mode: 'normal',
       hint: '',
       homeHint: '',
-      onSubmit: (text) => submissions.push(text),
+      onSubmit: (submission) => submissions.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       readClipboardImage: () => {
         reads += 1;
@@ -180,7 +180,7 @@ describe('composer clipboard images', () => {
       mode: 'normal',
       hint: '',
       homeHint: '',
-      onSubmit: (text) => submissions.push(text),
+      onSubmit: (submission) => submissions.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       readClipboardImage: async () => {
         reads += 1;
@@ -216,7 +216,7 @@ describe('composer clipboard images', () => {
       hint: '',
       homeHint: '',
       submitKeepsDraft: true,
-      onSubmit: (text) => submissions.push(text),
+      onSubmit: (submission) => submissions.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       readClipboardImage: async () => ({ ok: true, path: imagePath }),
     });

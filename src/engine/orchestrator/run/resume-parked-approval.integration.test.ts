@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { afterEach, expect, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -84,7 +86,7 @@ it('reopens a parked plan card and sends the correction typed at it to the plann
   });
   wctx.continuation = createContinuationHolder({
     step: { kind: 'gate', gate: 'plan' },
-    steer: 'Greet in Polish',
+    steer: plainUserMessage('Greet in Polish'),
   });
 
   const result = await resumeParkedApproval({

@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
+
 import { describe, expect, it } from 'vitest';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
@@ -17,6 +19,7 @@ import {
   raisePendingRecovery,
   rebaseOnPersistedWorkflowState,
   addUsageAndSave,
+  recordResumeUserMessage,
 } from './state-ops.js';
 
 function setupProject(): { projectDir: string; sessionId: string } {
@@ -46,13 +49,38 @@ function makeState(overrides?: Partial<WorkflowState>): WorkflowState {
 function makeQueuedMessage(): QueuedMessage {
   return {
     id: 'msg-one',
-    text: 'queued while planner was running',
+    ...plainUserMessage('queued while planner was running'),
     queuedAt: '2026-05-27T04:00:00.000Z',
     phase: 'researching',
     deliveredViaNative: false,
     nativeDeliveryState: 'pending',
   };
 }
+
+describe('recordResumeUserMessage', () => {
+  it('stores only expanded attachment messages, including after the first attachment', () => {
+    const ref = setupProject();
+    try {
+      saveState(ref, createInitialState('feature'));
+      const ts = '2026-10-10T00:00:00.000Z';
+      const message = {
+        ts,
+        phase: 'planning' as const,
+        displayText: 'Use @notes.md',
+        text: 'Use @notes.md\n\nPELICAN-42 \n',
+      };
+      recordResumeUserMessage(ref, message);
+      recordResumeUserMessage(ref, {
+        ts,
+        phase: 'planning',
+        ...plainUserMessage('plain follow-up'),
+      });
+      expect(loadState(ref)?.resumeUserMessages).toEqual([message]);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+});
 
 describe('addUsageAndSave', () => {
   it('accumulates token usage into the new state and emits a cost-update event', () => {

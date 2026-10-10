@@ -17,8 +17,8 @@ export async function resumeParkedApproval(opts: {
   const { wctx, state, setTrackedState, phaseTimings, startTime } = opts;
   if (!reopensPlanCard(state)) return null;
 
-  let correction = wctx.continuation?.take({ kind: 'gate', gate: 'plan' })?.steer?.trim();
-  if (correction === '') correction = undefined;
+  let correction = wctx.continuation?.take({ kind: 'gate', gate: 'plan' })?.steer;
+  if (correction?.text.trim() === '') correction = undefined;
   const resumeWctx: PlannerCallbacksContext & { planner: Planner } = {
     ...plannerCallbacksContextOf(wctx),
     callbacks: {
@@ -27,9 +27,9 @@ export async function resumeParkedApproval(opts: {
         if (type !== 'plan' || correction === undefined) {
           return wctx.callbacks.onApprovalNeeded(type, input, confirms);
         }
-        const comment = correction;
+        const message = correction;
         correction = undefined;
-        return { approved: false, action: 'revise', comment, recorded: true };
+        return { approved: false, action: 'revise', message, recorded: true };
       },
     },
     planner: wctx.planner,

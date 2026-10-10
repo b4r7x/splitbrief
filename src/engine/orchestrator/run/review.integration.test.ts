@@ -1,5 +1,14 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { createTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -49,6 +58,40 @@ function setupProject(): { projectDir: string; sessionId: string } {
 const RUN_BASELINE = { head: null, runStartChangedFiles: [], fingerprints: {} };
 
 describe('review answer follower', () => {
+  it('delivers an attached file into reviewer triage and publishes compact text once', async () => {
+    const projectDir = createTempDir('review-attached-file');
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId: 'review-attached-file' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const message = attachedMessage(projectDir);
+    const qa = [{ question: 'Change the API?', answer: message.displayText }];
+    const state = {
+      ...pendingReview(),
+      phase: 'final-review' as const,
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(ref));
+    const callbacks = makeCallbacks({ onPlannerReply: async () => ({ message, qa }) }).callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: () => {},
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork: {
+        ...fixWork,
+        ask: { question: 'Change the API?', whyOnlyUserCanAnswer: 'The plan defines the API' },
+      },
+    });
+    expect(result.state.pendingTriage?.inputs.at(-1)?.text).toContain('PELICAN-42');
+    expect(events.find((event) => event.type === 'user_message')).toMatchObject({ qa });
+    await expectCompactMessage(ref, events, message);
+    await expectResumedMessage(ref, message);
+  });
+
   const fixWork = { fixTasks: [], rejected: [], verify: [], ask: null };
   const input = {
     id: 'P1',
@@ -86,7 +129,7 @@ describe('review answer follower', () => {
     };
     saveState(ref, state);
     const callbacks = makeCallbacks({
-      onPlannerReply: vi.fn(async () => 'Keep the planned API'),
+      onPlannerReply: vi.fn(async () => plainUserMessage('Keep the planned API')),
     }).callbacks;
     const planner = makePlanner({ typedCall: vi.fn() });
     const result = await followReviewAnswer({
@@ -173,7 +216,7 @@ describe('review answer follower', () => {
       ...ref,
       state: result.state,
       action: 'revise',
-      comment: 'Fix the typecheck failure',
+      comment: plainUserMessage('Fix the typecheck failure'),
       bus,
     });
     expect(corrected.ok).toBe(true);
@@ -337,7 +380,7 @@ describe('runScheduledReview saved recovery', () => {
       onPlannerReply: vi.fn(async (reply) => {
         expect(reply.text).toBe('Change the API?');
         asked = true;
-        return 'Keep the API';
+        return plainUserMessage('Keep the API');
       }),
     }).callbacks;
     const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
@@ -378,7 +421,7 @@ describe('runScheduledReview saved recovery', () => {
     const state = scheduledReviewState();
     saveState(ref, state);
     const callbacks = makeCallbacks({
-      onPlannerReply: vi.fn(async () => 'Keep the API'),
+      onPlannerReply: vi.fn(async () => plainUserMessage('Keep the API')),
     }).callbacks;
     const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
     const reviewPrompts: string[] = [];
@@ -466,7 +509,7 @@ describe('runScheduledReview saved recovery', () => {
       ...ref,
       state: halted.state,
       action: 'revise',
-      comment: 'Keep the reviewed correction',
+      comment: plainUserMessage('Keep the reviewed correction'),
       bus,
     });
     expect(corrected.ok).toBe(true);
@@ -554,7 +597,7 @@ describe('runScheduledReview saved recovery', () => {
       ...ref,
       state: halted.state,
       action: 'accept-as-is',
-      comment: 'Reviewed the diff by hand.',
+      comment: plainUserMessage('Reviewed the diff by hand.'),
       bus,
     });
     expect(skipped).toMatchObject({ ok: true, status: 'continued' });

@@ -4,7 +4,7 @@ import type { TaskStatus } from '../../schemas/enums.js';
 import { CREW_SEAT_IDS } from '../../crew/identity.js';
 import type { OverlayType, Screen } from '../../navigation/types.js';
 import type { CopyOutcome } from '../../../lib/clipboard/clipboard.js';
-import type { ResolveAttachmentReason } from '../../attachments/resolve.js';
+import type { AttachmentFailureReason } from '../../attachments/failure.js';
 
 type CommandHandlerResult = void | Promise<void>;
 
@@ -188,7 +188,7 @@ export const REMOVED_COMMANDS: Readonly<Record<string, string>> = {
 
 export type AttachImageResult =
   | { ok: true; path: string }
-  | { ok: false; reason: ResolveAttachmentReason | 'no-vision' };
+  | { ok: false; reason: AttachmentFailureReason | 'no-vision' };
 
 export interface SkillCommandOption {
   id: string;

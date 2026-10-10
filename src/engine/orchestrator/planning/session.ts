@@ -25,6 +25,7 @@ import {
 } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import type { DiscoveredValidation, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 import {
   isSessionConversation,
   questionsText,
@@ -74,7 +75,6 @@ import {
   createBusTextHandler,
   publishPlannerStatus,
   publishRunnerCallEvent,
-  publishUserMessage,
   publishWarning,
 } from '../events.js';
 import { askPlannerSession } from '../planner-session.js';
@@ -82,7 +82,13 @@ import { buildPlanSessionHaltRecoveryIssue } from '../recovery/builders/planner.
 import { buildSeatProtocolErrorRecoveryIssue } from '../recovery/builders/seat-protocol.js';
 import { loadSeatSwapContext } from '../recovery/seat-swap-context.js';
 import { closeRunIfOpen } from '../run/close.js';
-import { addUsageAndSave, raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import {
+  addUsageAndSave,
+  raisePendingRecovery,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../state-ops.js';
+import { recordUserMessage } from '../transcript/user-message.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { plannerRejectionContext, waitForPlannerReply } from './call-loop.js';
 import { apiPlanningPacket } from './api-packet.js';
@@ -96,6 +102,7 @@ import {
   type PlanTurn,
 } from './plan-session.js';
 import { drainAndFormat } from './queue-drain.js';
+import { formatDrainedMessages } from '../queue/prompt.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningProducerResult } from './types.js';
 
@@ -269,15 +276,19 @@ export async function runPlanningSession(
   const { projectDir, sessionId, bus } = wctx;
   const ref = { projectDir, sessionId };
   let state = opts.state;
-  const steer = wctx.continuation?.take(resumeStep(state))?.steer?.trim();
+  const steer = wctx.continuation?.take(resumeStep(state))?.steer;
   // A run continued with a steer while its planner question waited: the steer is the answer.
   const conversation = state.pendingPlannerConversation;
   const steerAnswer =
-    conversation !== undefined && !conversation.answered && steer ? steer : undefined;
+    conversation !== undefined && !conversation.answered && steer?.text.trim() ? steer : undefined;
   const pending = sessionConversation(state);
-  const earlier = earlierPlanning(ref, state, pending === undefined ? steerAnswer : undefined);
+  const earlier = earlierPlanning(
+    ref,
+    state,
+    pending === undefined ? steerAnswer?.text : undefined,
+  );
   let resumedAnswer = pending === undefined ? undefined : steerAnswer;
-  const standing = [lead, steerAnswer === undefined ? steer : undefined]
+  const standing = [lead, steerAnswer === undefined ? steer?.text : undefined]
     .filter((part): part is string => part !== undefined && part !== '')
     .join('\n\n');
   // A session continued after a stop at its questions: a planner on its own session still holds
@@ -335,14 +346,14 @@ export async function runPlanningSession(
       const sessionBody = !onSession
         ? undefined
         : turn.kind === 'answers'
-          ? planAnswersTurn(turn.reply.text, rounds())
+          ? planAnswersTurn(turn.reply.message.text, rounds())
           : turn.kind === 'repair'
             ? planRepairTurn(turn.errors)
             : lead !== undefined
               ? ''
               : undefined;
       const opening = sessionBody !== undefined && !standingHeard ? standing : '';
-      const said = interruptSteer?.trim();
+      const said = interruptSteer?.trim() ? interruptSteer : undefined;
       const around = (body: string) =>
         [note, opening, body, said ? `The user says: ${said}` : '']
           .filter((part) => part !== '')
@@ -438,7 +449,7 @@ export async function runPlanningSession(
     const answer = async (
       questions: readonly ClarificationQuestion[],
       round: number,
-    ): Promise<string | PlannerReplyAnswer | undefined> => {
+    ): Promise<UserMessageInput | PlannerReplyAnswer | undefined> => {
       let asked = sessionConversation(state);
       if (asked === undefined || asked.answered) {
         asked = {
@@ -463,7 +474,7 @@ export async function runPlanningSession(
       if (resumedAnswer !== undefined) {
         const reply = resumedAnswer;
         resumedAnswer = undefined;
-        return reply;
+        return { message: reply, qa: [] };
       }
       return waitForPlannerReply(wctx, asked);
     };
@@ -496,18 +507,17 @@ function recordAnswers(
           type: 'SET_PLANNER_CONVERSATION',
           conversation: {
             ...asked,
-            answers: [...asked.answers, { reply: asked.text, answer: reply.text }],
+            answers: [...asked.answers, { reply: asked.text, answer: reply.message.text }],
             answered: true,
           },
         });
-  appendMessage(ref, {
-    role: 'user',
-    phase: next.phase,
-    text: reply.text,
-    ...(reply.qa.length > 0 && { qa: reply.qa }),
+  recordUserMessage({ ...ref, bus: wctx.bus, phase: next.phase }, reply.message, {
+    qa: reply.qa,
+    ...(asked !== undefined && {
+      answerIndex: (next.userAnswers?.length ?? 0) + asked.answers.length,
+    }),
   });
-  publishUserMessage({ bus: wctx.bus, phase: next.phase }, reply.text, { qa: reply.qa });
-  return next;
+  return rebaseOnPersistedWorkflowState(ref, next);
 }
 
 async function settle(
@@ -688,6 +698,9 @@ export async function runPlanApproval(
     const queued = drainAndFormat(projectDir, sessionId, current, bus);
     current = queued.state;
     let correction = queued.prefix.trim();
+    let displayCorrection = formatDrainedMessages(
+      queued.messages.map((message) => ({ ...message, text: message.displayText })),
+    ).trim();
 
     if (correction === '') {
       try {
@@ -720,10 +733,12 @@ export async function runPlanApproval(
           current = await applyPlanEdit(wctx, current, reviewed);
           continue;
         }
-        if (result.action !== 'revise' || result.comment.trim() === '') continue;
-        correction = result.comment.trim();
+        if (result.action !== 'revise' || result.message.text.trim() === '') continue;
+        correction = result.message.text;
+        displayCorrection = result.message.displayText;
         if (result.recorded !== true) {
-          appendMessage(ref, { role: 'user', phase: 'reviewing-plan', text: correction });
+          recordUserMessage({ ...ref, bus, phase: 'reviewing-plan' }, result.message);
+          current = rebaseOnPersistedWorkflowState(ref, current);
         }
       } catch (err) {
         return handlePlanningFailure({ err, projectDir, sessionId, state: current, wctx });
@@ -734,7 +749,7 @@ export async function runPlanApproval(
       type: 'plan_regenerated',
       ts: Date.now(),
       phase: current.phase,
-      comment: correction,
+      comment: displayCorrection,
     });
     current = transitionAndSave(ref, current, { type: 'CORRECT_PLAN', comment: correction });
     const revised = await runPlanningSession(

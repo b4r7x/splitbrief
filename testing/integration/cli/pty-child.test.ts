@@ -26,6 +26,7 @@ import {
 } from '../../../src/features/workflow/handlers.js';
 import { loadState } from '../../../src/core/state/persistence.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
+import { plainUserMessage, type UserMessageInput } from '../../../src/core/types/user-input.js';
 import { PTY_REVIEW_SESSION_ID, parsePtyChildArgs, runPtyChild } from './pty/child.js';
 import {
   PTY_ACTIVE_REVIEW_MARKER,
@@ -208,7 +209,7 @@ describe('PTY behavior child', () => {
                     expect(interrupted?.interruptedStep?.source).toBe('user');
                     expect(interrupted?.awaitingContinue).toBe(true);
                     expect(interrupted?.closed).toBeUndefined();
-                    return new Promise<string>((resolve) => {
+                    return new Promise<UserMessageInput>((resolve) => {
                       stopStore.park('boundary', null, resolve);
                     });
                   },
@@ -237,7 +238,7 @@ describe('PTY behavior child', () => {
       });
       await vi.waitFor(() => expect(quitExited).toBe(true));
       expect(consumeBoundaryInterrupt()).toBe(false);
-      stopStore.resume('');
+      stopStore.resume(plainUserMessage(''));
       await expect(pending).resolves.toEqual({ approved: true });
 
       expect(events[1]).toMatchObject({ type: 'turn_interrupted', source: 'user', at: 'mid-step' });
@@ -306,7 +307,7 @@ describe('PTY behavior child', () => {
       const controller = new AbortController();
       const events: EngineEvent[] = [];
       const output: string[] = [];
-      const onContinuationNeeded = vi.fn(() => new Promise<string>(() => {}));
+      const onContinuationNeeded = vi.fn(() => new Promise<UserMessageInput>(() => {}));
       vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
         output.push(String(chunk));
         return true;

@@ -1,14 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import type { Stats } from 'node:fs';
-import { accessSync, constants, realpathSync, statSync } from 'node:fs';
+import { isUtf8 } from 'node:buffer';
+import { accessSync, constants, readFileSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, normalize, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { includes } from '../../utils/type-guards.js';
+import { isNodeError } from '../../lib/process/errors.js';
 import type { Attachment } from '../schemas/attachment.js';
 
-export type ResolveAttachmentReason = 'not-image' | 'not-found' | 'too-large';
+export type InputFileFailureReason =
+  | 'not-found'
+  | 'not-a-file'
+  | 'too-large'
+  | 'unreadable'
+  | 'not-text';
+
+export type ResolveInputFileResult =
+  | { ok: true; kind: 'text'; path: string; sizeBytes: number; content: string }
+  | { ok: true; kind: 'image'; path: string; sizeBytes: number; attachment: Attachment }
+  | { ok: false; reason: InputFileFailureReason };
+
+export type ResolveAttachmentReason = InputFileFailureReason | 'not-image';
 
 export type ResolveAttachmentResult =
   | { ok: true; attachment: Attachment }
@@ -18,35 +31,15 @@ export type ResolveRenderAttachmentResult =
   | { ok: true; attachment: Attachment }
   | { ok: false; reason: ResolveAttachmentReason | 'outside-safe-roots' };
 
-export type AttachmentFailureAction = 'attach' | 'send';
+type ResolveAttachmentOpts =
+  | { input: string; projectDir: string }
+  | { path: string; projectDir: string };
 
-export function formatAttachmentFailure(input: {
-  action: AttachmentFailureAction;
-  reason: ResolveAttachmentReason;
-  imageId?: string | undefined;
-}): string {
-  const subject = input.action === 'send' ? 'send image' : 'attach image';
-  const identifiedSubject =
-    input.action === 'send' && input.imageId !== undefined
-      ? `send image (${input.imageId})`
-      : subject;
+type InspectedInputFile = { inputPath: string; path: string; sizeBytes: number };
 
-  switch (input.reason) {
-    case 'not-found':
-      return input.action === 'send'
-        ? `Cannot ${identifiedSubject}: the file is no longer available. Remove it from the draft and attach it again.`
-        : 'Cannot attach image: the file was not found. Check the path and try again.';
-    case 'not-image':
-      return `Cannot ${subject}: choose a PNG, JPEG, GIF, WebP, or BMP file.`;
-    case 'too-large':
-      return `Cannot ${subject}: the file is larger than 10 MiB. Choose a smaller image.`;
-  }
-}
-
-interface ResolveAttachmentOpts {
-  input: string;
-  projectDir: string;
-}
+type InspectInputFileResult =
+  | ({ ok: true } & InspectedInputFile)
+  | { ok: false; reason: InputFileFailureReason };
 
 function ensureTrailingSep(p: string): string {
   return p.endsWith(sep) ? p : p + sep;
@@ -59,11 +52,7 @@ function isUnderRoot(absPath: string, root: string): boolean {
 }
 
 function realRootOf(root: string): string {
-  try {
-    return normalize(realpathSync(root));
-  } catch {
-    return normalize(root);
-  }
+  return normalize(realpathSync(root));
 }
 
 function isInsideSafeRoot(absPath: string, realPath: string, root: string): boolean {
@@ -73,89 +62,136 @@ function isInsideSafeRoot(absPath: string, realPath: string, root: string): bool
   return pathIsInsideRoot && isUnderRoot(realPath, realRoot);
 }
 
-function extOf(p: string): string {
-  const dot = p.lastIndexOf('.');
-  if (dot < 0) return '';
-  return p.slice(dot + 1).toLowerCase();
+export function resolveInputFile(opts: ResolveAttachmentOpts): ResolveInputFileResult {
+  const result = inspectInputFile(opts);
+  if (!result.ok) return result;
+  const image = resolveInspectedImage(result);
+  if (image.ok) {
+    return {
+      ok: true,
+      kind: 'image',
+      path: result.path,
+      sizeBytes: result.sizeBytes,
+      attachment: image.attachment,
+    };
+  }
+  try {
+    const content = readFileSync(result.path);
+    if (!isUtf8(content) || content.some((byte) => byte < 9 || (byte > 13 && byte < 32))) {
+      return { ok: false, reason: 'not-text' };
+    }
+    return {
+      ok: true,
+      kind: 'text',
+      path: result.path,
+      sizeBytes: result.sizeBytes,
+      content: content.toString('utf-8'),
+    };
+  } catch (err) {
+    return inputFileFailure(err);
+  }
 }
 
-export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmentResult {
-  const trimmed = opts.input.trim().replace(/^['"]|['"]$/g, '');
-  if (!trimmed) return { ok: false, reason: 'not-found' };
-
-  const expanded = trimmed.startsWith('~/') ? join(homedir(), trimmed.slice(2)) : trimmed;
-  const absPath = isAbsolute(expanded) ? normalize(expanded) : resolve(opts.projectDir, expanded);
-  const result = inspectAttachment(absPath);
+export function resolveAttachment(
+  opts: ResolveAttachmentOpts | { attachment: Attachment; projectDir: string },
+): ResolveAttachmentResult {
+  const result = inspectInputFile(
+    'attachment' in opts ? { path: opts.attachment.path, projectDir: opts.projectDir } : opts,
+  );
   if (!result.ok) return result;
-  try {
-    accessSync(result.attachment.path, constants.R_OK);
-  } catch {
-    return { ok: false, reason: 'not-found' };
-  }
-  return result;
+  return 'attachment' in opts
+    ? {
+        ok: true,
+        attachment: { ...opts.attachment, path: result.path, sizeBytes: result.sizeBytes },
+      }
+    : resolveInspectedImage(result);
 }
 
 export function resolveRenderAttachment(
   opts: ResolveAttachmentOpts,
 ): ResolveRenderAttachmentResult {
-  const trimmed = opts.input.trim().replace(/^['"]|['"]$/g, '');
-  if (!trimmed) return { ok: false, reason: 'not-found' };
-
-  const absPath = isAbsolute(trimmed) ? normalize(trimmed) : resolve(opts.projectDir, trimmed);
-  const result = inspectAttachment(absPath);
+  const result = inspectInputFile(opts);
   if (!result.ok) return result;
+  const image = resolveInspectedImage(result);
+  if (!image.ok) return image;
 
   const safeRoots = [opts.projectDir, homedir()].map((r) => normalize(r));
-  const inSafeRoot = safeRoots.some((root) =>
-    isInsideSafeRoot(absPath, result.attachment.path, root),
-  );
-  if (!inSafeRoot) {
-    return { ok: false, reason: 'outside-safe-roots' };
+  try {
+    const inSafeRoot = safeRoots.some((root) =>
+      isInsideSafeRoot(result.inputPath, result.path, root),
+    );
+    if (!inSafeRoot) return { ok: false, reason: 'outside-safe-roots' };
+  } catch (err) {
+    return inputFileFailure(err);
   }
-  return result;
+  return image;
 }
 
-function inspectAttachment(absPath: string): ResolveAttachmentResult {
-  const ext = extOf(absPath);
-  if (!includes(SUPPORTED_IMAGE_EXTS, ext)) {
-    return { ok: false, reason: 'not-image' };
-  }
+function inspectInputFile(opts: ResolveAttachmentOpts): InspectInputFileResult {
+  const value = 'input' in opts ? opts.input.trim() : opts.path;
+  const quoted =
+    'input' in opts &&
+    value.length >= 2 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")));
+  const input = quoted ? value.slice(1, -1) : value;
+  if (!input) return { ok: false, reason: 'not-found' };
 
-  let stat: Stats;
+  const expanded = input.startsWith('~/') ? join(homedir(), input.slice(2)) : input;
+  const inputPath = isAbsolute(expanded) ? normalize(expanded) : resolve(opts.projectDir, expanded);
   try {
-    stat = statSync(absPath);
-  } catch {
-    return { ok: false, reason: 'not-found' };
+    const stat = statSync(inputPath);
+    if (!stat.isFile()) return { ok: false, reason: 'not-a-file' };
+    if (stat.size > MAX_ATTACHMENT_BYTES) return { ok: false, reason: 'too-large' };
+    const path = realpathSync(inputPath);
+    accessSync(path, constants.R_OK);
+    return { ok: true, inputPath, path, sizeBytes: stat.size };
+  } catch (err) {
+    return inputFileFailure(err);
   }
-  if (!stat.isFile()) return { ok: false, reason: 'not-found' };
+}
 
-  if (stat.size > MAX_ATTACHMENT_BYTES) return { ok: false, reason: 'too-large' };
-
-  let realPath = absPath;
-  try {
-    realPath = realpathSync(absPath);
-  } catch {
-    return { ok: false, reason: 'not-found' };
+function inputFileFailure(err: unknown): { ok: false; reason: InputFileFailureReason } {
+  if (isNodeError(err)) {
+    switch (err.code) {
+      case 'ENOENT':
+      case 'ENOTDIR':
+      case 'ENAMETOOLONG':
+      case 'ELOOP':
+        return { ok: false, reason: 'not-found' };
+      case 'EACCES':
+      case 'EPERM':
+        return { ok: false, reason: 'unreadable' };
+    }
   }
+  throw err;
+}
 
-  const mimeType = EXT_TO_MIME[ext];
-  const id = `att-${randomUUID()}`;
-
+function resolveInspectedImage(
+  file: InspectedInputFile,
+): { ok: true; attachment: Attachment } | { ok: false; reason: 'not-image' } {
+  const ext = extname(file.inputPath).slice(1).toLowerCase();
+  if (!includes(SUPPORTED_IMAGE_EXTS, ext)) return { ok: false, reason: 'not-image' };
   return {
     ok: true,
     attachment: {
-      id,
+      id: `att-${randomUUID()}`,
       kind: 'image',
-      path: realPath,
-      mimeType,
-      sizeBytes: stat.size,
+      path: file.path,
+      mimeType: EXT_TO_MIME[ext],
+      sizeBytes: file.sizeBytes,
     },
   };
+}
+
+export function formatAttachedText(typedPath: string, content: string): string {
+  return `--- @${typedPath} ---\n${content}`;
 }
 
 const ATTACHMENT_SHORT_NAME_MAX = 24;
 
 export function attachmentShortName(p: string): string {
-  const base = p.split(/[\\/]/).pop() ?? p;
+  const path = p.replace(/[\\/]+$/, '');
+  const base = path.split(/[\\/]/).pop() || p;
   return truncateTerminalDisplayText(base, ATTACHMENT_SHORT_NAME_MAX);
 }

@@ -19,6 +19,7 @@ import { consultCallAnswering, passingReviewVerdict } from '#testing/helpers/typ
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { error } from '../../../utils/error.js';
 import { loadState } from '../../../core/state/persistence.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { LineageRecord, WorkflowState } from '../../../core/schemas/workflow.js';
@@ -375,7 +376,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const implementer = decidingImplementer([[WHAT], []]);
     const validator = scriptedValidator({});
     const { planner, prompts } = scriptedPlanner({ confirm: askUser });
-    const onPlannerReply = vi.fn().mockResolvedValue(ANSWER);
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -412,7 +413,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const { planner, prompts } = scriptedPlanner({
       confirm: () => (confirms.shift() ?? askUser)(),
     });
-    const onPlannerReply = vi.fn().mockResolvedValue(ANSWER);
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -466,7 +467,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
         return next();
       },
     });
-    const onPlannerReply = vi.fn().mockResolvedValue(ANSWER);
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -503,7 +504,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const implementer = decidingImplementer([[], [], [WHAT], []]);
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
     const { planner, prompts } = scriptedPlanner({ confirm: askUser, consult: guidance });
-    const onPlannerReply = vi.fn().mockResolvedValue(ANSWER);
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({
@@ -569,7 +570,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const implementer = decidingImplementer([[], [WHAT], []]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
     const { planner, prompts } = scriptedPlanner({ confirm: askUser });
-    const onPlannerReply = vi.fn().mockResolvedValue(ANSWER);
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
     const result = await runLoop({

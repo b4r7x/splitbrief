@@ -1,9 +1,38 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { RuntimeCommandDef } from './types.js';
 import { executeRuntimeCommand as dispatchRuntimeCommand } from './dispatch.js';
 import { noop, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 
 describe('executeRuntimeCommand', () => {
+  it.each(['sync', 'async'] as const)(
+    'settles a %s handler error through onError exactly once',
+    async (kind) => {
+      const failure = new Error('Cannot send: file not found.');
+      const onError = vi.fn();
+      const commands: RuntimeCommandDef[] = [
+        {
+          kind: 'noarg',
+          name: '/test',
+          description: 'test',
+          category: 'view',
+          validScreens: ['home'],
+          handler:
+            kind === 'sync'
+              ? () => {
+                  throw failure;
+                }
+              : async () => {
+                  throw failure;
+                },
+        },
+      ];
+      await expect(
+        runCommandInTest({ commands, raw: '/test', screen: 'home', onError }),
+      ).resolves.toBeUndefined();
+      expect(onError).toHaveBeenCalledExactlyOnceWith(failure.message);
+    },
+  );
+
   it('runs the command when it is valid on the current screen', () => {
     let called = false;
     const cmds: RuntimeCommandDef[] = [

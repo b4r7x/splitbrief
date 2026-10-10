@@ -147,7 +147,9 @@ describe('unsent session composer draft', () => {
     ui.stdin.write('\r');
     await flushEffects();
     flushSessionDrafts();
-    expect(onSubmit).toHaveBeenCalledWith('send this');
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.objectContaining({ text: 'send this' }) }),
+    );
     expect(readSessionDraft(ref)).toEqual(createDraftDocument(''));
     ui.unmount();
   });
@@ -174,7 +176,9 @@ describe('unsent session composer draft', () => {
     await flushEffects();
     flushSessionDrafts();
 
-    expect(onSubmit).toHaveBeenCalledWith('keep my spacing');
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.objectContaining({ text: 'keep my spacing' }) }),
+    );
     expect(readSessionDraft(ref)).toEqual(createDraftDocument('  keep my spacing  '));
     ui.unmount();
   });

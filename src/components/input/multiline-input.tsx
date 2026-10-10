@@ -23,13 +23,11 @@ const FILE_DROP_EXT_PATTERN = new RegExp(`\\.(${SUPPORTED_IMAGE_EXTS.join('|')})
 
 function parseDroppedImagePath(input: string): string | null {
   const trimmed = input.trim();
-  if (!trimmed || trimmed.includes('\n')) return null;
-  const unquoted =
-    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
-    (trimmed.startsWith("'") && trimmed.endsWith("'"))
-      ? trimmed.slice(1, -1)
-      : trimmed;
-  if (!unquoted || !FILE_DROP_EXT_PATTERN.test(unquoted)) return null;
+  if (trimmed.includes('\n')) return null;
+  const token = trimmed.match(/^(?:"([^"]*)"|'([^']*)'|((?:\\[\s\S]|[^\s"'\\])+))$/);
+  if (!token) return null;
+  const unquoted = token[1] ?? token[2] ?? token[3]?.replace(/\\([\s\S])/g, '$1');
+  if (!unquoted || unquoted.startsWith('@') || !FILE_DROP_EXT_PATTERN.test(unquoted)) return null;
   return unquoted;
 }
 

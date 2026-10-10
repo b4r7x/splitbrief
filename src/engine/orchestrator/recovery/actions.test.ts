@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -16,6 +17,14 @@ import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
 import { buildReviewFailedRecoveryIssue, buildSeatDownIssue } from './builders/task.js';
 import { EngineEventSchema } from '../../events/schema.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
+import { transitionAndSave } from '../state-ops.js';
+import { formatDrainedMessages } from '../queue/prompt.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -183,6 +192,69 @@ describe('applyRecoveryAction: continue', () => {
 });
 
 describe('applyRecoveryAction: the run-level answers', () => {
+  it.each(['planner-revise', 'seat-retry', 'review-correction'] as const)(
+    'delivers an attached file through %s and records compact text once',
+    async (route) => {
+      const ref = setupSession(`attached-${route}`);
+      const message = attachedMessage(ref.projectDir);
+      const issue: RecoveryIssue =
+        route === 'review-correction'
+          ? buildReviewFailedRecoveryIssue({ blocking: 1, phase: 'complete', createdAt })
+          : route === 'planner-revise'
+            ? reviseIssue('brief-review-no-progress')
+            : {
+                id: 'seat-failed',
+                reason: 'planner-call-failed',
+                phase: 'planning',
+                seat: 'plan',
+                status: 'awaiting-user',
+                files: [],
+                affectedTaskIds: [],
+                message: 'Planning failed',
+                details: [],
+                availableActions: ['retry-same-worker', 'end-run'],
+                recommendedAction: 'retry-same-worker',
+                createdAt,
+              };
+      const state: WorkflowState = {
+        ...makeImplState([]),
+        phase: route === 'review-correction' ? 'complete' : 'planning',
+        pendingRecovery: issue,
+        ...(route === 'review-correction' ? { reviewStatus: 'failed' as const } : {}),
+      };
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+      bus.subscribe(createJsonlSink(ref));
+      const result = await applyRecoveryAction({
+        ...ref,
+        state,
+        action: route === 'seat-retry' ? 'retry-same-worker' : 'revise',
+        comment: message,
+        bus,
+      });
+      expect(result).toMatchObject({
+        ok: true,
+        status: 'continued',
+        correctionRecorded: true,
+      });
+      const seatText =
+        route === 'review-correction'
+          ? result.state.pendingTriage?.inputs[0]?.text
+          : formatDrainedMessages(result.state.messageQueue);
+      expect(seatText).toContain('PELICAN-42');
+      if (route !== 'review-correction')
+        expect(result.state.messageQueue[0]).toMatchObject(message);
+      await expectCompactMessage(ref, events, message);
+      if (route !== 'review-correction') {
+        transitionAndSave(ref, result.state, {
+          type: 'DRAIN_QUEUE',
+          ids: result.state.messageQueue.map((queued) => queued.id),
+        });
+      }
+      await expectResumedMessage(ref, message);
+    },
+  );
+
   function plannerHaltState(projectDir: string, sessionId: string, issue: RecoveryIssue) {
     const base = makeImplState([makeTask({ id: 'T001' })]);
     const state = { ...base, pendingRecovery: issue };
@@ -219,10 +291,10 @@ describe('applyRecoveryAction: the run-level answers', () => {
       state,
       action: 'revise',
       bus,
-      comment: '  split the first brief  ',
+      comment: plainUserMessage('split the first brief'),
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result).toMatchObject({ ok: true, status: 'continued', correctionRecorded: true });
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(result.state.messageQueue.map((message) => message.text)).toEqual([
       'split the first brief',
@@ -246,7 +318,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
       bus,
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result).toMatchObject({ ok: true, status: 'continued', correctionRecorded: false });
     expect(result.state.messageQueue).toHaveLength(0);
     expect(result.state.pendingRecovery).toBeUndefined();
   });
@@ -268,7 +340,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
       state,
       action: 'revise',
       bus,
-      comment: 'drop the class',
+      comment: plainUserMessage('drop the class'),
     });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
@@ -354,15 +426,17 @@ describe('applyRecoveryAction: the run-level answers', () => {
       state,
       action: 'continue',
       bus,
-      comment: 'grant it',
+      comment: plainUserMessage('grant it'),
     });
 
     expect(issue.taskId).toBeUndefined();
     expect(issue.affectedTaskIds).toEqual([]);
     expect(issue.details).toContain('Continuing grants five more planner calls.');
-    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result).toMatchObject({ ok: true, status: 'continued', correctionRecorded: false });
     if (!result.ok) return;
     expect(result.state.plannerCalls).toEqual({ used: 10, allowance: 15 });
+    expect(result.state.messageQueue).toEqual([]);
+    expect(events.filter((event) => event.type === 'user_message')).toEqual([]);
     expect(result.state.tasks).toEqual(state.tasks);
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(events.map((event) => event.type)).not.toContain('task_reset');
@@ -406,7 +480,7 @@ describe('applyRecoveryAction: revise on a failed review', () => {
       state,
       action: 'revise',
       bus,
-      comment: 'log the error, then rethrow it',
+      comment: plainUserMessage('log the error, then rethrow it'),
     });
 
     expect(result).toMatchObject({ ok: true, status: 'continued' });
@@ -451,7 +525,7 @@ describe('applyRecoveryAction: revise on a failed review', () => {
       bus,
     });
 
-    expect(result).toMatchObject({ ok: true, status: 'continued' });
+    expect(result).toMatchObject({ ok: true, status: 'continued', correctionRecorded: false });
     if (!result.ok) return;
     expect(result.state.phase).toBe('final-review');
     expect(result.state.pendingTriage).toEqual({ inputs: [] });

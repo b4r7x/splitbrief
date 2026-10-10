@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { sessionDir } from '../src/core/paths.js';
 import type { Config } from '../src/core/schemas/config.js';
+import { plainUserMessage } from '../src/core/types/user-input.js';
 import { createEventBus } from '../src/engine/events/bus.js';
 import type { EngineEvent } from '../src/engine/events/types.js';
 import { runWorkflow } from '../src/engine/orchestrator/run/workflow.js';
@@ -193,7 +194,7 @@ async function runSingleEval(
           sinks: { setAbortHandler: () => undefined, setQueueHandler: () => undefined },
           callbacks: {
             onApprovalNeeded: async () => ({ approved: true }),
-            onContinuationNeeded: async () => '',
+            onContinuationNeeded: async () => plainUserMessage(''),
             onComplete: () => undefined,
           },
         });

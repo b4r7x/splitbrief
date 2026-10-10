@@ -14,7 +14,6 @@ import { readConversationScrollSnapshot } from '../features/workflow/layout/snap
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
-import type { Config } from '../core/schemas/config.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { RunRecord } from '../core/sessions/run-record.js';
 import type { SessionRef } from '../core/types/session-ref.js';
@@ -54,7 +53,7 @@ import type {
   ToggleLatestActivityBatchResult,
   ToggleLatestDiffResult,
 } from '../core/runtime/commands/types.js';
-import { detectedModelFact, seatSupportsImages } from '../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../core/runners/capabilities.js';
 import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
@@ -71,6 +70,11 @@ import { writeUiPrefs } from '../core/ui-prefs.js';
 import { error } from '../utils/error.js';
 import { assertNever } from '../utils/type-guards.js';
 import type { RouteData } from '../stores/navigation/router.js';
+import { createDraftDocument } from '../core/composer/document.js';
+import { prepareDraftSubmission, type DraftSubmission } from '../core/composer/submission.js';
+import { attachmentsStore } from '../stores/workflow/attachments.js';
+import { formatSubmissionFailure } from '../components/composer/home-hint.js';
+import { plainUserMessage } from '../core/types/user-input.js';
 
 export interface ConversationScrollMetrics {
   renderableCount: number;
@@ -93,6 +97,8 @@ export interface WorkflowCommandPorts {
 const appCommandContextError = {
   noActiveSession: (command: string) =>
     error('app-command-no-active-session', `No active session for ${command}`, { command }),
+  submissionRefused: (submission: Extract<DraftSubmission, { ok: false }>) =>
+    error('app-command-submission-refused', formatSubmissionFailure(submission), submission),
 } as const;
 
 function routeSessionId(route: RouteData, projectDir: string): string | null {
@@ -218,14 +224,6 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
     sessionsStore.refresh();
   }
   return { status: 'discarded' };
-}
-
-function plannerSupportsImages(config: Config | null): boolean {
-  if (config === null) return false;
-  return seatSupportsImages({
-    runner: config.planner,
-    detected: detectedModelFact(modelCacheStore.getDetection().providers, config.planner),
-  });
 }
 
 function insertImageIntoComposer(input: Parameters<typeof attachImage>[0]): AttachImageResult {
@@ -373,14 +371,28 @@ export function buildCommandContext({
     toggleSkill,
     refreshSkills,
     getCurrentPhase: () => lifecycleStore.get().phase,
-    resumeRun: () => requestResume(''),
-    steerRun: requestSteer,
+    resumeRun: () => requestResume(plainUserMessage('')),
+    steerRun: (text) => {
+      const submission = prepareDraftSubmission(createDraftDocument(text), {
+        projectDir,
+        supportsImages: plannerSupportsImages(
+          configStore.get().config,
+          modelCacheStore.getDetection().providers,
+        ),
+      });
+      if (!submission.ok) {
+        throw appCommandContextError.submissionRefused(submission);
+      }
+      attachmentsStore.replacePendingImages(submission.message.images);
+      return requestSteer(submission.message);
+    },
     endRun: requestEndRun,
     getQueueDepth: () => lifecycleStore.get().queueDepth,
     clearQueue: workflow.requestClearQueue,
     insertImage: insertImageIntoComposer,
     attachImage,
-    plannerSupportsImages: () => plannerSupportsImages(configStore.get().config),
+    plannerSupportsImages: () =>
+      plannerSupportsImages(configStore.get().config, modelCacheStore.getDetection().providers),
     detachImage,
     listAttachments,
     acceptRun,
@@ -454,17 +466,18 @@ export function useRuntimeCommands({
   const runtimeChainRef = useRef(Promise.resolve());
   const handleRuntimeCommand = (raw: string, from: Screen) => {
     const config = configStore.get().config;
-    runtimeChainRef.current = runtimeChainRef.current
-      .then(() =>
-        executeRuntimeCommand(commands, raw, {
-          screen: from,
-          phase,
-          plannerSupportsImages: plannerSupportsImages(config),
-          openRunAtRest: isOpenRunAtRest(routerStore.get()),
-          onError: feedbackStore.setError,
-        }),
-      )
-      .catch(() => {});
+    runtimeChainRef.current = runtimeChainRef.current.then(() =>
+      executeRuntimeCommand(commands, raw, {
+        screen: from,
+        phase,
+        plannerSupportsImages: plannerSupportsImages(
+          config,
+          modelCacheStore.getDetection().providers,
+        ),
+        openRunAtRest: isOpenRunAtRest(routerStore.get()),
+        onError: feedbackStore.setError,
+      }),
+    );
   };
   return {
     commands,

@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { stopStore } from './stop.js';
 
@@ -18,9 +19,9 @@ describe('stopStore', () => {
     expect(stopStore.get().phase).toBe('parked');
     expect(stopStore.get().parked).toMatchObject({ kind: 'mid-brief', taskId: 'T001' });
 
-    stopStore.resume('use the other adapter');
+    stopStore.resume(plainUserMessage('use the other adapter'));
 
-    expect(resolve).toHaveBeenCalledExactlyOnceWith('use the other adapter');
+    expect(resolve).toHaveBeenCalledExactlyOnceWith(plainUserMessage('use the other adapter'));
     expect(stopStore.get()).toEqual({
       intent: 'none',
       phase: 'idle',
@@ -48,9 +49,9 @@ describe('stopStore', () => {
     expect(stopStore.get().phase).toBe('parked');
     expect(stopStore.get().parked).toMatchObject({ kind: 'boundary', taskId: 'T001' });
 
-    stopStore.resume('');
+    stopStore.resume(plainUserMessage(''));
 
-    expect(resolve).toHaveBeenCalledExactlyOnceWith('');
+    expect(resolve).toHaveBeenCalledExactlyOnceWith(plainUserMessage(''));
     expect(stopStore.get().phase).toBe('idle');
     expect(stopStore.get().intent).toBe('none');
   });
@@ -58,7 +59,7 @@ describe('stopStore', () => {
   it('parks a boundary pause with no resolver and resumes without throwing', () => {
     stopStore.request('pause-after-brief');
     stopStore.park('boundary', null, null);
-    stopStore.resume('');
+    stopStore.resume(plainUserMessage(''));
     expect(stopStore.get().phase).toBe('idle');
   });
 });

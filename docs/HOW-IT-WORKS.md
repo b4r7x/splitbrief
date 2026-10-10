@@ -10,6 +10,8 @@ The user types `splitbrief start "add email validation"`. Execution begins in `s
 
 A headless run needs a feature argument. `--json` or `--plain` without one fails with `--<mode> requires a feature argument`. A file reference in the feature position stops the command with exit code `2` before startup. An empty feature before `@file` inputs stops it too.
 
+CLI and composer file references use `resolveInputFile()` in `src/core/attachments/resolve.ts`. This core resolver reads text or identifies images from any path. `prepareDraftSubmission()` in `src/core/composer/submission.ts` separates display text, attached bodies, images, and metadata before the composer forwards them.
+
 For `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) returns text context, image attachments, attached inputs with resolved paths, and errors. The attached inputs travel with the run to the first `user_message` event. Any refused input stops the command with exit code `2` before startup. After these checks, the handler queues the images in the attachments store and selects one of two paths:
 
 ```mermaid

@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { Text } from 'ink';
@@ -75,7 +76,7 @@ describe('useWorkflowScreen while a brief is parked', () => {
 
     requireModel(capture).onEmptySubmit?.();
 
-    expect(steer).toHaveBeenCalledWith('');
+    expect(steer).toHaveBeenCalledWith(plainUserMessage(''));
     expect(stopStore.get().phase).toBe('idle');
     expect(feedbackStore.get().isError).toBe(false);
     ui.unmount();
@@ -91,9 +92,9 @@ describe('useWorkflowScreen while a brief is parked', () => {
     stopStore.park('mid-brief', 'T002', steer);
     await tick();
 
-    requireModel(capture).handleInput('use the other adapter');
+    requireModel(capture).handleInput(plainUserMessage('use the other adapter'));
 
-    expect(steer).toHaveBeenCalledWith('use the other adapter');
+    expect(steer).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     expect(stopStore.get().phase).toBe('idle');
     ui.unmount();
   });

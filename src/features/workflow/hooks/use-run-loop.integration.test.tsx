@@ -1,3 +1,4 @@
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
@@ -85,14 +86,14 @@ import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
 
 interface RunnerHandle {
   startedAt: string;
-  handleResume: (injectedText?: string) => void;
+  handleResume: (message?: UserMessageInput) => void;
   /** Answers the question the recovery panel is asking, as the composer would. */
-  answer: (text: string) => void;
+  answer: (message: UserMessageInput) => void;
 }
 
 interface HarnessProps {
   prepared: PreparedExecution;
-  steer?: string | undefined;
+  steer?: UserMessageInput | undefined;
   captureRunner?: { current: RunnerHandle | null };
   runWorkflow?: RunWorkflowFn | undefined;
   prepareExecution?: PrepareExecutionFn | undefined;
@@ -241,7 +242,7 @@ async function answerRecoveryPanel(
   await tick(60);
   const runner = captureRunner.current;
   if (!runner) throw new Error('expected captureRunner.current to be populated');
-  runner.answer(text);
+  runner.answer(plainUserMessage(text));
 }
 
 function userMessageEvents() {
@@ -457,7 +458,7 @@ describe('useRunLoop', () => {
       let noticesAtEntry: string[] = [];
       const inst = renderHarness({
         prepared,
-        ...(correction && { steer: 'log the error and rethrow' }),
+        ...(correction && { steer: plainUserMessage('log the error and rethrow') }),
         runWorkflow: async () => {
           entered = true;
           noticesAtEntry = eventsStore
@@ -1052,7 +1053,7 @@ describe('useRunLoop', () => {
       });
       const seen: (string | undefined)[] = [];
       const runWorkflowSpy: RunWorkflowFn = async (options) => {
-        seen.push(options.steer);
+        seen.push(options.steer?.text);
         return runWorkflow(options);
       };
       const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
@@ -1063,7 +1064,7 @@ describe('useRunLoop', () => {
 
       const runner = captureRunner.current;
       if (!runner) throw new Error('expected captureRunner.current to be populated');
-      runner.handleResume(text);
+      runner.handleResume(plainUserMessage(text));
       await vi.waitFor(() => {
         expect(userMessageEvents()).toHaveLength(1);
         const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
@@ -1093,7 +1094,7 @@ describe('useRunLoop', () => {
     });
     const seen: (string | undefined)[] = [];
     const runWorkflowSpy: RunWorkflowFn = async (options) => {
-      seen.push(options.steer);
+      seen.push(options.steer?.text);
       return runWorkflow(options);
     };
     const inst = renderHarness({ prepared, captureRunner, runWorkflow: runWorkflowSpy });
@@ -1156,7 +1157,7 @@ describe('useRunLoop', () => {
 
     const runner = captureRunner.current;
     if (!runner) throw new Error('expected captureRunner.current to be populated');
-    runner.handleResume(answer);
+    runner.handleResume(plainUserMessage(answer));
     await vi.waitFor(() => {
       expect(returned).toBe(2);
     });
@@ -1182,7 +1183,7 @@ describe('useRunLoop', () => {
     });
     const seen: (string | undefined)[] = [];
     const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
-      seen.push(options.steer);
+      seen.push(options.steer?.text);
       // The first call halts again on the same brief; the second is answered with the keyword.
       if (seen.length === 1) {
         const current = loadState({ projectDir, sessionId });
@@ -1219,13 +1220,13 @@ describe('useRunLoop', () => {
     });
     const seen: (string | undefined)[] = [];
     const runWorkflowStub: RunWorkflowFn = vi.fn(async (options) => {
-      seen.push(options.steer);
+      seen.push(options.steer?.text);
       return makeSummary();
     });
 
     const inst = renderHarness({
       prepared,
-      steer: 'original',
+      steer: plainUserMessage('original'),
       captureRunner,
       runWorkflow: runWorkflowStub,
     });
@@ -1236,6 +1237,67 @@ describe('useRunLoop', () => {
 
     inst.unmount();
   });
+
+  it.each([
+    { phase: 'planning', seat: 'plan' },
+    { phase: 'final-review', seat: 'review' },
+  ] as const)(
+    'records a restarted taskless $seat retry correction once',
+    async ({ phase, seat }) => {
+      const sessionId = `taskless-${seat}-retry-correction`;
+      const halted: WorkflowState = {
+        ...createInitialState('add auth'),
+        phase,
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          phase,
+          seat,
+          taskId: undefined,
+          taskTitle: undefined,
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+        }),
+      };
+      const prepared = preparedExecution({
+        projectDir,
+        feature: halted.feature,
+        sessionId,
+        resumeState: halted,
+      });
+      saveState(prepared.session.ref, halted);
+      const correction: UserMessageInput = {
+        text: 'use @/outside/context.txt\n\n--- @/outside/context.txt ---\ncontext body',
+        displayText: 'use @/outside/context.txt',
+        images: [],
+        attachedInputs: [{ kind: 'text', path: '/outside/context.txt' }],
+      };
+      const captureRunner: HarnessProps['captureRunner'] = { current: null };
+      const run = recordedEngine();
+      const inst = renderHarness({
+        prepared,
+        steer: correction,
+        captureRunner,
+        runWorkflow: run.engine,
+      });
+      try {
+        await answerRecoveryPanel(captureRunner, 'retry');
+        await vi.waitFor(() => expect(run.returned()).toBe(1));
+
+        expect(userMessageEvents()).toEqual([
+          expect.objectContaining({
+            phase,
+            text: correction.displayText,
+            attachedInputs: correction.attachedInputs,
+          }),
+        ]);
+        const log = readFileSync(join(sessionDir(projectDir, sessionId), 'session.jsonl'), 'utf-8');
+        expect(loggedMessageRows(log, correction.displayText)).toBe(1);
+        expect(loadState(prepared.session.ref)?.messageQueue).toMatchObject([correction]);
+      } finally {
+        inst.unmount();
+      }
+    },
+  );
 
   it('stops at the brief boundary and continues at rest when a seat changed under the run', async () => {
     const sessionId = '2026-09-21-seat-change';
@@ -1371,10 +1433,10 @@ describe('useRunLoop', () => {
     if (!runner) throw new Error('expected captureRunner.current to be populated');
     const settled = vi.fn();
     stopStore.park('mid-brief', 'T001', settled);
-    runner.handleResume('use the other adapter');
+    runner.handleResume(plainUserMessage('use the other adapter'));
     await tick(60);
 
-    expect(settled).toHaveBeenCalledWith('use the other adapter');
+    expect(settled).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     expect((runWorkflowStub as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBe(
       runsBefore,
     );

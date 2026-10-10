@@ -1,5 +1,12 @@
 import { createStore, storeBase } from '../create-store.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../core/schemas/question.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
+import { error } from '../../utils/error.js';
+
+const questionPromptError = {
+  missingAnswer: (index: number) =>
+    error('question-prompt-missing-answer', `Missing answer for question ${index + 1}`, { index }),
+} as const;
 
 export interface QuestionAnswerDraft {
   text: string;
@@ -11,7 +18,7 @@ export interface QuestionPromptState {
   questions?: readonly ClarificationQuestion[] | undefined;
   index: number;
   drafts: readonly QuestionAnswerDraft[];
-  answers: readonly string[];
+  answers: readonly UserMessageInput[];
   focus: 'menu' | 'answer' | 'composer';
   openedAt: number;
   complete: boolean;
@@ -110,22 +117,34 @@ function previous(): void {
 }
 
 /** Only the completed batch crosses the existing planner-reply boundary. */
-function answer(text: string): PlannerReplyAnswer | undefined {
+function answer(message: UserMessageInput): PlannerReplyAnswer | undefined {
   const state = store.get();
-  if (state.complete || !state.questions?.length || text.trim() === '') return undefined;
+  if (state.complete || !state.questions?.length || message.text.trim() === '') return undefined;
   const answers = [...state.answers];
-  answers[state.index] = text.trim();
+  answers[state.index] = message;
   const complete = state.index === state.questions.length - 1;
   const index = complete ? state.index : state.index + 1;
   const next = state.questions[index];
+  const answerAt = (index: number): UserMessageInput => {
+    const answer = answers[index];
+    if (answer === undefined) throw questionPromptError.missingAnswer(index);
+    return answer;
+  };
   const qa: PlannerReplyAnswer | undefined = complete
     ? {
-        text: state.questions
-          .map((question, i) => `${i + 1}. ${question.text}\n${answers[i] ?? ''}`)
-          .join('\n\n'),
+        message: {
+          text: state.questions
+            .map((question, i) => `${i + 1}. ${question.text}\n${answerAt(i).text}`)
+            .join('\n\n'),
+          displayText: state.questions
+            .map((question, i) => `${i + 1}. ${question.text}\n${answerAt(i).displayText}`)
+            .join('\n\n'),
+          images: answers.flatMap((answer) => answer.images),
+          attachedInputs: answers.flatMap((answer) => answer.attachedInputs),
+        },
         qa: state.questions.map((question, i) => ({
           question: question.text,
-          answer: answers[i] ?? '',
+          answer: answerAt(i).displayText,
         })),
       }
     : undefined;

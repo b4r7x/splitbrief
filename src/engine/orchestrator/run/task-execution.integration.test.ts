@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { writeSpecFile } from '../../../core/paths-io.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { describe, expect, it, afterEach, vi } from 'vitest';
@@ -332,7 +334,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       sinks: pauseOnceSinks(),
       onContinuationNeeded: async (partial, at) => {
         parks.push({ partial, at });
-        return 'use the shared helper';
+        return plainUserMessage('use the shared helper');
       },
     });
 
@@ -391,7 +393,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
       sinks: pauseOnceSinks(),
-      onContinuationNeeded: async () => correction,
+      onContinuationNeeded: async () => plainUserMessage(correction),
       continuation: createContinuationHolder(),
       implementer,
       config: makeNoValidationConfig({ workflow: { review: 'task' } }),
@@ -454,7 +456,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
       sinks,
-      onContinuationNeeded: async () => correction,
+      onContinuationNeeded: async () => plainUserMessage(correction),
       continuation: createContinuationHolder(),
       implementer,
       config: makeNoValidationConfig({ workflow: { review: 'task' } }),
@@ -969,7 +971,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       state: result.state,
       action: 'accept-as-is',
       bus: makeBusRecorder().bus,
-      comment: 'Ship it as is',
+      comment: plainUserMessage('Ship it as is'),
     });
     expect(accepted.ok).toBe(true);
     if (!accepted.ok) throw new Error(accepted.message);
@@ -1154,7 +1156,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       state: old,
       action: 'revise',
       bus: makeBusRecorder().bus,
-      comment: 'Preserve the old session correction',
+      comment: plainUserMessage('Preserve the old session correction'),
     });
     expect(corrected.ok).toBe(true);
     if (!corrected.ok) throw new Error(corrected.message);
@@ -1395,7 +1397,7 @@ describe('runTasksAndReview review halt', { timeout: 120_000 }, () => {
       state: halted.state,
       action: 'revise',
       bus,
-      comment: 'log the error, then rethrow it',
+      comment: plainUserMessage('log the error, then rethrow it'),
     });
     expect(corrected.ok).toBe(true);
     if (!corrected.ok) return;

@@ -296,12 +296,19 @@ describe('visual contract boundaries', () => {
     expect(GitRevisionSchema.safeParse('ABCDEF1').success).toBe(false);
   });
 
-  it('allows the exact synthetic fixture path with prose punctuation and rejects other host paths', () => {
+  it('allows synthetic fixture paths and their rendered forms while rejecting other host paths', () => {
     for (const safe of [
       '/Users/dev/notes/brief.md',
       '/Users/dev/notes/brief.md.',
       '/Users/dev/notes/brief.md,',
       '/Users/dev/notes/brief.md!),.:;?]}',
+      '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+      '/Users/me/notes/product-planning/archive/',
+      '/Users/me/notes/product-planning/archive/receiving-workflow/',
+      '/Volumes/design/receiving-flow.png',
+      '/Users/me/notes/product-planning/archive/r…',
+      '/Users/me/…',
+      'File: /Users/me/notes/product-planning/archive/r…╭────╮│ › draft │╰────╯',
       'The plan seat reads no files, so it cannot open /Users/dev/notes/brief.md. Put @ before a file path to attach its text.',
     ]) {
       expect(containsHostPath(safe)).toBe(false);
@@ -311,6 +318,13 @@ describe('visual contract boundaries', () => {
       '/Users/dev/notes/other.md',
       '/Users/dev/notes',
       '/Users/dev/notes/brief.md.bak',
+      '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md.bak',
+      '/Users/me/notes/product-planning/archive/private/',
+      '/Users/me/notes/private.md',
+      '/Users/me/notes/private…',
+      '/Volumes/design/receiving-flow.png.bak',
+      '/Volumes/design/private.png',
+      '│/Users/operator/private.md╰────╯',
       'Read /Users/dev/notes/brief.md, then /Users/dev/notes/other.md.',
     ]) {
       expect(containsHostPath(hostile)).toBe(true);

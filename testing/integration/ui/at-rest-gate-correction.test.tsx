@@ -9,6 +9,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
+import { plainUserMessage, type UserMessageInput } from '../../../src/core/types/user-input.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { SessionSelectDeps } from '../../../src/stores/navigation/session-select.js';
@@ -31,10 +32,14 @@ import { eventsStore } from '../../../src/stores/workflow/events.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';
 
 const STEER = 'prefer the cached parser, please';
 
 let projectDir = '';
+let outsideDir = '';
 let ui: ReturnType<typeof renderFeature> | undefined;
 
 beforeEach(() => {
@@ -49,6 +54,99 @@ afterEach(() => {
   resetAllStores();
   routerStore.init({ screen: 'home' });
   cleanupTempDir(projectDir);
+  if (outsideDir !== '') cleanupTempDir(outsideDir);
+  outsideDir = '';
+});
+
+describe('an attached correction at a taskless recovery halt', () => {
+  it.each(['planner-calls-spent', 'planner-call-failed'] as const)(
+    '%s delivers the file body to the planner and records the correction once',
+    async (reason) => {
+      const sessionId = `attached-${reason}`;
+      const ref = { projectDir, sessionId };
+      const state: WorkflowState = {
+        ...createInitialState('add auth'),
+        phase: 'planning',
+        plannerCalls: { used: 10, allowance: 10 },
+        pendingRecovery: makeRecoveryIssue({
+          reason,
+          phase: 'planning',
+          seat: 'plan',
+          taskId: undefined,
+          taskTitle: undefined,
+          affectedTaskIds: [],
+          files: [],
+          selectedImplementerProfile: undefined,
+          availableActions:
+            reason === 'planner-calls-spent'
+              ? ['continue', 'end-run']
+              : ['retry-same-worker', 'end-run'],
+          recommendedAction: reason === 'planner-calls-spent' ? 'continue' : 'retry-same-worker',
+        }),
+      };
+      ensureSessionDir(projectDir, sessionId);
+      saveState(ref, state);
+      outsideDir = createTempDir('recovery-attached-outside');
+      const correction = attachedMessage(outsideDir);
+      const config = makeConfig({ workflow: { approve: 'plan' } });
+      const typed = scriptedTypedCall([makePlanProposal()]);
+      const planner = makePlanner({ typedCall: typed.typedCall });
+      const prepared = prepareWorkflowExecution({
+        ...ref,
+        feature: state.feature,
+        config,
+        resumeState: state,
+      });
+      const steers: (UserMessageInput | undefined)[] = [];
+      const deps: WorkflowScreenDeps = {
+        runWorkflow: async (options) => {
+          steers.push(options.steer);
+          return runWorkflow({
+            ...options,
+            _planner: planner,
+            callbacks: {
+              ...options.callbacks,
+              onApprovalNeeded: async () => ({ approved: false, action: 'end-run' }),
+            },
+          });
+        },
+      };
+      configStore.__testReset({ config, projectDir });
+      terminalSizeStore.__testReset({ cols: 120, rows: 60, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord({ ref, feature: state.feature }),
+        execution: { kind: 'local', prepared },
+      });
+      ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={deps} />, {
+        cols: 120,
+        rows: 60,
+      });
+      await vi.waitFor(() => {
+        expect(stripAnsiStyles(ui?.lastFrame() ?? '')).toContain('Choose an action above');
+      });
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      ui.stdin.write('\t');
+      await flushEffects();
+      ui.stdin.write(correction.displayText);
+      await flushEffects();
+      ui.stdin.write('\r');
+
+      await vi.waitFor(() => {
+        expect(typed.prompts).toHaveLength(1);
+        expect(typed.prompts[0]).toContain(correction.text);
+      });
+      await vi.waitFor(() => {
+        const route = routerStore.get();
+        expect(route.screen === 'workflow' && route.execution.kind === 'at-rest').toBe(true);
+      });
+      expect(steers).toEqual([reason === 'planner-calls-spent' ? correction : undefined]);
+      await expectCompactMessage(ref, eventsStore.get().events, correction);
+      const frame = stripAnsiStyles(ui.lastFrame());
+      expect(frame).toContain('Attached files · 1');
+      expect(frame).not.toContain('PELICAN-42');
+    },
+  );
 });
 
 describe('a correction typed at a parked approval gate', () => {
@@ -81,7 +179,7 @@ describe('a correction typed at a parked approval gate', () => {
       writeFileSync(join(sessionDir(projectDir, sessionId), 'tasks.md'), formatTasks(tasks));
       saveState({ projectDir, sessionId }, savedState);
 
-      const steers: (string | undefined)[] = [];
+      const steers: (UserMessageInput | undefined)[] = [];
       const config = makeConfig({ workflow: { approve: 'plan' } });
       const typed = scriptedTypedCall([makePlanProposal()]);
       const planner = makePlanner({ typedCall: typed.typedCall });
@@ -140,7 +238,7 @@ describe('a correction typed at a parked approval gate', () => {
       ui.stdin.write('\r');
 
       await vi.waitFor(() => {
-        expect(steers.at(-1)).toBe(STEER);
+        expect(steers.at(-1)).toEqual(plainUserMessage(STEER));
         expect(
           eventsStore
             .get()

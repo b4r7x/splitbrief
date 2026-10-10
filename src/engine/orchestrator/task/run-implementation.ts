@@ -96,7 +96,7 @@ export async function runImplementation(opts: {
   const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
   // Each correction is written against the saved head, so one already on disk is never replaced.
   const recordCorrection = (text: string | undefined): void => {
-    if (!text) return;
+    if (!text?.trim()) return;
     state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
     if (briefCorrections(state, task.id).includes(text)) return;
     state = transitionAndSave({ projectDir, sessionId }, state, {
@@ -107,7 +107,7 @@ export async function runImplementation(opts: {
     setTrackedState(state);
   };
   state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-  recordCorrection(seed?.steer?.trim());
+  recordCorrection(seed?.steer?.text);
   const workspace: AttemptWorkspace = await wctx.isolation.acquire({
     role: 'implementer',
     config,
@@ -153,7 +153,7 @@ export async function runImplementation(opts: {
       body: async ({ signal, partial, steer, recordOutput }) => {
         // The brief restarts on its own prompt. What the cut attempt already
         // wrote is still on disk, so it is named rather than re-derived.
-        recordCorrection(steer?.trim());
+        recordCorrection(steer);
         const corrections = briefCorrections(state, task.id);
         const combinedSteer =
           [...corrections, ...(corrections.includes(queuedSteer) ? [] : [queuedSteer])]

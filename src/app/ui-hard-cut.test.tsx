@@ -116,7 +116,7 @@ const cases: ReadonlyArray<{
             currentScreen="home"
             mode="normal"
             hint=""
-            onSubmit={(prompt) => prompts.push(prompt)}
+            onSubmit={(submission) => prompts.push(submission.message.displayText)}
             onRuntimeCommand={(command) => runtimeCommands.push(command)}
           />
         </Box>,

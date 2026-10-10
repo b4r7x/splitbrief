@@ -7,13 +7,14 @@ import { resumeParkedRun } from '../handlers.js';
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseInputModeResult } from './use-input-mode.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 
 /** The state the next entry into the engine starts from, and what the operator typed to continue it. */
 export interface InlineResume {
   prepared: PreparedExecution;
   state: WorkflowState;
   /** What the operator typed to continue this run; the engine seeds it into the first step. */
-  steer?: string | undefined;
+  steer?: UserMessageInput | undefined;
 }
 
 interface UseRunContinueOptions {
@@ -27,7 +28,7 @@ export interface UseRunContinueResult {
   inlineResume: InlineResume | undefined;
   /** Record the state this run carries without re-entering the engine. */
   setInlineResume: (next: InlineResume) => void;
-  handleResume: (injectedText?: string) => void;
+  handleResume: (message?: UserMessageInput) => void;
 }
 
 /**
@@ -48,11 +49,11 @@ export function useRunContinue({
     setRunId((id) => id + 1);
   };
 
-  const handleResume = (injectedText?: string) => {
+  const handleResume = (message?: UserMessageInput) => {
     if (prepared === undefined) return;
     const outcome = continueRun({
       ref: prepared.session.ref,
-      ...(injectedText !== undefined && { steer: injectedText }),
+      ...(message !== undefined && { steer: message }),
       deps: {
         resumeParked: resumeParkedRun,
         loadState: hydrateResume,

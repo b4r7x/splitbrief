@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { describe, it, expect } from 'vitest';
 import type { QueuedMessage } from '../../../core/schemas/workflow.js';
 import { formatDrainedMessages, formatMessage } from './prompt.js';
@@ -6,7 +8,7 @@ describe('formatMessage', () => {
   it('formats user-input message with [user also says] wrapper', () => {
     const msg: QueuedMessage = {
       id: 'msg-1',
-      text: 'add logging',
+      ...plainUserMessage('add logging'),
       queuedAt: new Date().toISOString(),
       phase: 'researching',
       deliveredViaNative: false,
@@ -21,7 +23,7 @@ describe('formatMessage', () => {
   it('formats clarification message with [clarification answer] wrapper', () => {
     const msg: QueuedMessage = {
       id: 'msg-2',
-      text: 'Yes, JWT',
+      ...plainUserMessage('Yes, JWT'),
       queuedAt: new Date().toISOString(),
       phase: 'specifying',
       deliveredViaNative: false,
@@ -46,7 +48,7 @@ describe('formatDrainedMessages', () => {
     const messages: QueuedMessage[] = [
       {
         id: 'msg-1',
-        text: 'add logging',
+        ...plainUserMessage('add logging'),
         queuedAt: new Date().toISOString(),
         phase: 'researching',
         deliveredViaNative: false,
@@ -64,7 +66,7 @@ describe('formatDrainedMessages', () => {
     const messages: QueuedMessage[] = [
       {
         id: 'msg-1',
-        text: 'first',
+        ...plainUserMessage('first'),
         queuedAt: new Date().toISOString(),
         phase: 'researching',
         deliveredViaNative: false,
@@ -72,7 +74,7 @@ describe('formatDrainedMessages', () => {
       },
       {
         id: 'msg-2',
-        text: 'second',
+        ...plainUserMessage('second'),
         queuedAt: new Date().toISOString(),
         phase: 'specifying',
         deliveredViaNative: false,

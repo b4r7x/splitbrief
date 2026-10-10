@@ -281,6 +281,35 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'home-draft-outside-image',
+      title: 'Home · draft with an outside image',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Outside image between draft text',
+        kind: 'ready',
+        marker: '[image #1]',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
+      ],
+    }),
+    ...(['not-found', 'not-a-file', 'too-large', 'unreadable', 'not-text'] as const).map((reason) =>
+      defineScenario({
+        id: `home-attachment-${reason}`,
+        title: `Home · outside attachment refused: ${reason}`,
+        surface: screenSurface('home'),
+        checkpoint: {
+          id: 'failure',
+          title: `Draft retained after ${reason}`,
+          kind: 'failure',
+          marker: 'Cannot send:',
+        },
+        elements: [{ id: 'composer', title: 'Draft and attachment feedback' }],
+      }),
+    ),
+    defineScenario({
       id: 'home-recent-sessions',
       title: 'Home · recent sessions focused',
       surface: screenSurface('home'),
@@ -341,6 +370,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Request and attached files' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-composer-outside-file',
+      title: 'Workflow · composer message with an outside file',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'composer-outside-file',
+        title: 'Mid-run message with attached text',
+        kind: 'planning',
+        marker: 'Attached files · 1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Message and attached file' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-question-outside-file',
+      title: 'Workflow · answered question with an outside file',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'question-outside-file',
+        title: 'Answered question followed by its attachment',
+        kind: 'planning',
+        marker: 'Attached files · 1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Answered question and attached file' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

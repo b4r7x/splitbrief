@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
 import { useLayoutEffect, useState } from 'react';
 import { Box } from 'ink';
 import { StopMenu } from '../../features/workflow/stop/menu.js';
@@ -70,6 +71,15 @@ import { navigateIndex } from '../../utils/indexing.js';
 import { sessionSelectDeps } from '../prepare-resume.js';
 import type { readClipboardImage } from '../../core/attachments/clipboard-image.js';
 import type { listProjectFiles } from '../../lib/file-listing.js';
+import { createDraftDocument } from '../../core/composer/document.js';
+import { prepareDraftSubmission, type DraftSubmission } from '../../core/composer/submission.js';
+import { plannerSupportsImages } from '../../core/runners/capabilities.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { configStore } from '../../stores/project/config.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 
 interface WorkflowScreenProps {
   commands: RuntimeCommandDef[];
@@ -137,8 +147,21 @@ export function WorkflowScreen({
   const answerQuestion = (text: string): void => {
     const state = questionPromptStore.get();
     if (Date.now() - state.openedAt < PROMPT_TYPEAHEAD_GRACE_MS) return;
-    const answered = questionPromptStore.answer(text);
-    if (answered !== undefined) void model.handleInput(answered.text);
+    if (text.trim() === '') return;
+    const { config, projectDir } = configStore.get();
+    const submission = prepareDraftSubmission(createDraftDocument(text), {
+      projectDir,
+      supportsImages: plannerSupportsImages(config, modelCacheStore.getDetection().providers),
+    });
+    if (!submission.ok) {
+      feedbackStore.setError(formatSubmissionFailure(submission));
+      return;
+    }
+    const answered = questionPromptStore.answer(submission.message);
+    attachmentsStore.replacePendingImages(
+      questionPromptStore.get().answers.flatMap((answer) => answer.images),
+    );
+    if (answered !== undefined) void model.handleInput(answered.message);
   };
   const composeAnswer = (): void => {
     const state = questionPromptStore.get();
@@ -156,12 +179,14 @@ export function WorkflowScreen({
         : 'menu',
     );
   };
-  const handleFooterInput = (text: string): void => {
+  const handleFooterInput = (submission: Extract<DraftSubmission, { ok: true }>): void => {
+    const { message } = submission;
+    composerLiveStore.setDraft(submission.document);
     if (structuredQuestion) {
-      if (text.trim() !== '') void model.handleInput(text);
+      if (message.text.trim() !== '') void model.handleInput(message);
       return;
     }
-    if (reviewArtifact !== null && text.trim() === '') {
+    if (reviewArtifact !== null && message.displayText.trim() === '') {
       const row = reviewDocumentOptions(reviewArtifact)[reviewSelected];
       // The comment row hands the keyboard to the composer the same way a typed `c` does: one
       // prefilled draft, so there is one spelling of a review comment and not two.
@@ -169,10 +194,10 @@ export function WorkflowScreen({
         composerDraftStore.request(REVIEW_COMMENT_DRAFT);
         return;
       }
-      void model.handleInput(row.command);
+      void model.handleInput(plainUserMessage(row.command));
       return;
     }
-    void model.handleInput(text);
+    void model.handleInput(message);
   };
 
   // A closed run's account is the block at the end of its transcript: it names the crew that ran
@@ -456,7 +481,7 @@ export function WorkflowScreen({
             {...(reviewArtifact !== null
               ? {
                   onEditShortcut: () => {
-                    void model.handleInput('edit-file');
+                    void model.handleInput(plainUserMessage('edit-file'));
                   },
                 }
               : {})}
@@ -511,7 +536,7 @@ export function WorkflowScreen({
             onRecoveryFocusChange={(menuFocused) => {
               setRecoveryFocus({ key: recoveryFocusKey, menu: menuFocused });
             }}
-            onRecoveryResolve={(answer) => model.inputMode.resolve(answer)}
+            onRecoveryResolve={(answer) => model.inputMode.resolve(plainUserMessage(answer))}
             questions={plannerQuestions}
             planner={
               structuredQuestion

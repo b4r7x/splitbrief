@@ -9,6 +9,7 @@ import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/in
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -226,7 +227,7 @@ describe('WorkflowScreen lifecycle', () => {
       await tick(20);
       expect(runWorkflow).toHaveBeenCalledTimes(1);
 
-      requestResume('');
+      requestResume(plainUserMessage(''));
 
       await vi.waitFor(() => {
         expect(runWorkflow).toHaveBeenCalledTimes(2);

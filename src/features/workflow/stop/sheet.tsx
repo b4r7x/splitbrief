@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
@@ -28,7 +29,7 @@ import {
 function performStop(id: StopRowId): void {
   switch (id) {
     case 'resume':
-      requestResume('');
+      requestResume(plainUserMessage(''));
       return;
     case 'leave':
       requestLeaveSession();

@@ -7,6 +7,9 @@ import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { formatAttachmentFailure } from '../../../src/core/attachments/failure.js';
+import type { InputFileFailureReason } from '../../../src/core/attachments/resolve.js';
 import {
   CHECKING_TOOLS_STAGE,
   preparationStore,
@@ -690,6 +693,56 @@ function createDraftPathFixture(): FixtureLifecycle {
   };
 }
 
+function createOutsideAttachmentFailureFixture(reason: InputFileFailureReason): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      const { path, prompt } =
+        reason === 'not-a-file'
+          ? { path: '/Users/me/notes/product-planning/archive/', prompt: 'use this folder' }
+          : reason === 'too-large'
+            ? { path: '/Users/me/exports/receiving-dump.log', prompt: 'summarize this' }
+            : reason === 'not-text'
+              ? { path: '/Users/me/exports/archive.zip', prompt: 'read this archive' }
+              : {
+                  path: '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+                  prompt: 'use this brief',
+                };
+      composerDraftStore.request(`@${path} ${prompt}`);
+      feedbackStore.setError(formatAttachmentFailure({ action: 'send', reason, path }));
+    },
+    teardown: home.teardown,
+  };
+}
+
+function createOutsideDraftImageFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.requestDocument({
+        version: 1,
+        parts: [
+          { kind: 'text', text: 'fix the overlap shown here ' },
+          {
+            kind: 'image',
+            attachment: {
+              id: 'att-outside-visual-1',
+              kind: 'image',
+              path: '/Users/me/notes/product-planning/receiving-workflow/mock.png',
+              mimeType: 'image/png',
+              sizeBytes: 48_120,
+            },
+          },
+          { kind: 'text', text: ' and keep the axis labels.' },
+        ],
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
 // A draft that is not only text: the image sits where the caret put it, between the words that
 // explain it, and nothing is parked in a row of its own above the box.
 function createDraftImageFixture(): FixtureLifecycle {
@@ -804,6 +857,24 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
   [scenarioId('home-recent-sessions'), createRecentSessionsFixture],
   [scenarioId('home-draft-image'), createDraftImageFixture],
+  [scenarioId('home-draft-outside-image'), createOutsideDraftImageFixture],
+  [
+    scenarioId('home-attachment-not-found'),
+    () => createOutsideAttachmentFailureFixture('not-found'),
+  ],
+  [
+    scenarioId('home-attachment-not-a-file'),
+    () => createOutsideAttachmentFailureFixture('not-a-file'),
+  ],
+  [
+    scenarioId('home-attachment-too-large'),
+    () => createOutsideAttachmentFailureFixture('too-large'),
+  ],
+  [
+    scenarioId('home-attachment-unreadable'),
+    () => createOutsideAttachmentFailureFixture('unreadable'),
+  ],
+  [scenarioId('home-attachment-not-text'), () => createOutsideAttachmentFailureFixture('not-text')],
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],

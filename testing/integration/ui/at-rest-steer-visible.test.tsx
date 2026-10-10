@@ -9,6 +9,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
+import { plainUserMessage, type UserMessageInput } from '../../../src/core/types/user-input.js';
 import { prepareWorkflowExecution } from '#testing/helpers/workflow-screen.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { SessionSelectDeps } from '../../../src/stores/navigation/session-select.js';
@@ -56,7 +57,7 @@ describe('a correction typed on a run at rest', () => {
 
     // The re-entry runs the real engine on a planner that is not installed: the
     // steer is published on the resume path, then the run settles at rest again.
-    const steers: (string | undefined)[] = [];
+    const steers: (UserMessageInput | undefined)[] = [];
     const config = makeConfig({
       planner: { kind: 'agent', command: 'splitbrief-non-existent-planner-x7q9' },
     });
@@ -108,7 +109,7 @@ describe('a correction typed on a run at rest', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(steers.at(-1)).toBe(STEER);
+      expect(steers.at(-1)).toEqual(plainUserMessage(STEER));
       expect(
         eventsStore
           .get()

@@ -5,6 +5,7 @@ import { type CliEffortChannel, runnerEffortChannel } from './effort-channel.js'
 import type { ProviderDetection } from '../discovery/detection.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import { resolveAutoModel } from '../providers/model-selection.js';
+import type { Config } from '../schemas/config.js';
 
 /** The models.dev fact for one model; absent when detection never reached it. */
 export type DetectedModelFact = Readonly<{ supportsImages?: boolean }>;
@@ -44,6 +45,17 @@ export function seatSupportsImages(
     default:
       return assertNever(runner);
   }
+}
+
+export function plannerSupportsImages(
+  config: Config | null,
+  providers: readonly ProviderDetection[],
+): boolean {
+  if (config === null) return false;
+  return seatSupportsImages({
+    runner: config.planner,
+    detected: detectedModelFact(providers, config.planner),
+  });
 }
 
 /** The detected fact for the seat's own model, when the seat runs an API provider. */

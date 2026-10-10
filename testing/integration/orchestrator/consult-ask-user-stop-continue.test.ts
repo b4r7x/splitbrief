@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ConsultAnswer } from '../../../src/core/schemas/consult.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -159,7 +160,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
       callbacks: makeCallbacks({
         onPlannerReply: async (conversation) => {
           secondAsked.push(conversation);
-          return 'from-retry';
+          return plainUserMessage('from-retry');
         },
       }).callbacks,
       sinks: TEST_WORKFLOW_SINKS,

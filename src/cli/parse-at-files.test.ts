@@ -1,9 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import * as os from 'node:os';
 import { join, relative } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { formatAtFileRefusal, parseAtFiles } from './parse-at-files.js';
+
+vi.mock('node:os', async (original) => ({
+  ...(await original<typeof import('node:os')>()),
+}));
 
 let tmp: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -15,6 +19,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -82,6 +87,20 @@ describe('parseAtFiles', () => {
 
     expect(result.errors).toEqual([{ path: 'missing.md', reason: 'not-found' }]);
     expect(result.textContext).toBe('');
+  });
+
+  it('reports path failures and binary content without throwing or sending their bodies', () => {
+    symlinkSync('loop', join(tmp, 'loop'));
+    writeFileSync(join(tmp, 'archive.zip'), Buffer.from([0x50, 0x4b, 0x00]));
+    const long = 'a'.repeat(300);
+    const result = parseAtFiles('fix', [`@${long}`, '@loop', '@archive.zip'], tmp);
+    expect(result.errors).toEqual([
+      { path: long, reason: 'not-found' },
+      { path: 'loop', reason: 'not-found' },
+      { path: 'archive.zip', reason: 'not-text' },
+    ]);
+    expect(result.textContext).toBe('');
+    expect(result.attachedInputs).toEqual([]);
   });
 
   it('reports error for files exceeding size limit', () => {
@@ -163,15 +182,12 @@ describe('parseAtFiles', () => {
   });
 
   it('expands a leading ~/ to the home folder', () => {
-    const root = join(
-      homedir(),
-      `.splitbrief-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    );
+    const root = createTempDir('parse-at-files-home');
+    vi.spyOn(os, 'homedir').mockReturnValue(root);
     try {
-      mkdirSync(root, { recursive: true });
       const brief = join(root, 'brief.md');
       writeFileSync(brief, 'Brief from home.');
-      const raw = `~/${relative(homedir(), brief)}`;
+      const raw = '~/brief.md';
 
       const result = parseAtFiles('fix', [`@${raw}`], tmp);
 
@@ -189,6 +205,62 @@ describe('parseAtFiles', () => {
     expect(result.errors).toEqual([
       { path: '~/splitbrief-no-such-dir/brief.md', reason: 'not-found' },
     ]);
+  });
+
+  it('accepts a quoted outside text path and a literal backslash in an image path', () => {
+    const outside = createTempDir('parse-at-files-typed-outside');
+    try {
+      const brief = join(outside, 'my notes.md');
+      const image = join(outside, 'my\\ shot.png');
+      writeFileSync(brief, 'Outside notes.');
+      writeFileSync(image, 'image');
+      writeFileSync(join(outside, 'my shot.png'), 'other image');
+      const rawText = `"${brief}"`;
+
+      const result = parseAtFiles('fix', [`@${rawText}`, `@${image}`], tmp);
+
+      expect(result.errors).toEqual([]);
+      expect(result.textContext).toBe(`--- @${rawText} ---\nOutside notes.`);
+      expect(result.attachments).toMatchObject([{ path: realpathSync(image) }]);
+      expect(result.attachedInputs).toEqual([
+        { path: realpathSync(brief), kind: 'text' },
+        { path: realpathSync(image), kind: 'image' },
+      ]);
+    } finally {
+      cleanupTempDir(outside);
+    }
+  });
+
+  it('refuses an escaped outside image path when only the unescaped filename exists', () => {
+    const outside = createTempDir('parse-at-files-literal-outside');
+    try {
+      const image = join(outside, 'my shot.png');
+      writeFileSync(image, 'image');
+      const rawImage = image.replace('my shot', 'my\\ shot');
+
+      const result = parseAtFiles('fix', [`@${rawImage}`], tmp);
+
+      expect(result.errors).toEqual([{ path: rawImage, reason: 'not-found' }]);
+      expect(result.textContext).toBe('');
+      expect(result.attachments).toEqual([]);
+      expect(result.attachedInputs).toEqual([]);
+    } finally {
+      cleanupTempDir(outside);
+    }
+  });
+
+  itReadableByOwnerOnly('refuses a file in an unreadable directory as unreadable', () => {
+    const directory = join(tmp, 'locked');
+    mkdirSync(directory);
+    writeFileSync(join(directory, 'notes.md'), 'Notes.');
+    chmodSync(directory, 0o000);
+    try {
+      expect(parseAtFiles('fix', ['@locked/notes.md'], tmp).errors).toEqual([
+        { path: 'locked/notes.md', reason: 'unreadable' },
+      ]);
+    } finally {
+      chmodSync(directory, 0o700);
+    }
   });
 
   itUnix('follows a text symlink that points outside the project', () => {

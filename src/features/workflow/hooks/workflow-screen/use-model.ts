@@ -26,6 +26,7 @@ import { atRestComposer, atRestRailStages } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
 import { useWorkflowInlineEdit } from './use-inline-edit.js';
+import { plainUserMessage, type UserMessageInput } from '../../../../core/types/user-input.js';
 
 export interface WorkflowScreenDeps {
   runWorkflow?: RunWorkflowFn | undefined;
@@ -67,12 +68,12 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
 
   // One continuation path for a run at rest: the engine decides whether the run can be picked up,
   // the preparation attempt re-enters it in place, and the screen never moves.
-  const continueAtRest = (text: string, run = atRestRecord): void => {
+  const continueAtRest = (message: UserMessageInput, run = atRestRecord): void => {
     const sessionSelect = deps?.sessionSelect;
     if (run === undefined || sessionSelect === undefined) return;
     const outcome = continueRun({
       ref: run.ref,
-      ...(text.trim() === '' ? {} : { steer: text }),
+      ...(message.text.trim() === '' ? {} : { steer: message }),
       deps: {
         resumeParked: () => false,
         loadState: hydrateResume,
@@ -97,7 +98,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     inputMode,
     continuation,
     runWorkflow: deps?.runWorkflow,
-    continueAtRest: (run) => continueAtRest('', run),
+    continueAtRest: (run) => continueAtRest(plainUserMessage(''), run),
   });
 
   const approvalPromptState = approvalPromptStore.use((s) => s);
@@ -162,10 +163,10 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     onEmptySubmit:
       atRestRecord !== undefined
         ? composer?.continuable === true
-          ? () => continueAtRest('')
+          ? () => continueAtRest(plainUserMessage(''))
           : () => routerStore.navigate({ to: 'home' })
         : parked
-          ? () => requestResume('')
+          ? () => requestResume(plainUserMessage(''))
           : undefined,
     inputHint,
     commandsOnly: composer?.commandsOnly ?? false,

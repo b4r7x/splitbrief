@@ -23,7 +23,7 @@ function reviewComposer(submissions: string[]) {
       currentScreen="workflow"
       mode="review"
       hint="y approve · e edit · c comment · q reject"
-      onSubmit={(text) => submissions.push(text)}
+      onSubmit={(submission) => submissions.push(submission.message.displayText)}
       onRuntimeCommand={() => {}}
     />
   );

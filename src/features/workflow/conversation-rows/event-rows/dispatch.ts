@@ -317,12 +317,13 @@ export function eventRowBlock(options: {
         labelTone: 'textDim',
       });
     case 'user_message': {
-      if (event.qa !== undefined && event.qa.length > 0)
-        return answeredQuestionsRowBlock({ keyPrefix, qa: event.qa, width: ctx.width });
-      const prompt = promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
-      if (event.attachedInputs === undefined || event.attachedInputs.length === 0) return prompt;
+      const body =
+        event.qa !== undefined && event.qa.length > 0
+          ? answeredQuestionsRowBlock({ keyPrefix, qa: event.qa, width: ctx.width })
+          : promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
+      if (event.attachedInputs === undefined || event.attachedInputs.length === 0) return body;
       return compositeBlock(keyPrefix, [
-        prompt,
+        body,
         attachedInputsRowBlock({
           keyPrefix: `${keyPrefix}-attached-inputs`,
           attachedInputs: event.attachedInputs,

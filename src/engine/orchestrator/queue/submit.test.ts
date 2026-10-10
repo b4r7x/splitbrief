@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
 import { createInitialState } from '../../../core/state/machine.js';
@@ -8,6 +9,14 @@ import { setupProject, makeResearchingState } from '#testing/helpers/queue.js';
 import { createWriteSequencer } from '../serial-executor.js';
 import { transitionAndSave } from '../state-ops.js';
 import { createQueueHandler } from './submit.js';
+import { readMessages } from '../../../core/sessions/log-reader.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
+import { formatDrainedMessages } from './prompt.js';
 
 let dirs: string[] = [];
 
@@ -17,6 +26,65 @@ afterEach(() => {
 });
 
 describe('enqueue', () => {
+  it('delivers an attached file through the queue and publishes compact text once before status', async () => {
+    const ref = setupProject(dirs);
+    const message = attachedMessage(ref.projectDir);
+    let state: WorkflowState = makeResearchingState();
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(ref));
+    const injected: string[] = [];
+    const serialize = createWriteSequencer();
+    const planner = makePlanner({
+      capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      injectUserTurn: async ({ text }) => {
+        injected.push(text);
+        return { status: 'delivered', usage: null };
+      },
+    });
+    const handler = createQueueHandler({
+      ...ref,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+      planner,
+      serialize,
+    });
+    expect(await handler(message, 'researching')).toMatchObject({ status: 'accepted' });
+    await serialize(() => {});
+    expect(injected[0]).toContain('PELICAN-42');
+    expect(formatDrainedMessages(state.messageQueue)).toContain('PELICAN-42');
+    expect(state.messageQueue[0]).toMatchObject(message);
+    expect(events.findIndex((event) => event.type === 'user_message')).toBeLessThan(
+      events.findIndex((event) => event.type === 'message_queued'),
+    );
+    await expectCompactMessage(ref, events, message);
+    await expectResumedMessage(ref, message);
+  });
+
+  it('publishes and logs no attached message when enqueue is rejected', async () => {
+    const ref = setupProject(dirs);
+    const message = attachedMessage(ref.projectDir);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(ref));
+    const handler = createQueueHandler({
+      ...ref,
+      getState: () => createInitialState('feat'),
+      setState: () => {},
+      bus,
+      planner: makePlanner(),
+      serialize: createWriteSequencer(),
+    });
+    expect(await handler(message, 'idle')).toMatchObject({ status: 'rejected' });
+    expect(events.filter((event) => event.type === 'user_message')).toEqual([]);
+    const logged = [];
+    for await (const entry of readMessages(ref)) {
+      if (entry.role === 'user') logged.push(entry);
+    }
+    expect(logged).toEqual([]);
+  });
+
   it('enqueues a message into state and emits message-queued event', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState | undefined = makeResearchingState();
@@ -35,7 +103,7 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('hello world', 'researching');
+    const result = await handler(plainUserMessage('hello world'), 'researching');
 
     expect(result.status).toBe('accepted');
     expect(state?.messageQueue).toHaveLength(1);
@@ -63,7 +131,10 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('token sk-proj-abcdefghijklmnopqrstuvwxyz', 'researching');
+    const result = await handler(
+      plainUserMessage('token sk-proj-abcdefghijklmnopqrstuvwxyz'),
+      'researching',
+    );
 
     expect(result.status).toBe('accepted');
     const queued = events.find((event) => event.type === 'message_queued');
@@ -103,7 +174,7 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('inject me', 'researching');
+    const result = await handler(plainUserMessage('inject me'), 'researching');
 
     await new Promise((r) => setTimeout(r, 0));
 
@@ -141,7 +212,7 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('no state', 'researching');
+    const result = await handler(plainUserMessage('no state'), 'researching');
 
     expect(result.status).toBe('rejected');
     expect(writtenState).toBeUndefined();
@@ -156,7 +227,7 @@ describe('enqueue', () => {
 
     const fakeMessages: QueuedMessage[] = Array.from({ length: 50 }, (_, i) => ({
       id: `msg-${i}`,
-      text: `message ${i}`,
+      ...plainUserMessage(`message ${i}`),
       queuedAt: new Date().toISOString(),
       phase: 'researching' as const,
       deliveredViaNative: false,
@@ -176,7 +247,7 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('overflow', 'researching');
+    const result = await handler(plainUserMessage('overflow'), 'researching');
 
     expect(result).toMatchObject({ status: 'rejected', reason: 'queue-full' });
     const warning = events.find((e) => e.type === 'warning');
@@ -205,7 +276,7 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('keep this for after', 'implementing');
+    const result = await handler(plainUserMessage('keep this for after'), 'implementing');
 
     expect(result).toMatchObject({ status: 'accepted' });
     expect(state?.messageQueue.map((m) => m.text)).toEqual(['keep this for after']);
@@ -237,7 +308,7 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const result = await handler('should not queue', 'idle');
+    const result = await handler(plainUserMessage('should not queue'), 'idle');
 
     expect(result).toMatchObject({ status: 'rejected', reason: 'phase-unavailable' });
     expect(state?.messageQueue).toHaveLength(0);
@@ -287,8 +358,8 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    const first = handler('first', 'researching');
-    const second = handler('second', 'researching');
+    const first = handler(plainUserMessage('first'), 'researching');
+    const second = handler(plainUserMessage('second'), 'researching');
     await new Promise((r) => setTimeout(r, 0));
 
     await expect(first).resolves.toMatchObject({ status: 'accepted' });
@@ -323,9 +394,9 @@ describe('enqueue', () => {
     });
 
     const results = await Promise.all([
-      handler('first', 'researching'),
-      handler('second', 'researching'),
-      handler('third', 'researching'),
+      handler(plainUserMessage('first'), 'researching'),
+      handler(plainUserMessage('second'), 'researching'),
+      handler(plainUserMessage('third'), 'researching'),
     ]);
 
     expect(results.every((result) => result.status === 'accepted')).toBe(true);
@@ -356,9 +427,11 @@ describe('enqueue', () => {
       serialize: createWriteSequencer(),
     });
 
-    await expect(handler('do not drop me', 'researching')).resolves.toMatchObject({
-      status: 'accepted',
-    });
+    await expect(handler(plainUserMessage('do not drop me'), 'researching')).resolves.toMatchObject(
+      {
+        status: 'accepted',
+      },
+    );
 
     state = transitionAndSave({ projectDir, sessionId }, staleState, {
       type: 'PLAN_DONE',

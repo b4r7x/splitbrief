@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -114,7 +116,7 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
     continuation: createContinuationHolder({
       step: { kind: 'brief', taskId: task.id, attempt: second.state.attempt },
       keepWorkspace: true,
-      steer: 'continue',
+      steer: plainUserMessage('continue'),
     }),
   });
   const third = await runImplementation({ ...options, wctx: continued, state: second.state });

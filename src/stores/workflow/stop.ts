@@ -1,4 +1,5 @@
 import { createStore, storeBase } from '../create-store.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 
 export type StopIntent = 'none' | 'stop-now' | 'pause-after-brief' | 'end-run' | 'quit';
 export type StopPhase =
@@ -12,7 +13,7 @@ export type StopPhase =
   | 'failed';
 export type StopParkKind = 'mid-brief' | 'boundary';
 
-export type StopResolver = (steer: string) => void;
+export type StopResolver = (steer: UserMessageInput) => void;
 
 export interface StopParked {
   kind: StopParkKind;
@@ -55,7 +56,7 @@ function park(kind: StopParkKind, taskId: string | null, resolve: StopResolver |
   store.set((s) => ({ ...s, phase: 'parked', parked: { kind, taskId, resolve } }));
 }
 
-function resume(steer: string): void {
+function resume(steer: UserMessageInput): void {
   const resolve = store.get().parked?.resolve;
   store.set(initial);
   resolve?.(steer);

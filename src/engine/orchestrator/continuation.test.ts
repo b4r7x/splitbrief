@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
@@ -22,6 +23,12 @@ import { readMessages } from '../../core/sessions/log-reader.js';
 import { createTranscriptBuffer } from '../streaming/transcript-buffer.js';
 import { processError } from '../../lib/process/errors.js';
 import type { WorkflowSinks } from './types.js';
+import { createJsonlSink } from '../events/sinks/jsonl.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
 
 function makeSinks(): WorkflowSinks & { trigger: () => boolean; hasHandler: () => boolean } {
   let abortHandler: (() => void) | null = null;
@@ -164,12 +171,12 @@ describe('createContinuationHolder', () => {
     const holder = createContinuationHolder({
       step: { kind: 'planner', call: 'spec' },
       partial: 'half a spec',
-      steer: 'shorter',
+      steer: plainUserMessage('shorter'),
     });
 
     expect(holder.take({ kind: 'planner', call: 'spec' })).toEqual({
       partial: 'half a spec',
-      steer: 'shorter',
+      steer: plainUserMessage('shorter'),
     });
     expect(holder.take({ kind: 'planner', call: 'spec' })).toBeUndefined();
   });
@@ -192,10 +199,13 @@ describe('createContinuationHolder', () => {
 
   it('holds a steer for the step a boundary park stopped before', () => {
     const holder = createContinuationHolder();
-    holder.hold({ kind: 'brief', taskId: taskId('T002'), attempt: 0 }, 'use the new helper');
+    holder.hold(
+      { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+      plainUserMessage('use the new helper'),
+    );
 
     expect(holder.take({ kind: 'brief', taskId: taskId('T002'), attempt: 0 })).toEqual({
-      steer: 'use the new helper',
+      steer: plainUserMessage('use the new helper'),
     });
   });
 
@@ -221,10 +231,12 @@ describe('createContinuationHolder', () => {
   it('gives a steer an old run parked at a retired planner call to the planning session', () => {
     const holder = createContinuationHolder({
       step: { kind: 'planner', call: 'tasks' },
-      steer: 'keep it small',
+      steer: plainUserMessage('keep it small'),
     });
 
-    expect(holder.take({ kind: 'planner', call: 'plan' })).toEqual({ steer: 'keep it small' });
+    expect(holder.take({ kind: 'planner', call: 'plan' })).toEqual({
+      steer: plainUserMessage('keep it small'),
+    });
   });
 
   it('gives an empty cut only to its recorded step and only once', () => {
@@ -240,6 +252,38 @@ describe('createContinuationHolder', () => {
 const PLANNER_STEP: StepRef = { kind: 'planner', call: 'research' };
 
 describe('withContinuationLoop', () => {
+  it('delivers an attached file after a parked call and records compact text once', async () => {
+    const ref = setupProjectDir();
+    const message = attachedMessage(ref.projectDir);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(ref));
+    let parked = true;
+    let prompt = '';
+    await withContinuationLoop({
+      ctx: {
+        ...ref,
+        bus,
+        callbacks: makeCallbacks({ onContinuationNeeded: async () => message }).callbacks,
+        sinks: {
+          ...makeSinks(),
+          consumeBoundaryInterrupt: () => {
+            const result = parked;
+            parked = false;
+            return result;
+          },
+        },
+      },
+      state: { ...createInitialState('feat'), phase: 'planning' },
+      step: PLANNER_STEP,
+      body: async ({ steer }) => {
+        prompt = steer ?? '';
+      },
+    });
+    expect(prompt).toContain('PELICAN-42');
+    await expectCompactMessage(ref, events, message);
+    await expectResumedMessage(ref, message);
+  });
+
   it('starts an ordinary call without a continuation note', async () => {
     const ref = setupProjectDir();
     const { callbacks } = makeCallbacks();
@@ -265,7 +309,7 @@ describe('withContinuationLoop', () => {
   it('marks a live cut with no output as a continuation when the same step restarts', async () => {
     const ref = setupProjectDir();
     const sinks = makeSinks();
-    const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => '' });
+    const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => plainUserMessage('') });
     const prompts: string[] = [];
 
     await withContinuationLoop({
@@ -318,7 +362,7 @@ describe('withContinuationLoop', () => {
     dirs.push(workspaceDir);
     const sinks = makeSinks();
     const { callbacks } = makeCallbacks({
-      onContinuationNeeded: async () => 'focus on the parser',
+      onContinuationNeeded: async () => plainUserMessage('focus on the parser'),
     });
     let calls = 0;
 
@@ -380,7 +424,7 @@ describe('withContinuationLoop', () => {
     const { callbacks } = makeCallbacks({
       onContinuationNeeded: async (partial) => {
         userReplies.push(partial);
-        return 'please finish it';
+        return plainUserMessage('please finish it');
       },
     });
     const sinks = makeSinks();
@@ -422,7 +466,7 @@ describe('withContinuationLoop', () => {
   it('an aborted call never proceeds as success even when the runner exits cleanly', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { callbacks } = makeCallbacks({
-      onContinuationNeeded: async () => 'keep going',
+      onContinuationNeeded: async () => plainUserMessage('keep going'),
     });
     const sinks = makeSinks();
     const state: WorkflowState = createInitialState('feat');
@@ -463,7 +507,7 @@ describe('withContinuationLoop', () => {
     const { callbacks } = makeCallbacks({
       onContinuationNeeded: async (partial) => {
         partials.push(partial);
-        return 'steer this way';
+        return plainUserMessage('steer this way');
       },
     });
     const state: WorkflowState = createInitialState('feat');
@@ -501,7 +545,9 @@ describe('withContinuationLoop', () => {
           return wasPending;
         },
       };
-      const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => reply });
+      const { callbacks } = makeCallbacks({
+        onContinuationNeeded: async () => plainUserMessage(reply),
+      });
       const bodyArgs: { partial: string | undefined; steer: string | undefined }[] = [];
       const prompts: string[] = [];
       await withContinuationLoop<string>({
@@ -534,7 +580,7 @@ describe('withContinuationLoop', () => {
   it('an outer-signal abort while parked skips the RESUME_STEP save', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const outer = new AbortController();
-    let resolvePrompt: (text: string) => void = () => {};
+    let resolvePrompt: (message: ReturnType<typeof plainUserMessage>) => void = () => {};
     let promptOpened: () => void = () => {};
     const parked = new Promise<void>((resolve) => {
       promptOpened = resolve;
@@ -542,7 +588,7 @@ describe('withContinuationLoop', () => {
     const { callbacks } = makeCallbacks({
       onContinuationNeeded: () => {
         promptOpened();
-        return new Promise<string>((resolve) => {
+        return new Promise<ReturnType<typeof plainUserMessage>>((resolve) => {
           resolvePrompt = resolve;
         });
       },
@@ -570,7 +616,7 @@ describe('withContinuationLoop', () => {
 
     await parked;
     outer.abort(new Error('workflow rewound'));
-    resolvePrompt('resume anyway');
+    resolvePrompt(plainUserMessage('resume anyway'));
 
     await expect(loop).rejects.toThrow('workflow rewound');
     const statePath = join(projectDir, '.splitbrief', 'sessions', sessionId, STATE_FILE);
@@ -587,7 +633,7 @@ describe('withContinuationLoop', () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus, events } = makeBusRecorder();
     const { callbacks } = makeCallbacks({
-      onContinuationNeeded: async () => 'retry please',
+      onContinuationNeeded: async () => plainUserMessage('retry please'),
     });
     const sinks = makeSinks();
     const state: WorkflowState = createInitialState('feat');
@@ -624,7 +670,7 @@ describe('withContinuationLoop', () => {
     const { callbacks } = makeCallbacks({
       onContinuationNeeded: async () => {
         publishedBeforePrompt.push(events.some((e) => e.type === 'turn_interrupted'));
-        return 'go on';
+        return plainUserMessage('go on');
       },
     });
     const sinks = makeSinks();
@@ -674,7 +720,9 @@ describe('withContinuationLoop', () => {
 
   it('propagates abort-throws without entering continuation when the outer signal is also aborted', async () => {
     const { projectDir, sessionId } = setupProjectDir();
-    const { callbacks } = makeCallbacks({ onContinuationNeeded: async () => 'never' });
+    const { callbacks } = makeCallbacks({
+      onContinuationNeeded: async () => plainUserMessage('never'),
+    });
     const sinks = makeSinks();
     const state: WorkflowState = createInitialState('feat');
     const outer = new AbortController();
@@ -707,7 +755,7 @@ describe('withContinuationLoop', () => {
     const stagedDir = createTempDir('continuation-staged');
     dirs.push(stagedDir);
     const { callbacks } = makeCallbacks({
-      onContinuationNeeded: async () => 'resume',
+      onContinuationNeeded: async () => plainUserMessage('resume'),
     });
     const sinks = makeSinks();
     const state: WorkflowState = createInitialState('feat');

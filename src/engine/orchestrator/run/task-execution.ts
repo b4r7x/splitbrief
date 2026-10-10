@@ -29,7 +29,7 @@ import {
 import type { UnrunnableCheck } from '../recovery/builders/checks.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
 import { captureReviewedCandidate } from '../apply/states.js';
-import { transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
@@ -100,8 +100,10 @@ async function parkAtBoundary(args: {
   state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });
   setTrackedState(state);
   recordSteer({ ...ref, bus: wctx.bus }, state.phase, steer);
+  state = rebaseOnPersistedWorkflowState(ref, state);
+  setTrackedState(state);
   wctx.bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
-  wctx.continuation?.hold(step, steer.trim() === '' ? undefined : steer);
+  wctx.continuation?.hold(step, steer.text.trim() === '' ? undefined : steer);
   return { state, continued: true };
 }
 

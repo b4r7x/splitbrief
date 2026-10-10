@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { join } from 'node:path';
@@ -730,7 +732,7 @@ describe('runPlanningPhases', () => {
           validator: createValidator(),
           continuation: createContinuationHolder({
             step: { kind: 'gate', gate },
-            steer: 'Keep the old parser',
+            steer: plainUserMessage('Keep the old parser'),
           }),
         },
         state: savedState,

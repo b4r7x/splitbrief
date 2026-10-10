@@ -3,6 +3,8 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
 import type { Task } from '../../../core/schemas/task.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import { recordUserMessage } from '../transcript/user-message.js';
 import type {
   ChangedFilesSnapshot,
   PlannerConversation,
@@ -14,14 +16,9 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { consultSeatRunner } from '../escalation/consult-guidance.js';
-import {
-  publishTaskReplaced,
-  publishTasksInserted,
-  publishTasksPlanned,
-  publishUserMessage,
-} from '../events.js';
+import { publishTaskReplaced, publishTasksInserted, publishTasksPlanned } from '../events.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
-import { transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { restoreAttemptFiles } from '../task/rollback.js';
 import { runBriefGate } from '../task/brief-gate.js';
@@ -307,11 +304,18 @@ function defaultAnswer(question: ClarificationQuestion): string {
 
 export function consultReplyAnswer(
   question: ClarificationQuestion,
-  reply: string | PlannerReplyAnswer | undefined,
-): string {
-  if (reply === undefined) return defaultAnswer(question);
-  const answer = typeof reply === 'string' ? reply : (reply.qa[0]?.answer ?? reply.text);
-  return answer.trim() === '' ? defaultAnswer(question) : answer;
+  reply: UserMessageInput | PlannerReplyAnswer | undefined,
+): PlannerReplyAnswer {
+  const message = reply === undefined ? undefined : 'message' in reply ? reply.message : reply;
+  if (message === undefined || message.text.trim() === '') {
+    const text = defaultAnswer(question);
+    return {
+      message: plainUserMessage(text),
+      qa: [{ question: question.text, answer: text }],
+    };
+  }
+  if (reply !== undefined && 'message' in reply) return reply;
+  return { message, qa: [{ question: question.text, answer: message.displayText }] };
 }
 
 /** The consult seat's confirm: the decisions extend the run's ledger on the reporting task. */
@@ -351,14 +355,19 @@ async function applyAskUser(
   const answered = consultReplyAnswer(question, reply);
   const recorded = transitionAndSave(ctx, ctx.state, {
     type: 'SET_PLANNER_CONVERSATION',
-    conversation: { ...asked, answered: true, answers: [{ reply: asked.text, answer: answered }] },
+    conversation: {
+      ...asked,
+      answered: true,
+      answers: [{ reply: asked.text, answer: answered.message.text }],
+    },
   });
   const cleared = transitionAndSave(ctx, recorded, { type: 'CLEAR_PLANNER_CONVERSATION' });
-  ctx.onStateChange?.(cleared);
-  publishUserMessage({ bus: ctx.bus, phase: cleared.phase }, answered, {
-    qa: [{ question: action.question, answer: answered }],
+  recordUserMessage({ ...ctx, phase: cleared.phase }, answered.message, {
+    qa: answered.qa,
+    answerIndex: (cleared.userAnswers?.length ?? 0) - 1,
   });
-  return { action: 'guidance', instructions: answered, context: null };
+  ctx.onStateChange?.(rebaseOnPersistedWorkflowState(ctx, cleared));
+  return { action: 'guidance', instructions: answered.message.text, context: null };
 }
 
 /**

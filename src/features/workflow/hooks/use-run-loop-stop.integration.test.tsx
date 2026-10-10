@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -368,9 +369,9 @@ describe('run-loop stop completion', () => {
     await vi.waitFor(() => expect(mounted?.lastFrame()).toBe('question'));
 
     expect(stopStore.get()).toMatchObject({ intent: 'none', phase: 'idle', parked: null });
-    expect(resumeParkedRun('src/core')).toBe(false);
-    inputMode?.resolve('src/core');
-    await vi.waitFor(() => expect(answers).toEqual(['src/core']));
+    expect(resumeParkedRun(plainUserMessage('src/core'))).toBe(false);
+    inputMode?.resolve(plainUserMessage('src/core'));
+    await vi.waitFor(() => expect(answers).toEqual([plainUserMessage('src/core')]));
     expect(requestStopNow()).toBe(true);
     await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'), { timeout: 3000 });
     expect(engine).toHaveBeenCalledTimes(2);

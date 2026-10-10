@@ -88,6 +88,8 @@ The `/refresh` slash command re-runs detection as a manual pass, as do `ctrl+r` 
 
 Compaction summarizes older turns in `session.jsonl` without deleting them. A summary entry is appended to the log; original messages remain intact. On resume, `readCompactedMessages()` returns the latest summary entry plus only the messages after its `summarizedUpTo` timestamp -- the planner rebuilds context from that smaller window instead of replaying the full log.
 
+Freeform compaction summarizes the reconstructed planner conversation. It places the previous summary first as a user message, then uses later planner turns. It excludes implementer output and pending queued messages. The reconstruction restores saved file bodies from `state.json` before summarization. Compaction keeps every entry from the first pending queue entry onward, so the pending message can still enter context after delivery.
+
 **Auto-compaction** fires during `autoCompactResumeContext()` when the planner supports self-summarization (`supportsSelfSummarisation` capability) and the message count exceeds `workflow.compactionThreshold`. The threshold is an integer minimum of 10, set in config. If the threshold is unset or the planner lacks the capability, auto-compaction is skipped.
 
 **Two formats.** `workflow.compactionFormat` controls the output shape. When set to `auto` (the default), the format is selected by planner kind: `api` uses `structured`, everything else uses `freeform`. Freeform summaries are plain text. Structured summaries are JSON objects with fields: `goal`, `stepsCompleted`, `currentStep`, `filesModified`, `constraintsDiscovered`, `remainingWork`. If a structured summarization call returns invalid JSON, the system falls back to freeform and emits a warning.

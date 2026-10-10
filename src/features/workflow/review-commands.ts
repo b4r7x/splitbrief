@@ -62,15 +62,13 @@ export function parseReviewCommand(text: string): ReviewAction {
 }
 
 export function reviewCommandToApprovalReviewResult(
-  command: ReviewCommand,
+  command: Exclude<ReviewCommand, { action: 'revise' }>,
 ): ApprovalReviewResult | null {
   switch (command.action) {
     case 'approve':
       return { approved: true };
     case 'end-run':
       return { approved: false, action: 'end-run' };
-    case 'revise':
-      return { approved: false, action: 'revise', comment: command.comment };
     case 'external_edit_applied':
       return { approved: false, action: 'edit' };
     case 'save_draft':

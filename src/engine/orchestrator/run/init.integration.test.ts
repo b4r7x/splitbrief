@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -137,7 +139,7 @@ async function initializeTestWorkflow(
     projectDir: string;
     sessionId: string;
     feature: string;
-    steer?: string | undefined;
+    steer?: ReturnType<typeof plainUserMessage> | undefined;
     savedState?: WorkflowState | undefined;
     newWorkflow?: boolean;
     reviewer?: Config['reviewer'];
@@ -290,7 +292,7 @@ describe('initializeWorkflow', () => {
         sessionId: 'session-init-continued-inputs',
         feature,
         attachedInputs: [{ path: '/Users/dev/briefs/feature.md', kind: 'text' }],
-        steer: 'include the receiving screen',
+        steer: plainUserMessage('include the receiving screen'),
         savedState: { ...createInitialState(feature), phase: 'planning' },
         eventSink: (event) => events.push(event),
       });
@@ -736,7 +738,7 @@ describe('initializeWorkflow', () => {
         projectDir,
         sessionId: 'session-init-halt-steer',
         feature,
-        steer: 'use the registry',
+        steer: plainUserMessage('use the registry'),
         eventSink: (event) => events.push(event),
         savedState: {
           ...createInitialState(feature),
@@ -751,7 +753,7 @@ describe('initializeWorkflow', () => {
       if (!result.init.ok) return;
       expect(
         result.init.wctx.continuation?.take({ kind: 'brief', taskId: taskId('T001'), attempt: 0 }),
-      ).toEqual({ steer: 'use the registry' });
+      ).toEqual({ steer: plainUserMessage('use the registry') });
       expect(
         events.filter(
           (event) => event.type === 'user_message' && event.text === 'use the registry',

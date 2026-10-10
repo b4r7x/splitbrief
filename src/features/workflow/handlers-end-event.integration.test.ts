@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -96,7 +97,7 @@ describe('End run at rest', () => {
     setResumeHandler(resume);
 
     expect(requestEndRun()).toBe(true);
-    expect(requestResume('')).toBe(false);
+    expect(requestResume(plainUserMessage(''))).toBe(false);
     expect(resume).not.toHaveBeenCalled();
 
     await vi.waitFor(() =>
@@ -132,7 +133,7 @@ describe('/resume and /end on a run at rest at a gate', () => {
     const run = (raw: string) =>
       runCommandInTest({
         commands: createRuntimeCommands(
-          makeCtx({ endRun: requestEndRun, resumeRun: () => requestResume('') }),
+          makeCtx({ endRun: requestEndRun, resumeRun: () => requestResume(plainUserMessage('')) }),
         ),
         raw,
         screen: 'workflow',
@@ -162,6 +163,6 @@ describe('/resume and /end on a run at rest at a gate', () => {
     await run('/resume');
 
     expect(errors).toEqual([]);
-    expect(resume).toHaveBeenCalledWith('');
+    expect(resume).toHaveBeenCalledWith(plainUserMessage(''));
   });
 });

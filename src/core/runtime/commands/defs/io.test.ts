@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeCtx } from '#testing/helpers/runtime-commands.js';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { resolveAttachment } from '../../../attachments/resolve.js';
 import { ioCommands } from './io.js';
 
 function imageCommand(ctx: Parameters<typeof ioCommands>[0]) {
@@ -61,8 +65,31 @@ describe('/image command', () => {
 
     await command.handler('/tmp/outside.png');
 
-    expect(errors).toEqual([
-      'Cannot attach image: the file was not found. Check the path and try again.',
-    ]);
+    expect(errors).toEqual(['Cannot attach image: file not found. Check the path and try again.']);
+  });
+
+  it('names a folder refusal as not a regular file', async () => {
+    const projectDir = createTempDir('image-command-folder');
+    try {
+      mkdirSync(join(projectDir, 'folder'));
+      const errors: string[] = [];
+      const command = imageCommand(
+        makeCtx({
+          insertImage: (input) => {
+            const result = resolveAttachment({ input, projectDir });
+            return result.ok ? { ok: true, path: result.attachment.path } : result;
+          },
+          setFeedbackError: (message) => errors.push(message),
+        }),
+      );
+
+      await command.handler('folder');
+
+      expect(errors).toEqual([
+        'Cannot attach image: not a regular file. Name a file, not a directory.',
+      ]);
+    } finally {
+      cleanupTempDir(projectDir);
+    }
   });
 });

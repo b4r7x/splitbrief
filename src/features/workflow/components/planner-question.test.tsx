@@ -1,3 +1,14 @@
+import { writeFileSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
+import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { configStore } from '../../../stores/project/config.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
+import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import { attachmentsStore } from '../../../stores/workflow/attachments.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { afterAll, afterEach, expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -247,7 +258,7 @@ it('teaches select, next and write while the menu owns the keyboard', async () =
 
   expect(legendOf(ui.lastFrame() ?? '')).toBe('↑↓ select · ⏎ next · tab write');
 
-  store.answer('Planner');
+  store.answer(plainUserMessage('Planner'));
   await flushEffects();
   expect(legendOf(ui.lastFrame() ?? '')).toContain('⏎ send answers');
   ui.unmount();
@@ -285,7 +296,7 @@ it('paints the navigation rows dim until they are highlighted', async () => {
   ]);
   const ui = renderQuestion();
   await flushEffects();
-  store.answer('Planner');
+  store.answer(plainUserMessage('Planner'));
   await flushEffects();
   const frame = ui.lastFrame() ?? '';
 
@@ -293,4 +304,179 @@ it('paints the navigation rows dim until they are highlighted', async () => {
   expect(colorOf(frame, 'Previous question')).toBe(colorOf(frame, 'Write an answer…'));
   expect(colorOf(frame, 'Previous question')).not.toBe(colorOf(frame, 'Large'));
   ui.unmount();
+});
+
+it('prepares panel answers once and preserves the batch, draft and images after refusal', async () => {
+  resetAllStores();
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const projectDir = createTempDir('panel-project');
+  const outside = createTempDir('panel-outside');
+  const path = join(outside, 'context.txt');
+  writeFileSync(path, 'attached body');
+  const delivered = vi.fn<(reply: UserMessageInput | PlannerReplyAnswer | undefined) => void>();
+  const ui = mountWorkflowScreen({
+    projectDir,
+    deps: {
+      runWorkflow: async (opts) => {
+        void opts.callbacks
+          .onPlannerReply?.({
+            call: 'research',
+            text: '',
+            questions: [
+              { id: 'q1', type: 'input', text: 'Which file?' },
+              { id: 'q2', type: 'input', text: 'Any more?' },
+            ],
+            answers: [],
+            answered: false,
+          })
+          .then(delivered);
+        return new Promise(() => {});
+      },
+    },
+  });
+  try {
+    await flushEffects();
+    await vi.waitFor(() => expect(store.get().questions).toHaveLength(2));
+    now += 200;
+    store.setFocus('answer', `use @${path}`);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(store.get().index).toBe(1);
+    expect(store.get().answers[0]).toEqual({
+      text: `use @${path}\n\n--- @${path} ---\nattached body`,
+      displayText: `use @${path}`,
+      images: [],
+      attachedInputs: [{ kind: 'text', path: realpathSync(path) }],
+    });
+    const pending = {
+      id: 'pending',
+      kind: 'image' as const,
+      path: '/outside/pending.png',
+      mimeType: 'image/png' as const,
+      sizeBytes: 1,
+    };
+    attachmentsStore.replacePendingImages([pending]);
+    store.setFocus('answer', 'use @/definitely-missing/context.txt');
+    await flushEffects();
+    const previous = store.get();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(store.get()).toBe(previous);
+    expect(attachmentsStore.peek()).toEqual([pending]);
+    expect(delivered).not.toHaveBeenCalled();
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
+      isError: true,
+    });
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Cannot send');
+    const imagePath = join(outside, 'image.png');
+    writeFileSync(imagePath, 'png');
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'agent', command: 'no-vision-planner' } }),
+    });
+    store.setFocus('answer', `look @${imagePath}`);
+    await flushEffects();
+    const beforeNoVision = store.get();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(store.get()).toBe(beforeNoVision);
+    expect(attachmentsStore.peek()).toEqual([pending]);
+    expect(feedbackStore.get().message).toContain('cannot see images');
+    expect(delivered).not.toHaveBeenCalled();
+    writeFileSync(path, 'changed body');
+    store.setFocus('answer', 'done');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce());
+    expect(delivered.mock.calls[0]?.[0]).toEqual({
+      message: {
+        text: `1. Which file?\nuse @${path}\n\n--- @${path} ---\nattached body\n\n2. Any more?\ndone`,
+        displayText: `1. Which file?\nuse @${path}\n\n2. Any more?\ndone`,
+        images: [],
+        attachedInputs: [{ kind: 'text', path: realpathSync(path) }],
+      },
+      qa: [
+        { question: 'Which file?', answer: `use @${path}` },
+        { question: 'Any more?', answer: 'done' },
+      ],
+    });
+  } finally {
+    ui.unmount();
+    resetAllStores();
+    cleanupTempDir(projectDir);
+    cleanupTempDir(outside);
+  }
+});
+
+it('parks accumulated answer images in question order after successful preparation', async () => {
+  resetAllStores();
+  let now = 1000;
+  vi.spyOn(Date, 'now').mockImplementation(() => now);
+  const projectDir = createTempDir('panel-images');
+  const firstPath = join(projectDir, 'first.png');
+  const secondPath = join(projectDir, 'second.png');
+  writeFileSync(firstPath, 'first');
+  writeFileSync(secondPath, 'second');
+  const delivered = vi.fn<(reply: UserMessageInput | PlannerReplyAnswer | undefined) => void>();
+  const ui = mountWorkflowScreen({
+    projectDir,
+    deps: {
+      runWorkflow: async (opts) => {
+        void opts.callbacks
+          .onPlannerReply?.({
+            call: 'research',
+            text: '',
+            questions: [
+              { id: 'first', type: 'input', text: 'First?' },
+              { id: 'second', type: 'input', text: 'Second?' },
+            ],
+            answers: [],
+            answered: false,
+          })
+          .then(delivered);
+        return new Promise(() => {});
+      },
+    },
+  });
+  try {
+    await vi.waitFor(() => expect(store.get().questions).toHaveLength(2));
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    now += 200;
+    store.setFocus('answer', `look @${firstPath}`);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(store.get().index).toBe(1);
+    const firstImages = store.get().answers.flatMap((answer) => answer.images);
+    expect(attachmentsStore.peek()).toEqual(firstImages);
+    expect(firstImages.map((image) => image.path)).toEqual([realpathSync(firstPath)]);
+    store.setFocus('answer', `and @${secondPath}`);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    await vi.waitFor(() => expect(delivered).toHaveBeenCalledOnce());
+    const answer = delivered.mock.calls[0]?.[0];
+    if (answer === undefined || !('message' in answer)) throw new Error('expected batch');
+    expect(answer.message.images.map((image) => image.path)).toEqual([
+      realpathSync(firstPath),
+      realpathSync(secondPath),
+    ]);
+    expect(answer.message.images[0]).toEqual(firstImages[0]);
+    expect(answer.message.attachedInputs).toEqual([
+      { kind: 'image', path: realpathSync(firstPath) },
+      { kind: 'image', path: realpathSync(secondPath) },
+    ]);
+    expect(attachmentsStore.peek()).toEqual(answer.message.images);
+  } finally {
+    ui.unmount();
+    resetAllStores();
+    cleanupTempDir(projectDir);
+  }
 });

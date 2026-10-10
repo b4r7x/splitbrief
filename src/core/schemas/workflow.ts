@@ -28,6 +28,7 @@ import { lineageIdOf } from '../state/task-insert.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { ClarificationQuestionSchema } from './question.js';
 import { SeatAccountCauseSchema } from '../recovery/account-cause.js';
+import { AttachmentSchema, AttachedInputSchema } from './attachment.js';
 
 export const PlannerConversationSchema = z.object({
   call: z.enum(['research', 'spec', 'plan', 'tasks']),
@@ -53,24 +54,32 @@ export const DiscoveredValidationSchema = z.object({
 
 export type DiscoveredValidation = z.infer<typeof DiscoveredValidationSchema>;
 
-export const QueuedMessageSchema = z.object({
-  id: z.string(),
-  text: z.string(),
-  queuedAt: z.string(),
-  phase: PhaseSchema,
-  deliveredViaNative: z.boolean(),
-  nativeDeliveryState: z.enum(['pending', 'injecting', 'delivered']).default('pending'),
-  drainedAt: z.string().optional(),
-  deliveredTo: z
-    .object({
-      implementer: z.string().optional(),
-      consult: z.string().optional(),
-      reviewer: z.string().optional(),
-    })
-    .optional(),
-  origin: z.enum(['user-input', 'clarification']).optional(),
-  question: z.string().optional(),
-});
+export const QueuedMessageSchema = z
+  .object({
+    id: z.string(),
+    text: z.string(),
+    displayText: z.string().optional(),
+    images: z.array(AttachmentSchema).default([]),
+    attachedInputs: z.array(AttachedInputSchema).default([]),
+    queuedAt: z.string(),
+    phase: PhaseSchema,
+    deliveredViaNative: z.boolean(),
+    nativeDeliveryState: z.enum(['pending', 'injecting', 'delivered']).default('pending'),
+    drainedAt: z.string().optional(),
+    deliveredTo: z
+      .object({
+        implementer: z.string().optional(),
+        consult: z.string().optional(),
+        reviewer: z.string().optional(),
+      })
+      .optional(),
+    origin: z.enum(['user-input', 'clarification']).optional(),
+    question: z.string().optional(),
+  })
+  .transform((message) => ({
+    ...message,
+    displayText: message.displayText ?? message.text,
+  }));
 
 export const ChangedFilesSnapshotSchema = z.object({
   head: z.string(),
@@ -275,6 +284,22 @@ const WorkflowStateFields = {
   selectedSkills: z.array(z.string()).optional(),
   awaitingContinue: z.boolean().default(false),
   messageQueue: z.array(QueuedMessageSchema).default([]),
+  resumeUserMessages: z
+    .array(
+      z
+        .object({
+          ts: z.string(),
+          phase: PhaseSchema,
+          displayText: z.string(),
+        })
+        .and(
+          z.union([
+            z.object({ text: z.string() }),
+            z.object({ answerIndex: z.number().int().nonnegative() }),
+          ]),
+        ),
+    )
+    .optional(),
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
   plannerCalls: PlannerCallsSchema.optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),

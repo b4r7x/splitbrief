@@ -7,6 +7,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { configStore } from '../../../src/stores/project/config.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { escapeRegExp } from '../../../src/utils/regexp.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
 
@@ -42,7 +43,7 @@ describe('composer integration: completions', () => {
       currentScreen: 'home',
       mode: 'normal',
       hint: '',
-      onSubmit: (t) => submits.push(t),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: (c) => commandCalls.push(c),
     });
     await flushEffects();
@@ -115,7 +116,7 @@ describe('composer integration: completions', () => {
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
-        onSubmit: (t) => submits.push(t),
+        onSubmit: (submission) => submits.push(submission.message.displayText),
         onRuntimeCommand: () => {},
       });
 
@@ -157,7 +158,7 @@ describe('composer integration: completions', () => {
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
-        onSubmit: (text) => submits.push(text),
+        onSubmit: (submission) => submits.push(submission.message.displayText),
         onRuntimeCommand: () => {},
       });
       await flushEffects();
@@ -207,7 +208,7 @@ describe('composer integration: completions', () => {
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
-        onSubmit: (text) => submits.push(text),
+        onSubmit: (submission) => submits.push(submission.message.displayText),
         onRuntimeCommand: () => {},
       });
       await flushEffects();
@@ -231,7 +232,12 @@ describe('composer integration: completions', () => {
       ui.stdin.write(ENTER);
       await flushEffects();
 
-      expect(submits).toEqual(['@src']);
+      expect(submits).toEqual([]);
+      expect(feedbackStore.get()).toMatchObject({
+        isError: true,
+        message: 'Cannot send: not a regular file. Name a file, not a directory. File: src.',
+      });
+      expect(ui.lastFrame()).toContain('@src');
       ui.unmount();
     } finally {
       cleanupTempDir(projectDir);
@@ -247,7 +253,7 @@ describe('composer integration: completions', () => {
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
-        onSubmit: (text) => submits.push(text),
+        onSubmit: (submission) => submits.push(submission.message.displayText),
         onRuntimeCommand: () => {},
       });
 

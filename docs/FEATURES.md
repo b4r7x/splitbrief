@@ -35,11 +35,23 @@ splitbrief "add JWT middleware" @design-notes.md
 
 **What it does.** An `@file` input is the user's explicit choice. SPLITBRIEF reads it wherever it is. Text enters planner context on every planner call and stays in the run's `state.json`. Images become planner attachments.
 
-Put the feature description first. A feature description cannot start with `@`. Example: `splitbrief "Implement @mentions in comments"`.
+For CLI arguments, put the feature description first. A feature description cannot start with `@`. Example: `splitbrief "Implement @mentions in comments"`.
 
-Use an absolute path, a path relative to the project root, or `~/…`. SPLITBRIEF expands only a leading `~/` and follows symlinks. The file must exist, be a regular file, be at most 10 MiB, and be readable. The transcript names every attached file by its resolved path under the request. `--plain` prints one `attached files:` line. `--json` carries `attachedInputs` on the `user_message` event.
+Use an absolute path, a path relative to the project root, or `~/…`. SPLITBRIEF expands only a leading `~/` and follows symlinks. The file must exist, be a regular file, be at most 10 MiB, and be readable. The transcript lists each file as `text · <path>` or `image · <path>` under the request. Paths inside the project are relative; outside paths are resolved and absolute. `--plain` prints one `attached files:` line. `--json` carries `attachedInputs` on the `user_message` event.
 
 Any refused input stops `start` before the run begins, with exit code `2`. One error names every refused input, its reason, and the fix. An empty feature description before `@file` inputs also stops `start` with exit code `2`. SPLITBRIEF attaches nothing from that command line.
+
+**Composer syntax.** An `@` at the start of text or after whitespace begins a reference. Use any file path inside or outside the project. An unquoted reference ends at unescaped whitespace. A quoted reference ends at its closing quote. Examples: `@/Users/me/notes/brief.md`, `@/Users/me/my\ notes.md`, `@docs/brief.md`, `@"a b.md"`, and `@'a b.md'`.
+
+A token with `/`, or a token with matching opening and closing quotes, is an explicit path. Any file refusal stops the whole send. An unmatched quote stays part of an unquoted token.
+
+A bare `@word` uses the same resolver. If no file exists, it stays text. If a file exists, it attaches. Other failures stop the send. Emails, embedded `@`, escaped `\@`, and a lone `@` stay text.
+
+Text must use UTF-8 and contain no control bytes except whitespace. SPLITBRIEF refuses binary content with `not-text`. Images must use PNG, JPEG, GIF, WebP, or BMP.
+
+Home sends attached text as planner context, like `start`. A mid-run message carries the file text to the seat that receives the message. Attached content is never parsed for more references. The transcript keeps the typed reference and shows `Attached files · n` under the message. Each file row reads `text · <path>` or `image · <path>`. Files inside the project use relative paths. Outside files show their full resolved paths. The transcript contains no file bodies.
+
+A refused plain send keeps the whole draft, history, and pending images unchanged. Feedback names the reason and fix. `/steer` accepts the same `@` references. A refused `/steer` clears the draft and records the command in history; ↑ recalls it. The refusal sends no correction and leaves pending images unchanged.
 
 **How to use.**
 
@@ -408,7 +420,7 @@ An older event without findings shows only the headline. A closed run's `Run` bl
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/run <accept\|reject>` | Accept or reject what this run wrote (rejection needs `/run reject confirm`) |
 | `/resume` | Continue a paused or stopped run |
-| `/steer <correction>` | Stop now and continue the run with your correction |
+| `/steer <correction>` | Stop now and continue with your correction, including `@file` references. Refusal clears the draft and records history; ↑ recalls it. |
 | `/end` | Close the run, keeping every change on disk |
 | `/stop` | Open the inline session-options menu (Stop now, Pause after this brief, End run) |
 
@@ -520,7 +532,7 @@ The fraction counts briefs that **completed under their review cadence** — a s
 **Steer, queue, interrupt.** The composer means a different thing in each state, and its placeholder says which:
 
 - **Queue** — while a planning call is running, the placeholder reads `Queue a message for the planner…`, and during the final review `Queue a message for the reviewer…`; while a brief is building, it reads `Queue a message for after this brief…`. Text you send waits for the next safe boundary. A message queued during a brief is delivered at that boundary as the next brief's implementer steer and to the next consult on that task. `/queue show` and `/queue clear` inspect and discard what is pending.
-- **Steer** — while the run is parked (`Stop now`, or an interrupted call), a blank Enter resumes a run parked in this process exactly as `/resume` does, and typed text steers it. A continuable run at rest resumes on a blank Enter. `/steer <correction>` is the explicit form: it stops the run now and continues it with the correction, holding the text through the stop race.
+- **Steer** — while the run is parked (`Stop now`, or an interrupted call), a blank Enter resumes a run parked in this process exactly as `/resume` does, and typed text steers it. A continuable run at rest resumes on a blank Enter. `/steer <correction>` is the explicit form: it stops the run now and continues it with the correction, holding the text through the stop race. It accepts `@file` references. A refused `/steer` clears the draft and records the command in history; ↑ recalls it.
 - **Interrupt** — `ctrl+c` stops the run at once, `esc` opens the stop menu. Neither is reachable by typing.
 
 ### Run result menu
@@ -684,6 +696,20 @@ Incoming output cannot replace the text being selected: the display holds still 
 
 Images from `/image`, drop, or paste may come from any folder. SPLITBRIEF follows symlinks and records the resolved path. Each file must exist, be a regular file, be at most 10 MiB, and be readable.
 
+A composer reference such as `@x.png` becomes an image on send, like a dropped image. It uses the same image atom and pending attachments. The PLAN seat must support images.
+
+File refusals use `not-found`, `not-a-file`, `too-large`, or `unreadable`. Image-only actions also use `not-image` for unsupported formats. The supported formats are PNG, JPEG, GIF, WebP, and BMP. Feedback names the reason and fix.
+
+A composer send uses `Cannot send: <reason>`. Its file refusals end with ` File: <base name>.`. The base name uses at most 24 terminal cells. `/image` and drop use `Cannot attach image: <reason>` without that suffix.
+
+Sending the directory reference `@/Users/me/notes/` reports `Cannot send: not a regular file. Name a file, not a directory. File: notes.`
+
+Without vision, `/image` reports `PLAN seat cannot see images — pick a vision model with /crew plan`. The dispatcher refuses the command before its handler runs.
+
+Drop, paste, and sending a resolved `@x.png` use the composer's vision check. With a loaded configuration, each reports `Cannot attach: PLAN seat <seat identity> cannot see images — /crew plan`.
+
+Without a loaded configuration, drop and paste report `Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.` Without a loaded configuration, sending `@x.png` reports `Cannot send image: the planner cannot see images. Choose a vision model with /crew plan.`
+
 **How to use.**
 
 ```
@@ -699,6 +725,8 @@ The composer shows `Pasting image…` during the read and keeps text typed meanw
 Clipboard images are stored as private PNG files under `~/.splitbrief/clipboard/`, up to 10 MiB each. Identical image bytes share a file. These files remain after submission and exit so draft history and recorded attachments can still read them.
 
 Dragging a file onto the terminal also inserts it at the caret. The home composer advertises this with a `drop an image` hint on its legend line; the workflow composer shows no hint because its byline is occupied by live status, but image input works there too. `Backspace` beside an atom takes the whole reference, and that image with it. `/image list` and `/image remove` address attachments already pending for the planner, including command-line `--image` inputs; edit inline draft atoms in the composer.
+
+Quoted drag paths and backslash-escaped paths such as `/Users/me/design\ notes/mock.png` resolve to the same image. A dropped non-image path stays text. Use `@` to attach that file's text.
 
 Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time.
 

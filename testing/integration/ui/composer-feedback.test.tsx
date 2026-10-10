@@ -6,6 +6,12 @@ import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { Composer } from '../../../src/components/composer/composer.js';
 import { COMMANDS, renderDockedComposer } from '#testing/helpers/composer.js';
+import {
+  attachmentFailureText,
+  formatAttachmentFailure,
+} from '../../../src/core/attachments/failure.js';
+import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -14,6 +20,46 @@ describe('composer feedback', () => {
   beforeEach(() => {
     resetAllStores();
   });
+
+  it.each(
+    (['not-found', 'not-a-file', 'too-large', 'unreadable'] as const).flatMap((reason) =>
+      [
+        { width: 60, rows: 18 },
+        { width: 80, rows: 24 },
+        { width: 120, rows: 40 },
+      ].map((viewport) => ({ reason, ...viewport })),
+    ),
+  )(
+    'shows the $reason send refusal at $width columns while retaining an outside-file draft',
+    async ({ reason, width, rows }) => {
+      terminalSizeStore.__testReset({ cols: width, rows, isSmall: false });
+      const path = '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+      const draft = `@${path} use this brief`;
+      composerDraftStore.request(draft);
+      const message = formatAttachmentFailure({ action: 'send', reason, path });
+      feedbackStore.setError(message);
+      const ui = renderDockedComposer({
+        commands: [],
+        currentScreen: 'home',
+        mode: 'normal',
+        hint: '',
+        homeHint: '',
+        width,
+        onSubmit: () => {},
+        onRuntimeCommand: () => {},
+      });
+      try {
+        await flushEffects();
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain(`Cannot send: ${attachmentFailureText(reason).split('. ')[0]}.`);
+        expect(message).toMatch(/ File: brief\.md\.$/);
+        expect(composerLiveStore.get().text).toBe(draft);
+        expect(feedbackStore.get().message).toBe(message);
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
 
   it('preserves the failed-session suffix when the feature name contains quotes', async () => {
     feedbackStore.setError(

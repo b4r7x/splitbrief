@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { plainUserMessage } from '../../core/types/user-input.js';
 import chalk from 'chalk';
 import { plainTheme } from '../../core/theme/resolve.js';
 import { paint } from '../../core/theme/paint.js';
@@ -193,7 +194,8 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
           const outcome = await runPlanSession({
             rounds: 0,
             ask: async (turn) => {
-              if (turn.kind === 'answers') rounds.push({ reply: asked, answer: turn.reply.text });
+              if (turn.kind === 'answers')
+                rounds.push({ reply: asked, answer: turn.reply.message.text });
               return requestTyped({
                 prompt: await turnText((prompt) =>
                   planFullTurn(prompt, rounds, turn.kind === 'repair' ? turn : undefined),
@@ -212,9 +214,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
             answer: async (questions) => {
               asked = questionsText(questions);
               console.log(`${chalk.bold('The planner asks:')}\n${stripTerminalControls(asked)}\n`);
-              return interaction === 'interactive'
-                ? promptForLine('Your answer (⏎ takes the defaults): ')
-                : '';
+              return plainUserMessage(
+                interaction === 'interactive'
+                  ? await promptForLine('Your answer (⏎ takes the defaults): ')
+                  : '',
+              );
             },
             check: (proposal) => checkFullPlan(planContext, proposal),
           });

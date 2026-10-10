@@ -1,6 +1,7 @@
 import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
@@ -16,7 +17,7 @@ export interface EnqueueUserMessageOptions {
   projectDir: string;
   sessionId: string;
   state: WorkflowState;
-  text: string;
+  message: UserMessageInput;
   phase: Phase;
   bus: EventBus;
   enforcePhasePolicy?: boolean | undefined;

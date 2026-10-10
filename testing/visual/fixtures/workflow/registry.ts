@@ -231,6 +231,8 @@ const checkpointPredicates = [
     checkpointId('start-attached-files'),
     includesAll('Attached files · 2', 'design/receiving-flow.png'),
   ],
+  [checkpointId('composer-outside-file'), includesAll('Attached files · 1', 'Planning…')],
+  [checkpointId('question-outside-file'), includesAll('Attached files · 1', 'Planning…')],
   [checkpointId('planning-path-notice'), includesAll('cannot open', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],

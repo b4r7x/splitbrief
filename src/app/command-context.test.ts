@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { realpathSync, writeFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {
   installClipboardExecFixture,
   readClipboardExecCalls,
@@ -10,7 +11,7 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
-import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -19,7 +20,10 @@ import {
   setClearQueueHandler,
   clearAllHandlers,
   requestClearQueue,
+  setResumeHandler,
 } from '../features/workflow/handlers.js';
+import { executeRuntimeCommand } from '../core/runtime/commands/dispatch.js';
+import { workflowCommands } from '../core/runtime/commands/defs/workflow.js';
 import {
   activityBatchKey,
   findLatestExpandableActivityBatchKey,
@@ -28,6 +32,10 @@ import { readConversationScrollSnapshot } from '../features/workflow/layout/snap
 import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
 import { configStore } from '../stores/project/config.js';
 import { composerDraftStore } from '../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../stores/ui/composer-live.js';
+import { inputHistoryStore } from '../stores/ui/input-history.js';
+import { WorkflowFooter } from '../features/workflow/components/chrome.js';
+import { createDraftDocument } from '../core/composer/document.js';
 import { attachmentsStore } from '../stores/workflow/attachments.js';
 import { skillsStore } from '../stores/project/skills.js';
 import type { SkillMeta } from '../core/skills/types.js';
@@ -46,6 +54,7 @@ import {
 } from './command-context.js';
 import { detectionStore } from '../stores/project/detection.js';
 import { getDefaultDetectionService, type DetectionDeps } from '../engine/detection/service.js';
+import * as clipboard from '../lib/clipboard/clipboard.js';
 
 let projectDir = '';
 const originalPlatform = process.platform;
@@ -92,6 +101,58 @@ function seedExpandableActivityBatch(): string {
 }
 
 describe('buildCommandContext', () => {
+  it('prepares a steer argument once and passes the full message to the continuation', () => {
+    projectDir = createTempDir('command-steer');
+    const path = `${projectDir}/context.txt`;
+    writeFileSync(path, 'context body');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    const resume = vi.fn();
+    setResumeHandler(resume);
+
+    expect(build().steerRun(`use @${path}`)).toBe(true);
+    expect(resume).toHaveBeenCalledExactlyOnceWith({
+      text: `use @${path}\n\n--- @${path} ---\ncontext body`,
+      displayText: `use @${path}`,
+      images: [],
+      attachedInputs: [{ kind: 'text', path: realpathSync(path) }],
+    });
+  });
+
+  it('keeps the canonical refusal when a steer file cannot be prepared', async () => {
+    const resume = vi.fn();
+    setResumeHandler(resume);
+    const pending = {
+      id: 'pending',
+      kind: 'image' as const,
+      path: '/outside/a.png',
+      mimeType: 'image/png',
+      sizeBytes: 1,
+    };
+    attachmentsStore.replacePendingImages([pending]);
+    const onError = vi.fn(feedbackStore.setError);
+
+    await executeRuntimeCommand(
+      workflowCommands(build()),
+      '/steer use @/definitely-missing/context.txt',
+      {
+        screen: 'workflow',
+        phase: 'implementing',
+        plannerSupportsImages: false,
+        openRunAtRest: false,
+        onError,
+      },
+    );
+
+    expect(feedbackStore.get()).toEqual({
+      message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
+      isError: true,
+    });
+    expect(onError).toHaveBeenCalledOnce();
+    expect(resume).not.toHaveBeenCalled();
+    expect(attachmentsStore.peek()).toEqual([pending]);
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
   it('routes an image command into the composer draft instead of pending attachments', () => {
     projectDir = createTempDir('app-command-context-image');
     const imagePath = `${projectDir}/shot.png`;
@@ -380,6 +441,19 @@ function RuntimeCommandsHarness({
   return null;
 }
 
+function CommandComposerHarness() {
+  const model = useRuntimeCommands({ exit: () => {}, phase: 'implementing' });
+  return createElement(WorkflowFooter, {
+    commands: model.commands,
+    mode: 'normal',
+    inputHint: '',
+    handleInput: () => {},
+    disabled: false,
+    onRuntimeCommand: (raw) => model.handleRuntimeCommand(raw, 'workflow'),
+    listProjectFiles: async () => [],
+  });
+}
+
 describe('useRuntimeCommands', () => {
   beforeEach(() => {
     resetAllStores();
@@ -387,6 +461,178 @@ describe('useRuntimeCommands', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it('recalls a refused steer command from history before a successful retry', async () => {
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    projectDir = createTempDir('command-composer-steer');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    const path = `${projectDir}/context.txt`;
+    const document = createDraftDocument(`/steer use @${path}`);
+    const pending = {
+      id: 'pending',
+      kind: 'image' as const,
+      path: '/outside/pending.png',
+      mimeType: 'image/png' as const,
+      sizeBytes: 1,
+    };
+    attachmentsStore.replacePendingImages([pending]);
+    inputHistoryStore.hydrate(['Earlier']);
+    const resumed: string[] = [];
+    setResumeHandler((message) => resumed.push(message.text));
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 160, rows: 24 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    composerDraftStore.requestDocument(document);
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(
+        'Cannot send: file not found. Check the path and try again. File: context.txt.',
+      );
+    });
+    await flushEffects();
+    expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
+    expect(inputHistoryStore.get().workflowEntries).toEqual([document]);
+    expect(attachmentsStore.peek()).toEqual([pending]);
+    expect(resumed).toEqual([]);
+    expect(ui.lastFrame()).not.toContain(`/steer use @${path}`);
+
+    writeFileSync(path, 'context body');
+    ui.stdin.write('\u001b[A');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().document).toEqual(document);
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(resumed).toEqual([`use @${path}\n\n--- @${path} ---\ncontext body`]);
+      expect(composerLiveStore.get().empty).toBe(true);
+    });
+    expect(inputHistoryStore.get().workflowEntries).toEqual([document]);
+  });
+
+  it('clears /steer use @/missing/x.md with one refusal line and recalls it with Up', async () => {
+    projectDir = createTempDir('command-composer-missing');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    const document = createDraftDocument('/steer use @/missing/x.md');
+    const earlier = createDraftDocument('Earlier');
+    inputHistoryStore.pushDocumentSubmission(earlier, { currentScreen: 'workflow' });
+    const resumed = vi.fn();
+    setResumeHandler(resumed);
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 160, rows: 24 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    composerDraftStore.requestDocument(document);
+    await flushEffects();
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('/steer use @/missing/x.md');
+    });
+    await flushEffects();
+
+    const refusal = 'Cannot send: file not found. Check the path and try again. File: x.md.';
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get(), stripAnsiStyles(ui.lastFrame())).toEqual({
+        message: refusal,
+        isError: true,
+      });
+    });
+    await flushEffects();
+    expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).not.toContain('/steer use @/missing/x.md');
+    expect(frame).toContain(refusal);
+    expect(frame.split(refusal)).toHaveLength(2);
+    expect(inputHistoryStore.get().workflowEntries).toEqual([document, earlier]);
+    expect(resumed).not.toHaveBeenCalled();
+
+    ui.stdin.write('\u001b[A');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().document).toEqual(document);
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('/steer use @/missing/x.md');
+  });
+
+  it('keeps a newer draft when a steer refusal waits behind an asynchronous copy', async () => {
+    projectDir = createTempDir('command-composer-queued-steer');
+    configStore.__testReset({ projectDir, config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
+    addEvent({ type: 'planner_text', ts: 1, phase: 'implementing', text: 'Copy this message' });
+    const copy = Promise.withResolvers<clipboard.CopyOutcome>();
+    const copyToClipboard = vi.spyOn(clipboard, 'copyToClipboard').mockReturnValue(copy.promise);
+    onTestFinished(() => copy.resolve('native'));
+    const resumed = vi.fn();
+    setResumeHandler(resumed);
+    const ui = renderFeature(createElement(CommandComposerHarness), { cols: 160, rows: 24 });
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    composerDraftStore.request('/copy');
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(copyToClipboard).toHaveBeenCalledExactlyOnceWith('Copy this message');
+      expect(composerLiveStore.get().empty).toBe(true);
+    });
+    const command = createDraftDocument('/steer use @/missing/x.md');
+    composerDraftStore.requestDocument(command);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().empty).toBe(true);
+      expect(inputHistoryStore.get().entries).toEqual([command, createDraftDocument('/copy')]);
+    });
+    ui.stdin.write('Newer draft');
+    const newer = createDraftDocument('Newer draft');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().document).toEqual(newer);
+    });
+    expect(feedbackStore.get().isError).toBe(false);
+    const draftRequest = composerDraftStore.get().request;
+
+    copy.resolve('native');
+    const refusal = 'Cannot send: file not found. Check the path and try again. File: x.md.';
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({ message: refusal, isError: true });
+    });
+    await flushEffects();
+    expect(composerLiveStore.get().document).toEqual(newer);
+    expect(composerDraftStore.get().request).toBe(draftRequest);
+    expect(inputHistoryStore.get().entries).toEqual([command, createDraftDocument('/copy')]);
+    expect(resumed).not.toHaveBeenCalled();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('Newer draft');
+    expect(frame.split(refusal)).toHaveLength(2);
+  });
+
+  it('keeps the image atom requested by a successful image command', async () => {
+    projectDir = createTempDir('command-composer-image');
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const path = `${projectDir}/shot.png`;
+    writeFileSync(path, 'png');
+    const ui = renderFeature(createElement(CommandComposerHarness));
+    onTestFinished(ui.unmount);
+    await flushEffects();
+    composerDraftStore.request(`/image ${path}`);
+    await flushEffects();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(composerLiveStore.get().document.parts).toEqual([
+        { kind: 'image', attachment: expect.objectContaining({ path: realpathSync(path) }) },
+      ]);
+    });
+    expect(inputHistoryStore.get().workflowEntries).toEqual([
+      createDraftDocument(`/image ${path}`),
+    ]);
+    expect(attachmentsStore.peek()).toEqual([]);
   });
 
   it('surfaces an unknown command as feedback error state', async () => {

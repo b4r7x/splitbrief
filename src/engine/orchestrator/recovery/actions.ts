@@ -15,7 +15,7 @@ import { readConfigDocument } from '../../../core/config/load/document.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -33,11 +33,11 @@ import {
   publishRecoveryResolved,
   publishSeatSwitched,
   publishTaskSkipped,
-  publishUserMessage,
 } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { closeRunIfOpen } from '../run/close.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
+import { recordUserMessage } from '../transcript/user-message.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { restoreExhaustedTaskFiles } from '../task/rollback.js';
 import { runCodeDir } from '../run/task-execution.js';
 import { isConsultBoundReason } from './builders/consult.js';
@@ -62,17 +62,19 @@ export type RecoveryActionAppliedStatus =
   | 'retry-current-task';
 
 export type ApplyRecoveryActionResult =
-  | {
+  | ({
       ok: true;
       action: RecoveryAction;
       issue: RecoveryIssue;
       state: WorkflowState;
-      status: RecoveryActionAppliedStatus;
       implementerProfile?: string | undefined;
       switchedSeat?: Readonly<{ seat: CrewSeatId; candidate: SeatSwapCandidate }> | undefined;
       switchedConfig?: Config | undefined;
       currentConfig?: Config | undefined;
-    }
+    } & (
+      | { status: 'continued'; correctionRecorded: boolean }
+      | { status: Exclude<RecoveryActionAppliedStatus, 'continued'> }
+    ))
   | {
       ok: false;
       action: RecoveryAction;
@@ -110,7 +112,7 @@ export interface ApplyRecoveryActionOptions {
   /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
   candidate?: SeatSwapCandidate | undefined;
   /** `revise`, `continue` and a seat-level retry: what the operator wants changed. */
-  comment?: string | undefined;
+  comment?: UserMessageInput | undefined;
 }
 
 export async function applyRecoveryAction(
@@ -161,12 +163,26 @@ export async function applyRecoveryAction(
       return applySkipCurrentTaskRecoveryAction(opts, issue);
     case 'restore-backup': {
       const state = markRecoveryApplying(opts, issue);
-      return { ok: true, action: opts.action, issue, state, status: 'continued' };
+      return {
+        ok: true,
+        action: opts.action,
+        issue,
+        state,
+        status: 'continued',
+        correctionRecorded: false,
+      };
     }
     case 'retry-same-worker': {
       if (issue.reason === 'apply-partial') {
         const state = markRecoveryApplying(opts, issue);
-        return { ok: true, action: opts.action, issue, state, status: 'continued' };
+        return {
+          ok: true,
+          action: opts.action,
+          issue,
+          state,
+          status: 'continued',
+          correctionRecorded: false,
+        };
       }
       return applyRetrySameWorkerRecoveryAction(opts, issue);
     }
@@ -218,7 +234,14 @@ function applyContinueRecoveryAction(
     outcome: 'continued',
   });
 
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  return {
+    ok: true,
+    action: opts.action,
+    issue,
+    state,
+    status: 'continued',
+    correctionRecorded: false,
+  };
 }
 
 /**
@@ -240,7 +263,7 @@ function applyConsultGrantRecoveryAction(
         type: 'GRANT_ALLOWANCE',
         target: 'planner',
         taskId: null,
-        note: opts.comment?.trim() || 'continued',
+        note: opts.comment?.displayText.trim() || 'continued',
       },
       { expectedRevision: state.stateRevision ?? 0 },
     );
@@ -257,7 +280,14 @@ function applyConsultGrantRecoveryAction(
       action: opts.action,
       outcome: 'continued',
     });
-    return { ok: true, action: opts.action, issue, state, status: 'continued' };
+    return {
+      ok: true,
+      action: opts.action,
+      issue,
+      state,
+      status: 'continued',
+      correctionRecorded: false,
+    };
   }
 
   const taskId = issue.taskId ?? opts.state.tasks[opts.state.currentTaskIndex]?.id;
@@ -279,7 +309,7 @@ function applyConsultGrantRecoveryAction(
       type: 'GRANT_ALLOWANCE',
       target: issue.reason === 'planner-calls-spent' ? 'planner' : 'lineage',
       taskId,
-      note: opts.comment?.trim() || 'continued',
+      note: opts.comment?.displayText.trim() || 'continued',
       ...(typeof issue.facts?.failingOutput === 'string' && {
         failingOutput: issue.facts.failingOutput,
       }),
@@ -367,25 +397,29 @@ function applyReviseRecoveryAction(
 ): ApplyRecoveryActionResult {
   if (issue.reason === 'review-failed') return applyReviewCorrectionAction(opts, issue);
   let state = markRecoveryApplying(opts, issue);
-  const comment = opts.comment?.trim() ?? '';
-  if (comment.length > 0) {
+  let correctionRecorded = false;
+  const comment = opts.comment;
+  if (comment !== undefined && comment.text.trim() !== '') {
+    const queuedMessage: QueuedMessage = {
+      id: randomUUID(),
+      ...comment,
+      queuedAt: nowIso(),
+      phase: issue.phase,
+      deliveredViaNative: false,
+      nativeDeliveryState: 'pending',
+      origin: 'user-input',
+    };
     state = transitionAndSave(
       opts,
       state,
       {
         type: 'ENQUEUE_USER_MSG',
-        message: {
-          id: randomUUID(),
-          text: comment,
-          queuedAt: nowIso(),
-          phase: issue.phase,
-          deliveredViaNative: false,
-          nativeDeliveryState: 'pending',
-          origin: 'user-input',
-        },
+        message: queuedMessage,
       },
       { expectedRevision: state.stateRevision ?? 0 },
     );
+    recordUserMessage({ ...opts, phase: issue.phase }, comment, { queuedMessage });
+    correctionRecorded = true;
   }
   state = transitionAndSave(
     opts,
@@ -400,7 +434,7 @@ function applyReviseRecoveryAction(
     action: opts.action,
     outcome: 'continued',
   });
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  return { ok: true, action: opts.action, issue, state, status: 'continued', correctionRecorded };
 }
 
 function readCriticalFindings(
@@ -429,7 +463,7 @@ function applyAcceptAsIsRecoveryAction(
   opts: ApplyRecoveryActionOptions,
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
-  const comment = opts.comment?.trim() ?? '';
+  const comment = opts.comment?.displayText.trim() ?? '';
   const findings =
     issue.reason === 'review-input-too-large'
       ? [issue.message, ...(comment === '' ? [] : [comment])]
@@ -478,7 +512,14 @@ function applyAcceptAsIsRecoveryAction(
     action: opts.action,
     outcome: 'continued',
   });
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  return {
+    ok: true,
+    action: opts.action,
+    issue,
+    state,
+    status: 'continued',
+    correctionRecorded: false,
+  };
 }
 
 /**
@@ -492,11 +533,14 @@ function applyReviewCorrectionAction(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   const ref = { projectDir: opts.projectDir, sessionId: opts.sessionId };
-  const correction = opts.comment?.trim() ?? '';
+  const comment = opts.comment;
+  const correction = comment?.text ?? '';
   let state = markRecoveryApplying(opts, issue);
-  if (correction !== '') {
-    appendMessage(ref, { role: 'user', phase: state.phase, text: correction });
-    publishUserMessage({ bus: opts.bus, phase: state.phase }, correction);
+  let correctionRecorded = false;
+  if (comment !== undefined && correction.trim() !== '') {
+    recordUserMessage({ ...ref, bus: opts.bus, phase: state.phase }, comment);
+    correctionRecorded = true;
+    state = rebaseOnPersistedWorkflowState(ref, state);
   }
   state = transitionAndSave(
     opts,
@@ -517,7 +561,7 @@ function applyReviewCorrectionAction(
     action: opts.action,
     outcome: 'continued',
   });
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  return { ok: true, action: opts.action, issue, state, status: 'continued', correctionRecorded };
 }
 
 async function applySkipCurrentTaskRecoveryAction(
@@ -834,7 +878,9 @@ export function commitSeatSwitch(
     action: 'switch-seat',
     issue,
     state,
-    status: briefHalt ? 'retry-current-task' : 'continued',
+    ...(briefHalt
+      ? { status: 'retry-current-task' }
+      : { status: 'continued', correctionRecorded: false }),
     switchedSeat: { seat, candidate },
     switchedConfig,
     ...(issue.selectedImplementerProfile !== undefined && {
@@ -868,19 +914,23 @@ function resolveSeatIssueWithoutTask(
   issue: RecoveryIssue,
 ): ApplyRecoveryActionResult {
   let state = markRecoveryApplying(opts, issue);
-  if (opts.comment?.trim()) {
+  let correctionRecorded = false;
+  if (opts.comment !== undefined && opts.comment.text.trim() !== '') {
+    const queuedMessage: QueuedMessage = {
+      id: randomUUID(),
+      ...opts.comment,
+      queuedAt: nowIso(),
+      phase: state.phase,
+      deliveredViaNative: false,
+      nativeDeliveryState: 'pending',
+      origin: 'user-input',
+    };
     state = transitionAndSave(opts, state, {
       type: 'ENQUEUE_USER_MSG',
-      message: {
-        id: randomUUID(),
-        text: opts.comment,
-        queuedAt: nowIso(),
-        phase: state.phase,
-        deliveredViaNative: false,
-        nativeDeliveryState: 'pending',
-        origin: 'user-input',
-      },
+      message: queuedMessage,
     });
+    recordUserMessage({ ...opts, phase: state.phase }, opts.comment, { queuedMessage });
+    correctionRecorded = true;
   }
   state = transitionAndSave(
     opts,
@@ -895,7 +945,7 @@ function resolveSeatIssueWithoutTask(
     action: opts.action,
     outcome: 'continued',
   });
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  return { ok: true, action: opts.action, issue, state, status: 'continued', correctionRecorded };
 }
 
 function applyRetryLaterRecoveryAction(
@@ -930,7 +980,14 @@ function applyRetryLaterRecoveryAction(
     action: opts.action,
     outcome: 'continued',
   });
-  return { ok: true, action: opts.action, issue, state, status: 'continued' };
+  return {
+    ok: true,
+    action: opts.action,
+    issue,
+    state,
+    status: 'continued',
+    correctionRecorded: false,
+  };
 }
 
 function applyRetryCurrentTaskRecoveryAction(

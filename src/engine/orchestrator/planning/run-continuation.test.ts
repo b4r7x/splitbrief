@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
@@ -12,6 +14,7 @@ import {
   type RunOpts,
 } from '#testing/helpers/planning-phase.js';
 import { typedCallAnswering } from '#testing/helpers/typed-planner.js';
+import { attachedMessage } from '#testing/helpers/user-message.js';
 
 let dirs: string[] = [];
 afterEach(() => {
@@ -27,6 +30,7 @@ describe('runPlanningPhase — abort + continuation', () => {
   it('runs a cut planning call again with what the user typed', async () => {
     const sinks = createTestSinks();
     const prompts: string[] = [];
+    let message = plainUserMessage('');
     const planner = makePassingPlanner({
       typedCall: (ctx) => ({
         seat: ctx.seat,
@@ -35,6 +39,7 @@ describe('runPlanningPhase — abort + continuation', () => {
         invoke: async ({ prompt }) => {
           prompts.push(prompt);
           if (prompts.length === 1) {
+            message = attachedMessage(ctx.projectDir);
             sinks.abortTurn();
             throw new DOMException('The user aborted a request.', 'AbortError');
           }
@@ -45,7 +50,7 @@ describe('runPlanningPhase — abort + continuation', () => {
         },
       }),
     });
-    const onContinuationNeeded = vi.fn(async () => 'also use PostgreSQL 15');
+    const onContinuationNeeded = vi.fn(async () => message);
 
     const { result } = await runTurn({
       planner,
@@ -57,7 +62,7 @@ describe('runPlanningPhase — abort + continuation', () => {
     expect(result.disposition).toBe('ready-for-tasks');
     expect(onContinuationNeeded).toHaveBeenCalledTimes(1);
     expect(prompts).toHaveLength(2);
-    expect(prompts[1]).toContain('The user says: also use PostgreSQL 15');
+    expect(prompts[1]).toContain(`The user says: ${message.text}`);
   });
 
   it('abort without onContinuationNeeded falls through to planning failure', async () => {

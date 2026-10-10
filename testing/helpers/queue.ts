@@ -1,4 +1,5 @@
 import type { WorkflowState, QueuedMessage } from '../../src/core/schemas/workflow.js';
+import { plainUserMessage } from '../../src/core/types/user-input.js';
 import { createInitialState, transition } from '../../src/core/state/machine.js';
 import { ensureSessionDir } from '../../src/core/paths-io.js';
 import { createTempDir } from './temp-dir.js';
@@ -33,7 +34,7 @@ export function makeStateWithQueue(
 export function makeMessage(text = 'test message'): QueuedMessage {
   return {
     id: 'msg-test',
-    text,
+    ...plainUserMessage(text),
     queuedAt: new Date().toISOString(),
     phase: 'researching',
     deliveredViaNative: false,

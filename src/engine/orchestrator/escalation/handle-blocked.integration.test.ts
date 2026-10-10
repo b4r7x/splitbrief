@@ -1,4 +1,6 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -101,7 +103,7 @@ describe('handleRetryAndEscalation — a blocked implementer', () => {
       const task = makeTask({ criteria: ['C1', 'C2'] });
       const currentState = { ...makeValidatingState(), tasks: [task] };
       const answer = 'Keep both criteria and repair the existing implementation.';
-      const onPlannerReply = vi.fn().mockResolvedValue(answer);
+      const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(answer));
       const { callbacks } = makeCallbacks({ onPlannerReply });
       const { bus, events } = makeBusRecorder();
       const implementer = makeImplementer();

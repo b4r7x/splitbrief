@@ -23,6 +23,7 @@ import { recordRunnerPid } from '../../../src/core/sessions/runner-pids.js';
 import { LOCKFILE } from '../../../src/core/paths.js';
 import { readProcessStartTimeMs } from '../../../src/lib/process/start-time.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import { transitionAndSave } from '../../../src/engine/orchestrator/state-ops.js';
@@ -239,7 +240,7 @@ describe('saved run settings through resume', () => {
       type: 'ENQUEUE_USER_MSG',
       message: {
         id: 'mode-check',
-        text: 'Keep the saved plan',
+        ...plainUserMessage('Keep the saved plan'),
         phase: pinned.phase,
         queuedAt: new Date().toISOString(),
         deliveredViaNative: false,
@@ -283,7 +284,7 @@ describe('saved run settings through resume', () => {
         .mockResolvedValueOnce({
           approved: false,
           action: 'revise',
-          comment: 'Clarify the greeting',
+          message: plainUserMessage('Clarify the greeting'),
         })
         .mockResolvedValueOnce({ approved: false, action: 'end-run' }),
     });

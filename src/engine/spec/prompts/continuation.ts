@@ -36,7 +36,7 @@ const NO_EARLIER_OUTPUT = 'No output from an earlier attempt of this step is ava
 export function continuationBlock(input: Omit<ComposeContinuationInput, 'basePrompt'>): string {
   const partial = input.partial?.trim() ?? '';
   const extra = input.extra?.trim() ?? '';
-  const steer = input.steer?.trim() || DEFAULT_STEER;
+  const steer = input.steer?.trim() ? input.steer : DEFAULT_STEER;
   const opening =
     partial !== ''
       ? 'The previous attempt of this step was interrupted.'

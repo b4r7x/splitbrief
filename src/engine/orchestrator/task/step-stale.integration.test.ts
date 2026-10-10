@@ -1,6 +1,8 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
 import {
   makeBusRecorder,
   makeCallbacks,
@@ -651,7 +653,7 @@ describe('runSingleTask — stale refresh', () => {
         );
         expect(implementer.implement).not.toHaveBeenCalled();
         expect(implementer.retry).not.toHaveBeenCalled();
-        return answer;
+        return plainUserMessage(answer);
       });
       const resolved = await retryStaleTask({ ...retryOptions, state: unanswered });
       expect(typed.mock.calls.map(([ctx]) => ctx.seat)).toEqual([runner, runner, runner]);
@@ -735,7 +737,7 @@ describe('runSingleTask — stale refresh', () => {
         expect(implementer.implement).not.toHaveBeenCalled();
         expect(implementer.retry).not.toHaveBeenCalled();
         return {
-          text: `How should T002 proceed?\n${answer}`,
+          message: plainUserMessage(`How should T002 proceed?\n${answer}`),
           qa: [{ question: 'How should T002 proceed?', answer }],
         };
       });
@@ -775,9 +777,12 @@ describe('runSingleTask — stale refresh', () => {
       expect(firstAttempt?.error).toContain(
         `## Guidance from the ${seat === 'review' ? 'reviewer' : 'planner'}:`,
       );
-      expect(firstAttempt?.error).not.toContain('How should T002 proceed?');
+      expect(firstAttempt?.error).toContain('How should T002 proceed?');
       expect(events.filter((event) => event.type === 'user_message')).toEqual([
-        expect.objectContaining({ text: answer, qa: [expect.objectContaining({ answer })] }),
+        expect.objectContaining({
+          text: `How should T002 proceed?\n${answer}`,
+          qa: [expect.objectContaining({ answer })],
+        }),
       ]);
     },
   );

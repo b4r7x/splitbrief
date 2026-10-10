@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
+import { formatAttachmentFailure } from '../../src/core/attachments/failure.js';
+import type { InputFileFailureReason } from '../../src/core/attachments/resolve.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
+import { composerLiveStore } from '../../src/stores/ui/composer-live.js';
+import { feedbackStore } from '../../src/stores/ui/feedback.js';
+import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { selectRailForm } from '../../src/features/workflow/layout/chrome-rows.js';
 import {
   listVisualScenarios,
@@ -328,6 +333,15 @@ describe('visual catalog', () => {
       'home-preparation-isolation-blocked',
       'workflow-continuing',
       'home-draft-image',
+      'home-draft-outside-image',
+      'home-attachment-not-found',
+      'home-attachment-not-a-file',
+      'home-attachment-too-large',
+      'home-attachment-unreadable',
+      'home-attachment-not-text',
+      'workflow-start-attached-files',
+      'workflow-composer-outside-file',
+      'workflow-question-outside-file',
       'home-draft-path',
       'workflow-planning-path-notice',
       'overlay-usage-details',
@@ -342,6 +356,57 @@ describe('visual catalog', () => {
       expect(findVisualScenario(id), id).toBeDefined();
     }
   });
+
+  it.each([
+    {
+      reason: 'not-found',
+      path: '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+      prompt: 'use this brief',
+    },
+    {
+      reason: 'not-a-file',
+      path: '/Users/me/notes/product-planning/archive/',
+      prompt: 'use this folder',
+    },
+    {
+      reason: 'too-large',
+      path: '/Users/me/exports/receiving-dump.log',
+      prompt: 'summarize this',
+    },
+    {
+      reason: 'unreadable',
+      path: '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+      prompt: 'use this brief',
+    },
+    {
+      reason: 'not-text',
+      path: '/Users/me/exports/archive.zip',
+      prompt: 'read this archive',
+    },
+  ] satisfies { reason: InputFileFailureReason; path: string; prompt: string }[])(
+    'renders a retained draft that matches the $reason refusal',
+    async ({ reason, path, prompt }) => {
+      const scenario = findVisualScenario(`home-attachment-${reason}`);
+      const checkpoint = scenario?.checkpoints[0];
+      if (scenario === undefined || checkpoint === undefined) {
+        throw new Error(`Missing attachment fixture: ${reason}`);
+      }
+      const feedback = formatAttachmentFailure({ action: 'send', reason, path });
+      for (const viewport of REQUIRED_VIEWPORTS) {
+        const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+        try {
+          const frame = await handle.waitForCheckpoint();
+          expect(composerLiveStore.get().text).toBe(`@${path} ${prompt}`);
+          expect(feedbackStore.get()).toEqual({ message: feedback, isError: true });
+          const plain = stripTerminalControls(frame).replace(/\s+/g, ' ');
+          expect(plain).toContain(feedback.slice(0, feedback.indexOf('. ')));
+          if (viewport.cols === 120) expect(plain).toContain(feedback);
+        } finally {
+          await handle.unmount();
+        }
+      }
+    },
+  );
 
   it.each([
     ['offline', 'Ollama is not reachable'],

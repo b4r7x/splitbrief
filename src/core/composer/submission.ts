@@ -1,10 +1,13 @@
-import { type ResolveAttachmentReason, resolveAttachment } from '../attachments/resolve.js';
-import type { Attachment } from '../schemas/attachment.js';
+import type { AttachmentFailureReason } from '../attachments/failure.js';
+import { formatAttachedText, resolveAttachment, resolveInputFile } from '../attachments/resolve.js';
+import type { AttachedInput, Attachment } from '../schemas/attachment.js';
 import type { DraftDocument, DraftPart } from '../schemas/draft-document.js';
+import type { UserMessageInput } from '../types/user-input.js';
+import { normalizeDraftDocument } from './document.js';
 
 export type DraftSubmission =
-  | { ok: true; document: DraftDocument; text: string; images: Attachment[] }
-  | { ok: false; reason: ResolveAttachmentReason | 'no-vision'; imageId?: string };
+  | { ok: true; document: DraftDocument; message: UserMessageInput; plannerContext: string }
+  | { ok: false; reason: AttachmentFailureReason | 'no-vision'; imageId?: string; path?: string };
 
 export function prepareDraftSubmission(
   document: DraftDocument,
@@ -12,24 +15,57 @@ export function prepareDraftSubmission(
 ): DraftSubmission {
   const parts: DraftPart[] = [];
   const images: Attachment[] = [];
-  for (const part of document.parts) {
+  const attachedInputs: AttachedInput[] = [];
+  const attachedTextBlocks: string[] = [];
+  const normalized = normalizeDraftDocument(document);
+  for (const [index, part] of normalized.parts.entries()) {
     if (part.kind === 'text') {
-      parts.push(part);
+      let cursor = 0;
+      for (const match of part.text.matchAll(/@("([^"]*)"|'([^']*)'|(?:\\[\s\S]|[^\s])+)/g)) {
+        const startsDocument = index === 0 && match.index === 0;
+        if (!startsDocument && !/\s/.test(part.text.charAt(match.index - 1))) continue;
+        const typedPath = match[0].slice(1);
+        const quoted = match[2] !== undefined || match[3] !== undefined;
+        const explicit = typedPath.includes('/') || quoted;
+        const path = quoted ? typedPath.slice(1, -1) : typedPath.replace(/\\([\s\S])/g, '$1');
+        const result = resolveInputFile({ path, projectDir: opts.projectDir });
+        if (!result.ok) {
+          if (!explicit && result.reason === 'not-found') continue;
+          return { ok: false, reason: result.reason, path: typedPath };
+        }
+        if (result.kind === 'text') {
+          attachedTextBlocks.push(formatAttachedText(typedPath, result.content));
+        } else {
+          if (!opts.supportsImages) return { ok: false, reason: 'no-vision', path: typedPath };
+          parts.push({ kind: 'text', text: part.text.slice(cursor, match.index) });
+          parts.push({ kind: 'image', attachment: result.attachment });
+          images.push(result.attachment);
+          cursor = match.index + match[0].length;
+        }
+        attachedInputs.push({ kind: result.kind, path: result.path });
+      }
+      parts.push({ kind: 'text', text: part.text.slice(cursor) });
       continue;
     }
     const imageId = part.attachment.id;
-    if (!opts.supportsImages) return { ok: false, reason: 'no-vision', imageId };
-    const result = resolveAttachment({ input: part.attachment.path, projectDir: opts.projectDir });
-    if (!result.ok) return { ok: false, reason: result.reason, imageId };
-    const attachment = { ...result.attachment, id: imageId };
+    const path = part.attachment.path;
+    if (!opts.supportsImages) return { ok: false, reason: 'no-vision', imageId, path };
+    const result = resolveAttachment({ attachment: part.attachment, projectDir: opts.projectDir });
+    if (!result.ok) return { ok: false, reason: result.reason, imageId, path };
+    const attachment = result.attachment;
     parts.push({ kind: 'image', attachment });
     images.push(attachment);
+    attachedInputs.push({ kind: 'image', path: attachment.path });
   }
+  const submittedDocument = normalizeDraftDocument({ version: 1, parts });
+  const displayText = compileSubmissionText(submittedDocument.parts, images);
+  const plannerContext = attachedTextBlocks.join('\n\n');
+  const text = plannerContext === '' ? displayText : `${displayText}\n\n${plannerContext}`;
   return {
     ok: true,
-    document: { version: 1, parts },
-    text: compileSubmissionText(parts, images),
-    images,
+    document: submittedDocument,
+    message: { text, displayText, images, attachedInputs },
+    plannerContext,
   };
 }
 

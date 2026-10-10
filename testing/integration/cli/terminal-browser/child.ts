@@ -144,7 +144,8 @@ async function startComposer(): Promise<void> {
       width: 116,
       listProjectFiles: async () => [],
       onRuntimeCommand: () => undefined,
-      onSubmit: (text: string) => {
+      onSubmit: (submission) => {
+        const text = submission.message.displayText;
         state = {
           ...state,
           submitted: { text, images: attachmentsStore.peek().length },

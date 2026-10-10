@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
-import { sanitizeRowDisplayText, wrappedProseTexts, wrappedRowTexts } from './text.js';
+import {
+  sanitizeRowDisplayText,
+  wrappedPrefixedRowTexts,
+  wrappedProseTexts,
+  wrappedRowTexts,
+} from './text.js';
 
 // The fast path skips wrap-ansi for a printable-ASCII line that already fits. It is only allowed to
 // exist while it is indistinguishable from the wrapper, so the contract is asserted directly rather
@@ -45,6 +50,82 @@ describe('wrappedRowTexts', () => {
 
   it('sanitizes before deciding whether the line fits', () => {
     expect(wrappedRowTexts('\u001b[31mred\u001b[0m', 5)).toEqual(['red']);
+  });
+});
+
+describe('wrappedPrefixedRowTexts', () => {
+  const path = '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+
+  it.each([
+    {
+      width: 60,
+      prefix: 'You → ',
+      text: `@${path}`,
+      first: 'You → @/Users/me/notes/product-planning/archive/',
+      last: 'receiving-workflow/brief.md',
+    },
+    {
+      width: 80,
+      prefix: 'You → ',
+      text: `@${path}`,
+      first: 'You → @/Users/me/notes/product-planning/archive/receiving-workflow/',
+      last: 'brief.md',
+    },
+    { width: 120, prefix: 'You → ', text: `@${path}`, first: `You → @${path}`, last: undefined },
+    {
+      width: 60,
+      prefix: 'text · ',
+      text: path,
+      first: 'text · /Users/me/notes/product-planning/archive/',
+      last: 'receiving-workflow/brief.md',
+    },
+    {
+      width: 80,
+      prefix: 'text · ',
+      text: path,
+      first: 'text · /Users/me/notes/product-planning/archive/receiving-workflow/',
+      last: 'brief.md',
+    },
+    { width: 120, prefix: 'text · ', text: path, first: `text · ${path}`, last: undefined },
+  ])(
+    'keeps path segments whole with $prefix at $width columns',
+    ({ width, prefix, text, first, last }) => {
+      const bodyWidth = width - (prefix === 'You → ' ? 8 : 7);
+      const lines = wrappedPrefixedRowTexts(text, bodyWidth, prefix);
+
+      expect(lines).toEqual(last === undefined ? [first] : [first, last]);
+      expect(lines.join('')).toBe(`${prefix}${text}`);
+      expect(lines.every((line) => getTerminalCellWidth(line) <= bodyWidth)).toBe(true);
+    },
+  );
+
+  it('hard-wraps a path segment when no slash fits', () => {
+    expect(wrappedPrefixedRowTexts('@abcdefghijk/brief.md', 10, 'You → ')).toEqual([
+      'You → @abc',
+      'defghijk/',
+      'brief.md',
+    ]);
+  });
+
+  it('uses the last slash in the remaining room even when the whole path fits a new row', () => {
+    expect(wrappedPrefixedRowTexts('Use @/a/b/c.md', 16, 'You → ')).toEqual([
+      'You → Use @/a/b/',
+      'c.md',
+    ]);
+  });
+
+  it('measures Unicode paths in terminal cells and sanitizes control sequences', () => {
+    expect(wrappedPrefixedRowTexts('\u001b[31m@/界界/brief.md\u001b[0m', 14, 'You → ')).toEqual([
+      'You → @/界界/',
+      'brief.md',
+    ]);
+  });
+
+  it('keeps ordinary prose wrapping when a slash-containing word fits', () => {
+    const text =
+      'What should be refactored? Give a file/module/feature name or area of the codebase.';
+
+    expect(wrappedPrefixedRowTexts(text, 54, '')).toEqual(wrappedRowTexts(text, 54));
   });
 });
 

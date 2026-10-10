@@ -384,7 +384,11 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(outcome).toEqual({ approved: false, action: 'revise', comment: typed });
+      expect(outcome).toEqual({
+        approved: false,
+        action: 'revise',
+        message: { text: typed, displayText: typed, images: [], attachedInputs: [] },
+      });
     });
     ui.unmount();
   });
@@ -546,7 +550,12 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     const route = routerStore.get();
     if (route.screen === 'workflow' && route.execution.kind === 'local') {
-      expect(route.execution.steer).toBe('use the cached parser');
+      expect(route.execution.steer).toEqual({
+        text: 'use the cached parser',
+        displayText: 'use the cached parser',
+        images: [],
+        attachedInputs: [],
+      });
     } else {
       throw new Error('expected the continuation to flip the execution in place');
     }

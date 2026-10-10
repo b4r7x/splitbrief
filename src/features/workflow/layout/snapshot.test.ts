@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
@@ -817,7 +818,7 @@ it('remeasures the active structured question after advancing and going back', (
   ]);
   controlsStore.setInputMode('question');
   const firstHeight = readConversationScrollSnapshot().viewportHeight;
-  questionPromptStore.answer('answer');
+  questionPromptStore.answer(plainUserMessage('answer'));
   const current = questionPromptStore.get();
   const secondHeight = readConversationScrollSnapshot().viewportHeight;
   expect(secondHeight).toBe(

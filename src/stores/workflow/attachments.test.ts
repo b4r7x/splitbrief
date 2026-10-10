@@ -148,6 +148,7 @@ describe('attachment actions', () => {
   });
 
   it('returns resolver errors without mutating pending attachments', () => {
+    writeFileSync(join(projectDir, 'notes.txt'), 'Notes.');
     const result = attachImage({
       path: join(projectDir, 'notes.txt'),
       projectDir,
@@ -155,6 +156,17 @@ describe('attachment actions', () => {
     });
 
     expect(result).toEqual({ ok: false, reason: 'not-image' });
+    expect(listAttachments()).toEqual([]);
+  });
+
+  it('reports a missing non-image path as not-found', () => {
+    expect(
+      attachImage({
+        path: join(projectDir, 'missing.txt'),
+        projectDir,
+        supportsImages: true,
+      }),
+    ).toEqual({ ok: false, reason: 'not-found' });
     expect(listAttachments()).toEqual([]);
   });
 
@@ -204,7 +216,7 @@ describe('attachment actions', () => {
     );
 
     const submission = prepareDraftSubmission(document, { projectDir, supportsImages: true });
-    if (submission.ok) attachmentsStore.replacePendingImages(submission.images);
+    if (submission.ok) attachmentsStore.replacePendingImages(submission.message.images);
 
     expect(attachmentsStore.peek()).toEqual([second]);
   });
@@ -217,9 +229,14 @@ describe('attachment actions', () => {
       projectDir,
       supportsImages: true,
     });
-    if (submission.ok) attachmentsStore.replacePendingImages(submission.images);
+    if (submission.ok) attachmentsStore.replacePendingImages(submission.message.images);
 
-    expect(submission).toEqual({ ok: false, reason: 'not-found', imageId: 'img-1' });
+    expect(submission).toEqual({
+      ok: false,
+      reason: 'not-found',
+      imageId: 'img-1',
+      path: missing.path,
+    });
     expect(attachmentsStore.peek()).toEqual([makeAttachment('stale')]);
   });
 

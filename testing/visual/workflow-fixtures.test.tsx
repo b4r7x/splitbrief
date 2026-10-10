@@ -717,7 +717,10 @@ describe('workflow visual fixtures', () => {
         expect(frame.indexOf(`You → ${answer}`)).toBeGreaterThan(frame.indexOf('Which store?'));
         expect(frame.indexOf('Which store?')).toBeGreaterThan(frame.indexOf('T901'));
         expect(eventsStore.get().events.filter((event) => event.type === 'user_message')).toEqual([
-          expect.objectContaining({ text: answer, qa: [{ question: 'Which store?', answer }] }),
+          expect.objectContaining({
+            text: `1. Which store?\n${answer}`,
+            qa: [{ question: 'Which store?', answer }],
+          }),
         ]);
         expect(frame).toContain(
           'PLAN · Claude Code CLI · Claude Sonnet 4 · answering the consult on T901',

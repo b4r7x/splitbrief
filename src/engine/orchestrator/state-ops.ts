@@ -453,7 +453,11 @@ function mutateState(input: MutationInput): WorkflowState {
                 stateRevision: head.state.stateRevision ?? 0,
                 messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
               };
-    const next = preparedState(base, input.derive(base));
+    const recordedBase =
+      head?.state.resumeUserMessages === undefined
+        ? base
+        : { ...base, resumeUserMessages: head.state.resumeUserMessages };
+    const next = preparedState(recordedBase, input.derive(recordedBase));
     const committed = commitState(input.ref, head, next);
     if (committed === 'written') {
       return next;
@@ -492,6 +496,67 @@ export function transitionAndSave(
         return base;
       }
       return transition(base, action);
+    },
+  });
+}
+
+export function recordResumeUserMessage(
+  ref: SessionRef,
+  message: Pick<
+    NonNullable<WorkflowState['resumeUserMessages']>[number],
+    'ts' | 'phase' | 'displayText'
+  > & {
+    text: string;
+    answerIndex?: number;
+  },
+): void {
+  if (message.text === message.displayText) return;
+  const head = readStateHead(ref);
+  if (head === null) {
+    throw stateOpsError.invalidHead('Attached user text requires saved workflow state.');
+  }
+  const { text, answerIndex, ...identity } = message;
+  const saved = answerIndex === undefined ? { ...identity, text } : { ...identity, answerIndex };
+  mutateState({
+    ref,
+    state: head.state,
+    operation: 'transition',
+    options: { expectedRevision: head.state.stateRevision },
+    rederivable: false,
+    mergeQueue: false,
+    derive: (state) => ({
+      ...state,
+      resumeUserMessages: [...(state.resumeUserMessages ?? []), saved],
+    }),
+  });
+}
+
+export function pruneResumeUserMessages(
+  ref: SessionRef,
+  messages: NonNullable<WorkflowState['resumeUserMessages']>,
+): void {
+  if (messages.length === 0) return;
+  const head = readStateHead(ref);
+  if (head === null)
+    throw stateOpsError.invalidHead('Compacted user text requires saved workflow state.');
+  mutateState({
+    ref,
+    state: head.state,
+    operation: 'transition',
+    options: { expectedRevision: head.state.stateRevision },
+    rederivable: false,
+    mergeQueue: false,
+    derive: (state) => {
+      const removals = messages.map((message) => JSON.stringify(message));
+      return {
+        ...state,
+        resumeUserMessages: (state.resumeUserMessages ?? []).filter((message) => {
+          const index = removals.indexOf(JSON.stringify(message));
+          if (index === -1) return true;
+          removals.splice(index, 1);
+          return false;
+        }),
+      };
     },
   });
 }

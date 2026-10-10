@@ -1,5 +1,6 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { OwnedResumeState } from '../../../core/state/resume-hydration.js';
 import { deriveRunStatus, type RunStatus } from '../../../core/sessions/run-status.js';
 import { sanitizePasteBody } from '../../../lib/terminal/filtered-stdin/paste.js';
@@ -27,14 +28,14 @@ export type ContinueRunDeps = Readonly<{
    * Settles a park this process is holding, with the operator's steer. True when
    * there was one; false when the run is at rest and has to be re-entered.
    */
-  resumeParked: (steer: string) => boolean;
+  resumeParked: (steer: UserMessageInput) => boolean;
   /** Reads the owner's saved state. */
   loadState: (ref: SessionRef) => OwnedResumeState;
   /**
    * Re-enters the run on this state. The steer rides `RunWorkflowOptions.steer`,
    * where it seeds the first step's continuation.
    */
-  restart: (input: { state: WorkflowState; steer: string | undefined }) => void;
+  restart: (input: { state: WorkflowState; steer: UserMessageInput | undefined }) => void;
 }>;
 
 /**
@@ -45,12 +46,18 @@ export type ContinueRunDeps = Readonly<{
  * recorded as the user message they are, in the transcript and session log.
  */
 export function continueRun(
-  input: Readonly<{ ref: SessionRef; steer?: string | undefined; deps: ContinueRunDeps }>,
+  input: Readonly<{ ref: SessionRef; steer?: UserMessageInput | undefined; deps: ContinueRunDeps }>,
 ): ContinueRunOutcome {
   const { ref, deps } = input;
-  // The steer becomes a prompt, and a seat that takes its prompt in argv (cursor, opencode) cannot
-  // be spawned with a NUL in it. It keeps only what a paste may carry, whatever put it in the draft.
-  const steer = sanitizePasteBody(input.steer ?? '').trim();
+  const displayText = sanitizePasteBody(input.steer?.displayText ?? '').trim();
+  const steer: UserMessageInput =
+    input.steer === undefined
+      ? plainUserMessage('')
+      : {
+          ...input.steer,
+          text: displayText + input.steer.text.slice(input.steer.displayText.length),
+          displayText,
+        };
 
   if (deps.resumeParked(steer)) return { kind: 'continued-in-place' };
 
@@ -78,6 +85,6 @@ export function continueRun(
     };
   }
 
-  deps.restart({ state: hydrated.state, steer: steer === '' ? undefined : steer });
+  deps.restart({ state: hydrated.state, steer: steer.text === '' ? undefined : steer });
   return { kind: 'restarted', state: hydrated.state };
 }
