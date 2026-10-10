@@ -23,12 +23,9 @@ export function cloneScopedCliCatalogRuntime(
   runtime: ScopedCliCatalogRuntime,
 ): ScopedCliCatalogRuntime {
   return {
+    ...runtime,
     connection: { ...runtime.connection },
-    state: runtime.state,
     models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
-    fetchedAt: runtime.fetchedAt,
-    validatedAt: runtime.validatedAt,
-    ...(runtime.failure === undefined ? {} : { failure: runtime.failure }),
   };
 }
 
@@ -49,6 +46,10 @@ function runtimeFromCliCatalogAttempt(
       validatedAt: observedAt,
     };
   }
+  const failure =
+    attempt.outcome.kind === 'command-failed'
+      ? { failure: attempt.outcome.kind, failureCause: attempt.outcome.cause }
+      : { failure: attempt.outcome.kind };
   if (previous !== undefined && previous.state !== 'failed') {
     return {
       connection: { ...attempt.connection },
@@ -56,7 +57,7 @@ function runtimeFromCliCatalogAttempt(
       models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
       fetchedAt: previous.fetchedAt,
       validatedAt: observedAt,
-      failure: attempt.outcome.kind,
+      ...failure,
     };
   }
   return {
@@ -65,7 +66,7 @@ function runtimeFromCliCatalogAttempt(
     models: null,
     fetchedAt: null,
     validatedAt: observedAt,
-    failure: attempt.outcome.kind,
+    ...failure,
   };
 }
 
@@ -142,22 +143,24 @@ export function cliCatalogValues(
 export function staleCliCatalogRuntimes(input: {
   previous: readonly ScopedCliCatalogRuntime[];
   observedAt: number;
-  failure: ScopedCliCatalogRuntime['failure'];
+  failure: Exclude<ScopedCliCatalogRuntime['failure'], 'command-failed'>;
 }): ScopedCliCatalogRuntime[] {
   return input.previous.map((runtime) => {
-    if (runtime.state === 'failed') return cloneScopedCliCatalogRuntime(runtime);
+    const failed = runtime.state === 'failed';
     return {
       connection: { ...runtime.connection },
-      state: 'stale',
-      models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
-      fetchedAt: runtime.fetchedAt,
+      state: failed ? 'failed' : 'stale',
+      models: failed || runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+      fetchedAt: failed ? null : runtime.fetchedAt,
       validatedAt: input.observedAt,
       ...(input.failure === undefined ? {} : { failure: input.failure }),
     };
   });
 }
 
-function cliCatalogFailure(error: DetectionSourceError): ScopedCliCatalogRuntime['failure'] {
+function cliCatalogFailure(
+  error: DetectionSourceError,
+): Exclude<ScopedCliCatalogRuntime['failure'], 'command-failed'> {
   switch (error.kind) {
     case 'missing-credential':
       return 'missing-credential';

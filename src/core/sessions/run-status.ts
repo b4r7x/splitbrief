@@ -32,6 +32,11 @@ export type RunStatus =
   | { kind: 'ready-to-apply'; override: boolean }
   | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'discarded' };
 
+export function haltedIssue(status: RunStatus): RecoveryIssue | null {
+  if (status.kind !== 'open' || status.stop.on.kind !== 'halt') return null;
+  return status.stop.on.issue;
+}
+
 const PHASE_GATE: Partial<Record<Phase, GateName>> = {
   'reviewing-spec': 'spec',
   'reviewing-plan': 'plan',

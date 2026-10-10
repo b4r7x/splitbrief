@@ -180,7 +180,6 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     expect(state.pendingRecovery?.details).toEqual([
       `OpenCode CLI wrote to ${checkoutFile} (your checkout) with bash: printf x > ${checkoutFile}`,
       "Your checkout gets the run's changes only through Apply.",
-      'Worker profile: default',
     ]);
     expect(events).toContainEqual(
       expect.objectContaining({

@@ -72,6 +72,12 @@ export const VISUAL_FIXTURE_PROJECT_DIR = `${VISUAL_FIXTURE_WORK_DIR}/ui-fixture
 
 type VisualConfigOverrides = Parameters<typeof makeConfig>[0];
 
+export const VISUAL_WIDE_CREW: VisualConfigOverrides = {
+  planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh' },
+  implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+  reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+};
+
 type VisualModelsDevArm = 'not-run' | 'pending' | 'failed' | { readonly catalog: ModelsDevCatalog };
 
 const BASE_PLANNER = {
@@ -80,7 +86,7 @@ const BASE_PLANNER = {
   model: 'claude-sonnet-4',
 } as const;
 
-const BASE_IMPLEMENTER = {
+export const BASE_IMPLEMENTER = {
   kind: 'api',
   provider: 'ollama',
   model: 'qwen2.5-coder:7b',
@@ -671,6 +677,17 @@ function createSkillsCompletionFixture(): FixtureLifecycle {
   };
 }
 
+function createDraftPathFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      composerDraftStore.request('/Users/dev/notes/brief.md plan from this brief');
+    },
+    teardown: home.teardown,
+  };
+}
+
 // A draft that is not only text: the image sits where the caret put it, between the words that
 // explain it, and nothing is parked in a row of its own above the box.
 function createDraftImageFixture(): FixtureLifecycle {
@@ -772,11 +789,16 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-cold'), () => createHomeFixture({ cold: true })],
   [scenarioId('home-cold-detecting'), () => createHomeFixture({ cold: true, detecting: true })],
+  [
+    scenarioId('home-cold-crew'),
+    () => createHomeFixture({ cold: true, detecting: true, config: VISUAL_WIDE_CREW }),
+  ],
   [scenarioId('home-preparing'), createHomePreparingFixture],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],
+  [scenarioId('home-draft-path'), createDraftPathFixture],
   [scenarioId('home-reference-completion'), createReferenceCompletionFixture],
   [scenarioId('home-recent-sessions'), createRecentSessionsFixture],
   [scenarioId('home-draft-image'), createDraftImageFixture],

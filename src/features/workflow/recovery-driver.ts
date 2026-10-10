@@ -74,13 +74,12 @@ interface RecoveryDriverOptions {
 /**
  * The open halt, published for the rest of the screen while the operator reads the panel: the
  * issue itself, plus the two things the header annotates the bar with — the halted seat and, when
- * the runner named one, the clock its quota comes back on. Only the swap offer names a seat the
- * header can mark, so a halt without an offer still publishes itself and leaves the bar alone.
+ * the runner named one, the clock its quota comes back on.
  */
 function openRecoveryNotice(issue: RecoveryIssue): void {
   const resetAt = issue.resetAt === undefined ? Number.NaN : Date.parse(issue.resetAt);
   recoveryNoticeStore.open({
-    seat: issue.switchSeat?.seat ?? null,
+    seat: issue.seat ?? null,
     resetAt: Number.isFinite(resetAt) ? resetAt : null,
     issue,
   });
@@ -170,7 +169,7 @@ export function createRecoveryDriver(
   const { projectDir, sessionId } = ref;
   const config = prepared.config;
 
-  return async function promptPendingRecovery({
+  async function promptRecovery({
     state,
     controller,
     republishPrompt,
@@ -186,7 +185,6 @@ export function createRecoveryDriver(
     // and the operator picks the seat by hand.
     const auto = issue.switchSeat?.auto;
     if (auto !== undefined) {
-      recoveryNoticeStore.clear();
       feedbackStore.reset();
       return {
         shouldRun: true,
@@ -231,7 +229,6 @@ export function createRecoveryDriver(
           openRecoveryNotice(issue);
           return null;
         }
-        recoveryNoticeStore.clear();
         feedbackStore.reset();
         return {
           shouldRun: true,
@@ -265,7 +262,6 @@ export function createRecoveryDriver(
 
       const status = deriveRunStatus({ state: result.state, liveness: 'not-alive' });
       if (status.kind === 'closed') {
-        recoveryNoticeStore.clear();
         // The close is on the state; the run loop finalizes the session from it —
         // one summary, one receipt release, through the same path every other
         // ending takes.
@@ -275,7 +271,6 @@ export function createRecoveryDriver(
         return { shouldRun: false, state: result.state };
       }
 
-      recoveryNoticeStore.clear();
       // A replayed brief takes the typed words as its steer; a seat-level retry and a
       // revise already carried them to the planner as the comment.
       const steered =
@@ -356,6 +351,19 @@ export function createRecoveryDriver(
       }
       const applied = await applyAction(action, answer, comment, correction);
       if (applied !== null) return applied;
+    }
+  }
+
+  return async function promptPendingRecovery(
+    args: PromptPendingRecoveryArgs,
+  ): Promise<PendingRecoveryResult> {
+    const resetMode = (): void => inputMode.resetMode();
+    args.controller.signal.addEventListener('abort', resetMode);
+    try {
+      return await promptRecovery(args);
+    } finally {
+      args.controller.signal.removeEventListener('abort', resetMode);
+      recoveryNoticeStore.clear();
     }
   };
 }

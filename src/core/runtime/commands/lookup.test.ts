@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { findRuntimeCommand, rankClosedOptions, suggestRuntimeCommand } from './lookup.js';
+import {
+  findRuntimeCommand,
+  isRuntimeCommandLine,
+  rankClosedOptions,
+  suggestRuntimeCommand,
+} from './lookup.js';
 import type { RuntimeCommandDef } from './types.js';
 
 const COMMANDS: RuntimeCommandDef[] = [
@@ -97,5 +102,26 @@ describe('rankClosedOptions', () => {
 
   it('drops options the query does not match', () => {
     expect(rankClosedOptions(options, undefined, 'quic')).toEqual(['quick']);
+  });
+});
+
+describe('isRuntimeCommandLine', () => {
+  it.each(['/', '/help', '/crew plan', '/skill:review', '/nope', '/copy some/path.md'])(
+    '%s is a runtime command',
+    (line) => {
+      expect(isRuntimeCommandLine(line)).toBe(true);
+    },
+  );
+
+  it.each([
+    '/Users/dev/notes/brief.md',
+    '/Users/dev/Projects/app/docs',
+    '/tmp/brief.md read this first',
+    '/Users/dev/notes/\nplan it',
+    'read /help first',
+    'plan the change',
+    '',
+  ])('%s is text for the planner', (line) => {
+    expect(isRuntimeCommandLine(line)).toBe(false);
   });
 });

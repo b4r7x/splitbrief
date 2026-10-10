@@ -11,11 +11,11 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
 - **Binary name:** `splitbrief`. The `npm run dev -- <cmd>` form is equivalent during local development.
 - **Working directory:** Most commands accept `--project <dir>`. When omitted, the project starts from the current working directory. Every command then canonicalizes it to the git toplevel (`canonicalizeProjectDir` in `src/cli/setup.ts`), so a session started from `packages/web` is the same session `status`, `doctor` and `resume` see from the repository root, and `spec` never auto-creates a second config next to a nested `package.json`. An explicit `--project` pointing inside a repository prints a one-line relocation warning; a bare subdirectory invocation relocates silently.
 - **Runtime requirement:** the CLI reads `process.versions.node` before it parses anything and refuses a Node older than `package.json`'s `engines.node` (`>=22`) with `splitbrief requires Node.js 22 or newer; this process is Node.js <version>.` — see `src/cli/node-guard.ts`.
-- **Mistyped subcommands:** `start` is the default command, so a bare token becomes a feature description. To stop `splitbrief doctro` from buying a planner call, a single bare operand that is not a registered command but is within one edit of a short command name (≤ 4 characters) or two edits of a longer one is rejected: `unknown command 'doctro' — did you mean 'doctor'?`, exit `1`. Transpositions count as one edit. The guard only looks at an invocation whose leading operand run is exactly one whitespace-free token, so `splitbrief "fix the typo"`, `splitbrief fix the typo` and the explicit `splitbrief start doctro` all still run. See `src/cli/unknown-command.ts`.
+- **Mistyped subcommands:** `start` is the default command, so a bare token becomes a feature description. To stop `splitbrief doctro` from buying a planner call, a single bare operand that is not a registered command but is within one edit of a short command name (≤ 4 characters) or two edits of a longer one is rejected: `unknown command 'doctro' — did you mean 'doctor'?`, exit `1`. Transpositions count as one edit. The guard only looks at an invocation whose leading operand run is exactly one whitespace-free token, so `splitbrief "fix the typo"`, `splitbrief fix the typo` and the explicit `splitbrief start doctro` all still run. The guard skips tokens that start with `@`; they are file references, and `start` handles their refusal. See `src/cli/unknown-command.ts`.
 - **Exit codes:**
   - `0` — success.
   - `1` — generic CLI failure. Almost every command throws via `cliError(message)` which defaults to `exitCode: 1`. The top-level handler in `src/cli.ts` prints `Error: <message>` to stderr and exits with the carried code.
-  - `2` — reserved for guardrail hooks (e.g. `.claude/hooks/block-git-commits.sh`). The CLI itself does not raise `2`; observe it in subprocess output only.
+  - `2`: `start` refuses an `@file` input, an empty feature description before `@file` inputs, or a feature description that starts with `@`. Guardrail hooks also use this code.
 - **Error format:** Failures print `Error: <message>` in red on stderr. Programmatic callers should grep stderr, not stdout.
 
 ## Command index
@@ -38,19 +38,29 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
 **Synopsis**
 
 ```
-splitbrief start [feature] [options]
+splitbrief start [feature] [files...] [options]
 ```
 
 Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, SPLITBRIEF runs one planning session, shows the plan card (unless `workflow.approve: none`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
 
 **Shorthand.** `splitbrief "feature"` is equivalent to `splitbrief start "feature"` — `start` is the default command (`isDefault`). No subcommand required for the happy path.
 
-**`@file` syntax.** Positional arguments prefixed with `@` are resolved as file paths. Text files are injected into planner context; image files are queued as planner attachments. Example: `splitbrief "refactor auth" @context.md @screenshot.png`.
+**`@file` syntax.** Put the feature description first, then the `@file` inputs. Example: `splitbrief "refactor auth" @context.md @screenshot.png`. A feature description cannot start with `@`. Example: `splitbrief "Implement @mentions in comments"`.
+
+An `@file` input is the user's explicit choice. SPLITBRIEF reads the file wherever it is. Use an absolute path, a path relative to the project root, or `~/…`. SPLITBRIEF expands only a leading `~/` to the home folder. It follows symlinks. The file must exist, be a regular file, be at most 10 MiB, and be readable.
+
+Text enters planner context on every planner call and stays in the run's `state.json`. Images become planner attachments. The transcript names every attached file by its resolved path under the request. `--plain` prints one `attached files:` line. `--json` carries `attachedInputs` on the `user_message` event.
+
+Any refused input stops `start` before the run begins, with exit code `2`. One error names every refused input, its reason, and the fix. An empty feature description before `@file` inputs also stops `start` with exit code `2`. SPLITBRIEF attaches nothing from that command line.
+
+**A bare path.** A path without `@` in the feature text stays text. The plan seat uses its own tools and policy to read it. An `api` plan seat shows one warning before planning for existing absolute paths. The TUI shows the warning in the transcript. `--plain` and `splitbrief spec` write it to stderr. `--json` writes it as a `warning` record on stdout.
+
+The warning reads `The plan seat reads no files, so it cannot open <p1>, <p2>. Put @ before a file path to attach its text.`
 
 ### Usage
 
 ```
-splitbrief start [feature] \
+splitbrief start [feature] [files...] \
   [--planner <tool>] [--planner-model <model>] [--planner-command <cmd>] \
   [--planner-api-base <url>] [--planner-api-key-env <var>] [--planner-args <arg>] \
   [--planner-output-format <format>] [--planner-context-length <tokens>] \
@@ -140,7 +150,7 @@ splitbrief start --plain "fix flaky test in user.test.ts"
 
 - `0` — workflow completed (or TUI exited cleanly).
 - `1` — invalid or unwritable config, planner/implementer failure, a pending recovery nobody answered, a final review that ended `failed`, or a run that did not reach `complete` (it is saved `open` or `ended` and can be continued with `splitbrief continue <id>`), or any uncaught error.
-- `2` — an invalid flag combination, such as `--plain` together with `--json`, or an unusable flag value such as an unknown `--skills` id or a `--action` that names no continue action.
+- `2` — an invalid flag combination, such as `--plain` together with `--json`, or an unusable flag value such as an unknown `--skills` id or a `--action` that names no continue action. `start` refuses an `@file` input, an empty feature description before `@file` inputs, or a feature description that starts with `@`.
 
 ### Files affected
 

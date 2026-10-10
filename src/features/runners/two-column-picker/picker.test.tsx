@@ -12,6 +12,7 @@ import { glyph } from '../../../lib/glyphs.js';
 import { overlayWidth } from '../../../core/navigation/overlay-rect.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
+import { bylineDiagnostic } from '../picker-format.js';
 import { TwoColumnPicker, buildRightDisplay } from './picker.js';
 
 interface Tool {
@@ -39,6 +40,26 @@ const MODELS_BY_TOOL: Record<string, Model[]> = {
   ],
   gamma: [{ id: 'g-1', displayName: 'gamma-1' }],
 };
+
+const picker = (preview: Parameters<typeof TwoColumnPicker<Tool, Model>>[0]['preview']) => (
+  <TwoColumnPicker<Tool, Model>
+    title="Picker"
+    leftProps={{
+      items: TOOLS,
+      getKey: (tool) => tool.id,
+      renderRow: (tool) => <Text>{tool.displayName}</Text>,
+    }}
+    rightProps={{
+      items: MODELS_BY_TOOL.alpha ?? [],
+      getKey: (model) => model.id,
+      renderRow: (model) => <Text>{model.displayName}</Text>,
+    }}
+    preview={preview}
+    onConfirm={() => {}}
+    onCancel={() => {}}
+    onRefresh={() => {}}
+  />
+);
 
 describe('TwoColumnPicker', () => {
   beforeEach(() => {
@@ -90,6 +111,73 @@ describe('TwoColumnPicker', () => {
       ui.unmount();
     },
   );
+
+  it.each([60, 80])(
+    'wraps a full-width preview without a leading space and keeps command failure recovery at %i columns',
+    async (cols) => {
+      const rows = 24;
+      terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+      const ui = renderFeature(
+        picker(({ bylineBudget }) => `${'x'.repeat(bylineBudget)} Second preview row`),
+        { cols, rows },
+      );
+      try {
+        await flushEffects();
+        const lines = ui.lastFrame().split('\n');
+        const firstRow = lines.find((line) => line.includes('xxx')) ?? '';
+        const secondRow = lines.find((line) => line.includes('Second preview row')) ?? '';
+        expect(firstRow.trim()).toHaveLength(overlayWidth({ cols, density: 'wide' }));
+        expect(secondRow).toBe(`${' '.repeat(firstRow.indexOf('x'))}Second preview row`);
+
+        ui.rerender(
+          picker(({ bylineBudget }) =>
+            bylineDiagnostic({
+              diagnostic: {
+                kind: 'probe-failed',
+                failure: 'command-failed',
+                cause:
+                  'Server at http://127.0.0.1:49374 did not provide a compatible V2 health response',
+              },
+              modelCount: 0,
+              toolName: 'OpenCode CLI',
+              budget: bylineBudget,
+            }),
+          ),
+        );
+        await flushEffects();
+        const frame = ui.lastFrame();
+        expect(frame).toContain('OpenCode CLI could not list models: Server at');
+        expect(frame).toContain('ctrl+r to retry');
+        expect(frame.split('\n')).toHaveLength(rows);
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
+
+  it('renders identical preview rows and replaces both when the preview changes', async () => {
+    const cols = 60;
+    const rows = 24;
+    terminalSizeStore.__testReset({ cols, rows, isSmall: true });
+    const repeatedRow = 'x'.repeat(56);
+    const ui = renderFeature(
+      picker(() => `${repeatedRow} ${repeatedRow}`),
+      { cols, rows },
+    );
+    try {
+      await flushEffects();
+      const initialRows = ui.lastFrame().split('\n');
+      expect(initialRows.filter((line) => line.trim() === repeatedRow)).toHaveLength(2);
+
+      ui.rerender(picker(() => 'Replacement preview row'));
+      await flushEffects();
+      const frame = ui.lastFrame();
+      expect(frame).toContain('Replacement preview row');
+      expect(frame).not.toContain(repeatedRow);
+    } finally {
+      ui.unmount();
+    }
+  });
 
   it('keeps the column and select keys at 60 columns, dropping refresh first', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });

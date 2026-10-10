@@ -12,6 +12,7 @@ import {
   TaskStatusSchema,
   WorkflowModeSchema,
 } from '../../core/schemas/enums.js';
+import { AttachedInputSchema } from '../../core/schemas/attachment.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
@@ -714,6 +715,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('user_message').extend({
     text: z.string(),
     qa: z.array(AnsweredQuestionSchema).optional(),
+    attachedInputs: z.array(AttachedInputSchema).optional(),
   }),
   phaseEvent('planner_attachments_dropped').extend({
     count: z.number(),

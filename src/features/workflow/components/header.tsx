@@ -14,12 +14,14 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { configStore } from '../../../stores/project/config.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { haltedIssue } from '../../../core/sessions/run-status.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
@@ -101,6 +103,11 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
   );
   const { phase, cancelled } = lifecycle;
   const config = configStore.use((s) => s.config);
+  const savedHalt = routerStore.use((state) =>
+    state.screen === 'workflow' && state.execution.kind === 'at-rest'
+      ? haltedIssue(state.run.status)
+      : null,
+  );
   const displayNames = useCrewDisplayNames(config);
   const railCells = measureRailCells({
     phase,
@@ -123,6 +130,7 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
         build: resolveImplementerProfiles(config).defaultProfile.config,
         reviewer: configuredReviewerRunner(config),
         budget: seatRoom,
+        haltedSeat: recoveryNotice.seat ?? savedHalt?.seat,
         displayNames,
         ...(seatNotes !== undefined && { notes: seatNotes }),
       })

@@ -2,6 +2,7 @@ import { baseSplit } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
 import type { EngineEvent, EventSink } from '../types.js';
@@ -162,6 +163,12 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
     }
 
     switch (bounded.type) {
+      case 'user_message':
+        if (bounded.attachedInputs !== undefined && bounded.attachedInputs.length > 0)
+          write(
+            `attached files: ${bounded.attachedInputs.map((input) => `${stripTerminalControls(input.path)} (${input.kind})`).join('; ')}`,
+          );
+        return;
       case 'checks_run':
         checks.set(bounded.taskId, checksSummary(bounded));
         return;

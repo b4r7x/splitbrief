@@ -20,7 +20,7 @@ import {
 import type { InteractiveDispatchArgs } from './types.js';
 
 export async function runInteractiveStart(args: InteractiveDispatchArgs): Promise<void> {
-  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts } = args;
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, attachedInputs, opts } = args;
   assertInteractiveTty('use --json or --plain');
   // The line claims a first run, so it is only true while nothing is remembered.
   if (!hasRememberedDetection(projectDir)) process.stderr.write(COLD_START_STDERR_LINE);
@@ -46,6 +46,7 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
       onComplete: feature ? 'workflow' : 'home',
       feature: enrichedFeature ?? feature,
       plannerContext,
+      ...(attachedInputs !== undefined && { attachedInputs }),
       allowRepoRunners: opts.allowRepoRunners ?? false,
     });
     await Promise.all([mountInk(), finishBootstrap()]);
@@ -73,6 +74,7 @@ export async function runInteractiveStart(args: InteractiveDispatchArgs): Promis
           projectDir,
           feature: enrichedFeature ?? feature,
           plannerContext,
+          ...(attachedInputs !== undefined && { attachedInputs }),
           opts,
           transport: 'interactive',
           emitReadiness: () => {},

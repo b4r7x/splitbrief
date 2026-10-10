@@ -249,6 +249,48 @@ describe('HomeScreen', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
+  it('names all three seats on the wake card in the words the workflow header uses', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh' },
+        implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+      }),
+    });
+    terminalSizeStore.__testReset({ cols: 200, rows: 50, isSmall: false });
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+
+    const ui = renderHome();
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const titleRow = lines.findIndex((line) => line.includes('Waking your crew…'));
+
+    expect(lines[titleRow + 1]).toContain(
+      'PLAN GPT-6-Astra · BUILD Gemini 3.8 Flash (High) · REVIEW GPT-6.1-Sol',
+    );
+    expect(lineContaining(ui.lastFrame() ?? '', 'PLAN      ')).toContain(
+      'OpenAI Codex CLI · GPT-6-Astra · xhigh',
+    );
+    expect(lineContaining(ui.lastFrame() ?? '', 'BUILD     ')).toContain(
+      'Google Antigravity CLI · Gemini 3.8 Flash (High)',
+    );
+    ui.unmount();
+  });
+
+  it('marks an inherited review seat on the wake card', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+
+    const ui = renderHome();
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const titleRow = lines.findIndex((line) => line.includes('Waking your crew…'));
+
+    expect(lines[titleRow + 1]).toContain('REVIEW = PLAN');
+    ui.unmount();
+  });
+
   it('shows the cold initialization notice while first discovery runs, then hides it', async () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });

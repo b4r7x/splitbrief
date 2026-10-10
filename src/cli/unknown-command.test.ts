@@ -166,6 +166,7 @@ describe('assertNotMistypedCommand leaves real invocations alone', () => {
     { label: 'a near-miss that is a value-flag argument', argv: ['--model', 'doctro'] },
     { label: "a planner tool's own --mode flag", argv: ['add x', '--planner-args', '--mode'] },
     { label: 'a removed flag after the end of options', argv: ['start', '--', '--mode', 'x'] },
+    { label: 'a file reference one edit from a command', argv: ['@spec'] },
   ])('admits $label', ({ argv }) => {
     expect(() => assertNotMistypedCommand(argv, COMMANDS, VALUE_FLAGS)).not.toThrow();
   });

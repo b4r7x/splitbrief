@@ -1,6 +1,10 @@
 import { Fzf } from 'fzf';
 import { REMOVED_COMMANDS, type RuntimeCommandDef } from './types.js';
 
+export function isRuntimeCommandLine(text: string): boolean {
+  return /^\/[^/\s]*(?:\s|$)/.test(text);
+}
+
 export function findRuntimeCommand(
   commands: RuntimeCommandDef[],
   name: string,

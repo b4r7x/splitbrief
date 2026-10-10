@@ -1,3 +1,4 @@
+import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
@@ -37,6 +38,7 @@ import { readManifestCommands } from '../../../core/validation/manifest-commands
 import { detectStack } from '../../../core/validation/stacks/registry.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { buildRepoMap } from '../../codebase/repomap.js';
+import { absolutePathsNamed } from '../../planners/api-context.js';
 import { buildProjectContextMarkdown } from '../../planners/context.js';
 import type { Planner, PriorMessage } from '../../planners/types.js';
 import { fallbackInstruction, type RequestTypedResult } from '../../runners/typed-output.js';
@@ -198,6 +200,30 @@ export async function planTurnText(opts: {
   if (planner.resolvePlanningContext === undefined) {
     const prompt = compose(await buildProjectContextMarkdown(projectDir));
     return async (turn) => turn(prompt);
+  }
+  const entries = await Promise.all(
+    absolutePathsNamed([opts.feature, opts.steer].join('\n')).map(async (path) => {
+      try {
+        const stats = await stat(path);
+        return stats.isFile() || stats.isDirectory() ? [path] : [];
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          'code' in err &&
+          typeof err.code === 'string' &&
+          ['ENOENT', 'ENOTDIR', 'ENAMETOOLONG', 'ELOOP', 'EACCES', 'EPERM'].includes(err.code)
+        ) {
+          return [];
+        }
+        throw err;
+      }
+    }),
+  );
+  const paths = entries.flat();
+  if (paths.length > 0) {
+    opts.onWarn(
+      `The plan seat reads no files, so it cannot open ${paths.join(', ')}. Put @ before a file path to attach its text.`,
+    );
   }
   const context = await planner.resolvePlanningContext(wctx.signal);
   return async (turn, priorMessages) =>
@@ -480,7 +506,7 @@ function recordAnswers(
     text: reply.text,
     ...(reply.qa.length > 0 && { qa: reply.qa }),
   });
-  publishUserMessage({ bus: wctx.bus, phase: next.phase }, reply.text, reply.qa);
+  publishUserMessage({ bus: wctx.bus, phase: next.phase }, reply.text, { qa: reply.qa });
   return next;
 }
 

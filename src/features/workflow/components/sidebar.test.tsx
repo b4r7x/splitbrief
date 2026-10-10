@@ -5,6 +5,7 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
@@ -690,6 +691,83 @@ describe('Sidebar — reviewer seat', () => {
     expect(frame).toContain('REVIEW');
     expect(frame).toContain('GPT-5 Codex');
     expect(frame).not.toContain(PLANNER_INHERITANCE.mark);
+    ui.unmount();
+  });
+});
+
+describe('Sidebar — a crew wider than the seat column', () => {
+  beforeEach(forceUnicodeGlyphs);
+
+  // The smoke crew of 2026-10-10: at the 48-column cap each identity overruns the 36-cell budget.
+  const smokeCrew = () =>
+    makeConfig({
+      planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra', effort: 'xhigh' },
+      implementer: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+      reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+    });
+
+  function seatBlock(frame: string, label: string): string {
+    const lines = stripAnsiStyles(frame).split('\n');
+    const index = lines.findIndex((line) => line.includes(`${label} `));
+    return [lines[index] ?? '', lines[index + 1] ?? '']
+      .map((line) => line.replace(/[│┌┐└┘─]/g, '').trim())
+      .join(' ');
+  }
+
+  it('wraps each identity onto a second row instead of shedding the model or the effort', async () => {
+    configStore.__testReset({ projectDir: '/tmp/project', config: smokeCrew() });
+    tasksStore.__testReset({ tasks: [task('1', 'pending')] });
+
+    const ui = renderFeature(<Sidebar width={48} />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+
+    expect(seatBlock(frame, 'PLAN')).toBe('PLAN    OpenAI Codex CLI GPT-6-Astra · xhigh');
+    expect(seatBlock(frame, 'BUILD')).toBe(
+      'BUILD   Google Antigravity CLI Gemini 3.8 Flash (High)',
+    );
+    expect(seatBlock(frame, 'REVIEW')).toBe('REVIEW  OpenAI Codex CLI GPT-6.1-Sol · high');
+    for (const line of stripAnsiStyles(frame).split('\n')) {
+      expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(48);
+    }
+
+    ui.unmount();
+  });
+
+  it('keeps one row per seat when the identity fits', async () => {
+    configStore.__testReset({ projectDir: '/tmp/project', config: smokeCrew() });
+    tasksStore.__testReset({ tasks: [task('1', 'pending')] });
+
+    const ui = renderFeature(<Sidebar width={80} />);
+    await tick();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+    expect(lines.find((line) => line.includes('PLAN '))).toContain(
+      'OpenAI Codex CLI · GPT-6-Astra · xhigh',
+    );
+    expect(lines.find((line) => line.includes('BUILD '))).toContain(
+      'Google Antigravity CLI · Gemini 3.8 Flash (High)',
+    );
+
+    ui.unmount();
+  });
+
+  it('budgets the wrapped seat rows so the panel keeps its height and every seat row', async () => {
+    configStore.__testReset({ projectDir: '/tmp/project', config: smokeCrew() });
+    tasksStore.__testReset({
+      tasks: Array.from({ length: 30 }, (_, index) => task(String(index + 1), 'pending')),
+    });
+
+    const ui = renderFeature(<Sidebar width={48} height={20} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame.split('\n').length).toBeLessThanOrEqual(20);
+    expect(frame).toContain('GPT-6-Astra · xhigh');
+    expect(frame).toContain('Gemini 3.8 Flash (High)');
+    expect(frame).toContain('GPT-6.1-Sol · high');
+    expect(frame).toContain('local');
+
     ui.unmount();
   });
 });

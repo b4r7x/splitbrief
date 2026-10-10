@@ -7,6 +7,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
+import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { configPath } from '../../core/config/load/document.js';
 import { CONFIG_FILE, sessionDir, SPLITBRIEF_DIR } from '../../core/paths.js';
@@ -164,6 +165,7 @@ function preparedExecution(input: PrepareExecutionInput): PreparedExecution {
     runtime: {
       feature: input.feature,
       ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+      ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
       allowRepoRunners: input.policy.allowRepoRunners,
       allowHooks: input.policy.allowHooks,
     },
@@ -678,11 +680,16 @@ describe('SetupScreen', () => {
       configStore.load(projectDir);
       const request = beginDiscovery();
       freshDiscovery(request, 1);
+      const attachedInputs: AttachedInput[] = [
+        { path: join(projectDir, 'notes.md'), kind: 'text' },
+        { path: join(projectDir, 'mock.png'), kind: 'image' },
+      ];
       routerStore.init({
         screen: 'setup',
         onComplete: 'workflow',
         feature: 'Keep setup behavior',
         plannerContext: 'Use the selected planner',
+        attachedInputs,
         allowRepoRunners: true,
       });
       terminalSizeStore.__testReset({ cols: 80, rows: 24 });
@@ -716,12 +723,14 @@ describe('SetupScreen', () => {
           expect(route.execution.prepared.runtime).toMatchObject({
             feature: 'Keep setup behavior',
             plannerContext: 'Use the selected planner',
+            attachedInputs,
             allowRepoRunners: true,
           });
         }
       });
       expect(prepare).toHaveBeenCalledOnce();
       const preparationInput = prepare.mock.calls[0]?.[0];
+      expect(preparationInput?.attachedInputs).toEqual(attachedInputs);
       expect(preparationInput?.effectiveConfig).toBe(configStore.get().config);
       expect(preparationInput?.policy).toMatchObject({
         purpose: 'new-workflow',

@@ -63,7 +63,7 @@ describe.runIf(process.platform !== 'win32')('Command Code catalog completion', 
       stdout: listing,
       stderr: 'Authentication required\n',
       exit: 1,
-      expected: 'malformed',
+      expected: 'command-failed',
     },
   ])(
     '$label',

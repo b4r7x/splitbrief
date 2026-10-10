@@ -348,9 +348,9 @@ async function applyAskUser(
   });
   const cleared = transitionAndSave(ctx, recorded, { type: 'CLEAR_PLANNER_CONVERSATION' });
   ctx.onStateChange?.(cleared);
-  publishUserMessage({ bus: ctx.bus, phase: cleared.phase }, answered, [
-    { question: action.question, answer: answered },
-  ]);
+  publishUserMessage({ bus: ctx.bus, phase: cleared.phase }, answered, {
+    qa: [{ question: action.question, answer: answered }],
+  });
   return { action: 'guidance', instructions: answered, context: null };
 }
 

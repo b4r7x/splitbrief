@@ -109,7 +109,8 @@ function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   // conversation with --resume; --session-id names a NEW session and exits 1
   // ("Session ID <uuid> is already in use.") when given a consumed id.
   if (opts.sessionId !== null) args.push('--resume', opts.sessionId);
-  // A read outside the working directory needs a prompt `-p` cannot answer.
+  // In default mode, `-p` cannot answer prompts for reads outside the working directory.
+  // Plan mode permits these reads; grant the skill roots read access here for default mode.
   const skillRoots = opts.skillRoots ?? [];
   if (skillRoots.length > 0) {
     args.push(

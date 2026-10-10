@@ -112,3 +112,15 @@ describe('formatToolModel', () => {
     ).toBe(`${getProviderDisplayName('codex')} \u00b7 GPT-6.1 Sol`);
   });
 });
+
+describe('formatModelName before any catalog is cached', () => {
+  // A cold project names a seat from the bundled rows; a warm one from the tool's own listing.
+  // Both must spell the model the way the tool does, or home and the workflow screen disagree.
+  it.each([
+    ['codex', 'gpt-6-astra', 'GPT-6-Astra'],
+    ['codex', 'gpt-6.1-sol', 'GPT-6.1-Sol'],
+    ['antigravity', 'gemini-3.8-flash-high', 'Gemini 3.8 Flash (High)'],
+  ])('spells %s %s as the tool lists it', (tool, model, label) => {
+    expect(formatModelName(model, tool)).toBe(label);
+  });
+});

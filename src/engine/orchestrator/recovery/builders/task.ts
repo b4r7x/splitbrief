@@ -18,7 +18,8 @@ import type {
   DeepReadonly,
   RunnerConfig,
 } from '../../../../core/config/accessors/runner-config.js';
-import type { SeatAccountCause, SeatFailureClassification } from '../../../runners/seat-failure.js';
+import type { SeatFailureClassification } from '../../../runners/seat-failure.js';
+import { accountCauseAdvice } from '../../../../core/recovery/account-cause.js';
 import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
@@ -52,7 +53,7 @@ import { includes } from '../../../../utils/type-guards.js';
 import type { RecoveryBuilderBase, TaskRecoveryContext } from './issue.js';
 import { compactFacts, createRecoveryIssue } from './issue.js';
 import { chooseRecommended, haltActions } from './actions.js';
-import { attemptDetails, implementerDetails, summarizeValidation, taskFiles } from './details.js';
+import { attemptDetails, summarizeValidation, taskFiles } from './details.js';
 
 export interface ValidationRecoveryOptions extends RecoveryBuilderBase, TaskRecoveryContext {
   validationSummary?: string | undefined;
@@ -189,13 +190,6 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
   return { seat: context.seat, candidates };
 }
 
-/** The plain words of an account cause, after the tool and the word `account`. */
-const ACCOUNT_CAUSE_WORDS: Readonly<Record<Exclude<SeatAccountCause, 'auth'>, string>> = {
-  balance: 'balance spent',
-  billing: 'billing refused',
-  quota: 'quota spent',
-};
-
 /**
  * What every seat-down halt carries beyond its cause: the seat, the tool's own
  * words and what the classifier made of them. A `account` classification with
@@ -308,7 +302,11 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     classification.class === 'account'
       ? classification.cause === 'auth'
         ? `${displayName} is signed out. ${runnerLoginInstruction(opts.runner)}`
-        : `${displayName} account: ${ACCOUNT_CAUSE_WORDS[classification.cause]}`
+        : accountCauseAdvice({
+            cause: classification.cause,
+            tool: displayName,
+            seat: opts.seatSwap?.seat ?? opts.seat,
+          })
       : usageLimitAdvice({ tool: displayName, seat: opts.seatSwap?.seat ?? opts.seat });
   // A seat that cannot work recommends the move that gets it working: a detected
   // seat to switch to, then a named reset's wait, then the same-seat retry.
@@ -329,7 +327,6 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
       reportedDetail(displayName, opts),
       fallbackDetail(opts.fallback, opts.seatSwap?.fallbackBlockedReason),
       ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
       ...(opts.details ?? []),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
@@ -401,7 +398,6 @@ export function buildRetryExhaustedRecoveryIssue(
     details: [
       lastErrorDetail(validation),
       ...(opts.attempts === 0 ? [] : attemptDetails(opts.attempts, opts.maxAttempts)),
-      ...implementerDetails(opts.selectedImplementerProfile),
       ...(opts.handBack ? [`Implementer said: ${handBackQuote(opts.handBack)}`] : []),
     ],
     attempts: opts.attempts,
@@ -515,7 +511,6 @@ export function buildImplementerUnavailableRecoveryIssue(
     affectedTaskIds: [opts.task.id],
     message: `${opts.task.id} selected implementer is unavailable`,
     details: [
-      ...implementerDetails(opts.selectedImplementerProfile),
       opts.tool !== undefined ? `Tool: ${opts.tool}` : undefined,
       opts.model !== undefined ? `Model: ${opts.model}` : undefined,
       opts.availabilityReason !== undefined
@@ -604,7 +599,6 @@ function recipeHaltIssue(opts: RunnerFailureRecoveryOptions, message: string): R
       `${displayName} reported: ${opts.toolMessage}`,
       'The run stopped instead of spending retries on a command the tool cannot accept.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
@@ -673,7 +667,6 @@ export function buildRepeatedTimeoutRecoveryIssue(
       `${displayName} reported: ${opts.toolMessage}`,
       'The run stopped instead of escalating a brief the implementer cannot finish in time.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),
@@ -720,7 +713,7 @@ function isolationHaltIssue(
     files: halt.files,
     affectedTaskIds: [opts.task.id],
     message: halt.message,
-    details: [...halt.details, ...implementerDetails(opts.selectedImplementerProfile)],
+    details: [...halt.details],
     selectedImplementerProfile: opts.selectedImplementerProfile,
     ...(seatSwap !== undefined && { switchSeat: seatSwap }),
     facts: compactFacts({ tool: runnerAuthDisplayName(opts.runner), changes: halt.changes }),
@@ -824,7 +817,6 @@ export function buildRunnerInputTooLargeRecoveryIssue(
       `${displayName} reported: ${opts.toolMessage}`,
       'A retry sends the same prompt. Narrow the brief or end the run.',
       ...attemptDetails(opts.attempts, opts.maxAttempts),
-      ...implementerDetails(opts.selectedImplementerProfile),
     ],
     ...(opts.attempts !== undefined ? { attempts: opts.attempts } : {}),
     ...(opts.maxAttempts !== undefined ? { maxAttempts: opts.maxAttempts } : {}),

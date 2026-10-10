@@ -33,7 +33,13 @@ splitbrief "add JWT middleware" @design-notes.md
 
 ### `@file` context injection
 
-**What it does.** Positional arguments prefixed with `@` are resolved as file paths. Text files are injected into planner context alongside the feature description; image files become planner attachments.
+**What it does.** An `@file` input is the user's explicit choice. SPLITBRIEF reads it wherever it is. Text enters planner context on every planner call and stays in the run's `state.json`. Images become planner attachments.
+
+Put the feature description first. A feature description cannot start with `@`. Example: `splitbrief "Implement @mentions in comments"`.
+
+Use an absolute path, a path relative to the project root, or `~/…`. SPLITBRIEF expands only a leading `~/` and follows symlinks. The file must exist, be a regular file, be at most 10 MiB, and be readable. The transcript names every attached file by its resolved path under the request. `--plain` prints one `attached files:` line. `--json` carries `attachedInputs` on the `user_message` event.
+
+Any refused input stops `start` before the run begins, with exit code `2`. One error names every refused input, its reason, and the fix. An empty feature description before `@file` inputs also stops `start` with exit code `2`. SPLITBRIEF attaches nothing from that command line.
 
 **How to use.**
 
@@ -43,6 +49,10 @@ splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 ```
 
 **When to use.** When the planner needs additional context (design docs, screenshots, existing code) that isn't captured by the repo-map or the feature description alone.
+
+**A bare path.** A path without `@` stays prompt text. A composer line is a command only when its first word is `/` plus a name without another `/`. `/help` and `/crew plan` are commands. A line that starts with `/Users/me/notes.md` goes to the planner as text because the path has a second `/`. The plan seat uses its own tools and policy to read the path. In the TUI, a pasted or dropped image path becomes an image attachment (`[image #n]`).
+
+SPLITBRIEF reads and attaches text files when you put `@` before the path. An `api` plan seat has no file tools and shows one warning before planning for existing absolute paths: `The plan seat reads no files, so it cannot open <p1>, <p2>. Put @ before a file path to attach its text.`
 
 ### Runner kinds (cli / api / shell / agent)
 
@@ -60,6 +70,10 @@ splitbrief start "add endpoint" @api-spec.yaml @existing-handler.ts
 **Auto-detection.** `splitbrief init` and `/refresh` probe installed CLI tools and reachable API endpoints; the seat pickers, reached from Settings ∋ Crew (`/crew plan`, `/crew build`), surface only what is available. A first setup with no remembered result shows the "Waking your crew…" boot manifest (seat rows plus live discovery-lane marks) and advances when discovery succeeds. On later TUI setup loads, SPLITBRIEF publishes the sanitized remembered result for the project — including remembered model rows — before discovery refreshes in the background; a result remembered under a different configuration context still hydrates, as presentation-only rows that never outrank a live lane. A failed refresh leaves those rows visible with a refresh-failure indication. The home screen shows a spinner with "Waking your crew…" during a cold first discovery and "Refreshing your tools…" during warm background refreshes, and the runner pickers mirror the same cold/warm states.
 
 Remembered detection is presentation-only. It can populate a picker, but it cannot authorize a workflow, resume, or `spec` run, and it is not an offline execution mode. Every local run still performs fresh execution preparation against its exact effective configuration.
+
+The home wake card names PLAN, BUILD and REVIEW with the same collapsed line as the workflow header.
+An inherited review seat reads `REVIEW = PLAN`. The card drops the first-run note before it shortens a seat.
+Bundled tool labels keep the seat names the same before and after a model catalog arrives.
 
 ```yaml
 planner:  { kind: cli, tool: claude-code }
@@ -653,6 +667,8 @@ Incoming output cannot replace the text being selected: the display holds still 
 ### Image attachments
 
 **What it does.** Attach screenshots or images for the next planner call (multimodal-capable backends only). A pasted or dropped image lands in the draft itself, as one atom at the caret shown as `[image #1]`, with editable text on either side; moving and deleting act on the whole atom. Submitting hands the draft's images to the workflow store in document order and sends the planner an `[image:<id>]` reference at each atom's position plus a legend binding those ids to the attachments. `/image <path>` also inserts an inline image.
+
+Images from `/image`, drop, or paste may come from any folder. SPLITBRIEF follows symlinks and records the resolved path. Each file must exist, be a regular file, be at most 10 MiB, and be readable.
 
 **How to use.**
 

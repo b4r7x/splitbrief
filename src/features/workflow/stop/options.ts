@@ -7,6 +7,7 @@ import {
 } from '../../../stores/workflow/tasks.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
@@ -180,12 +181,15 @@ export function readStopMenuRows(): StopRow[] {
     ];
   const tasks = tasksStore.get();
   const brief = selectRunningBrief(tasks, lifecycleStore.get().phase);
-  return stopSheetRows({
+  const rows = stopSheetRows({
     currentTaskId: brief.current?.id ?? null,
     nextTaskId: brief.next?.id ?? null,
     hasChanges: briefsHaveRun(tasks, lifecycleStore.get().phase),
-    boundaryPauseRequested: stopStore.get().intent === 'pause-after-brief',
+    boundaryPauseRequested: stop.intent === 'pause-after-brief',
   });
+  return recoveryNoticeStore.get().issue === null
+    ? rows
+    : rows.filter((row) => row.id === 'stop-now' || row.id === 'end-run');
 }
 
 /** A brief that ran left changes behind; until the first one starts, the run has none to keep. */

@@ -1,22 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import type { Stats } from 'node:fs';
-import { realpathSync, statSync } from 'node:fs';
+import { accessSync, constants, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, normalize, resolve, sep } from 'node:path';
+import { isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { EXT_TO_MIME, MAX_ATTACHMENT_BYTES, SUPPORTED_IMAGE_EXTS } from '../schemas/attachment.js';
 import { truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { includes } from '../../utils/type-guards.js';
 import type { Attachment } from '../schemas/attachment.js';
 
-export type ResolveAttachmentReason =
-  | 'not-image'
-  | 'not-found'
-  | 'too-large'
-  | 'outside-safe-roots';
+export type ResolveAttachmentReason = 'not-image' | 'not-found' | 'too-large';
 
 export type ResolveAttachmentResult =
   | { ok: true; attachment: Attachment }
   | { ok: false; reason: ResolveAttachmentReason };
+
+export type ResolveRenderAttachmentResult =
+  | { ok: true; attachment: Attachment }
+  | { ok: false; reason: ResolveAttachmentReason | 'outside-safe-roots' };
 
 export type AttachmentFailureAction = 'attach' | 'send';
 
@@ -40,8 +40,6 @@ export function formatAttachmentFailure(input: {
       return `Cannot ${subject}: choose a PNG, JPEG, GIF, WebP, or BMP file.`;
     case 'too-large':
       return `Cannot ${subject}: the file is larger than 10 MiB. Choose a smaller image.`;
-    case 'outside-safe-roots':
-      return `Cannot ${subject}: the file must be inside the project or home folder.`;
   }
 }
 
@@ -85,8 +83,39 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
   const trimmed = opts.input.trim().replace(/^['"]|['"]$/g, '');
   if (!trimmed) return { ok: false, reason: 'not-found' };
 
-  const absPath = isAbsolute(trimmed) ? normalize(trimmed) : resolve(opts.projectDir, trimmed);
+  const expanded = trimmed.startsWith('~/') ? join(homedir(), trimmed.slice(2)) : trimmed;
+  const absPath = isAbsolute(expanded) ? normalize(expanded) : resolve(opts.projectDir, expanded);
+  const result = inspectAttachment(absPath);
+  if (!result.ok) return result;
+  try {
+    accessSync(result.attachment.path, constants.R_OK);
+  } catch {
+    return { ok: false, reason: 'not-found' };
+  }
+  return result;
+}
 
+export function resolveRenderAttachment(
+  opts: ResolveAttachmentOpts,
+): ResolveRenderAttachmentResult {
+  const trimmed = opts.input.trim().replace(/^['"]|['"]$/g, '');
+  if (!trimmed) return { ok: false, reason: 'not-found' };
+
+  const absPath = isAbsolute(trimmed) ? normalize(trimmed) : resolve(opts.projectDir, trimmed);
+  const result = inspectAttachment(absPath);
+  if (!result.ok) return result;
+
+  const safeRoots = [opts.projectDir, homedir()].map((r) => normalize(r));
+  const inSafeRoot = safeRoots.some((root) =>
+    isInsideSafeRoot(absPath, result.attachment.path, root),
+  );
+  if (!inSafeRoot) {
+    return { ok: false, reason: 'outside-safe-roots' };
+  }
+  return result;
+}
+
+function inspectAttachment(absPath: string): ResolveAttachmentResult {
   const ext = extOf(absPath);
   if (!includes(SUPPORTED_IMAGE_EXTS, ext)) {
     return { ok: false, reason: 'not-image' };
@@ -107,12 +136,6 @@ export function resolveAttachment(opts: ResolveAttachmentOpts): ResolveAttachmen
     realPath = realpathSync(absPath);
   } catch {
     return { ok: false, reason: 'not-found' };
-  }
-
-  const safeRoots = [opts.projectDir, homedir()].map((r) => normalize(r));
-  const inSafeRoot = safeRoots.some((root) => isInsideSafeRoot(absPath, realPath, root));
-  if (!inSafeRoot) {
-    return { ok: false, reason: 'outside-safe-roots' };
   }
 
   const mimeType = EXT_TO_MIME[ext];

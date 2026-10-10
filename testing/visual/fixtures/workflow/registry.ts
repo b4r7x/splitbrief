@@ -7,6 +7,7 @@ import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
+import { overlayStore } from '../../../../src/stores/ui/overlay.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../../src/lib/terminal/typeahead-grace.js';
 import {
   WORKFLOW_FIXTURE_TEXT,
@@ -33,6 +34,9 @@ const CONSULT_BOUND_NOTE = 'run the formatter first';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (projection.scenarioId === 'workflow-stop-sheet-recovery') {
+    return () => ({ ...base(), afterMount: () => overlayStore.open('stop-sheet') });
+  }
   if (
     projection.scenarioId === 'workflow-consult-answer-default' ||
     projection.scenarioId === 'workflow-consult-answer-typed'
@@ -107,10 +111,28 @@ function includesAll(...markers: readonly string[]): CheckpointPredicate {
   };
 }
 
+function excludesAll(...markers: readonly string[]): CheckpointPredicate {
+  return ({ output }) => {
+    const text = stripAnsiStyles(output);
+    return markers.every((marker) => !text.includes(marker));
+  };
+}
+
 const checkpointPredicates = [
+  [
+    checkpointId('stop-sheet-recovery'),
+    (context) =>
+      includesAll('Stop options', 'Stop now', 'End run')(context) &&
+      excludesAll('Pause after this brief', 'tab to type a correction')(context),
+  ],
   [checkpointId('idle'), includesAll(WORKFLOW_FIXTURE_TEXT.idle)],
   // One planning session: the answered round stays in the transcript, the byline carries the call.
   [checkpointId('planning'), includesAll('Keep the public API?', 'Planning…')],
+  [
+    checkpointId('start-attached-files'),
+    includesAll('Attached files · 2', 'design/receiving-flow.png'),
+  ],
+  [checkpointId('planning-path-notice'), includesAll('cannot open', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],
@@ -289,7 +311,7 @@ const checkpointPredicates = [
     includesAll(
       'REVIEW activity',
       'OpenAI Codex CLI',
-      'GPT-6 Astra',
+      'GPT-6-Astra',
       'npm test · not\u00a0run',
       'Review…',
     ),

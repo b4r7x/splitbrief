@@ -23,6 +23,10 @@ const CASES: readonly GalleryCase[] = [
   { scenarioId: 'home-empty', viewport: viewport({ cols: 120, rows: 40 }) },
   { scenarioId: 'workflow-question', viewport: viewport({ cols: 80, rows: 24 }) },
   { scenarioId: 'overlay-help', viewport: viewport({ cols: 60, rows: 18 }) },
+  { scenarioId: 'workflow-recovery-balance-spent', viewport: viewport({ cols: 80, rows: 24 }) },
+  { scenarioId: 'workflow-crew-wide', viewport: viewport({ cols: 200, rows: 50 }) },
+  { scenarioId: 'home-cold-crew', viewport: viewport({ cols: 200, rows: 50 }) },
+  { scenarioId: 'workflow-stop-sheet-recovery', viewport: viewport({ cols: 80, rows: 24 }) },
 ];
 
 afterEach(() => {

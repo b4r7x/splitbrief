@@ -134,6 +134,11 @@ const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
     title: 'Home · first tool check running',
     viewports: HOME_COLD_DETECTING_VIEWPORTS,
   },
+  {
+    id: 'home-cold-crew',
+    title: 'Home · first discovery with a wide crew',
+    viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+  },
 ];
 
 const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
@@ -172,6 +177,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'composer', title: 'Feature composer' },
         { id: 'completion', title: 'Skills completion menu' },
+      ],
+    }),
+    defineScenario({
+      id: 'home-draft-path',
+      title: 'Home · a pasted absolute path in the draft',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Draft holding an absolute path',
+        kind: 'ready',
+        marker: 'plan from this brief',
+      },
+      elements: [
+        { id: 'header', title: 'Home header' },
+        { id: 'composer', title: 'Feature composer' },
       ],
     }),
     // A check running behind a live composer: the status borrows the hint's row and the draft the
@@ -310,6 +330,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-start-attached-files',
+      title: 'Workflow · start with attached files',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'start-attached-files',
+        title: 'The first request names the attached files',
+        kind: 'planning',
+        marker: 'Attached files',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Request and attached files' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-planning-path-notice',
+      title: 'Workflow · plan seat names a path it cannot open',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'planning-path-notice',
+        title: 'API path notice before planning',
+        kind: 'planning',
+        marker: 'cannot open',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Planning transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-compiled',
       title: 'Workflow · plan compiled',
       surface: screenSurface('workflow'),
@@ -348,6 +400,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       checkpoint: {
         id: 'implementation',
         title: 'Implementation activity',
+        kind: 'implementation',
+        marker: 'Inspecting deterministic fixture contract',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'activity', title: 'Implementation activity block' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-crew-wide',
+      title: 'Workflow · a wide crew during implementation',
+      surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+      checkpoint: {
+        id: 'implementation',
+        title: 'Implementation with wrapped seats',
         kind: 'implementation',
         marker: 'Inspecting deterministic fixture contract',
       },
@@ -1088,7 +1158,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'at-rest-halted',
         title: 'Halted run at rest',
         kind: 'ready',
-        marker: 'Seat down · Usage limit on Ollama',
+        marker: 'Seat down · Quota spent on Ollama',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1409,6 +1479,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Usage-limit recovery menu',
         kind: 'question',
         marker: 'Change BUILD tool',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'question-panel', title: 'Recovery menu panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-recovery-balance-spent',
+      title: 'Workflow · a spent balance on BUILD',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+      checkpoint: {
+        id: 'recovery',
+        title: 'Balance recovery menu',
+        kind: 'question',
+        marker: 'Seat down · Balance spent on OpenCode CLI',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -2351,6 +2438,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-planner-picker-command-failed',
+        title: 'Overlay · planner picker · model listing command failed',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-command-failed-stale',
+        title: 'Overlay · planner picker · failed command with stale models',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-claude',
         title: 'Overlay · planner picker · Claude Code alias rows',
         marker: PICKER_TITLE_MARKER,
@@ -2576,7 +2673,20 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Pause after this brief',
       },
     ],
-  }),
+  }).concat(
+    defineScenario({
+      id: 'workflow-stop-sheet-recovery',
+      title: 'Workflow · stop options at a recovery halt',
+      surface: overlaySurface('stop-sheet', 'workflow'),
+      checkpoint: {
+        id: 'stop-sheet-recovery',
+        title: 'Stop sheet ready',
+        kind: 'ready',
+        marker: 'Stop options',
+      },
+      elements: [{ id: 'overlay-panel', title: 'Stop options panel' }],
+    }),
+  ),
   sessions: overlayGroup({
     overlay: 'sessions',
     underlyingScreen: 'home',

@@ -3,12 +3,13 @@ import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import {
   cutSeatIdentity,
-  fitSeatIdentity,
   formatCollapsedSeatLine,
+  formatCollapsedSeatLineFromIdentities,
   formatSeatIdentity,
   formatShortSeatIdentity,
   PLANNER_INHERITANCE,
   seatIdsOf,
+  wrapSeatIdentity,
 } from './identity.js';
 
 const planner: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' };
@@ -450,32 +451,32 @@ describe('formatCollapsedSeatLine', () => {
   });
 });
 
-describe('fitSeatIdentity', () => {
+describe('cutSeatIdentity with a formatted seat', () => {
   it('cuts the full identity to the budget instead of shortening it', () => {
-    const fitted = fitSeatIdentity({ runner: planner, budget: 10 });
+    const fitted = cutSeatIdentity(formatSeatIdentity({ seat: planner }), 10);
 
     expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(10);
     expect(fitted.startsWith('Claude Co')).toBe(true);
   });
 
   it('leaves an identity that already fits alone', () => {
-    expect(fitSeatIdentity({ runner: planner, budget: 80 })).toBe(
+    expect(cutSeatIdentity(formatSeatIdentity({ seat: planner }), 80)).toBe(
       formatSeatIdentity({ seat: planner }),
     );
   });
 
   it('cuts the suffixed identity, keeping the tool name and losing the axis tail', () => {
     const full = formatSeatIdentity({ seat: cursorMultiAxis });
-    const fitted = fitSeatIdentity({ runner: cursorMultiAxis, budget: full.length - 8 });
+    const fitted = cutSeatIdentity(full, full.length - 8);
 
     expect(getTerminalCellWidth(fitted)).toBeLessThanOrEqual(full.length - 8);
     expect(full.startsWith(fitted.replace(/\u2026$/, ''))).toBe(true);
   });
 
-  it('uses displayName in fitSeatIdentity', () => {
-    expect(fitSeatIdentity({ runner: planner, budget: 80, displayName: 'Claude Sonnet 5' })).toBe(
-      'Claude Code CLI · Claude Sonnet 5',
-    );
+  it('uses the seat displayName', () => {
+    expect(
+      cutSeatIdentity(formatSeatIdentity({ seat: planner, displayName: 'Claude Sonnet 5' }), 80),
+    ).toBe('Claude Code CLI · Claude Sonnet 5');
   });
 });
 
@@ -516,25 +517,18 @@ describe('cutSeatIdentity', () => {
 
     expect(identity).toBe('Claude Code CLI · Claude Sonnet 4 · high');
     for (let budget = 33; budget < getTerminalCellWidth(identity); budget++) {
-      const fitted = fitSeatIdentity({ runner: seat, budget });
+      const fitted = cutSeatIdentity(identity, budget);
 
       expect(fitted).toBe('Claude Code CLI · Claude Sonnet 4');
     }
     // Below the model's own budget the model segment goes too: every segment is an atom.
-    expect(fitSeatIdentity({ runner: seat, budget: 32 })).toBe('Claude Code CLI');
-  });
-
-  it('matches fitSeatIdentity for every budget from 4 to identity length', () => {
-    const identity = formatSeatIdentity({ seat: planner });
-    for (let budget = 4; budget <= identity.length; budget++) {
-      expect(fitSeatIdentity({ runner: planner, budget })).toBe(cutSeatIdentity(identity, budget));
-    }
+    expect(cutSeatIdentity(identity, 32)).toBe('Claude Code CLI');
   });
 
   it('never leaves a trailing separator before the ellipsis at any budget', () => {
     const identity = formatSeatIdentity({ seat: planner });
     for (let budget = 4; budget <= identity.length; budget++) {
-      expect(fitSeatIdentity({ runner: planner, budget })).not.toMatch(/[ ·]…$/);
+      expect(cutSeatIdentity(identity, budget)).not.toMatch(/[ ·]…$/);
     }
   });
 });
@@ -630,5 +624,76 @@ describe('kind-aware seat identity', () => {
     });
     expect(line).toContain('GPT-5.3 Codex High');
     expect(line).not.toContain('Cursor Agent CLI');
+  });
+});
+
+describe('wrapSeatIdentity', () => {
+  it('returns an identity that fits as one row', () => {
+    expect(wrapSeatIdentity('Ollama · Qwen2.5 Coder 7B', 36)).toEqual([
+      'Ollama · Qwen2.5 Coder 7B',
+    ]);
+  });
+
+  it('puts the tool on the first row and the model with its axes on the second', () => {
+    expect(wrapSeatIdentity('OpenAI Codex CLI · GPT-6-Astra · xhigh', 36)).toEqual([
+      'OpenAI Codex CLI',
+      'GPT-6-Astra · xhigh',
+    ]);
+    expect(wrapSeatIdentity('Google Antigravity CLI · Gemini 3.8 Flash (High)', 36)).toEqual([
+      'Google Antigravity CLI',
+      'Gemini 3.8 Flash (High)',
+    ]);
+  });
+
+  it('cuts each row by the segment rule when a row still overruns', () => {
+    const rows = wrapSeatIdentity('OpenAI Codex CLI · GPT-6-Astra · xhigh', 12);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toBe('GPT-6-Astra');
+    for (const row of rows) expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(12);
+  });
+});
+
+describe('formatCollapsedSeatLine with a halted seat', () => {
+  const input = { planner, build, reviewer: undefined, budget: 34 };
+
+  it('spends another seat before the halted one', () => {
+    expect(formatCollapsedSeatLine(input)).toBe('PLAN Sonnet 4 · REVIEW = PLAN');
+    const halted = formatCollapsedSeatLine({ ...input, haltedSeat: 'build' });
+
+    expect(halted).toBe('BUILD Qwen2.5 Coder 7B');
+    expect(getTerminalCellWidth(halted)).toBeLessThanOrEqual(34);
+    expect(halted).not.toContain(ELLIPSIS);
+  });
+
+  it('keeps the halted seat when its reset note no longer fits', () => {
+    expect(
+      formatCollapsedSeatLine({ ...input, haltedSeat: 'build', notes: { build: 'resets 17:00' } }),
+    ).toBe('BUILD Qwen2.5 Coder 7B');
+  });
+
+  it('falls back to the plain rule when the halted name itself cannot fit', () => {
+    expect(formatCollapsedSeatLine({ ...input, budget: 19, haltedSeat: 'build' })).toBe(
+      'PLAN Sonnet 4',
+    );
+  });
+
+  it('falls back to the plain rule when the protected line would name nobody', () => {
+    // An inherited review seat is a mark that points at the planner; keeping it alone names no one.
+    expect(formatCollapsedSeatLine({ ...input, budget: 20, haltedSeat: 'review' })).toBe(
+      'PLAN Sonnet 4',
+    );
+  });
+
+  it('protects the halted seat through the identities entry point', () => {
+    expect(
+      formatCollapsedSeatLineFromIdentities({
+        plan: 'Sonnet 4',
+        build: 'Qwen2.5 Coder 7B',
+        review: null,
+        budget: 34,
+        haltedSeat: 'build',
+      }),
+    ).toBe('BUILD Qwen2.5 Coder 7B');
   });
 });

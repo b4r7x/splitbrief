@@ -16,6 +16,8 @@ import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-g
 import { configStore } from '../../../src/stores/project/config.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
+import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 
 let projectDir = '';
 let ui: ReturnType<typeof renderFeature> | undefined;
@@ -35,6 +37,65 @@ afterEach(() => {
 });
 
 describe('recovery menu and composer keyboard ownership', () => {
+  it('ends a usage-limit halt with one action key and keeps the composer empty', async () => {
+    const ref = { projectDir, sessionId: 'recover-usage-limit' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    saveState(
+      ref,
+      makeWorkflowState({
+        phase: 'implementing',
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          phase: 'implementing',
+          facts: { tool: 'OpenCode CLI', cause: 'balance' },
+          availableActions: ['retry-same-worker', 'end-run'],
+          recommendedAction: 'retry-same-worker',
+        }),
+      }),
+    );
+    const saved = loadState(ref);
+    if (saved === null) throw new Error('Missing fixture state');
+    const config = makeConfig();
+    const prepared = prepareWorkflowExecution({
+      ...ref,
+      config,
+      feature: saved.feature,
+      resumeState: saved,
+    });
+    configStore.__testReset({ config, projectDir });
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    routerStore.navigate({
+      to: 'workflow',
+      run: makeRunRecord({ ref, feature: saved.feature }),
+      execution: { kind: 'local', prepared },
+    });
+    const runWorkflow = vi.fn(() => new Promise<Summary>(() => {}));
+    ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={{ runWorkflow }} />,
+    );
+    const screen = ui;
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('End run');
+      expect(stripAnsiStyles(screen.lastFrame())).toContain('Choose an action above');
+    });
+    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+
+    screen.stdin.write('a');
+
+    await vi.waitFor(() => expect(loadState(ref)?.closed?.as).toBe('ended'));
+    await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Run ended.'));
+    await flushEffects();
+    expect(loadState(ref)?.pendingRecovery).toBeUndefined();
+    expect(composerLiveStore.get()).toEqual({ empty: true, text: '' });
+    expect(runWorkflow).not.toHaveBeenCalled();
+    const replay = await readRunEvents(ref);
+    const actions = replay.events.filter((event) => event.type === 'recovery_action_selected');
+    expect(actions).toHaveLength(1);
+    expect(actions[0]?.action).toBe('end-run');
+    expect(replay.events.filter((event) => event.type === 'recovery_resolved')).toHaveLength(1);
+  });
+
   it('keeps spaces in the draft, then applies the correction from the composer', async () => {
     const ref = { projectDir, sessionId: 'recover-planning' };
     ensureSessionDir(projectDir, ref.sessionId);

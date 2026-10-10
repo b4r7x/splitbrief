@@ -78,6 +78,21 @@ describe('recovery prompt', () => {
     };
   }
 
+  it('names a spent balance in the panel title, not a usage limit', async () => {
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue([{ tool: 'claude-code' }]),
+      message: 'Balance spent on OpenCode CLI. Add credit or change the BUILD tool, then continue.',
+      details: ['OpenCode CLI reported: provider.quota: Insufficient Balance'],
+      facts: { tool: 'OpenCode CLI', cause: 'balance' },
+      resetAt: undefined,
+    };
+
+    const visible = await renderPromptBody(formatRecoveryPrompt(issue));
+
+    expect(visible).toContain('Seat down · Balance spent on OpenCode CLI');
+    expect(visible).not.toContain('Usage limit');
+  });
+
   it('states a quota halt once, in the clock the header uses', async () => {
     const resetAt = new Date();
     resetAt.setHours(17, 0, 0, 0);
@@ -115,7 +130,8 @@ describe('recovery prompt', () => {
       );
 
       expect(visible).toContain('Usage limit on OpenAI Codex CLI · resets 17:00');
-      expect(visible).toContain('to purchase more credits. Worker');
+      expect(visible).toContain('to purchase more credits.');
+      expect(visible).not.toMatch(/\bWorker\b/);
       expect(visible).not.toContain('try again');
     }
   });
@@ -199,24 +215,28 @@ describe('recovery prompt', () => {
     expect(visible).toContain(
       'Last check test failed: npm test -- auth failed in src/auth/session.test.ts',
     );
-    expect(visible).toContain('Worker local-qwen');
+    expect(visible).not.toMatch(/\bWorker\b/);
     expect(visible).toContain('r   retry same worker recommended');
     expect(visible).toContain('s   skip task');
     expect(visible).toContain('a   end run · closes this run, changes kept');
     expect(visible).not.toContain('continue');
   });
 
-  it('names the worker with its context length in compact form', async () => {
-    const visible = await renderPromptBody(
-      formatRecoveryPrompt({
-        ...baseIssue,
-        selectedImplementerProfile: 'default',
-        facts: { contextLength: 32_768 },
-      }),
-    );
+  it.each(['default', 'local-fixture'])(
+    'states no Worker row for the %s profile, saved detail or not',
+    async (profile) => {
+      const visible = await renderPromptBody(
+        formatRecoveryPrompt({
+          ...baseIssue,
+          details: [...baseIssue.details, `Worker profile: ${profile}`],
+          selectedImplementerProfile: profile,
+          facts: { contextLength: 32_768 },
+        }),
+      );
 
-    expect(visible).toContain('Worker default · 32K context');
-  });
+      expect(visible).not.toMatch(/\bWorker\b/);
+    },
+  );
 
   it.each([
     ['plan-questions-exhausted', 'Needs you · Planner still asks questions after 2 rounds'],
@@ -736,7 +756,14 @@ describe('recovery prompt', () => {
           : ['skip-current-task', 'end-run'],
       };
 
-      expect(recoveryComposerHint(issue, menuFocused)).toBe(hint);
+      expect(recoveryComposerHint(issue, menuFocused, false)).toBe(hint);
+    },
+  );
+
+  it.each([true, false])(
+    'omits the Tab promise while the stop sheet is open (menu focused %s)',
+    (menuFocused) => {
+      expect(recoveryComposerHint(baseIssue, menuFocused, true)).toBe('Choose an action above…');
     },
   );
 });

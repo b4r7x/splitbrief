@@ -11,6 +11,7 @@ import {
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionOwnershipReceipt } from '../../../core/sessions/active-pointer.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
@@ -57,6 +58,7 @@ type PrepareExecutionCommon = Readonly<{
   effectiveConfig: Config;
   signal: AbortSignal;
   plannerContext?: string | undefined;
+  attachedInputs?: readonly AttachedInput[] | undefined;
   resumeState?: WorkflowState | undefined;
   worktreeName?: string | undefined;
   deps?: Partial<PrepareExecutionDependencies> | undefined;
@@ -408,6 +410,7 @@ export async function prepareExecution(input: PrepareExecutionInput): Promise<Pr
         runtime: {
           feature: input.feature,
           ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+          ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
           ...(input.resumeState !== undefined && { resumeState: input.resumeState }),
           allowRepoRunners: input.policy.allowRepoRunners,
           allowHooks: input.policy.allowHooks,

@@ -2,6 +2,7 @@ import { createStore, storeBase } from '../create-store.js';
 import { publishFeedbackError, publishFeedbackReset } from '../channels/feedback.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
+import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 
@@ -27,6 +28,7 @@ type SetupPayload = {
   onComplete?: 'home' | 'workflow' | undefined;
   feature?: string | undefined;
   plannerContext?: string | undefined;
+  attachedInputs?: readonly AttachedInput[] | undefined;
   allowRepoRunners?: boolean | undefined;
 };
 
@@ -90,6 +92,7 @@ function navigate(args: NavigateArgs) {
         onComplete: args.onComplete,
         feature: args.feature,
         plannerContext: args.plannerContext,
+        ...(args.attachedInputs !== undefined && { attachedInputs: args.attachedInputs }),
         allowRepoRunners: args.allowRepoRunners,
       });
       return;

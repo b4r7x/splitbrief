@@ -9,6 +9,7 @@ import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
 import type { Config } from '../../core/schemas/config.js';
+import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
@@ -166,6 +167,7 @@ type SetupPreparationInput = Readonly<{
   projectDir: string;
   feature: string;
   plannerContext?: string | undefined;
+  attachedInputs?: readonly AttachedInput[] | undefined;
   allowRepoRunners: boolean;
 }>;
 
@@ -377,6 +379,9 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   const pendingPlannerContext = routerStore.use((state) =>
     state.screen === 'setup' ? state.plannerContext : undefined,
   );
+  const pendingAttachedInputs = routerStore.use((state) =>
+    state.screen === 'setup' ? state.attachedInputs : undefined,
+  );
   const pendingAllowRepoRunners = routerStore.use((state) =>
     state.screen === 'setup' ? state.allowRepoRunners : undefined,
   );
@@ -407,6 +412,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
           allowRepoRunners: input.allowRepoRunners,
         },
         ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+        ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
       });
     },
     onPrepared: (execution) => {
@@ -480,6 +486,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
           projectDir,
           feature: pendingFeature,
           ...(pendingPlannerContext !== undefined && { plannerContext: pendingPlannerContext }),
+          ...(pendingAttachedInputs !== undefined && { attachedInputs: pendingAttachedInputs }),
           allowRepoRunners: pendingAllowRepoRunners ?? false,
         }),
       );

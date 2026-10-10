@@ -20,14 +20,20 @@ export interface ScopedCliCatalogAttempt {
 
 export type ScopedCliCatalogRuntimeState = 'fresh' | 'stale' | 'failed';
 
-export interface ScopedCliCatalogRuntime {
-  readonly connection: ScopedCliCatalogConnection;
-  readonly state: ScopedCliCatalogRuntimeState;
-  readonly models: readonly DetectedModel[] | null;
-  readonly fetchedAt: number | null;
-  readonly validatedAt: number;
-  readonly failure?: Exclude<ProbeOutcomeKind, 'success'> | undefined;
-}
+export type ScopedCliCatalogRuntime = Readonly<{
+  connection: ScopedCliCatalogConnection;
+  state: ScopedCliCatalogRuntimeState;
+  models: readonly DetectedModel[] | null;
+  fetchedAt: number | null;
+  validatedAt: number;
+}> &
+  (
+    | Readonly<{ failure: 'command-failed'; failureCause: string }>
+    | Readonly<{
+        failure?: Exclude<ProbeOutcomeKind, 'success' | 'command-failed'> | undefined;
+        failureCause?: never | undefined;
+      }>
+  );
 
 const executableTokens = new Map<string, string>();
 let nextExecutableToken = 1;
@@ -90,7 +96,7 @@ function cloneOutcome(
 ): ProbeOutcome<readonly DetectedModel[]> {
   return outcome.kind === 'success'
     ? { kind: 'success', value: outcome.value.map(cloneDetectedModel) }
-    : { kind: outcome.kind };
+    : { ...outcome };
 }
 
 export function cloneScopedCliCatalogAttempt(
@@ -106,12 +112,9 @@ export function cloneScopedCliCatalogRuntime(
   runtime: ScopedCliCatalogRuntime,
 ): ScopedCliCatalogRuntime {
   return {
+    ...runtime,
     connection: cloneConnection(runtime.connection),
-    state: runtime.state,
     models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
-    fetchedAt: runtime.fetchedAt,
-    validatedAt: runtime.validatedAt,
-    ...(runtime.failure === undefined ? {} : { failure: runtime.failure }),
   };
 }
 
@@ -135,6 +138,10 @@ function failedRuntime(
   previous: ScopedCliCatalogRuntime | undefined,
   observedAt: number,
 ): ScopedCliCatalogRuntime {
+  const failure =
+    outcome.kind === 'command-failed'
+      ? { failure: outcome.kind, failureCause: outcome.cause }
+      : { failure: outcome.kind };
   if (previous !== undefined && previous.state !== 'failed') {
     return {
       connection: cloneConnection(connection),
@@ -142,7 +149,7 @@ function failedRuntime(
       models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
       fetchedAt: previous.fetchedAt,
       validatedAt: observedAt,
-      failure: outcome.kind,
+      ...failure,
     };
   }
   return {
@@ -151,7 +158,7 @@ function failedRuntime(
     models: null,
     fetchedAt: null,
     validatedAt: observedAt,
-    failure: outcome.kind,
+    ...failure,
   };
 }
 

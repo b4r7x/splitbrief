@@ -14,6 +14,7 @@ export const PROBE_OUTCOME_KINDS = [
   'offline',
   'timeout',
   'malformed',
+  'command-failed',
   'cancelled',
   'not-run',
 ] as const;
@@ -22,7 +23,9 @@ export type ProbeOutcomeKind = (typeof PROBE_OUTCOME_KINDS)[number];
 export type ProbeOutcome<Value> = {
   [Kind in ProbeOutcomeKind]: Kind extends 'success'
     ? Readonly<{ kind: Kind; value: Value }>
-    : Readonly<{ kind: Kind }>;
+    : Kind extends 'command-failed'
+      ? Readonly<{ kind: Kind; cause: string }>
+      : Readonly<{ kind: Kind }>;
 }[ProbeOutcomeKind];
 
 export const MODEL_RUN_FACT_KINDS = [

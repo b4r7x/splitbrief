@@ -579,6 +579,37 @@ function seedKiloMalformed(): void {
   });
 }
 
+function seedOpencodeCommandFailed(): void {
+  seedConfig({
+    planner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+  })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'opencode', { installedVersion: '2.0.26' })],
+    cliModels: [
+      catalogAttempt({
+        tool: 'opencode',
+        outcome: {
+          kind: 'command-failed',
+          cause: 'Server at http://127.0.0.1:49374 did not provide a compatible V2 health response',
+        },
+      }),
+    ],
+  });
+}
+
+function seedOpencodeCommandFailedStale(): void {
+  const models = opencodeApiModels().filter((model) =>
+    ['opencode-go/deepseek-v4.1-flash', 'opencode-go/glm-5.3', 'opencode-go/kimi-k2.6'].includes(
+      model.id,
+    ),
+  );
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'opencode', { installedVersion: '2.0.26' })],
+    cliModels: [catalogAttempt({ tool: 'opencode', outcome: { kind: 'success', value: models } })],
+  });
+  seedOpencodeCommandFailed();
+}
+
 /** The `(NO ZDR)` family the collapsed frame must show, and the family the expanded frame opens. */
 const CURSOR_NO_ZDR_MODEL = 'claude-fable-5-high';
 const CURSOR_FAMILY_MODEL = 'gpt-5.6-sol-high';
@@ -910,6 +941,18 @@ const createPlannerPickerMalformedFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: seedKiloMalformed,
     focus: 'tool:kilo-code',
+  });
+const createPlannerPickerCommandFailedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedOpencodeCommandFailed,
+    focus: OPENCODE_FOCUS,
+  });
+const createPlannerPickerCommandFailedStaleFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: seedOpencodeCommandFailedStale,
+    focus: OPENCODE_FOCUS,
   });
 const createPlannerPickerCursorFixture: FixtureFactory = () =>
   createOverlayFixture({
@@ -1750,6 +1793,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-kilo'), createPlannerPickerKiloFixture],
   [scenarioId('overlay-planner-picker-kilo-free'), createPlannerPickerKiloFreeFixture],
   [scenarioId('overlay-planner-picker-malformed'), createPlannerPickerMalformedFixture],
+  [scenarioId('overlay-planner-picker-command-failed'), createPlannerPickerCommandFailedFixture],
+  [
+    scenarioId('overlay-planner-picker-command-failed-stale'),
+    createPlannerPickerCommandFailedStaleFixture,
+  ],
   [scenarioId('overlay-planner-picker-claude'), createPlannerPickerClaudeFixture],
   [
     scenarioId('overlay-planner-picker-claude-custom-twin'),

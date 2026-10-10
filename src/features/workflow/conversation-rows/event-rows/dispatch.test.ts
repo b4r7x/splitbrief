@@ -12,6 +12,7 @@ import {
   makeRunnerCallStarted,
 } from '#testing/helpers/events/runner-call.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../../display/activity-label-display.js';
+import { configStore } from '../../../../stores/project/config.js';
 import { eventRowBlock } from './dispatch.js';
 import { rowText } from '../row-format/rows.js';
 import { rowLeadingCells } from '../row-markers.js';
@@ -263,6 +264,110 @@ describe('event row dispatch', () => {
     expect(text).not.toContain(']52');
     expect(text).not.toContain('[2J');
     expect(text).toContain('beforeafter');
+  });
+
+  describe('the attached files of a request', () => {
+    const request: EngineEventOf<'user_message'> = {
+      type: 'user_message',
+      ts: 0,
+      phase: 'idle',
+      text: 'build it',
+      attachedInputs: [
+        { path: '/Users/dev/notes.md', kind: 'text' },
+        { path: '/Volumes/design/mock.png', kind: 'image' },
+      ],
+    };
+
+    function requestLines(event: EngineEvent, width: number): string[] {
+      return eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 40, streaming },
+      })
+        .map(rowText)
+        .map((line) => line.trim());
+    }
+
+    it.each([120, 80, 60])('names every attached file by its full path at %i columns', (width) => {
+      const lines = requestLines(request, width);
+      const header = lines.indexOf('Attached files · 2');
+
+      expect(lines.findIndex((line) => line.includes('build it'))).toBeLessThan(header);
+      expect(lines.slice(header, header + 3)).toEqual([
+        'Attached files · 2',
+        '/Users/dev/notes.md · text',
+        '/Volumes/design/mock.png · image',
+      ]);
+    });
+
+    it('wraps a long path without shortening it', () => {
+      const long =
+        '/Users/dev/projects/a-rather-long-folder-name/another-nested-level/brief-for-the-feature.md';
+      const lines = requestLines(
+        { ...request, attachedInputs: [{ path: long, kind: 'text' }] },
+        40,
+      );
+
+      expect(lines.join('')).toContain(long);
+      expect(lines.join('\n')).not.toContain('…');
+    });
+
+    it('strips terminal control bytes from an attached path', () => {
+      const esc = String.fromCharCode(0x1b);
+      const bel = String.fromCharCode(0x07);
+      const text = requestLines(
+        {
+          ...request,
+          attachedInputs: [{ path: `/tmp/${esc}]0;pwned${bel}brief.md`, kind: 'text' }],
+        },
+        80,
+      ).join('\n');
+
+      expect(text).toContain('/tmp/brief.md · text');
+      expect(text).not.toContain('pwned');
+    });
+
+    it('shows a file inside the project relative to it and any other file in full', () => {
+      configStore.__testReset({ projectDir: '/repo' });
+      try {
+        const lines = requestLines(
+          {
+            ...request,
+            attachedInputs: [
+              { path: '/repo/docs/brief.md', kind: 'text' },
+              { path: '/elsewhere/mock.png', kind: 'image' },
+            ],
+          },
+          80,
+        );
+
+        expect(lines).toContain('docs/brief.md · text');
+        expect(lines).toContain('/elsewhere/mock.png · image');
+      } finally {
+        configStore.__testReset();
+      }
+    });
+
+    it('keeps a path with line breaks on its own entry', () => {
+      const lines = requestLines(
+        {
+          ...request,
+          attachedInputs: [{ path: '/tmp/a\nreview: passed\n\tbrief.md', kind: 'text' }],
+        },
+        80,
+      );
+      const header = lines.indexOf('Attached files · 1');
+
+      expect(lines.slice(header + 1)).toHaveLength(1);
+      expect(lines.some((line) => line.startsWith('review: passed'))).toBe(false);
+    });
+
+    it('adds no attached-files rows to a request without attached inputs', () => {
+      const { attachedInputs: _omitted, ...plain } = request;
+
+      expect(requestLines(plain, 80).join('\n')).not.toContain('Attached files');
+    });
   });
 
   it.each(['researching', 'specifying', 'escalating'] as const)(

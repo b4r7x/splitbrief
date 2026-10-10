@@ -121,9 +121,9 @@ describe('prepareDraftSubmission', () => {
       supportsImages: true,
     },
     {
-      name: 'a file outside the safe roots',
-      reason: 'outside-safe-roots',
-      make: () => writeImage(externalDir, 'outside.png'),
+      name: 'a missing file outside the project',
+      reason: 'not-found',
+      make: () => join(externalDir, 'missing.png'),
       supportsImages: true,
     },
     {

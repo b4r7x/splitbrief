@@ -42,6 +42,7 @@ import {
 } from '../runners/cli-tools/readiness-probe.js';
 import { isCanonicalCliDeclaredProbe } from '../runners/cli-tools/registry.js';
 import { throwIfAborted } from '../../utils/abort.js';
+import { sanitizeTerminalDiagnosticText, stripTerminalControls } from '../../utils/display-text.js';
 import type {
   CliCatalogProbe,
   CliCatalogProbeLegacy,
@@ -338,7 +339,7 @@ async function runAdmittedCatalogProbe(
   cwd: string,
   env: NodeJS.ProcessEnv,
   externalSignal: AbortSignal | undefined,
-): Promise<CliProbeOutput> {
+): Promise<ProbeOutcome<readonly DetectedModel[]>> {
   throwIfAborted(externalSignal);
   const [, ...args] = command.command;
   const timeoutMs =
@@ -358,7 +359,7 @@ async function runAdmittedCatalogProbe(
       : AbortSignal.any([externalSignal, timeout.signal]);
   let timer: NodeJS.Timeout | undefined;
   let child: ChildProcess | undefined;
-  let spawnFailure: unknown;
+  let spawnFailure: Error | undefined;
   let outputBytes = 0;
   let outputExceeded = false;
 
@@ -372,16 +373,25 @@ async function runAdmittedCatalogProbe(
       remediation: `Catalog probe exceeded its ${maxOutputBytes}-byte output budget.`,
     };
   };
-  const captured = (exitCode: number | null, timedOut: boolean): CliProbeOutput => ({
-    stdout: stdout.snapshot().text,
-    stderr: stderr.snapshot().text,
-    exitCode,
-    timedOut,
-    outputExceeded,
-  });
+  const captured = (
+    exitCode: number | null,
+    timedOut: boolean,
+  ): ProbeOutcome<readonly DetectedModel[]> =>
+    catalogOutcomeFromProbe(
+      operation.context.id,
+      command,
+      {
+        stdout: stdout.snapshot().text,
+        stderr: stderr.snapshot().text,
+        exitCode,
+        timedOut,
+        outputExceeded,
+      },
+      spawnFailure,
+    );
 
   try {
-    return await spawnPipe<CliProbeOutput>({
+    return await spawnPipe<ProbeOutcome<readonly DetectedModel[]>>({
       command: operation.executable.path,
       args,
       cwd,
@@ -419,10 +429,29 @@ async function runAdmittedCatalogProbe(
   }
 }
 
+function catalogCommandFailureCause(
+  output: CliProbeOutput,
+  spawnFailure: Error | undefined,
+): string {
+  const firstLine = output.stderr.split(/[\r\n]/).find((line) => line.trim() !== '') ?? '';
+  const cause = sanitizeTerminalDiagnosticText(
+    stripTerminalControls(firstLine)
+      .trim()
+      .replace(/^error:\s*/i, ''),
+    { maxChars: 200 },
+  ).trim();
+  if (cause !== '') return cause;
+  if (spawnFailure !== undefined) {
+    return sanitizeTerminalDiagnosticText(spawnFailure.message, { maxChars: 200 }).trim();
+  }
+  return output.exitCode === null ? 'no exit code' : `exit code ${output.exitCode}`;
+}
+
 function catalogOutcomeFromProbe(
   tool: CliToolId,
   probe: Exclude<CliCatalogProbe, { kind: 'not-run' }>,
   output: CliProbeOutput,
+  spawnFailure: Error | undefined,
 ): ProbeOutcome<readonly DetectedModel[]> {
   if (output.outputExceeded) return { kind: 'malformed' };
   if (output.timedOut) {
@@ -437,7 +466,9 @@ function catalogOutcomeFromProbe(
       ? { kind: 'timeout' }
       : { kind: 'success', value: nativeCliCatalogToDetectedModels(complete) };
   }
-  if (output.exitCode !== 0) return { kind: 'malformed' };
+  if (output.exitCode !== 0) {
+    return { kind: 'command-failed', cause: catalogCommandFailureCause(output, spawnFailure) };
+  }
   try {
     return probe.parse(output);
   } catch {
@@ -511,19 +542,16 @@ export async function probeContextCatalog(
     ) {
       return { kind: 'missing-credential' };
     }
-    const outcome = catalogOutcomeFromProbe(
-      operation.context.id,
-      probe,
+    const outcome =
       input.authProbeRun !== undefined && probeCommandsMatch(probe, input.authProbeRun.command)
-        ? input.authProbeRun.output
+        ? catalogOutcomeFromProbe(operation.context.id, probe, input.authProbeRun.output, undefined)
         : await runAdmittedCatalogProbe(
             operation,
             probe,
             neutralDir,
             environment.env,
             input.signal,
-          ),
-    );
+          );
     const after = await resolveCustomExecutable({
       command: operation.executable.executableIdentity.canonicalPath,
       projectDir: input.projectDir,

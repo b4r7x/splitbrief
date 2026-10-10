@@ -1,5 +1,4 @@
-import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
-import type { RunStatus } from '../../core/sessions/run-status.js';
+import { haltedIssue } from '../../core/sessions/run-status.js';
 import { usageDetailsForRun } from '../../features/workflow/spend-text.js';
 import { deriveUsageDetails } from '../../features/workflow/usage-details-model.js';
 import { UsageDetails } from '../../features/workflow/usage-details.js';
@@ -10,12 +9,6 @@ import { tokensStore } from '../../stores/workflow/tokens.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { configStore } from '../../stores/project/config.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-
-/** The halt a run is parked on, read off the record that already states how the run stands. */
-function haltedIssue(status: RunStatus): RecoveryIssue | null {
-  if (status.kind !== 'open' || status.stop.on.kind !== 'halt') return null;
-  return status.stop.on.issue;
-}
 
 /**
  * The `/usage` destination. Counters come from the token store, which a replayed run hydrates

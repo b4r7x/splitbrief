@@ -338,6 +338,7 @@ export function PickerView({
       diagnostic: catalog.catalogDiagnostic,
       modelCount: catalog.modelRowCount,
       toolName: tool.displayName,
+      budget: ctx.bylineBudget,
     });
     if (status !== undefined) return status;
     const byline =

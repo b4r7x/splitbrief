@@ -13,7 +13,7 @@ import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { resolveModelDisplayName } from '../../engine/providers/model/display-names.js';
 import { isSeatLevelRetry } from '../../engine/orchestrator/recovery/actions.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
-import { recoveryFactNumber, recoveryFactString } from '../../core/schemas/recovery/facts.js';
+import { recoveryFactString } from '../../core/schemas/recovery/facts.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -23,7 +23,7 @@ import {
   recoveryActionLabel,
   type RecoveryActionChoiceContext,
 } from '../../core/recovery/action-label.js';
-import { formatContextLength, formatTruncatedList } from '../../core/formatting.js';
+import { formatTruncatedList } from '../../core/formatting.js';
 import {
   readRecoveryContext,
   recoveryContextCauseWords,
@@ -121,7 +121,12 @@ export function correctionActionFor(issue: RecoveryIssue): RecoveryAction | unde
 }
 
 /** The composer placeholder on an open halt names what the focused side takes. */
-export function recoveryComposerHint(issue: RecoveryIssue, menuFocused: boolean): string {
+export function recoveryComposerHint(
+  issue: RecoveryIssue,
+  menuFocused: boolean,
+  stopMenuOpen: boolean,
+): string {
+  if (stopMenuOpen) return 'Choose an action above…';
   const correction = correctionActionFor(issue) !== undefined;
   if (menuFocused)
     return correction
@@ -347,11 +352,7 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
     resetAt: issue.resetAt,
   };
   const recommended = resolveRecommendedAction(issue, actions);
-  const facts = [
-    ...formatSubjectLines(issue),
-    ...formatDetailLines(issue),
-    ...formatWorkerLines(issue),
-  ];
+  const facts = [...formatSubjectLines(issue), ...formatDetailLines(issue)];
 
   const rows: PromptRow[] = [
     { kind: 'headline', tone: 'attention', text: formatRecoveryHeader(issue) },
@@ -557,16 +558,4 @@ function formatDetailLine(detail: string): string {
   if (detail.startsWith('Validation ')) return `Last check ${detail.slice('Validation '.length)}`;
   if (detail.startsWith('Spent ')) return `Spent ${detail.slice('Spent '.length)}`;
   return detail;
-}
-
-function formatWorkerLines(issue: RecoveryIssue): string[] {
-  const worker = issue.selectedImplementerProfile;
-  if (!worker) return [];
-  const contextLength = recoveryFactNumber(issue.facts, 'contextLength');
-  const formattedLength = formatContextLength(contextLength) || contextLength;
-  return [
-    contextLength === undefined
-      ? `Worker ${worker}`
-      : `Worker ${worker} · ${formattedLength} context`,
-  ];
 }

@@ -19,6 +19,7 @@ import { isTextEntryInput } from '../../lib/terminal/text-entry.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { InputMode } from '../../core/navigation/types.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
+import { isRuntimeCommandLine } from '../../core/runtime/commands/lookup.js';
 import { useHistory } from './use-history.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import {
@@ -534,12 +535,13 @@ function ComposerInput({
       return;
     }
 
-    if (commandsOnly === true && !trimmedText.startsWith('/')) {
+    const commandLine = trimmed.parts[0]?.kind === 'text' && isRuntimeCommandLine(trimmedText);
+    if (commandsOnly === true && !commandLine) {
       feedbackStore.setMessage(COMMANDS_ONLY_NOTICE);
       return;
     }
 
-    if (trimmedText.startsWith('/')) {
+    if (commandLine) {
       inputHistoryStore.pushDocumentSubmission(trimmed, { currentScreen });
       clearDraft();
       onRuntimeCommand(trimmedText);

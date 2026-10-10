@@ -179,9 +179,9 @@ async function activateFixtureInputMode(
       const text = consultReplyAnswer(question, answer);
       const bus = createEventBus();
       bus.subscribe(addEvent);
-      publishUserMessage({ bus, phase: 'escalating' }, text, [
-        { question: 'Which store?', answer: text },
-      ]);
+      publishUserMessage({ bus, phase: 'escalating' }, text, {
+        qa: [{ question: 'Which store?', answer: text }],
+      });
       const consultCall = projection.events.find((event) => event.type === 'runner_call_started');
       if (consultCall === undefined) throw new Error('Consult fixture requires a planner call');
       bus.publish({

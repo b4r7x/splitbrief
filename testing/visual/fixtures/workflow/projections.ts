@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
@@ -78,9 +79,11 @@ import { createEventBus } from '../../../../src/engine/events/bus.js';
 import type { EventBus } from '../../../../src/engine/events/types.js';
 import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
 import {
+  BASE_IMPLEMENTER,
   VISUAL_FIXTURE_PROJECT_DIR,
   visualConfig,
   VISUAL_WORKFLOW_SESSION_ID,
+  VISUAL_WIDE_CREW,
 } from '../screen-fixtures.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner-fields.js';
@@ -212,6 +215,7 @@ export interface WorkflowFixtureProjection {
 
 const WORKFLOW_IDLE_ID = scenarioId('workflow-idle');
 const WORKFLOW_PLANNING_ID = scenarioId('workflow-planning');
+const WORKFLOW_PLANNING_PATH_NOTICE_ID = scenarioId('workflow-planning-path-notice');
 const WORKFLOW_IMPLEMENTATION_ID = scenarioId('workflow-implementation');
 const WORKFLOW_IMPLEMENTATION_RETRY_ID = scenarioId('workflow-implementation-retry');
 const WORKFLOW_VALIDATION_ID = scenarioId('workflow-validation');
@@ -299,6 +303,64 @@ const planningProjection: WorkflowFixtureProjection = {
         { question: 'Which module should the plan cover?', answer: 'src/auth.ts' },
         { question: 'Keep the public API?', answer: 'Yes' },
       ],
+    },
+  ],
+};
+
+const startAttachedFilesProjection: WorkflowFixtureProjection = {
+  ...planningProjection,
+  scenarioId: scenarioId('workflow-start-attached-files'),
+  events: [
+    ...planningProjection.events.filter(
+      (event) => event.type === 'workflow_started' || event.type === 'planner_status',
+    ),
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 20,
+      phase: 'planning',
+      text: WORKFLOW_FEATURE,
+      attachedInputs: [
+        {
+          path: resolve(
+            VISUAL_FIXTURE_PROJECT_DIR,
+            'docs/briefs/restock-planning-and-receiving.md',
+          ),
+          kind: 'text',
+        },
+        { path: resolve(VISUAL_FIXTURE_PROJECT_DIR, 'design/receiving-flow.png'), kind: 'image' },
+      ],
+    },
+  ],
+};
+
+const planningPathNoticeProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_PLANNING_PATH_NOTICE_ID,
+  feature: '/Users/dev/notes/brief.md plan from this brief',
+  inputMode: 'normal',
+  sidebarVisible: false,
+  config: { planner: BASE_IMPLEMENTER },
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'planning',
+      feature: '/Users/dev/notes/brief.md plan from this brief',
+    },
+    {
+      type: 'warning',
+      ts: FIXED_TS + 10,
+      phase: 'planning',
+      message:
+        'The plan seat reads no files, so it cannot open /Users/dev/notes/brief.md. Put @ before a file path to attach its text.',
+    },
+    {
+      type: 'planner_status',
+      ts: FIXED_TS + 20,
+      phase: 'planning',
+      status: 'running',
+      tool: BASE_IMPLEMENTER.provider,
+      model: BASE_IMPLEMENTER.model,
+      call: 'plan',
     },
   ],
 };
@@ -1890,6 +1952,62 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
         resetAt: issue.resetAt,
       }),
     );
+  },
+  get resumeState() {
+    return haltedResumeState(usageLimitRecoveryIssue());
+  },
+};
+
+const OPENCODE_BALANCE_SEAT = {
+  kind: 'cli',
+  tool: 'opencode',
+  model: 'deepseek/deepseek-flash',
+} as const;
+const BALANCE_WORDS = 'provider.quota: Insufficient Balance';
+
+function balanceSpentRecoveryIssue(): RecoveryIssue {
+  return buildSeatDownIssue({
+    id: 'rec_visual_balance_spent',
+    seat: 'build',
+    runner: OPENCODE_BALANCE_SEAT,
+    classification: { class: 'account', cause: 'balance' },
+    words: BALANCE_WORDS,
+    task: HALTED_TASK,
+    phase: 'implementing',
+    attempts: 1,
+    maxAttempts: DEFAULT_LOCAL_RETRIES,
+    selectedImplementerProfile: 'default',
+    seatSwap: {
+      seat: 'build',
+      currentTool: 'opencode',
+      detectedTools: [{ tool: 'claude-code', ready: true }],
+    },
+    createdAt: new Date(FIXED_TS).toISOString(),
+  });
+}
+
+const balanceSpentRecoveryProjection: WorkflowFixtureProjection = {
+  ...usageLimitRecoveryProjection,
+  scenarioId: scenarioId('workflow-recovery-balance-spent'),
+  config: { implementer: OPENCODE_BALANCE_SEAT },
+  get events() {
+    const issue = balanceSpentRecoveryIssue();
+    return publishedEvents(FIXED_TS + 100, (bus) =>
+      publishError({ bus, phase: issue.phase, message: runnerHaltRow(issue, BALANCE_WORDS) }),
+    );
+  },
+  get resumeState() {
+    return haltedResumeState(balanceSpentRecoveryIssue());
+  },
+};
+
+const stopSheetRecoveryProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-stop-sheet-recovery'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  get events() {
+    return usageLimitRecoveryProjection.events;
   },
   get resumeState() {
     return haltedResumeState(usageLimitRecoveryIssue());
@@ -3851,9 +3969,34 @@ const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
 const projections = [
   idleProjection,
   planningProjection,
+  startAttachedFilesProjection,
+  planningPathNoticeProjection,
   planCompiledProjection,
   firstBriefAfterPlanProjection,
   implementationProjection,
+  {
+    ...implementationProjection,
+    scenarioId: scenarioId('workflow-crew-wide'),
+    config: VISUAL_WIDE_CREW,
+    events: implementationProjection.events.map((event): EngineEvent => {
+      switch (event.type) {
+        case 'task_started':
+          return { ...event, tool: 'antigravity', model: AGY_BUILD_SEAT.model };
+        case 'runner_call_started':
+        case 'runner_call_activity':
+          return {
+            ...event,
+            backendKind: 'cli',
+            runnerName: 'antigravity',
+            model: AGY_BUILD_SEAT.model,
+          };
+        default:
+          return event;
+      }
+    }),
+  },
+  balanceSpentRecoveryProjection,
+  stopSheetRecoveryProjection,
   buildConsultProjection,
   buildReviewConsultProjection,
   implementationRetryProjection,

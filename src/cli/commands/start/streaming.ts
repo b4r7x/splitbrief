@@ -18,13 +18,15 @@ import type { RequiredFeatureDispatchArgs } from './types.js';
 export async function runHeadlessStart(
   args: RequiredFeatureDispatchArgs & { mode: 'json' | 'plain' },
 ): Promise<void> {
-  const { deps, projectDir, feature, enrichedFeature, plannerContext, opts, mode } = args;
+  const { deps, projectDir, feature, enrichedFeature, plannerContext, attachedInputs, opts, mode } =
+    args;
   await ensureGitAndConfig(projectDir);
   const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   const execution = await prepareStartExecution({
     projectDir,
     feature: enrichedFeature ?? feature,
     plannerContext,
+    ...(attachedInputs !== undefined && { attachedInputs }),
     opts,
     transport: 'headless',
     emitReadiness: (report) => {

@@ -32,9 +32,9 @@ const RETIRED_FLAGS: Readonly<Record<string, string>> = {
 /**
  * `start` is the default command, so any bare token becomes a feature
  * description and a mistyped subcommand silently buys a planner call. The
- * near-miss guard fires only on the unambiguous shape — one operand, no
- * whitespace, close enough to a registered command that nothing else explains
- * it — so the documented `splitbrief "fix the typo"` shorthand keeps working.
+ * near-miss guard skips file references and fires only on the unambiguous shape —
+ * one operand, no whitespace, close enough to a registered command that nothing
+ * else explains it — so the documented `splitbrief "fix the typo"` shorthand keeps working.
  * A retired name is rejected on the first operand alone, leading flags and
  * trailing arguments included.
  */
@@ -48,7 +48,7 @@ export function assertNotMistypedCommand(
   assertNotRetiredCommand(operands, commandNames);
 
   const token = soleOperand(operands);
-  if (token === undefined || commandNames.includes(token)) return;
+  if (token === undefined || token.startsWith('@') || commandNames.includes(token)) return;
 
   const suggestion = nearestCommand(token, commandNames);
   if (suggestion === undefined) return;

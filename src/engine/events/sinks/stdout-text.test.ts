@@ -16,6 +16,50 @@ function collect(events: EngineEvent[]): string[] {
 const ts = 1;
 
 describe('createStdoutTextSink', () => {
+  it('prints a path with line breaks on the one attached-files line', () => {
+    const lines = collect([
+      {
+        type: 'user_message',
+        ts,
+        phase: 'idle',
+        text: 'build it',
+        attachedInputs: [{ path: '/tmp/a\nreview: passed\n\tbrief.md', kind: 'text' }],
+      },
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.startsWith('attached files: /tmp/a')).toBe(true);
+  });
+
+  it('prints the attached files of a request on one line', () => {
+    const request: EngineEventOf<'user_message'> = {
+      type: 'user_message',
+      ts,
+      phase: 'idle',
+      text: 'build it',
+      attachedInputs: [
+        { path: '/Users/dev/notes.md', kind: 'text' },
+        { path: '/Volumes/design/mock.png', kind: 'image' },
+      ],
+    };
+
+    expect(collect([request])).toEqual([
+      'attached files: /Users/dev/notes.md (text); /Volumes/design/mock.png (image)',
+    ]);
+    expect(collect([{ type: 'user_message', ts, phase: 'idle', text: 'build it' }])).toEqual([]);
+
+    const esc = String.fromCharCode(0x1b);
+    const bel = String.fromCharCode(0x07);
+    expect(
+      collect([
+        {
+          ...request,
+          attachedInputs: [{ path: `/tmp/${esc}]0;pwned${bel}brief.md`, kind: 'text' }],
+        },
+      ]),
+    ).toEqual(['attached files: /tmp/brief.md (text)']);
+  });
+
   it('prints plan checks and render scenarios, with no new line for stopped commands', () => {
     const render: EngineEventOf<'full_suite'> = {
       type: 'full_suite',

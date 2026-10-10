@@ -1,5 +1,6 @@
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { CliReadinessResult } from '../../../core/schemas/readiness.js';
 import type { ImplementerConfig } from '../../../core/schemas/implementer-config.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
@@ -156,6 +157,7 @@ type StartPreparationInput = Readonly<{
   projectDir: string;
   feature: string;
   plannerContext?: string | undefined;
+  attachedInputs?: readonly AttachedInput[] | undefined;
   opts: WorkflowOpts;
   transport: 'interactive' | 'headless';
   emitReadiness: (report: ReadinessReport) => void;
@@ -191,6 +193,7 @@ export async function prepareStartOutcome(
     }),
     signal: input.signal ?? new AbortController().signal,
     ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+    ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
   });
   if (outcome.kind !== 'aborted') {
     const report = outcome.kind === 'prepared' ? outcome.execution.report : outcome.report;
