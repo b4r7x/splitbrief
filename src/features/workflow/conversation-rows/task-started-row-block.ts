@@ -6,6 +6,7 @@ import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } fr
 import { segmentedRow } from './row-format/rows.js';
 import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
+import { compositeBlock, wrappedTextBlock } from './row-block-compose.js';
 
 // A wrapped continuation carries the space it broke on, and when the break lands before a
 // separator it carries that too — `· sonnet` on its own row reads as a new bullet, not as the tail
@@ -56,6 +57,25 @@ export function taskStartedMetadata(event: EngineEventOf<'task_started'>): reado
     }),
     ...rest,
   ];
+}
+
+export function taskStartedCrewRowBlock(input: {
+  keyPrefix: string;
+  event: EngineEventOf<'task_started'>;
+  width: number;
+}): ConversationRowBlock | null {
+  const [, ...metadata] = taskStartedMetadata(input.event);
+  return compositeBlock(
+    input.keyPrefix,
+    metadata.map((text, index) =>
+      wrappedTextBlock({
+        keyPrefix: `${input.keyPrefix}-metadata-${index}`,
+        text,
+        width: input.width,
+        tone: 'textDim',
+      }),
+    ),
+  );
 }
 
 // The header names the brief by its own id, the id the byline, the sidebar and the Tasks card use;

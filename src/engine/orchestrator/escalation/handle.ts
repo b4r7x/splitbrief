@@ -9,7 +9,6 @@ import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import {
-  createBusTextHandler,
   publishConsultBoundSpent,
   publishError,
   publishWarning,
@@ -408,10 +407,6 @@ export async function handleRetryAndEscalation(
           state.discoveredValidation?.language,
         ),
         phase: state.phase,
-        onOutput: createBusTextHandler(
-          { bus: ctx.bus, phase: state.phase },
-          { role: 'implementer' },
-        ),
       }),
     });
     state = outcome.state;

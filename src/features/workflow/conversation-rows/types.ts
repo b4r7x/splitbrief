@@ -91,12 +91,14 @@ export interface ConversationRowBlock {
 }
 
 export interface ConversationRowsProjection {
+  activeTaskHeaderKey: string | null;
   blocks: ConversationRowBlock[];
   renderableCount: number;
   totalRows: number;
 }
 
 export interface ConversationRowScrollComputation {
+  activeTaskHeaderKey: string | null;
   activeRowKey: string | null;
   maxOffset: number;
   newEventCount: number;

@@ -24,6 +24,7 @@ import { detectionStore } from '../../src/stores/project/detection.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../src/stores/workflow/transcript-tail.js';
+import { resultMenuStore } from '../../src/stores/workflow/result-menu.js';
 import { approvalPromptStore } from '../../src/stores/approval-prompt/prompt.js';
 import { reviewChecksPromptStore } from '../../src/stores/review-checks-prompt/prompt.js';
 import { commandPaletteMruStore } from '../../src/stores/ui/command-palette-mru.js';
@@ -67,6 +68,7 @@ export function resetAllStores(): void {
   modelCacheStore.reset();
   streamingOutputStore.reset();
   transcriptTailStore.__testReset();
+  resultMenuStore.reset();
   approvalPromptStore.reset();
   reviewChecksPromptStore.reset();
   commandPaletteMruStore.reset();

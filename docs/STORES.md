@@ -66,6 +66,7 @@ src/stores/
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
 │   ├── streaming-output.ts   # Live streamed runner output
 │   ├── transcript-tail.ts    # What the blocks after the run's events add to the transcript
+│   ├── result-menu.ts        # Measured result menu rows, including Apply confirmation
 │   ├── recovery-notice.ts    # The seat a halt stopped + its quota reset, for the header
 │   └── review.ts             # Review file path + scroll
 ├── approval-prompt/          # Confirmation prompt (protected writes, custom-runner admission)
@@ -214,6 +215,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
 | `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
+| `resultMenuStore` | `workflow/result-menu.ts` | `number \| null` — measured result menu height, including Apply confirmation | `setHeight()`, `reset()` — written by the workflow screen, read by the scroll snapshot |
 | `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `reviewChecksPromptStore` | `review-checks-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` — the reviewer's chosen commands waiting for Run all or Skip all | `openReviewChecksPrompt()`, `closeReviewChecksPrompt(answer?)` (via `channels/prompt`); a superseded or cancelled card resolves `undefined`, which the engine never reads as Run all |

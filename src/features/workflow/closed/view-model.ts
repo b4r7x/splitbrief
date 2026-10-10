@@ -47,6 +47,8 @@ export interface BriefRow {
   retries: number;
   durationMs: number | null;
   file: string | null;
+  fileNote?: string | undefined;
+  extraFiles?: string | undefined;
   partialFiles: number;
 }
 

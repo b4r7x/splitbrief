@@ -8,6 +8,8 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { TaskSummary, fitDetailRun } from './task-summary.js';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
+import { getMethodDisplay } from '../core/sessions/display.js';
+import { taskTargetParts } from '../stores/workflow/tasks.js';
 
 const jwt =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
@@ -54,7 +56,7 @@ describe('TaskSummary', () => {
     expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
     if (width === 18) {
       expect(frame).toBe(` ${glyph('stageDone')} T001 Add the b…`);
-      expect(frame).not.toContain('local');
+      expect(frame).not.toContain(getMethodDisplay('local', defaultTheme).text);
     } else if (width >= 60) {
       expect(frame).toBe(
         ` ${glyph('stageDone')} T001 Add the book catalogue schema  passed · 5.0s`,
@@ -62,6 +64,100 @@ describe('TaskSummary', () => {
     }
     ui.unmount();
   });
+
+  it('drops target annotations before shortening the path', () => {
+    const target = taskTargetParts({
+      file: 'testing/visual/fixtures/workflow/registry.ts',
+      files: ['registry.ts', 'a.ts', 'b.ts', 'c.ts'],
+      action: 'modify',
+    });
+    const method = getMethodDisplay('local', defaultTheme).text;
+    const head = 'T002 Register fixtures';
+    const exactPathWidth = getTerminalCellWidth(` ✓ ${head}  ${target.path} · ${method} · 2m 0s`);
+    for (const width of [60, exactPathWidth, 120]) {
+      const ui = renderFeature(
+        <TaskSummary
+          width={width}
+          id="T002"
+          title="Register fixtures"
+          state={{ kind: 'settled', method: 'local' }}
+          file={target.path}
+          fileNote={target.note}
+          extraFiles={target.extraFiles}
+          duration={120_000}
+        />,
+        { cols: width, rows: 18 },
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain(`${method} · 2m 0s`);
+      expect(frame).toContain(width === 60 ? '…/registry.ts' : target.path);
+      if (width === 120) expect(frame).toContain(`${target.path} (modify) · +3 files`);
+      else expect(frame).not.toContain(target.note);
+      expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
+      ui.unmount();
+    }
+  });
+
+  it('keeps the extra file count in its own token when the target has no action', () => {
+    const target = taskTargetParts({ file: 'src/a.ts', files: ['src/a.ts', 'src/b.ts'] });
+    const ui = renderFeature(
+      <TaskSummary
+        width={80}
+        id="T001"
+        title="Update report"
+        state={{ kind: 'settled', method: 'local' }}
+        file={target.path}
+        fileNote={target.note}
+        extraFiles={target.extraFiles}
+      />,
+      { cols: 80, rows: 18 },
+    );
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('src/a.ts · +1 file · passed');
+    ui.unmount();
+  });
+
+  it.each([1, 2])('drops a skipped reason that has no character within %s cells', (room) => {
+    const task = { id: 'T002', title: 'Receive stock' };
+    const head = `${task.id} ${task.title}`;
+    const width = getTerminalCellWidth(` ✓ ${head}  skipped · `) + room;
+    expect(fitDetailRun(task, ['skipped', '作業を続けられません'], width, true)).toEqual({
+      head,
+      tail: ['skipped'],
+    });
+  });
+
+  it('keeps a skipped reason with one character and its ellipsis', () => {
+    const task = { id: 'T002', title: 'Receive stock' };
+    const head = `${task.id} ${task.title}`;
+    const width = getTerminalCellWidth(` ✓ ${head}  skipped · `) + 2;
+    expect(fitDetailRun(task, ['skipped', 'Denied by hook'], width, true).tail).toEqual([
+      'skipped',
+      'D…',
+    ]);
+  });
+
+  it.each([40, 60])(
+    'keeps the skipped brief title ahead of a long reason at %s columns',
+    (width) => {
+      const ui = renderFeature(
+        <TaskSummary
+          width={width}
+          id="T002"
+          title="Receive stock"
+          state={{ kind: 'settled', method: 'skipped' }}
+          file="src/orders.js"
+          fileNote="(modify)"
+          reason="The worker cannot continue because the selected account has reached its usage limit"
+        />,
+        { cols: width, rows: 18 },
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('T002 Receive stock');
+      expect(frame).toContain('skipped');
+      expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
+      ui.unmount();
+    },
+  );
 
   it('paints a settled stage mark, head and sanitized detail run', () => {
     for (const failed of [false, true]) {
@@ -148,6 +244,27 @@ describe('TaskSummary', () => {
 
     ui.unmount();
   });
+
+  it.each(['failed', 'skipped'] as const)(
+    'keeps the file on a %s heading at narrow widths',
+    (method) => {
+      const ui = renderFeature(
+        <TaskSummary
+          width={60}
+          id="T2"
+          title="Receive stock"
+          state={{ kind: 'settled', method }}
+          file="src/orders/receiving/deliveries/orders.js"
+          reason={method === 'skipped' ? 'Denied by hook' : undefined}
+        />,
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('orders.js');
+      expect(frame).toContain(method);
+      expect(frame.split('\n')).toHaveLength(1);
+      ui.unmount();
+    },
+  );
 
   it('paints the ✗ marker and a single failed word', () => {
     chalk.level = 3;

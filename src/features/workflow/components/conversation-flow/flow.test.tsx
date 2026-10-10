@@ -259,6 +259,47 @@ describe('ConversationFlow', () => {
     terminalSizeStore.__testReset({ cols: 90, rows: 30, isSmall: true });
   });
 
+  it.each([false, true])(
+    'keeps an abandoned header in progress with a following brief=%s',
+    (following) => {
+      const first = makeTaskStart({ title: 'Abandoned brief' });
+      const next = makeTaskStart({ taskId: taskId('T002'), title: 'Running brief' });
+      const ui = renderConversation(
+        [
+          first,
+          { type: 'task_reset', ts: 1, phase: 'implementing', taskId: first.taskId },
+          ...(following
+            ? [
+                next,
+                makeRunnerCallActivity({
+                  phase: 'implementing',
+                  role: 'implementer',
+                  taskId: next.taskId,
+                }),
+              ]
+            : []),
+        ],
+        20,
+        120,
+      );
+      lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+      ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      expect(lines.find((line) => line.includes('Abandoned brief'))).toContain(`${LIVE_MARK} T001`);
+      if (following) {
+        expect(lines.find((line) => line.includes('Running brief'))).toContain(`${LIVE_MARK} T002`);
+      }
+      lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
+      ui.rerender(<ConversationFlow height={20} conversationWidth={120} contentWidth={120} />);
+      expect(
+        stripAnsiStyles(ui.lastFrame() ?? '')
+          .split('\n')
+          .find((line) => line.includes('Abandoned brief')),
+      ).toContain(`${LIVE_MARK} T001`);
+      ui.unmount();
+    },
+  );
+
   it('renders markdown planner documents without raw markdown control markers', () => {
     const ui = renderConversation([makeMarkdownPlannerText()], 20, 90);
     const frame = ui.lastFrame() ?? '';
@@ -538,7 +579,7 @@ describe('ConversationFlow', () => {
       expect(frame.indexOf(`Review 1 ${review}`)).toBeGreaterThan(
         frame.indexOf('T001 First brief'),
       );
-      expect(frame).not.toContain('Checking the diff.');
+      expect(frame).toContain('Checking the diff.');
       ui.unmount();
     },
   );
@@ -555,12 +596,17 @@ describe('ConversationFlow', () => {
 
     expect(frame).not.toContain('Completed');
     expect(frame).not.toContain('briefs passed');
-    expect(frame).toContain(`${glyph('stageDone')} Plan ${projection.feature}`);
     expect(frame).toContain('T001');
     expect(tasksStore.get().tasks.find((task) => task.id === 'T001')?.status).toBe('in_progress');
     expect(frame).not.toContain('+0 earlier');
 
     ui.unmount();
+    conversationScrollStore.__testReset({ scrollOffset: Number.MAX_SAFE_INTEGER });
+    const top = renderConversation([...projection.events], 30, 90);
+    expect(stripAnsiStyles(top.lastFrame() ?? '')).toContain(
+      `${glyph('stageDone')} Plan ${projection.feature}`,
+    );
+    top.unmount();
   });
 
   it('renders settled sections in event order inside the transcript without a capped ledger', async () => {
@@ -616,7 +662,7 @@ describe('ConversationFlow', () => {
       suite(51_000, 'test'),
     ];
 
-    const ui = renderConversation(events, 30, 100);
+    const ui = renderConversation(events, 80, 100);
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
     const lineOf = (text: string) => lines.findIndex((line) => line.includes(text));
 
@@ -627,7 +673,7 @@ describe('ConversationFlow', () => {
     expect(lines[lineOf('Review 1 failed')]).toContain('npm test · fixes T002');
     expect(lineOf('T002 Fix brief')).toBeGreaterThan(lineOf('Review 1 failed'));
     expect(lineOf('npm test · running')).toBeGreaterThan(lineOf('T002 Fix brief'));
-    expect(frameRowCount(ui.lastFrame() ?? '')).toBeLessThanOrEqual(30);
+    expect(frameRowCount(ui.lastFrame() ?? '')).toBeLessThanOrEqual(80);
 
     ui.unmount();
   });
@@ -971,11 +1017,9 @@ describe('ConversationFlow', () => {
     );
     const baseline = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(baseline).not.toContain(FOCUS_MARK);
-    for (const [index, label] of [
-      'Plan Fix the queue',
-      'T001 First brief',
-      'Review 1 passed',
-    ].entries()) {
+    for (const label of ['Plan Fix the queue', 'T001 First brief', 'Review 1 passed']) {
+      const index = baseline.split('\n').findIndex((line) => line.includes(label));
+      expect(index).toBeGreaterThan(-1);
       hoverStore.set(index);
       await tick(20);
       const focused = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -987,6 +1031,48 @@ describe('ConversationFlow', () => {
     hoverStore.clear();
     await tick(20);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toBe(baseline);
+    ui.unmount();
+  });
+
+  it('settled brief bodies scroll in place', async () => {
+    const events: EngineEvent[] = [
+      makeTaskStart({ title: 'First brief', file: 'src/first.ts', tool: 'codex' }),
+      {
+        type: 'planner_text',
+        ts: 1,
+        phase: 'implementing',
+        role: 'implementer',
+        text: Array.from({ length: 16 }, (_, index) => `retained-${index + 1}`).join('\n\n'),
+      },
+      makeTaskComplete(),
+      makeTaskStart({ taskId: taskId('T002'), title: 'Running brief', file: 'src/running.ts' }),
+      makeImplementerGenerate({
+        status: 'running',
+        taskId: taskId('T002'),
+        file: 'src/running.ts',
+      }),
+    ];
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    conversationScrollStore.__testReset({ scrollOffset: Number.MAX_SAFE_INTEGER });
+    hoverStore.clear();
+    const ui = renderConversation(events, 10, 90);
+    const top = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(top).toContain('T001 First brief');
+    expect(top).toContain('src/first.ts');
+    expect(top).toContain('retained-1');
+    expect(top).not.toContain('T002 Running brief');
+    hoverStore.set(0);
+    await tick(20);
+    expect(countGlyphOccurrences(stripAnsiStyles(ui.lastFrame() ?? ''), FOCUS_MARK)).toBe(1);
+    hoverStore.clear();
+    conversationScrollStore.scrollToBottom(0);
+    await tick(20);
+    const bottom = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(bottom).toContain('T002 Running brief');
+    expect(bottom).toContain('working on src/running.ts');
+    expect(bottom).not.toContain('T001 First brief');
+    expect(bottom).toContain('retained-16');
+    expect(frameRowCount(bottom)).toBeLessThanOrEqual(10);
     ui.unmount();
   });
 

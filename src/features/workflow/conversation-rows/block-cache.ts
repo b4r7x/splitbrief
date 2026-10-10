@@ -7,6 +7,7 @@ export interface EventBlockCacheKey {
   expanded: boolean;
   keyPrefix: string;
   dedupTitle: string | undefined;
+  settled: boolean;
 }
 
 interface ActivityBatchCacheKey {
@@ -14,6 +15,7 @@ interface ActivityBatchCacheKey {
   count: number;
   width: number;
   expanded: boolean;
+  settled: boolean;
 }
 
 interface CacheEntry<Key> {
@@ -31,8 +33,7 @@ export function getCachedEventRowBlock(
   event: EngineEvent,
   key: EventBlockCacheKey,
 ): ConversationRowBlock | null | undefined {
-  // implementer_generate_running blocks read per-pass streaming context (ctx.streaming) that no
-  // key field captures, so a cached block would freeze a stale stream.
+  // Headers read the async model catalog; generate hints read the current stream.
   if (event.type === 'task_started' || event.type === 'implementer_generate_running') {
     return undefined;
   }
@@ -78,7 +79,8 @@ function sameEventKey(a: EventBlockCacheKey, b: EventBlockCacheKey): boolean {
     a.viewportRows === b.viewportRows &&
     a.expanded === b.expanded &&
     a.keyPrefix === b.keyPrefix &&
-    a.dedupTitle === b.dedupTitle
+    a.dedupTitle === b.dedupTitle &&
+    a.settled === b.settled
   );
 }
 
@@ -87,6 +89,7 @@ function sameBatchKey(a: ActivityBatchCacheKey, b: ActivityBatchCacheKey): boole
     a.batchKey === b.batchKey &&
     a.count === b.count &&
     a.width === b.width &&
-    a.expanded === b.expanded
+    a.expanded === b.expanded &&
+    a.settled === b.settled
   );
 }

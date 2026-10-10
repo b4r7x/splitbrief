@@ -708,7 +708,7 @@ describe('groupEventsIntoSections', () => {
   });
 
   // S11 run 3 (owner screenshot, 2026-10-07 20:10): rows no brief owned stayed above the live brief
-  // for the rest of the run. A build row between briefs belongs to a brief and collapses with it.
+  // for the rest of the run. A build row between briefs stays in that brief's retained body.
   describe('a build row no brief owns joins a brief', () => {
     const row = (type: string, phase: Phase, fields: Record<string, unknown> = {}) => ({
       type,
@@ -1231,7 +1231,7 @@ describe('diffEventKey', () => {
 });
 
 describe('findLatestRenderableDiffKey', () => {
-  it('skips diffs inside settled stages', () => {
+  it('selects the latest retained diff inside a settled stage', () => {
     const live = makeImplementerGenerate({ status: 'done', diff: '+ live' });
     const sections: Section[] = [
       { type: 'events', startIndex: 0, items: [live] },
@@ -1252,10 +1252,10 @@ describe('findLatestRenderableDiffKey', () => {
       },
     ];
 
-    expect(findLatestRenderableDiffKey(sections)).toBe(diffEventKey(live, 0));
+    expect(findLatestRenderableDiffKey(sections)).toBe('implementer_generate_done:1');
   });
 
-  it('skips completed-task sections and returns the latest live diff key', () => {
+  it('returns the latest live diff key after a completed brief', () => {
     const live = makeImplementerGenerate({ status: 'done', diff: '+ live', ts: 1234 });
     const sections: Section[] = [
       {

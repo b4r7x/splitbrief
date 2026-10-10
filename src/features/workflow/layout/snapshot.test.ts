@@ -48,6 +48,10 @@ import { scenarioId } from '#testing/visual/contracts/identifiers.js';
 import { viewport } from '#testing/visual/contracts/geometry.js';
 import { mountGalleryScenario } from '#testing/visual/gallery/mount.js';
 import { resultMenuHeight } from '../result/options.js';
+import { WorkflowScreen } from '../../../app/screens/workflow.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { configStore } from '../../../stores/project/config.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -90,7 +94,7 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
 }
 
 describe('readConversationScrollSnapshot', () => {
-  it('scrolls seven ready-to-apply transcript rows in the painted 60x18 viewport', async () => {
+  it('scrolls retained ready-to-apply transcript rows in the painted 60x18 viewport', async () => {
     const scenario = findVisualScenario(scenarioId('workflow-review-task-cadence-settled'));
     if (scenario === undefined) throw new Error('Missing settled cadence scenario');
     const checkpoint = scenario.checkpoints[0];
@@ -111,7 +115,7 @@ describe('readConversationScrollSnapshot', () => {
           60,
         ),
       });
-      expect(snapshot.totalHeight).toBe(7);
+      expect(snapshot.totalHeight).toBe(19);
       expect(snapshot.viewportHeight).toBe(paintedHeight);
       expect(snapshot.transcriptViewportHeight).toBe(paintedHeight);
       expect(snapshot.maxOffset).toBeGreaterThan(0);
@@ -128,6 +132,72 @@ describe('readConversationScrollSnapshot', () => {
     } finally {
       await ui.unmount();
     }
+  });
+
+  it("a ready run's result menu reduces the snapshot transcript rows the same as the screen", async () => {
+    const findings = ['Missing receiving test', 'Missing stock check', 'Missing error check'];
+    configStore.__testReset({ config: makeConfig() });
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: false });
+    routerStore.init({
+      screen: 'workflow',
+      execution: { kind: 'at-rest' },
+      run: makeRunRecord({
+        status: { kind: 'ready-to-apply', override: true },
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({
+            phase: 'complete',
+            acceptedAsIs: { at: '2026-10-10T00:00:00.000Z', findings },
+          }),
+        },
+      }),
+    });
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'planner_text',
+          ts: 1,
+          phase: 'planning',
+          text: 'Retained row.\n'.repeat(40).trimEnd(),
+        },
+      ],
+    });
+    const ui = renderFeature(
+      createElement(WorkflowScreen, { commands: [], onRuntimeCommand: () => undefined }),
+      { cols: 80, rows: 24 },
+    );
+    try {
+      await flushEffects();
+      for (const confirming of [false, true]) {
+        if (confirming) {
+          ui.stdin.write('\r');
+          await flushEffects();
+        }
+        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+        expect(frame).toContain(
+          confirming ? 'Apply with 3 open findings?' : 'Ready to apply as is',
+        );
+        const expectedRows = getWorkflowViewportHeight({
+          rows: 24,
+          inputRows: inputHeightStore.get().rows,
+          promptRows: resultMenuHeight({ override: true, findings, confirming, files: null }, 80),
+        });
+        const snapshot = readConversationScrollSnapshot();
+        expect(snapshot.transcriptViewportHeight).toBe(expectedRows);
+        expect(snapshot.maxOffset).toBe(snapshot.totalHeight - expectedRows);
+        expect(frame.split('\n').filter((line) => line.includes('Retained row.'))).toHaveLength(
+          expectedRows,
+        );
+      }
+    } finally {
+      ui.unmount();
+      routerStore.reset();
+      configStore.reset();
+    }
+    await flushEffects();
+    expect(readConversationScrollSnapshot().transcriptViewportHeight).toBe(
+      getWorkflowViewportHeight({ rows: 24, inputRows: inputHeightStore.get().rows }),
+    );
   });
 
   it.each([

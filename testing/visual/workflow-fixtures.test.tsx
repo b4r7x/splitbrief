@@ -9,6 +9,9 @@ import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
 import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
+import { conversationScrollStore } from '../../src/stores/workflow/conversation-scroll.js';
+import { readConversationScrollSnapshot } from '../../src/features/workflow/layout/snapshot.js';
+import { flushEffects, tick } from '#testing/helpers/ink.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import {
@@ -28,15 +31,52 @@ import {
   workflowFixtureProjections,
   type WorkflowFixtureProjection,
 } from './fixtures/workflow/projections.js';
-import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
+import { workflowFixtureRegistry, workflowTranscriptText } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
+
+it.each(['workflow-continuous-transcript', 'workflow-continuous-transcript-ready'])(
+  'records the max effort on every started brief in %s',
+  (id) => {
+    const projection = workflowFixtureProjections.get(scenarioId(id));
+    if (projection === undefined) throw new Error(`Missing scenario ${id}`);
+    const starts = projection.events.filter((event) => event.type === 'task_started');
+    expect(starts).toHaveLength(id === 'workflow-continuous-transcript' ? 3 : 2);
+    for (const event of starts) expect(event.axes).toEqual(['max']);
+  },
+);
 
 function lifecycleFor(scenarioId: ScenarioId): FixtureLifecycle {
   const factory = workflowFixtureRegistry.get(scenarioId);
   if (!factory) throw new Error(`Missing workflow fixture ${scenarioId}`);
   return factory();
+}
+
+async function scrollTranscript(
+  ui: GalleryCaptureHandle,
+  markers: readonly string[],
+): Promise<string> {
+  let snapshot = readConversationScrollSnapshot();
+  while (snapshot.scrollOffset < snapshot.maxOffset) {
+    ui.stdin.write('\u001b[5~');
+    await tick(20);
+    const next = readConversationScrollSnapshot();
+    expect(next.scrollOffset).toBeGreaterThan(snapshot.scrollOffset);
+    snapshot = next;
+  }
+  const reached = [stripTerminalControls(ui.lastFrame() ?? '', { preserveLineBreaks: true })];
+  const rows = conversationScrollStore.get().scrollOffset;
+  for (
+    let row = 0;
+    row < rows && !markers.every((marker) => reached.join('\n').includes(marker));
+    row++
+  ) {
+    ui.stdin.write('\u001b[1;2B');
+    await tick(20);
+    reached.push(stripTerminalControls(ui.lastFrame() ?? '', { preserveLineBreaks: true }));
+  }
+  return reached.join('\n');
 }
 
 async function setupProjection(projection: WorkflowFixtureProjection): Promise<FixtureLifecycle> {
@@ -118,45 +158,122 @@ describe('workflow visual fixtures', () => {
     },
   );
 
+  it('models the smoke narration as marked chunks and retains the completed brief body', () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-continuous-transcript'));
+    if (!projection) throw new Error('Missing continuous transcript scenario');
+    for (const event of projection.events)
+      expect(EngineEventSchema.safeParse(event).success, event.type).toBe(true);
+    const chunks = projection.events
+      .filter((event) => event.type === 'planner_text')
+      .filter((event) => event.role === 'implementer');
+    expect(chunks.slice(0, 5).map((event) => event.text)).toEqual([
+      'Implemented `lowStockItems` and `restockPlan` in',
+      ' [src/report.js](file:///Users/x',
+      '/.local/state/splitbrief/trees/42',
+      '/run/src/report.js)',
+      ' and added tests.\n',
+    ]);
+    for (const chunk of chunks) expect(chunk.content).toBe('markdown');
+    expect(
+      projection.events.filter(
+        (event) => event.type === 'runner_call_activity' && event.taskId === 'T001',
+      ),
+    ).toHaveLength(5);
+    const merged = mergeEventLog([...projection.events]);
+    expect(merged).toContainEqual(
+      expect.objectContaining({
+        type: 'planner_text',
+        role: 'implementer',
+        text: expect.stringContaining('src/report.js) and added tests.'),
+      }),
+    );
+  });
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps the completed body and running brief reachable at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-continuous-transcript');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing continuous transcript checkpoint');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const live = await ui.waitForCheckpoint();
+        expect(live).toContain('npm test');
+        const markers = [
+          '● Plan',
+          '● T001',
+          'lowStockItems',
+          '+2 more · ctrl+a',
+          'Report  done',
+          'Validate',
+          'Fix check V1',
+          'Keep the stock warning',
+          '● T002',
+          '◉ T003',
+        ];
+        const history = await scrollTranscript(ui, markers);
+        for (const marker of markers) expect(history).toContain(marker);
+        if (renderViewport.cols <= 120)
+          expect(history.indexOf('● Plan')).toBeLessThan(history.indexOf('● T001'));
+        expect(history.indexOf('● T001')).toBeLessThan(history.indexOf('lowStockItems'));
+        expect(history).toContain('src/report.js');
+        expect(history).not.toContain('](file:');
+        expect(history).not.toContain('`lowStockItems`');
+        expect(history).not.toContain('working on T001');
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
   it.each(['workflow-review-task-cadence', 'workflow-review-task-cadence-settled'])(
     'renders %s with each review below its brief',
     async (id) => {
       const projection = workflowFixtureProjections.get(scenarioId(id));
       if (projection === undefined) throw new Error('Missing task cadence scenario');
-      const frame = stripTerminalControls(await renderProjection(projection), {
-        preserveLineBreaks: true,
-      });
-      const lines = frame.split('\n');
-      const first = lines.findIndex((line) => line.includes('● T001'));
-      const firstReview = lines.findIndex((line) => line.includes('● Review T001 passed'));
-      const second = lines.findIndex((line) => line.includes('● T002'));
-      expect(first).toBeGreaterThanOrEqual(0);
-      expect(firstReview).toBe(first + 1);
-      expect(second).toBe(firstReview + 1);
-      expect(lines.filter((line) => line.includes('Review T001 passed'))).toHaveLength(1);
-      if (projection.atRest === undefined) {
-        expect(frame).toContain('Review · Reviewer check V1 · npm test');
-        expect(frame).toContain('Reviewer check V1');
-        expect(frame).toContain('running 0:35');
-        expect(
-          projection.events.findLast((event) => event.type === 'review_started'),
-        ).toMatchObject({
-          scope: 'task',
-          afterTaskId: 'T002',
-          tool: 'codex',
-          model: 'gpt-6.1-sol',
-          axes: ['high'],
+      const scenario = findVisualScenario(id);
+      const checkpoint = scenario?.checkpoints[0];
+      if (scenario === undefined || checkpoint === undefined)
+        throw new Error('Missing task cadence checkpoint');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+          preserveLineBreaks: true,
         });
-      } else {
-        expect(lines.filter((line) => line.includes('Review'))).toEqual(
-          expect.arrayContaining([
-            expect.stringContaining('✗ Review T002 failed  1 blocking · fixes T003 · 49.0s'),
-            expect.stringContaining('● Review T002 passed  49.0s'),
-            expect.stringContaining('● Review 1 passed  1m 2s'),
-          ]),
-        );
-        expect(lines.filter((line) => line.includes('Review 1 passed'))).toHaveLength(1);
-        expect(frame).not.toContain('running 0:');
+        const lines = workflowTranscriptText().split('\n');
+        const first = lines.findIndex((line) => line.includes('● T001'));
+        const firstReview = lines.findIndex((line) => line.includes('● Review T001 passed'));
+        const second = lines.findIndex((line) => line.includes('● T002'));
+        expect(first).toBeGreaterThanOrEqual(0);
+        expect(firstReview).toBeGreaterThan(first);
+        expect(second).toBeGreaterThan(firstReview);
+        expect(lines.filter((line) => line.includes('Review T001 passed'))).toHaveLength(1);
+        if (projection.atRest === undefined) {
+          expect(frame).toContain('Review · Reviewer check V1 · npm test');
+          expect(frame).toContain('Reviewer check V1');
+          expect(frame).toContain('running 0:35');
+          expect(
+            projection.events.findLast((event) => event.type === 'review_started'),
+          ).toMatchObject({
+            scope: 'task',
+            afterTaskId: 'T002',
+            tool: 'codex',
+            model: 'gpt-6.1-sol',
+            axes: ['high'],
+          });
+        } else {
+          expect(lines.filter((line) => line.includes('Review'))).toEqual(
+            expect.arrayContaining([
+              expect.stringContaining('✗ Review T002 failed  1 blocking · fixes T003 · 49.0s'),
+              expect.stringContaining('● Review T002 passed  49.0s'),
+              expect.stringContaining('● Review 1 passed  1m 2s'),
+            ]),
+          );
+          expect(lines.filter((line) => line.includes('Review 1 passed'))).toHaveLength(1);
+          expect(frame).not.toContain('running 0:');
+        }
+      } finally {
+        await ui.unmount();
       }
     },
   );
@@ -286,6 +403,118 @@ describe('workflow visual fixtures', () => {
       expect(completedIndex).toBeLessThan(startedIndex);
     } finally {
       await handle.unmount();
+    }
+  });
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps plan and reviewer check rows after a ready verdict at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-continuous-transcript-ready');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing ready transcript checkpoint');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = await ui.waitForCheckpoint();
+        expect(frame).toContain('Apply');
+        ui.stdin.write('\t');
+        await flushEffects();
+        const markers = [
+          '● Plan',
+          '● T001',
+          '● T002',
+          '● Review 1 passed',
+          'Plan check K1',
+          'Plan check K2',
+          'Reviewer check V1',
+        ];
+        const history = await scrollTranscript(ui, markers);
+        for (const marker of markers) expect(history).toContain(marker);
+        expect(history.indexOf('● Review 1 passed')).toBeLessThan(
+          history.indexOf('Reviewer check V1'),
+        );
+        expect(history).toContain('npm test · passed');
+        expect(eventsStore.get().events.at(-1)?.type).toBe('replay_complete');
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
+  it.each(REQUIRED_VIEWPORTS)(
+    'keeps file bundle content plain at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-implementation-extracted-code');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing extracted-code checkpoint');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+          preserveLineBreaks: true,
+        });
+        expect(frame).toContain('Pending 2');
+        if (renderViewport.cols === 60 && renderViewport.rows === 18) {
+          expect(frame).toContain('Pending 2 · +1 more');
+        } else {
+          expect(frame).toContain('T903 Capture the bounded fixture frame');
+        }
+        const markers = ['file-bundle-v1', '__init__(*args)', '<!-- keep -->', '`code`'];
+        const history = await scrollTranscript(ui, markers);
+        for (const marker of markers)
+          expect(history.replace(/\s/g, '')).toContain(marker.replace(/\s/g, ''));
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
+  it.each([
+    ['workflow-implementation-narration', 'src/registry.ts'],
+    ['workflow-implementation-adjacent-narration', 'src/fixture.ts'],
+    ['workflow-implementation-fenced-handback', 'src/row.ts'],
+  ])('renders marked implementer markdown in %s', async (id, label) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error(`Missing narration checkpoint ${id}`);
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      await ui.waitForCheckpoint();
+      const markers = [label];
+      if (id.endsWith('adjacent-narration')) markers.push('I run the two brief checks now.');
+      if (id.endsWith('fenced-handback')) markers.push('Report  done');
+      const history = await scrollTranscript(ui, markers);
+      expect(history).toContain(label);
+      expect(history).not.toContain('](file:');
+      expect(history).not.toContain('`fixture`');
+      if (id.endsWith('adjacent-narration')) {
+        const messages = eventsStore.get().events.filter((event) => event.type === 'planner_text');
+        expect(messages).toHaveLength(3);
+        expect(messages[1]).toMatchObject({
+          messageStart: true,
+          text: 'The gallery has an uncommitted change.',
+        });
+        expect(history).toContain('I run the two brief checks now.');
+      }
+      if (id.endsWith('fenced-handback')) {
+        expect(history).toContain('Report  done');
+        expect(history).not.toContain('filesChanged');
+      }
+    } finally {
+      await ui.unmount();
+    }
+  });
+
+  it('keeps earlier brief boundary rows when the next brief starts', async () => {
+    const scenario = findVisualScenario('workflow-completed-orphan-rows');
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error('Missing orphan-row checkpoint');
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      await ui.waitForCheckpoint();
+      const markers = ['● T901', 'could not be read', 'also changed', '◉ T902'];
+      const history = await scrollTranscript(ui, markers);
+      for (const marker of markers) expect(history).toContain(marker);
+    } finally {
+      await ui.unmount();
     }
   });
 
@@ -556,27 +785,39 @@ describe('workflow visual fixtures', () => {
   });
 
   it('shows three completed briefs before the mixed base review checks', async () => {
-    const projection = workflowFixtureProjections.get(scenarioId('workflow-review-base-mixed'));
-    if (projection === undefined) throw new Error('Missing mixed base review scenario');
-    const frame = stripTerminalControls(await renderProjection(projection));
-    expect(frame).toContain('3/3 briefs passed');
-    const review = frame.indexOf('Reviewer checks');
-    for (const id of ['T001', 'T002', 'T003']) {
-      const brief = frame.indexOf(`● ${id}`);
-      expect(brief).toBeGreaterThanOrEqual(0);
-      expect(brief).toBeLessThan(review);
+    const scenario = findVisualScenario('workflow-review-base-mixed');
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error('Missing mixed base review scenario');
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      expect(await ui.waitForCheckpoint()).toContain('3/3 briefs passed');
+      const frame = await scrollTranscript(ui, ['● T001', '● T002', '● T003', 'Reviewer checks']);
+      const review = frame.indexOf('Reviewer checks');
+      for (const id of ['T001', 'T002', 'T003']) {
+        const brief = frame.indexOf(`● ${id}`);
+        expect(brief).toBeGreaterThanOrEqual(0);
+        expect(brief).toBeLessThan(review);
+      }
+    } finally {
+      await ui.unmount();
     }
   });
 
   it('replays the completed briefs and the mid-step stop at T003 in the paused run', async () => {
-    const projection = workflowFixtureProjections.get(scenarioId('workflow-at-rest-paused'));
-    if (projection === undefined) throw new Error('Missing paused run scenario');
-    const frame = stripTerminalControls(await renderProjection(projection));
-    expect(frame).toContain('● T001');
-    expect(frame).toContain('● T002');
-    expect(frame).toContain('◉ T003 Add signup route tests');
-    expect(frame).toContain('│ Stopped at T003');
-    expect(frame).not.toContain('no events yet');
+    const scenario = findVisualScenario('workflow-at-rest-paused');
+    const checkpoint = scenario?.checkpoints[0];
+    if (!scenario || !checkpoint) throw new Error('Missing paused run scenario');
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    try {
+      const live = stripTerminalControls(await ui.waitForCheckpoint());
+      expect(live).toContain('│ Stopped at T003');
+      expect(live).not.toContain('no events yet');
+      const markers = ['● T001', '● T002', '◉ T003 Add signup route tests'];
+      const history = await scrollTranscript(ui, markers);
+      for (const marker of markers) expect(history).toContain(marker);
+    } finally {
+      await ui.unmount();
+    }
   });
 
   it('uses the production named-check warning with metadata and the additional-check count', () => {
@@ -597,20 +838,9 @@ describe('workflow visual fixtures', () => {
       try {
         const live = await ui.waitForCheckpoint();
         expect(live).toContain('Review · Reviewer check V2');
-        ui.stdin.write('\u001b[H');
-        await ui.waitForCheckpoint({
-          predicate: ({ output }) => stripTerminalControls(output).includes('● Plan'),
-        });
-        const reached = [stripTerminalControls(ui.lastFrame() ?? '')];
-        for (let row = 0; row < 10; row++) {
-          ui.stdin.write('\u001b[1;2B');
-          await new Promise((resolve) => setTimeout(resolve, 20));
-          reached.push(stripTerminalControls(ui.lastFrame() ?? ''));
-        }
-        const history = reached.join('\n');
-        expect(history).toContain('Review 1 failed');
-        expect(history).toContain('fixes T904');
-        expect(history).toContain('T904');
+        const markers = ['● Plan', 'Review 1 failed', 'fixes T904', '● T904'];
+        const history = await scrollTranscript(ui, markers);
+        for (const marker of markers) expect(history).toContain(marker);
       } finally {
         await ui.unmount();
       }
@@ -625,19 +855,15 @@ describe('workflow visual fixtures', () => {
     teardownVisualFixture();
   });
 
-  // One render per projection: the walk grows with the gallery, so it gets the time a walk needs.
-  it('renders every checkpoint through the production App without starting live work', {
-    timeout: 60_000,
-  }, async () => {
-    const fetch = vi.fn();
-    vi.stubGlobal('fetch', fetch);
-
-    for (const projection of workflowFixtureProjections.values()) {
+  it.each([...workflowFixtureProjections.values()])(
+    'renders $scenarioId through the production App without starting live work',
+    async (projection) => {
+      const fetch = vi.fn();
+      vi.stubGlobal('fetch', fetch);
       await renderProjection(projection);
-    }
-
-    expect(fetch).not.toHaveBeenCalled();
-  });
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
 
   it('initializes the requested viewport and resets prompt, review, event, and stream state', async () => {
     const review = workflowFixtureProjections.get(scenarioId('workflow-review'));

@@ -9,6 +9,7 @@ import type { SeatAttempt } from '../../runners/transient.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { implementerSeatAttempt, runSeatCall } from './seat-wait.js';
 import type { RetryInvokeArgs, RetryInvokeResult } from './types.js';
+import { createImplementerTextHandler } from '../events.js';
 
 export function makeImplementerRetryInvoker(opts: {
   context: ProjectContext;
@@ -16,7 +17,6 @@ export function makeImplementerRetryInvoker(opts: {
   languageContext: LanguageContext;
   sessionId: string;
   phase: Phase;
-  onOutput: (text: string) => void;
   implementer?: Implementer | undefined;
   config?: Config | undefined;
 }): (args: RetryInvokeArgs) => Promise<RetryInvokeResult> {
@@ -35,9 +35,14 @@ export function makeImplementerRetryInvoker(opts: {
     seat,
   }) => {
     const effectiveConfig = opts.config ?? config;
+    const effectiveImplementer = opts.implementer ?? implementer;
+    const onOutput = createImplementerTextHandler(
+      { bus: seat.ref.bus, phase: opts.phase },
+      effectiveImplementer,
+    );
     const produce = async (attemptSignal: AbortSignal): Promise<SeatAttempt<RetryInvokeResult>> => {
       const corrections = briefCorrections(seat.state, task.id);
-      const result = await (opts.implementer ?? implementer).retry({
+      const result = await effectiveImplementer.retry({
         task,
         projectDir,
         config: effectiveConfig,
@@ -46,7 +51,7 @@ export function makeImplementerRetryInvoker(opts: {
         error: lastError,
         attempt: attempts,
         kind: opts.kind,
-        onOutput: opts.onOutput,
+        onOutput,
         sessionId: opts.sessionId,
         phase: opts.phase,
         lineageAttempts: lineageAttemptsOf(seat.state, task),

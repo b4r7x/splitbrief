@@ -1,4 +1,20 @@
-import { type CheckpointId, checkpointId } from '../../contracts/identifiers.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { renderToString } from 'ink';
+import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
+import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
+import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
+import { readConversationScrollSnapshot } from '../../../../src/features/workflow/layout/snapshot.js';
+import {
+  getConversationRowsProjection,
+  getConversationRowsWindowProjection,
+} from '../../../../src/features/workflow/conversation-rows/projection-cache.js';
+import { rowText } from '../../../../src/features/workflow/conversation-rows/row-format/rows.js';
+import { getSections } from '../../../../src/stores/workflow/actions/sections.js';
+import { conversationScrollStore } from '../../../../src/stores/workflow/conversation-scroll.js';
+import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
+import type { CheckpointId } from '../../contracts/identifiers.js';
+import { checkpointId } from '../../contracts/identifiers.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { CheckpointPredicate, FixtureFactory, FixtureRegistry } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
@@ -45,6 +61,26 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         },
         afterMount: () => {
           if (showStopSheet) overlayStore.open('stop-sheet');
+        },
+      };
+    };
+  }
+  const atRest = projection.atRest;
+  if (atRest !== undefined && projection.events.length > 0) {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          const { projectDir, sessionId } = atRest.record.ref;
+          const directory = sessionDir(projectDir, sessionId);
+          await mkdir(directory, { recursive: true });
+          await writeFile(
+            join(directory, SESSION_LOG_FILE),
+            `${projection.events.map((event) => JSON.stringify(toEngineEventEntry(event))).join('\n')}\n`,
+          );
+          await hydrateRun(atRest.record);
         },
       };
     };
@@ -133,6 +169,54 @@ function excludesAll(...markers: readonly string[]): CheckpointPredicate {
   };
 }
 
+export function workflowTranscriptText(): string {
+  const { conversationWidth, transcriptViewportHeight } = readConversationScrollSnapshot();
+  const { expandedDiffs, expandedActivityBatches } = conversationScrollStore.get();
+  const projection = getConversationRowsProjection({
+    sections: getSections(),
+    expandedDiffs,
+    expandedActivityBatches,
+    cols: conversationWidth,
+    viewportHeight: transcriptViewportHeight,
+    streaming: streamingOutputStore.get(),
+  });
+  const { rows } = getConversationRowsWindowProjection({
+    projection,
+    windowStart: 0,
+    windowEnd: projection.totalRows,
+  });
+  return stripAnsiStyles(
+    rows
+      .map((row) =>
+        row.node === undefined
+          ? rowText(row)
+          : renderToString(typeof row.node === 'function' ? row.node(false) : row.node, {
+              columns: conversationWidth,
+            }),
+      )
+      .join('\n'),
+  );
+}
+
+function includesTranscript(...markers: readonly string[]): CheckpointPredicate {
+  return (context) => {
+    const text = workflowTranscriptText();
+    return (
+      (stripAnsiStyles(context.output).includes(context.checkpoint.marker) ||
+        text.includes(context.checkpoint.marker)) &&
+      markers.every((marker) => text.includes(marker))
+    );
+  };
+}
+
+function implementerMarkdown(label: string): CheckpointPredicate {
+  return (context) => {
+    if (!includesAll('briefs passed')(context) || !excludesAll('](file:')(context)) return false;
+    const text = workflowTranscriptText();
+    return text.includes(label) && !text.includes('](file:');
+  };
+}
+
 const checkpointPredicates = [
   [
     checkpointId('stop-sheet-recovery'),
@@ -161,10 +245,26 @@ const checkpointPredicates = [
     checkpointId('implementation'),
     includesAll(WORKFLOW_FIXTURE_TEXT.implementation, 'briefs passed'),
   ],
-  // The brief's row is the transcript's tail, so its estimate is on screen at every width.
-  [checkpointId('implementation-narration'), includesAll('briefs passed')],
-  [checkpointId('implementation-adjacent-narration'), includesAll('briefs passed')],
-  [checkpointId('implementation-fenced-handback'), includesAll('briefs passed')],
+  [
+    checkpointId('implementation-extracted-code'),
+    () => {
+      const text = workflowTranscriptText().replace(/\s/g, '');
+      return ['file-bundle-v1', '__init__(*args)', '<!--keep-->', '`code`'].every((marker) =>
+        text.includes(marker),
+      );
+    },
+  ],
+  [checkpointId('implementation-narration'), implementerMarkdown('src/registry.ts')],
+  [checkpointId('implementation-adjacent-narration'), implementerMarkdown('src/fixture.ts')],
+  [checkpointId('implementation-fenced-handback'), implementerMarkdown('src/row.ts')],
+  [
+    checkpointId('continuous-transcript'),
+    includesTranscript('● Plan', '● T001', 'lowStockItems', 'T003 Test the receiving flow'),
+  ],
+  [
+    checkpointId('continuous-transcript-ready'),
+    includesTranscript('● Review 1 passed', 'Plan check K1', 'Plan check K2', 'Reviewer check V1'),
+  ],
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
@@ -179,11 +279,9 @@ const checkpointPredicates = [
           'Review · Reviewer check V2',
           'npm test · running',
         )(context) &&
-        (context.viewport.cols < 80 || includesAll('Review 1 failed', 'fixes T904')(context)) &&
+        includesTranscript('Review 1 failed', 'fixes T904')(context) &&
         !text.includes('does not take') &&
-        !text.includes('Tasks  ') &&
-        !/T90[1-3] {2}/u.test(text) &&
-        !text.includes('npm test · failed')
+        workflowTranscriptText().split('Tasks  18 lines').length === 2
       );
     },
   ],
@@ -201,25 +299,25 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-task-cadence'),
-    includesAll('Review T001 passed', 'Review · Reviewer check V1', 'npm test'),
+    (context) =>
+      includesTranscript('Review T001 passed')(context) &&
+      includesAll('Review · Reviewer check V1', 'npm test')(context),
   ],
   [
     checkpointId('review-task-cadence-settled'),
-    (context) =>
-      includesAll('Review 1 passed')(context) &&
-      (context.viewport.cols < 80 || includesAll('Review T002 failed', 'fixes T003')(context)),
+    includesTranscript('Review 1 passed', 'Review T002 failed', 'fixes T003'),
   ],
   [checkpointId('review-task-out-of-scope'), includesAll('Review T001 passed', '3 notes')],
-  [checkpointId('review-settled-passed'), includesAll('● Review 1 passed', '7.0s')],
-  [checkpointId('review-settled-failed'), includesAll('✗ Review 1 failed', '7.0s')],
   [checkpointId('review-drift-clean'), includesAll('Drift · clean')],
   [
     checkpointId('review-drift-found'),
     includesAll('Drift · failed · 2 errors · 3 warnings', '3/5 briefs passed'),
   ],
+  [checkpointId('review-settled-passed'), includesTranscript('● Review 1 passed', '7.0s')],
+  [checkpointId('review-settled-failed'), includesTranscript('✗ Review 1 failed', '7.0s')],
   [
     checkpointId('review-corrected'),
-    includesAll('T902', 'Review 1 failed', '7.0s', 'Review 2 passed', '5.0s'),
+    includesTranscript('T902', 'Review 1 failed', '7.0s', 'Review 2 passed', '5.0s'),
   ],
   [checkpointId('review-summary'), includesAll('Review · Summary')],
   [checkpointId('review-compaction'), includesAll('Review · Compaction')],
@@ -234,14 +332,14 @@ const checkpointPredicates = [
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],
-  // The live brief is on screen and no row a closed brief owns is left above it.
   [
     checkpointId('completed-orphan-rows'),
-    (context) =>
-      includesAll('T902')(context) &&
-      ['timed out', 'also changed', 'Batch suite'].every(
-        (orphan) => !stripAnsiStyles(context.output).includes(orphan),
-      ),
+    includesTranscript(
+      '● T901',
+      'could not be read',
+      'also changed',
+      'T902 Register the bounded fixture projection',
+    ),
   ],
   // The tiered gate owns this checkpoint: it takes the prompt zone from the document panel, so the
   // panel's own words are never on this frame.

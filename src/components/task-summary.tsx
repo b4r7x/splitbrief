@@ -10,6 +10,7 @@ import {
   elidePathMiddle,
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../utils/display-text.js';
 import { countNoun } from '../utils/pluralize.js';
@@ -43,6 +44,7 @@ const SETTLED_METHODS = new Set([
   'escalated-intermediate',
   'escalated-hint',
   'escalated-full',
+  'skipped',
 ]);
 
 function isRetrySegment(segment: string): boolean {
@@ -89,11 +91,22 @@ export function fitDetailRun(
   tail: string[],
   width: number,
   settled?: boolean,
+  fileNote?: string,
+  extraFiles?: string,
 ): FittedDetailRun {
   const head = formatTaskHeading(task);
   const budget = Math.max(0, width - LEADING_CELLS);
   const cells = (parts: string[]): number =>
     getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${parts.join(SOFT_SEP)}`);
+  const filePath = tail[0];
+  if (filePath !== undefined && (isPresent(fileNote) || isPresent(extraFiles))) {
+    const annotatedTail = [
+      isPresent(fileNote) ? `${filePath} ${fileNote}` : filePath,
+      extraFiles,
+      ...tail.slice(1),
+    ].filter(isPresent);
+    if (cells(annotatedTail) <= budget) return { head, tail: annotatedTail };
+  }
 
   const isSettled = settled ?? isSettledTail(tail);
   if (!isSettled) {
@@ -110,6 +123,18 @@ export function fitDetailRun(
   }
 
   if (cells(tail) <= budget) return { head, tail };
+
+  const skipIndex = tail.indexOf('skipped');
+  if (skipIndex >= 0 && tail.length > skipIndex + 1) {
+    const withoutReason = tail.slice(0, skipIndex + 1);
+    const reason = tail[skipIndex + 1];
+    const room = budget - cells(withoutReason) - getTerminalCellWidth(SOFT_SEP);
+    if (reason !== undefined && room > 0) {
+      const shortenedReason = truncateTerminalDisplayText(reason, room);
+      if (shortenedReason !== '…') return { head, tail: [...withoutReason, shortenedReason] };
+    }
+    return fitDetailRun(task, withoutReason, width, true);
+  }
 
   const { file, retries, keptMeta } = partitionSettledTail(tail);
 
@@ -166,6 +191,8 @@ interface TaskSummaryProps {
   retries?: number | undefined;
   duration?: number | undefined;
   file?: string | undefined;
+  fileNote?: string | undefined;
+  extraFiles?: string | undefined;
   reason?: string | undefined;
   /** What a halted row still owes the reader: `2 partial files`. */
   note?: string | undefined;
@@ -212,12 +239,17 @@ export function TaskSummary({
   retries,
   duration,
   file,
+  fileNote,
+  extraFiles,
   reason,
   note,
   focused,
 }: TaskSummaryProps) {
   const t = useTheme();
   const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
+  const safeFileNote = fileNote === undefined ? undefined : sanitizeTerminalDisplayText(fileNote);
+  const safeExtraFiles =
+    extraFiles === undefined ? undefined : sanitizeTerminalDisplayText(extraFiles);
   const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
   const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
   const marker = markerSpec(state, t);
@@ -251,7 +283,9 @@ export function TaskSummary({
     { id, title },
     detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
     width - (failed ? FAILED_SUFFIX.length : 0),
-    state.kind === 'settled' && state.method !== 'failed' && state.method !== 'skipped',
+    state.kind === 'settled',
+    isPresent(safeFile) ? safeFileNote : undefined,
+    isPresent(safeFile) ? safeExtraFiles : undefined,
   );
 
   return (
@@ -286,8 +320,8 @@ function detailRun(input: {
   if (state.kind === 'halted') {
     return [safeFile, state.word, safeNote].filter(isPresent);
   }
-  if (state.method === 'failed') return [];
-  if (state.method === 'skipped') return ['skipped', safeReason].filter(isPresent);
+  if (state.method === 'failed') return [safeFile].filter(isPresent);
+  if (state.method === 'skipped') return [safeFile, 'skipped', safeReason].filter(isPresent);
   const meta = [getMethodDisplay(state.method, input.t).text];
   if (retries !== undefined && retries > 0) meta.push(countNoun(retries, 'retry', 'retries'));
   if (duration != null) meta.push(formatDuration(duration));

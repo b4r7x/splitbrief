@@ -1,7 +1,9 @@
 import { TaskSummary } from '../../../components/task-summary.js';
+import { taskTargetParts } from '../../../stores/workflow/tasks.js';
 import { stageSummaryRow } from '../components/conversation-flow/stage-summary.js';
-import type { SettledTranscriptSection } from './transcript-walk.js';
+import { settledTaskStartedEvent, type SettledTranscriptSection } from './transcript-walk.js';
 import type { ConversationRow, ConversationRowBlock } from './types.js';
+import { taskStartedCrewRowBlock } from './task-started-row-block.js';
 
 export interface SettledRowBlockOptions {
   section: SettledTranscriptSection;
@@ -10,6 +12,8 @@ export interface SettledRowBlockOptions {
 
 export function settledRowBlock({ section, width }: SettledRowBlockOptions): ConversationRowBlock {
   const key = `settled-${section.startIndex}`;
+  const started = section.type === 'completed-task' ? settledTaskStartedEvent(section) : undefined;
+  const target = started === undefined ? undefined : taskTargetParts(started);
   const node = (focused?: boolean) =>
     section.type === 'completed-task' ? (
       <TaskSummary
@@ -20,7 +24,9 @@ export function settledRowBlock({ section, width }: SettledRowBlockOptions): Con
         state={{ kind: 'settled', method: section.summary.method }}
         retries={section.summary.retries}
         duration={section.summary.duration}
-        file={section.summary.file}
+        file={target === undefined || target.path === '' ? section.summary.file : target.path}
+        fileNote={target?.note}
+        extraFiles={target?.extraFiles}
         reason={section.summary.reason}
       />
     ) : (
@@ -33,11 +39,20 @@ export function settledRowBlock({ section, width }: SettledRowBlockOptions): Con
     segments: [],
     node,
   };
+  const crew =
+    started === undefined
+      ? null
+      : taskStartedCrewRowBlock({
+          keyPrefix: `event-${section.startIndex + section.items.indexOf(started)}-${started.type}`,
+          event: started,
+          width,
+        });
+  const rows = [row, ...(crew?.createRows(0, crew.rowCount) ?? [])];
 
   return {
     key,
-    rowCount: 1,
+    rowCount: rows.length,
     renderableUnits: 1,
-    createRows: (windowStart, windowEnd) => [row].slice(windowStart, windowEnd),
+    createRows: (windowStart, windowEnd) => rows.slice(windowStart, windowEnd),
   };
 }

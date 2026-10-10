@@ -25,6 +25,40 @@ export function plannerTextRowBlock(options: {
 }): ConversationRowBlock | null {
   const { event, keyPrefix, width, dedupTitle } = options;
   const markdownWidth = wrapWidthFor('message', width);
+  if (
+    event.role === 'implementer' &&
+    (event.content === 'markdown' || event.content === undefined)
+  ) {
+    const handBack = splitImplementerHandBack(event.text);
+    const narrationKey = handBack === undefined ? keyPrefix : `${keyPrefix}-narration-0`;
+    const narrationText = handBack === undefined ? event.text : handBack.narration;
+    const narration =
+      handBack?.narration === ''
+        ? null
+        : event.content === 'markdown'
+          ? markdownPlannerTextRowBlock({
+              keyPrefix: narrationKey,
+              text: narrationText,
+              width: markdownWidth,
+              proseTone: 'textDim',
+            })
+          : wrappedTextBlock({
+              keyPrefix: narrationKey,
+              text: narrationText,
+              width,
+              tone: 'textDim',
+            });
+    if (handBack === undefined) return narration;
+    return compositeBlock(keyPrefix, [
+      narration,
+      wrappedTextBlock({
+        keyPrefix: `${keyPrefix}-report-1`,
+        text: reportSummaryLine(handBack.report),
+        width,
+        tone: 'textDim',
+      }),
+    ]);
+  }
   if (isPlannerTextRenderedAsMarkdown(event)) {
     return markdownPlannerTextRowBlock({
       keyPrefix,
@@ -46,12 +80,6 @@ export function plannerTextRowBlock(options: {
       });
     case 'plain':
     case undefined: {
-      if (event.role === 'implementer') {
-        const handBack = splitImplementerHandBack(event.text);
-        if (handBack !== undefined) {
-          return implementerHandBackRowBlock(keyPrefix, handBack, width);
-        }
-      }
       return wrappedTextBlock({
         keyPrefix,
         text: event.text,
@@ -96,31 +124,6 @@ function splitImplementerHandBack(
     start = start === 0 ? -1 : text.lastIndexOf('{', start - 1);
   }
   return undefined;
-}
-
-function implementerHandBackRowBlock(
-  keyPrefix: string,
-  handBack: { narration: string; report: ImplementerReport },
-  width: number,
-): ConversationRowBlock | null {
-  const narration =
-    handBack.narration === ''
-      ? null
-      : wrappedTextBlock({
-          keyPrefix: `${keyPrefix}-narration-0`,
-          text: handBack.narration,
-          width,
-          tone: 'textDim',
-        });
-  return compositeBlock(keyPrefix, [
-    narration,
-    wrappedTextBlock({
-      keyPrefix: `${keyPrefix}-report-1`,
-      text: reportSummaryLine(handBack.report),
-      width,
-      tone: 'textDim',
-    }),
-  ]);
 }
 
 function reportSummaryLine(report: ImplementerReport): string {

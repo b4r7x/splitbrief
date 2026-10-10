@@ -5,8 +5,9 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
-import { activityBatchKey } from './activity-batch-key.js';
+import { activityBatchKey, findLatestExpandableActivityBatchKey } from './activity-batch-key.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import { buildConversationRowsProjection } from './build.js';
 import { buildConversationRowActions } from './row-actions.js';
 import { rowText } from './row-format/rows.js';
 
@@ -176,6 +177,85 @@ describe('buildConversationRowActions', () => {
     ).toBe(0);
   });
 
+  it('older disclosures remain clickable; Ctrl+A selects only the latest eligible batch', () => {
+    const batch = (callId: string) =>
+      ['a', 'b', 'c', 'd'].map((name, index) =>
+        activity({
+          callId,
+          sequence: index + 1,
+          activityId: `${callId}-${name}`,
+          kind: 'read',
+          label: `reading ${name}.ts`,
+        }),
+      );
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'completed-task',
+        startIndex: 0,
+        summary: { id: 'T001', title: 'Done', method: 'local', retries: 0, duration: 1 },
+        items: [
+          ...batch('older'),
+          makeImplementerGenerate({ diff: '+ retained diff' }),
+          makeImplementerGenerate({ status: 'failed', error: 'Failure evidence '.repeat(30) }),
+        ],
+      },
+      {
+        type: 'settled-stage',
+        startIndex: 6,
+        summary: { stage: 'plan', feature: 'Plan', duration: 1 },
+        items: batch('latest'),
+      },
+      {
+        type: 'events',
+        startIndex: 10,
+        items: [
+          activity({
+            callId: 'small',
+            activityId: 'small',
+            kind: 'read',
+            label: 'reading tail.ts',
+          }),
+        ],
+      },
+    ];
+    const inputs = {
+      sections,
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+    };
+    const { rows } = buildConversationRows(inputs);
+    const actions = buildConversationRowActions(inputs);
+    expect(
+      rows.filter((row) => row.kind === 'activity-more').map((row) => actions.get(row.key)),
+    ).toEqual([
+      { type: 'toggle-activity-batch', key: activityBatchKey(0, 'older') },
+      { type: 'toggle-activity-batch', key: activityBatchKey(6, 'latest') },
+    ]);
+    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(6, 'latest'));
+    expect([...actions.values()]).toContainEqual({
+      type: 'toggle-diff',
+      key: 'implementer_generate_done:4',
+    });
+    expect([...actions.values()]).toContainEqual({
+      type: 'toggle-diff',
+      key: 'implementer_generate_failed:5',
+    });
+    for (const row of rows.filter((row) => row.node !== undefined))
+      expect(actions.has(row.key)).toBe(false);
+    const blocks = buildConversationRowsProjection(inputs).blocks;
+    expect(
+      blocks.find((block) => block.key === activityBatchKey(0, 'older'))?.activeRowKey,
+    ).toBeUndefined();
+    expect(
+      blocks.find((block) => block.key === activityBatchKey(6, 'latest'))?.activeRowKey,
+    ).toBeUndefined();
+    expect(
+      blocks.find((block) => block.key === activityBatchKey(10, 'small'))?.activeRowKey,
+    ).toBeDefined();
+  });
   it('maps the rendered +N more row to a toggle-activity-batch action', () => {
     const sections: Section<EngineEvent>[] = [
       {

@@ -52,9 +52,17 @@ segments, and each is one line, so the row count the scroll model charges is exa
 zero renderable units — it is not an event the run emitted, so it never counts toward the
 `N new events` banner.
 
-Settled sections render inline inside the one scroller in finish order: briefs and the settled Plan and Review N stages, grouped by `groupEventsIntoSections`. `walkTranscript` yields them as one-row transcript blocks (`ConversationRow` with a `node` renderer that passes focus to `TaskSummary`, via `settledRowBlock` in `src/features/workflow/conversation-rows/settled-row-block.tsx`), with no blank spacer between consecutive settled rows. There is no sticky Completed ledger, no `Completed · n/m briefs passed` heading, no `+N earlier` row, and no row cap: settled rows simply scroll inside the one continuous transcript. The dynamic window holds settled sections, the live stage and the running brief. A skipped brief settles on `task_skipped`, even when a pre-hook denied it before `task_started`. A build-phase row no brief owns belongs to a brief section: a row between two briefs joins the brief that closed before it only up to the first `consult_answered` event whose `taskId` is the next brief (from that event on it joins the next brief), and a run-level row joins the first brief, so it collapses with that brief's summary. `review_started` separates review events from the preceding brief. Each `review_completed` settles one Review row with its recorded verdict, findings and frozen duration. Task reviews read `Review T001`; final reviews read `Review 1`, with ordinals counting final reviews only. A following `review_fix_started` names the fix briefs in that review's row. The review lifecycle events draw no direct rows. A re-review creates another settled row. A running review stays live; a completed review with `no-verdict` or `stopped` settles with a failure or stop marker. The derivation applies to each review segment. A segment with `review_started` ends at its `review_completed` and includes a following `review_fix_started`. A segment without `review_started` derives its review row from `workflow_complete.review` or `review_fix_started`. Rows after the last verdict stay live, including recovery prompts. The operator's consult answer is published as a `user_message` event with `qa` and rendered by the shared answered-questions row block as `You → <answer>` beneath the question. A bare Enter records and renders the default answer.
+Settled sections stay in the transcript in event order. `groupEventsIntoSections` groups each brief and each Plan or Review N stage. `walkTranscript` yields the heading, then the retained body rows. One blank row separates the section from the next section. `settledRowBlock` renders the heading with the existing `TaskSummary` mark and detail run. Headings have no disclosure glyph. Sections can use compact rows. They do not hide their body when they settle.
 
-Done brief rows in both the transcript and closed ledger use `TaskSummary` and its shared `fitDetailRun`. The method and duration stay whole at every width. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
+A settled brief heading carries the mark, id, title, file, method and duration. The brief heading carries the target label `path (action) · +N files`; annotations drop before the path shortens. `TaskSummary` and `fitDetailRun` fit the file to the heading width. The crew row does not repeat the target. The crew row follows the heading directly, on the running header's continuation column. It uses the same tool, model and effort words as the running header. One blank row separates the crew metadata from the body. Failed and skipped briefs use the same layout. A brief skipped before `task_started` has no crew metadata.
+
+The body keeps narration, compact activity batches, validation, checks, `full_suite` rows, the result and diff card, and the hand-back report. It also keeps consult rows, retries, recovery rows, warnings and errors. It drops the transient `implementer_generate_running` hint and its streaming preview. It drops a terminal skip or failure label that the heading already states. A compact activity batch keeps its header, its newest three items and `+N more · ctrl+a`. Settled brief, Plan and Review activity headers use `textDim`. Running activity headers keep their seat tone.
+
+A settled Plan keeps the request, questions and answers, narration, activity, plan and tasks artifact cards, plan-check rows, warnings and recovery. A settled Review keeps reviewer-check decisions, plan-check and reviewer-check command rows, drift, activity, narration, correction answers and recovery. `review_started` opens the review segment; `review_completed` settles its heading with scope, task anchor, verdict, findings and duration. Task reviews read `Review T001`; final ordinals count final reviews only. A following `review_fix_started` names the fix briefs in that review's heading. A segment without `review_started` derives its verdict from `workflow_complete.review` or `review_fix_started`. A running review stays live; a completed review with `no-verdict` or `stopped` settles with a failure or stop marker. The review lifecycle events draw no direct rows. Rows after the last verdict stay live, including recovery prompts.
+
+The scroller shows settled sections before the live stage and running brief. Pending briefs keep their existing `Pending n` block below the scroller. When only one pending row fits, the heading includes `+N more` for the hidden briefs. A skipped brief settles on `task_skipped`, even when a pre-hook denied it before `task_started`. Build rows between two briefs join the earlier brief up to the first `consult_answered` event for the next brief. Rows from that event join the next brief. Run-level build rows join the first brief and stay in its body. The operator's consult answer uses a `user_message` event with `qa`. The shared answered-questions row block renders `You → <answer>` beneath the question. A bare Enter records and renders the default answer.
+
+Done brief rows in both the transcript and closed ledger use `TaskSummary` and its shared `fitDetailRun`. The closed ledger uses the same target label as the brief heading. The method and duration stay whole while space permits. If metadata leaves no room for the task id and a title fragment, the row drops metadata first. Retries go before the path shortens by whole middle directory segments (`testing/…/projections.ts`), then to `…/projections.ts` and the bare filename. Only a filename that cannot fit loses characters. Path elision lives with the picker label rule in `src/utils/display-text.ts`.
 
 Check-row statuses `not run` and `chose none` join their words with a non-breaking space (`\u00a0`), so wrapping at 60 columns keeps each phrase whole. Running checks use `formatElapsedClock` in the build block and byline (`running 10:02`, `running 0:35` in the block). Finished-row durations keep `2m 0s` or `14.0s`.
 
@@ -76,7 +84,7 @@ Conversation scrolling uses one semantic set of actions over the row window:
 - `Home` / `End` jump to the top or bottom.
 - `/scroll top`, `/scroll bottom`, `/scroll page-up`, and `/scroll page-down` provide the same actions through the runtime command path.
 
-Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` expand or collapse the latest activity batch with hidden rows. Compact collapsed rows show the lowercase key affordance, such as `ctrl+a`.
+Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` toggle the latest expandable activity batch in the whole transcript, including settled sections. Older activity disclosures stay clickable. `Ctrl+D` toggles the latest expandable diff in the whole transcript. Older diff disclosures stay clickable. Compact rows show the lowercase key affordance, such as `ctrl+a` or `ctrl+d`.
 
 An older run parked at `reviewing-briefs` displays its review document as markdown.
 Keyboard and wheel scrolling use the markdown frame and overflow rows, as for every other review document.
@@ -96,7 +104,7 @@ Row projection is split from row materialization:
 - `getConversationRowsWindowProjection()` materializes only the visible window returned by `getScrollWindowState()`.
 - Activity batches dedupe with `Map`. Collapsed mode shows the newest three entries in event order, and pins no warning or error: the header counts the warnings and errors. Expanded mode allocates all deduped activity rows. Historical session activities contribute no rows, update counts or disclosure entries.
 - Activity producers preserve sanitized text up to the payload limits (512 characters for labels, 2048 for targets and partials). The row formatter fits that text to the current terminal width, so widening the terminal reveals more of a command or path.
-- Markdown planner text uses `markdownConversationRowsProjection()` with a bounded cache keyed by event identity and width. Appends reuse unchanged chunks and relayout the suffix; width changes invalidate the projection.
+- Planner markdown and direct-writer narration with `content: 'markdown'` use the shared markdown core and `markdownConversationRowsProjection()`. Direct-writer prose stays dim. Inline code and file links keep their markdown styles. Extracted-code output and unmarked implementer text stay plain dim text. Hand-back reports split into one report row for marked markdown and unmarked implementer text. Their narration keeps the event's markdown or plain format. The bounded cache keys include event identity and width. Appends reuse unchanged chunks and relayout the suffix. Width changes invalidate the projection. Settled sections keep their markdown cache entries.
 
 The performance regression harness is documented in [`TESTING.md`](./TESTING.md#performance-harnesses).
 
@@ -116,6 +124,8 @@ Width changes are not cosmetic here. They can change the number of rows in `task
 Prompt row budgeting lives in `src/features/workflow/prompt-rows/workflow.ts`.
 
 Approval and cost prompts declare the same measured row heights that the workflow layout subtracts. The rendered prompt components use fixed heights, `overflow="hidden"`, and `flexShrink={0}`.
+
+The screen measures the ready result menu with `resultMenuHeight`. It publishes that measurement through `resultMenuStore`, including Apply confirmation rows. The scroll snapshot reads the same measurement. The screen clears it when the menu closes or the screen unmounts.
 
 `src/features/workflow/layout/rect.ts` caps prompt rows to the available middle area. `WorkflowScreen` renders prompts inside a fixed-height clipped container, so a very long action description or a narrow terminal can clip the prompt instead of pushing the conversation and footer out of the screen.
 
@@ -139,7 +149,9 @@ The key regression coverage is observable Ink output, not implementation wiring:
   - adjacent scroll offsets move by one rendered row
   - wrapped `task_started` rows do not jump by card
   - streaming output participates in row height
-  - settled sections render in event order inside the transcript without a capped ledger
+  - settled sections render a heading, retained body rows and one blank row in event order
+  - completed briefs keep metadata, activity, validation, reports, warnings and recovery
+  - settled Plan and Review sections keep plan-check and reviewer-check rows
   - new-event counts surface through the chrome label, not viewport rows
 - `src/features/workflow/conversation-rows/projection-cache.test.ts`
   - unchanged source identity reuses projections
@@ -148,9 +160,18 @@ The key regression coverage is observable Ink output, not implementation wiring:
 - `src/features/workflow/conversation-rows/build.test.ts`
   - render blocks are materialized only when they intersect the requested row window
   - compact activity rows dedupe and expose the key affordance
+  - settled brief bodies drop transient hints and duplicate terminal labels
+  - settled headings show the file once, followed directly by the crew row and then one blank row
+  - settled activity headers use `textDim`; live activity headers keep their seat tone
+- `src/features/workflow/conversation-rows/event-rows/planner-text.test.ts`
+  - marked direct-writer narration renders dim markdown with styled inline code and file links
+  - extracted-code output and unmarked implementer narration stay plain dim text
+  - unmarked hand-backs retain plain narration and one report row when older runs replay
+  - marked hand-backs retain dim markdown narration and one report row
 - `src/features/workflow/layout/snapshot.test.ts`
   - rendered scroll ends and mouse rows agree after a recovery resets the running brief to pending
   - closed runs below the sidebar breakpoint reserve no queued rows
+  - ready result menus and Apply confirmations reduce the snapshot and screen transcript by the same row count
 - `src/features/workflow/hooks/use-keys.test.tsx`
   - keyboard and wheel scrolling ignore stale brief-load errors and reach the last markdown row in an older brief review
 - `src/features/workflow/conversation-rows/markdown-rows.test.ts`
@@ -164,18 +185,30 @@ The key regression coverage is observable Ink output, not implementation wiring:
 - `src/features/workflow/keyboard.test.ts`
   - conversation panes support Shift+arrow, PageUp/PageDown, Home/End, and `/scroll`
   - review panes support Shift+arrow, PageUp/PageDown, Home/End, and Ctrl+B/Ctrl+F
-  - `/activity` and `Ctrl+A` toggle activity
+  - `/activity` and `Ctrl+A` toggle the latest expandable activity batch in the whole transcript
+  - `Ctrl+D` toggles the latest expandable diff in the whole transcript
 - `src/features/workflow/layout/scroll-window.test.ts`
   - the window spans the full visible height; banners ride the chrome dividers
 - `src/features/workflow/layout/rect.test.ts`
   - prompt rows are capped to the available middle area
 - `src/features/workflow/conversation-rows/transcript-walk.test.ts`
-  - settled sections yield in event order inside the transcript
+  - settled sections yield their heading and retained body in event order
+- `testing/visual/workflow-fixtures.test.tsx`
+  - completed brief bodies stay reachable before the running brief at every required viewport
+  - plan-check and reviewer-check rows stay reachable after a ready verdict
+  - split file links render their label without raw markdown
+  - scrolling traverses to required content without a fixed row limit
 
 ## Invariants
 
 - Scroll units are rendered terminal rows.
 - Row descriptors must render as exactly one terminal row.
 - Prompt rows and queued rows are part of the row budget; settled rows scroll inside the transcript; scroll banners live on the chrome dividers.
+- Each settled section renders its heading, retained body and one blank row before the next section.
+- Settling a brief or stage does not hide its body. Only transient hints and duplicate terminal labels leave a settled brief.
+- A settled brief heading owns its title and file path. The crew row follows it directly. Headings carry no disclosure glyph.
+- Settled brief, Plan and Review activity headers use `textDim`. Running activity headers keep their seat tone.
+- Activity and diff shortcuts search the whole transcript. Older disclosures stay clickable.
+- Direct-writer narration with `content: 'markdown'` uses the shared markdown core with dim prose, including hand-back narration. Extracted-code output and unmarked implementer narration stay plain dim text. Unmarked hand-back reports still split into one report row.
 - Terminal width changes must recompute row wrapping and total height.
 - Stores remain the data source; layout helpers remain pure enough to test without running the workflow engine.

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeImplementer } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder, makeImplementer } from '#testing/helpers/orchestrator-factories.js';
 import { createEventBus } from '../../events/bus.js';
 import { buildLanguageContext } from '../../spec/prompts/language-context.js';
 import type { RetryOptions } from '../../implementers/types.js';
@@ -20,6 +20,59 @@ function makeRecordingImplementer() {
 }
 
 describe('makeImplementerRetryInvoker', () => {
+  it.each(['local', 'consult'] as const)(
+    'classifies %s output using the selected implementer, including profile overrides',
+    async (kind) => {
+      for (const writesFiles of ['direct', 'extracted-code'] as const) {
+        for (const override of [false, true]) {
+          const { bus, events } = makeBusRecorder();
+          const selected = makeImplementer({
+            capabilities: { writesFiles },
+            retry: async ({ onOutput }) => {
+              onOutput('# Load config', { messageStart: true });
+              return { success: true, output: 'fixed' };
+            },
+          });
+          const invoker = makeImplementerRetryInvoker({
+            context: defaultContext,
+            kind,
+            sessionId: 'sess-retry',
+            languageContext: buildLanguageContext('python'),
+            phase: 'implementing',
+            ...(override ? { implementer: selected } : {}),
+          });
+
+          await invoker({
+            task: makeTask(),
+            lastError: 'validation failed',
+            attempts: 1,
+            projectDir: '/staged',
+            config: makeConfig(),
+            implementer: override ? makeImplementer() : selected,
+            fileIgnoreProjectDir: '/project',
+            seat: {
+              ref: { projectDir: '/staged', sessionId: 'sess-retry', bus },
+              state: makeImplState([makeTask()]),
+              usageCategory: 'implementer',
+            },
+          });
+
+          expect(events.filter((event) => event.type === 'planner_text')).toEqual([
+            {
+              type: 'planner_text',
+              ts: expect.any(Number),
+              phase: 'implementing',
+              role: 'implementer',
+              content: writesFiles === 'direct' ? 'markdown' : 'plain',
+              text: '# Load config',
+              ...(writesFiles === 'direct' ? { messageStart: true } : {}),
+            },
+          ]);
+        }
+      }
+    },
+  );
+
   it('forwards invoke args and fixed options into the invoke-arg implementer', async () => {
     const { implementer, getReceived } = makeRecordingImplementer();
     const languageContext = buildLanguageContext('typescript');
@@ -42,7 +95,6 @@ describe('makeImplementerRetryInvoker', () => {
       sessionId: 'sess-retry',
       languageContext,
       phase: 'implementing',
-      onOutput: () => {},
     });
 
     const result = await invoker({
@@ -104,7 +156,6 @@ describe('makeImplementerRetryInvoker', () => {
       sessionId: 'sess-retry',
       languageContext: buildLanguageContext('typescript'),
       phase: 'implementing',
-      onOutput: () => {},
       implementer: override.implementer,
       config: overrideConfig,
     });

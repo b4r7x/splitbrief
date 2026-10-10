@@ -70,6 +70,7 @@ export function buildConversationRowActions(
         globalIndex,
         ctx,
         expanded: inputs.expandedDiffs.has(key),
+        settledSection: step.settledSection,
       });
       if (block !== null) {
         for (const row of block.createRows(0, block.rowCount)) {

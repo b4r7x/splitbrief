@@ -67,6 +67,7 @@ export function computeConversationRowsWindowFromProjection(input: {
   });
 
   return {
+    activeTaskHeaderKey: projection.activeTaskHeaderKey,
     activeRowKey: findLastActiveRowKey(projection.blocks),
     maxOffset,
     newEventCount,
@@ -120,6 +121,7 @@ function withTailBlocks(
 ): ConversationRowsProjection {
   if (tail.length === 0) return projection;
   return {
+    ...projection,
     blocks: [...projection.blocks, ...tail],
     renderableCount:
       projection.renderableCount + tail.reduce((sum, block) => sum + block.renderableUnits, 0),

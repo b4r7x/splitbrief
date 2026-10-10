@@ -48,6 +48,8 @@ export interface BriefRowParts {
   retries?: number | undefined;
   duration?: number | undefined;
   file?: string | undefined;
+  fileNote?: string | undefined;
+  extraFiles?: string | undefined;
   note?: string | undefined;
 }
 
@@ -229,6 +231,8 @@ export function briefRowParts(input: Readonly<{ row: BriefRow }>): BriefRowParts
     ...(row.retries > 0 && { retries: row.retries }),
     ...(row.durationMs !== null && { duration: row.durationMs }),
     ...(row.file !== null && { file: row.file }),
+    ...(row.fileNote !== undefined && { fileNote: row.fileNote }),
+    ...(row.extraFiles !== undefined && { extraFiles: row.extraFiles }),
     ...(note !== undefined && { note }),
   };
 }

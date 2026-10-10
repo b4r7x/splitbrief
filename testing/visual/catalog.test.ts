@@ -2,25 +2,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js';
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
-import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { selectRailForm } from '../../src/features/workflow/layout/chrome-rows.js';
 import {
   listVisualScenarios,
   findVisualScenario,
   REQUIRED_VIEWPORTS,
+  WIDE_VIEWPORTS,
   REQUIRED_WORKFLOW_CHECKPOINT_IDS,
   REQUIRED_WORKFLOW_CHECKPOINT_KINDS,
   VISUAL_CATALOG,
   VISUAL_CATALOG_VERSION,
   VISUAL_FIXTURE_VERSION,
 } from './catalog.js';
-import { formatViewport } from './contracts/geometry.js';
+import { formatViewport, viewport } from './contracts/geometry.js';
 import { checkpointId, scenarioId } from './contracts/identifiers.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from './fixtures/screen-fixtures.js';
 import {
   workflowCheckpointPredicates,
   workflowFixtureRegistry,
+  workflowTranscriptText,
 } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario } from './gallery/mount.js';
 
@@ -42,6 +43,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-task-cadence-settled', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-out-of-scope', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-continuous-transcript', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-continuous-transcript-ready', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '200x50']],
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
@@ -99,6 +102,44 @@ describe('visual catalog', () => {
     expect(scenario?.checkpoints[0]?.marker).toBe('finish T006');
     expect(scenario?.viewports.map(formatViewport)).toEqual(['120x40', '80x24', '60x18', '160x45']);
   });
+
+  it.each([
+    ['workflow-continuous-transcript', 'continuous-transcript', 'implementation'],
+    ['workflow-continuous-transcript-ready', 'continuous-transcript-ready', 'success'],
+  ])('covers %s with a registered transcript checkpoint', (id, checkpoint, kind) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario?.checkpoints[0]).toMatchObject({ id: checkpoint, kind });
+    expect(scenario?.viewports).toEqual([...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })]);
+    expect(scenario?.elements.map((element) => element.id)).toEqual([
+      'header',
+      'transcript',
+      'sidebar',
+    ]);
+    expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId(checkpoint))).toBe(true);
+  });
+
+  it.each([
+    'workflow-implementation-narration',
+    'workflow-implementation-adjacent-narration',
+    'workflow-implementation-fenced-handback',
+  ])('rejects raw file-link markdown in the %s checkpoint', (id) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports[0];
+    const predicate = checkpoint && workflowCheckpointPredicates.get(checkpoint.id);
+    if (!scenario || !checkpoint || !viewport || !predicate)
+      throw new Error(`Missing narration checkpoint ${id}`);
+    expect(
+      predicate({
+        scenario,
+        checkpoint,
+        viewport,
+        output: `${checkpoint.marker}\nbriefs passed\n[src/row.ts](file:///tmp/src/row.ts)`,
+      }),
+    ).toBe(false);
+  });
+
   it('keeps the recovery stop-sheet predicate separate from generic ready checkpoints', () => {
     const scenario = findVisualScenario('workflow-stop-sheet-recovery');
 
@@ -178,7 +219,7 @@ describe('visual catalog', () => {
         expect(frame).toContain('Review · Render workflow-review');
         expect(frame).toContain('running 0:12');
         expect(frame).toContain('Review · Render workflow-review 0:12');
-        const plain = stripTerminalControls(frame, { preserveLineBreaks: true });
+        const plain = workflowTranscriptText();
         for (const id of ['T901', 'T902', 'T903']) expect(plain).toContain(`● ${id}`);
         expect(plain).toMatch(/● T902[^\n]*registry\.ts/);
         expect(plain).toMatch(/● T903[^\n]*review-fixture\.md/);

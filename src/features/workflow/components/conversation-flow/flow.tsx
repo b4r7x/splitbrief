@@ -108,12 +108,12 @@ export function ConversationFlow({
     pendingTaskCount: pendingTasks.length,
   });
   // A block too short for every pending brief spends its last row saying how many it left out,
-  // unless that row would be its only one: the heading already carries the count.
+  // unless that row would be its only one: then the heading carries the overflow count.
   const shownPending =
     pendingTasks.length > viewportSplit.queuedRows && viewportSplit.queuedRows > 1
       ? viewportSplit.queuedRows - 1
       : Math.min(viewportSplit.queuedRows, pendingTasks.length);
-  const hiddenPending = viewportSplit.queuedRows > 1 ? pendingTasks.length - shownPending : 0;
+  const hiddenPending = pendingTasks.length - shownPending;
   const queuedRows = pendingTasks.slice(0, shownPending).map((task) =>
     row({
       key: `queued-${task.id}`,
@@ -130,6 +130,7 @@ export function ConversationFlow({
     totalDynamicHeight,
     viewportHeight: scrollViewportHeight,
     activeRowKey,
+    activeTaskHeaderKey,
   } = computeConversationRowScroll({
     sections,
     expandedDiffs,
@@ -204,7 +205,11 @@ export function ConversationFlow({
               <Text color={t.textDim}>no events yet</Text>
             </Box>
           )}
-          <ConversationTranscriptRows rows={rows} visibleActiveRowKey={visibleActiveRowKey} />
+          <ConversationTranscriptRows
+            rows={rows}
+            visibleActiveRowKey={visibleActiveRowKey}
+            activeTaskHeaderKey={activeTaskHeaderKey}
+          />
         </Box>
       </Box>
       {viewportSplit.queuedRows > 0 && (
@@ -220,14 +225,16 @@ export function ConversationFlow({
             flexShrink={0}
             marginLeft={rowLeadingCells('message')}
           >
-            <Text color={t.textDim}>{`Pending ${pendingTasks.length}`}</Text>
+            <Text color={t.textDim}>
+              {`Pending ${pendingTasks.length}${viewportSplit.queuedRows === 1 && hiddenPending > 0 ? `${SOFT_SEP}+${hiddenPending} more` : ''}`}
+            </Text>
           </Box>
           {queuedRows.map((queuedRow) => (
             <Box key={queuedRow.key} height={1} width={conversationWidth} flexShrink={0}>
               <ConversationRowView row={queuedRow} lifecycle="queued" />
             </Box>
           ))}
-          {hiddenPending > 0 && (
+          {hiddenPending > 0 && viewportSplit.queuedRows > 1 && (
             <Box
               height={1}
               width={conversationWidth}
