@@ -312,6 +312,102 @@ function checkedModelLines(frame: string): string[] {
   return modelColumnLines(frame).filter((line) => line.includes(CHECK));
 }
 
+describe('ToolModelPicker focus changes', () => {
+  beforeEach(() => {
+    forceUnicodeGlyphs();
+    resetPickerStores();
+    terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig(),
+    });
+    detectionStore.setDetection({
+      cliTools: [cliDetectionFor('ready', 'claude-code')],
+      providers: [{ provider: 'ollama', available: true, isLocal: true }],
+    });
+    modelCacheStore.setProviderModels('ollama', [{ id: 'c4-ollama-model' }]);
+  });
+
+  it('moves the mounted picker to a new tool and clears omitted focus without self-stacking', async () => {
+    overlayStore.open('planner-picker', 'tool:claude-code');
+    const ui = renderFeature(<ToolModelPicker role="planner" />, { cols: 120, rows: 40 });
+    await flushEffects();
+    expect(frameText(ui)).toContain(`${listRowLead('context')}Claude Code CLI`);
+    expect(frameText(ui)).toContain('Sonnet 5');
+
+    ui.stdin.write(ARROW_LEFT);
+    await flushEffects();
+    ui.stdin.write('Claude');
+    await flushEffects();
+    expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+
+    overlayStore.setExclusive(true);
+    const before = overlayStore.get();
+    overlayStore.open('planner-picker', 'tool:claude-code');
+    await flushEffects();
+    expect(overlayStore.get()).toBe(before);
+    expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+
+    overlayStore.open('planner-picker', 'tool:ollama');
+    await flushEffects();
+    expect(frameText(ui)).toContain(`${listRowLead('context')}Ollama`);
+    expect(frameText(ui)).not.toContain('Sonnet 5');
+    expect(frameText(ui)).toContain('C4 Ollama Model');
+    expect(overlayStore.get()).toEqual({
+      active: 'planner-picker',
+      focus: 'tool:ollama',
+      exclusive: true,
+      stack: [],
+    });
+    overlayStore.open('planner-picker');
+    await flushEffects();
+    expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+    expect(frameText(ui)).toContain('Sonnet 5');
+    expect(frameText(ui)).not.toContain('C4 Ollama Model');
+    expect(overlayStore.get()).toEqual({
+      active: 'planner-picker',
+      focus: undefined,
+      exclusive: true,
+      stack: [],
+    });
+
+    ui.stdin.write(ESC);
+    await flushEffects();
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
+  it('moves an open picker from its tool cursor to the crew seat effort axis', async () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
+    });
+    configStore.__testReset({ config });
+    overlayStore.open('planner-picker');
+    const ui = renderFeature(<ToolModelPicker role="planner" />, { cols: 120, rows: 40 });
+    await flushEffects();
+    expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
+
+    const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
+    if (plan === undefined) throw new Error('No plan seat row.');
+    overlayStore.setExclusive(true);
+    crewActivate({ target: { kind: 'crew', row: plan }, config });
+    await flushEffects();
+
+    expect(
+      modelColumnLines(frameText(ui)).some(
+        (line) => line.includes(glyph('liveBar')) && line.includes('effort'),
+      ),
+    ).toBe(true);
+    expect(overlayStore.get()).toEqual({
+      active: 'planner-picker',
+      focus: 'seat:plan:effort',
+      exclusive: true,
+      stack: [],
+    });
+    ui.unmount();
+  });
+});
+
 describe('ToolModelPicker provider routes', () => {
   let projectDir: string;
   let initialPlanner: Config['planner'];

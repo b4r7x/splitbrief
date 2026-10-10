@@ -65,10 +65,10 @@ type ConsultRun =
   | Readonly<{ kind: 'answer'; result: RequestTypedResult<ConsultAnswer> }>
   | Readonly<{ kind: 'threw'; error: unknown }>;
 
-/** The seat whose consult call threw each error `requestConsult` rethrew, for the halt to name. */
+/** The seat whose consult failed, including returned protocol errors the caller throws. */
 const thrownSeats = new WeakMap<object, ConsultSeat>();
 
-/** The seat whose consult call threw `err`, when `requestConsult` rethrew it. */
+/** The seat whose consult produced `err`, for a caller that halts on that failure. */
 export function thrownConsultSeat(err: unknown): ConsultSeat | undefined {
   return typeof err === 'object' && err !== null ? thrownSeats.get(err) : undefined;
 }
@@ -304,6 +304,7 @@ export async function requestConsult(
   // The reviewer call booked its usage already; the planner's books here.
   if ('error' in answer.result) {
     if (seat === 'plan') apply(addUsageAndSave(usageCtx, state, 'planner', answer.result.usage));
+    thrownSeats.set(answer.result.error, seat);
     return { error: answer.result.error };
   }
 

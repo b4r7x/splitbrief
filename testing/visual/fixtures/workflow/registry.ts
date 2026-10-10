@@ -198,6 +198,7 @@ const checkpointPredicates = [
   [checkpointId('question'), includesAll(WORKFLOW_FIXTURE_TEXT.question)],
   [checkpointId('question-overflow'), includesAll('Question 2 of 3')],
   [checkpointId('question-input'), includesAll('Question 1 of 2', 'New instruction')],
+  [checkpointId('reviewer-question'), includesAll('REVIEW → T904', 'Reply to the reviewer')],
   [checkpointId('planner-reply'), includesAll('Reply to the planner…', 'Waiting for your answer')],
   // The transcript pins the tail, so the block's last row is the width-stable marker.
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],

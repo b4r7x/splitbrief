@@ -51,6 +51,7 @@ describe('formatRecoveryHeadline', () => {
       ],
       [{ reason: 'runner-timeout-repeated' }, 'Two timeouts in a row on T001'],
       [{ reason: 'planner-call-failed' }, 'Planner call failed'],
+      [{ reason: 'planner-call-failed', seat: 'review' }, 'Reviewer call failed'],
       [{ reason: 'planner-returned-no-briefs' }, 'Planner returned no briefs'],
       [{ reason: 'constitution-check-failed' }, 'Constitution check failed'],
       [{ reason: 'brief-review-no-progress' }, 'Brief review is not making progress'],

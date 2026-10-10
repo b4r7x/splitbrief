@@ -113,7 +113,9 @@ export async function runBriefGate(opts: {
     state,
     stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
     acceptance,
-    error: failedChecks.map((run) => checkFailureText(run, carried.get(run.checkId))).join('\n\n'),
+    error: failedChecks
+      .map((run) => checkFailureText(run, { carried: carried.get(run.checkId) }))
+      .join('\n\n'),
     diagnosis: firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`,
   };
 }

@@ -30,6 +30,7 @@ import { ClarificationQuestionSchema } from './question.js';
 
 export const PlannerConversationSchema = z.object({
   call: z.enum(['research', 'spec', 'plan', 'tasks']),
+  seat: z.enum(CONSULT_SEATS).optional(),
   text: z.string(),
   questions: z.array(ClarificationQuestionSchema),
   answers: z.array(z.object({ reply: z.string(), answer: z.string() })),
@@ -132,6 +133,7 @@ export const LineageRecordSchema = z.object({
   attempts: nonnegativeInteger,
   consultAllowance: nonnegativeInteger,
   attemptAllowance: nonnegativeInteger,
+  /** The revision whose stale guidance applied successfully, saved with its fresh input hashes. */
   staleConsultedRevision: z.record(z.string(), z.number().int()).default({}),
   consultRecords: z.array(ConsultRecordSchema).default([]),
   replacedParents: z.array(TaskSchema).default([]),

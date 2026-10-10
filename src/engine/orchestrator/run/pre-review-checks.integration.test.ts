@@ -20,7 +20,9 @@ import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../recovery/builders/checks.js';
 import { failingFilesFromKeys } from '../task/file-owner.js';
+import { failureKeys } from '../validation/extract-failure-keys.js';
 import {
+  buildPreReviewInputs,
   classifyRequiredChecks,
   runPreReviewChecks,
   runPreReview,
@@ -390,6 +392,69 @@ describe('pre-review checks', () => {
       redKeys: ['src/a.ts(1,1): error TS1005'],
     });
     expect(result.defects[0]?.text).toContain('Last changed by T001.');
+  });
+
+  it('lists only each required-check input file and its assertion messages', async () => {
+    const plan = makePlan([{ id: 'K2', kind: 'cmd', value: 'tsc --noEmit', required: true }]);
+    const runner = makeCommandRunner(
+      processError.exitCode({
+        command: 'tsc',
+        code: 1,
+        stderr: '',
+        output: [
+          ' FAIL  src/a.test.ts > adds',
+          'AssertionError: expected 1 to be 2',
+          ' FAIL  src/b.test.ts > subtracts',
+          'AssertionError: expected 3 to be 4',
+          'runner event\n'.repeat(500),
+        ].join('\n'),
+      }),
+    );
+    const result = await runPreReviewChecks(
+      options({ state: makeImplState([], { plan }), runCommand: runner }),
+    );
+
+    expect(result.defects.map((input) => input.file)).toEqual(['src/a.test.ts', 'src/b.test.ts']);
+    expect(result.defects[0]?.text).toContain(
+      '1 failure\nFailures:\n- src/a.test.ts::adds\n  AssertionError: expected 1 to be 2',
+    );
+    expect(result.defects[0]?.text).not.toContain('src/b.test.ts');
+    expect(result.defects[0]?.text).not.toContain('expected 3 to be 4');
+    expect(result.defects[1]?.text).toContain(
+      '1 failure\nFailures:\n- src/b.test.ts::subtracts\n  AssertionError: expected 3 to be 4',
+    );
+    expect(result.defects[1]?.text).not.toContain('src/a.test.ts');
+    expect(result.defects[1]?.text).not.toContain('expected 1 to be 2');
+    for (const input of result.defects) expect(input.text).not.toContain('Output tail:');
+  });
+
+  it('keeps an unassigned Rust failure on the required check target', () => {
+    const output = 'test tests::adds ... FAILED';
+    const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs', required: true };
+    const inputs = buildPreReviewInputs({
+      failed: [
+        {
+          checkId: check.id,
+          status: 'fail',
+          output,
+          failure: failureKeys(
+            { capture: { text: output, complete: true }, exitCode: 1 },
+            projectDir,
+          ),
+          command: 'cargo test',
+        },
+      ],
+      registry: new Map([[check.id, check]]),
+      tasks: [],
+      ledger: null,
+      workspaceDir: projectDir,
+    });
+
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({ file: 'src/lib.rs', failureKeys: ['tests::adds'], output });
+    expect(inputs[0]?.text).toContain('1 failure\nFailures:\n- tests::adds');
+    expect(inputs[0]?.text).not.toContain('0 failures');
+    expect(inputs[0]?.text).not.toContain('Output tail:');
   });
 
   it('reads the files a check failure key names relative to the workspace', () => {

@@ -419,7 +419,7 @@ describe('requestConsult', () => {
     expect(seen.at(-1)?.plannerSessionId).toBe('native-1');
   });
 
-  it('records a stale consult without spending a planner call', async () => {
+  it('records a stale consult without marking it applied or spending a planner call', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const { bus } = makeBusRecorder();
     const planner = consultPlanner([guidanceAnswer('Inputs moved.', null)], true);
@@ -450,7 +450,8 @@ describe('requestConsult', () => {
     expect('answer' in result).toBe(true);
     const after = seen.at(-1)!;
     expect(after.lineages?.T003?.consults).toBe(1);
-    expect(after.lineages?.T003?.staleConsultedRevision).toEqual({ T003: 1 });
+    expect(after.lineages?.T003?.staleConsultedRevision).toEqual({});
+    expect(after.tasks[0]?.inputHashes).toEqual(state.tasks[0]?.inputHashes);
     expect(after.plannerCalls?.used ?? 0).toBe(0);
     expect(after.tokenUsage.plannerInput).toBe(10);
   });

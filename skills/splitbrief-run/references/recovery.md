@@ -9,7 +9,7 @@ Seat failures use the diagnoses and halt rules in references/tool-recipes.md.
 Validate consult and triage answers against their schemas before applying an action.
 Use ConsultAnswerSchema for consults and the typed triage contract below.
 If validation fails, send the invalid answer and schema errors in one repair request.
-Validate the repaired answer. If it is still invalid, record a planner seat failure and apply no action.
+Validate the repaired answer. If it is still invalid, record a failure of the seat that answered and apply no action.
 Use references/tool-recipes.md for seat recovery.
 A direct writer's completion report follows the contract in references/implementer-prompt.md (Completion report); the one recovery rule here: it receives no repair request.
 
@@ -29,17 +29,20 @@ Use this shape:
 A failed post-consult attempt consults again while bounds permit.
 A recipe error is seat trouble. Halt with its diagnosis; do not improvise permission flags or change adapters mid-run.
 
-## Planner consult
+## Task consult
 
 Consult immediately on proposed decisions before the next dispatch.
 Apply confirmed decisions with references/planning.md.
-Keep the consult read-only. The planner chooses the next action and never edits implementation code.
-Use the same planning session and record the answer with its diagnosis.
+Keep the consult read-only. The seat that owns the task chooses the next action and never edits implementation code.
+Plan tasks use the planner's session. Fix tasks use the reviewer with the full fix context and no session.
+Decision-confirm stays with the planner. Record each answer with its seat and diagnosis.
 
 <!-- generated: consult-table -->
 Attempt → 1 local retry with the exact errors → a consult.
 A plan task consults the planner. A fix task the reviewer wrote consults the reviewer, also after a rewrite or a split.
 Every decision-confirm stays with the planner.
+The planner continues its planning session. The reviewer reads the full fix context without a session.
+Record a malformed answer as a failure of the seat that answered. Apply no action.
 
 | Action | Next step |
 |---|---|
@@ -52,8 +55,14 @@ Every decision-confirm stays with the planner.
 
 Keep lineage counters across splits and resume: 2 consults and 8 attempts.
 Keep the run counter: 10 planner decisions after planning, including the consults of both seats and triage.
-Before dispatch, changed inputs get one stale consult per revision: guidance or rewrite-task.
+Before dispatch, changed inputs get one successful stale consult per revision: guidance or rewrite-task.
 A stale consult spends no run planner decision. A blocked report consults at once.
+A thrown or malformed stale consult halts on the seat that answered. Never dispatch the unchanged brief.
+A guarded rewrite or split asks the operator on the consulted seat before dispatch.
+An unanswered stale guard question halts on that seat, keeps input hashes unchanged, and dispatches no implementer.
+A failed stale call, malformed answer or unanswered guard leaves the stale revision marker unchanged. Retry consults the same seat before dispatch.
+Successful stale guidance records fresh input hashes and marks the revision in one transition. A rewrite records hashes on its new revision.
+An answered stale guard question records fresh input hashes and sends the operator's answer as guidance on the first attempt.
 A hand-back with new decisions gets one decision-confirm before validation: confirm (how) or ask-user (what).
 Decision-confirm runs at most once per attempt, bounded by the brief's attempts.
 It spends no run counter, never a lineage consult or a planner decision.

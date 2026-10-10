@@ -33,6 +33,8 @@ import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { thrownConsultSeat } from '../consult/request.js';
+import { typedOutputError } from '../../runners/typed-output.js';
+import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 
 export type RetryAndRecordOptions = {
   wctx: WorkflowContext;
@@ -72,14 +74,14 @@ export function retryFailureLabel(err: unknown, taskId: TaskId): string {
  */
 function consultHaltSeat(
   wctx: WorkflowContext,
-  err: unknown,
+  seat: ConsultSeat,
 ): Readonly<{
   seat: ConsultSeat;
   runner: ReviewerConfig;
   swap: Readonly<{ seat: ConsultSeat; runner: ReviewerConfig }>;
   details: string[];
 }> {
-  if (thrownConsultSeat(err) !== 'review') {
+  if (seat !== 'review') {
     const runner = wctx.config.planner;
     return { seat: 'plan', runner, swap: { seat: 'plan', runner }, details: [] };
   }
@@ -137,6 +139,7 @@ export async function handleTaskPlannerCallFailure(
     Pick<RetryAndRecordOptions, 'state' | 'setTrackedState'> & {
       err: unknown;
       label: string;
+      seat?: ConsultSeat;
     },
 ): Promise<WorkflowState> {
   const { wctx, task, err, setTrackedState } = opts;
@@ -146,7 +149,8 @@ export async function handleTaskPlannerCallFailure(
     setTrackedState(stoppedState);
     return stoppedState;
   }
-  const halt = consultHaltSeat(wctx, err);
+  const consultSeat = opts.seat ?? thrownConsultSeat(err);
+  const halt = consultHaltSeat(wctx, consultSeat ?? 'plan');
   const diagnosis = diagnosePlannerCallFailure({
     err,
     label: opts.label,
@@ -167,8 +171,15 @@ export async function handleTaskPlannerCallFailure(
   // A consult seat out of quota or signed out halts on that seat, not as a brief
   // that exhausted its retries. The halt names the brief, so retrying it or
   // moving the seat replays that brief from its start.
-  const issue =
-    diagnosis.failure === 'call-failed'
+  const issue = typedOutputError.isSeatProtocol(err)
+    ? await seatProtocolHaltIssue({
+        projectDir: wctx.projectDir,
+        config: wctx.config,
+        error: err,
+        phase: recoveryBaseState.phase,
+        task,
+      })
+    : diagnosis.failure === 'call-failed' && consultSeat === undefined
       ? buildRetryExhaustedRecoveryIssue({
           task,
           phase: recoveryBaseState.phase,
@@ -189,7 +200,16 @@ export async function handleTaskPlannerCallFailure(
           swap: halt.swap,
           details: [...consultHaltDetails(task.id, halt.seat), ...halt.details],
         });
-  const nextState = raisePendingRecovery(wctx, recoveryBaseState, issue, setTrackedState);
+  const nextState = raisePendingRecovery(
+    wctx,
+    recoveryBaseState,
+    {
+      ...issue,
+      attempts: recoveryBaseState.attempt,
+      maxAttempts: DEFAULT_LOCAL_RETRIES,
+    },
+    setTrackedState,
+  );
   await recordFailedTask(opts, nextState, recoveryBaseState.attempt);
   return nextState;
 }

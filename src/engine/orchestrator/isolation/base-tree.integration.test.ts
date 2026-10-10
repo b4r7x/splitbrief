@@ -12,17 +12,29 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import * as fs from 'node:fs/promises';
 import { basename, isAbsolute, join, relative } from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
+import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { runBaseTreesRoot } from '../../../core/paths.js';
+import { installDiagnosticSink } from '../../../lib/warn.js';
 import { runBaseOf, withRunBaseTree } from './base-tree.js';
 import { runBaseTreeError } from './errors.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs/promises')>()),
+}));
 
 const FILES = {
   'src/legacy.ts': 'export const legacy = 1;\n',
   'src/legacy.test.ts': "import { legacy } from './legacy.js';\n",
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function inside(root: string, path: string): boolean {
   const rel = relative(root, path);
@@ -66,6 +78,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         sessionId: 'sess-base-tree',
         atBase: (dir) => {
           commitTreeOnlyEntries(dir);
+          writeFileSync(join(dir, 'scripts/hook.sh'), '#!/bin/sh\necho edited\n');
           // An uncommitted edit the run started from belongs to the run base.
           writeFileSync(join(dir, 'src/legacy.ts'), 'export const legacy = 2;\n');
         },
@@ -95,6 +108,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           expect(() => git(dir, `cat-file -e ${first}^{commit}`)).not.toThrow();
           expect(git(dir, 'ls-files')).toContain('scripts/hook.sh');
           expect(statSync(join(dir, 'scripts/hook.sh')).mode & 0o111).not.toBe(0);
+          expect(readFileSync(join(dir, 'scripts/hook.sh'), 'utf-8')).toContain('echo edited');
           expect(readlinkSync(join(dir, 'legacy-link.ts'))).toBe('src/legacy.ts');
           expect(readFileSync(join(dir, 'fixtures/p/.splitbrief/config.yaml'), 'utf-8')).toBe(
             'version: 3\n',
@@ -103,7 +117,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           return readFileSync(join(dir, 'src/legacy.ts'), 'utf-8');
         });
 
-        expect(legacy).toBe('export const legacy = 2;\n');
+        expect(legacy).toEqual({ result: 'export const legacy = 2;\n', cleanupError: undefined });
         expect(tree).not.toBe('');
         expect(existsSync(tree)).toBe(false);
         expect(git(run.dir, 'for-each-ref')).toBe(refs);
@@ -129,7 +143,7 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
   });
 
   // C3 review: an unreachable base commit crashed the review and left the base row running.
-  it('throws checkoutFailed with the Git error when the base commit cannot be checked out, and leaves nothing behind', async () => {
+  it('throws preparationFailed with the Git error when the base commit cannot be checked out, and leaves nothing behind', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-base-tree-unreachable' }, async (run) => {
       const worktrees = git(run.dir, 'worktree list --porcelain');
       mkdirSync(runBaseTreesRoot(), { recursive: true });
@@ -140,10 +154,10 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         (err: unknown) => err,
       );
 
-      expect(runBaseTreeError.isCheckoutFailed(failed)).toBe(true);
+      expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
       expect(failed).toHaveProperty(
         'message',
-        expect.stringContaining('the run base could not be checked out'),
+        expect.stringContaining('the run base could not be prepared'),
       );
       expect(failed).toHaveProperty('message', expect.stringContaining('f'.repeat(40)));
       expect(use).not.toHaveBeenCalled();
@@ -161,13 +175,17 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
       const stale = join(runBaseTreesRoot(), `base-${gone}-stale`);
       const live = join(runBaseTreesRoot(), `base-${process.pid}-live`);
       const unowned = join(runBaseTreesRoot(), 'base-unowned');
+      const missing = join(run.dir, 'unrelated-missing-worktree');
       git(run.dir, `worktree add --detach ${JSON.stringify(stale)} HEAD`);
       git(run.dir, `worktree add --detach ${JSON.stringify(live)} HEAD`);
+      git(run.dir, `worktree add --detach ${JSON.stringify(missing)} HEAD`);
+      rmSync(missing, { recursive: true, force: true });
       // Git names a registration after the tree's directory, whatever path form it prints.
       const registered = (tree: string) =>
         existsSync(join(run.dir, '.git', 'worktrees', basename(tree)));
       expect(registered(stale)).toBe(true);
       mkdirSync(unowned);
+      const launches = recordGitLaunches();
       try {
         await withRunBaseTree(baseOf(run), async () => undefined);
 
@@ -176,12 +194,200 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
         expect(existsSync(live)).toBe(true);
         expect(registered(live)).toBe(true);
         expect(existsSync(unowned)).toBe(true);
+        expect(registered(missing)).toBe(true);
+        expect(git(run.dir, 'worktree list --porcelain')).toContain(missing);
+        expect(launches.launches().some((line) => line.includes('worktree prune'))).toBe(false);
       } finally {
+        launches.restore();
         git(run.dir, `worktree remove --force ${JSON.stringify(live)}`);
+        git(run.dir, `worktree remove --force ${JSON.stringify(missing)}`);
         rmSync(unowned, { recursive: true, force: true });
       }
     });
   });
+
+  it('sweeps dead-process copies and another repository worktree on a run without a base commit', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-owner' }, async (owner) => {
+      await withApplyRun(
+        FILES,
+        { sessionId: 'sess-base-sweep-no-head', strategy: 'staged-copy' },
+        async (run) => {
+          expect(run.workspace.base.head).toBeNull();
+          mkdirSync(runBaseTreesRoot(), { recursive: true });
+          const gone = spawnSync(process.execPath, ['-e', '']).pid;
+          const stale = join(runBaseTreesRoot(), `base-${gone}-foreign`);
+          const copy = join(runBaseTreesRoot(), `base-${gone}-copy`);
+          const older = join(runBaseTreesRoot(), 'base-older-build');
+          git(owner.dir, `worktree add --detach ${JSON.stringify(stale)} HEAD`);
+          git(owner.dir, `worktree add --detach ${JSON.stringify(older)} HEAD`);
+          mkdirSync(copy);
+          writeFileSync(join(copy, 'leftover.txt'), 'snapshot-only');
+          const registration = join(owner.dir, '.git/worktrees', basename(stale));
+          const olderRegistration = join(owner.dir, '.git/worktrees', basename(older));
+          expect(existsSync(registration)).toBe(true);
+          try {
+            await withRunBaseTree(baseOf(run), async () => undefined);
+            expect(existsSync(stale)).toBe(false);
+            expect(existsSync(registration)).toBe(false);
+            expect(existsSync(copy)).toBe(false);
+            expect(existsSync(older)).toBe(true);
+            expect(existsSync(olderRegistration)).toBe(true);
+            expect(git(owner.dir, 'worktree list --porcelain')).not.toContain(stale);
+          } finally {
+            git(owner.dir, `worktree remove --force ${JSON.stringify(older)}`);
+          }
+        },
+      );
+    });
+  });
+
+  it('warns about a stale tree it cannot remove and still prepares the run base', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-sweep-fails' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const gone = spawnSync(process.execPath, ['-e', '']).pid;
+      const stale = join(runBaseTreesRoot(), `base-${gone}-locked`);
+      git(run.dir, `worktree add --detach ${JSON.stringify(stale)} HEAD`);
+      git(run.dir, `worktree lock ${JSON.stringify(stale)}`);
+      const warnings: string[] = [];
+      const restore = installDiagnosticSink((message) => warnings.push(message));
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const completed = await withRunBaseTree({ ...baseOf(run), head: null }, async ({ dir }) =>
+            readFileSync(join(dir, 'src/legacy.ts'), 'utf8'),
+          );
+          expect(completed).toEqual({ result: FILES['src/legacy.ts'], cleanupError: undefined });
+        }
+        expect(warnings).toHaveLength(2);
+        expect(warnings.every((warning) => warning.includes(stale))).toBe(true);
+        expect(warnings.every((warning) => warning.includes('locked'))).toBe(true);
+        expect(existsSync(stale)).toBe(true);
+        expect(existsSync(join(run.dir, '.git/worktrees', basename(stale)))).toBe(true);
+      } finally {
+        restore();
+        git(run.dir, `worktree unlock ${JSON.stringify(stale)}`);
+        git(run.dir, `worktree remove --force ${JSON.stringify(stale)}`);
+      }
+    });
+  });
+
+  it.each(['absolute', 'relative'] as const)(
+    'sweeps a stale tree with a missing %s gitdir and runs the current base command',
+    async (pathKind) => {
+      await withApplyRun(FILES, { sessionId: 'sess-base-owner-gone' }, async (run) => {
+        const owner = createTempDir('base-owner-gone');
+        createTestGitRepo(owner, FILES);
+        mkdirSync(runBaseTreesRoot(), { recursive: true });
+        const gone = spawnSync(process.execPath, ['-e', '']).pid;
+        const stale = join(runBaseTreesRoot(), `base-${gone}-owner-gone`);
+        git(owner, `worktree add --detach ${JSON.stringify(stale)} HEAD`);
+        const gitdir = readFileSync(join(stale, '.git'), 'utf8').trim().slice('gitdir: '.length);
+        if (pathKind === 'relative') {
+          writeFileSync(join(stale, '.git'), `gitdir: ${relative(stale, gitdir)}\n`);
+        }
+        cleanupTempDir(owner);
+        expect(existsSync(gitdir)).toBe(false);
+        const worktrees = git(run.dir, 'worktree list --porcelain');
+        try {
+          const completed = await withRunBaseTree(baseOf(run), async ({ dir }) => {
+            expect(existsSync(stale)).toBe(false);
+            expect(git(dir, 'rev-parse HEAD').trim()).toBe(run.workspace.base.head);
+            return readFileSync(join(dir, 'src/legacy.ts'), 'utf8');
+          });
+          expect(completed).toEqual({ result: FILES['src/legacy.ts'], cleanupError: undefined });
+          expect(git(run.dir, 'worktree list --porcelain')).toBe(worktrees);
+        } finally {
+          rmSync(stale, { recursive: true, force: true });
+          cleanupTempDir(owner);
+        }
+      });
+    },
+  );
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'wraps a snapshot reconciliation failure and removes the %s base tree',
+    async (strategy) => {
+      await withApplyRun(FILES, { sessionId: 'sess-base-reconcile', strategy }, async (run) => {
+        mkdirSync(runBaseTreesRoot(), { recursive: true });
+        const before = readdirSync(runBaseTreesRoot());
+        const worktrees = git(run.dir, 'worktree list --porcelain');
+        const use = vi.fn();
+        const failed = await withRunBaseTree(
+          { ...baseOf(run), snapshotId: 'missing-snapshot' },
+          use,
+        ).catch((err: unknown) => err);
+        expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
+        expect(failed).toHaveProperty('message', expect.stringContaining('missing-snapshot'));
+        expect(use).not.toHaveBeenCalled();
+        expect(readdirSync(runBaseTreesRoot())).toEqual(before);
+        expect(git(run.dir, 'worktree list --porcelain')).toBe(worktrees);
+      });
+    },
+  );
+
+  it('records cleanup failure alongside the preparation error', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-base-double-failure' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const before = readdirSync(runBaseTreesRoot());
+      const cleanupError = new Error('base copy removal denied');
+      const remove = fs.rm;
+      vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+        if (String(path).startsWith(runBaseTreesRoot())) throw cleanupError;
+        return remove(path, options);
+      });
+      try {
+        const failed = await withRunBaseTree(
+          { ...baseOf(run), head: 'f'.repeat(40) },
+          vi.fn(),
+        ).catch((err: unknown) => err);
+        expect(runBaseTreeError.isPreparationFailed(failed)).toBe(true);
+        expect(failed).toHaveProperty('message', expect.stringContaining('f'.repeat(40)));
+        expect(failed).toHaveProperty('message', expect.stringContaining(cleanupError.message));
+        expect(failed).toHaveProperty('data.cleanupError', cleanupError);
+      } finally {
+        vi.restoreAllMocks();
+        for (const name of readdirSync(runBaseTreesRoot())) {
+          if (!before.includes(name)) rmSync(join(runBaseTreesRoot(), name), { recursive: true });
+        }
+      }
+    });
+  });
+
+  it.each(['pass', 'throw'] as const)(
+    'reports cleanup failure after the callback chooses to %s',
+    async (outcome) => {
+      await withApplyRun(FILES, { sessionId: 'sess-base-cleanup-fails' }, async (run) => {
+        const warnings: string[] = [];
+        const restore = installDiagnosticSink((message) => warnings.push(message));
+        const callbackError = new Error('callback failed');
+        let tree = '';
+        try {
+          const completed = await withRunBaseTree(baseOf(run), async ({ dir }) => {
+            tree = dir;
+            git(run.dir, `worktree lock ${JSON.stringify(dir)}`);
+            if (outcome === 'throw') throw callbackError;
+            return 'passed';
+          }).catch((err: unknown) => err);
+          if (outcome === 'throw') {
+            expect(completed).toBe(callbackError);
+            expect(warnings.join('\n')).toContain(tree);
+            expect(warnings.join('\n')).toContain('locked');
+          } else {
+            expect(completed).toMatchObject({
+              result: 'passed',
+              cleanupError: expect.stringContaining(tree),
+            });
+            expect(completed).toHaveProperty('cleanupError', expect.stringContaining('locked'));
+          }
+          expect(existsSync(tree)).toBe(true);
+          expect(existsSync(join(run.dir, '.git/worktrees', basename(tree)))).toBe(true);
+        } finally {
+          restore();
+          git(run.dir, `worktree unlock ${JSON.stringify(tree)}`);
+          git(run.dir, `worktree remove --force ${JSON.stringify(tree)}`);
+        }
+      });
+    },
+  );
 
   it('names the base a staged-copy run started from, and why its copy is incomplete', async () => {
     await withApplyRun(
@@ -194,12 +400,13 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
           git: existsSync(join(dir, '.git')),
           incomplete,
         }));
-        expect(seen).toEqual({
+        expect(seen.result).toEqual({
           legacy: FILES['src/legacy.ts'],
           git: false,
           incomplete:
             'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks',
         });
+        expect(seen.cleanupError).toBeUndefined();
       },
     );
   });

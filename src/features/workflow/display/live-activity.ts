@@ -94,6 +94,14 @@ export function deriveLiveStatus(input: {
       tone: 'validator',
     };
   }
+  if (input.activeOperation?.status === 'running' && input.activeOperation.role === 'review') {
+    return {
+      verb: reviewActivityText(input.activeOperation, input.reviewerLabel),
+      stageStart: Math.max(input.activeOperation.startedAt, input.resumedAt ?? 0),
+      waitedMs: 0,
+      tone: 'validator',
+    };
+  }
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
   const activeStage = getActiveRailStage(input.phase);

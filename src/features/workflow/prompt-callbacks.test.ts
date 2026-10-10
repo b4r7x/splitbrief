@@ -219,6 +219,38 @@ describe('buildPromptCallbacks onPlannerReply', () => {
     answered: false,
   };
 
+  it.each([
+    { questions: [] },
+    { questions: [{ id: 'ask-user', type: 'input' as const, text: 'Which module?' }] },
+  ])('names the reviewer that asked, with questions $questions', async ({ questions }) => {
+    const hints: string[] = [];
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode('the cache'),
+      setQuestionMode: async (hint) => {
+        hints.push(hint);
+        return 'the cache';
+      },
+    });
+
+    await expect(callbacks.onPlannerReply?.({ ...reply, seat: 'review', questions })).resolves.toBe(
+      'the cache',
+    );
+    expect(hints).toEqual(['Reply to the reviewer…']);
+  });
+
+  it('keeps the planner hint for conversations without a recorded seat', async () => {
+    const hints: string[] = [];
+    const callbacks = makeCallbacksWithInputMode({
+      ...makeInputMode('the cache'),
+      setQuestionMode: async (hint) => {
+        hints.push(hint);
+        return 'the cache';
+      },
+    });
+    await callbacks.onPlannerReply?.(reply);
+    expect(hints).toEqual(['Reply to the planner…']);
+  });
+
   it('hands an empty submit on as an empty reply, not as no reply', async () => {
     await expect(makeCallbacks('   ').onPlannerReply?.(reply)).resolves.toBe('');
   });

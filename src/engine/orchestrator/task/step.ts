@@ -6,7 +6,8 @@ import type { WorkflowContext } from '../types.js';
 import { recordTaskUsage } from '../tokens.js';
 import { toErrorMessage, labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
-import { publishError, publishWarning } from '../events.js';
+import { publishError } from '../events.js';
+import { error } from '../../../utils/error.js';
 import {
   addUsageAndSave,
   parkStoppedRun,
@@ -124,7 +125,7 @@ async function rerunReplacedTask(
 
 /**
  * What the stale refresh left: the replacement to rerun, or the task to dispatch
- * with the planner's guidance when one answered.
+ * with the consult seat's guidance when one answered.
  */
 type StaleRefresh =
   | { kind: 'replaced'; state: WorkflowState }
@@ -137,19 +138,21 @@ function noAttemptSnapshot(): ChangedFilesSnapshot {
 
 /**
  * The stale refresh before dispatch: when the brief's inputs moved under it since
- * the revision recorded their hashes, the planner is asked once, with reason
+ * the revision recorded their hashes, the task's seat is asked, with reason
  * `stale`, what the new workspace means for the brief. Guidance becomes the first
  * attempt's extra instructions and the fresh hashes are recorded without a new
  * revision; a rewrite records them on its new revision and hands back to the task
- * loop, which dispatches it. A consult that cannot be reached is a warning:
- * dispatch goes on.
+ * loop, which dispatches it. Successful guidance marks the revision with its fresh
+ * hashes. A failed consult leaves both unchanged and halts on the answering seat.
  */
-async function refreshStaleTask(
-  opts: RunSingleTaskOptions,
-  task: Task,
-  state: WorkflowState,
-  taskStartTime: number,
-): Promise<StaleRefresh> {
+async function refreshStaleTask(input: {
+  opts: RunSingleTaskOptions;
+  task: Task;
+  state: WorkflowState;
+  taskStartTime: number;
+}): Promise<StaleRefresh> {
+  const { opts, task, taskStartTime } = input;
+  let state = input.state;
   const revision = task.revision ?? 1;
   const lineage = state.lineages?.[lineageIdOf(task)];
   if (lineage?.staleConsultedRevision[task.id] === revision) {
@@ -206,14 +209,7 @@ async function refreshStaleTask(
       ...(userText !== undefined && { userText }),
     },
   );
-  if ('error' in refreshed) {
-    publishWarning({
-      bus: opts.wctx.bus,
-      phase: state.phase,
-      message: `Stale refresh for ${task.id} skipped: ${refreshed.error.message}`,
-    });
-    return { kind: 'dispatch', state, task, guidance: undefined };
-  }
+  if ('error' in refreshed) throw refreshed.error;
   if (queued.messages.length > 0) {
     state = commitQueueMessagesConsulted({
       projectDir: opts.wctx.projectDir,
@@ -250,11 +246,8 @@ async function refreshStaleTask(
   if (applied.action === 'rewrite-task') {
     return { kind: 'replaced', state };
   }
-  if (applied.action === 'guidance' || applied.action === 'ask-user') {
-    const guidance =
-      applied.action === 'guidance'
-        ? guidanceInstructions(applied.instructions, applied.context)
-        : `${applied.question}\n\nWhy only you can answer: ${applied.whyOnlyUserCanAnswer}`;
+  if (applied.action === 'guidance') {
+    const guidance = guidanceInstructions(applied.instructions, applied.context);
     state = transitionAndSave(
       { projectDir: opts.wctx.projectDir, sessionId: opts.wctx.sessionId },
       state,
@@ -267,13 +260,19 @@ async function refreshStaleTask(
     opts.setTrackedState(state);
     return { kind: 'dispatch', state, task, guidance };
   }
-  publishWarning({
-    bus: opts.wctx.bus,
-    phase: state.phase,
-    message: `Stale refresh for ${task.id} answered ${applied.action}; dispatching the brief unchanged`,
-  });
-  return { kind: 'dispatch', state, task, guidance: undefined };
+  throw staleConsultError.failedAction({ task, applied });
 }
+
+const staleConsultError = {
+  failedAction: (input: { task: Task; applied: Awaited<ReturnType<typeof applyConsultAnswer>> }) =>
+    error(
+      'stale-consult-failed',
+      `Stale refresh for ${input.task.id} could not apply ${input.applied.action}${
+        input.applied.action === 'failed' ? `: ${input.applied.reason}` : ''
+      }`,
+      { taskId: input.task.id, action: input.applied.action },
+    ),
+} as const;
 
 export async function runSingleTask(opts: RunSingleTaskOptions): Promise<WorkflowState> {
   const { wctx, index, totalTasks, taskBreakdowns, setTrackedState, setCurrentTask } = opts;
@@ -295,9 +294,23 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   }
 
   const taskStartTime = Date.now();
-  // A task whose recorded inputs changed under it is refreshed once per revision
-  // before it is dispatched, so the brief runs on the workspace it will meet.
-  const staleRefresh = await refreshStaleTask(opts, task, state, taskStartTime);
+  // A successful stale refresh marks the revision; a halted refresh must consult again on Retry.
+  let staleRefresh: StaleRefresh;
+  try {
+    staleRefresh = await refreshStaleTask({ opts, task, state, taskStartTime });
+  } catch (err) {
+    const seat = consultSeat(task, 'stale');
+    return handleTaskPlannerCallFailure({
+      wctx,
+      task,
+      state,
+      taskStartTime,
+      setTrackedState,
+      err,
+      seat,
+      label: consultFailureLabel(seat, task.id),
+    });
+  }
   if (staleRefresh.kind === 'replaced') {
     return (await rerunReplacedTask(opts, staleRefresh.state)) ?? staleRefresh.state;
   }
@@ -308,11 +321,11 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   const retryError =
     guidance === undefined
       ? carriedFailure
-      : consultAttemptError(
-          `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
-          guidance,
-          consultSeat(task, 'stale'),
-        );
+      : consultAttemptError({
+          lastError: `The task's inputs changed since the brief was compiled: ${taskInputFiles(task).join(', ')}`,
+          instructions: guidance,
+          seat: consultSeat(task, 'stale'),
+        });
 
   setCurrentTask(task);
 

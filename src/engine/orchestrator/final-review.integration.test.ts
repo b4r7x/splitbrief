@@ -1222,7 +1222,11 @@ describe('runFinalReviewPhase', () => {
               ask: null,
             },
             verification: [
-              { id: 'finding:F9', status: 'fail', output: 'K9: fail — EXACT triage output' },
+              {
+                id: 'finding:F9',
+                status: 'fail',
+                output: 'check K9 did not pass (fail): EXACT triage output',
+              },
             ],
           },
         ],

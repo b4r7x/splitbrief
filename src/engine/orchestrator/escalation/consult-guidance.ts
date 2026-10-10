@@ -14,11 +14,12 @@ export function guidanceInstructions(instructions: string, context: string | nul
 }
 
 /** The error block the one post-consult attempt retries with, under the seat that answered. */
-export function consultAttemptError(
-  lastError: string,
-  instructions: string,
-  seat: ConsultSeat,
-): string {
+export function consultAttemptError(opts: {
+  lastError: string;
+  instructions: string;
+  seat: ConsultSeat;
+}): string {
+  const { lastError, instructions, seat } = opts;
   return truncateByChars(
     `${lastError}\n\n## Guidance from the ${consultSeatRunner(seat)}:\n${instructions}`,
     BOUNDS.consultFailingOutputChars,

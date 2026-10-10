@@ -849,6 +849,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-reviewer-question',
+      title: 'Workflow · reviewer consult question',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'reviewer-question',
+        title: 'The reviewer asks about its repair task',
+        kind: 'question',
+        marker: 'Reply to the reviewer',
+      },
+      elements: [
+        { id: 'transcript', title: 'Reviewer consult' },
+        { id: 'composer', title: 'Reply to the reviewer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-question-input',
       title: 'Workflow · answer inside the question',
       surface: screenSurface('workflow'),

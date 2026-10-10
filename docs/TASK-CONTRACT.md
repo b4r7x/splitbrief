@@ -502,7 +502,7 @@ type EvidenceLedger = {
       exitCode?: number;
       output?: string;           // bounded, redacted tail
       preExisting?: string[];    // failure keys the same reviewer command also shows at the run base
-      base?: { exitCode?: number; output?: string };  // the run base re-run of a red reviewer check: its exit code and bounded output
+      base?: { exitCode?: number; output?: string };  // a returned base re-run result: its exit code and bounded output
       artifacts?: Array<{ path: string; sha256: string }>;
       workspaceSnapshotId?: string;
       ts: string;
@@ -524,6 +524,8 @@ type EvidenceLedger = {
 ```
 
 ### Check kinds and policy
+
+Any base-tree preparation failure, including directory creation, listing stale trees, checkout, submodule initialization, snapshot reconciliation or dependency linking, settles the base row as *not verified at the run base* with its error. The reviewer decides and the check has no `base` field. A cleanup failure during preparation appears alongside the original error. Cleanup failure after a completed base command settles the row as *not verified at the run base*, with the cleanup error visible. The review continues; its keys stay unverified and the check has no `base` field, even though the command completed. Callback errors propagate unchanged; cleanup failures alongside them are reported as warnings. Every base re-run sweeps dead-PID trees, including runs with no base commit. Registered trees are removed individually in their owning repository with `git worktree remove --force <dir>`; unrelated registrations and older names without a PID stay untouched. A tree whose `.git` file names a missing gitdir is deleted from disk because its registration is gone. A stale tree that cannot be removed is a warning that names it; the sweep and the current base re-run continue and compare keys as usual, so one broken leftover cannot block later base re-runs. See [Troubleshooting](./TROUBLESHOOTING.md#symptom-the-base-re-run-is-red-although-the-same-commit-passes-in-your-checkout) for one-time manual removal of those older trees.
 
 A check is one of three kinds. A `test` check runs the named test file or pattern through the resolved test command (`resolveTestCommand`) and the stack's narrowing; on this repository that is `npm test -- <file>`, which finds only unit files, so an integration test is a `cmd` check (`npm run test:integration -- <file>`). A `cmd` check runs its value as a command: `npm run <script>` is allowed only under an approved plan and only when `package.json` defines the script, and `npx` is allowed only as `npx --no-install <stack tool>`. `checkCommandRefusal` (`src/engine/orchestrator/planning/sanitize-discovered-validation.ts`) decides this; `planApprovesNpmScripts` reads the configured approval level and the run's recorded plan approval, and without approval every other command falls to `unsafeCommandReason`. The plan card lists approved `npm run` checks as confirmations (`planConfirmations`, `src/engine/orchestrator/approval/confirm.ts`). A `render` check runs the user's `validation.render` command — `{id}` is the check's value, one argv element matching `^[a-z0-9-]+$`, and `{out}` is a fresh directory under `<workspace>/.test-artifacts/ui/`, with cwd the workspace; it is not filtered by the planner command policy. Every `.png` under `{out}` is copied to `.splitbrief/sessions/<id>/renders/<check-id>/` and logged with its sha256. With no `validation.render` the check is `not-runnable` with `validation.render is not set`.
 

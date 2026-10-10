@@ -1136,8 +1136,9 @@ describe('consult and split state operations', () => {
     expect(next.lineages?.T002?.notes).toEqual(['five more planner calls']);
   });
 
-  it('RECORD_CONSULT appends the answer, counts the consult, and remembers a stale revision', () => {
-    const state = implementationState([makeTask({ id: 'T002' })]);
+  it('RECORD_CONSULT records a stale answer without marking it applied or refreshing its hashes', () => {
+    const task = makeTask({ id: 'T002', inputHashes: { 'src/a.ts': 'before' } });
+    const state = implementationState([task]);
 
     const next = transition(
       state,
@@ -1161,8 +1162,10 @@ describe('consult and split state operations', () => {
 
     expect(next.lineages?.T002).toMatchObject({
       consults: 1,
-      staleConsultedRevision: { T002: 2 },
     });
+    expect(next.lineages?.T002?.staleConsultedRevision).toEqual({});
+    expect(next.tasks[0]).toBe(task);
+    expect(next.tasks[0]?.inputHashes).toEqual({ 'src/a.ts': 'before' });
     expect(next.lineages?.T002?.consultRecords[0]).toEqual({
       reason: 'stale',
       action: 'guidance',
@@ -1196,7 +1199,7 @@ describe('consult and split state operations', () => {
   });
 
   it('SET_TASK_INPUT_HASHES and RECORD_CHECK_RESULTS update the task', () => {
-    const state = implementationState([makeTask({ id: 'T002' })]);
+    const state = implementationState([makeTask({ id: 'T002', revision: 2 })]);
 
     const hashed = transition(state, {
       type: 'SET_TASK_INPUT_HASHES',
@@ -1204,6 +1207,7 @@ describe('consult and split state operations', () => {
       inputHashes: { 'src/a.ts': 'sha' },
     });
     expect(hashed.tasks[0]?.inputHashes).toEqual({ 'src/a.ts': 'sha' });
+    expect(hashed.lineages?.T002?.staleConsultedRevision).toEqual({ T002: 2 });
 
     const recorded = transition(hashed, {
       type: 'RECORD_CHECK_RESULTS',

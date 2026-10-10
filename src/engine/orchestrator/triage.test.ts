@@ -18,6 +18,7 @@ import type {
 } from '../../core/schemas/workflow.js';
 import { applyTriage, runTriageVerification, triageContractErrors } from './triage.js';
 import { enabledReviewChecks } from './validation/run-checks.js';
+import { processError } from '../../lib/process/errors.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -49,7 +50,11 @@ function reviewRecord(): ReviewRecord {
     verdict: FAIL_VERDICT,
     outcome: 'fail',
     verification: [
-      { id: 'finding:F1', status: 'fail', output: 'K1: fail — the widget swallowed it' },
+      {
+        id: 'finding:F1',
+        status: 'fail',
+        output: 'check K1 did not pass (fail): the widget swallowed it',
+      },
     ],
     at: '2026-10-04T10:00:00.000Z',
   };
@@ -231,6 +236,37 @@ describe('triageContractErrors', () => {
 });
 
 describe('review fix work', () => {
+  it('leads a red verification with the failing test and assertion before a noise tail', async () => {
+    const ref = setupProject(dirs);
+    const noise = 'runner event\n'.repeat(500);
+    const runCommand = makeCommandRunner(
+      processError.exitCode({
+        command: 'npm test',
+        code: 1,
+        stderr: '',
+        output: ` FAIL  src/a.test.ts > adds\nAssertionError: expected 1 to be 2\n${noise}`,
+      }),
+    );
+    const verification = await runTriageVerification(
+      {
+        ...ref,
+        workspaceDir: ref.projectDir,
+        config: makeConfig({}),
+        bus: makeBusRecorder().bus,
+        runCommand,
+      },
+      { ...triageState(), reviewChecks: REVIEW_CHECKS },
+      { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
+    );
+
+    expect(verification[0]?.status).toBe('fail');
+    expect(verification[0]?.output).toMatch(/^check V2 did not pass \(fail\): 1 failure\n/);
+    expect(verification[0]?.output).toContain(
+      'Failures:\n- src/a.test.ts::adds\n  AssertionError: expected 1 to be 2\nOutput tail:\n',
+    );
+    expect(verification[0]?.output.split('Output tail:')[1]).not.toContain('AssertionError');
+  });
+
   it('verifies the named registered checks without a seat call', async () => {
     const ref = setupProject(dirs);
     const state = triageState();
@@ -376,7 +412,7 @@ describe('review fix work', () => {
         kind: 'defect' as const,
         source: 'check' as const,
         file: null,
-        text: 'Required check K1 failed: broken No task changed it.',
+        text: 'No task changed it.\nRequired check K1 did not pass (fail): broken',
         checkIds: ['K1'],
         output: 'broken',
       },

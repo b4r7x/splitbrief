@@ -8,6 +8,7 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplStateWithMetadata as implementingState } from '#testing/helpers/factories/workflow-state.js';
 import { consultCallAnswering } from '#testing/helpers/typed-planner.js';
@@ -18,13 +19,16 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
   setupTaskProject as setupProject,
 } from '#testing/helpers/orchestrator-task-context.js';
-import type { ConsultAnswer } from '../../../core/schemas/consult.js';
+import type { ConsultAnswer, ConsultSeat } from '../../../core/schemas/consult.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
 import type { Planner } from '../../planners/types.js';
+import type { OrchestratorCallbacks } from '../types.js';
+import { loadState } from '../../../core/state/persistence.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { type ContinuationHolder, createContinuationHolder } from '../continuation.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
 import { inputHashesNow, specInputFiles } from './stale-inputs.js';
 import { runSingleTask } from './step.js';
 
@@ -83,6 +87,35 @@ function staleTask(projectDir: string, id = 'T002'): Task {
   };
 }
 
+function setupGuardQuestion(seat: ConsultSeat) {
+  const ref = setupProject({ 'src/shared.ts': SHARED });
+  const task = makeTask({
+    ...staleTask(ref.projectDir),
+    checks: [{ id: 'K2', kind: 'cmd', value: 'node --version', required: true }],
+    ...(seat === 'review' && {
+      fix: { cycle: 1, findings: [{ id: 'F1', text: 'Fix the shared import', acceptance: null }] },
+    }),
+  });
+  const state: WorkflowState = {
+    ...implementingState([task, trailingTask()]),
+    plan: {
+      summary: 'Read the shared import',
+      decisions: [],
+      criteria: [{ id: 'C1', text: 'Read the shared import', checkIds: ['K2'] }],
+      checks: task.checks ?? [],
+      validation: null,
+    },
+  };
+  return { ...ref, task, state };
+}
+
+const guardCases = [
+  { seat: 'plan', violation: 'criteria' },
+  { seat: 'review', violation: 'criteria' },
+  { seat: 'plan', violation: 'required check' },
+  { seat: 'review', violation: 'required check' },
+] as const;
+
 /** A second pending brief, so a completed T002 is not the loop-boundary state. */
 function trailingTask(): Task {
   return makeTask({
@@ -106,10 +139,12 @@ function runForTask(opts: {
   task: Task;
   state: WorkflowState;
   planner: Planner;
+  reviewer?: Planner;
   implementer?: ReturnType<typeof makeImplementer>;
   bus?: EventBus;
   workspaceDir?: string;
   continuation?: ContinuationHolder;
+  callbacks?: OrchestratorCallbacks;
 }): Promise<WorkflowState> {
   return runSingleTask({
     wctx: makeWorkflowContext({
@@ -117,8 +152,9 @@ function runForTask(opts: {
       sessionId: opts.sessionId,
       ...(opts.workspaceDir !== undefined && { workspaceDir: opts.workspaceDir }),
       planner: opts.planner,
+      ...(opts.reviewer !== undefined && { reviewer: opts.reviewer }),
       implementer: opts.implementer ?? failingImplementer(),
-      callbacks: makeCallbacks().callbacks,
+      callbacks: opts.callbacks ?? makeCallbacks().callbacks,
       ...(opts.bus !== undefined && { bus: opts.bus }),
       ...(opts.continuation !== undefined && { continuation: opts.continuation }),
     }),
@@ -136,6 +172,25 @@ function taskIn(state: WorkflowState, id: string): Task {
   const found = state.tasks.find((task) => task.id === id);
   if (found === undefined) throw new Error(`task ${id} left the run`);
   return found;
+}
+
+async function retryStaleTask(opts: Parameters<typeof runForTask>[0]): Promise<WorkflowState> {
+  const retried = await applyRecoveryAction({
+    projectDir: opts.projectDir,
+    sessionId: opts.sessionId,
+    config: makeConfig(),
+    bus: opts.bus ?? makeBusRecorder().bus,
+    state: opts.state,
+    action: 'retry-same-worker',
+  });
+  expect(retried.ok).toBe(true);
+  if (!retried.ok) throw new Error(retried.message);
+  expect(retried.status).toBe('retry-current-task');
+  const task = taskIn(retried.state, opts.task.id);
+  expect(task.status).toBe('pending');
+  expect(task.inputHashes).toEqual(opts.task.inputHashes);
+  expect(loadState(opts)?.tasks[0]?.inputHashes).toEqual(opts.task.inputHashes);
+  return runForTask({ ...opts, task, state: retried.state });
 }
 
 /** The run's state again at the top of the same brief: the halt cleared, the task pending. */
@@ -502,24 +557,228 @@ describe('runSingleTask — stale refresh', () => {
     );
   });
 
-  it("dispatches with the guard's question attached when a rewrite changes the criteria", async () => {
-    const { projectDir, sessionId } = setupProject({ 'src/shared.ts': SHARED });
-    const task = staleTask(projectDir);
-    const state = implementingState([task, trailingTask()]);
-    const typed = consultCallAnswering(() => staleRewriteAnswer(['C1', 'C2']));
-    const planner = makePlanner({ typedCall: typed });
-    const implementer = makeImplementer();
-    writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+  it.each(guardCases)(
+    'retries the $seat stale consult before dispatch until its $violation guard question is answered',
+    async ({ seat, violation }) => {
+      const { projectDir, sessionId, task, state } = setupGuardQuestion(seat);
+      const typed = consultCallAnswering(() =>
+        staleRewriteAnswer(violation === 'criteria' ? ['C1', 'C2'] : ['C1']),
+      );
+      const otherSeat = makePlanner();
+      const planner = seat === 'plan' ? makePlanner({ typedCall: typed }) : otherSeat;
+      const reviewer = seat === 'review' ? makePlanner({ typedCall: typed }) : otherSeat;
+      const implementer = makeImplementer();
+      const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+      writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
 
-    const result = await runForTask({ projectDir, sessionId, task, state, planner, implementer });
+      const result = await runForTask({
+        projectDir,
+        sessionId,
+        task,
+        state,
+        planner,
+        reviewer,
+        implementer,
+        callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      });
 
-    expect(taskIn(result, 'T002').revision).toBeUndefined();
-    expect(implementer.implement).not.toHaveBeenCalled();
-    expect(implementer.retry).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.stringContaining('How should T002 proceed?') }),
-    );
-    expect(implementer.retry).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.stringContaining('Why only you can answer:') }),
-    );
-  });
+      expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          seat,
+          text: expect.stringContaining(
+            `SPLITBRIEF asked the ${seat === 'review' ? 'reviewer' : 'planner'} to fix T002`,
+          ),
+          questions: [
+            expect.objectContaining({
+              text: expect.stringContaining(
+                violation === 'criteria'
+                  ? 'the rewritten task changes its criteria'
+                  : 'the rewritten task drops the checks its criteria require: K2',
+              ),
+            }),
+          ],
+          answered: false,
+        }),
+      );
+      expect(result.pendingRecovery).toMatchObject({
+        reason: 'planner-call-failed',
+        seat,
+        taskId: task.id,
+        message: expect.stringContaining(
+          `The ${seat === 'review' ? 'reviewer' : 'planner'}'s question remains unanswered.`,
+        ),
+      });
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(result.pendingRecovery);
+      expect(taskIn(result, 'T002').revision).toBeUndefined();
+      expect(taskIn(result, 'T002').criteria).toEqual(task.criteria);
+      expect(taskIn(result, 'T002').inputHashes).toEqual(task.inputHashes);
+      expect(loadState({ projectDir, sessionId })?.tasks[0]?.inputHashes).toEqual(task.inputHashes);
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(implementer.retry).not.toHaveBeenCalled();
+
+      const retryOptions = {
+        projectDir,
+        sessionId,
+        task,
+        state: result,
+        planner,
+        reviewer,
+        implementer,
+        callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      };
+      const unanswered = await retryStaleTask(retryOptions);
+      const runner = seat === 'review' ? 'reviewer' : 'planner';
+      expect(typed.mock.calls.map(([ctx]) => ctx.seat)).toEqual([runner, runner]);
+      expect(onPlannerReply).toHaveBeenCalledTimes(2);
+      expect(unanswered.pendingRecovery).toMatchObject({
+        reason: 'planner-call-failed',
+        seat,
+        taskId: task.id,
+      });
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(
+        unanswered.pendingRecovery,
+      );
+      expect(taskIn(unanswered, task.id).inputHashes).toEqual(task.inputHashes);
+      expect(loadState({ projectDir, sessionId })?.tasks[0]?.inputHashes).toEqual(task.inputHashes);
+      expect(unanswered.lineages?.T002?.staleConsultedRevision).toEqual({});
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(implementer.retry).not.toHaveBeenCalled();
+
+      const answer = 'Keep C1 and read the new shared file before implementation.';
+      onPlannerReply.mockImplementation(async () => {
+        expect(loadState({ projectDir, sessionId })?.tasks[0]?.inputHashes).toEqual(
+          task.inputHashes,
+        );
+        expect(implementer.implement).not.toHaveBeenCalled();
+        expect(implementer.retry).not.toHaveBeenCalled();
+        return answer;
+      });
+      const resolved = await retryStaleTask({ ...retryOptions, state: unanswered });
+      expect(typed.mock.calls.map(([ctx]) => ctx.seat)).toEqual([runner, runner, runner]);
+      expect(otherSeat.typedCall).not.toHaveBeenCalled();
+      expect(resolved.pendingRecovery).toBeUndefined();
+      expect(taskIn(resolved, task.id).inputHashes).toEqual(
+        inputHashesNow(projectDir, ['src/b.ts', 'src/shared.ts']),
+      );
+      expect(resolved.lineages?.T002?.staleConsultedRevision).toEqual({ T002: 1 });
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(implementer.retry).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ attempt: 1, error: expect.stringContaining(answer) }),
+      );
+    },
+  );
+
+  it.each(['plan', 'review'] as const)(
+    'retries a thrown stale consult on %s before any dispatch',
+    async (seat) => {
+      const { projectDir, sessionId, task, state } = setupGuardQuestion(seat);
+      const implementer = makeImplementer();
+      let answered = false;
+      const typed = consultCallAnswering(() => {
+        expect(implementer.implement).not.toHaveBeenCalled();
+        expect(implementer.retry).not.toHaveBeenCalled();
+        if (!answered) throw new Error('The stale consult process stopped unexpectedly.');
+        return guidanceAnswer('Read the new shared file first.');
+      });
+      const otherSeat = makePlanner();
+      const planner = seat === 'plan' ? makePlanner({ typedCall: typed }) : otherSeat;
+      const reviewer = seat === 'review' ? makePlanner({ typedCall: typed }) : otherSeat;
+      writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+      const options = { projectDir, sessionId, task, state, planner, reviewer, implementer };
+      const halted = await runForTask(options);
+
+      expect(halted.pendingRecovery).toMatchObject({
+        reason: 'planner-call-failed',
+        seat,
+        taskId: task.id,
+      });
+      expect(loadState({ projectDir, sessionId })?.pendingRecovery).toEqual(halted.pendingRecovery);
+      expect(taskIn(halted, task.id).inputHashes).toEqual(task.inputHashes);
+      expect(loadState({ projectDir, sessionId })?.tasks[0]?.inputHashes).toEqual(task.inputHashes);
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(implementer.retry).not.toHaveBeenCalled();
+
+      answered = true;
+      const resolved = await retryStaleTask({ ...options, state: halted });
+      const runner = seat === 'review' ? 'reviewer' : 'planner';
+      expect(typed.mock.calls.map(([ctx]) => ctx.seat)).toEqual([runner, runner]);
+      expect(otherSeat.typedCall).not.toHaveBeenCalled();
+      expect(resolved.pendingRecovery).toBeUndefined();
+      expect(taskIn(resolved, task.id).inputHashes).toEqual(
+        inputHashesNow(projectDir, ['src/b.ts', 'src/shared.ts']),
+      );
+      expect(resolved.lineages?.T002?.staleConsultedRevision).toEqual({ T002: 1 });
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(implementer.retry).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          attempt: 1,
+          error: expect.stringContaining('Read the new shared file first.'),
+        }),
+      );
+    },
+  );
+
+  it.each(guardCases)(
+    'dispatches its first attempt with the operator answer and fresh hashes after a $seat $violation guard question',
+    async ({ seat, violation }) => {
+      const { projectDir, sessionId, task, state } = setupGuardQuestion(seat);
+      const typed = consultCallAnswering(() =>
+        staleRewriteAnswer(violation === 'criteria' ? ['C1', 'C2'] : ['C1']),
+      );
+      const planner = makePlanner({ typedCall: typed });
+      const implementer = makeImplementer();
+      const answer = 'Keep C1 and read the new shared file before implementation.';
+      const onPlannerReply = vi.fn(async () => {
+        expect(loadState({ projectDir, sessionId })?.tasks[0]?.inputHashes).toEqual(
+          task.inputHashes,
+        );
+        expect(implementer.implement).not.toHaveBeenCalled();
+        expect(implementer.retry).not.toHaveBeenCalled();
+        return {
+          text: `How should T002 proceed?\n${answer}`,
+          qa: [{ question: 'How should T002 proceed?', answer }],
+        };
+      });
+      const { bus, events } = makeBusRecorder();
+      writeFileSync(join(projectDir, 'src/shared.ts'), EDITED_SHARED);
+
+      const result = await runForTask({
+        projectDir,
+        sessionId,
+        task,
+        state,
+        planner,
+        implementer,
+        bus,
+        callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      });
+
+      expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          seat,
+          questions: [
+            expect.objectContaining({ text: expect.stringContaining('How should T002 proceed?') }),
+          ],
+        }),
+      );
+      expect(result.pendingRecovery).toBeUndefined();
+      expect(taskIn(result, 'T002').revision).toBeUndefined();
+      expect(taskIn(result, 'T002').criteria).toEqual(task.criteria);
+      expect(taskIn(result, 'T002').inputHashes).toEqual(
+        inputHashesNow(projectDir, ['src/b.ts', 'src/shared.ts']),
+      );
+      expect(implementer.implement).not.toHaveBeenCalled();
+      expect(implementer.retry).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ attempt: 1, error: expect.stringContaining(answer) }),
+      );
+      const firstAttempt = vi.mocked(implementer.retry).mock.calls[0]?.[0];
+      expect(firstAttempt?.error).toContain(
+        `## Guidance from the ${seat === 'review' ? 'reviewer' : 'planner'}:`,
+      );
+      expect(firstAttempt?.error).not.toContain('How should T002 proceed?');
+      expect(events.filter((event) => event.type === 'user_message')).toEqual([
+        expect.objectContaining({ text: answer, qa: [expect.objectContaining({ answer })] }),
+      ]);
+    },
+  );
 });

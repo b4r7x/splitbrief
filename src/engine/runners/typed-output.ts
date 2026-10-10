@@ -5,7 +5,7 @@ import type {
 } from '../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { type AppError, error } from '../../utils/error.js';
+import { type AppError, error, matches } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { toTokenDelta } from '../calls/projection.js';
@@ -80,6 +80,7 @@ function freshRepairPrompt(prompt: string, answer: string, errors: string): stri
 }
 
 export const typedOutputError = {
+  isSeatProtocol: (err: unknown): err is SeatProtocolError => matches('seat-protocol-error')(err),
   seatProtocol: (data: SeatProtocolErrorData): SeatProtocolError =>
     error(
       'seat-protocol-error',

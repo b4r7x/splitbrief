@@ -25,6 +25,7 @@ import {
 } from '../../../core/paths.js';
 import { createGitClient } from '../../../lib/git/client.js';
 import { isInsideRoot } from '../../../lib/path-confinement.js';
+import { installDiagnosticSink } from '../../../lib/warn.js';
 import {
   getChangedFilesSinceSnapshot,
   getChangedFilesSnapshot,
@@ -645,14 +646,19 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
     rmSync(join(first.worktreePath, 'node_modules'));
     symlinkSync(join(outsideDir, 'never-created'), join(first.worktreePath, 'node_modules'), 'dir');
 
+    const warnings: string[] = [];
+    const restore = installDiagnosticSink((message) => warnings.push(message));
     const second = await ensureIsolationWorktree({
       projectDir: repoDir,
       sessionId: SESSION_ID,
       git: createGitClient(repoDir),
-    });
+    }).finally(restore);
 
     expect(second).toEqual({ kind: 'ready', worktreePath: first.worktreePath, reused: true });
     if (second.kind !== 'ready') return;
     expect(lstatSync(join(second.worktreePath, 'node_modules')).isSymbolicLink()).toBe(true);
+    expect(warnings.join('\n')).toContain('Could not link node_modules');
+    expect(warnings.join('\n')).toContain(first.worktreePath);
+    expect(warnings.join('\n')).toContain('EEXIST');
   });
 });

@@ -29,6 +29,7 @@ import {
 import { recordCheckRuns } from './evidence/record-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
+import { checkFailureText } from './validation/failure-text.js';
 
 export function checkVerificationStatus(
   runs: readonly CheckRunResult[],
@@ -41,6 +42,7 @@ export function checkVerificationStatus(
 export function checkVerificationOutput(runs: readonly CheckRunResult[]): string {
   return runs
     .map((run) => {
+      if (run.status === 'fail') return checkFailureText(run);
       const output = run.output.trim();
       return `${run.checkId}: ${run.status}${output === '' ? '' : ` — ${output}`}`;
     })
