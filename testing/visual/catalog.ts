@@ -84,24 +84,23 @@ interface ScenarioInput {
   readonly id: string;
   readonly title: string;
   readonly surface: Surface;
-  readonly checkpoint: CheckpointInput;
+  readonly checkpoint: CheckpointInput | readonly CheckpointInput[];
   readonly elements: readonly ElementInput[];
   readonly viewports?: readonly Viewport[] | undefined;
 }
 
 function defineScenario(input: ScenarioInput): ScenarioDefinition {
+  const checkpoints = 'id' in input.checkpoint ? [input.checkpoint] : input.checkpoint;
   return ScenarioDefinitionSchema.parse({
     id: input.id,
     title: input.title,
     surface: input.surface,
     fixtureVersion: VISUAL_FIXTURE_VERSION,
     viewports: input.viewports ?? REQUIRED_VIEWPORTS,
-    checkpoints: [
-      {
-        ...input.checkpoint,
-        timeoutMs: CHECKPOINT_TIMEOUT_MS,
-      },
-    ],
+    checkpoints: checkpoints.map((checkpoint) => ({
+      ...checkpoint,
+      timeoutMs: CHECKPOINT_TIMEOUT_MS,
+    })),
     elements: input.elements.map((element) => ({
       id: element.id,
       title: element.title,
@@ -519,7 +518,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
-        { id: 'sidebar', title: 'Workflow sidebar' },
+        { id: 'sidebar', title: 'Workflow sidebar', required: false },
       ],
     }),
     defineScenario({
@@ -839,9 +838,52 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-fix-narrow-rail',
+      title: 'Workflow · inserted review fixes in the narrow rail',
+      surface: screenSurface('workflow'),
+      viewports: [viewport({ cols: 22, rows: 45 }), viewport({ cols: 160, rows: 45 })],
+      checkpoint: [
+        {
+          id: 'review-fix-narrow-rail',
+          title: 'Inserted review fix running with build progress',
+          kind: 'implementation',
+          marker: '4/7 briefs passed',
+        },
+        {
+          id: 'review-fix-narrow-rail-stop',
+          title: 'Inserted review fix with stop options open',
+          kind: 'implementation',
+          marker: 'Stop options',
+        },
+      ],
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-task-statuses',
+      title: 'Workflow · escalated, failed and skipped briefs',
+      surface: screenSurface('workflow'),
+      viewports: [viewport({ cols: 160, rows: 45 }), viewport({ cols: 80, rows: 24 })],
+      checkpoint: {
+        id: 'task-statuses',
+        title: 'Sidebar status column',
+        kind: 'implementation',
+        marker: '1/7 briefs passed',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-escalated',
       title: 'Workflow · escalated brief',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'implementation-escalated',
         title: 'Escalated brief',
@@ -2728,7 +2770,12 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     panelTitle: 'Stop options panel',
     checkpointTitle: 'Stop sheet ready',
     scenarios: [
-      { id: 'workflow-stop-sheet', title: 'Workflow · stop options', marker: 'Stop options' },
+      {
+        id: 'workflow-stop-sheet',
+        title: 'Workflow · stop options',
+        marker: 'Stop options',
+        viewports: WIDE_VIEWPORTS,
+      },
       {
         id: 'workflow-stop-menu-parked-gate',
         title: 'Workflow · parked at the plan gate',
@@ -2761,7 +2808,18 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Press ctrl+c again to quit',
       },
       { id: 'workflow-stop-menu-failed', title: 'Workflow · failed stop', marker: 'Retry stop' },
-      { id: 'workflow-stop-menu-pause', title: 'Workflow · pause option', marker: 'finish T002' },
+      {
+        id: 'workflow-stop-menu-pause',
+        title: 'Workflow · pause option',
+        marker: 'finish T002',
+        viewports: WIDE_VIEWPORTS,
+      },
+      {
+        id: 'workflow-stop-sheet-fix-inserted',
+        title: 'Workflow · pause after an inserted review fix',
+        marker: 'finish T006',
+        viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 160, rows: 45 })],
+      },
       {
         id: 'workflow-stop-sheet-after-continue',
         title: 'Workflow · stop options right after a continue',

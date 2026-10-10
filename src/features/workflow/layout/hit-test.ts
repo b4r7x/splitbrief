@@ -1,4 +1,5 @@
 import type { Phase } from '../../../core/schemas/enums.js';
+import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { resolveGlyphTier } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
@@ -64,31 +65,30 @@ export const RAIL_STAGE_FIRST_ROW = 1;
 export const RAIL_CONTENT_LEFT_COL = WORKFLOW_GUTTER_X;
 // Marker plus trailing space prefixes the active label in the Form-C line.
 const RAIL_GLYPH_PREFIX_WIDTH = 2;
-const RAIL_FORM_C_FRACTION_PREFIX = '  task ';
 // The literal the rail paints in the fraction's place once the run is cancelled. Shared with the
 // renderer so the Form-C click zone covers it.
 export const RAIL_FORM_C_CANCELLED_SUFFIX = '  cancelled';
 
-export function buildRailFraction(
-  stage: RailStage,
-  currentTask: number,
-  totalTasks: number,
-): string {
-  return stage === 'build' && totalTasks > 0 ? `${currentTask}/${totalTasks}` : '';
+export function railFormCFractionText(fraction: string): string {
+  return fraction === '' ? '' : `  ${fraction} passed`;
+}
+
+export function buildRailFraction(stage: RailStage, passed: number, total: number): string {
+  return stage === 'build' && total > 0 ? `${passed}/${total}` : '';
 }
 
 // The fraction the rail actually renders: the active stage's `N/M`. A cancelled stage has status
 // 'cancelled' (not 'active'), so it resolves to '' and the rail paints the cancelled suffix instead.
 export function resolveRailFraction(input: {
   phase: Phase;
-  currentTask: number;
-  totalTasks: number;
+  tasks: TasksState;
   cancelled: boolean;
+  buildBlockShown: boolean;
 }): string {
-  const activeStage = input.cancelled ? null : getActiveRailStage(input.phase);
-  return activeStage
-    ? buildRailFraction(activeStage.stage, input.currentTask, input.totalTasks)
-    : '';
+  const activeStage =
+    input.cancelled || input.buildBlockShown ? null : getActiveRailStage(input.phase);
+  const view = selectTaskListView(input.tasks);
+  return activeStage ? buildRailFraction(activeStage.stage, view.passed, view.total) : '';
 }
 
 export interface RailStageZone {
@@ -125,7 +125,7 @@ export function getRailStageZones(input: {
     const { state, index } = rendered;
     const fractionWidth =
       state.status === 'active' && input.fraction !== ''
-        ? RAIL_FORM_C_FRACTION_PREFIX.length + input.fraction.length
+        ? getTerminalCellWidth(railFormCFractionText(input.fraction))
         : 0;
     const cancelledWidth = state.status === 'cancelled' ? RAIL_FORM_C_CANCELLED_SUFFIX.length : 0;
     const width =

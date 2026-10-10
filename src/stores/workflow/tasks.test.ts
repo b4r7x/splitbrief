@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { selectTaskListView, taskTargetLabel, tasksStore } from './tasks.js';
+import {
+  briefAfter,
+  selectRunningBrief,
+  selectTaskListView,
+  taskRowLabel,
+  taskTargetLabel,
+  tasksStore,
+} from './tasks.js';
 import { addEvent } from './actions/event.js';
 import { resetWorkflow } from './actions/reset.js';
 import { taskId } from '../../core/schemas/task.js';
@@ -8,7 +15,10 @@ import {
   makeTaskStart,
   makeTaskComplete,
   makeTaskSkipped,
+  makeReviewFixInsertedEvents,
 } from '#testing/helpers/events/task.js';
+import { eventsStore } from './events.js';
+import { tokensStore } from './tokens.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 
 function makeTasksPlanned(count: number): EngineEvent {
@@ -31,8 +41,8 @@ describe('tasksStore — via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
   it('covers task-start → task-complete happy path end-to-end', () => {
-    addEvent(makeTaskStart({ taskId: taskId('T010'), title: 'New task', index: 2, total: 5 }));
-    expect(tasksStore.get().currentTask).toBe(3);
+    addEvent(makeTaskStart({ taskId: taskId('T010'), title: 'New task', index: 0, total: 5 }));
+    expect(tasksStore.get().currentTask).toBe(1);
     expect(tasksStore.get().totalTasks).toBe(5);
     expect(tasksStore.get().taskMap.get('T010')).toEqual({
       id: 'T010',
@@ -156,6 +166,114 @@ describe('tasksStore — via addEvent', () => {
 describe('tasks_planned', () => {
   beforeEach(() => resetWorkflow());
 
+  it('inserts every review fix before pending work and focuses by started id', () => {
+    for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+    const state = tasksStore.get();
+    expect(state.tasks.map((task) => task.id)).toEqual([
+      'T001',
+      'T002',
+      'T003',
+      'T004',
+      'T006',
+      'T007',
+      'T005',
+    ]);
+    expect(state.currentTask).toBe(5);
+    expect(selectRunningBrief(state, 'implementing')).toMatchObject({
+      current: { id: 'T006' },
+      next: { id: 'T007' },
+    });
+    expect(briefAfter(state, 'T006')?.id).toBe('T007');
+    expect(selectTaskListView(state)).toMatchObject({ passed: 4, total: 7, unannounced: 0 });
+
+    addEvent(makeTaskComplete({ taskId: taskId('T006') }));
+    addEvent(makeTaskStart({ taskId: taskId('T007'), index: 5, total: 7 }));
+    expect(tasksStore.get().currentTask).toBe(6);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+      current: { id: 'T007' },
+      next: { id: 'T005' },
+    });
+  });
+
+  it('ignores a deliberately wrong task_started index and focuses the announced id', () => {
+    for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+    addEvent(makeTaskComplete({ taskId: taskId('T006') }));
+    addEvent(makeTaskStart({ taskId: taskId('T007'), index: 99, total: 7 }));
+    expect(tasksStore.get().currentTask).toBe(6);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+      current: { id: 'T007' },
+      next: { id: 'T005' },
+    });
+  });
+
+  it('republishing keeps statuses, routes, files, focus and tokens without adding transcript rows', () => {
+    const events = makeReviewFixInsertedEvents();
+    for (const event of events) addEvent(event);
+    const before = tasksStore.get();
+    const tokens = tokensStore.get();
+    const log = eventsStore.get().events;
+    const announcement = events.findLast((event) => event.type === 'tasks_planned');
+    if (announcement === undefined) throw new Error('Missing inserted announcement');
+    addEvent(announcement);
+    addEvent(announcement);
+    expect(tasksStore.get()).toEqual(before);
+    expect(tokensStore.get()).toBe(tokens);
+    expect(eventsStore.get().events).toBe(log);
+    expect(tasksStore.get().taskMap.get('T006')).toMatchObject({
+      status: 'in_progress',
+      files: ['src/library/task-6.ts', 'src/library/task-6.test.ts'],
+      route: { profile: 'local', runner: 'ollama', model: 'qwen2.5-coder:7b' },
+    });
+  });
+
+  it('resolves focus after reordering and clears it when a split drops the focused parent', () => {
+    addEvent(makeTasksPlanned(3));
+    addEvent(makeTaskStart({ taskId: taskId('T001'), total: 3 }));
+    const announcement = makeTasksPlanned(3);
+    if (announcement.type !== 'tasks_planned') throw new Error('Expected announcement');
+    addEvent({ ...announcement, tasks: [...announcement.tasks].reverse() });
+    expect(tasksStore.get().currentTask).toBe(3);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing').current?.id).toBe('T001');
+    addEvent({
+      ...announcement,
+      total: 2,
+      tasks: announcement.tasks.filter((task) => task.id !== 'T001'),
+    });
+    expect(tasksStore.get().taskMap.has('T001')).toBe(false);
+    expect(tasksStore.get().currentTask).toBe(0);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing').current).toBeNull();
+  });
+
+  it('task_reset moves focus to its id even when that task is already pending', () => {
+    addEvent(makeTasksPlanned(3));
+    addEvent(makeTaskStart({ taskId: taskId('T003'), total: 3 }));
+    addEvent({ type: 'task_reset', ts: 2, phase: 'implementing', taskId: taskId('T001') });
+    expect(tasksStore.get().currentTask).toBe(1);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+      current: { id: 'T001' },
+      next: { id: 'T002' },
+    });
+  });
+
+  it('old logs append an unannounced started id and focus its actual position', () => {
+    for (const event of makeReviewFixInsertedEvents(false)) addEvent(event);
+    expect(tasksStore.get().tasks.map((task) => task.id)).toEqual([
+      'T001',
+      'T002',
+      'T003',
+      'T004',
+      'T005',
+      'T006',
+    ]);
+    expect(tasksStore.get().currentTask).toBe(6);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing').current?.id).toBe('T006');
+    expect(selectTaskListView(tasksStore.get())).toMatchObject({
+      passed: 4,
+      total: 7,
+      unannounced: 1,
+    });
+  });
+
   it('lists the whole plan as pending before any task starts', () => {
     addEvent(makeTasksPlanned(4));
 
@@ -188,7 +306,7 @@ describe('tasks_planned', () => {
     ]);
   });
 
-  it('returns the briefs a review fix cycle reopened to pending', () => {
+  it('keeps task state unchanged when a review fix cycle starts', () => {
     addEvent(makeTasksPlanned(10));
     for (let index = 0; index < 10; index += 1) {
       const id = taskId(`T${String(index + 1).padStart(3, '0')}`);
@@ -196,6 +314,7 @@ describe('tasks_planned', () => {
       addEvent(makeTaskComplete({ taskId: id, title: `Task ${index + 1}` }));
     }
 
+    const before = tasksStore.get();
     addEvent({
       type: 'review_fix_started',
       ts: Date.now(),
@@ -205,13 +324,10 @@ describe('tasks_planned', () => {
     });
 
     const view = selectTaskListView(tasksStore.get());
-    expect(view.passed).toBe(7);
+    expect(tasksStore.get().taskMap).toBe(before.taskMap);
+    expect(view.passed).toBe(10);
     expect(view.total).toBe(10);
-    expect(view.items.filter((task) => task.status === 'pending').map((task) => task.id)).toEqual([
-      'T001',
-      'T007',
-      'T010',
-    ]);
+    expect(view.items.filter((task) => task.status === 'pending')).toEqual([]);
   });
 
   it('reconciles a republished plan as a snapshot', () => {
@@ -347,6 +463,42 @@ describe('tasks_planned', () => {
     addEvent(makeTaskStart({ taskId: taskId('T001'), title: 'Task 1', index: 0, total: 3 }));
     expect(tasksStore.get().totalTasks).toBe(3);
     expect(selectTaskListView(tasksStore.get()).total).toBe(3);
+  });
+});
+
+describe('taskRowLabel', () => {
+  const task = {
+    id: 'T006',
+    title: 'Look up books',
+    status: 'pending' as const,
+    file: 'src/books.ts',
+    action: 'modify' as const,
+  };
+
+  it.each([
+    [45, 'T006 Look up books · src/books.ts (modify)'],
+    [42, 'T006 Look up books · src/books.ts (modify)'],
+    [41, 'T006 Look up books'],
+    [18, 'T006 Look up books'],
+    [17, 'T006 Look up boo…'],
+    [13, 'T006 Look up…'],
+    [6, 'T006 …'],
+    [5, 'T006'],
+    [4, 'T006'],
+    [2, 'T006'],
+  ])('fits the label at %i cells without splitting its target or id', (cells, expected) => {
+    expect(taskRowLabel(task, cells)).toBe(expected);
+  });
+
+  it('uses terminal cells when it truncates a wide title', () => {
+    expect(taskRowLabel({ ...task, title: '図書一覧' }, 11)).toBe('T006 図書…');
+  });
+
+  it('sanitizes the title and target before measuring them', () => {
+    expect(taskRowLabel({ ...task, title: '\u001b[31mBooks\u001b[0m', file: 'a.ts' }, 80)).toBe(
+      'T006 Books · a.ts (modify)',
+    );
+    expect(taskRowLabel({ id: task.id, title: '', status: task.status }, 4)).toBe('T006');
   });
 });
 

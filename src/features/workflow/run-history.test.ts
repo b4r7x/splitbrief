@@ -16,21 +16,20 @@ import {
   makeRunnerCallStarted,
   makeRunnerCallCompleted,
 } from '#testing/helpers/events/runner-call.js';
-import { makeTaskStart } from '#testing/helpers/events/task.js';
+import { makeReviewFixInsertedEvents, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { createEventBus } from '../../engine/events/bus.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
-import { eventRows } from '#testing/helpers/event-rows.js';
-import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import { eventRows, buildConversationRows } from '#testing/helpers/event-rows.js';
 import { rowText } from './conversation-rows/row-format/rows.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { eventsStore } from '../../stores/workflow/events.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../stores/workflow/tasks.js';
+import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { operationsStore } from '../../stores/workflow/operations/state.js';
 import { hydrateRun, readRunHistory } from './run-history.js';
@@ -151,6 +150,30 @@ describe('hydrateRun', () => {
     });
   });
 
+  it('lets saved state supply inserted order for old logs before the second fix starts', async () => {
+    writeLog(makeReviewFixInsertedEvents(false));
+    const state: WorkflowState = {
+      ...savedState(),
+      currentTaskIndex: 4,
+      tasks: ['T001', 'T002', 'T003', 'T004', 'T006', 'T007', 'T005'].map((id, index) =>
+        makeTask({ id, status: index < 4 ? 'done' : index === 4 ? 'in_progress' : 'pending' }),
+      ),
+    };
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state },
+      }),
+    );
+    expect(tasksStore.get().tasks.map((task) => task.id)).toEqual(
+      state.tasks.map((task) => task.id),
+    );
+    expect(tasksStore.get().taskMap.get('T007')?.status).toBe('pending');
+    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+      current: { id: 'T006' },
+      next: { id: 'T007' },
+    });
+  });
   it('restores the first request with every attached file in the transcript', async () => {
     writeLog([
       ...RUN.slice(0, 1),
@@ -372,7 +395,7 @@ describe('hydrateRun', () => {
       const lines = stripAnsiStyles(ui.lastFrame())
         .split('\n')
         .map((line) => line.trim())
-        .filter((line) => /^[✓✗×] (?:T\d|Review )/u.test(line));
+        .filter((line) => /^[●✗×] (?:T\d|Review )/u.test(line));
       ui.unmount();
       return {
         lines,
@@ -387,9 +410,9 @@ describe('hydrateRun', () => {
     for (const event of log) addEvent(event);
     const live = transcript();
     expect(live.lines.filter((line) => line.includes('Review'))).toEqual([
-      '✓ Review T001 passed  49.0s',
+      '● Review T001 passed  49.0s',
       '✗ Review T002 failed  1 blocking · fixes T003 · 49.0s',
-      '✓ Review 1 passed  1m 2s',
+      '● Review 1 passed  1m 2s',
     ]);
     resetWorkflow();
     await hydrateRun(

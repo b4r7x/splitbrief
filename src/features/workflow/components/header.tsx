@@ -18,9 +18,8 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { formatCollapsedSeatLine } from '../../../core/crew/identity.js';
+import { formatCollapsedSeatLine, type CrewSeatId } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
-import type { CrewSeatId } from '../../../core/crew/identity.js';
 import { haltedIssue } from '../../../core/sessions/run-status.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
@@ -30,6 +29,7 @@ import { measureRailCells, Rail } from './rail.js';
 interface HeaderProps {
   startedAt: string;
   railForm?: RailForm | undefined;
+  buildBlockShown?: boolean | undefined;
   /** A run at rest names the stages its own record earned, and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
   seatLine?: string | undefined;
@@ -93,7 +93,13 @@ export function getHeaderLayout(input: {
   return { contentWidth, railWidth, seatRoom, showElapsed, showSeats };
 }
 
-export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }: HeaderProps) {
+export function Header({
+  startedAt,
+  railForm,
+  buildBlockShown = false,
+  stages,
+  seatLine: givenSeatLine,
+}: HeaderProps) {
   const [{ cols }, lifecycle, tasks, eventsState, recoveryNotice] = useStores(
     terminalSizeStore,
     lifecycleStore,
@@ -117,6 +123,7 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
     tasks,
     events: eventsState.events,
     recoveryPending: recoveryNotice.issue !== null,
+    buildBlockShown,
     ...(stages !== undefined && { stages }),
   });
 
@@ -141,7 +148,13 @@ export function Header({ startedAt, railForm, stages, seatLine: givenSeatLine }:
       cols={cols}
       railCells={railCells}
       seatLine={seatLine}
-      rail={<Rail form={railForm} {...(stages !== undefined && { stages })} />}
+      rail={
+        <Rail
+          form={railForm}
+          buildBlockShown={buildBlockShown}
+          {...(stages !== undefined && { stages })}
+        />
+      }
       clock={<ElapsedClock mountedAt={startedAt} lifecycle={lifecycle} />}
     />
   );

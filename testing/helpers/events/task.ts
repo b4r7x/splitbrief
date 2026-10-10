@@ -37,6 +37,64 @@ export function makeTaskComplete(
   };
 }
 
+export function makeReviewFixInsertedEvents(announce = true): EngineEvent[] {
+  const ts = 1_783_958_400_000;
+  const titles = [
+    'Add the book catalogue schema',
+    'Implement book checkout',
+    'Implement book returns',
+    'Add overdue book reporting',
+    'Wire the library dashboard',
+    'Implement and test overdue book lookup',
+    'Test overdue report boundaries',
+  ];
+  const tasks = titles.map((title, index) => ({
+    id: taskId(`T${String(index + 1).padStart(3, '0')}`),
+    title,
+    index,
+    file: `src/library/task-${index + 1}.ts`,
+    action: 'modify' as const,
+  }));
+  const planned = (ordered: typeof tasks): EventOfType<'tasks_planned'> => ({
+    type: 'tasks_planned',
+    ts,
+    phase: 'implementing',
+    total: ordered.length,
+    tasks: ordered.map((task, index) => ({ ...task, index })),
+  });
+  const events: EngineEvent[] = [planned(tasks.slice(0, 5))];
+  for (const task of tasks.slice(0, 4)) {
+    events.push(
+      makeTaskStart({ ...task, taskId: task.id, ts: ts + events.length, total: 5 }),
+      makeTaskComplete({ taskId: task.id, title: task.title, ts: ts + events.length + 1 }),
+    );
+  }
+  if (announce)
+    events.push(planned([...tasks.slice(0, 4), ...tasks.slice(5), ...tasks.slice(4, 5)]));
+  events.push(
+    {
+      type: 'review_fix_started',
+      ts: ts + 20,
+      phase: 'implementing',
+      cycle: 1,
+      taskIds: [taskId('T006'), taskId('T007')],
+    },
+    makeTaskStart({
+      taskId: taskId('T006'),
+      title: 'Implement and test overdue book lookup',
+      ts: ts + 21,
+      index: 4,
+      total: 7,
+      file: 'src/library/task-6.ts',
+      files: ['src/library/task-6.ts', 'src/library/task-6.test.ts'],
+      tool: 'ollama',
+      model: 'qwen2.5-coder:7b',
+      implementerProfile: 'local',
+    }),
+  );
+  return events;
+}
+
 export function makeTaskSkipped(
   overrides?: Partial<EventOfType<'task_skipped'>>,
 ): EventOfType<'task_skipped'> {

@@ -154,7 +154,7 @@ export function ConversationRowView({
   );
 
   return (
-    <Box height={1} overflow="hidden" flexShrink={0}>
+    <Box width="100%" height={1} overflow="hidden" flexShrink={0}>
       <RowLeading
         kind={row.kind}
         lifecycle={lifecycle}

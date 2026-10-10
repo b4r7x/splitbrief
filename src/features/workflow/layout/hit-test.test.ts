@@ -11,6 +11,7 @@ import {
 } from './hit-test.js';
 import type { WorkflowContentRect } from './rect.js';
 import { getChromeContentWidth, WORKFLOW_GUTTER_X } from './chrome-rows.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
 
 function zoneByIndex(zones: RailStageZone[], index: number): RailStageZone {
   const zone = zones.find((z) => z.index === index);
@@ -194,24 +195,24 @@ describe('rail stage hit zones', () => {
 });
 
 describe('resolveRailFraction', () => {
-  it('renders the active build fraction during a live run', () => {
+  it('counts only passed briefs instead of the focused position during a live run', () => {
     expect(
       resolveRailFraction({
         phase: 'implementing',
-        currentTask: 3,
-        totalTasks: 7,
+        tasks: { ...tasksStore.get(), currentTask: 3, totalTasks: 7 },
         cancelled: false,
+        buildBlockShown: false,
       }),
-    ).toBe('3/7');
+    ).toBe('0/7');
   });
 
   it('drops the fraction when cancelled so geometry matches the cancelled renderer', () => {
     expect(
       resolveRailFraction({
         phase: 'implementing',
-        currentTask: 3,
-        totalTasks: 7,
+        tasks: { ...tasksStore.get(), currentTask: 3, totalTasks: 7 },
         cancelled: true,
+        buildBlockShown: false,
       }),
     ).toBe('');
   });
@@ -220,9 +221,9 @@ describe('resolveRailFraction', () => {
     expect(
       resolveRailFraction({
         phase: 'final-review',
-        currentTask: 7,
-        totalTasks: 7,
+        tasks: { ...tasksStore.get(), currentTask: 7, totalTasks: 7 },
         cancelled: false,
+        buildBlockShown: false,
       }),
     ).toBe('');
   });

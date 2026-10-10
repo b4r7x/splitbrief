@@ -12,6 +12,7 @@ import { taskId } from '../../../../src/core/schemas/task.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
+import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
 import { renderCheckNotes, planRepairWarning } from '../../../../src/engine/spec/plan-checks.js';
@@ -22,7 +23,7 @@ import { buildConsultBoundRecoveryIssue } from '../../../../src/engine/orchestra
 import { taskFromSpec } from '../../../../src/engine/spec/plan-tasks.js';
 import { planConfirmations } from '../../../../src/engine/orchestrator/approval/confirm.js';
 import { makeImplState, makeWorkflowState } from '../../../helpers/factories/workflow-state.js';
-import type { EngineEvent, EngineEventOf } from '../../../../src/engine/events/types.js';
+import type { EngineEvent, EngineEventOf, EventBus } from '../../../../src/engine/events/types.js';
 import type { ClarificationQuestion } from '../../../../src/core/schemas/question.js';
 import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
@@ -42,8 +43,7 @@ import type {
 } from '../../../../src/core/approval/types.js';
 import { reviewChecksCardLayout } from '../../../../src/features/workflow/review-checks/options.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../../src/stores/workflow/stop.js';
-import type { ScenarioId } from '../../contracts/identifiers.js';
-import { scenarioId } from '../../contracts/identifiers.js';
+import { type ScenarioId, scenarioId } from '../../contracts/identifiers.js';
 import { tasksCardProjection } from './artifact-card-projections.js';
 import {
   buildRetryExhaustedRecoveryIssue,
@@ -75,11 +75,12 @@ import {
   publishRecoveryPrompted,
   publishRecoveryResolved,
   publishWarning,
+  publishSeatSwitched,
+  publishTaskStart,
 } from '../../../../src/engine/orchestrator/events.js';
 import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
-import type { EventBus } from '../../../../src/engine/events/types.js';
 import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
 import {
   BASE_IMPLEMENTER,
@@ -96,10 +97,6 @@ import { formatSeatChangeIdentities } from '../../../../src/core/crew/identity.j
 import { formatSeatChangeNotice } from '../../../../src/core/state/seats.js';
 import { formatRecoveryHeadline } from '../../../../src/core/recovery/headline.js';
 import type { ScopedCliCatalogAttempt } from '../../../../src/engine/detection/cli-catalog-outcomes.js';
-import {
-  publishSeatSwitched,
-  publishTaskStart,
-} from '../../../../src/engine/orchestrator/events.js';
 import {
   atRestProjections,
   reviewTaskCadenceProjection,
@@ -1480,6 +1477,48 @@ const reviewChecksOffProjection: WorkflowFixtureProjection = {
           : event,
     );
   },
+};
+
+const reviewFixNarrowRailProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-fix-narrow-rail'),
+  feature: 'Add overdue book reporting',
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'implementing',
+      feature: 'Add overdue book reporting',
+    },
+    ...makeReviewFixInsertedEvents(),
+  ],
+};
+
+const taskStatusesProjection: WorkflowFixtureProjection = {
+  ...reviewFixNarrowRailProjection,
+  scenarioId: scenarioId('workflow-task-statuses'),
+  events: reviewFixNarrowRailProjection.events.map((event): EngineEvent => {
+    if (event.type !== 'task_completed') return event;
+    if (event.taskId === 'T002') return { ...event, method: 'escalated-full' };
+    if (event.taskId === 'T003')
+      return {
+        type: 'task_full_fail',
+        ts: event.ts,
+        phase: event.phase,
+        taskId: event.taskId,
+      };
+    if (event.taskId === 'T004')
+      return {
+        type: 'task_skipped',
+        ts: event.ts,
+        phase: event.phase,
+        taskId: event.taskId,
+        title: event.title,
+        reason: 'No changes needed',
+      };
+    return event;
+  }),
 };
 
 const implementationEscalatedProjection: WorkflowFixtureProjection = {
@@ -4441,12 +4480,6 @@ const projections = [
           fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
         ]),
         finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
-        {
-          type: 'planner_text',
-          ts: FIXED_TS + 1_000,
-          phase: 'final-review',
-          text: 'Checking the diff before the verdict.',
-        },
         finalReviewCompleted({
           ts: FIXED_TS + 8_000,
           duration: 7_000,
@@ -4467,6 +4500,8 @@ const projections = [
     }),
   ),
   reviewChecksOffProjection,
+  reviewFixNarrowRailProjection,
+  taskStatusesProjection,
   implementationEscalatedProjection,
   implementationNarrationProjection,
   implementationAdjacentNarrationProjection,

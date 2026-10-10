@@ -10,12 +10,12 @@ import {
   elidePathMiddle,
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../utils/display-text.js';
 import { countNoun } from '../utils/pluralize.js';
 import { glyph, type GlyphName } from '../lib/glyphs.js';
 import { ROW_LEADING } from './row-leading.js';
+import { formatTaskHeading, type WorkflowTask } from '../stores/workflow/tasks.js';
 
 // The transcript's leading: the shared one-cell pad the hover bar paints into, then the marker and
 // its trailing space. A brief's mark lands on column 1 with its title on column 3, the same shape a
@@ -85,11 +85,12 @@ function partitionSettledTail(tail: string[]): {
 }
 
 export function fitDetailRun(
-  head: string,
+  task: Pick<WorkflowTask, 'id' | 'title'>,
   tail: string[],
   width: number,
   settled?: boolean,
 ): FittedDetailRun {
+  const head = formatTaskHeading(task);
   const budget = Math.max(0, width - LEADING_CELLS);
   const cells = (parts: string[]): number =>
     getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${parts.join(SOFT_SEP)}`);
@@ -105,7 +106,7 @@ export function fitDetailRun(
     if (only !== undefined && room > 0) {
       return { head, tail: [truncateTerminalDisplayTextMiddle(only, room)] };
     }
-    return { head: truncateTerminalDisplayText(head, budget), tail: [] };
+    return { head: formatTaskHeading(task, budget), tail: [] };
   }
 
   if (cells(tail) <= budget) return { head, tail };
@@ -136,7 +137,10 @@ export function fitDetailRun(
   const keptMetaWidth =
     keptMeta.length === 0 ? 0 : TITLE_SEP.length + getTerminalCellWidth(keptMeta.join(SOFT_SEP));
   const headBudget = Math.max(0, budget - keptMetaWidth);
-  return { head: truncateTerminalDisplayText(head, headBudget), tail: keptMeta };
+  if (headBudget < getTerminalCellWidth(task.id) + 2) {
+    return { head: formatTaskHeading(task, budget), tail: [] };
+  }
+  return { head: formatTaskHeading(task, headBudget), tail: keptMeta };
 }
 
 /**
@@ -171,11 +175,6 @@ interface TaskSummaryProps {
 interface MarkerSpec {
   name: GlyphName;
   color: string | undefined;
-}
-
-export function formatTaskHeading(input: Pick<TaskSummaryProps, 'id' | 'title'>): string {
-  const title = sanitizeTerminalDisplayText(input.title);
-  return title === '' ? input.id : `${input.id} ${title}`;
 }
 
 function settledMarker(method: TaskCompletionMethod, t: Theme): MarkerSpec {
@@ -221,7 +220,6 @@ export function TaskSummary({
   const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
   const safeReason = reason === undefined ? undefined : sanitizeTerminalDisplayText(reason);
   const safeNote = note === undefined ? undefined : sanitizeTerminalDisplayText(note);
-  const head = formatTaskHeading({ id, title });
   const marker = markerSpec(state, t);
   // One leading for every row kind — the transcript's padding then the marker slot — so a settled
   // brief and a pending one line their marks up in the same column, and that column is the one the
@@ -250,7 +248,7 @@ export function TaskSummary({
   const quiet =
     failed || state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
   const fitted = fitDetailRun(
-    head,
+    { id, title },
     detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
     width - (failed ? FAILED_SUFFIX.length : 0),
     state.kind === 'settled' && state.method !== 'failed' && state.method !== 'skipped',

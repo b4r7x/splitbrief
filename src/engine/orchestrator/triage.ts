@@ -23,6 +23,7 @@ import { checkTaskIdentities } from '../spec/plan-checks.js';
 import { taskFromSpec } from '../spec/plan-tasks.js';
 import { writeTasksArtifact } from './artifact-write.js';
 import { transitionAndSave } from './state-ops.js';
+import { publishTasksPlanned } from './events.js';
 import type { WorkflowContext } from './types.js';
 import {
   checkRegistry,
@@ -331,7 +332,7 @@ export function applyTriage(
   };
 }
 
-/** Review fix work spends one fix cycle; appended tasks announce it. */
+/** Review fix work spends one fix cycle; inserted tasks announce it. */
 export function startFixCycle(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
@@ -346,6 +347,7 @@ export function startFixCycle(args: {
   );
   args.setTrackedState(state);
   if (args.taskIds.length > 0) {
+    publishTasksPlanned({ bus: wctx.bus, phase: state.phase }, state.tasks);
     wctx.bus.publish({
       type: 'review_fix_started',
       ts: Date.now(),

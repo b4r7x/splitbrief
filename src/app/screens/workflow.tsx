@@ -348,6 +348,7 @@ export function WorkflowScreen({
           startedAt={model.startedAt}
           scrollAboveLabel={scrollAboveLabel}
           railForm={railForm}
+          buildBlockShown={progressRows > 0}
           {...(model.railStages !== undefined && { stages: model.railStages })}
           {...(closedChrome !== null && { seatLine: closedChrome.seatLine })}
         >

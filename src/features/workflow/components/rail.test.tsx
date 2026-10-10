@@ -12,6 +12,9 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
@@ -25,9 +28,12 @@ import {
 import {
   buildRailFraction,
   getRailStageZones,
+  hitRailStage,
   RAIL_FORM_C_CANCELLED_SUFFIX,
 } from '../layout/hit-test.js';
-import { Rail, railFormCText } from './rail.js';
+import { measureRailCells, Rail, railFormCText } from './rail.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
+import { readRailSnapshot } from '../layout/snapshot.js';
 
 const STAGES = ['Plan', 'Build', 'Review'];
 const originalColorLevel = chalk.level;
@@ -57,10 +63,10 @@ function lineContaining(frame: string, needle: string): string {
 // The rail renders inline inside the header row, which sits in the WORKFLOW_GUTTER_X gutter, so its
 // first stage marker sits on the gutter column. A standalone render mirrors the same inset so the
 // hit-test geometry stays honest.
-function renderRail(form: 'B' | 'C') {
+function renderRail(form: 'B' | 'C', buildBlockShown = false) {
   return renderFeature(
     <Box paddingLeft={WORKFLOW_GUTTER_X}>
-      <Rail form={form} />
+      <Rail form={form} buildBlockShown={buildBlockShown} />
     </Box>,
   );
 }
@@ -72,6 +78,7 @@ beforeEach(() => {
   tasksStore.__testReset();
   tokensStore.__testReset();
   skillsStore.reset();
+  overlayStore.reset();
 });
 
 afterEach(() => {
@@ -374,13 +381,46 @@ describe('Rail — completion with a halt open', () => {
 });
 
 describe('Rail — Form C (narrow floor)', () => {
+  it.each([true, false])(
+    'matches render, measure and hit-test with build block shown %s',
+    async (buildBlockShown) => {
+      terminalSizeStore.__testReset({ cols: 22, rows: 24, isSmall: true });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+      for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+      if (!buildBlockShown) overlayStore.open('stop-sheet');
+      const ui = renderRail('C', buildBlockShown);
+      await tick();
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '').trim();
+
+      expect(frame).toBe(buildBlockShown ? `${DONE} Build` : `${DONE} Build  4/7 passed`);
+      expect(
+        measureRailCells({
+          phase: 'implementing',
+          cancelled: false,
+          form: 'C',
+          cols: 22,
+          tasks: tasksStore.get(),
+          events: eventsStore.get().events,
+          recoveryPending: false,
+          buildBlockShown,
+        }),
+      ).toBe(getTerminalCellWidth(frame));
+      const zones = readRailSnapshot().zones;
+      const right = WORKFLOW_GUTTER_X + getTerminalCellWidth(frame) - 1;
+      expect(zones[0]?.right).toBe(right);
+      expect(hitRailStage(zones, right, 1)).toBe(1);
+      expect(hitRailStage(zones, right + 1, 1)).toBeNull();
+      ui.unmount();
+    },
+  );
+
   it('builds the active stage line without a task fraction outside task stages', () => {
     expect(railFormCText({ stages: getRailStages('planning'), fraction: '' })).toBe(`${DONE} Plan`);
   });
 
-  it('builds the active task stage line with its task fraction', () => {
+  it('builds the active build stage line with its passed fraction', () => {
     expect(railFormCText({ stages: getRailStages('implementing'), fraction: '3/7' })).toBe(
-      `${DONE} Build  task 3/7`,
+      `${DONE} Build  3/7 passed`,
     );
   });
 
@@ -403,7 +443,7 @@ describe('Rail — Form C (narrow floor)', () => {
 
     expect(frame).toContain('Build');
     expect(frame).toContain(`${DONE} Build`);
-    expect(frame).toContain('task 3/7');
+    expect(frame).toContain('0/7 passed');
     expect(frame).not.toContain('implementing');
     expect(frame).not.toContain('Review');
     ui.unmount();
@@ -422,7 +462,7 @@ describe('Rail — Form C (narrow floor)', () => {
       form: 'C',
       phase: 'implementing',
       cols,
-      fraction: buildRailFraction('build', 3, 7),
+      fraction: buildRailFraction('build', 0, 7),
     });
     const buildZone = zones.find((zone) => zone.stage === 'build');
     expect(buildZone).toBeDefined();
@@ -449,7 +489,7 @@ describe('Rail — Form C (narrow floor)', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('cancelled');
-    expect(frame).not.toContain('task 3/7');
+    expect(frame).not.toContain('3/7 passed');
     expect(frame).toContain(`${CANCELLED} Build`);
 
     const zones = getRailStageZones({

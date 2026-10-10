@@ -14,7 +14,12 @@ import { assertNever } from '../../../utils/type-guards.js';
 import type { EventBus } from '../../events/types.js';
 import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { consultSeatRunner } from '../escalation/consult-guidance.js';
-import { publishTaskReplaced, publishTasksInserted, publishUserMessage } from '../events.js';
+import {
+  publishTaskReplaced,
+  publishTasksInserted,
+  publishTasksPlanned,
+  publishUserMessage,
+} from '../events.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
 import { transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
@@ -165,6 +170,7 @@ async function applyRewrite(
   ctx.onStateChange?.(state);
   const replaced = state.tasks.find((candidate) => candidate.id === task.id);
   if (replaced === undefined) throw consultApplyError.taskMissing(task.id);
+  publishTasksPlanned({ bus: ctx.bus, phase: state.phase }, state.tasks);
   publishTaskReplaced({ bus: ctx.bus, phase: state.phase }, replaced.id, replaced.revision ?? 1);
   return { action: 'rewrite-task', task: replaced };
 }
@@ -192,6 +198,7 @@ async function applySplit(
     if (saved === undefined) throw consultApplyError.taskMissing(child.id);
     return saved;
   });
+  publishTasksPlanned({ bus: ctx.bus, phase: state.phase }, state.tasks);
   publishTasksInserted(
     { bus: ctx.bus, phase: state.phase },
     task.id,

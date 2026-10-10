@@ -8,7 +8,9 @@ import {
   readRailSnapshot,
   readReviewContentHeight,
 } from './snapshot.js';
-import { hitTranscriptRow } from './hit-test.js';
+import { getRailStageZones, hitTranscriptRow } from './hit-test.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { makeReviewFixInsertedEvents, makeTaskStart } from '#testing/helpers/events/task.js';
 import { getContentTopRow, getProgressRows } from './chrome-rows.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
@@ -33,10 +35,10 @@ import {
 import { taskId } from '../../../core/schemas/task.js';
 import type { TieredApprovalRequest } from '../../../core/approval/types.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js';
+import { overlayStore } from '../../../stores/ui/overlay.js';
 import { ConversationFlow } from '../components/conversation-flow/flow.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { row } from '../conversation-rows/row-format/rows.js';
@@ -56,6 +58,7 @@ beforeEach(() => {
   reviewStore.reset();
   approvalPromptStore.reset();
   questionPromptStore.reset();
+  overlayStore.reset();
   transcriptTailStore.__testReset();
 });
 
@@ -581,6 +584,27 @@ describe('readConversationScrollSnapshot', () => {
 });
 
 describe('readRailSnapshot', () => {
+  it.each([true, false])(
+    'matches the compact hit zone with build block shown %s',
+    (buildBlockShown) => {
+      terminalSizeStore.__testReset({ cols: 20, rows: 24, isSmall: true });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
+      for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+      tasksStore.__testReset({ ...tasksStore.get(), currentTask: 100 });
+      if (!buildBlockShown) overlayStore.open('stop-sheet');
+
+      expect(readRailSnapshot().zones).toEqual(
+        getRailStageZones({
+          form: 'C',
+          phase: 'implementing',
+          cols: 20,
+          fraction: buildBlockShown ? '' : '4/7',
+          cancelled: false,
+        }),
+      );
+    },
+  );
+
   it('returns clickable zones for the active streaming rail', () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 30, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });

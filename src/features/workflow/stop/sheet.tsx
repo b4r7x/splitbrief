@@ -94,8 +94,11 @@ export function StopSheet({
       overflow="hidden"
       flexShrink={0}
     >
-      <Text color={t.textDim}>
-        {rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE} · {footer}
+      <Text color={t.textDim} wrap="truncate-end">
+        {fitKeyLegend(
+          `${rows.some((row) => row.id === 'leave') ? 'Session options' : STOP_SHEET_TITLE} · ${footer}`,
+          Math.max(1, layout.width - 4),
+        )}
       </Text>
       <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
         {layout.options.map(({ row, lines }, index) => (

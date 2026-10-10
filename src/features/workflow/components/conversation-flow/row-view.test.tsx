@@ -4,6 +4,7 @@ import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { ConversationRow } from '../../conversation-rows/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
+import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { defaultTheme, ThemeProvider, ThemeText as Text } from '../../../../components/theme.js';
 import { resolveTheme } from '../../../../core/theme/resolve.js';
 import { ConversationRowView } from './row-view.js';
@@ -54,6 +55,24 @@ function makeTaskHeaderRow(key: string): ConversationRow {
 }
 
 describe('ConversationRowView lifecycle and focus glyphs', () => {
+  it('fits a long queued title beside its marker inside a narrow row', () => {
+    const header = {
+      ...makeTaskHeaderRow('queued-T007'),
+      segments: [{ text: 'T007 Test overdue report boundaries', tone: 'textDim' as const }],
+    };
+    const ui = renderFeature(
+      <Box width={21}>
+        <ConversationRowView row={header} lifecycle="queued" />
+      </Box>,
+      { cols: 22, rows: 45 },
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines).toHaveLength(1);
+    expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(21);
+    expect(lines[0]).toContain('T007');
+    ui.unmount();
+  });
+
   it('renders the live ◉ for an active activity row and the done ● for a finished one', () => {
     const activeRow = makeActivityRow('activity-batch:0:call-1');
 

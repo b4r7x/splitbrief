@@ -514,6 +514,15 @@ describe('applyConsultAnswer', () => {
     expect(events.filter((event) => event.type === 'task_replaced')).toMatchObject([
       { taskId: 'T003', revision: 2 },
     ]);
+    expect(events.filter((event) => event.type === 'tasks_planned')).toMatchObject([
+      {
+        total: 1,
+        tasks: [{ id: 'T003', title: result.task.title, file: 'src/greet.ts', index: 0 }],
+      },
+    ]);
+    expect(events.findIndex((event) => event.type === 'tasks_planned')).toBeLessThan(
+      events.findIndex((event) => event.type === 'task_replaced'),
+    );
   });
 
   it('a rewritten task records workspace hashes', async () => {
@@ -587,6 +596,21 @@ describe('applyConsultAnswer', () => {
     expect(events.filter((event) => event.type === 'tasks_inserted')).toMatchObject([
       { parentId: 'T003', taskIds: ['T004', 'T005'] },
     ]);
+    expect(events.filter((event) => event.type === 'tasks_planned')).toMatchObject([
+      {
+        total: 2,
+        tasks: [
+          { id: 'T004', index: 0, file: 'src/split-a.ts' },
+          { id: 'T005', index: 1, file: 'src/split-b.ts' },
+        ],
+      },
+    ]);
+    expect(events.findIndex((event) => event.type === 'tasks_planned')).toBeLessThan(
+      events.findIndex((event) => event.type === 'tasks_inserted'),
+    );
+    expect(
+      events.find((event) => event.type === 'tasks_planned')?.tasks.map((task) => task.id),
+    ).toEqual(states[0]?.tasks.map((task) => task.id));
   });
 
   it('split-task fails when the saved run has no parent to split', async () => {

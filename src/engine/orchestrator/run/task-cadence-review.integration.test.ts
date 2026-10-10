@@ -160,6 +160,77 @@ function runOptions(opts: {
 }
 
 describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () => {
+  it('announces two anchored fixes before their cycle and execution, including pending plan work', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = Array.from({ length: 5 }, (_, index) =>
+      makeTask({
+        id: `T${String(index + 1).padStart(3, '0')}`,
+        suggestedFiles: [`src/planned-${index + 1}.ts`],
+        criteria: [index < 4 ? 'C1' : 'C2'],
+      }),
+    );
+    const { events, ref, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: cadenceState(tasks, head),
+      review: (prompt, call) => {
+        if (call !== 4) return passingReviewVerdict(prompt);
+        const verdict = failedReviewVerdict(prompt, 'Overdue lookup needs coverage', {
+          taskId: 'T004',
+        });
+        return {
+          ...verdict,
+          findings: [
+            ...verdict.findings,
+            ...verdict.findings.map((finding) => ({
+              ...finding,
+              id: 'F2',
+              text: 'Overdue boundary needs coverage',
+            })),
+          ],
+        };
+      },
+      triage: () => ({
+        fixTasks: ['T006', 'T007'].map((id, index) => ({
+          ...makeTaskSpec({
+            id,
+            suggestedFiles: [`src/${id}.ts`],
+            criteria: [],
+            checks: [{ id: `${id}-K1`, kind: 'cmd', value: 'node --version', required: true }],
+          }),
+          findingIds: [`F${index + 1}`],
+        })),
+        rejected: [],
+        verify: [],
+        ask: null,
+      }),
+      onComplete: vi.fn(),
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(true);
+    const order = ['T001', 'T002', 'T003', 'T004', 'T006', 'T007', 'T005'];
+    const announcementIndex = events.findIndex(
+      (event) => event.type === 'tasks_planned' && event.total === 7,
+    );
+    expect(announcementIndex).toBeGreaterThan(-1);
+    expect(events[announcementIndex]).toMatchObject({
+      total: 7,
+      tasks: order.map((id, index) => ({ id, index })),
+    });
+    expect(announcementIndex).toBeLessThan(
+      events.findIndex((event) => event.type === 'review_fix_started'),
+    );
+    expect(announcementIndex).toBeLessThan(
+      events.findIndex((event) => event.type === 'task_started' && event.taskId === 'T006'),
+    );
+    expect(
+      events.filter((event) => event.type === 'task_started').map((event) => event.taskId),
+    ).toEqual(order);
+    expect(loadState(ref)?.tasks.map((task) => task.id)).toEqual(order);
+  });
+
   it('scopes each scheduled review to the completed briefs and due criteria', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
