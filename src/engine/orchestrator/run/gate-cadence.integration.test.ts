@@ -266,7 +266,7 @@ describe("reviewer checks with workflow.review 'end'", { timeout: 120_000 }, () 
     expect(verdicts).toEqual([false, true]);
     expect(harness.reviewPrompts).toHaveLength(2);
     expect(reviewerChecksSection(harness.reviewPrompts[0])).toContain(
-      `- V1 \`tsc --noEmit\`: failed, 1 new failure(s): ${TYPE_ERROR.split(':')[0]}`,
+      `- V1 \`tsc --noEmit\`: failed, 1 new failure(s)\ncheck V1 did not pass (fail): 1 failure\nFailures:\n- ${TYPE_ERROR.split(':')[0]}`,
     );
     expect(reviewerChecksSection(harness.reviewPrompts[1])).toContain(
       '- V1 `tsc --noEmit`: passed',

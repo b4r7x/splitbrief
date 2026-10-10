@@ -779,9 +779,10 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       expect(reviewPrompts).toHaveLength(stopBeforeVerdict ? 4 : 2);
       const pending = reviewPrompts.at(-1)?.split('## Pending Inputs\n')[1]?.split('\n## ')[0];
       expect(pending).toContain('**V1.1** (check · defect)');
-      expect(pending).toContain('src/c.ts(1,1): error C');
+      expect(pending).toContain('New failures:\n- src/c.ts(1,1): error C');
       expect(pending).not.toContain('src/a.ts(1,1): error A');
       expect(pending).not.toContain('src/b.ts(1,1): error B');
+      expect(pending).not.toContain('Output tail:');
       expect(result.state.review?.cycle).toBe(1);
       expect(result.state.pendingReviewCommands ?? []).toEqual([]);
       expect(loadState({ projectDir, sessionId })?.pendingReviewCommands ?? []).toEqual([]);
@@ -1527,6 +1528,73 @@ function ledgerFor(tasks: Task[], changed: Record<string, string[]>): EvidenceLe
 }
 
 describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
+  it.each(['task', 'plan'] as const)(
+    'keeps an unassigned Rust failure in the Apply %s end-check input',
+    async (origin) => {
+      const { projectDir, sessionId, head } = setupProject();
+      writeFileSync(
+        join(projectDir, 'Cargo.toml'),
+        '[package]\nname = "rust-check"\nversion = "0.1.0"\n',
+      );
+      const check: Check = { id: 'K-rust', kind: 'test', value: 'src/lib.rs', required: false };
+      const tasks = [
+        makeTask({
+          id: 'T001',
+          suggestedFiles: ['src/lib.rs'],
+          status: 'done',
+          checks: origin === 'task' ? [check] : [],
+        }),
+      ];
+      const output = 'test tests::adds ... FAILED';
+      vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+        processError.exitCode({ command: 'cargo test', code: 1, stderr: '', output }),
+      );
+      const controller = new AbortController();
+      const { options, reviewPrompts } = runOptions({
+        projectDir,
+        sessionId,
+        state: {
+          ...integrationReviewState(tasks, head, 0),
+          plan: {
+            summary: 'Re-check Rust after Apply.',
+            decisions: [],
+            criteria: [],
+            validation: null,
+            checks: origin === 'plan' ? [check] : [],
+          },
+        },
+        review: (prompt) => {
+          controller.abort();
+          return {
+            ...passingReviewVerdict(prompt),
+            rejected: [{ findingId: 'A1', reason: 'No fix required.' }],
+          };
+        },
+        onComplete: vi.fn(),
+        signal: controller.signal,
+      });
+
+      try {
+        const result = await runTasksAndReview(options);
+        const pending = reviewPrompts[0]?.split('## Pending Inputs\n')[1]?.split('\n## ')[0];
+        expect(reviewPrompts).toHaveLength(1);
+        expect(pending).toContain('**A1** (check · defect)');
+        expect(pending).toContain('src/lib.rs');
+        expect(pending).toContain('1 failure\nFailures:\n- tests::adds');
+        expect(pending).not.toContain('0 failures');
+        expect(pending).not.toContain('Output tail:');
+        expect(result.state.pendingTriage?.inputs[0]).toMatchObject({
+          id: 'A1',
+          file: 'src/lib.rs',
+          failureKeys: ['tests::adds'],
+          output: 'FAIL  tests::adds',
+        });
+      } finally {
+        await options.wctx.isolation.dispose();
+      }
+    },
+  );
+
   it('halts every unrunnable required Apply check before review, even with an optional failure', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [
@@ -1617,7 +1685,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     const { projectDir, sessionId, head } = setupProject();
     writeFileSync(
       join(projectDir, 'Makefile'),
-      'test:\n\t@echo "src/alpha.ts(1,1): error TS1005" >&2; exit 1\n',
+      'test:\n\t@echo " FAIL  src/alpha.test.ts > adds"; echo "AssertionError: expected 1 to be 2"; echo " FAIL  src/beta.test.ts > subtracts"; echo "AssertionError: expected 3 to be 4"; exit 1\n',
     );
     const tasks = [
       makeTask({
@@ -1628,7 +1696,10 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         checkResults: [{ id: 'C1', passed: true }],
       }),
     ];
-    writeEvidenceLedger({ projectDir, sessionId }, ledgerFor(tasks, { T001: ['src/alpha.ts'] }));
+    writeEvidenceLedger(
+      { projectDir, sessionId },
+      ledgerFor(tasks, { T001: ['src/alpha.ts', 'src/alpha.test.ts'] }),
+    );
     const controller = new AbortController();
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async (call: ImplementerOptions) => {
@@ -1662,7 +1733,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
               criteria: [],
               checks: [],
             }),
-            findingIds: ['A1', 'A2'],
+            findingIds: ['A1', 'A2', 'A3'],
           },
         ],
         rejected: [],
@@ -1690,6 +1761,15 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       expect(triagePrompts[0]).toContain('src/alpha.ts');
       expect(triagePrompts[0]).toContain('Last changed by T001.');
       expect(triagePrompts[0]).toContain('No task changed it.');
+      const pending = triagePrompts[0]?.split('## Pending Inputs\n')[1] ?? '';
+      const alpha = pending.split('**A1**')[1]?.split('**A2**')[0];
+      const beta = pending.split('**A2**')[1]?.split('**A3**')[0];
+      expect(alpha).toContain('- src/alpha.test.ts::adds\n  AssertionError: expected 1 to be 2');
+      expect(alpha).not.toContain('src/beta.test.ts');
+      expect(alpha).not.toContain('expected 3 to be 4');
+      expect(beta).toContain('- src/beta.test.ts::subtracts\n  AssertionError: expected 3 to be 4');
+      expect(beta).not.toContain('src/alpha.test.ts');
+      expect(beta).not.toContain('expected 1 to be 2');
       expect(result.completed).toBe(false);
     } finally {
       await options.wctx.isolation.dispose();

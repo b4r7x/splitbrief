@@ -160,6 +160,7 @@ async function activateFixtureInputMode(
   if (projection.question !== undefined) {
     const answer = await options.callbacks.onPlannerReply?.({
       call: 'research',
+      ...(projection.question.seat !== undefined && { seat: projection.question.seat }),
       text: '',
       questions:
         projection.question.questions === undefined

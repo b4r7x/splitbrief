@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan, TaskSpec } from '../../../core/schemas/plan.js';
 import type { Task } from '../../../core/schemas/task.js';
@@ -93,11 +93,6 @@ function rewrite(spec: TaskSpec): ConsultAnswer {
 
 function split(specs: TaskSpec[]): ConsultAnswer {
   return { answer: { diagnosis: 'The brief was too big', action: 'split-task', tasks: specs } };
-}
-
-function questionOf(result: Awaited<ReturnType<typeof applyConsultAnswer>>): string {
-  if (result.action !== 'ask-user') throw new Error(`expected ask-user, got ${result.action}`);
-  return result.question;
 }
 
 describe('applyConsultAnswer', () => {
@@ -276,7 +271,7 @@ describe('applyConsultAnswer', () => {
     });
   });
 
-  it('a rewrite whose criteria differ becomes ask-user naming the dropped criterion', async () => {
+  it('asks the operator when a rewrite changes criteria and fails without an answer', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -284,7 +279,10 @@ describe('applyConsultAnswer', () => {
       criteria: ['C1', 'C2'],
       status: 'failed',
     });
-    const { ctx, states } = contextFor(projectDir, sessionId, task);
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+    const { ctx, states } = contextFor(projectDir, sessionId, task, undefined, {
+      onPlannerReply,
+    });
     const attempt = await getChangedFilesSnapshot(projectDir);
     writeFileSync(join(projectDir, 'src/greet.ts'), ATTEMPT_GREET);
 
@@ -295,22 +293,36 @@ describe('applyConsultAnswer', () => {
       attempt,
     );
 
-    expect(questionOf(result)).toContain('C1');
-    expect(questionOf(result)).toContain('SPLITBRIEF asked the planner to fix T003');
+    expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        seat: 'plan',
+        text: expect.stringContaining('SPLITBRIEF asked the planner to fix T003'),
+        questions: [expect.objectContaining({ text: expect.stringContaining('C1') })],
+        answered: false,
+      }),
+    );
+    expect(result).toEqual({
+      action: 'failed',
+      reason: "The planner's question remains unanswered.",
+    });
     // The guard runs before the rollback: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
     expect(states).toHaveLength(0);
   });
 
-  it('a guarded fix-task answer names the reviewer that gave it', async () => {
+  it('asks the operator on the review seat when a fix-task rewrite changes criteria', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
       suggestedFiles: ['src/greet.ts'],
       criteria: ['C1', 'C2'],
       status: 'failed',
+      fix: { cycle: 1, findings: [{ id: 'F1', text: 'Fix the greeting', acceptance: null }] },
     });
-    const { ctx } = contextFor(projectDir, sessionId, task);
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+    const { ctx, states } = contextFor(projectDir, sessionId, task, undefined, {
+      onPlannerReply,
+    });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(
@@ -320,14 +332,22 @@ describe('applyConsultAnswer', () => {
       attempt,
     );
 
-    expect(result).toMatchObject({
-      action: 'ask-user',
-      question: expect.stringContaining('SPLITBRIEF asked the reviewer to fix T003'),
-      whyOnlyUserCanAnswer: expect.stringContaining("The reviewer's answer cannot keep"),
+    expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        seat: 'review',
+        text: expect.stringContaining('SPLITBRIEF asked the reviewer to fix T003'),
+        questions: [expect.objectContaining({ text: expect.stringContaining('C1') })],
+        answered: false,
+      }),
+    );
+    expect(result).toEqual({
+      action: 'failed',
+      reason: "The reviewer's question remains unanswered.",
     });
+    expect(states).toHaveLength(0);
   });
 
-  it('a split that together misses a criterion becomes ask-user naming it', async () => {
+  it('asks the operator when a split drops a criterion and fails without an answer', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -335,7 +355,10 @@ describe('applyConsultAnswer', () => {
       criteria: ['C1', 'C2'],
       status: 'failed',
     });
-    const { ctx, states } = contextFor(projectDir, sessionId, task);
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+    const { ctx, states } = contextFor(projectDir, sessionId, task, undefined, {
+      onPlannerReply,
+    });
     const attempt = await getChangedFilesSnapshot(projectDir);
 
     const result = await applyConsultAnswer(
@@ -348,7 +371,16 @@ describe('applyConsultAnswer', () => {
       attempt,
     );
 
-    expect(questionOf(result)).toContain('C2');
+    expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        seat: 'plan',
+        questions: [expect.objectContaining({ text: expect.stringContaining('C2') })],
+      }),
+    );
+    expect(result).toEqual({
+      action: 'failed',
+      reason: "The planner's question remains unanswered.",
+    });
     expect(states).toHaveLength(0);
   });
 
@@ -392,7 +424,7 @@ describe('applyConsultAnswer', () => {
     expect(states).toHaveLength(1);
   });
 
-  it('a rewrite that drops a check its criteria require becomes ask-user', async () => {
+  it('asks the operator when a rewrite drops a required check and fails without an answer', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
       id: 'T003',
@@ -408,7 +440,8 @@ describe('applyConsultAnswer', () => {
       checks: [{ id: 'K1', kind: 'test', value: 'src/greet.test.ts', required: true }],
       validation: null,
     };
-    const { ctx, states } = contextFor(projectDir, sessionId, task, plan);
+    const onPlannerReply = vi.fn().mockResolvedValue(undefined);
+    const { ctx, states } = contextFor(projectDir, sessionId, task, plan, { onPlannerReply });
     const attempt = await getChangedFilesSnapshot(projectDir);
     writeFileSync(join(projectDir, 'src/greet.ts'), ATTEMPT_GREET);
 
@@ -426,7 +459,16 @@ describe('applyConsultAnswer', () => {
       attempt,
     );
 
-    expect(questionOf(result)).toContain('K1');
+    expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        seat: 'plan',
+        questions: [expect.objectContaining({ text: expect.stringContaining('K1') })],
+      }),
+    );
+    expect(result).toEqual({
+      action: 'failed',
+      reason: "The planner's question remains unanswered.",
+    });
     // The guard runs before the rollback: the attempt's write is still on disk.
     expect(readFileSync(join(projectDir, 'src/greet.ts'), 'utf-8')).toBe(ATTEMPT_GREET);
     expect(states).toHaveLength(0);

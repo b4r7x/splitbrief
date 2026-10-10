@@ -1,12 +1,16 @@
 import {
   fixCheckVerdict,
+  fileFromFailureKey,
+  isTestNodeKey,
   judgeFixCheck,
   pairFailureKeys,
   type FixCheckKeys,
 } from '../../../core/review/fix-task.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByChars } from '../../../utils/truncate.js';
+import type { FailureKeys } from './extract-failure-keys.js';
 import type { CheckRunResult } from './run-checks.js';
+import { boundedOutputTail } from './stage.js';
 
 /** The failure keys a failure text lists before the output tail; the rest are counted. */
 const LISTED_FAILURE_KEYS = 10;
@@ -23,28 +27,78 @@ function keyLines(keys: readonly string[], messages: ReadonlyMap<string, string>
   });
 }
 
+function matchesFile(input: { key: string; file?: string | null | undefined }): boolean {
+  const named = fileFromFailureKey(input.key);
+  return input.file == null || named === null || named === input.file;
+}
+
+/** Unassigned keys stay visible even when the check's target supplies the input file. */
+export function failureKeysForFile(input: {
+  failure: FailureKeys | null;
+  file?: string | null | undefined;
+}): string[] {
+  if (input.failure === null || input.failure.placeholder !== undefined) return [];
+  return input.failure.keys.filter((key) => matchesFile({ key, file: input.file }));
+}
+
 /**
  * The text a check that did not pass hands the implementer, the consult and the reviewer. A red
  * with failure keys leads with them, each failing test with its assertion message, before the
- * output tail, so a tail of runner noise still names the failure. With `carried`, the keys a fix
- * task answers, it says which of them remain and lists those first. A red with a placeholder key
- * and every other status keep the output as it is.
+ * output tail, so a tail of runner noise still names the failure. Each failure family gets half
+ * the listed keys, with unused places going to the other family. With `carried`, the keys a fix
+ * task answers, it says which of them remain and lists those first. A file-scoped input lists its
+ * keys and unassigned keys without the output tail. Reviewer checks name pre-existing failures.
  */
-export function checkFailureText(run: CheckRunResult, carried?: FixCheckKeys): string {
+export function checkFailureText(
+  run: CheckRunResult,
+  options: { carried?: FixCheckKeys | undefined; file?: string | null | undefined } = {},
+): string {
+  const { carried } = options;
+  const scoped = options.file != null;
   const head = `check ${run.checkId} did not pass (${run.status})`;
+  const output = boundedOutputTail(run.output);
   if (run.status !== 'fail' || run.failure.placeholder !== undefined) {
-    return `${head}: ${run.output}`;
+    const detail =
+      run.status === 'fail' &&
+      run.failure.placeholder !== undefined &&
+      (scoped || output.trim() === '')
+        ? clip(run.failure.placeholder)
+        : output;
+    return `${head}: ${detail}`;
   }
-  const { keys } = run.failure;
-  const messages = run.failure.messages ?? new Map<string, string>();
+  const keys = failureKeysForFile({ failure: run.failure, file: options.file });
+  const messages = new Map(
+    [...(run.failure.messages ?? [])].filter(([, message]) =>
+      matchesFile({ key: message, file: options.file }),
+    ),
+  );
   const judged = carried === undefined ? null : judgeFixCheck(carried, run.failure);
-  // The task's own keys that remain, as this run prints them: a diagnostic may have moved lines.
-  const { remaining } = pairFailureKeys(judged?.left ?? [], keys);
-  const own = keys.filter((_key, index) => !remaining.has(index));
-  const others = keys.filter((_key, index) => remaining.has(index));
-  const listedOwn = own.slice(0, LISTED_FAILURE_KEYS);
-  const listedOthers = others.slice(0, LISTED_FAILURE_KEYS - listedOwn.length);
-  const unlisted = keys.length - listedOwn.length - listedOthers.length;
+  const classified = judged === null && run.preExisting !== undefined;
+  // A carried diagnostic may have moved lines; pre-existing keys use this run's positions.
+  const { remaining } = pairFailureKeys({
+    carried: judged?.left ?? run.preExisting ?? [],
+    rerun: keys,
+  });
+  const primary = keys.filter((_key, index) =>
+    classified ? remaining.has(index) : !remaining.has(index),
+  );
+  const others = keys.filter((_key, index) =>
+    classified ? !remaining.has(index) : remaining.has(index),
+  );
+  const ordered = [...primary, ...others];
+  const tests = ordered.filter(
+    (key) => isTestNodeKey(key) || fileFromFailureKey(key) === null || messages.has(key),
+  );
+  const testKeys = new Set(tests);
+  const diagnostics = ordered.filter((key) => !testKeys.has(key));
+  const testLimit = Math.max(LISTED_FAILURE_KEYS / 2, LISTED_FAILURE_KEYS - diagnostics.length);
+  const listed = new Set([
+    ...tests.slice(0, testLimit),
+    ...diagnostics.slice(0, LISTED_FAILURE_KEYS - Math.min(testLimit, tests.length)),
+  ]);
+  const listedPrimary = primary.filter((key) => listed.has(key));
+  const listedOthers = others.filter((key) => listed.has(key));
+  const unlisted = keys.length - listedPrimary.length - listedOthers.length;
   const summary =
     judged === null
       ? `${keys.length} ${keys.length === 1 ? 'failure' : 'failures'}`
@@ -56,14 +110,23 @@ export function checkFailureText(run: CheckRunResult, carried?: FixCheckKeys): s
         }).join(', ');
   return [
     `${head}: ${summary}`,
-    ...(listedOwn.length > 0
-      ? ['Your failures that remain:', ...keyLines(listedOwn, messages)]
+    ...(listedPrimary.length > 0
+      ? [
+          classified ? 'New failures:' : 'Your failures that remain:',
+          ...keyLines(listedPrimary, messages),
+        ]
       : []),
     ...(listedOthers.length > 0
-      ? [judged === null ? 'Failures:' : 'Other failures:', ...keyLines(listedOthers, messages)]
+      ? [
+          classified
+            ? 'Pre-existing failures (also red at the run base):'
+            : judged === null
+              ? 'Failures:'
+              : 'Other failures:',
+          ...keyLines(listedOthers, messages),
+        ]
       : []),
     ...(unlisted > 0 ? [`and ${unlisted} more`] : []),
-    'Output tail:',
-    run.output,
+    ...(!scoped ? ['Output tail:', output] : []),
   ].join('\n');
 }

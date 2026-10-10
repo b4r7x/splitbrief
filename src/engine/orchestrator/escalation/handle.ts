@@ -3,7 +3,6 @@ import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/
 import type { ConsultReason } from '../../../core/schemas/consult.js';
 import type { WorkflowContext } from '../types.js';
 import type { EngineEvent } from '../../events/types.js';
-import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { recordNoProgressCut, runLocalRetries } from './local-retries.js';
 import { runRetryStep, type BlockedReport } from './step.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
@@ -23,7 +22,6 @@ import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drai
 import { formatMessage } from '../queue/prompt.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { captureWorkspaceSnapshot, revertedDir } from '../isolation/entry-snapshot.js';
-import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import {
   buildConsultBoundRecoveryIssue,
   consultBoundSpent,
@@ -201,30 +199,6 @@ async function attemptChangedFiles(
   } catch {
     return [];
   }
-}
-
-/** The consult seat answered against its contract; the seat is the halt, not the brief. */
-async function seatProtocolHalt(
-  ctx: EscalationContext,
-  state: WorkflowState,
-  error: SeatProtocolError,
-  attempts: number,
-  handBack: string | undefined,
-): Promise<{ state: WorkflowState; result: RetryResult }> {
-  const issue = await seatProtocolHaltIssue({
-    projectDir: ctx.projectDir,
-    config: ctx.config,
-    error,
-    phase: state.phase,
-  });
-  publishError({ bus: ctx.bus, phase: state.phase, message: issue.message });
-  return {
-    state: raisePendingRecovery(ctx, state, issue),
-    result: failedRetry(attempts, {
-      lastError: error.message,
-      ...(handBack !== undefined && { handBack }),
-    }),
-  };
 }
 
 /** The lineage or the run is out of the budget a consult needs; the operator decides the grant. */
@@ -515,9 +489,7 @@ export async function handleRetryAndEscalation(
         ...(userText !== undefined && { userText }),
       },
     );
-    if ('error' in consult) {
-      return seatProtocolHalt(ctx, state, consult.error, attempts, handBack);
-    }
+    if ('error' in consult) throw consult.error;
     if (queued.messages.length > 0) {
       state = commitQueueMessagesConsulted({
         projectDir: ctx.projectDir,
@@ -528,7 +500,7 @@ export async function handleRetryAndEscalation(
     }
     lastDiagnosis = consult.answer.answer.diagnosis;
 
-    let applied = await applyConsultAnswer(
+    const applied = await applyConsultAnswer(
       {
         projectDir: ctx.projectDir,
         workspaceDir: ctx.workspaceDir,
@@ -551,31 +523,6 @@ export async function handleRetryAndEscalation(
       consult.answer,
       snapshot,
     );
-
-    if (applied.action === 'ask-user') {
-      applied = await applyConsultAnswer(
-        {
-          projectDir: ctx.projectDir,
-          workspaceDir: ctx.workspaceDir,
-          sessionId: ctx.sessionId,
-          bus: ctx.bus,
-          config: ctx.config,
-          validator: ctx.validator,
-          callbacks: ctx.callbacks,
-          sinks: ctx.sinks,
-          state,
-          seat,
-          taskStartTime: ctx.taskStartTime,
-          ...(ctx.signal !== undefined && { signal: ctx.signal }),
-          onStateChange: (next) => {
-            state = next;
-          },
-        },
-        task,
-        { answer: { ...applied, diagnosis: lastDiagnosis } },
-        snapshot,
-      );
-    }
 
     // The consult replaced or split the brief; the task loop dispatches the new current task.
     if (applied.action === 'rewrite-task' || applied.action === 'split-task') {
@@ -609,12 +556,10 @@ export async function handleRetryAndEscalation(
     const instructions =
       applied.action === 'guidance'
         ? guidanceInstructions(applied.instructions, applied.context)
-        : applied.action === 'ask-user'
-          ? `${applied.question}\n\nWhy only you can answer: ${applied.whyOnlyUserCanAnswer}`
-          : `The ${consultSeatRunner(seat)} confirmed the reported decisions:\n${applied.decisions
-              .map((decision) => `- ${decision.what} — ${decision.why}`)
-              .join('\n')}`;
-    const halted = await attempt(consultAttemptError(lastError, instructions, seat));
+        : `The ${consultSeatRunner(seat)} confirmed the reported decisions:\n${applied.decisions
+            .map((decision) => `- ${decision.what} — ${decision.why}`)
+            .join('\n')}`;
+    const halted = await attempt(consultAttemptError({ lastError, instructions, seat }));
     if (halted) return halted;
   }
 }

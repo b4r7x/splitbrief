@@ -69,7 +69,8 @@ function diagnosticIdentity(key: string): string | null {
 }
 
 /** Pair exact keys first, then diagnostic identities, each re-run key at most once. */
-export function pairFailureKeys(carried: readonly string[], rerun: readonly string[]) {
+export function pairFailureKeys(input: { carried: readonly string[]; rerun: readonly string[] }) {
+  const { carried, rerun } = input;
   const remaining = new Set(rerun.map((_key, index) => index));
   const matched = new Set<number>();
   for (const [index, key] of carried.entries()) {
@@ -100,8 +101,14 @@ export function judgeFixCheck(
   const own = carried.failureKeys.length;
   if (own === 0 || failure?.placeholder !== undefined) return null;
   if (failure === null) return { own, left: [], others: 0, proven: true };
-  const { matched, remaining } = pairFailureKeys(carried.failureKeys, failure.keys);
-  const otherRed = pairFailureKeys(carried.failureKeys, carried.redKeys).remaining;
+  const { matched, remaining } = pairFailureKeys({
+    carried: carried.failureKeys,
+    rerun: failure.keys,
+  });
+  const otherRed = pairFailureKeys({
+    carried: carried.failureKeys,
+    rerun: carried.redKeys,
+  }).remaining;
   const originalOthers = carried.redKeys.filter((_key, index) => otherRed.has(index));
   const rerunOthers = failure.keys.filter((_key, index) => remaining.has(index));
   return {
@@ -110,7 +117,8 @@ export function judgeFixCheck(
     others: remaining.size,
     proven:
       carried.redKeys.length > 0 &&
-      (matched.size > 0 || pairFailureKeys(originalOthers, rerunOthers).matched.size > 0),
+      (matched.size > 0 ||
+        pairFailureKeys({ carried: originalOthers, rerun: rerunOthers }).matched.size > 0),
   };
 }
 

@@ -3,11 +3,7 @@ import { join } from 'node:path';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { resolveApproveChecks, resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
-import {
-  fileFromFailureKey,
-  judgeFixCheck,
-  type FixCheckKeys,
-} from '../../core/review/fix-task.js';
+import { judgeFixCheck, type FixCheckKeys } from '../../core/review/fix-task.js';
 import type { Config } from '../../core/schemas/config.js';
 import {
   MAX_REVIEW_CHECKS,
@@ -38,6 +34,7 @@ import { runReviewerCall } from './review-call.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
+import { checkFailureText, failureKeysForFile } from './validation/failure-text.js';
 import {
   planApprovesNpmScripts,
   reviewCheckList,
@@ -151,8 +148,9 @@ function notVerifiedReason(workspace: FailureKeys, base: FailureKeys): string {
  * The keys of a red command that the same command text also shows at the run base, or why the
  * re-run at the run base could not tell. A red base re-run proves a pre-existing failure only when
  * both runs name their failures: with a placeholder on either side nothing is pre-existing, and
- * `notVerified` says why. A run base that Git cannot check out leaves every key not verified, with
- * the Git error as the reason.
+ * `notVerified` says why. A run base that cannot be prepared leaves every key not verified, with
+ * the preparation error and any cleanup error as the reason. Cleanup errors after a completed
+ * re-run also leave every key not verified, with the cleanup error visible in the row detail.
  */
 async function preExistingKeys(input: {
   id: string;
@@ -175,8 +173,9 @@ async function preExistingKeys(input: {
     moment: 'base',
   });
   let atBase: { run: CheckRunResult; incomplete: string | undefined } | undefined;
+  let treeError: string | undefined;
   try {
-    atBase = await withRunBaseTree(input.base, async ({ dir, incomplete }) => {
+    const completed = await withRunBaseTree(input.base, async ({ dir, incomplete }) => {
       const [run] = await runChecks([input.id], {
         ...input.checkOptions,
         projectDir: dir,
@@ -185,21 +184,26 @@ async function preExistingKeys(input: {
       });
       return run === undefined ? undefined : { run, incomplete };
     });
+    atBase = completed.result;
+    treeError = completed.cleanupError;
   } catch (err) {
-    if (!runBaseTreeError.isCheckoutFailed(err)) throw err;
+    if (!runBaseTreeError.isPreparationFailed(err)) throw err;
+    treeError = err.message;
+  }
+  if (treeError !== undefined) {
     publishReviewCheck(input.notices, {
       status: 'done',
       id: input.id,
       command: input.command,
       moment: 'base',
       passed: false,
-      detail: err.message,
+      detail: treeError,
       duration: Date.now() - startedAt,
       newFailures: 0,
       preExisting: 0,
       notVerified: input.failure.keys.length,
     });
-    return { keys: [], notVerified: err.message };
+    return { keys: [], notVerified: treeError };
   }
   if (atBase === undefined || (atBase.run.status !== 'pass' && atBase.run.status !== 'fail')) {
     publishReviewCheck(input.notices, {
@@ -575,27 +579,27 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       continue;
     }
     if (requiredCommands.includes(chosen.command)) ranRequiredCommands.add(chosen.command);
-    if (run.status === 'pass') {
+    if (run.status !== 'fail') {
       lines.push(`- ${label}: passed`);
       continue;
     }
     const preExisting = run.preExisting ?? [];
     lines.push(
       notVerified === undefined
-        ? `- ${label}: failed, ${fresh.length} new failure(s)${fresh.length > 0 ? `: ${fresh.join('; ')}` : ''}${
+        ? `- ${label}: failed, ${fresh.length} new failure(s)${
             preExisting.length > 0
-              ? `; ${preExisting.length} pre-existing (also red at the run base): ${preExisting.join('; ')}`
+              ? `; ${preExisting.length} pre-existing (also red at the run base)`
               : ''
           }${unavailable === undefined ? '' : `; base re-run ${unavailable}`}`
-        : `- ${label}: failed (${fresh.join('; ')}), not verified at the run base (${notVerified}); the reviewer decides`,
+        : `- ${label}: failed, not verified at the run base (${notVerified}); the reviewer decides`,
+      checkFailureText(run),
     );
     if (fresh.length === 0) continue;
     stoppedBy = chosen.id;
     const named = failingFilesFromKeys(fresh, opts.workspaceDir);
     for (const file of named.length > 0 ? named : [null]) {
       const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
-      const failureKeys =
-        file === null ? [] : fresh.filter((key) => fileFromFailureKey(key) === file);
+      const failureKeys = failureKeysForFile({ failure: { ...run.failure, keys: fresh }, file });
       inputs.push({
         id: `${chosen.id}.${inputs.length + 1}`,
         kind: 'defect',
@@ -603,11 +607,11 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
         file,
         text: `Reviewer check ${chosen.id} (${chosen.command}) failed ${
           notVerified === undefined
-            ? `with new failures: ${fresh.join('; ')}.`
+            ? 'with new failures.'
             : run.base === undefined
-              ? `(${fresh.join('; ')}) and SPLITBRIEF could not re-run it at the run base (${notVerified}); the reviewer decides.`
-              : `(${fresh.join('; ')}) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
-        } ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
+              ? `and SPLITBRIEF could not verify its run base re-run (${notVerified}); the reviewer decides.`
+              : `and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${notVerified}); the reviewer decides.`
+        } ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}\n${checkFailureText(run, { file })}`,
         checkIds: [chosen.id],
         command: chosen.command,
         output: run.output,

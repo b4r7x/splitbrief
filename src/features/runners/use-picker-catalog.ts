@@ -180,6 +180,11 @@ export function usePickerCatalog(
     useStores(detectionStore);
 
   const [uncontrolledItemId, setUncontrolledItemId] = useState<string | null>(null);
+  const [previousFocus, setPreviousFocus] = useState(focus);
+  if (previousFocus !== focus) {
+    setPreviousFocus(focus);
+    setUncontrolledItemId(null);
+  }
 
   const runnerConfig = readActiveRunner({ config, role: lane });
 

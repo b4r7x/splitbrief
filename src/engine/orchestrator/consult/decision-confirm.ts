@@ -102,11 +102,11 @@ export async function confirmAttemptDecisions(opts: {
     return {
       kind: 'answer',
       state,
-      answer: consultAttemptError(
-        'The planner asked the user about the decisions this attempt reported.',
-        guidanceInstructions(applied.instructions, applied.context),
+      answer: consultAttemptError({
+        lastError: 'The planner asked the user about the decisions this attempt reported.',
+        instructions: guidanceInstructions(applied.instructions, applied.context),
         seat,
-      ),
+      }),
     };
   }
   if (applied.action === 'failed') return { kind: 'retry', state, error: applied.reason };

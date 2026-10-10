@@ -20,7 +20,7 @@ import {
   planApprovesNpmScripts,
   runChecks,
 } from '../validation/run-checks.js';
-import { checkFailureText } from '../validation/failure-text.js';
+import { checkFailureText, failureKeysForFile } from '../validation/failure-text.js';
 import {
   classifyRequiredChecks,
   haltRequiredChecksUnrunnable,
@@ -32,7 +32,6 @@ import { captureReviewedCandidate } from '../apply/states.js';
 import { transitionAndSave } from '../state-ops.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { fileFromFailureKey } from '../../../core/review/fix-task.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { failingFilesFromKeys, lastTaskChangingFile } from '../task/file-owner.js';
 import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
@@ -168,21 +167,21 @@ async function recheckMergedCandidate(
   const registry = checkRegistry({ plan: state.plan, tasks: state.tasks });
   const pushFiles = (
     files: readonly (string | null)[],
-    text: string,
+    ownerLabel: string,
     run: CheckRunResult,
   ): void => {
     for (const file of files) {
       const owner = file === null ? undefined : lastTaskChangingFile(ledger, state.tasks, file);
-      const failureKeys =
-        file === null || run.status !== 'fail'
-          ? []
-          : run.failure.keys.filter((key) => fileFromFailureKey(key) === file);
+      const failureKeys = failureKeysForFile({
+        failure: run.status === 'fail' ? run.failure : null,
+        file,
+      });
       inputs.push({
         id: `A${inputs.length + 1}`,
         kind: 'defect',
         source: 'check',
         file,
-        text: `${text} ${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}`,
+        text: `${owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`}\n${ownerLabel} ${checkFailureText(run, { file })}`,
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,
@@ -191,7 +190,7 @@ async function recheckMergedCandidate(
       });
     }
   };
-  const pushRun = (run: CheckRunResult, text: string): void => {
+  const pushRun = (run: CheckRunResult, ownerLabel: string): void => {
     const check = registry.get(run.checkId);
     const named = failingFilesFromKeys(
       run.status === 'fail' ? run.failure.keys : [],
@@ -203,7 +202,7 @@ async function recheckMergedCandidate(
         : check?.kind === 'test'
           ? [normalizeProjectRelativePath(check.value)]
           : [null];
-    pushFiles(files, text, run);
+    pushFiles(files, ownerLabel, run);
   };
   const collectRuns = (owner: string, runs: readonly CheckRunResult[]) => {
     const required = classifyRequiredChecks(
@@ -218,7 +217,7 @@ async function recheckMergedCandidate(
       } else if (run.status !== 'pass') {
         const text = `${owner} ${checkFailureText(run)}`;
         failures.push(text);
-        pushRun(run, text);
+        pushRun(run, owner);
       }
     }
   };

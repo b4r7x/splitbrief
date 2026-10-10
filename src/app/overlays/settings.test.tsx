@@ -9,6 +9,8 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
+import { glyph } from '../../lib/glyphs.js';
+import { listRowLead } from '../../components/list-row.js';
 import { _resetMouseZones } from '../../lib/terminal/mouse-zones.js';
 import { SettingsOverlay } from './settings.js';
 
@@ -114,6 +116,56 @@ describe('SettingsOverlay', () => {
     expect(validationRowIndex).toBeGreaterThan(-1);
     expect(workflowRowIndex).toBeLessThan(validationRowIndex);
 
+    ui.unmount();
+  });
+
+  it('moves the mounted cursor and filter when the active overlay opens with a new focus', async () => {
+    overlayStore.open('settings', 'seat:plan');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    expect(lineWith(frameLines(ui), 'PLAN')).toContain(`${glyph('liveBar')} PLAN`);
+
+    ui.stdin.write('temp');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Temperature`);
+    overlayStore.setExclusive(true);
+
+    overlayStore.open('settings', 'seat:build');
+    await flushEffects();
+    expect(lineWith(frameLines(ui), 'BUILD')).toContain(`${glyph('liveBar')} BUILD`);
+    expect(lineWith(frameLines(ui), 'PLAN')).not.toContain(`${glyph('liveBar')} PLAN`);
+    expect(overlayStore.get()).toEqual({
+      active: 'settings',
+      focus: 'seat:build',
+      exclusive: true,
+      stack: [],
+    });
+
+    ui.stdin.write('temp');
+    await flushEffects();
+    overlayStore.open('settings', 'seat:build');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain(`${listRowLead('active')}Temperature`);
+    expect(lineWith(frameLines(ui), 'PLAN')).toBeUndefined();
+
+    overlayStore.open('settings', 'filter:workflow');
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('workflow');
+    expect(lineWith(frameLines(ui), 'Create branch')).toBeDefined();
+    expect(lineWith(frameLines(ui), 'Temperature')).toBeUndefined();
+
+    overlayStore.open('settings');
+    await flushEffects();
+    expect(lineWith(frameLines(ui), 'PLAN')).toContain(`${glyph('liveBar')} PLAN`);
+    expect(overlayStore.get()).toEqual({
+      active: 'settings',
+      focus: undefined,
+      exclusive: true,
+      stack: [],
+    });
+    ui.stdin.write(ESC);
+    await flushEffects();
+    expect(overlayStore.get().active).toBe('none');
     ui.unmount();
   });
 

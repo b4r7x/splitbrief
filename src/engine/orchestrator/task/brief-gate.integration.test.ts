@@ -162,7 +162,7 @@ describe('brief gate', () => {
         findings: [
           {
             id: 'P1',
-            text: 'Required check K1 failed: broken No task changed it.',
+            text: 'No task changed it.\nRequired check K1 did not pass (fail): broken',
             acceptance: null,
             checkIds: ['K1'],
             commands: { K1: 'node --version' },

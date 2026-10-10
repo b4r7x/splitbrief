@@ -5,6 +5,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import { ImplementerReportSchema, type ConsultAnswer } from '../../../core/schemas/consult.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -93,6 +94,77 @@ function consultPlanner(script: readonly ConsultAnswer[]): {
 }
 
 describe('handleRetryAndEscalation — a blocked implementer', () => {
+  it.each(['rewrite-task', 'split-task'] as const)(
+    'asks once about a guarded %s and delivers the operator answer as guidance',
+    async (action) => {
+      const { projectDir, sessionId } = setupProject();
+      const task = makeTask({ criteria: ['C1', 'C2'] });
+      const currentState = { ...makeValidatingState(), tasks: [task] };
+      const answer = 'Keep both criteria and repair the existing implementation.';
+      const onPlannerReply = vi.fn().mockResolvedValue(answer);
+      const { callbacks } = makeCallbacks({ onPlannerReply });
+      const { bus, events } = makeBusRecorder();
+      const implementer = makeImplementer();
+      const replacement = makeTaskSpec({ id: 'T001', criteria: ['C2'] });
+      const { planner, prompts } = consultPlanner([
+        {
+          answer:
+            action === 'rewrite-task'
+              ? { action, diagnosis: 'The brief needs repair.', task: replacement }
+              : {
+                  action,
+                  diagnosis: 'The brief needs repair.',
+                  tasks: [replacement, makeTaskSpec({ id: 'T002', criteria: ['C2'] })],
+                },
+        },
+      ]);
+
+      const outcome = await handleRetryAndEscalation({
+        taskStartTime: Date.now(),
+        wctx: makeWctx({
+          projectDir,
+          sessionId,
+          config: makeNoValidationConfig(),
+          planner,
+          callbacks,
+          implementer,
+          bus,
+        }),
+        task,
+        initialError: 'Implementer is blocked.',
+        currentState,
+        initialBlocked: { status: 'blocked', question: 'How should I proceed?', filesNeeded: [] },
+      });
+
+      expect(onPlannerReply).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          seat: 'plan',
+          text: expect.stringContaining('SPLITBRIEF asked the planner to fix T001'),
+          questions: [expect.objectContaining({ text: expect.stringContaining('C1') })],
+        }),
+      );
+      expect(prompts).toHaveLength(1);
+      expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 1 });
+      expect(outcome.state.pendingRecovery).toBeUndefined();
+      expect(outcome.state.tasks).toHaveLength(1);
+      expect(outcome.state.tasks[0]?.criteria).toEqual(['C1', 'C2']);
+      expect(outcome.state.tasks[0]?.revision).toBeUndefined();
+      expect(implementer.retry).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ error: expect.stringContaining(answer) }),
+      );
+      expect(vi.mocked(implementer.retry).mock.calls[0]?.[0].error).not.toContain(
+        'How should T001 proceed?',
+      );
+      expect(events.filter((event) => event.type === 'task_retry')).toEqual([]);
+      expect(events.filter((event) => event.type === 'user_message')).toEqual([
+        expect.objectContaining({ text: answer, qa: [expect.objectContaining({ answer })] }),
+      ]);
+      expect(
+        events.filter((event) => event.type === 'task_replaced' || event.type === 'tasks_inserted'),
+      ).toEqual([]);
+    },
+  );
+
   it('consults the planner at once when the first attempt stopped to ask', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();

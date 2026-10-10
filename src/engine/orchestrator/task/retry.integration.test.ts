@@ -397,18 +397,20 @@ describe('retryAndRecord — recovery stop points', () => {
 
     expect(result.completed).toBe(false);
     expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
+      reason: 'planner-call-failed',
+      seat: 'plan',
       taskId: 'T001',
       availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })?.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
+      reason: 'planner-call-failed',
+      seat: 'plan',
       taskId: 'T001',
     });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'recovery_prompted',
-        reason: 'retry-exhausted',
+        reason: 'planner-call-failed',
         taskId: 'T001',
         availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
       }),
@@ -555,18 +557,20 @@ describe('retryAndRecord — recovery stop points', () => {
     expect(result.completed).toBe(false);
     expect(result.state.attempt).toBe(1);
     expect(result.state.pendingRecovery).toMatchObject({
-      reason: 'retry-exhausted',
+      reason: 'planner-call-failed',
+      seat: 'plan',
       taskId: 'T001',
       attempts: 1,
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
     });
     expect(loadState({ projectDir, sessionId })).toMatchObject({
       attempt: 1,
-      pendingRecovery: expect.objectContaining({ reason: 'retry-exhausted' }),
+      pendingRecovery: expect.objectContaining({ reason: 'planner-call-failed', seat: 'plan' }),
     });
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'recovery_prompted',
-        reason: 'retry-exhausted',
+        reason: 'planner-call-failed',
         taskId: 'T001',
       }),
     );

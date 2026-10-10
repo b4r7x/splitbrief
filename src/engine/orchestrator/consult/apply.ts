@@ -59,13 +59,6 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
   | Readonly<{ action: 'completed'; task: Task; durationMs: number }>
   | Readonly<{ action: 'confirm'; decisions: ConfirmAction['decisions'] }>
-  | Readonly<{
-      action: 'ask-user';
-      question: string;
-      whyOnlyUserCanAnswer: string;
-      choices: string[] | null;
-      default: string | null;
-    }>
   | Readonly<{ action: 'failed'; reason: string }>
   | Readonly<{ action: 'skipped' }>;
 
@@ -128,23 +121,23 @@ function guardViolation(
   return null;
 }
 
-function guardAskUser(
-  task: Task,
-  action: RewriteAction | SplitAction,
-  reason: string,
-  seat: ConsultSeat,
-): ConsultApplyOutcome {
-  const runner = consultSeatRunner(seat);
+async function applyGuardQuestion(
+  ctx: ConsultApplyContext,
+  input: { task: Task; action: RewriteAction | SplitAction; reason: string },
+): Promise<ConsultApplyOutcome> {
+  const { task, action, reason } = input;
+  const runner = consultSeatRunner(ctx.seat);
   const specs = action.action === 'rewrite-task' ? [action.task] : action.tasks;
   const dropped = droppedCriteria(task, specs);
   const droppedText = dropped.length > 0 ? dropped.join(', ') : 'none';
-  return {
+  return applyAskUser(ctx, {
     action: 'ask-user',
+    diagnosis: action.diagnosis,
     question: `SPLITBRIEF asked the ${runner} to fix ${task.id}, but ${reason}. Dropped criteria: ${droppedText}. How should ${task.id} proceed?`,
     whyOnlyUserCanAnswer: `The ${runner}'s answer cannot keep every criterion of ${task.id}, and only you can decide how to cover them.`,
     choices: null,
     default: null,
-  };
+  });
 }
 
 /**
@@ -336,6 +329,7 @@ async function applyAskUser(
   const question = askUserQuestion(action);
   const asked: PlannerConversation = {
     call: 'plan',
+    seat: ctx.seat,
     text: action.question,
     questions: [question],
     answers: [],
@@ -364,8 +358,9 @@ async function applyAskUser(
  * Moves the run on the consult seat's answer: guidance hands back what the next attempt's error
  * block carries; a rewrite or a split rolls the current attempt back and replaces the task;
  * verify completes the task when its selection covers the criteria and the validation and
- * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the seat's one question to the operator and hands the answer
- * back as guidance; an answer that would drop a criterion or one of its checks becomes ask-user.
+ * checks pass, and a pre_validation deny of that gate skips the task; ask-user puts the seat's
+ * one question to the operator and hands the answer back as guidance; an answer that would
+ * drop a criterion or one of its checks asks the operator through that same path.
  *
  * `attempt` is the current attempt's start snapshot; null means no attempt ran (a stale
  * refresh before dispatch), so there is nothing to roll back.
@@ -379,7 +374,7 @@ export async function applyConsultAnswer(
   const action = answer.answer;
   if (action.action === 'rewrite-task' || action.action === 'split-task') {
     const violation = guardViolation(task, ctx.state.plan, action);
-    if (violation !== null) return guardAskUser(task, action, violation, ctx.seat);
+    if (violation !== null) return applyGuardQuestion(ctx, { task, action, reason: violation });
   }
   switch (action.action) {
     case 'guidance':

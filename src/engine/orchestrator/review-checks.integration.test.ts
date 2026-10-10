@@ -1,5 +1,7 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import * as fs from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -9,12 +11,14 @@ import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-fact
 import { planFromTasks, typedCallPlanAndReview } from '#testing/helpers/typed-planner.js';
 import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
+import { runBaseTreesRoot } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { Task } from '../../core/schemas/task.js';
 import { MAX_REVIEW_CHECKS, type ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
+import { installDiagnosticSink } from '../../lib/warn.js';
 import * as commandRunner from '../../lib/process/spawn/run-command.js';
 import type { EngineEvent, EngineEventOf } from '../events/types.js';
 import { recordLocalTaskEvidence } from './evidence/task.js';
@@ -25,6 +29,10 @@ import {
   type ReviewChecksOptions,
   type ReviewChecksOutcome,
 } from './review-checks.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs/promises')>()),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -499,15 +507,15 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         preExisting: [OLD_RED],
       });
       expect(sectionOf(outcome)).toContain(
-        'failed, 0 new failure(s); 1 pre-existing (also red at the run base): src/legacy.ts(3,7)',
+        `failed, 0 new failure(s); 1 pre-existing (also red at the run base)\ncheck V1 did not pass (fail): 1 failure\nPre-existing failures (also red at the run base):\n- ${OLD_RED}\nOutput tail:`,
       );
     });
   });
 
   // Q2 review B3: the base row read `fails at the run base too` whether the run stopped or went on.
-  it('counts the new and the pre-existing failures of a mixed red on its base row', async () => {
+  it('counts and labels the new and pre-existing keys of a mixed red', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-mixed-red' }, async (run) => {
-      const { events } = await reviewChecks(run, {
+      const { outcome, events } = await reviewChecks(run, {
         plan: plan([
           ['V1', 'npm test'],
           ['V2', 'npx --no-install vitest run'],
@@ -533,6 +541,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ['V1', 'base', 'done', 1, 1],
         ['V2', 'pre-review', 'not-run', undefined, undefined],
       ]);
+      const listing = sectionOf(outcome).split('Output tail:')[0] ?? '';
+      expect(listing).toContain(
+        `New failures:\n- ${NEW_RED}\nPre-existing failures (also red at the run base):\n- ${OLD_RED}`,
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(`New failures:\n- ${NEW_RED}`);
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(OLD_RED);
     });
   });
 
@@ -583,8 +597,13 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({ id: 'V1.1', file: null }),
       ]);
-      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('new failures: timed out');
-      expect(sectionOf(outcome)).toContain('- V1 `npm test`: failed, 1 new failure(s): timed out');
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
+        'failed with new failures. No task changed it.\ncheck V1 did not pass (fail):',
+      );
+      expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('timed out');
+      expect(sectionOf(outcome)).toContain(
+        '- V1 `npm test`: failed, 1 new failure(s)\ncheck V1 did not pass (fail):',
+      );
     });
   });
 
@@ -619,10 +638,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         expect.objectContaining({ id: 'V1.1', file: null, checkIds: ['V1'] }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'failed (timed out) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs timed out); the reviewer decides.',
+        'failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs timed out); the reviewer decides.',
       );
       expect(sectionOf(outcome)).toContain(
-        '- V1 `npm test`: failed (timed out), not verified at the run base (both runs timed out); the reviewer decides',
+        '- V1 `npm test`: failed, not verified at the run base (both runs timed out); the reviewer decides\ncheck V1 did not pass (fail):',
       );
       expect(sectionOf(outcome)).toContain(
         '- V2 `npx --no-install vitest run`: not run, V1 failed',
@@ -642,7 +661,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
 
       expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
       expect(sectionOf(outcome)).toContain(
-        '- V1 `npm test`: failed (exited with code 1), not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides',
+        '- V1 `npm test`: failed, not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides\ncheck V1 did not pass (fail):',
       );
     });
   });
@@ -708,10 +727,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         expect.objectContaining({ id: 'V1.1', file: null, checkIds: ['V1'], output: red.red }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'failed (exited with code 1) and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs exited with code 1 without diagnostics); the reviewer decides.',
+        'failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs exited with code 1 without diagnostics); the reviewer decides.',
       );
       expect(sectionOf(outcome)).toContain(
-        `- V1 \`${red.command}\`: failed (exited with code 1), not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides`,
+        `- V1 \`${red.command}\`: failed, not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides\ncheck V1 did not pass (fail): ${red.red}`,
       );
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();
@@ -761,16 +780,15 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ['done', false, 0, 1],
       ]);
       const settled = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
-      expect(settled?.detail).toContain('the run base could not be checked out');
+      expect(settled?.detail).toContain('the run base could not be prepared');
       expect(settled?.detail).toContain(unreachable);
       expect(sectionOf(outcome)).toContain(
-        '- V1 `npm test`: failed (' +
-          NEW_RED +
-          '), not verified at the run base (the run base could not be checked out',
+        '- V1 `npm test`: failed, not verified at the run base (the run base could not be prepared',
       );
+      expect(sectionOf(outcome)).toContain(`Failures:\n- ${NEW_RED}\nOutput tail:`);
       expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'SPLITBRIEF could not re-run it at the run base (the run base could not be checked out',
+        'SPLITBRIEF could not verify its run base re-run (the run base could not be prepared',
       );
       expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(
         'failed at the run base too',
@@ -778,6 +796,222 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')).toBeDefined();
       expect(logged.find((entry) => entry.id === 'V1')).not.toHaveProperty('base');
+    });
+  });
+
+  it.each(['reconcile', 'link'] as const)(
+    'settles a base preparation %s failure as not verified with its error',
+    async (step) => {
+      await withApplyRun(
+        FILES,
+        {
+          sessionId: `sess-checks-base-${step}`,
+          atBase: (dir) => writeFileSync(join(dir, 'src/a.ts'), 'export const a = 2;\n'),
+        },
+        async (run) => {
+          mkdirSync(join(run.dir, 'node_modules'));
+          mkdirSync(runBaseTreesRoot(), { recursive: true });
+          const before = readdirSync(runBaseTreesRoot());
+          const failure = new Error(`${step} preparation denied`);
+          if (step === 'reconcile') {
+            const rename = fs.rename;
+            vi.spyOn(fs, 'rename').mockImplementation(async (source, target) => {
+              if (String(target).startsWith(runBaseTreesRoot())) throw failure;
+              return rename(source, target);
+            });
+          } else {
+            vi.spyOn(fs, 'symlink').mockRejectedValueOnce(failure);
+          }
+          const { outcome, events, commands, ref } = await reviewChecks(run, {
+            plan: plan([['V1', 'npm test']]),
+            answer: () => ({ red: NEW_RED }),
+          });
+          expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+          expect(
+            rows(events)
+              .filter((row) => row.moment === 'base')
+              .map((row) => [row.status, row.passed, row.newFailures, row.notVerified]),
+          ).toEqual([
+            ['running', undefined, undefined, undefined],
+            ['done', false, 0, 1],
+          ]);
+          const settled = rows(events).find(
+            (row) => row.moment === 'base' && row.status === 'done',
+          );
+          expect(settled?.detail).toContain('the run base could not be prepared');
+          expect(settled?.detail).toContain(failure.message);
+          expect(sectionOf(outcome)).toContain(`not verified at the run base`);
+          expect(sectionOf(outcome)).toContain(failure.message);
+          expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+          expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(failure.message);
+          const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
+          expect(logged.find((entry) => entry.id === 'V1')).toBeDefined();
+          expect(logged.find((entry) => entry.id === 'V1')).not.toHaveProperty('base');
+          expect(readdirSync(runBaseTreesRoot())).toEqual(before);
+        },
+      );
+    },
+  );
+
+  it('settles a preparation failure with both the original and cleanup errors', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-base-cleanup' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const before = readdirSync(runBaseTreesRoot());
+      const remove = fs.rm;
+      vi.spyOn(fs, 'rm').mockImplementation(async (path, options) => {
+        if (String(path).startsWith(runBaseTreesRoot())) throw new Error('base cleanup denied');
+        return remove(path, options);
+      });
+      try {
+        const { outcome, events, commands } = await reviewChecks(run, {
+          plan: plan([['V1', 'npm test']]),
+          state: {
+            workspace: { ...run.workspace, base: { ...run.workspace.base, head: 'f'.repeat(40) } },
+          },
+          answer: () => ({ red: NEW_RED }),
+        });
+        expect(commands).toEqual([{ command: 'npm test', at: 'workspace' }]);
+        const settled = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+        expect(settled?.notVerified).toBe(1);
+        expect(settled?.detail).toContain('f'.repeat(40));
+        expect(settled?.detail).toContain('base cleanup denied');
+        expect(sectionOf(outcome)).toContain('base cleanup denied');
+        expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('base cleanup denied');
+      } finally {
+        vi.restoreAllMocks();
+        for (const name of readdirSync(runBaseTreesRoot())) {
+          if (!before.includes(name)) rmSync(join(runBaseTreesRoot(), name), { recursive: true });
+        }
+      }
+    });
+  });
+
+  it.each(['pass', 'fail'] as const)(
+    'settles a completed %s base command with its cleanup error and continues the review',
+    async (baseStatus) => {
+      await withApplyRun(FILES, { sessionId: 'sess-checks-completed-cleanup' }, async (run) => {
+        mkdirSync(runBaseTreesRoot(), { recursive: true });
+        const before = readdirSync(runBaseTreesRoot());
+        let tree = '';
+        try {
+          const { outcome, events, commands, ref } = await reviewChecks(run, {
+            plan: plan([
+              ['V1', 'npm test'],
+              ['V2', 'npx --no-install vitest run'],
+            ]),
+            answer: (command, at) => {
+              if (command !== 'npm test') return 'pass';
+              if (at === 'workspace') return { red: OLD_RED };
+              const name = readdirSync(runBaseTreesRoot()).find((entry) => !before.includes(entry));
+              if (name === undefined) throw new Error('the base command has no tree');
+              tree = join(runBaseTreesRoot(), name);
+              execFileSync('git', ['worktree', 'lock', tree], { cwd: run.dir, stdio: 'pipe' });
+              return baseStatus === 'pass' ? 'pass' : { red: OLD_RED };
+            },
+          });
+          expect(outcome.kind).toBe('ran');
+          expect(
+            rows(events)
+              .filter((row) => row.moment === 'base')
+              .map((row) => row.status),
+          ).toEqual(['running', 'done']);
+          const settled = rows(events).find(
+            (row) => row.moment === 'base' && row.status === 'done',
+          );
+          expect(settled).toMatchObject({
+            passed: false,
+            newFailures: 0,
+            preExisting: 0,
+            notVerified: 1,
+          });
+          expect(settled?.detail).toContain('cleanup of run base tree');
+          expect(settled?.detail).toContain(tree);
+          expect(settled?.detail).toContain('locked');
+          expect(commands).toEqual([
+            { command: 'npm test', at: 'workspace' },
+            { command: 'npm test', at: 'base' },
+          ]);
+          const logged = (readEvidenceLedger(ref)?.tasks[0]?.checks ?? []).find(
+            (entry) => entry.id === 'V1',
+          );
+          expect(logged).toBeDefined();
+          expect(logged).not.toHaveProperty('base');
+          expect(logged?.preExisting).toBeUndefined();
+          expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
+          expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain('locked');
+          expect(outcome.state.pendingTriage?.inputs[0]?.text).not.toContain(
+            'failed at the run base too',
+          );
+          expect(sectionOf(outcome)).toContain('not verified at the run base');
+          expect(sectionOf(outcome)).toContain('locked');
+          expect(rows(events).find((row) => row.id === 'V2')).toMatchObject({ status: 'not-run' });
+          expect(existsSync(tree)).toBe(true);
+          expect(existsSync(join(run.dir, '.git/worktrees', basename(tree)))).toBe(true);
+        } finally {
+          if (tree !== '') {
+            execFileSync('git', ['worktree', 'unlock', tree], { cwd: run.dir, stdio: 'pipe' });
+            execFileSync('git', ['worktree', 'remove', '--force', tree], {
+              cwd: run.dir,
+              stdio: 'pipe',
+            });
+          }
+        }
+      });
+    },
+  );
+
+  it('warns about a stale tree it cannot remove while repeated base re-runs still compare keys', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-stale-cleanup' }, async (run) => {
+      mkdirSync(runBaseTreesRoot(), { recursive: true });
+      const gone = spawnSync(process.execPath, ['-e', '']).pid;
+      const stale = join(runBaseTreesRoot(), `base-${gone}-locked`);
+      execFileSync('git', ['worktree', 'add', '--detach', stale, 'HEAD'], {
+        cwd: run.dir,
+        stdio: 'pipe',
+      });
+      execFileSync('git', ['worktree', 'lock', stale], { cwd: run.dir, stdio: 'pipe' });
+      const warnings: string[] = [];
+      const restore = installDiagnosticSink((message) => warnings.push(message));
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const { outcome, events, commands } = await reviewChecks(run, {
+            plan: plan([
+              ['V1', 'npm test'],
+              ['V2', 'npx --no-install vitest run'],
+            ]),
+            answer: (command) => (command === 'npm test' ? { red: OLD_RED } : 'pass'),
+          });
+          expect(outcome.kind).toBe('ran');
+          expect(commands).toEqual([
+            { command: 'npm test', at: 'workspace' },
+            { command: 'npm test', at: 'base' },
+            { command: 'npx --no-install vitest run', at: 'workspace' },
+          ]);
+          const settled = rows(events).find(
+            (row) => row.moment === 'base' && row.status === 'done',
+          );
+          expect(settled).toMatchObject({ passed: false, newFailures: 0, preExisting: 1 });
+          expect(settled).not.toHaveProperty('detail');
+          expect(sectionOf(outcome)).toContain(
+            'failed, 0 new failure(s); 1 pre-existing (also red at the run base)\n',
+          );
+          expect(sectionOf(outcome)).toContain(
+            'Pre-existing failures (also red at the run base):\n- src/legacy.ts(3,7)',
+          );
+          expect(existsSync(stale)).toBe(true);
+          expect(existsSync(join(run.dir, '.git/worktrees', basename(stale)))).toBe(true);
+        }
+        expect(warnings).toHaveLength(2);
+        expect(warnings.every((warning) => warning.includes(stale))).toBe(true);
+        expect(warnings.every((warning) => warning.includes('locked'))).toBe(true);
+      } finally {
+        restore();
+        execFileSync('git', ['worktree', 'unlock', stale], { cwd: run.dir, stdio: 'pipe' });
+        execFileSync('git', ['worktree', 'remove', '--force', stale], {
+          cwd: run.dir,
+          stdio: 'pipe',
+        });
+      }
     });
   });
 
@@ -837,7 +1071,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         const reason =
           'the run recorded no base commit, so its run base copy has no Git history, file modes or symlinks';
         expect(sectionOf(outcome)).toContain(
-          `- V1 \`npm test\`: failed (src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.), not verified at the run base (${reason}); the reviewer decides`,
+          `- V1 \`npm test\`: failed, not verified at the run base (${reason}); the reviewer decides\ncheck V1 did not pass (fail): 1 failure\nFailures:\n- ${OLD_RED}\nOutput tail:`,
         );
         expect(outcome.state.pendingTriage?.inputs.map((input) => input.id)).toEqual(['V1.1']);
         expect(
@@ -925,6 +1159,10 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ]);
         expect(inputs[0]?.text).toContain('Last changed by T001.');
         expect(inputs[1]?.text).toContain('Last changed by T002.');
+        expect(inputs[0]?.text).toContain(`- ${NEW_RED}`);
+        expect(inputs[0]?.text).not.toContain('src/b.ts');
+        expect(inputs[1]?.text).toContain('- src/b.ts(2,3): error TS2304: Cannot find name x.');
+        expect(inputs[1]?.text).not.toContain('src/a.ts');
       },
     );
   });
@@ -965,6 +1203,48 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(
         (outcome.state.pendingTriage?.inputs ?? []).map((input) => [input.file, input.failureKeys]),
       ).toEqual([['src/a.ts', [NEW_RED]]]);
+    });
+  });
+
+  it('bounds each file listing and keeps test assertions when the output tail is noise', async () => {
+    await withApplyRun(FILES, { sessionId: 'sess-checks-test-messages' }, async (run) => {
+      const noise = 'runner event\n'.repeat(500);
+      const { outcome } = await reviewChecks(run, {
+        plan: plan([['V1', 'npm test']]),
+        answer: (_command, at) =>
+          at === 'base'
+            ? 'pass'
+            : {
+                red: [
+                  ...Array.from(
+                    { length: 12 },
+                    (_line, index) =>
+                      ` FAIL  src/a.test.ts > adds ${index}\nAssertionError: expected ${index} to be 20`,
+                  ),
+                  ' FAIL  src/b.test.ts > subtracts',
+                  'AssertionError: expected 3 to be 4',
+                  noise,
+                ].join('\n'),
+              },
+      });
+      const inputs = outcome.state.pendingTriage?.inputs ?? [];
+
+      expect(inputs.map((input) => input.file)).toEqual(['src/a.test.ts', 'src/b.test.ts']);
+      expect(inputs[0]?.output).not.toContain('AssertionError');
+      expect(inputs[0]?.text).toContain(
+        '12 failures\nFailures:\n- src/a.test.ts::adds 0\n  AssertionError: expected 0 to be 20',
+      );
+      expect(inputs[0]?.text.match(/^- /gm)).toHaveLength(10);
+      expect(inputs[0]?.text).toContain('and 2 more');
+      expect(inputs[0]?.text).not.toContain('Output tail:');
+      expect(inputs[0]?.text).not.toContain('src/b.test.ts');
+      expect(inputs[0]?.text).not.toContain('expected 3 to be 4');
+      expect(inputs[1]?.text).toContain(
+        '1 failure\nFailures:\n- src/b.test.ts::subtracts\n  AssertionError: expected 3 to be 4',
+      );
+      expect(inputs[1]?.text).not.toContain('src/a.test.ts');
+      expect(inputs[1]?.text).not.toContain('expected 0 to be 20');
+      expect(sectionOf(outcome).match(/^- src\/[ab].test.ts::/gm)).toHaveLength(10);
     });
   });
 

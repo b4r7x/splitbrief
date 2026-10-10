@@ -38,6 +38,7 @@ export function ToolModelPicker({ role, deps = defaultPickerEffectDeps }: ToolMo
   const localConnection = useLocalConnectionActions(role, deps);
   const isSubView = view.kind !== 'picker';
   const overlayAllowsKeys = overlayStore.use((s) => overlayAllowsPickerKeys(s.active));
+  const focus = overlayStore.use((s) => s.focus);
   const coldDiscovery = catalog.discovery.cold && catalog.discovery.refreshing;
   const item = catalog.currentItem;
 
@@ -130,5 +131,5 @@ export function ToolModelPicker({ role, deps = defaultPickerEffectDeps }: ToolMo
     );
   }
 
-  return <PickerView role={role} catalog={catalog} actions={actions} deps={deps} />;
+  return <PickerView key={focus} role={role} catalog={catalog} actions={actions} deps={deps} />;
 }

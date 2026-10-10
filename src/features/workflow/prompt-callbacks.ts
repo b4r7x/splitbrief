@@ -73,7 +73,12 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
     onPlannerReply: async (reply: PlannerConversation) => {
       if (controller.signal.aborted || abortedRef.current) return undefined;
       // One promise owns this turn, including the whole batch of structured answers.
-      const hint = reply.questions.length > 0 ? 'Type your answer…' : 'Reply to the planner…';
+      const hint =
+        reply.seat === 'review'
+          ? 'Reply to the reviewer…'
+          : reply.questions.length > 0
+            ? 'Type your answer…'
+            : 'Reply to the planner…';
       const answerPromise = inputMode.setQuestionMode(hint);
       questionPromptStore.setQuestions(reply.questions);
       const answer = await answerPromise;

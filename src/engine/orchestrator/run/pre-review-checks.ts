@@ -6,7 +6,6 @@ import type { Phase } from '../../../core/schemas/enums.js';
 import type { TriageInput } from '../../../core/schemas/review.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
-import { fileFromFailureKey } from '../../../core/review/fix-task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishError, publishReviewCheck } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
@@ -25,7 +24,7 @@ import {
   type CheckRunResult,
   type RunChecksOptions,
 } from '../validation/run-checks.js';
-import { checkFailureText } from '../validation/failure-text.js';
+import { checkFailureText, failureKeysForFile } from '../validation/failure-text.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 
@@ -68,16 +67,18 @@ export function buildPreReviewInputs(input: {
     for (const file of files) {
       const owner =
         file === null ? undefined : lastTaskChangingFile(input.ledger, input.tasks, file);
-      const failureKeys =
-        file === null ? [] : keys.filter((key) => fileFromFailureKey(key) === file);
+      const failureKeys = failureKeysForFile({
+        failure: run.status === 'fail' ? run.failure : null,
+        file,
+      });
       inputs.push({
         id: `P${inputs.length + 1}`,
         kind: 'defect',
         source: 'check',
         file,
-        text: `Required ${checkFailureText(run)} ${
+        text: `${
           owner === undefined ? 'No task changed it.' : `Last changed by ${owner}.`
-        }`,
+        }\nRequired ${checkFailureText(run, { file })}`,
         checkIds: [run.checkId],
         ...(run.command !== undefined && { command: run.command }),
         output: run.output,

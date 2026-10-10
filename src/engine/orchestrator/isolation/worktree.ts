@@ -7,6 +7,7 @@ import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { GitClient } from '../../../lib/git/client.js';
 import { checkIgnoredPaths, getCurrentChangedFiles } from '../../../lib/git/files.js';
 import { getGitCommonDir } from '../../../lib/git/repository.js';
+import { warnError } from '../../../lib/warn.js';
 import { lockSibling, withFileLock } from '../../../lib/file-lock.js';
 import { pathConfinementError } from '../../../lib/path-confinement.js';
 import { error, type AppError } from '../../../utils/error.js';
@@ -116,11 +117,7 @@ export async function linkProjectNodeModules(projectDir: string, wtPath: string)
   const source = join(projectDir, NODE_MODULES);
   const target = join(wtPath, NODE_MODULES);
   if (!existsSync(source) || existsSync(target)) return;
-  try {
-    await symlink(source, target, 'dir');
-  } catch {
-    return;
-  }
+  await symlink(source, target, 'dir');
 }
 
 async function untrackedNodeModulesIn(wtPath: string): Promise<boolean> {
@@ -269,7 +266,11 @@ export async function ensureIsolationWorktree(opts: {
     reused = false;
   }
 
-  await linkProjectNodeModules(projectDir, wtPath);
+  try {
+    await linkProjectNodeModules(projectDir, wtPath);
+  } catch (err) {
+    warnError(`Could not link node_modules in run workspace ${wtPath}`, err);
+  }
   if (await untrackedNodeModulesIn(wtPath)) {
     const excludeFile = await excludeNodeModulesLink(projectDir, gitCommonDir, sessionId);
     if (excludeFile !== null) onNodeModulesExcluded?.(excludeFile);

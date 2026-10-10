@@ -294,6 +294,7 @@ export function useFilterableList<T>({
   pageSize,
   customKeys,
 }: UseFilterableListOptions<T>): UseFilterableListResult<T> {
+  const [entry, setEntry] = useState({ initialKey, initialFilter });
   const [state, setState] = useState<FilterableListState<T>>(() => {
     const filter = initialFilter ?? '';
     const candidates = getFilteredItems(items, filterFn, filter);
@@ -317,6 +318,13 @@ export function useFilterableList<T>({
     hasOnItemAction: onItemAction !== undefined,
     upAtStart,
   };
+  if (entry.initialKey !== initialKey || entry.initialFilter !== initialFilter) {
+    setEntry({ initialKey, initialFilter });
+    setState((prev) => ({
+      ...replaceFilter(prev, env, initialFilter ?? ''),
+      selectedKey: initialKey ?? null,
+    }));
+  }
   const commit = useEffectEvent((entry: PendingCommit<T>) => {
     switch (entry.kind) {
       case 'close':

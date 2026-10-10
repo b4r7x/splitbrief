@@ -6,6 +6,8 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallStarted } from '#testing/helpers/events/runner-call.js';
+import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import { taskId } from '../../../core/schemas/task.js';
 
 const base = {
   status: 'running' as const,
@@ -41,6 +43,33 @@ it('leads the review byline with the render scenario and its own clock', () => {
 });
 
 describe('deriveLiveStatus', () => {
+  it.each(['implementing', 'escalating'] as const)(
+    'names the active reviewer consult during %s on the call clock',
+    (phase) => {
+      resetWorkflow();
+      addEvent(
+        makeRunnerCallStarted({ phase, role: 'review', taskId: taskId('T013'), ts: 60_000 }),
+      );
+      const activeOperation = operationsStore.get().active;
+      expect(
+        deriveLiveStatus({
+          ...base,
+          phase,
+          reviewerLabel: 'GPT-6 Astra',
+          activeOperation,
+        }),
+      ).toEqual({
+        verb: 'Review… GPT-6 Astra',
+        stageStart: 60_000,
+        waitedMs: 0,
+        tone: 'validator',
+      });
+      expect(deriveLiveStatus({ ...base, phase, activeOperation: null })?.verb).toBe(
+        phase === 'implementing' ? 'Implementing…' : 'Escalating…',
+      );
+      resetWorkflow();
+    },
+  );
   it('is null when idle, complete, cancelled, or at a review gate', () => {
     expect(deriveLiveStatus({ ...base, phase: 'idle' })).toBeNull();
     expect(deriveLiveStatus({ ...base, phase: 'complete' })).toBeNull();

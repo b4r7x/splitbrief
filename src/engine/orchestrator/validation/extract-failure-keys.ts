@@ -46,9 +46,7 @@ export function failureKeys(
   const messages = new Map<string, string>();
   for (const test of tests) {
     const key = failingTestKey(test);
-    // A message that is a key itself, such as a Go test's diagnostic line, is listed as that key.
-    const listed = keys.includes(test.message);
-    if (test.message !== '' && !STACK_FRAME.test(test.message) && !listed && !messages.has(key)) {
+    if (test.message !== '' && !STACK_FRAME.test(test.message) && !messages.has(key)) {
       messages.set(key, test.message);
     }
   }

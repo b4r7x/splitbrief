@@ -736,12 +736,6 @@ export function transition(
         ...lineage,
         consults: lineage.consults + (action.reason === 'deviation' ? 0 : 1),
         consultRecords: [...lineage.consultRecords, record],
-        ...(action.reason === 'stale' && {
-          staleConsultedRevision: {
-            ...lineage.staleConsultedRevision,
-            [action.taskId]: action.revision,
-          },
-        }),
       }));
     }
 
@@ -818,7 +812,13 @@ export function transition(
 
     case 'SET_TASK_INPUT_HASHES':
       return {
-        ...state,
+        ...withLineage(state, lineageKeyFor(state, action.taskId), (lineage) => ({
+          ...lineage,
+          staleConsultedRevision: {
+            ...lineage.staleConsultedRevision,
+            [action.taskId]: state.tasks.find((task) => task.id === action.taskId)?.revision ?? 1,
+          },
+        })),
         tasks: state.tasks.map((task) =>
           task.id === action.taskId ? { ...task, inputHashes: action.inputHashes } : task,
         ),

@@ -1,5 +1,6 @@
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
+import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
@@ -7,6 +8,7 @@ import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makePlanProposal, makeTaskSpec } from '../../../helpers/factories/plan.js';
 import { formatPlanMarkdown } from '../../../../src/engine/spec/plan-markdown.js';
@@ -139,6 +141,7 @@ export const WORKFLOW_FIXTURE_TEXT = Object.freeze({
 });
 
 interface FixtureQuestion {
+  readonly seat?: ConsultSeat;
   readonly prompt: string;
   readonly answer: string;
   readonly questions?: readonly ClarificationQuestion[];
@@ -3727,6 +3730,9 @@ const fixCheckDoneProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   get events(): EngineEvent[] {
     const testCi = { ...REVIEW_CHECK_TEST, command: 'npm run test-ci' };
+    const remaining = 'a.ts:1: error';
+    const gone = 'src/checkout/total.test.ts::returns the total';
+    const keys = [remaining, 'b.ts:1', 'c.ts:1', 'd.ts:1'];
     return [
       ...fixCheckRunningProjection.events.slice(0, -1),
       reviewCheck(
@@ -3753,7 +3759,15 @@ const fixCheckDoneProjection: WorkflowFixtureProjection = {
         taskId: WORKFLOW_FIXTURE_FIX_TASK_ID,
         attempt: 1,
         maxRetries: 1,
-        error: 'check V2 did not pass (fail): src/checkout/total.ts(14,3): error TS2322',
+        error: checkFailureText(
+          {
+            checkId: 'V2',
+            status: 'fail',
+            failure: { keys },
+            output: '',
+          },
+          { carried: { failureKeys: [remaining, gone], redKeys: [...keys, gone] } },
+        ),
       },
       reviewCheck(
         FIXED_TS + 2_200,
@@ -3918,6 +3932,17 @@ const projections = [
   plannerReplyProjection,
   answeredQuestionsProjection,
   consultQuestionProjection,
+  {
+    ...buildReviewConsultProjection,
+    scenarioId: scenarioId('workflow-reviewer-question'),
+    inputMode: 'question',
+    question: {
+      seat: 'review',
+      prompt: 'Which cache key must the repair preserve?',
+      answer: '',
+      questions: [],
+    },
+  },
   {
     ...consultQuestionProjection,
     scenarioId: scenarioId('workflow-consult-answer-typed'),

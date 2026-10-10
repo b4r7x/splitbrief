@@ -22,10 +22,12 @@ describe('overlayStore', () => {
     expect(overlayStore.get().active).toBe('settings');
     expect(overlayStore.get().stack).toEqual([]);
 
+    overlayStore.setExclusive(true);
     overlayStore.open('planner-picker', 'models');
     expect(overlayStore.get()).toMatchObject({
       active: 'planner-picker',
       focus: 'models',
+      exclusive: false,
       stack: [{ type: 'settings', focus: 'planner.tool' }],
     });
 
@@ -46,14 +48,65 @@ describe('overlayStore', () => {
     overlayStore.open('settings', 'planner.tool');
     expect(overlayStore.get().stack).toEqual([]);
 
-    // Same type, different focus — focus updates, and since the active overlay
-    // has changed focus, the previous (self) frame is pushed onto the stack
     overlayStore.open('settings', 'implementer.model');
     expect(overlayStore.get().focus).toBe('implementer.model');
-    expect(overlayStore.get().stack).toEqual([{ type: 'settings', focus: 'planner.tool' }]);
+    expect(overlayStore.get().stack).toEqual([]);
 
     overlayStore.open('settings');
     expect(overlayStore.get().focus).toBeUndefined();
+    expect(overlayStore.get().stack).toEqual([]);
+  });
+
+  it('clears omitted focus without clearing exclusivity or stacking the active overlay', () => {
+    overlayStore.open('settings', 'planner.tool');
+    overlayStore.setExclusive(true);
+
+    overlayStore.open('settings');
+
+    expect(overlayStore.get()).toEqual({
+      active: 'settings',
+      focus: undefined,
+      exclusive: true,
+      stack: [],
+    });
+  });
+
+  it('changes defined focus while keeping exclusivity and the existing stack', () => {
+    overlayStore.open('settings', 'planner.tool');
+    overlayStore.setExclusive(true);
+    const before = overlayStore.get();
+
+    overlayStore.open('settings', 'planner.tool');
+    expect(overlayStore.get()).toBe(before);
+
+    overlayStore.open('settings', 'implementer.model');
+    expect(overlayStore.get()).toEqual({
+      active: 'settings',
+      focus: 'implementer.model',
+      exclusive: true,
+      stack: [],
+    });
+    expect(overlayStore.get().stack).toBe(before.stack);
+
+    overlayStore.close();
+    expect(overlayStore.get().active).toBe('none');
+
+    overlayStore.open('help');
+    overlayStore.open('settings', 'planner.tool');
+    overlayStore.setExclusive(true);
+    const stacked = overlayStore.get();
+
+    overlayStore.open('settings', 'implementer.model');
+    expect(overlayStore.get()).toEqual({ ...stacked, focus: 'implementer.model' });
+    expect(overlayStore.get().stack).toBe(stacked.stack);
+
+    overlayStore.close();
+    expect(overlayStore.get()).toEqual({
+      active: 'help',
+      focus: undefined,
+      exclusive: false,
+      stack: [],
+    });
   });
 
   it('keeps an active exclusive overlay as it is when the same overlay opens again', () => {

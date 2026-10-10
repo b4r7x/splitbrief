@@ -52,20 +52,26 @@ export const worktreeError = {
 } as const;
 
 export const runBaseTreeError = {
-  checkoutFailed: (cause: unknown) =>
+  preparationFailed: (input: { cause: unknown; cleanupError?: unknown }) =>
     error(
-      'run-base-checkout-failed',
+      'run-base-preparation-failed',
       redactSecrets(
-        labelError('the run base could not be checked out', cause)
+        [
+          labelError('the run base could not be prepared', input.cause),
+          ...(input.cleanupError === undefined
+            ? []
+            : [labelError('cleanup of the run base tree also failed', input.cleanupError)]),
+        ]
+          .join('\n')
           .split('\n')
           .map((line) => line.trim())
           .filter((line) => line !== '')
           .join('; '),
       ),
-      undefined,
-      cause,
+      { cleanupError: input.cleanupError },
+      input.cause,
     ),
-  isCheckoutFailed: matches('run-base-checkout-failed'),
+  isPreparationFailed: matches('run-base-preparation-failed'),
 } as const;
 
 export const attemptCleanupError = {
