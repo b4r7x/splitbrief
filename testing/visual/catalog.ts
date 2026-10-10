@@ -607,6 +607,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       }),
     ),
     defineScenario({
+      id: 'workflow-review-task-out-of-scope',
+      title: 'Workflow · task review with only out-of-scope notes',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-task-out-of-scope',
+        title: 'Task review passed with out-of-scope notes',
+        kind: 'implementation',
+        marker: 'Review T001 passed',
+      },
+      viewports: WIDE_VIEWPORTS,
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Task review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+        { id: 'sidebar', title: 'Workflow sidebar', required: false },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-settled-passed',
       viewports: WIDE_VIEWPORTS,
       title: 'Workflow · terminal Review passed',

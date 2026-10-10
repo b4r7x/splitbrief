@@ -14,6 +14,7 @@ import {
 } from '../../core/schemas/enums.js';
 import { AttachedInputSchema } from '../../core/schemas/attachment.js';
 import { DriftFindingsSchema } from '../../core/schemas/drift.js';
+import { ReviewFindingCountsSchema } from '../../core/schemas/review.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
@@ -648,9 +649,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     axes: z.array(z.string()).optional(),
     /** The reviewer's outcome; failed/empty calls are `no-verdict`, stops are `stopped`. Both omit findings. */
     verdict: z.enum(['pass', 'pass-with-notes', 'fail', 'no-verdict', 'stopped']),
-    findings: z
-      .object({ blocking: z.number().int().nonnegative(), minor: z.number().int().nonnegative() })
-      .optional(),
+    findings: ReviewFindingCountsSchema.optional(),
     duration: z.number(),
   }),
   /**

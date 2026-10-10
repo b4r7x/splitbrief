@@ -890,8 +890,8 @@ const READY_LOG: readonly EngineEvent[] = [
     verdict: 'pass-with-notes',
     findings: {
       blocking: READY_PACKET.finalReviewFindingCounts.critical,
-      minor:
-        READY_PACKET.finalReviewFindingCounts.warning + READY_PACKET.finalReviewFindingCounts.note,
+      minor: READY_PACKET.finalReviewFindingCounts.warning,
+      outOfScope: READY_PACKET.finalReviewFindingCounts.note,
     },
     duration: 62_000,
   },
@@ -906,7 +906,7 @@ const READY_LOG: readonly EngineEvent[] = [
 
 const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
   event.type === 'review_completed'
-    ? { ...event, verdict: 'fail', findings: { blocking: 2, minor: 0 } }
+    ? { ...event, verdict: 'fail', findings: { blocking: 2, minor: 0, outOfScope: 0 } }
     : event.type === 'workflow_complete'
       ? { ...event, review: 'failed', blocking: 2 }
       : event,
@@ -1328,7 +1328,7 @@ const CADENCE_EVENTS: readonly EngineEvent[] = [
     scope: 'task',
     afterTaskId: 'T001',
     verdict: 'pass',
-    findings: { blocking: 0, minor: 0 },
+    findings: { blocking: 0, minor: 0, outOfScope: 0 },
     duration: 49_000,
     ...CADENCE_SEAT,
   },
@@ -1373,6 +1373,20 @@ export const reviewTaskCadenceProjection: WorkflowFixtureProjection = {
   events: CADENCE_EVENTS,
 };
 
+export const reviewTaskOutOfScopeProjection: WorkflowFixtureProjection = {
+  ...reviewTaskCadenceProjection,
+  scenarioId: scenarioId('workflow-review-task-out-of-scope'),
+  events: CADENCE_EVENTS.map((event) =>
+    event.type === 'review_completed' && event.afterTaskId === 'T001'
+      ? {
+          ...event,
+          verdict: 'pass-with-notes',
+          findings: { blocking: 0, minor: 0, outOfScope: 3 },
+        }
+      : event,
+  ),
+};
+
 const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
   ...CADENCE_EVENTS,
   {
@@ -1393,7 +1407,7 @@ const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
     scope: 'task',
     afterTaskId: 'T002',
     verdict: 'fail',
-    findings: { blocking: 1, minor: 0 },
+    findings: { blocking: 1, minor: 0, outOfScope: 0 },
     duration: 49_000,
     ...CADENCE_SEAT,
   },
@@ -1420,7 +1434,7 @@ const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
     scope: 'task',
     afterTaskId: 'T002',
     verdict: 'pass',
-    findings: { blocking: 0, minor: 0 },
+    findings: { blocking: 0, minor: 0, outOfScope: 0 },
     duration: 49_000,
     ...CADENCE_SEAT,
   },
@@ -1437,7 +1451,7 @@ const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
     phase: 'final-review',
     scope: 'final',
     verdict: 'pass',
-    findings: { blocking: 0, minor: 0 },
+    findings: { blocking: 0, minor: 0, outOfScope: 0 },
     duration: 62_000,
     ...CADENCE_SEAT,
   },

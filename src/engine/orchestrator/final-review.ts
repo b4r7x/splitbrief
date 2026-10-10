@@ -985,6 +985,7 @@ export async function runFinalReviewPhase(opts: {
         findings: {
           blocking: verdict.outcome.blocking.length,
           minor: verdict.outcome.minor.length,
+          outOfScope: verdict.outcome.outOfScope.length,
         },
       }),
       duration: Date.now() - finalReviewStart,

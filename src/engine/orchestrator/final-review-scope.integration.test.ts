@@ -14,6 +14,7 @@ import {
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   failedReviewVerdict,
+  passingReviewVerdict,
   planFromTasks,
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
@@ -135,6 +136,57 @@ async function review(p: ReturnType<typeof project>, api = false, tasks = [p.tas
 }
 
 describe('final review task completion provenance', () => {
+  it('emits task review notes when every finding is out of scope', async () => {
+    const p = project();
+    await completeTask(p);
+    const { bus, events } = makeBusRecorder();
+    const result = await runFinalReviewPhase({
+      ...p,
+      workspaceDir: p.projectDir,
+      scope: 'task',
+      afterTaskId: p.task.id,
+      state: makeImplState([{ ...p.task, status: 'done' }], {
+        changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
+      }),
+      config: makeNoValidationConfig(),
+      bus,
+      callbacks: makeCallbacks().callbacks,
+      reviewer: makePlanner({
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([]),
+          (prompt) => ({
+            ...passingReviewVerdict(prompt),
+            findings: [1, 2].map((id) => ({
+              id: `F${id}`,
+              kind: 'defect',
+              severity: 'blocking',
+              taskId: 'T002',
+              file: 'src/later.ts',
+              line: id,
+              text: `Later task defect ${id}`,
+              acceptance: null,
+              checkIds: null,
+              criterionId: null,
+            })),
+          }),
+        ),
+      }),
+      metadata: TEST_METADATA,
+    });
+
+    expect(result.reviewStatus).toBe('written');
+    expect(result.verdict?.outcome.kind).toBe('pass-with-notes');
+    expect(events.filter((event) => event.type === 'review_completed')).toEqual([
+      expect.objectContaining({
+        scope: 'task',
+        afterTaskId: 'T001',
+        verdict: 'pass-with-notes',
+        findings: { blocking: 0, minor: 0, outOfScope: 2 },
+      }),
+    ]);
+    expect(existsSync(join(p.projectDir, '.git', 'index'))).toBe(false);
+  });
+
   it.each([false, true])(
     'separates mixed-file and independent operator hunks for API=%s',
     async (api) => {

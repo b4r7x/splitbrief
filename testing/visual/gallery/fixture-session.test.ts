@@ -447,6 +447,8 @@ describe('a replayed fixture walk', () => {
       // browses (the picker stays open), and on any other row it saves that row instead.
       // `high` stays visible in the seat identity throughout, so the saved seat — not the
       // frame text — is what establishes the returned selection.
+      // Enter waits for the scripted Right key to settle; the forwarded list fills before it does.
+      await flushEffects();
       await controller.pressToPreview('\r');
       await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'), { timeout: 10_000 });
       expect(configStore.get().config?.planner).toEqual({

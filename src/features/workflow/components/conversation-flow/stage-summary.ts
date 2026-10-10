@@ -28,7 +28,10 @@ export function stageSummaryRow(summary: StageSummary): {
         outcome: 'passed',
         detail:
           summary.outcome === 'passed-with-notes' && summary.findings
-            ? [countNoun(summary.findings.minor, 'note'), duration]
+            ? [
+                countNoun(summary.findings.minor + (summary.findings.outOfScope ?? 0), 'note'),
+                duration,
+              ]
             : [duration],
       },
     };

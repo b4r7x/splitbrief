@@ -1,5 +1,6 @@
 import { phaseStage } from '../rail-stages.js';
 import type { Phase, TaskCompletionMethod } from '../schemas/enums.js';
+import type { ReviewFindingCounts } from '../schemas/review.js';
 
 export interface SectionableEvent {
   type: string;
@@ -44,7 +45,7 @@ type ReviewCompletedEvent = {
   scope: 'final' | 'task';
   afterTaskId?: string | undefined;
   verdict: 'pass' | 'pass-with-notes' | 'fail' | 'no-verdict' | 'stopped';
-  findings?: { blocking: number; minor: number } | undefined;
+  findings?: ReviewFindingCounts | undefined;
   duration: number;
 };
 type WorkflowCompleteEvent = {
@@ -155,7 +156,7 @@ export type StageSummary =
       afterTaskId?: string | undefined;
       ordinal: number;
       outcome: 'passed' | 'passed-with-notes' | 'failed' | 'no-verdict' | 'stopped';
-      findings?: { blocking: number; minor: number } | undefined;
+      findings?: ReviewCompletedEvent['findings'];
       failedCommands: string[];
       failedChecks: number;
       fixes: string[];
