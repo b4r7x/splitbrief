@@ -99,7 +99,7 @@ import {
   publishSeatSwitched,
   publishTaskStart,
 } from '../../../../src/engine/orchestrator/events.js';
-import { atRestProjections } from './at-rest-projections.js';
+import { atRestProjections, reviewTaskCadenceProjection } from './at-rest-projections.js';
 
 type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
 
@@ -194,7 +194,7 @@ export interface FixtureStopState {
  */
 export interface FixtureAtRestRoute {
   readonly record: RunRecord;
-  readonly log?: string;
+  readonly log?: string | readonly EngineEvent[];
 }
 
 export interface WorkflowFixtureProjection {
@@ -913,6 +913,13 @@ const reviewFixProjection: WorkflowFixtureProjection = {
   get events(): EngineEvent[] {
     return [
       ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 390, BASE_PLANNER),
+      finalReviewCompleted({
+        ts: FIXED_TS + 400,
+        duration: 10,
+        verdict: 'fail',
+        seat: BASE_PLANNER,
+      }),
       {
         type: 'review_fix_started',
         ts: FIXED_TS + 400,
@@ -1023,6 +1030,40 @@ const REVIEW_CHECK_DECLINED = {
 
 const CODEX_REVIEW_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } as const;
 
+function finalReviewStarted(
+  ts: number,
+  seat: Pick<EngineEventOf<'review_started'>, 'tool' | 'model'>,
+): EngineEventOf<'review_started'> {
+  return {
+    type: 'review_started',
+    ts,
+    phase: 'final-review',
+    scope: 'final',
+    tool: seat.tool,
+    model: seat.model,
+  };
+}
+
+function finalReviewCompleted({
+  ts,
+  duration,
+  verdict,
+  seat,
+}: {
+  ts: number;
+  duration: number;
+  verdict: 'pass' | 'fail';
+  seat: Pick<EngineEventOf<'review_started'>, 'tool' | 'model'>;
+}): EngineEventOf<'review_completed'> {
+  return {
+    ...finalReviewStarted(ts, seat),
+    type: 'review_completed',
+    verdict,
+    findings: { blocking: verdict === 'fail' ? 1 : 0, minor: 0 },
+    duration,
+  };
+}
+
 /** The reviewer chose two commands and declined one test before the final review. */
 function reviewChecksPlanned(ts: number): EngineEvent {
   return {
@@ -1079,11 +1120,10 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-fix-cycles'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
-  sidebarVisible: false,
+  sidebarVisible: true,
   config: { reviewer: CODEX_REVIEW_SEAT },
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
-    { type: 'user_message', ts: FIXED_TS + 10, phase: 'planning', text: WORKFLOW_FEATURE },
     {
       type: 'artifact_written',
       ts: FIXED_TS + 20,
@@ -1095,20 +1135,13 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       omittedCount: 0,
       omittedUnit: 'task',
     },
-    {
-      type: 'warning',
-      ts: FIXED_TS + 21,
-      phase: 'planning',
-      code: 'discovered_validation_refused',
-      category: 'validation',
-      message: 'The test stage does not take the file pattern from the planner.',
-    },
     { type: 'plan_approved', ts: FIXED_TS + 30, phase: 'reviewing-plan' },
     FIXTURE_TASKS_PLANNED,
     ...FIXTURE_PLANNED_BRIEFS.flatMap((brief, index) => [
       orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
       fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
     ]),
+    finalReviewStarted(FIXED_TS + 900, CODEX_REVIEW_SEAT),
     reviewChecksPlanned(FIXED_TS + 900),
     reviewCheck(FIXED_TS + 1_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
     reviewCheck(FIXED_TS + 2_000, REVIEW_CHECK_TEST, { status: 'done', passed: false }),
@@ -1136,6 +1169,12 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       target: WORKFLOW_FIXTURE_SECOND_FILE,
       redacted: false,
     },
+    finalReviewCompleted({
+      ts: FIXED_TS + 4_000,
+      duration: 3_100,
+      verdict: 'fail',
+      seat: CODEX_REVIEW_SEAT,
+    }),
     {
       type: 'review_fix_started',
       ts: FIXED_TS + 4_000,
@@ -1168,6 +1207,7 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       tool: 'ollama',
       model: FIXED_RUNNER_MODEL,
     },
+    finalReviewStarted(FIXED_TS + 4_900, CODEX_REVIEW_SEAT),
     reviewChecksPlanned(FIXED_TS + 4_900),
     reviewCheck(FIXED_TS + 5_000, REVIEW_CHECK_TYPECHECK, { status: 'done', passed: true }),
     reviewCheck(FIXED_TS + 7_000, REVIEW_CHECK_TEST, { status: 'running' }),
@@ -1212,6 +1252,13 @@ const completeAfterFixTasksProjection: WorkflowFixtureProjection = {
         tool: 'ollama',
         model: FIXED_RUNNER_MODEL,
       },
+      finalReviewStarted(FIXED_TS + 500, BASE_PLANNER),
+      finalReviewCompleted({
+        ts: FIXED_TS + 600,
+        duration: 600,
+        verdict: 'pass',
+        seat: BASE_PLANNER,
+      }),
       {
         type: 'workflow_complete',
         ts: FIXED_TS + 600,
@@ -1233,6 +1280,13 @@ const reviewFixNoChangeProjection: WorkflowFixtureProjection = {
     const second = FIXTURE_PLANNED_BRIEFS[1];
     return [
       ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 390, BASE_PLANNER),
+      finalReviewCompleted({
+        ts: FIXED_TS + 400,
+        duration: 10,
+        verdict: 'fail',
+        seat: BASE_PLANNER,
+      }),
       {
         type: 'review_fix_started',
         ts: FIXED_TS + 400,
@@ -1266,6 +1320,7 @@ const finalReviewProjection: WorkflowFixtureProjection = {
   get events(): EngineEvent[] {
     return [
       ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 450, CODEX_REVIEW_SEAT),
       {
         type: 'review_checks',
         ts: FIXED_TS + 450,
@@ -1275,14 +1330,6 @@ const finalReviewProjection: WorkflowFixtureProjection = {
         commands: [],
         declined: [],
         reason: 'The project has no test, build or lint command, and no CI config names one.',
-      },
-      {
-        type: 'planner_status',
-        ts: FIXED_TS + 500,
-        phase: 'final-review',
-        status: 'running',
-        tool: 'codex',
-        model: 'gpt-6-astra',
       },
       {
         type: 'runner_call_started',
@@ -3567,6 +3614,7 @@ const reviewCheckRunningProjection: WorkflowFixtureProjection = {
       nativeSessionId: null,
     },
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], LAST_BRIEF_PASSED_TS),
+    finalReviewStarted(PRE_REVIEW_TEST_STARTED_TS - 30_000, BASE_PLANNER),
     reviewChecksPlanned(PRE_REVIEW_TEST_STARTED_TS - 30_000),
     reviewCheck(PRE_REVIEW_TEST_STARTED_TS - 20_000, REVIEW_CHECK_TYPECHECK, {
       status: 'done',
@@ -3643,7 +3691,7 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-review-corrected'),
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
-  sidebarVisible: false,
+  sidebarVisible: true,
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
     { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
@@ -3666,12 +3714,19 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
     },
     orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[2], FIXED_TS + 400),
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], FIXED_TS + 500),
+    finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
     {
       type: 'planner_text',
       ts: FIXED_TS + 1_000,
       phase: 'final-review',
       text: 'Check the fixture.',
     },
+    finalReviewCompleted({
+      ts: FIXED_TS + 8_000,
+      duration: 7_000,
+      verdict: 'fail',
+      seat: BASE_PLANNER,
+    }),
     { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'final-review', review: 'failed' },
     {
       type: 'user_message',
@@ -3679,7 +3734,14 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
       phase: 'final-review',
       text: 'The fixture is updated.',
     },
+    finalReviewStarted(FIXED_TS + 9_000, BASE_PLANNER),
     { type: 'planner_text', ts: FIXED_TS + 10_000, phase: 'final-review', text: 'Checking again.' },
+    finalReviewCompleted({
+      ts: FIXED_TS + 14_000,
+      duration: 5_000,
+      verdict: 'pass',
+      seat: BASE_PLANNER,
+    }),
     { type: 'workflow_complete', ts: FIXED_TS + 14_000, phase: 'complete', review: 'passed' },
   ],
 };
@@ -3698,14 +3760,6 @@ const reviewChecksSkippedProjection: WorkflowFixtureProjection = {
       status: 'skipped',
       commands: [{ ...REVIEW_CHECK_TYPECHECK }, { ...REVIEW_CHECK_TEST }],
       reason: 'Skip all was chosen on the card',
-    },
-    {
-      type: 'planner_status',
-      ts: PRE_REVIEW_TEST_STARTED_TS - 20_000,
-      phase: 'final-review',
-      status: 'running',
-      tool: 'claude-code',
-      model: 'fixture-planner-v1',
     },
   ],
 };
@@ -3798,6 +3852,7 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
       { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
       { ...FIXTURE_TASKS_PLANNED, total: 1, tasks: FIXTURE_TASKS_PLANNED.tasks.slice(0, 1) },
       fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[0], FIXED_TS + 300),
+      finalReviewStarted(FIXED_TS + 390, CODEX_REVIEW_SEAT),
       {
         type: 'review_checks',
         ts: FIXED_TS + 390,
@@ -3868,6 +3923,7 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   events: [
     ...everyBriefPassed(),
+    finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     {
       type: 'review_checks',
       ts: FIXED_TS + 900,
@@ -3913,6 +3969,7 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
         id: taskId(`T00${index + 1}`),
       })),
     ),
+    finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     {
       type: 'review_checks',
       ts: FIXED_TS + 900,
@@ -3947,9 +4004,12 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
   inputMode: 'normal',
   sidebarVisible: true,
   get events(): EngineEvent[] {
-    const fixBuild = reviewFixProjection.events.slice(everyBriefPassed().length);
+    const fixBuild = reviewFixProjection.events
+      .slice(everyBriefPassed().length)
+      .filter((event) => event.type !== 'review_started' && event.type !== 'review_completed');
     return [
       ...everyBriefPassed(),
+      finalReviewStarted(FIXED_TS + 350, BASE_PLANNER),
       reviewChecksPlanned(FIXED_TS + 350),
       reviewCheck(FIXED_TS + 360, REVIEW_CHECK_TYPECHECK, {
         status: 'done',
@@ -3968,6 +4028,12 @@ const fixCheckRunningProjection: WorkflowFixtureProjection = {
         duration: 20_000,
         newFailures: 1,
         preExisting: 0,
+      }),
+      finalReviewCompleted({
+        ts: FIXED_TS + 400,
+        duration: 50,
+        verdict: 'fail',
+        seat: BASE_PLANNER,
       }),
       ...fixBuild,
       reviewCheck(
@@ -4121,6 +4187,7 @@ const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   events: [
     ...everyBriefPassed(),
+    finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
     {
       type: 'review_checks',
       ts: FIXED_TS + 900,
@@ -4195,12 +4262,13 @@ const projections = [
   reviewFixNoChangeProjection,
   finalReviewProjection,
   reviewCorrectedProjection,
+  reviewTaskCadenceProjection,
   ...(['passed', 'failed'] as const).map(
     (review): WorkflowFixtureProjection => ({
       scenarioId: scenarioId(`workflow-review-settled-${review}`),
       feature: WORKFLOW_FEATURE,
       inputMode: 'normal',
-      sidebarVisible: false,
+      sidebarVisible: true,
       events: [
         { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
         { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
@@ -4209,12 +4277,19 @@ const projections = [
           orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
           fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
         ]),
+        finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
         {
           type: 'planner_text',
           ts: FIXED_TS + 1_000,
           phase: 'final-review',
           text: 'Checking the diff before the verdict.',
         },
+        finalReviewCompleted({
+          ts: FIXED_TS + 8_000,
+          duration: 7_000,
+          verdict: review === 'passed' ? 'pass' : 'fail',
+          seat: BASE_PLANNER,
+        }),
         { type: 'workflow_complete', ts: FIXED_TS + 8_000, phase: 'complete', review },
       ],
     }),

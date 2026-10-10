@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -26,6 +26,7 @@ import { readReviewRecord } from '../../../core/review/store.js';
 import { REVIEW_FILE, sessionDir } from '../../../core/paths.js';
 import { loadState } from '../../../core/state/persistence.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { Plan } from '../../../core/schemas/plan.js';
 import type { ReviewVerdict, TriageResult } from '../../../core/schemas/review.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
@@ -58,16 +59,17 @@ function cadenceState(
   tasks: readonly Task[],
   head: string,
   overrides?: Partial<WorkflowState>,
+  criteria: Plan['criteria'] = [
+    { id: 'C1', text: 'The first brief works', checkIds: [] },
+    { id: 'C2', text: 'The second brief works', checkIds: [] },
+  ],
 ): WorkflowState {
   return makeImplState([...tasks], {
     changedFilesBaseline: { head, fingerprints: {}, runStartChangedFiles: [] },
     plan: {
       summary: 'Two briefs, one criterion each',
       decisions: [],
-      criteria: [
-        { id: 'C1', text: 'The first brief works', checkIds: [] },
-        { id: 'C2', text: 'The second brief works', checkIds: [] },
-      ],
+      criteria,
       checks: [],
       validation: null,
     },
@@ -172,6 +174,10 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       sessionId,
       state: cadenceState(tasks, head),
       review: (prompt) => passingReviewVerdict(prompt),
+      config: makeNoValidationConfig({
+        workflow: { review: 'task' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol', effort: 'high' },
+      }),
       onComplete,
       phases,
       artifacts,
@@ -194,6 +200,61 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     ]);
     expect(events.filter((event) => event.type === 'all_tasks_done')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'workflow_complete')).toHaveLength(1);
+    const starts = events.filter((event) => event.type === 'review_started');
+    const completions = events.filter((event) => event.type === 'review_completed');
+    expect(starts).toHaveLength(3);
+    expect(completions).toHaveLength(3);
+    for (const [index, afterTaskId] of ['T001', 'T002', undefined].entries()) {
+      const scope = afterTaskId === undefined ? 'final' : 'task';
+      const start = starts[index];
+      const completion = completions[index];
+      expect(start).toMatchObject({
+        scope,
+        tool: 'codex',
+        model: 'gpt-6.1-sol',
+        axes: ['high'],
+        ...(afterTaskId !== undefined && { afterTaskId }),
+      });
+      expect(completion).toMatchObject({
+        scope,
+        tool: 'codex',
+        model: 'gpt-6.1-sol',
+        axes: ['high'],
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        ...(afterTaskId !== undefined && { afterTaskId }),
+      });
+      expect(completion?.duration).toBeGreaterThanOrEqual(0);
+      const startIndex = events.findIndex((event) => event === start);
+      const completionIndex = events.findIndex((event) => event === completion);
+      expect(completionIndex).toBeGreaterThan(startIndex);
+      expect(
+        events
+          .slice(startIndex, completionIndex + 1)
+          .some((event) => event.type === 'planner_status'),
+      ).toBe(false);
+      if (afterTaskId !== undefined) {
+        const taskCompleted = events.findIndex(
+          (event) => event.type === 'task_completed' && event.taskId === afterTaskId,
+        );
+        const next = events.findIndex((event) =>
+          index === 0
+            ? event.type === 'task_started' && event.taskId === 'T002'
+            : event.type === 'review_started' && event.scope === 'final',
+        );
+        expect(startIndex).toBeGreaterThan(taskCompleted);
+        expect(next).toBeGreaterThan(completionIndex);
+      } else {
+        expect(start).not.toHaveProperty('afterTaskId');
+        expect(completion).not.toHaveProperty('afterTaskId');
+        expect(events.findIndex((event) => event.type === 'workflow_complete')).toBeGreaterThan(
+          completionIndex,
+        );
+      }
+    }
+    expect(
+      events.filter((event) => event.type === 'planner_status' && event.tool === 'codex'),
+    ).toEqual([]);
     expect(result.state.fixCycles?.used ?? 0).toBe(0);
     expect(result.state.tasks.map((task) => task.status)).toEqual(['done', 'done']);
   });
@@ -244,12 +305,146 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
     expect(fixed?.fix?.findings.map((finding) => finding.id)).toEqual(['F1']);
     expect(result.state.fixCycles?.used).toBe(1);
     expect(phases).toEqual(['implementing', 'implementing', 'final-review']);
+    const failed = events.filter(
+      (event) => event.type === 'review_completed' && event.verdict === 'fail',
+    );
+    expect(failed).toEqual([
+      expect.objectContaining({
+        scope: 'task',
+        afterTaskId: 'T001',
+        verdict: 'fail',
+        findings: { blocking: 1, minor: 0 },
+      }),
+    ]);
+    expect(events.findIndex((event) => event.type === 'review_fix_started')).toBeGreaterThan(
+      events.findIndex((event) => event === failed[0]),
+    );
     expect(events.filter((event) => event.type === 'review_fix_started')).toEqual([
       expect.objectContaining({ cycle: 1, taskIds: ['T002'] }),
     ]);
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([
       expect.objectContaining({ review: 'passed' }),
     ]);
+  });
+
+  it('fixes the reviewed task without duplicating a pending task', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({ id: 'T001', status: 'done', criteria: ['C1'] }),
+      makeTask({ id: 'T002', status: 'done', criteria: ['C2'] }),
+      makeTask({ id: 'T003', status: 'done', criteria: ['C3'] }),
+      makeTask({
+        id: 'T004',
+        suggestedFiles: ['src/time-zone.ts'],
+        criteria: ['C4', 'C6'],
+      }),
+      makeTask({
+        id: 'T005',
+        suggestedFiles: ['src/pending.ts'],
+        criteria: ['C10', 'C11'],
+      }),
+    ];
+    const criteria = ['C1', 'C2', 'C3', 'C4', 'C6', 'C10', 'C11'].map((id) => ({
+      id,
+      text: `${id} works`,
+      checkIds: [],
+    }));
+    const onComplete = vi.fn();
+    let taskReviewMarkdown = '';
+    const { reviewPrompts, triagePrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: cadenceState(tasks, head, { currentTaskIndex: 3 }, criteria),
+      review: (prompt, call) => {
+        if (call === 3) {
+          taskReviewMarkdown = readFileSync(
+            join(sessionDir(projectDir, sessionId), REVIEW_FILE),
+            'utf8',
+          );
+        }
+        if (call > 2) return passingReviewVerdict(prompt);
+        return {
+          ...passingReviewVerdict(prompt),
+          findings: [
+            ...failedReviewVerdict(prompt, 'C10/C11 are not implemented').findings,
+            ...failedReviewVerdict(prompt, 'T004 has no time-zone tests', {
+              id: 'F2',
+              taskId: 'T004',
+              criterionId: 'C6',
+            }).findings,
+          ],
+        };
+      },
+      triage: (_prompt, call) => ({
+        fixTasks: [
+          ...(call === 1
+            ? [
+                {
+                  ...makeTaskSpec({
+                    id: 'T900',
+                    suggestedFiles: ['src/pending.ts'],
+                    criteria: [],
+                    checks: [
+                      { id: 'K-pending', kind: 'cmd', value: 'node --version', required: true },
+                    ],
+                  }),
+                  findingIds: ['F1'],
+                },
+              ]
+            : []),
+          {
+            ...makeTaskSpec({
+              id: 'T901',
+              suggestedFiles: ['src/time-zone.test.ts'],
+              criteria: ['C6'],
+              checks: [{ id: 'K-time-zone', kind: 'cmd', value: 'node --version', required: true }],
+            }),
+            findingIds: ['F2'],
+          },
+        ],
+        rejected: [],
+        verify: [],
+        ask: null,
+      }),
+      onComplete,
+    });
+
+    const result = await runTasksAndReview(options);
+
+    expect(result.completed).toBe(true);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(reviewPrompts[1]).toContain('It failed validation:');
+    expect(reviewPrompts[1]).toContain(
+      'Finding F1 is outside the task review scope and cannot be assigned to a fix task.',
+    );
+    expect(triagePrompts).toHaveLength(2);
+    expect(
+      result.state.tasks
+        .filter((task) => task.criteria?.some((id) => id === 'C10' || id === 'C11'))
+        .map((task) => task.id),
+    ).toEqual(['T005']);
+    expect(
+      result.state.tasks.flatMap((task) => task.fix?.findings.map((finding) => finding.id) ?? []),
+    ).not.toContain('F1');
+    const fixTasks = result.state.tasks.filter((task) => task.fix !== undefined);
+    expect(fixTasks).toHaveLength(1);
+    const fixTask = fixTasks[0];
+    expect(fixTask?.fix?.findings.map((finding) => finding.id)).toEqual(['F2']);
+    expect(fixTask?.criteria).toEqual(['C6']);
+    expect(result.state.tasks.map((task) => task.id)).toEqual([
+      'T001',
+      'T002',
+      'T003',
+      'T004',
+      fixTask?.id,
+      'T005',
+    ]);
+    expect(
+      vi.mocked(options.wctx.implementer.implement).mock.calls.map(([call]) => call.task.id),
+    ).toEqual(['T004', fixTask?.id, 'T005']);
+    expect(taskReviewMarkdown).toContain(
+      'Outside the task review scope: C10/C11 are not implemented',
+    );
   });
 
   it("keeps the unchanged 'end' cadence to one final review", async () => {

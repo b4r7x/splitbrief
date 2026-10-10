@@ -29,7 +29,7 @@ export function getMethodDisplay(
 ): MethodDisplay {
   switch (method) {
     case 'local':
-      return { text: 'local', color: theme.success };
+      return { text: 'passed', color: theme.success };
     case 'consulted':
       return { text: 'consulted', color: theme.success };
     case 'escalated-intermediate':
@@ -73,11 +73,11 @@ export function sessionStatusWord(session: Pick<Session, 'status' | 'stop' | 'ap
 
 function statusIcon(session: Pick<Session, 'status' | 'stop' | 'apply'>): string {
   if (session.apply === 'ready') return glyph('statusOpen');
-  if (session.apply === 'applied') return glyph('check');
+  if (session.apply === 'applied') return glyph('stageDone');
   if (session.apply === 'discarded') return glyph('statusCancelled');
   switch (session.status) {
     case 'complete':
-      return glyph('check');
+      return glyph('stageDone');
     case 'ended':
       return glyph('statusCancelled');
     case 'open':

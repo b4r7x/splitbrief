@@ -5,6 +5,7 @@ import type { ReviewRecord, WorkflowState } from '../schemas/workflow.js';
 export type Finding = ReviewVerdict['findings'][number];
 
 export type ReviewScope = {
+  kind: 'task' | 'final';
   taskIds: readonly string[];
   criterionIds: readonly string[];
 };
@@ -12,14 +13,25 @@ export type ReviewScope = {
 export function reviewScopeFor(state: WorkflowState, kind: 'final' | 'task'): ReviewScope {
   if (kind === 'final') {
     return {
+      kind,
       taskIds: state.tasks.map((task) => task.id),
       criterionIds: state.plan?.criteria.map((criterion) => criterion.id) ?? [],
     };
   }
   return {
+    kind,
     taskIds: state.tasks.filter((task) => isTaskCompleted(task.status)).map((task) => task.id),
     criterionIds: dueCriterionIds(state),
   };
+}
+
+export function findingInReviewScope(finding: Finding, scope: ReviewScope): boolean {
+  if (scope.kind === 'final') return true;
+  return (
+    (finding.taskId !== null || finding.criterionId !== null) &&
+    (finding.taskId === null || scope.taskIds.includes(finding.taskId)) &&
+    (finding.criterionId === null || scope.criterionIds.includes(finding.criterionId))
+  );
 }
 
 export function dueCriterionIds(state: WorkflowState, completingTaskId?: string): string[] {
@@ -36,6 +48,7 @@ export type ReviewOutcome = {
   kind: 'pass' | 'pass-with-notes' | 'fail';
   blocking: Finding[];
   minor: Finding[];
+  outOfScope: Finding[];
   unverifiedCriteria: string[];
   coverageErrors: string[];
   criteria: ReviewVerdict['criteria'];
@@ -49,6 +62,7 @@ export function reviewOutcomeOf(record: ReviewRecord): ReviewOutcome {
   return deriveReviewOutcome(
     record.verdict,
     {
+      kind: record.scope ?? 'final',
       taskIds: record.verdict.tasks.map((task) => task.id),
       criterionIds: record.verdict.criteria.map((criterion) => criterion.id),
     },
@@ -61,7 +75,11 @@ export function reviewOutcomeWord(outcome: ReviewOutcome): 'pass' | 'pass_with_n
 }
 
 export function reviewFindingCounts(outcome: ReviewOutcome) {
-  return { critical: outcome.blocking.length, warning: outcome.minor.length, note: 0 };
+  return {
+    critical: outcome.blocking.length,
+    warning: outcome.minor.length,
+    note: outcome.outOfScope.length,
+  };
 }
 
 export function verdictCoverageErrors(verdict: ReviewVerdict, scope: ReviewScope): string[] {
@@ -101,7 +119,9 @@ export function verdictCoverageErrors(verdict: ReviewVerdict, scope: ReviewScope
     }
     reportedFindingIds.add(finding.id);
   }
-  const blocking = verdict.findings.filter((finding) => finding.severity === 'blocking');
+  const blocking = verdict.findings.filter(
+    (finding) => finding.severity === 'blocking' && findingInReviewScope(finding, scope),
+  );
   for (const task of verdict.tasks) {
     if (task.plan === 'met') continue;
     if (!blocking.some((finding) => finding.taskId === task.id)) {
@@ -115,7 +135,7 @@ export function verdictCoverageErrors(verdict: ReviewVerdict, scope: ReviewScope
     }
   }
   for (const finding of verdict.findings) {
-    if (finding.kind !== 'unverified') continue;
+    if (finding.kind !== 'unverified' || !findingInReviewScope(finding, scope)) continue;
     const checkIds = finding.checkIds ?? [];
     if (checkIds.length === 0 && finding.criterionId === null) {
       errors.push(`Finding ${finding.id} is unverified and names no check or criterion.`);
@@ -141,7 +161,12 @@ export function deriveReviewOutcome(
   });
   const blocking: Finding[] = [];
   const minor: Finding[] = [];
+  const outOfScope: Finding[] = [];
   for (const finding of verdict.findings) {
+    if (!findingInReviewScope(finding, scope)) {
+      outOfScope.push(finding);
+      continue;
+    }
     if (finding.kind === 'unverified') {
       if (verification.get(verificationKey('finding', finding.id)) === 'pass') minor.push(finding);
       else blocking.push(finding);
@@ -157,11 +182,20 @@ export function deriveReviewOutcome(
     verdict.tasks.some((task) => task.plan !== 'met') ||
     criteria.some((criterion) => criterion.status !== 'pass');
   if (failed)
-    return { kind: 'fail', blocking, minor, unverifiedCriteria, coverageErrors, criteria };
+    return {
+      kind: 'fail',
+      blocking,
+      minor,
+      outOfScope,
+      unverifiedCriteria,
+      coverageErrors,
+      criteria,
+    };
   return {
-    kind: minor.length === 0 ? 'pass' : 'pass-with-notes',
+    kind: minor.length === 0 && outOfScope.length === 0 ? 'pass' : 'pass-with-notes',
     blocking,
     minor,
+    outOfScope,
     unverifiedCriteria,
     coverageErrors,
     criteria,

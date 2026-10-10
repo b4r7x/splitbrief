@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { getSessionStatusDisplay, sessionStatusWord } from './display.js';
+import { withCaptureEnvironment } from '#testing/visual/gallery/environment.js';
+import { glyph } from '../../lib/glyphs.js';
+import { getMethodDisplay, getSessionStatusDisplay, sessionStatusWord } from './display.js';
 
 const theme = {
   accent: 'accent',
@@ -8,6 +10,34 @@ const theme = {
   error: 'error',
   textDim: 'textDim',
 };
+
+describe('getMethodDisplay', () => {
+  it('labels a local completion passed in the success color', () => {
+    expect(getMethodDisplay('local', theme)).toEqual({ text: 'passed', color: theme.success });
+  });
+});
+
+describe('getSessionStatusDisplay', () => {
+  it.each(['unicode-mono', 'ascii-mono'] as const)(
+    'marks completed runs done at %s',
+    async (profile) => {
+      await withCaptureEnvironment({ viewport: { cols: 80, rows: 24 }, profile }, () => {
+        expect(getSessionStatusDisplay({ status: 'complete' }, theme)).toEqual({
+          icon: glyph('stageDone'),
+          color: 'success',
+          word: 'complete',
+        });
+        for (const status of ['complete', 'ended'] as const) {
+          expect(getSessionStatusDisplay({ status, apply: 'applied' }, theme)).toEqual({
+            icon: glyph('stageDone'),
+            color: 'success',
+            word: 'applied',
+          });
+        }
+      });
+    },
+  );
+});
 
 describe('sessionStatusWord', () => {
   it('names a run ready to apply instead of calling it running', () => {

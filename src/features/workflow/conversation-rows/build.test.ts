@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
+import { eventsStore } from '../../../stores/workflow/events.js';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createElement, Fragment } from 'react';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';
 import { renderFeature } from '#testing/helpers/ink.js';
@@ -53,7 +57,76 @@ function activity(
   });
 }
 
+beforeEach(forceUnicodeGlyphs);
+
 describe('buildConversationRows', () => {
+  it('keeps a task review between its brief and the next brief through the live store', () => {
+    resetWorkflow();
+    const events: EngineEvent[] = [
+      makeTaskStart({ ts: 1_000, title: 'First brief' }),
+      makeTaskComplete({ ts: 2_000 }),
+      {
+        type: 'review_started',
+        ts: 3_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        tool: 'codex',
+      },
+      {
+        type: 'review_completed',
+        ts: 52_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        tool: 'codex',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 49_000,
+      },
+    ];
+    const transcript = () => {
+      const { rows } = buildConversationRows({
+        sections: groupEventsIntoSections([...eventsStore.get().events]),
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 120,
+        viewportHeight: 40,
+        streaming,
+      });
+      const ui = renderFeature(
+        createElement(
+          Fragment,
+          null,
+          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+        ),
+        { cols: 120, rows: 40 },
+      );
+      const lines = stripAnsiStyles(ui.lastFrame()).split('\n');
+      ui.unmount();
+      return lines;
+    };
+    try {
+      for (const event of events) addEvent(event);
+      expect(transcript().filter((line) => line.includes('Review'))).toEqual([
+        ' ✓ Review T001 passed  49.0s',
+      ]);
+      addEvent(
+        makeTaskStart({ ts: 53_000, taskId: taskId('T002'), title: 'Second brief', index: 1 }),
+      );
+      const lines = transcript();
+      const first = lines.findIndex((line) => line.includes('T001 First brief'));
+      const review = lines.findIndex((line) => line.includes('✓ Review T001 passed'));
+      const second = lines.findIndex((line) => line.includes('T002 Second brief'));
+      expect(first).toBeGreaterThanOrEqual(0);
+      expect(review).toBe(first + 1);
+      expect(second).toBeGreaterThan(review);
+      expect(lines.filter((line) => line.includes('Review T001'))).toHaveLength(1);
+    } finally {
+      resetWorkflow();
+    }
+  });
+
   it.each(['passed', 'failed'] as const)(
     'materializes one terminal %s Review row with its own duration',
     (review) => {

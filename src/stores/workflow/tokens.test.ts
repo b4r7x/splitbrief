@@ -32,6 +32,29 @@ function makeTaskReset(id = 'T001'): EngineEvent {
 describe('tokensStore — cost-update', () => {
   beforeEach(() => resetWorkflow());
 
+  it('keeps review lifecycle events out of usage accounting', () => {
+    addEvent(makeCostUpdate());
+    const before = tokensStore.get();
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+    });
+    expect(tokensStore.get()).toBe(before);
+    addEvent({
+      type: 'review_completed',
+      ts: 2_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+      verdict: 'pass',
+      duration: 1_000,
+    });
+    expect(tokensStore.get()).toBe(before);
+  });
+
   it('sets tokenUsage and overwrites on subsequent cost-update', () => {
     const first = makeCostUpdate();
     addEvent(first);
@@ -125,23 +148,6 @@ describe('tokensStore — final-review phase attribution', () => {
 describe('tokensStore — task-complete counters', () => {
   beforeEach(() => resetWorkflow());
 
-  it.each([
-    { method: 'local' as const, localCount: 1, escalatedCount: 0 },
-    { method: 'escalated-intermediate' as const, localCount: 0, escalatedCount: 1 },
-    { method: 'escalated-hint' as const, localCount: 0, escalatedCount: 1 },
-    { method: 'escalated-full' as const, localCount: 0, escalatedCount: 1 },
-    { method: 'failed' as const, localCount: 0, escalatedCount: 0 },
-    { method: 'skipped' as const, localCount: 0, escalatedCount: 0 },
-  ])(
-    'method=$method → local=$localCount, escalated=$escalatedCount',
-    ({ method, localCount, escalatedCount }) => {
-      addEvent(makeTaskComplete({ method }));
-      const s = tokensStore.get();
-      expect(s.localCount).toBe(localCount);
-      expect(s.escalatedCount).toBe(escalatedCount);
-    },
-  );
-
   it('does not count workflow lifecycle events as completed tasks', () => {
     addEvent({ type: 'workflow_started', ts: Date.now(), phase: 'idle', feature: 'test' });
 
@@ -232,19 +238,16 @@ describe('tokensStore — per-task attempt accumulation', () => {
     });
   });
 
-  it('task_reset undoes the prior completion counters so a redo does not double-count', () => {
+  it('task_reset undoes the prior completion count so a redo does not double-count', () => {
     addEvent(makeTaskComplete({ method: 'local' }));
     addEvent(makeTaskTokens({ method: 'local', implementerTokens: 100 }));
-    expect(tokensStore.get().localCount).toBe(1);
     expect(tokensStore.get().completedTaskCount).toBe(1);
 
     addEvent(makeTaskReset());
-    expect(tokensStore.get().localCount).toBe(0);
     expect(tokensStore.get().completedTaskCount).toBe(0);
 
     addEvent(makeTaskComplete({ method: 'local' }));
     addEvent(makeTaskTokens({ method: 'local', implementerTokens: 200, retryCount: 0 }));
-    expect(tokensStore.get().localCount).toBe(1);
     expect(tokensStore.get().completedTaskCount).toBe(1);
 
     const record = tokensStore.get().perTask['T001'];
@@ -257,24 +260,20 @@ describe('tokensStore — per-task attempt accumulation', () => {
     addEvent(
       makeTaskTokens({ method: 'escalated-full', implementerTokens: 0, escalationTokens: 80 }),
     );
-    expect(tokensStore.get().escalatedCount).toBe(1);
+    expect(tokensStore.get().completedTaskCount).toBe(1);
 
     addEvent(makeTaskReset());
-    expect(tokensStore.get().escalatedCount).toBe(0);
     expect(tokensStore.get().completedTaskCount).toBe(0);
   });
 
   it('task_reset for a never-completed task leaves earlier tasks counted (recovery retry path)', () => {
     addEvent(makeTaskComplete({ method: 'local', taskId: taskId('T001') }));
     addEvent(makeTaskTokens({ taskId: taskId('T001'), method: 'local', implementerTokens: 100 }));
-    expect(tokensStore.get().localCount).toBe(1);
     expect(tokensStore.get().completedTaskCount).toBe(1);
 
     addEvent(makeTaskReset('T002'));
 
     const s = tokensStore.get();
     expect(s.completedTaskCount).toBe(1);
-    expect(s.localCount).toBe(1);
-    expect(s.escalatedCount).toBe(0);
   });
 });

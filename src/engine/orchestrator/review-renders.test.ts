@@ -168,7 +168,7 @@ describe('reviewRenders', () => {
     expect(forced.verdict.criteria[1]?.status).toBe('unverified');
     const outcome = deriveReviewOutcome(
       forced.verdict,
-      { taskIds: ['T001'], criterionIds: ['C1', 'C2'] },
+      { kind: 'final', taskIds: ['T001'], criterionIds: ['C1', 'C2'] },
       verification,
     );
     expect(outcome.kind).not.toBe('pass');

@@ -1,7 +1,5 @@
-import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
-import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { _tasksInternal, type TasksState, type WorkflowTask } from '../tasks.js';
 import {
   _tokensInternal,
@@ -115,19 +113,8 @@ function tasksStateFromState(
 
 function tokensStateFromState(
   state: WorkflowState,
-): Pick<
-  TokensState,
-  | 'localCount'
-  | 'escalatedCount'
-  | 'completedTaskCount'
-  | 'tokenUsage'
-  | 'pricingContext'
-  | 'perTask'
-> {
-  const counts = completionCounts(state);
+): Pick<TokensState, 'completedTaskCount' | 'tokenUsage' | 'pricingContext' | 'perTask'> {
   return {
-    localCount: counts.local,
-    escalatedCount: counts.escalated,
     completedTaskCount: state.tasks.filter(
       (task) => task.status !== 'pending' && task.status !== 'in_progress',
     ).length,
@@ -135,29 +122,6 @@ function tokensStateFromState(
     pricingContext: pricingContext(state),
     perTask: perTaskTokens(state),
   };
-}
-
-function completionCounts(state: WorkflowState): { local: number; escalated: number } {
-  const latestMethodByTask = new Map<string, TaskCompletionMethod>();
-  for (const breakdown of state.taskBreakdowns ?? []) {
-    latestMethodByTask.set(breakdown.taskId, breakdown.method);
-  }
-
-  let local = 0;
-  let escalated = 0;
-  for (const task of state.tasks) {
-    if (task.status !== 'done' && task.status !== 'escalated') continue;
-    const method = latestMethodByTask.get(task.id);
-    if (method) {
-      const completionClass = classifyTaskCompletionMethod(method);
-      if (completionClass === 'local') local += 1;
-      else if (completionClass === 'escalated') escalated += 1;
-      continue;
-    }
-    if (task.status === 'done') local += 1;
-    else escalated += 1;
-  }
-  return { local, escalated };
 }
 
 function perTaskTokens(state: WorkflowState): Record<string, PerTaskTokens> {

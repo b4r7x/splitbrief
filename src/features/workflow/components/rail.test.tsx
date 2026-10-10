@@ -4,6 +4,7 @@ import { defaultTheme } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
 import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
+import { withCaptureEnvironment } from '#testing/visual/gallery/environment.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -194,7 +195,7 @@ describe('Rail — Form B (horizontal pipeline)', () => {
 });
 
 describe('Rail — completion reward', () => {
-  it('collapses to the single done line with the only ✓ in the rail', async () => {
+  it('collapses to the single done line with the shared done mark', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({
       phase: 'complete',
@@ -229,11 +230,27 @@ describe('Rail — completion reward', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain(`${glyph('statusDone')} done`);
+    expect(frame).toContain(`${glyph('stageDone')} done`);
     expect(frame).toContain('7/7 briefs passed');
     expect(frame).toContain('no drift');
     expect(frame).not.toContain('Plan');
     ui.unmount();
+  });
+
+  it.each([
+    ['B', 'unicode-mono', '●'],
+    ['C', 'unicode-mono', '●'],
+    ['B', 'ascii-mono', '*'],
+    ['C', 'ascii-mono', '*'],
+  ] as const)('uses the done mark in form %s at %s', async (form, profile, mark) => {
+    await withCaptureEnvironment({ viewport: { cols: 100, rows: 40 }, profile }, async () => {
+      lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
+      const ui = renderRail(form);
+      await tick();
+      const frame = stripAnsiStyles(ui.lastFrame());
+      ui.unmount();
+      expect(frame).toContain(`${mark} done · drift not run`);
+    });
   });
 
   it('reports a drift failure on the completion line', async () => {
@@ -291,7 +308,6 @@ describe('Rail — completion after a failed review', () => {
   // counted once, however many completions the log carried for them.
   it('counts passed briefs out of the plan the fix tasks joined', async () => {
     tasksStore.__testReset({ currentTask: 12, totalTasks: 10, tasks: briefs(12) });
-    tokensStore.__testReset({ localCount: 14 });
     eventsStore.__testReset({
       events: [{ type: 'workflow_complete', ts: 1, phase: 'complete', review: 'passed' }],
     });

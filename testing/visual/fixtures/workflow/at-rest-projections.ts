@@ -3,6 +3,7 @@ import type { EvidenceLedger, EvidenceTask } from '../../../../src/core/schemas/
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { RunStatus } from '../../../../src/core/sessions/run-status.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import type {
   CostBreakdown,
@@ -20,6 +21,7 @@ import {
 import { makeUsage } from '../../../helpers/factories/summary.js';
 import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { scenarioId } from '../../contracts/identifiers.js';
+import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
 import type { FixtureAtRestRoute, WorkflowFixtureProjection } from './projections.js';
 
@@ -320,7 +322,9 @@ const READY_TASKS: readonly TaskTokenUsage[] = [
   },
 ];
 
-function settledLocalTasks(durations: readonly [number, number, number]): EvidenceTask[] {
+function settledLocalTasks(
+  durations: readonly [number, number, number],
+): (EvidenceTask & { durationMs: number; file: string })[] {
   return [
     {
       id: BRIEFS.validator.id,
@@ -375,9 +379,10 @@ const READY_PACKET = reviewPacket({
   tasks: 3,
 });
 
+const READY_BRIEFS = settledLocalTasks([84_200, 141_000, 96_300]);
 const READY_LEDGER: EvidenceLedger = ledger({
   sessionId: READY_SESSION,
-  tasks: settledLocalTasks([84_200, 141_000, 96_300]),
+  tasks: READY_BRIEFS,
   validationSummary: { passed: 9, failed: 0, skipped: 0, escalated: 0 },
   finalReview: { path: packetMarkdownPath(READY_SESSION), status: 'written' },
 });
@@ -833,6 +838,80 @@ const READY_OVERRIDE = record({
   ledger: READY_LEDGER,
 });
 
+const READY_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: Date.parse(STARTED_AT_ISO),
+    phase: 'implementing',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  ...READY_BRIEFS.flatMap((brief, index): EngineEvent[] => [
+    {
+      type: 'task_started',
+      ts: Date.parse(STARTED_AT_ISO) + index * 180_000,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      file: brief.file,
+      action: 'modify',
+      index,
+      total: READY_LEDGER.tasks.length,
+      tool: 'ollama',
+      model: 'qwen2.5-coder:7b',
+    },
+    {
+      type: 'task_completed',
+      ts: Date.parse(STARTED_AT_ISO) + index * 180_000 + brief.durationMs,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      method: 'local',
+      retries: brief.retries,
+      duration: brief.durationMs,
+      tool: 'ollama',
+      model: 'qwen2.5-coder:7b',
+    },
+  ]),
+  {
+    type: 'review_started',
+    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime - 62_000,
+    phase: 'final-review',
+    scope: 'final',
+    tool: 'claude-code',
+    model: 'claude-sonnet-4',
+  },
+  {
+    type: 'review_completed',
+    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime,
+    phase: 'final-review',
+    scope: 'final',
+    tool: 'claude-code',
+    model: 'claude-sonnet-4',
+    verdict: 'pass-with-notes',
+    findings: {
+      blocking: READY_PACKET.finalReviewFindingCounts.critical,
+      minor:
+        READY_PACKET.finalReviewFindingCounts.warning + READY_PACKET.finalReviewFindingCounts.note,
+    },
+    duration: 62_000,
+  },
+  {
+    type: 'workflow_complete',
+    ts: Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime,
+    phase: 'complete',
+    review: 'passed',
+    completedTasks: READY_LEDGER.tasks.length,
+  },
+];
+
+const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
+  event.type === 'review_completed'
+    ? { ...event, verdict: 'fail', findings: { blocking: 2, minor: 0 } }
+    : event.type === 'workflow_complete'
+      ? { ...event, review: 'failed', blocking: 2 }
+      : event,
+);
+
 const CLOSED_APPLIED = record({
   sessionId: 'visual-closed-applied',
   status: { kind: 'closed', as: 'applied' },
@@ -1154,7 +1233,258 @@ function atRestProjection(input: {
   };
 }
 
+const CADENCE_REVIEWER = {
+  kind: 'cli',
+  tool: 'codex',
+  model: 'gpt-6.1-sol',
+  effort: 'high',
+} as const;
+const CADENCE_IMPLEMENTER = {
+  kind: 'cli',
+  tool: 'antigravity',
+  model: 'gemini-3.8-flash-high',
+} as const;
+const CADENCE_SEAT = { tool: CADENCE_REVIEWER.tool, model: CADENCE_REVIEWER.model, axes: ['high'] };
+const CADENCE_BRIEFS = [
+  BRIEFS.validator,
+  BRIEFS.wire,
+  { id: taskId('T003'), title: 'Fix empty email validation', file: FILES.validate },
+] as const;
+const CADENCE_TS = VISUAL_FIXTURE_EPOCH - 258_000;
+
+function cadenceBrief({
+  brief,
+  index,
+  started,
+  completed,
+}: {
+  brief: (typeof CADENCE_BRIEFS)[number];
+  index: number;
+  started: number;
+  completed: number;
+}): EngineEvent[] {
+  return [
+    {
+      type: 'task_started',
+      ts: CADENCE_TS + started,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      file: brief.file,
+      action: 'modify',
+      index,
+      total: index === 2 ? 3 : 2,
+      tool: CADENCE_IMPLEMENTER.tool,
+      model: CADENCE_IMPLEMENTER.model,
+    },
+    {
+      type: 'task_completed',
+      ts: CADENCE_TS + completed,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      method: 'local',
+      retries: 0,
+      duration: completed - started,
+      tool: CADENCE_IMPLEMENTER.tool,
+      model: CADENCE_IMPLEMENTER.model,
+    },
+  ];
+}
+
+const CADENCE_EVENTS: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: CADENCE_TS,
+    phase: 'implementing',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  {
+    type: 'tasks_planned',
+    ts: CADENCE_TS + 10,
+    phase: 'implementing',
+    total: 2,
+    tasks: CADENCE_BRIEFS.slice(0, 2).map((brief, index) => ({
+      id: brief.id,
+      title: brief.title,
+      file: brief.file,
+      action: 'modify',
+      index,
+    })),
+  },
+  ...cadenceBrief({ brief: CADENCE_BRIEFS[0], index: 0, started: 1_000, completed: 61_000 }),
+  {
+    type: 'review_started',
+    ts: CADENCE_TS + 62_000,
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T001',
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'review_completed',
+    ts: CADENCE_TS + 111_000,
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T001',
+    verdict: 'pass',
+    findings: { blocking: 0, minor: 0 },
+    duration: 49_000,
+    ...CADENCE_SEAT,
+  },
+  ...cadenceBrief({ brief: CADENCE_BRIEFS[1], index: 1, started: 112_000, completed: 232_000 }),
+  {
+    type: 'review_started',
+    ts: CADENCE_TS + 233_000,
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T002',
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'review_checks',
+    ts: CADENCE_TS + 234_000,
+    phase: 'implementing',
+    scope: 'task',
+    status: 'planned',
+    commands: [{ id: 'V1', command: 'npm test', reason: 'Verify the email validation cases.' }],
+  },
+  {
+    type: 'full_suite',
+    ts: CADENCE_TS + 265_000,
+    phase: 'implementing',
+    id: 'V1',
+    command: 'npm test',
+    moment: 'pre-review',
+    status: 'running',
+  },
+];
+
+export const reviewTaskCadenceProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-task-cadence'),
+  feature: AT_REST_FIXTURE_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: {
+    reviewer: CADENCE_REVIEWER,
+    implementer: CADENCE_IMPLEMENTER,
+    workflow: { review: 'task' },
+  },
+  events: CADENCE_EVENTS,
+};
+
+const CADENCE_SETTLED_EVENTS: readonly EngineEvent[] = [
+  ...CADENCE_EVENTS,
+  {
+    type: 'full_suite',
+    ts: CADENCE_TS + 281_000,
+    phase: 'implementing',
+    id: 'V1',
+    command: 'npm test',
+    moment: 'pre-review',
+    status: 'done',
+    passed: true,
+    duration: 16_000,
+  },
+  {
+    type: 'review_completed',
+    ts: CADENCE_TS + 282_000,
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T002',
+    verdict: 'fail',
+    findings: { blocking: 1, minor: 0 },
+    duration: 49_000,
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'review_fix_started',
+    ts: CADENCE_TS + 283_000,
+    phase: 'implementing',
+    cycle: 1,
+    taskIds: [taskId('T003')],
+  },
+  ...cadenceBrief({ brief: CADENCE_BRIEFS[2], index: 2, started: 284_000, completed: 310_000 }),
+  {
+    type: 'review_started',
+    ts: CADENCE_TS + 311_000,
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T002',
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'review_completed',
+    ts: CADENCE_TS + 360_000,
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T002',
+    verdict: 'pass',
+    findings: { blocking: 0, minor: 0 },
+    duration: 49_000,
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'review_started',
+    ts: CADENCE_TS + 361_000,
+    phase: 'final-review',
+    scope: 'final',
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'review_completed',
+    ts: CADENCE_TS + 423_000,
+    phase: 'final-review',
+    scope: 'final',
+    verdict: 'pass',
+    findings: { blocking: 0, minor: 0 },
+    duration: 62_000,
+    ...CADENCE_SEAT,
+  },
+  {
+    type: 'workflow_complete',
+    ts: CADENCE_TS + 424_000,
+    phase: 'complete',
+    review: 'passed',
+    completedTasks: 3,
+  },
+];
+
+const CADENCE_SETTLED_STATE: WorkflowState = {
+  ...savedState({
+    phase: 'complete',
+    currentTaskIndex: 3,
+    briefs: CADENCE_BRIEFS.map((brief) => ({ id: brief.id, status: 'done' })),
+    startedAt: new Date(CADENCE_TS).toISOString(),
+    completedAt: new Date(CADENCE_TS + 424_000).toISOString(),
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    implementerTool: CADENCE_IMPLEMENTER.tool,
+    implementerModel: CADENCE_IMPLEMENTER.model,
+  }),
+  tasks: CADENCE_BRIEFS.map((brief) =>
+    makeTask({ id: brief.id, title: brief.title, status: 'done', suggestedFiles: [brief.file] }),
+  ),
+};
+
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
+  {
+    ...reviewTaskCadenceProjection,
+    scenarioId: scenarioId('workflow-review-task-cadence-settled'),
+    events: [],
+    atRest: {
+      record: {
+        ...record({
+          sessionId: 'visual-review-task-cadence-settled',
+          status: { kind: 'ready-to-apply', override: false },
+          state: CADENCE_SETTLED_STATE,
+        }),
+        startedAt: CADENCE_SETTLED_STATE.startedAt,
+      },
+      log: CADENCE_SETTLED_EVENTS,
+    },
+  },
+
   atRestProjection({
     id: 'workflow-at-rest-paused',
     route: { record: AT_REST_PAUSED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
@@ -1174,8 +1504,14 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: AT_REST_WAITING_GATE },
   }),
   atRestProjection({ id: 'workflow-closed-complete-ready', route: { record: CLOSED_READY } }),
-  atRestProjection({ id: 'workflow-ready-to-apply', route: { record: READY_TO_APPLY } }),
-  atRestProjection({ id: 'workflow-ready-override', route: { record: READY_OVERRIDE } }),
+  atRestProjection({
+    id: 'workflow-ready-to-apply',
+    route: { record: READY_TO_APPLY, log: READY_LOG },
+  }),
+  atRestProjection({
+    id: 'workflow-ready-override',
+    route: { record: READY_OVERRIDE, log: READY_OVERRIDE_LOG },
+  }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
   atRestProjection({ id: 'workflow-closed-undone', route: { record: undoneApplyRecord([]) } }),
   atRestProjection({

@@ -20,18 +20,130 @@ import {
 import { REVIEW_FILE, sessionDir } from '../../../core/paths.js';
 import { getChangedFilesSnapshot } from '../../orchestrator/approval/file-snapshots/capture.js';
 import { runFinalReviewPhase } from '../../orchestrator/final-review.js';
-import { buildFinalReviewPrompt } from './review.js';
+import { buildFinalReviewPrompt, type ReviewPlanData } from './review.js';
 
 const SPEC = '## Spec\nAdd a hello function.';
 const TASK_BRIEFS = '## Task T001\nAdd the hello export.';
 const DIFF = '+export function hello() { return "hello"; }';
 const dirs: string[] = [];
+const REVIEW_PLAN: ReviewPlanData = {
+  criteria: Array.from({ length: 11 }, (_, index) => ({
+    id: `C${index + 1}`,
+    text: `Requirement ${index + 1}`,
+    checkIds: [],
+  })),
+  tasks: [
+    {
+      id: 'T001',
+      status: 'done',
+      title: 'Storage',
+      intent: 'Store reminders',
+      criteria: ['C1', 'C2'],
+      suggestedFiles: [],
+      exclusions: [],
+    },
+    {
+      id: 'T002',
+      status: 'done',
+      title: 'Scheduling',
+      intent: 'Schedule reminders',
+      criteria: ['C3', 'C4'],
+      suggestedFiles: [],
+      exclusions: [],
+    },
+    {
+      id: 'T003',
+      status: 'done',
+      title: 'Delivery',
+      intent: 'Deliver reminders',
+      criteria: ['C5'],
+      suggestedFiles: [],
+      exclusions: [],
+    },
+    {
+      id: 'T004',
+      status: 'done',
+      title: 'Time zones',
+      intent: 'Handle time zones',
+      criteria: ['C6', 'C7', 'C8', 'C9'],
+      suggestedFiles: [],
+      exclusions: [],
+    },
+    {
+      id: 'T005',
+      status: 'pending',
+      title: 'Reminder API',
+      intent: 'Expose reminders',
+      criteria: ['C10', 'C11'],
+      suggestedFiles: [],
+      exclusions: [],
+    },
+  ],
+};
 
 afterEach(() => {
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
 describe('buildFinalReviewPrompt', () => {
+  it('a task review names its scope and marks pending work as context', () => {
+    const result = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      plan: REVIEW_PLAN,
+      reviewKind: 'task',
+      taskIds: ['T001', 'T002', 'T003', 'T004'],
+      criterionIds: REVIEW_PLAN.criteria.slice(0, 9).map((criterion) => criterion.id),
+      fixCycle: 1,
+    });
+
+    const scope = result.split('## Review Scope')[1]?.split('\n## ')[0] ?? '';
+    expect(result).toContain('# Task Implementation Review');
+    expect(scope).toContain('This is a task review.');
+    expect(scope).toContain('Reviewed tasks: T001, T002, T003, T004');
+    expect(scope).toContain('Due criteria: C1, C2, C3, C4, C5, C6, C7, C8, C9');
+    expect(scope).toContain(
+      'Pending tasks (not built yet; context, never a missing implementation):\n- T005 Reminder API — criteria C10, C11',
+    );
+    expect(result).toContain('- T005 [pending] Reminder API: Expose reminders');
+    expect(result.indexOf('## Review Scope')).toBeLessThan(result.indexOf('## Plan\n'));
+    expect(result).toContain(
+      'You are reviewing the completed work inside the Review Scope against its specification.',
+    );
+    expect(result).toContain(
+      'Review the implementation diff against each due acceptance criterion and the requirements of the reviewed tasks.',
+    );
+    expect(result).toContain('Check each due criterion and each reviewed task brief.');
+    expect(result).toContain(
+      'every blocking finding inside the Review Scope that is not unverified',
+    );
+    expect(scope).toContain('Raise no finding for work a pending task owns.');
+    expect(result).not.toContain('every acceptance criterion and requirement');
+    expect(result).not.toContain('Final Implementation Review');
+  });
+
+  it('the final review keeps its whole-run instructions', () => {
+    const result = buildFinalReviewPrompt({
+      spec: SPEC,
+      taskBriefs: TASK_BRIEFS,
+      diff: DIFF,
+      plan: REVIEW_PLAN,
+      fixCycle: 1,
+    });
+
+    expect(result).toContain('## Review Scope');
+    expect(result).toContain(
+      "This is the final review. It judges the whole run: every task and every acceptance criterion, whatever each task's status.",
+    );
+    expect(result).toContain('# Final Implementation Review');
+    expect(result).toContain('every acceptance criterion and requirement');
+    expect(result).toContain('Check each criterion from the spec and task briefs.');
+    expect(result).toContain('every blocking finding that is not unverified');
+    expect(result).toContain('- T004 [done] Time zones: Handle time zones');
+    expect(result).toContain('- T005 [pending] Reminder API: Expose reminders');
+  });
+
   it('hands the reviewer every pending input and asks it for the fix tasks in the same answer', () => {
     const result = buildFinalReviewPrompt({
       spec: SPEC,
@@ -89,6 +201,7 @@ describe('buildFinalReviewPrompt', () => {
         tasks: [
           {
             id: 'T001',
+            status: 'done',
             title: 'Hello module',
             intent: 'Add the hello export',
             criteria: ['C1'],
@@ -108,7 +221,7 @@ describe('buildFinalReviewPrompt', () => {
 
     expect(result).toContain('## Plan');
     expect(result).toContain('C1: The greeting is returned (checks: K1)');
-    expect(result).toContain('T001 Hello module: Add the hello export');
+    expect(result).toContain('T001 [done] Hello module: Add the hello export');
     expect(result).toContain('Suggested files: src/hello.ts');
     expect(result).toContain('Exclusions: docs/**');
     expect(result).toContain('### Decisions');

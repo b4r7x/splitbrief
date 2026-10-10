@@ -70,7 +70,6 @@ const ReviewPacketRunSchema = z.object({
   completedAt: z.string().nullable(),
   totalTimeMs: z.number().nonnegative().nullable(),
   totalTasks: z.number().int().nonnegative(),
-  completedLocally: z.number().int().nonnegative(),
   escalated: z.number().int().nonnegative(),
   skipped: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),

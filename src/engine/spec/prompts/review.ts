@@ -43,6 +43,7 @@ export type ReviewPlanData = {
   decisions?: readonly { text: string; taskId: string | null }[] | undefined;
   tasks: readonly {
     id: string;
+    status: 'done' | 'pending';
     title: string;
     intent: string;
     criteria: readonly string[];
@@ -74,7 +75,7 @@ function planBody(plan: ReviewPlanData): string {
     lines.push('None.');
   } else {
     for (const task of plan.tasks) {
-      lines.push(`- ${task.id} ${task.title}: ${task.intent}`);
+      lines.push(`- ${task.id} [${task.status}] ${task.title}: ${task.intent}`);
       lines.push(`  - Criteria: ${task.criteria.join(', ') || 'none'}`);
       lines.push(`  - Suggested files: ${task.suggestedFiles.join(', ') || 'none'}`);
       lines.push(`  - Exclusions: ${task.exclusions.join(', ') || 'none'}`);
@@ -120,10 +121,18 @@ function requiredResultsBody(
   taskIds: readonly string[],
   criterionIds: readonly string[],
   fixCycle: number | undefined,
+  reviewKind: 'task' | 'final',
 ): string {
+  const fixWorkContract =
+    reviewKind === 'task'
+      ? FIX_WORK_CONTRACT.replace(
+          'every blocking finding that is not unverified',
+          'every blocking finding inside the Review Scope that is not unverified',
+        )
+      : FIX_WORK_CONTRACT;
   return [
     REQUIRED_RESULTS,
-    ...(fixCycle === undefined ? [] : [FIX_WORK_CONTRACT]),
+    ...(fixCycle === undefined ? [] : [fixWorkContract]),
     '',
     `Task ids: ${taskIds.join(', ') || 'none'}`,
     `Criterion ids: ${criterionIds.join(', ') || 'none'}`,
@@ -133,6 +142,7 @@ function requiredResultsBody(
 export type FinalReviewPromptInput = {
   spec: string;
   taskBriefs: string;
+  reviewKind?: 'task' | 'final' | undefined;
   pendingInputs?: readonly TriageInput[] | undefined;
   fixCycle?: number | undefined;
   /** The one-shot review diff, used only when files are undefined. */
@@ -168,7 +178,35 @@ export type FinalReviewPromptInput = {
   skillsContext?: string | undefined;
 };
 
+function reviewScopeBody(
+  opts: FinalReviewPromptInput,
+  taskIds: readonly string[],
+  criterionIds: readonly string[],
+): string {
+  if (opts.reviewKind !== 'task') {
+    return "This is the final review. It judges the whole run: every task and every acceptance criterion, whatever each task's status.";
+  }
+  const pending = opts.plan?.tasks.filter((task) => task.status === 'pending') ?? [];
+  return [
+    'This is a task review. It judges only the reviewed tasks and the due criteria below. The final review judges the whole run later.',
+    '',
+    `Reviewed tasks: ${taskIds.join(', ') || 'none'}`,
+    `Due criteria: ${criterionIds.join(', ') || 'none'}`,
+    ...(pending.length === 0
+      ? ['Pending tasks: none.']
+      : [
+          'Pending tasks (not built yet; context, never a missing implementation):',
+          ...pending.map(
+            (task) => `- ${task.id} ${task.title} — criteria ${task.criteria.join(', ') || 'none'}`,
+          ),
+        ]),
+    '',
+    'Raise a blocking finding only for work inside this scope, and name its task id or criterion id. Raise no finding for work a pending task owns. A finding that names no reviewed task or due criterion, or names a pending one, is recorded as a note outside the task review scope and gets no fix task.',
+  ].join('\n');
+}
+
 export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
+  const reviewKind = opts.reviewKind ?? 'final';
   const taskIds = opts.taskIds ?? opts.plan?.tasks.map((task) => task.id) ?? [];
   const criterionIds =
     opts.criterionIds ?? opts.plan?.criteria.map((criterion) => criterion.id) ?? [];
@@ -182,6 +220,7 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
           { heading: 'Fix Cycle', body: `This answer starts fix cycle ${opts.fixCycle}.` },
         ]),
     ...skillsSection(opts.skillsContext),
+    { heading: 'Review Scope', body: reviewScopeBody(opts, taskIds, criterionIds) },
   ];
   if (opts.plan !== undefined) {
     sections.push({ heading: 'Plan', body: planBody(opts.plan) });
@@ -235,22 +274,39 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   if (opts.renders) {
     sections.push({ heading: 'Renders', body: opts.renders });
   }
+  const reviewInstructions =
+    reviewKind === 'task'
+      ? REVIEW_INSTRUCTIONS.replace(
+          'Review the implementation diff against every acceptance criterion and requirement in the spec and task briefs.',
+          'Review the implementation diff against each due acceptance criterion and the requirements of the reviewed tasks.',
+        )
+      : REVIEW_INSTRUCTIONS;
+  const reviewChecklist =
+    reviewKind === 'task'
+      ? REVIEW_CHECKLIST.replace(
+          'Check each criterion from the spec and task briefs.',
+          'Check each due criterion and each reviewed task brief.',
+        )
+      : REVIEW_CHECKLIST;
   sections.push(
     instructionsSection(
-      [REVIEW_INSTRUCTIONS, ...(opts.files === undefined ? [] : [PROVENANCE_INSTRUCTIONS])].join(
+      [reviewInstructions, ...(opts.files === undefined ? [] : [PROVENANCE_INSTRUCTIONS])].join(
         '\n\n',
       ),
     ),
-    { heading: 'Review Checklist', body: REVIEW_CHECKLIST },
+    { heading: 'Review Checklist', body: reviewChecklist },
     {
       heading: 'Required Results',
-      body: requiredResultsBody(taskIds, criterionIds, opts.fixCycle),
+      body: requiredResultsBody(taskIds, criterionIds, opts.fixCycle, reviewKind),
     },
   );
   return buildPrompt({
-    title: 'Final Implementation Review',
+    title: reviewKind === 'task' ? 'Task Implementation Review' : 'Final Implementation Review',
     intro:
-      'You are reviewing a completed implementation against its specification. Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
+      (reviewKind === 'task'
+        ? 'You are reviewing the completed work inside the Review Scope against its specification.'
+        : 'You are reviewing a completed implementation against its specification.') +
+      ' Your job is to verify that the implementation satisfies the spec and identify any issues. Treat error-level drift findings as review blockers unless you can clearly explain why they are false positives.',
     sections,
   });
 }

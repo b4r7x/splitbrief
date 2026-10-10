@@ -141,7 +141,6 @@ describe('WorkflowFooter', () => {
   // from exactly this fixture.
   function seedPricedRun(): void {
     tokensStore.__testReset({
-      localCount: 2,
       tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
     });
     configStore.__testReset({

@@ -555,7 +555,7 @@ describe('ConversationFlow', () => {
 
     expect(frame).not.toContain('Completed');
     expect(frame).not.toContain('briefs passed');
-    expect(frame).toContain(`${glyph('check')} Plan ${projection.feature}`);
+    expect(frame).toContain(`${glyph('stageDone')} Plan ${projection.feature}`);
     expect(frame).toContain('T001');
     expect(tasksStore.get().tasks.find((task) => task.id === 'T001')?.status).toBe('in_progress');
     expect(frame).not.toContain('+0 earlier');
@@ -981,7 +981,7 @@ describe('ConversationFlow', () => {
       const focused = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(countGlyphOccurrences(focused, FOCUS_MARK)).toBe(1);
       expect(focused.split('\n').find((line) => line.includes(label))).toContain(
-        `${FOCUS_MARK}${glyph('check')}`,
+        `${FOCUS_MARK}${glyph('stageDone')}`,
       );
     }
     hoverStore.clear();

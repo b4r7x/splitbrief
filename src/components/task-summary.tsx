@@ -23,7 +23,7 @@ import { ROW_LEADING } from './row-leading.js';
 function leadingWith(mark: string): string {
   return `${ROW_LEADING}${mark} `;
 }
-const LEADING_CELLS = getTerminalCellWidth(leadingWith(glyph('check')));
+const LEADING_CELLS = getTerminalCellWidth(leadingWith(glyph('stageDone')));
 // Two spaces divide the title from the detail run, `·` divides the run's own parts — the same two
 // levels a running task header uses, so a settled row and a live row read the same way.
 const TITLE_SEP = '  ';
@@ -35,7 +35,7 @@ interface FittedDetailRun {
 }
 
 const SETTLED_METHODS = new Set([
-  'local',
+  'passed',
   'consulted',
   'intermediate',
   'hint',
@@ -148,7 +148,11 @@ export type TaskSummaryState =
   | Readonly<{ kind: 'settled'; method: TaskCompletionMethod }>
   | Readonly<{ kind: 'halted'; tone: 'cancelled' | 'failed'; word: string }>
   | Readonly<{ kind: 'pending' }>
-  | Readonly<{ kind: 'stage'; failed: boolean; detail: readonly string[] }>;
+  | Readonly<{
+      kind: 'stage';
+      outcome: 'passed' | 'failed' | 'no-verdict' | 'stopped';
+      detail: readonly string[];
+    }>;
 
 interface TaskSummaryProps {
   id: string;
@@ -182,15 +186,16 @@ function settledMarker(method: TaskCompletionMethod, t: Theme): MarkerSpec {
   if (classifyTaskCompletionMethod(method) === 'escalated') {
     return { name: 'statusEscalated', color: t.warning };
   }
-  return { name: 'check', color: t.success };
+  return { name: 'stageDone', color: t.success };
 }
 
 function markerSpec(state: TaskSummaryState, t: Theme): MarkerSpec {
   if (state.kind === 'pending') return { name: 'statusPending', color: t.textDim };
   if (state.kind === 'stage') {
-    return state.failed
+    if (state.outcome === 'stopped') return { name: 'statusCancelled', color: t.warning };
+    return state.outcome === 'failed' || state.outcome === 'no-verdict'
       ? { name: 'statusFailed', color: t.error }
-      : { name: 'check', color: t.success };
+      : { name: 'stageDone', color: t.success };
   }
   if (state.kind === 'halted') {
     return state.tone === 'failed'
@@ -241,7 +246,7 @@ export function TaskSummary({
 
   const failed =
     (state.kind === 'settled' && state.method === 'failed') ||
-    (state.kind === 'stage' && state.failed);
+    (state.kind === 'stage' && state.outcome === 'failed');
   const quiet =
     failed || state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
   const fitted = fitDetailRun(

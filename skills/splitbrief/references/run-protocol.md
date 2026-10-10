@@ -97,6 +97,7 @@ Record command, exit, terminal result, report, changed paths, check results, and
 At `cadence=end`, review after all selected tasks and after each fix cycle.
 At `cadence=task`, also review after every completed task, scoped to completed tasks and criteria due so far.
 A criterion is due when all current tasks serving it are done. Keep pending criteria listed separately.
+SPLITBRIEF records a finding outside the task review scope as a note and refuses fix work for it.
 For a one-task selection, review only the selected task, its appended fixes, and criteria due within that selection.
 Criteria shared with unfinished tasks remain pending. Never claim the whole plan passed for one selected brief.
 There is no batch review cadence. The final review runs every registered check and its reviewer checks first under references/gates.md.

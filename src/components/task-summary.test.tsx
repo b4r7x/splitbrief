@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import chalk from 'chalk';
 import { defaultTheme } from './theme.js';
 import { paint } from '../core/theme/paint.js';
@@ -17,7 +18,26 @@ afterEach(() => {
   chalk.level = originalColorLevel;
 });
 
+beforeEach(forceUnicodeGlyphs);
+
 describe('TaskSummary', () => {
+  it.each([
+    ['no-verdict', 'no verdict', '✗'],
+    ['stopped', 'stopped', '×'],
+  ] as const)('keeps the %s stage marker and duration at 60 columns', (outcome, title, mark) => {
+    const ui = renderFeature(
+      <TaskSummary
+        width={60}
+        id="Review T001"
+        title={title}
+        state={{ kind: 'stage', outcome, detail: ['49.0s'] }}
+      />,
+      { cols: 60, rows: 18 },
+    );
+    expect(stripAnsiStyles(ui.lastFrame()).trim()).toBe(`${mark} Review T001 ${title}  49.0s`);
+    ui.unmount();
+  });
+
   it('paints a settled stage mark, head and sanitized detail run', () => {
     for (const failed of [false, true]) {
       const ui = renderFeature(
@@ -27,7 +47,7 @@ describe('TaskSummary', () => {
           title={failed ? '' : 'passed'}
           state={{
             kind: 'stage',
-            failed,
+            outcome: failed ? 'failed' : 'passed',
             detail: ['fixes \u001b[31mT006\u001b[0m', '8.0s'],
           }}
         />,
@@ -35,7 +55,7 @@ describe('TaskSummary', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
       expect(frame).toContain(
-        `${glyph(failed ? 'statusFailed' : 'check')} Review 1 ${failed ? 'failed' : 'passed'}`,
+        `${glyph(failed ? 'statusFailed' : 'stageDone')} Review 1 ${failed ? 'failed' : 'passed'}`,
       );
       expect(frame).toContain('fixes T006 · 8.0s');
       expect(frame).not.toContain('\u001b');
@@ -48,7 +68,7 @@ describe('TaskSummary', () => {
     chalk.level = 3;
     for (const state of [
       { kind: 'settled', method: 'failed' },
-      { kind: 'stage', failed: true, detail: ['fixes T904', '8.0s'] },
+      { kind: 'stage', outcome: 'failed', detail: ['fixes T904', '8.0s'] },
     ] as const) {
       const ui = renderFeature(<TaskSummary width={80} id="Review 1" title="" state={state} />);
       const frame = ui.lastFrame() ?? '';
@@ -138,8 +158,8 @@ describe('TaskSummary', () => {
         .split('\n')
         .find((candidate) => candidate.includes('T1 hash passwords')) ?? '';
 
-    expect(line.startsWith(` ${glyph('check')} `)).toBe(true);
-    expect(line[1]).toBe(glyph('check'));
+    expect(line.startsWith(` ${glyph('stageDone')} `)).toBe(true);
+    expect(line[1]).toBe(glyph('stageDone'));
 
     ui.unmount();
   });
@@ -195,7 +215,7 @@ describe('TaskSummary', () => {
     unfocused.unmount();
   });
 
-  it('marks an escalated brief with the sidebar ▲, never the success check', () => {
+  it('marks an escalated brief with the sidebar ▲, never the success mark', () => {
     for (const method of ['escalated-intermediate', 'escalated-hint', 'escalated-full'] as const) {
       const ui = renderFeature(
         <TaskSummary
@@ -208,7 +228,7 @@ describe('TaskSummary', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
       expect(frame).toContain(`${glyph('statusEscalated')} T1 hash passwords`);
-      expect(frame).not.toContain(glyph('check'));
+      expect(frame).not.toContain(glyph('stageDone'));
 
       ui.unmount();
     }
@@ -227,9 +247,8 @@ describe('TaskSummary', () => {
     );
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain(glyph('check'));
-    expect(frame).toContain('src/auth/session.ts');
-    expect(frame).toContain('·');
+    expect(frame).toContain(glyph('stageDone'));
+    expect(stripAnsiStyles(frame)).toContain('src/auth/session.ts · passed · 48.0s');
 
     ui.unmount();
   });
@@ -239,8 +258,8 @@ describe('TaskSummary', () => {
     const longPath =
       'src/engine/subsystems/workflow/coordinator/deeply/nested/components/tasks/resume.ts';
     for (const width of [60, 80, 120]) {
-      const fitted = fitDetailRun(head, [longPath, 'local', '48.0s'], width);
-      expect(fitted.tail).toContain('local');
+      const fitted = fitDetailRun(head, [longPath, 'passed', '48.0s'], width);
+      expect(fitted.tail).toContain('passed');
       expect(fitted.tail).toContain('48.0s');
       expect(fitted.tail[0]?.startsWith('src/')).toBe(true);
       expect(fitted.tail[0]?.endsWith('resume.ts')).toBe(true);
@@ -248,8 +267,8 @@ describe('TaskSummary', () => {
   });
 
   it('drops retries before shortening file segment', () => {
-    const fitted = fitDetailRun('T1', ['src/auth/session.ts', 'local', '2 retries', '48.0s'], 45);
-    expect(fitted.tail).toContain('local');
+    const fitted = fitDetailRun('T1', ['src/auth/session.ts', 'passed', '2 retries', '48.0s'], 45);
+    expect(fitted.tail).toContain('passed');
     expect(fitted.tail).toContain('48.0s');
     expect(fitted.tail).not.toContain('2 retries');
   });
@@ -266,15 +285,15 @@ describe('TaskSummary', () => {
             : file;
       for (const retries of [[], ['1 retry'], ['2 retries']]) {
         for (const settled of [undefined, true]) {
-          const fitted = fitDetailRun('T1', [file, 'local', ...retries, '2m 0s'], width, settled);
+          const fitted = fitDetailRun('T1', [file, 'passed', ...retries, '2m 0s'], width, settled);
           expect(fitted.tail).toEqual([
             expected,
-            'local',
+            'passed',
             ...(width === 120 ? retries : []),
             '2m 0s',
           ]);
           expect(
-            getTerminalCellWidth(` ✓ ${fitted.head}  ${fitted.tail.join(' · ')}`),
+            getTerminalCellWidth(` ● ${fitted.head}  ${fitted.tail.join(' · ')}`),
           ).toBeLessThanOrEqual(width);
         }
       }
@@ -290,9 +309,9 @@ describe('TaskSummary', () => {
         [14, 'projections.ts'],
         [8, 'pro…s.ts'],
       ] as const) {
-        const head = 'T1'.padEnd(width - 21 - room, 'x');
-        const fitted = fitDetailRun(head, [file, 'local', '1 retry', '2m 0s'], width, true);
-        expect(fitted.tail).toEqual([expected, 'local', '2m 0s']);
+        const head = 'T1'.padEnd(width - 22 - room, 'x');
+        const fitted = fitDetailRun(head, [file, 'passed', '1 retry', '2m 0s'], width, true);
+        expect(fitted.tail).toEqual([expected, 'passed', '2m 0s']);
       }
     }
   });
@@ -300,20 +319,20 @@ describe('TaskSummary', () => {
   it('uses the settled retry priority for the closed signup row', () => {
     const fitted = fitDetailRun(
       'T002 Wire validator into the signup form',
-      ['src/components/signup/form.ts', 'local', '1 retry', '2m 21s'],
+      ['src/components/signup/form.ts', 'passed', '1 retry', '2m 21s'],
       80,
       true,
     );
-    expect(fitted.tail).toEqual(['src/…/form.ts', 'local', '2m 21s']);
+    expect(fitted.tail).toEqual(['src/…/form.ts', 'passed', '2m 21s']);
   });
 
   it('cuts title last when room runs out completely', () => {
     const fitted = fitDetailRun(
       'T1 long task title that exceeds the budget',
-      ['src/auth/session.ts', 'local', '48.0s'],
+      ['src/auth/session.ts', 'passed', '48.0s'],
       26,
     );
-    expect(fitted.tail).toEqual(['local', '48.0s']);
+    expect(fitted.tail).toEqual(['passed', '48.0s']);
     expect(fitted.head.endsWith('…')).toBe(true);
   });
 
@@ -330,7 +349,7 @@ describe('TaskSummary', () => {
     );
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('local');
+    expect(frame).toContain('passed');
     expect(frame).toContain('48.0s');
     expect(frame).toContain('src/');
     expect(frame).toContain('resume.ts');

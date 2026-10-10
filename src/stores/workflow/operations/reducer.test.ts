@@ -311,6 +311,145 @@ describe('operationsStore', () => {
     });
   });
 
+  it.each([
+    ['task', 'implementing'],
+    ['final', 'final-review'],
+  ] as const)(
+    'opens one %s review fallback with the recorded seat and no taskId',
+    (scope, phase) => {
+      addEvent({
+        type: 'review_started',
+        ts: 1_000,
+        phase,
+        scope,
+        ...(scope === 'task' && { afterTaskId: 'T001' }),
+        tool: 'codex',
+        model: 'gpt-5',
+        axes: ['high'],
+      });
+
+      expect(operationsStore.get().active).toMatchObject({
+        role: 'review',
+        phase,
+        runnerName: 'codex',
+        model: 'gpt-5',
+        axes: ['high'],
+        status: 'running',
+        startedAt: 1_000,
+      });
+      expect(operationsStore.get().active).not.toHaveProperty('taskId');
+      expect(
+        [...operationsStore.get().byCallId.values()].filter((op) => op.status === 'running'),
+      ).toHaveLength(1);
+    },
+  );
+
+  it('closes the review fallback for a real call and restores it between the review calls', () => {
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'implementing',
+      scope: 'task',
+      afterTaskId: 'T001',
+      tool: 'codex',
+      model: 'gpt-5',
+    });
+    const fallback = operationsStore.get().active;
+    expect(fallback).not.toBeNull();
+    addEvent(runnerStarted({ ts: 1_100, role: 'review', taskId: undefined }));
+    expect(operationsStore.get().byCallId.get(fallback?.callId ?? '')).toMatchObject({
+      status: 'completed',
+      endedAt: 1_100,
+      durationMs: 100,
+    });
+    expect(operationsStore.get().active?.callId).toBe('call-1');
+    addEvent(
+      runnerCompleted({
+        ts: 1_200,
+        role: 'review',
+        taskId: undefined,
+        startedAt: 1_100,
+        endedAt: 1_200,
+        durationMs: 100,
+      }),
+    );
+    expect(operationsStore.get().active).toMatchObject({
+      callId: fallback?.callId,
+      role: 'review',
+      runnerName: 'codex',
+      model: 'gpt-5',
+      status: 'running',
+      startedAt: 1_000,
+    });
+    addEvent({
+      type: 'review_completed',
+      ts: 1_300,
+      phase: 'implementing',
+      scope: 'task',
+      afterTaskId: 'T001',
+      tool: 'codex',
+      model: 'gpt-5',
+      verdict: 'pass',
+      findings: { blocking: 0, minor: 0 },
+      duration: 300,
+    });
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().last).toMatchObject({
+      role: 'review',
+      status: 'completed',
+      endedAt: 1_300,
+    });
+  });
+
+  it('closes a review fallback on review_completed without completing the run', () => {
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+    });
+    addEvent({
+      type: 'review_completed',
+      ts: 1_250,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+      verdict: 'no-verdict',
+      duration: 250,
+    });
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().last).toMatchObject({
+      role: 'review',
+      status: 'completed',
+      durationMs: 250,
+    });
+  });
+
+  it('keeps planner_status on the planner role and closes it on done', () => {
+    addEvent(
+      makePlannerStatus({
+        ts: 1_000,
+        phase: 'planning',
+        status: 'running',
+        tool: 'claude-code',
+        model: 'claude-sonnet-5',
+      }),
+    );
+    expect(operationsStore.get().active).toMatchObject({
+      role: 'planner',
+      runnerName: 'claude-code',
+      model: 'claude-sonnet-5',
+    });
+    addEvent(makePlannerStatus({ ts: 1_250, phase: 'planning', status: 'done' }));
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().last).toMatchObject({
+      role: 'planner',
+      status: 'completed',
+      durationMs: 250,
+    });
+  });
+
   it('does not start a planner_status fallback while waiting on review', () => {
     addEvent(makePlannerStatus({ ts: 1_000, phase: 'planning', status: 'running' }));
     expect(operationsStore.get().active).toMatchObject({
@@ -345,10 +484,12 @@ describe('operationsStore', () => {
     );
 
     expect(operationsStore.get().active).toBeNull();
-    expect(operationsStore.get().byCallId.get('planner-status:researching')).toMatchObject({
-      status: 'completed',
-    });
-    expect(operationsStore.get().byCallId.get('planner-status:planning')).toMatchObject({
+    expect(operationsStore.get().byCallId.get('status-fallback:planner:researching')).toMatchObject(
+      {
+        status: 'completed',
+      },
+    );
+    expect(operationsStore.get().byCallId.get('status-fallback:planner:planning')).toMatchObject({
       status: 'completed',
     });
   });

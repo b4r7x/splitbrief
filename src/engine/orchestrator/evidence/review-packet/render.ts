@@ -232,7 +232,7 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     `- Planner: ${packetSeatIdentity(packet.run.planner)}`,
     `- Implementer: ${packetSeatIdentity(packet.run.implementer)}`,
     `- Reviewer: ${packetSeatIdentity(packet.run.reviewer)}`,
-    `- Tasks: ${packet.run.totalTasks} total, ${packet.run.completedLocally} local, ${packet.run.escalated} escalated, ${packet.run.skipped} skipped, ${packet.run.failed} failed`,
+    `- Tasks: ${packet.run.totalTasks} total, ${packet.run.escalated} escalated, ${packet.run.skipped} skipped, ${packet.run.failed} failed`,
     `- Generated: ${packet.generatedAt}`,
     '',
     '## Admission readiness',

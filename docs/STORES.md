@@ -57,7 +57,7 @@ src/stores/
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
 │   ├── tasks.ts              # Task map + counters
-│   ├── tokens.ts             # Local / escalated token counts
+│   ├── tokens.ts             # Token usage + completion count
 │   ├── lifecycle.ts          # Phase, cancelled, queue depth
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
 │   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections)
@@ -205,7 +205,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` invalidation tick; the composer owns file-list reads and local list state | `requestRefresh()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, currentAttempt, attemptAllowance, totalTasks, taskMap, tasks }` | internal writes via `actions.addEvent` |
-| `tokensStore` | `workflow/tokens.ts` | `{ localCount, escalatedCount, tokenUsage }` | internal writes via `actions.addEvent` |
+| `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, completedTaskCount, pricingContext }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt, bankedRunMs }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it, `bankedRunMs` is the run time of the stretches before the last resume, so the header clock (`runElapsedMs`) leaves parks out | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |

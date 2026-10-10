@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { cliDetectionFor } from '../../../helpers/factories/detection.js';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
@@ -145,13 +146,16 @@ async function setupProjection(
 /** The replay reads the session log from disk, so a scenario about the replay writes one first. */
 async function seedRunLog(route: FixtureAtRestRoute): Promise<void> {
   if (route.log === undefined) return;
-  const source = resolve(process.cwd(), route.log);
   const target = join(
     sessionDir(route.record.ref.projectDir, route.record.ref.sessionId),
     SESSION_LOG_FILE,
   );
   await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, await readFile(source, 'utf8'));
+  const content =
+    typeof route.log === 'string'
+      ? await readFile(resolve(process.cwd(), route.log), 'utf8')
+      : route.log.map((event) => `${JSON.stringify(toEngineEventEntry(event))}\n`).join('');
+  await writeFile(target, content);
 }
 
 async function activateFixtureInputMode(

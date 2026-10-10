@@ -9,6 +9,17 @@ const SESSION_LOG_PATH = '/project/.splitbrief/sessions/sess/session.jsonl';
 const EVIDENCE_PATHS = { validation: EVIDENCE_PATH, sessionLog: SESSION_LOG_PATH };
 
 describe('renderReviewPacketMarkdown review seat', () => {
+  it('lists the task tally without a local count', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown({
+      ...packet,
+      run: { ...packet.run, totalTasks: 7, escalated: 2, skipped: 1, failed: 1 },
+    });
+
+    const tally = rendered.split('\n').find((line) => line.startsWith('- Tasks:'));
+    expect(tally).toBe('- Tasks: 7 total, 2 escalated, 1 skipped, 1 failed');
+  });
+
   it('heads the verdict with the review seat and names the runner that held it', () => {
     const packet = makeReviewPacket();
     const rendered = renderReviewPacketMarkdown({

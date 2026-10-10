@@ -119,8 +119,10 @@ function unmountWhenSignalled(
 export async function renderApp(
   appElement: ReturnType<typeof createElement>,
   options: RenderOptions,
+  deps: { exit: (code: number) => void } = { exit: (code) => process.exit(code) },
 ): Promise<void> {
   const { fullscreen, mouse, hover, projectDir, unmountSignal } = options;
+  let processCompletion: Promise<void> | undefined;
   const kittyKeyboard = detectKittyKeyboardFlags();
   installTerminalOutputErrorGuard();
 
@@ -226,10 +228,13 @@ export async function renderApp(
   const onTerminationSignal = createTerminationHandler({
     cleanup,
     reportCleanupFailure: reportTerminationCleanupFailure,
-    exit: (code) => process.exit(code),
+    exit: deps.exit,
   });
   const settleTerminationSignal = createTerminationSignalListener({
-    handle: onTerminationSignal,
+    handle: (signal) => {
+      processCompletion ??= onTerminationSignal(signal);
+      return processCompletion;
+    },
     reportCleanupFailure: reportTerminationCleanupFailure,
   });
   process.on('SIGINT', settleTerminationSignal);
@@ -245,10 +250,13 @@ export async function renderApp(
     cleanup,
     report: reportCrash,
     reportCleanupFailure: reportCrashCleanupFailure,
-    exit: (code) => process.exit(code),
+    exit: deps.exit,
   });
   const settleCrash = createCrashListener({
-    handle: onCrash,
+    handle: (reason) => {
+      processCompletion ??= onCrash(reason);
+      return processCompletion;
+    },
     reportCrash,
     reportCleanupFailure: reportCrashCleanupFailure,
   });
@@ -330,29 +338,31 @@ export async function renderApp(
           setHandover: setActiveTerminalHandover,
         });
       } catch (err) {
-        if (isBrokenOutputError(err)) return;
-        warnError('Fullscreen init failed, falling back to inline mode', err);
-        const fallbackStdin = prepareInlineFallbackAfterFullscreenFailure({
-          sourceStdin: process.stdin,
-          clearTerminalHandover: () => setActiveTerminalHandover(undefined),
-          clearFilteredStdin: () => setActiveFilteredStdin(undefined),
-          disableFilteredStdin,
-        });
-        const inst = renderFallback(fallbackStdin);
-        unmountWhenSignalled(inst, unmountSignal);
-        try {
-          await inst.waitUntilExit();
-        } catch (fallbackErr) {
-          if (!isBrokenOutputError(fallbackErr)) throw fallbackErr;
+        ink = undefined;
+        if (!isBrokenOutputError(err)) {
+          warnError('Fullscreen init failed, falling back to inline mode', err);
+          const fallbackStdin = prepareInlineFallbackAfterFullscreenFailure({
+            sourceStdin: process.stdin,
+            clearTerminalHandover: () => setActiveTerminalHandover(undefined),
+            clearFilteredStdin: () => setActiveFilteredStdin(undefined),
+            disableFilteredStdin,
+          });
+          const inst = renderFallback(fallbackStdin);
+          unmountWhenSignalled(inst, unmountSignal);
+          try {
+            await inst.waitUntilExit();
+          } catch (fallbackErr) {
+            if (!isBrokenOutputError(fallbackErr)) throw fallbackErr;
+          }
         }
-        return;
       }
-      if (!ink) return;
-      unmountWhenSignalled(ink.instance, unmountSignal, selection?.suspend);
-      try {
-        await ink.waitUntilExit();
-      } catch (err) {
-        if (!isBrokenOutputError(err)) throw err;
+      if (ink !== undefined) {
+        unmountWhenSignalled(ink.instance, unmountSignal, selection?.suspend);
+        try {
+          await ink.waitUntilExit();
+        } catch (err) {
+          if (!isBrokenOutputError(err)) throw err;
+        }
       }
     } else {
       const inst = renderFallback();
@@ -369,4 +379,6 @@ export async function renderApp(
     process.off('unhandledRejection', settleCrash);
     await cleanup();
   }
+  if (processCompletion !== undefined) await processCompletion;
+  else if (!unmountSignal?.aborted) deps.exit(Number(process.exitCode ?? 0));
 }

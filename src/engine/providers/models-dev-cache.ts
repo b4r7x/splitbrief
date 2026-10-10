@@ -146,6 +146,7 @@ export async function refreshModelsDevCatalogCache(
 
   if (response.status === 304) {
     await cancelResponseBody(response);
+    throwIfAborted(options.signal);
     if (cached === null) {
       return {
         kind: 'failed',

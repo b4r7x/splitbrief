@@ -62,6 +62,7 @@ function acceptsEventAfterCancellation(event: EngineEvent): boolean {
   switch (event.type) {
     case 'workflow_cancelled':
     case 'turn_interrupted':
+    case 'review_completed':
     case 'runner_call_error':
     case 'runner_call_completed':
     case 'runner_call_warning':

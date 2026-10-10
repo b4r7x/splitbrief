@@ -95,12 +95,17 @@ Events cover the full workflow lifecycle. A few examples:
 
 - `workflow_started` / `workflow_complete` — session boundaries
 - `task_started` / `task_completed` / `task_full_fail` — task lifecycle with timing, method, retries
+- `review_started` / `review_completed` — review lifecycle with scope, seat, verdict, findings, and timing
 - `planner_text` — streaming planner output chunks. Planner document chunks set
   `content: 'markdown'`; plain logs omit it or use `content: 'plain'`.
 - `runner_call_*` — normalized planner/implementer/backend call lifecycle, text deltas, usage, raw tool-use, safe activity, session IDs, artifacts, warnings, errors, and completion, plus `runner_call_heartbeat`: a frame with nothing to show that still proves the tool is working, such as Claude Code's thinking-token estimates, at most one a second per call. A heartbeat moves the Build progress block's freshness clock (`lastRunnerEventTs`, `src/stores/workflow/lifecycle.ts`), paints no row, and stays out of `session.jsonl`
 - `cost_update` — cumulative token usage after each planner or implementer call
 
 The full union has many variants, but the pattern is consistent: every event is a flat object with snake_case type, timestamp, optional phase, and domain-specific fields. The phase is the run's phase when the event is published. A run follows every state head committed for its session (`followCommittedState`, `src/engine/orchestrator/state-ops.ts`), so a call's own events, its text and a recovery event never carry a phase the run has already left. A recovery issue keeps the phase its halt was raised in.
+
+`runFinalReviewPhase` publishes `review_started` and `review_completed` for both `task` and `final` scopes. Each start has one completion, including a failed call or a stop. A `preReview` halt publishes neither event. The review seat uses the configured reviewer, or the planner when no reviewer is configured. Both events carry that seat's `tool`, optional `model`, and nonempty `axes` from `seatAxisWords`. The review publishes no `planner_status`; that event belongs to planning.
+
+Task reviews carry `afterTaskId`, the completed brief that scheduled the review. Final reviews omit it. A completion carries the derived verdict and `duration` in milliseconds. `findings` counts blocking and minor findings only when a verdict exists. A failed call records `no-verdict`; a stop records `stopped`. Neither outcome carries findings.
 
 ### Runner call pipeline
 
@@ -138,7 +143,11 @@ Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditi
 
 **Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`.
 
+Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line.
+
 **Hook sink** (`src/engine/hooks/sink.ts`) maps events to workflow hook triggers and dispatches matching hooks without waiting. Only five event types trigger hooks. `task_completed` maps to `post_task`. `checks_run` maps to `post_validation`. It fires after brief gate checks and after plan and task checks before the final review, once per task that owns them. Its payload has `taskId` and `results` (`{ id, passed }[]`). `recovery_prompted` maps to `on_halt`. `workflow_complete` maps to `on_complete`. `error` maps to `on_error`. The sink ignores all other events.
+
+`review_started` and `review_completed` never fire a hook. Only run completion fires `on_complete`.
 
 **Logger sink** (`src/engine/events/sinks/logger.ts`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
@@ -343,6 +352,15 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   tool?: string; model?: string; implementerProfile?: string }
 // `duration` is measured once, at completion, from the brief's start time
 // (`validateCommitAndAdvance`). The ledger entry's `durationMs` carries the same value.
+
+// Review lifecycle
+{ type: 'review_started'; scope: 'final' | 'task'; afterTaskId?: string;
+  tool: string; model?: string; axes?: string[] }
+
+{ type: 'review_completed'; scope: 'final' | 'task'; afterTaskId?: string;
+  tool: string; model?: string; axes?: string[];
+  verdict: 'pass' | 'pass-with-notes' | 'fail' | 'no-verdict' | 'stopped';
+  findings?: { blocking: number; minor: number }; duration: number }
 
 // Review fix cycle — the review answer appended fix tasks and START_FIX_CYCLE sent the run back
 { type: 'review_fix_started'; cycle: number; taskIds: TaskId[] }

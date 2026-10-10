@@ -89,6 +89,18 @@ describe('closed-run evidence ledger (integration)', () => {
       summary: makeSummary({
         totalTasks: 1,
         completedByLocal: 1,
+        reviewPacket: {
+          jsonPath: 'review-packet.json',
+          markdownPath: 'review-packet.md',
+          generatedAt: '2026-09-14T00:00:00.000Z',
+          finalReviewStatus: 'written',
+          finalReviewVerdict: 'pass',
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
+          driftPassed: true,
+          evidenceValidatedTasks: 1,
+          evidenceTotalTasks: 1,
+          missingArtifactCount: 0,
+        },
         changedFiles: ['src/evidence.ts'],
         evidenceSummary: {
           path: 'evidence\u001b]52;c;clipboard-ledger\u0007.json',
@@ -110,7 +122,8 @@ describe('closed-run evidence ledger (integration)', () => {
     expect(frame).toMatch(/^\s*Briefs [─-]/m);
     expect(frame).toContain('T001 Evidence detail');
     expect(frame).toContain('src/evidence.ts');
-    expect(frame).toContain(glyph('check'));
+    expect(frame).toContain(`${glyph('stageDone')} T001 Evidence detail`);
+    expect(frame).toContain(`${glyph('stageDone')} Complete · 1/1 briefs passed`);
     expect(frame).not.toContain('clipboard-title');
     expect(frame).not.toContain('clipboard-ledger');
 

@@ -145,7 +145,7 @@ export function stopByline(input: StopBylineInput): StopByline | null {
     const hint = 'Pause requested; no next brief will start';
     if (input.suite === null) return { lead: `Finishing ${name}`, hint };
     return {
-      lead: suiteStatusText(input.workflowPhase, input.suite),
+      lead: suiteStatusText({ phase: input.workflowPhase, suite: input.suite }),
       clock: formatElapsedClock(input.suite.elapsedMs),
       hint,
     };

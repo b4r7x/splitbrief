@@ -25,7 +25,7 @@ import { WorkflowStateSchema } from '../../../src/core/schemas/workflow.js';
 import { isRecord } from '../../../src/utils/type-guards.js';
 
 export const PLAIN_LINE =
-  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (passed|failed)( \(\d+ blocking\))?|done: \d+ tasks|plan check \S+: ((passed|failed)( · (\d+\.\ds|(\d+h )?\d+m \d+s))? \(.*\)|(not run|refused)( \(.*\))?)|Render .+: ((rendered|failed)( · (\d+\.\ds|(\d+h )?\d+m \d+s))?|(not run|refused)( \(.*\))?)|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|(reviewer|fix) check V\d+: (passed|failed|refused|not run) \(.+\)|fix check V\d+: (your \d+[ \u00a0]failures? gone( · \d+[ \u00a0]others? left)?|your 1[ \u00a0]failure remains|\d+[ \u00a0]of your \d+[ \u00a0]failures remains?) \(.+\)|base re-run V\d+: (passes|fails|refused \(.+\)|not run \(.+\)|\d+[ \u00a0]new, \d+[ \u00a0]pre-existing|pre-existing · (all \d+ failures|the failure) also fails? before this run's changes))$/;
+  /^(phase: [a-z-]+|task T\d{3}: (done|failed) \(.+\)|review: (final|task T\d{3}) (pass|pass-with-notes|fail|no-verdict|stopped)( \(\d+ blocking\))?|done: \d+ tasks|plan check \S+: ((passed|failed)( · (\d+\.\ds|(\d+h )?\d+m \d+s))? \(.*\)|(not run|refused)( \(.*\))?)|Render .+: ((rendered|failed)( · (\d+\.\ds|(\d+h )?\d+m \d+s))?|(not run|refused)( \(.*\))?)|reviewer checks: (off|none \(.+\))|reviewer check declined: .+ \(.+\)|(reviewer|fix) check V\d+: (passed|failed|refused|not run) \(.+\)|fix check V\d+: (your \d+[ \u00a0]failures? gone( · \d+[ \u00a0]others? left)?|your 1[ \u00a0]failure remains|\d+[ \u00a0]of your \d+[ \u00a0]failures remains?) \(.+\)|base re-run V\d+: (passes|fails|refused \(.+\)|not run \(.+\)|\d+[ \u00a0]new, \d+[ \u00a0]pre-existing|pre-existing · (all \d+ failures|the failure) also fails? before this run's changes))$/;
 
 const DONE_LINE = /^done: (\d+) tasks$/;
 
@@ -50,7 +50,9 @@ export function assertPlainStdout(stdout: string): number {
     expect(() => JSON.parse(line), `line parses as JSON: ${line}`).toThrow();
   }
   expect(lines).toContain('phase: implementing');
-  expect(lines).toContain('review: passed');
+  expect(lines).toContainEqual(
+    expect.stringMatching(/^review: final (pass|pass-with-notes) \(0 blocking\)$/),
+  );
   const done = lines.find((line) => DONE_LINE.test(line));
   if (done === undefined) throw new Error('stdout carries no `done:` line');
   const completed = Number(DONE_LINE.exec(done)?.[1]);

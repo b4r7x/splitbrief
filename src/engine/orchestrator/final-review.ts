@@ -4,7 +4,9 @@ import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { ContinuationHolder } from './continuation.js';
 import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
+import type { TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
+import { isTaskCompleted } from '../../core/schemas/task.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import {
   PLAN_FILE,
@@ -20,6 +22,7 @@ import {
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import {
   getRunnerCatalogDisplayName,
   getRunnerDisplayName,
@@ -50,7 +53,7 @@ import type { Reviewer } from '../reviewers/types.js';
 import { buildSummary, type SummaryBase } from './summary/build.js';
 import {
   publishError,
-  publishPlannerStatus,
+  publishReviewEvent,
   publishWarning,
   publishWarningFromError,
 } from './events.js';
@@ -94,10 +97,12 @@ import {
 } from '../../core/schemas/review.js';
 import {
   deriveReviewOutcome,
+  findingInReviewScope,
   verificationKey,
   reviewScopeFor,
   verdictCoverageErrors,
   type ReviewOutcome,
+  type ReviewScope,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
 import {
@@ -192,6 +197,7 @@ function reviewPlanData(state: WorkflowState): ReviewPlanData {
     decisions: state.plan?.decisions ?? [],
     tasks: state.tasks.map((task) => ({
       id: task.id,
+      status: isTaskCompleted(task.status) ? 'done' : 'pending',
       title: task.title,
       intent: task.description,
       criteria: task.criteria ?? [],
@@ -251,6 +257,7 @@ type ReviewVerification = {
  */
 async function verifyReviewClaims(args: {
   verdict: ReviewVerdict;
+  scope: ReviewScope;
   state: WorkflowState;
   projectDir: string;
   workspaceDir: string;
@@ -306,6 +313,7 @@ async function verifyReviewClaims(args: {
     await run('criterion', criterion.id, criterionCheckIds(criterion.id));
   }
   for (const finding of args.verdict.findings) {
+    if (!findingInReviewScope(finding, args.scope)) continue;
     if (finding.kind !== 'unverified') continue;
     const named = finding.checkIds ?? [];
     await run(
@@ -339,6 +347,7 @@ export async function runFinalReviewPhase(opts: {
   integration?: string | undefined;
   /** The cadence this review serves: 'task' is the scheduled mid-run review, 'final' the run's last. */
   scope?: 'final' | 'task' | undefined;
+  afterTaskId?: TaskId | undefined;
   /**
    * The required checks run on the candidate before the review call. New
    * failures become pending inputs in the review answer.
@@ -393,27 +402,34 @@ export async function runFinalReviewPhase(opts: {
     }
   }
 
-  // The status names the seat that runs the review, which is the planner's only when no reviewer
-  // is configured.
   const reviewRunner = resolveReviewerRunner(config).runner;
   const maxInputChars =
     reviewRunner.kind === 'cli' && isCliToolId(reviewRunner.tool)
       ? CLI_TOOL_CATALOG[reviewRunner.tool].maxInputChars
       : undefined;
   const reviewModel = getRunnerModelName(reviewRunner);
-  const reviewSeat = {
+  const reviewAxes = seatAxisWords(reviewRunner);
+  const scope = opts.scope ?? 'final';
+  const reviewEvent = {
+    scope,
+    ...(scope === 'task' && opts.afterTaskId !== undefined && { afterTaskId: opts.afterTaskId }),
     tool: getRunnerDisplayName(reviewRunner),
     ...(reviewModel !== undefined && { model: reviewModel }),
+    ...(reviewAxes.length > 0 && { axes: [...reviewAxes] }),
   };
 
   const finalReviewStart = Date.now();
   const interrupted = (): FinalReviewResult => {
     if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
-    publishPlannerStatus(bus, state, 'done', {
-      ...reviewSeat,
-      duration: Date.now() - finalReviewStart,
-      summary: 'Final review aborted',
-    });
+    publishReviewEvent(
+      { bus, phase: state.phase },
+      {
+        type: 'review_completed',
+        ...reviewEvent,
+        verdict: 'stopped',
+        duration: Date.now() - finalReviewStart,
+      },
+    );
     return {
       state,
       summaryBase,
@@ -423,8 +439,8 @@ export async function runFinalReviewPhase(opts: {
       reviewStatus: 'failed',
     };
   };
+  publishReviewEvent({ bus, phase: state.phase }, { type: 'review_started', ...reviewEvent });
   if (opts.signal?.aborted) return interrupted();
-  publishPlannerStatus(bus, state, 'running', reviewSeat);
   if (opts.scope !== 'task') {
     bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
   }
@@ -557,6 +573,7 @@ export async function runFinalReviewPhase(opts: {
           state.pendingTriage?.inputs ?? [],
           state.tasks,
           enabledReviewChecks(config, state.reviewChecks),
+          scope,
         ),
       ]) {
         ctx.addIssue({ code: 'custom', message });
@@ -618,6 +635,7 @@ export async function runFinalReviewPhase(opts: {
         feature: state.feature,
         spec,
         taskBriefs,
+        reviewKind: opts.scope ?? 'final',
         fullDiff: universe.fullDiff,
         changedFiles: universe.changedFiles,
         baseline: { head: baseline.head, runStartChangedFiles: baseline.runStartChangedFiles },
@@ -660,6 +678,7 @@ export async function runFinalReviewPhase(opts: {
         prompt: {
           spec,
           taskBriefs,
+          reviewKind: opts.scope ?? 'final',
           files: reviewScope.files,
           laterDiff: reviewScope.laterDiff,
           workspaceContext: reviewScope.workspaceContext,
@@ -795,6 +814,7 @@ export async function runFinalReviewPhase(opts: {
     const fixVerification = await runTriageVerification(opts, state, fixWork);
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
+      scope,
       state,
       projectDir,
       workspaceDir,
@@ -858,7 +878,12 @@ export async function runFinalReviewPhase(opts: {
           reviewAt: record.at,
           inputIds: [
             ...findings
-              .filter((finding) => finding.severity === 'blocking' && finding.kind !== 'unverified')
+              .filter(
+                (finding) =>
+                  finding.severity === 'blocking' &&
+                  finding.kind !== 'unverified' &&
+                  findingInReviewScope(finding, scope),
+              )
               .map((finding) => finding.id),
             ...(state.pendingTriage?.inputs ?? []).map((input) => input.id),
           ],
@@ -950,11 +975,21 @@ export async function runFinalReviewPhase(opts: {
 
   if (phaseTimings) phaseTimings.review = Date.now() - finalReviewStart;
 
-  publishPlannerStatus(bus, state, 'done', {
-    ...reviewSeat,
-    duration: Date.now() - finalReviewStart,
-    ...(writeStatus === 'failed' && { summary: 'Final review failed' }),
-  });
+  publishReviewEvent(
+    { bus, phase: state.phase },
+    {
+      type: 'review_completed',
+      ...reviewEvent,
+      verdict: verdict?.outcome.kind ?? 'no-verdict',
+      ...(verdict !== null && {
+        findings: {
+          blocking: verdict.outcome.blocking.length,
+          minor: verdict.outcome.minor.length,
+        },
+      }),
+      duration: Date.now() - finalReviewStart,
+    },
+  );
 
   // The packet is the final review's artifact; a task-cadence review writes only
   // review.json and review.md.

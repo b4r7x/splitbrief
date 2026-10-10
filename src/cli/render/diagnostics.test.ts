@@ -96,6 +96,9 @@ beforeEach(() => {
   };
   vi.spyOn(process.stdout, 'write').mockImplementation(record);
   vi.spyOn(process.stderr, 'write').mockImplementation(record);
+  vi.spyOn(process, 'exit').mockImplementation(() => {
+    throw new Error('Unexpected process exit');
+  });
   ink.script.fullscreen = undefined;
   ink.script.inline = undefined;
 });
@@ -122,7 +125,7 @@ describe('renderApp diagnostics ownership', () => {
       },
     };
 
-    await renderApp(createElement(Fragment), { fullscreen: true, projectDir });
+    await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
 
     expect(debugLog()).toContain(`[diagnostics] ${notice}`);
     expect(rawDiagnosticWrites()).toEqual([]);
@@ -135,7 +138,7 @@ describe('renderApp diagnostics ownership', () => {
     };
 
     await expectPriorOwnerRestored(() =>
-      renderApp(createElement(Fragment), { fullscreen: true, projectDir }),
+      renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() }),
     );
 
     expect(feedbackDuringMount).toEqual([`${DIAGNOSTIC}: recoverable`]);
@@ -156,7 +159,7 @@ describe('renderApp diagnostics ownership', () => {
     };
 
     await expectPriorOwnerRestored(() =>
-      renderApp(createElement(Fragment), { fullscreen: true, projectDir }),
+      renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() }),
     );
 
     expect(debugLog()).toContain('Fullscreen init failed, falling back to inline mode');
@@ -223,7 +226,7 @@ describe('renderApp diagnostics ownership', () => {
     };
 
     try {
-      await renderApp(createElement(Fragment), { fullscreen: true, projectDir });
+      await renderApp(createElement(Fragment), { fullscreen: true, projectDir }, { exit: vi.fn() });
     } finally {
       unsubscribe();
     }

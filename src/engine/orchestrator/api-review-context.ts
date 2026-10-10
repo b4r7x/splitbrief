@@ -50,6 +50,7 @@ export type ApiReviewContextInput = Readonly<{
   fixCycle: number;
   spec: string;
   taskBriefs: string;
+  reviewKind?: 'task' | 'final' | undefined;
   /** The run universe's whole diff. This seat is never given a cut one. */
   fullDiff: string;
   changedFiles: readonly string[];
@@ -246,6 +247,7 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
   const prompt = buildFinalReviewPrompt({
     spec,
     taskBriefs,
+    reviewKind: input.reviewKind,
     pendingInputs: input.pendingInputs,
     fixCycle: input.fixCycle,
     ...(input.reviewScope === undefined

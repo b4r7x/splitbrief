@@ -168,6 +168,8 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
 10. **Stop**: `ctrl+c` stops active work; another press quits after cleanup. `esc` opens the inline stop menu; another `esc` stops resumably. The state records `interruptedStep`, including whether the stop cut a call or landed at a boundary. `/resume` continues it. `/end` uses the shared close path, preserving unapplied workspace work first. See [WORKFLOW.md](./WORKFLOW.md#4-abort--continue--queue) and [Global keys](./SLASH-COMMANDS-REFERENCE.md#global-any-screen).
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` derives the run's status, writes `summary.json`, and releases `.splitbrief/active` only if the run closed. The UI does not unmount: the run settles at rest on the screen it was already on, and the route's `execution` flips to `at-rest`.
 
+TUI quit tears down stores and cancels the current preparation. Detection shutdown refuses new cache saves and refreshes, cancels refresh lanes, and waits for accepted saves. Cleanup then drains registered processes, waits for workflow shutdown, and restores the terminal. `renderApp()` then ends the process with the selected exit code. A caller-requested unmount returns after cleanup so the caller can report an error. The process registry owns child termination timing.
+
 ---
 
 ## Planner / implementer symmetry
@@ -735,7 +737,7 @@ src/
 │       │                          divider, feedback-row, frame-panel, header,
 │       │                          input-footer, prompt-body, question-prompt,
 │       │                          rail, review-view.tsx, sidebar
-│       ├── display/               activity-display-text, local-share,
+│       ├── display/               activity-display-text,
 │       │                          runner-activity-display
 │       ├── handlers.ts            Runtime command context actions
 │       ├── at-rest.ts             Rail + composer contract when nothing runs
@@ -883,6 +885,12 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`
+
+**Review lifecycle (2):**
+
+`review_started`, `review_completed`. `runFinalReviewPhase` publishes both scopes, `task` and `final`, with one completion per start. A `preReview` halt publishes neither. Both events carry the review seat's `tool`, optional `model`, and nonempty effort `axes`. Task scope also carries `afterTaskId`; final scope omits it. The planner holds the review seat when no reviewer is configured.
+
+`review_completed` carries `duration` in milliseconds and a verdict: `pass`, `pass-with-notes`, `fail`, `no-verdict`, or `stopped`. The first three carry `findings`, with blocking and minor counts from the derived outcome. Failed calls use `no-verdict`; stops use `stopped`; both omit findings. Neither review event fires a hook. The review seat publishes no `planner_status`.
 
 **Planning milestones (19):**
 `spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`. The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/session.ts`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `mode_resolved`, `mode_advice`, `instant_plan_received` and `drift_chain_detected` have no producer now and stay so older logs replay. The `brief_quality_*` and `brief_readiness_*` events no longer replay under the recorded detail-loss decision for sessions older than S7.

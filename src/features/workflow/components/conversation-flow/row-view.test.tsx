@@ -22,8 +22,7 @@ afterAll(() => {
   else process.env['FORCE_COLOR'] = originalForceColor;
 });
 
-const DONE_MARK = glyph('statusDone');
-const ACTIVITY_DONE_MARK = glyph('stageDone');
+const DONE_MARK = glyph('stageDone');
 const QUEUED_MARK = glyph('statusPending');
 const LIVE_MARK = glyph('statusInProgress');
 const FOCUS_MARK = glyph('liveBar');
@@ -61,13 +60,13 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     const active = renderFeature(<ConversationRowView row={activeRow} lifecycle="live" />);
     const activeFrame = active.lastFrame() ?? '';
     expect(activeFrame).toContain(LIVE_MARK);
-    expect(activeFrame).not.toContain(ACTIVITY_DONE_MARK);
+    expect(activeFrame).not.toContain(DONE_MARK);
     expect(activeFrame).toContain('reading src/a.ts');
     active.unmount();
 
     const steady = renderFeature(<ConversationRowView row={activeRow} lifecycle="done" />);
     const steadyFrame = steady.lastFrame() ?? '';
-    expect(steadyFrame).toContain(ACTIVITY_DONE_MARK);
+    expect(steadyFrame).toContain(DONE_MARK);
     expect(steadyFrame).not.toContain(LIVE_MARK);
     expect(steadyFrame).toContain('reading src/a.ts');
     steady.unmount();
@@ -314,7 +313,7 @@ describe('ConversationRowView color-off degradation', () => {
     const queued = renderFeature(<ConversationRowView row={header} lifecycle="queued" />);
 
     expect(live.lastFrame() ?? '').toContain(LIVE_MARK);
-    expect(done.lastFrame() ?? '').toContain(ACTIVITY_DONE_MARK);
+    expect(done.lastFrame() ?? '').toContain(DONE_MARK);
     expect(queued.lastFrame() ?? '').toContain(QUEUED_MARK);
 
     live.unmount();

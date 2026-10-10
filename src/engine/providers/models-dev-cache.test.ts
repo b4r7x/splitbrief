@@ -155,6 +155,33 @@ describe('models.dev user cache', () => {
     });
   });
 
+  it('does not write the cache when aborted during 304 body cancellation', async () => {
+    responses.push({ status: 200, body: JSON.stringify(catalog()) });
+    await refreshModelsDevCatalogCache(options());
+    const cachePath = resolveModelsDevCatalogCachePath(options());
+    const before = readFileSync(cachePath, 'utf8');
+    const cached = await loadModelsDevCatalogCache(options());
+    currentTime += 1_000;
+    const controller = new AbortController();
+    const reason = new Error('Refresh cancelled');
+    const response = new Response(null, { status: 304 });
+    const cancel = vi.fn(async () => {
+      await Promise.resolve();
+      controller.abort(reason);
+    });
+    Object.defineProperty(response, 'body', { value: new ReadableStream({ cancel }) });
+
+    await expect(
+      refreshModelsDevCatalogCache(
+        options({ signal: controller.signal, fetch: async () => response }),
+      ),
+    ).rejects.toBe(reason);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(readFileSync(cachePath, 'utf8')).toBe(before);
+    expect(await loadModelsDevCatalogCache(options())).toEqual(cached);
+  });
+
   it('uses the user-level path with owner-only modes and atomically replaces a valid catalog', async () => {
     responses.push({ status: 200, body: JSON.stringify(catalog('model-a')) });
     await expect(refreshModelsDevCatalogCache(options())).resolves.toMatchObject({

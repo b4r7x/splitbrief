@@ -88,6 +88,7 @@ beforeEach(() => {
   vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
     loadDetection: async () => ({ providers: [], cliTools: [], catalog: null, cliModels: [] }),
     refreshDetection: vi.fn(),
+    shutdown: async () => {},
   });
   vi.mocked(globalThis.fetch).mockImplementation(async () => new Response('{}', { status: 200 }));
   savedContextLengthEnv = process.env.SPLITBRIEF_CONTEXT_LENGTH;
@@ -143,6 +144,7 @@ describe('initStores', () => {
     vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),
+      shutdown: async () => {},
     });
 
     await initStores(dir);
@@ -203,6 +205,7 @@ describe('initStores', () => {
     vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),
+      shutdown: async () => {},
     });
 
     const initialization = initStores(dir);
@@ -298,6 +301,7 @@ describe('initStores', () => {
     vi.spyOn(detectionServiceModule, 'getDefaultDetectionService').mockReturnValue({
       loadDetection,
       refreshDetection: vi.fn(),
+      shutdown: async () => {},
     });
 
     const initialization = initStores(dir);

@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import type { ReviewVerdict } from '../schemas/review.js';
 import { taskId } from '../schemas/task.js';
-import { deriveReviewOutcome, type ReviewScope, verdictCoverageErrors } from './verdict.js';
+import type { ReviewRecord } from '../schemas/workflow.js';
+import {
+  deriveReviewOutcome,
+  findingInReviewScope,
+  reviewOutcomeOf,
+  type ReviewScope,
+  verdictCoverageErrors,
+} from './verdict.js';
 
 type Finding = ReviewVerdict['findings'][number];
 
-const scope: ReviewScope = { taskIds: ['T001'], criterionIds: ['C1'] };
+const scope: ReviewScope = { kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] };
+const taskScope: ReviewScope = {
+  kind: 'task',
+  taskIds: ['T001', 'T002', 'T003', 'T004'],
+  criterionIds: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9'],
+};
 
 function task(id: string, plan: 'met' | 'partial' | 'missed' = 'met') {
   return { id: taskId(id), plan, note: '' };
@@ -101,6 +113,158 @@ describe('verdictCoverageErrors', () => {
 });
 
 describe('deriveReviewOutcome', () => {
+  it('records findings outside a task review scope and keeps scoped blockers', () => {
+    const outside = [
+      finding({ id: 'F1', severity: 'blocking', text: 'C10/C11 not implemented' }),
+      finding({ id: 'F3', severity: 'blocking', taskId: 'T005' }),
+      finding({ id: 'F4', severity: 'blocking', taskId: 'T004', criterionId: 'C10' }),
+    ];
+    const scoped = finding({
+      id: 'F2',
+      severity: 'blocking',
+      taskId: 'T004',
+      criterionId: 'C6',
+      text: 'Time-zone tests miss an offset',
+    });
+    const verdict = makeVerdict({
+      tasks: taskScope.taskIds.map((id) => task(id)),
+      criteria: taskScope.criterionIds.map((id) => criterion(id)),
+      findings: [...outside, scoped],
+    });
+    const failed = deriveReviewOutcome(verdict, taskScope, verification());
+    expect(failed.outOfScope).toEqual(outside);
+    expect(failed.blocking).toEqual([scoped]);
+    expect(failed.kind).toBe('fail');
+    expect(failed.coverageErrors).toEqual([]);
+
+    const noted = deriveReviewOutcome({ ...verdict, findings: outside }, taskScope, verification());
+    expect(noted.outOfScope).toEqual(outside);
+    expect(noted.blocking).toEqual([]);
+    expect(noted.kind).toBe('pass-with-notes');
+    expect(noted.coverageErrors).toEqual([]);
+  });
+
+  it('classifies task scope before unverified findings', () => {
+    const outside = [
+      finding({ id: 'F1', kind: 'unverified', severity: 'blocking' }),
+      finding({ id: 'F3', kind: 'unverified', checkIds: ['K1'] }),
+    ];
+    const scoped = finding({
+      id: 'F2',
+      kind: 'unverified',
+      severity: 'blocking',
+      taskId: 'T004',
+      criterionId: 'C6',
+    });
+    const verdict = makeVerdict({
+      tasks: taskScope.taskIds.map((id) => task(id)),
+      criteria: taskScope.criterionIds.map((id) => criterion(id)),
+      findings: [...outside, scoped],
+    });
+    for (const status of [undefined, 'pass', 'fail'] as const) {
+      const checked = verification(
+        status === undefined
+          ? []
+          : [
+              ['finding:F1', status],
+              ['finding:F2', status],
+              ['finding:F3', status],
+            ],
+      );
+      const outcome = deriveReviewOutcome(verdict, taskScope, checked);
+      expect(outcome.outOfScope).toEqual(outside);
+      expect(outcome.coverageErrors).toEqual([]);
+      expect(outcome.blocking).toEqual(status === 'pass' ? [] : [scoped]);
+      expect(outcome.minor).toEqual(status === 'pass' ? [scoped] : []);
+      expect(outcome.kind).toBe(status === 'pass' ? 'pass-with-notes' : 'fail');
+    }
+  });
+
+  it('an out-of-scope finding cannot answer a failed scoped result', () => {
+    const verdict = makeVerdict({
+      tasks: taskScope.taskIds.map((id) => task(id, id === 'T004' ? 'partial' : 'met')),
+      criteria: taskScope.criterionIds.map((id) => criterion(id, id === 'C6' ? 'fail' : 'pass')),
+      findings: [finding({ severity: 'blocking' })],
+    });
+    expect(verdictCoverageErrors(verdict, taskScope)).toEqual([
+      'Task T004 is partial and no blocking finding names it.',
+      'Criterion C6 failed and no blocking finding names it.',
+    ]);
+    const namesBoth = {
+      ...verdict,
+      findings: [
+        finding({ id: 'F1', severity: 'blocking', taskId: 'T004', criterionId: 'C10' }),
+        finding({ id: 'F2', severity: 'blocking', taskId: 'T005', criterionId: 'C6' }),
+      ],
+    };
+    expect(verdictCoverageErrors(namesBoth, taskScope)).toEqual(
+      verdictCoverageErrors(verdict, taskScope),
+    );
+  });
+
+  it('a stored task review derives the same outcome', () => {
+    const verdict = makeVerdict({
+      tasks: taskScope.taskIds.map((id) => task(id)),
+      criteria: taskScope.criterionIds.map((id) => criterion(id)),
+      findings: [
+        finding({ severity: 'blocking' }),
+        finding({
+          id: 'F2',
+          kind: 'unverified',
+          severity: 'blocking',
+          taskId: 'T004',
+          criterionId: 'C6',
+        }),
+      ],
+    });
+    const record: ReviewRecord = {
+      scope: 'task',
+      cycle: 0,
+      verdict,
+      outcome: 'pass-with-notes',
+      verification: [{ id: 'finding:F2', status: 'pass', output: '' }],
+      at: '2026-10-10T10:00:00.000Z',
+    };
+    expect(reviewOutcomeOf(record)).toEqual(
+      deriveReviewOutcome(verdict, taskScope, verification([['finding:F2', 'pass']])),
+    );
+    const legacy = reviewOutcomeOf({ ...record, scope: undefined });
+    expect(legacy.kind).toBe('fail');
+    expect(legacy.blocking.map((entry) => entry.id)).toEqual(['F1']);
+    expect(legacy.outOfScope).toEqual([]);
+  });
+
+  it('the final review still blocks a missing criterion and a null-id defect', () => {
+    const finalScope: ReviewScope = {
+      kind: 'final',
+      taskIds: ['T005'],
+      criterionIds: ['C10'],
+    };
+    const missing = finding({ severity: 'blocking', criterionId: 'C10' });
+    const verdict = makeVerdict({
+      tasks: [task('T005')],
+      criteria: [criterion('C10', 'fail')],
+      findings: [missing],
+    });
+    const failed = deriveReviewOutcome(verdict, finalScope, verification());
+    expect(failed.kind).toBe('fail');
+    expect(failed.blocking).toEqual([missing]);
+    expect(failed.outOfScope).toEqual([]);
+    expect(failed.coverageErrors).toEqual([]);
+    expect(verdictCoverageErrors({ ...verdict, criteria: [] }, finalScope)).toEqual([
+      'Criterion C10 is missing from the verdict.',
+    ]);
+    const defect = finding({ severity: 'blocking' });
+    const unnamed = deriveReviewOutcome(
+      { ...verdict, criteria: [criterion('C10')], findings: [defect] },
+      finalScope,
+      verification(),
+    );
+    expect(unnamed.kind).toBe('fail');
+    expect(unnamed.blocking).toEqual([defect]);
+    expect(unnamed.outOfScope).toEqual([]);
+  });
+
   it('keeps a finding check separate from a criterion with the same id', () => {
     const verdict = makeVerdict({
       criteria: [criterion('C1', 'unverified')],
@@ -191,5 +355,21 @@ describe('deriveReviewOutcome', () => {
     expect(passedCheck.kind).toBe('pass-with-notes');
     expect(passedCheck.blocking).toEqual([]);
     expect(passedCheck.minor).toHaveLength(1);
+  });
+});
+
+describe('findingInReviewScope', () => {
+  it.each([
+    { taskId: 'T004', criterionId: null, included: true },
+    { taskId: null, criterionId: 'C6', included: true },
+    { taskId: 'T004', criterionId: 'C6', included: true },
+    { taskId: 'T004', criterionId: 'C10', included: false },
+    { taskId: 'T005', criterionId: 'C6', included: false },
+    { taskId: 'T005', criterionId: null, included: false },
+    { taskId: null, criterionId: null, included: false },
+  ])('checks task $taskId and criterion $criterionId against both ids', (entry) => {
+    const candidate = finding({ ...entry, checkIds: ['K1'] });
+    expect(findingInReviewScope(candidate, taskScope)).toBe(entry.included);
+    expect(findingInReviewScope(candidate, scope)).toBe(true);
   });
 });

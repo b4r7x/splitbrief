@@ -1,27 +1,61 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { createElement, Fragment } from 'react';
 import { withFullScreen } from 'fullscreen-ink';
+import { render } from 'ink';
 import { terminalBackgroundStore } from '../../stores/ui/terminal-background.js';
 import { processError } from '../../lib/process/errors.js';
 import { createCrashHandler, createTerminationHandler } from './process-lifecycle.js';
 import { createCrashListener, createTerminationSignalListener, renderApp } from './app.js';
 
+const lifecycle = vi.hoisted(() => ({
+  teardownStores: vi.fn<() => void | Promise<void>>(),
+  shutdownDetection: vi.fn<() => Promise<void>>(),
+  killAllProcesses: vi.fn<() => Promise<void>>(),
+  awaitActiveWorkflowShutdown: vi.fn<() => Promise<void>>(),
+}));
+
+vi.mock('../init-stores.js', () => ({ teardownStores: lifecycle.teardownStores }));
+vi.mock('../../engine/detection/service.js', () => ({
+  getDefaultDetectionService: () => ({ shutdown: lifecycle.shutdownDetection }),
+}));
+vi.mock('../../lib/process/registry.js', () => ({ killAllProcesses: lifecycle.killAllProcesses }));
+vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', () => ({
+  awaitActiveWorkflowShutdown: lifecycle.awaitActiveWorkflowShutdown,
+}));
+
 vi.mock('ink', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ink')>();
   return {
     ...actual,
-    render: vi.fn(() => ({ waitUntilExit: () => Promise.resolve() })),
+    render: vi.fn(),
   };
 });
 
 vi.mock('fullscreen-ink', () => ({
-  withFullScreen: vi.fn(() => ({
-    start: () => Promise.resolve(),
-    waitUntilExit: () => Promise.resolve(),
-    instance: { unmount: () => {} },
-  })),
+  withFullScreen: vi.fn(),
 }));
+
+function inkInstance(
+  waitUntilExit: () => Promise<void> = async () => {},
+  unmount: () => void = () => {},
+) {
+  return { waitUntilExit, unmount, rerender: () => {}, cleanup: () => {}, clear: () => {} };
+}
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(render).mockReturnValue(inkInstance());
+  vi.mocked(withFullScreen).mockReturnValue({
+    start: async () => {},
+    waitUntilExit: async () => {},
+    instance: inkInstance(),
+  });
+  lifecycle.teardownStores.mockResolvedValue(undefined);
+  lifecycle.shutdownDetection.mockResolvedValue(undefined);
+  lifecycle.killAllProcesses.mockResolvedValue(undefined);
+  lifecycle.awaitActiveWorkflowShutdown.mockResolvedValue(undefined);
+});
 
 describe('renderApp background detection', () => {
   it.each([
@@ -57,7 +91,7 @@ describe('renderApp background detection', () => {
     vi.mocked(withFullScreen).mockClear();
     terminalBackgroundStore.reset();
     try {
-      await renderApp(createElement(Fragment), { fullscreen, mouse: false });
+      await renderApp(createElement(Fragment), { fullscreen, mouse: false }, { exit: vi.fn() });
 
       expect(writes.includes('\u001b]11;?\u001b\\')).toBe(probe);
       expect(terminalBackgroundStore.get()).toBe(probe ? '#24273a' : undefined);
@@ -74,6 +108,157 @@ describe('renderApp background detection', () => {
       input.destroy();
       output.destroy();
     }
+  });
+});
+
+describe('renderApp completion', () => {
+  it.each(['fullscreen', 'inline', 'fallback'] as const)(
+    'exits once after all cleanup barriers on the %s path',
+    async (path) => {
+      const inkExit = Promise.withResolvers<void>();
+      const barriers = Array.from({ length: 4 }, () => Promise.withResolvers<void>());
+      const owners = [
+        lifecycle.teardownStores,
+        lifecycle.shutdownDetection,
+        lifecycle.killAllProcesses,
+        lifecycle.awaitActiveWorkflowShutdown,
+      ];
+      owners.forEach((owner, index) => {
+        const barrier = barriers[index];
+        if (barrier === undefined) throw new Error('Missing cleanup barrier');
+        owner.mockImplementation(() => barrier.promise);
+      });
+      vi.mocked(render).mockReturnValueOnce(
+        inkInstance(
+          () => inkExit.promise,
+          () => inkExit.resolve(),
+        ),
+      );
+      vi.mocked(withFullScreen).mockImplementationOnce(() => ({
+        start: () =>
+          path === 'fallback'
+            ? Promise.reject(new Error('fullscreen unavailable'))
+            : Promise.resolve(),
+        waitUntilExit: () => inkExit.promise,
+        instance: inkInstance(
+          () => inkExit.promise,
+          () => inkExit.resolve(),
+        ),
+      }));
+      const writes: string[] = [];
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+        writes.push(String(chunk));
+        return true;
+      });
+      const exit = vi.fn(() => {
+        if (path !== 'inline') expect(writes).toContain('\x1b[?1049l');
+      });
+      const rendering = renderApp(
+        createElement(Fragment),
+        { fullscreen: path !== 'inline', unmountSignal: new AbortController().signal },
+        { exit },
+      );
+      try {
+        expect(exit).not.toHaveBeenCalled();
+        inkExit.resolve();
+        for (const [index, owner] of owners.entries()) {
+          await vi.waitFor(() => expect(owner).toHaveBeenCalledOnce());
+          expect(exit).not.toHaveBeenCalled();
+          barriers[index]?.resolve();
+        }
+        await rendering;
+        expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+      } finally {
+        inkExit.resolve();
+        barriers.forEach((barrier) => {
+          barrier.resolve();
+        });
+        await rendering;
+        stdout.mockRestore();
+      }
+    },
+  );
+
+  it.each([true, false])(
+    'returns control after a handoff unmount, fullscreen=%s',
+    async (fullscreen) => {
+      const unmount = new AbortController();
+      const inkExit = Promise.withResolvers<void>();
+      const instance = inkInstance(
+        () => inkExit.promise,
+        () => inkExit.resolve(),
+      );
+      vi.mocked(render).mockReturnValueOnce(instance);
+      vi.mocked(withFullScreen).mockReturnValueOnce({
+        start: async () => {},
+        waitUntilExit: instance.waitUntilExit,
+        instance,
+      });
+      const exit = vi.fn();
+      const rendering = renderApp(
+        createElement(Fragment),
+        {
+          fullscreen,
+          unmountSignal: unmount.signal,
+        },
+        { exit },
+      );
+      unmount.abort();
+      await rendering;
+      expect(lifecycle.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce();
+      expect(exit).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['render', 'cleanup'] as const)(
+    'propagates a %s failure without exiting',
+    async (failure) => {
+      const error = new Error(`${failure} failed`);
+      vi.mocked(render).mockReturnValueOnce(
+        inkInstance(async () => {
+          if (failure === 'render') throw error;
+        }),
+      );
+      if (failure === 'cleanup') lifecycle.killAllProcesses.mockRejectedValueOnce(error);
+      const exit = vi.fn();
+      await expect(
+        renderApp(createElement(Fragment), { fullscreen: false }, { exit }),
+      ).rejects.toBe(error);
+      expect(exit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('uses the selected process exit code', async () => {
+    const previous = process.exitCode;
+    const exit = vi.fn();
+    process.exitCode = 7;
+    try {
+      await renderApp(createElement(Fragment), { fullscreen: false }, { exit });
+      expect(exit).toHaveBeenCalledExactlyOnceWith(7);
+    } finally {
+      process.exitCode = previous;
+    }
+  });
+
+  it('exits once with the signal code when termination races Ink completion', async () => {
+    const inkExit = Promise.withResolvers<void>();
+    const workflow = Promise.withResolvers<void>();
+    lifecycle.awaitActiveWorkflowShutdown.mockImplementation(() => workflow.promise);
+    vi.mocked(render).mockReturnValueOnce(
+      inkInstance(
+        () => inkExit.promise,
+        () => inkExit.resolve(),
+      ),
+    );
+    const exit = vi.fn();
+    const rendering = renderApp(createElement(Fragment), { fullscreen: false }, { exit });
+    process.emit('SIGTERM', 'SIGTERM');
+    inkExit.resolve();
+    await vi.waitFor(() => expect(lifecycle.awaitActiveWorkflowShutdown).toHaveBeenCalledOnce());
+    expect(exit).not.toHaveBeenCalled();
+    workflow.resolve();
+    await rendering;
+    expect(exit).toHaveBeenCalledExactlyOnceWith(143);
   });
 });
 

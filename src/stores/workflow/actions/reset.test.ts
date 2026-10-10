@@ -57,7 +57,7 @@ describe('resetWorkflow', () => {
     expect(eventsStore.get().events).toEqual([]);
     expect(tasksStore.get().currentTask).toBe(0);
     expect(tasksStore.get().totalTasks).toBe(0);
-    expect(tokensStore.get().localCount).toBe(0);
+    expect(tokensStore.get().completedTaskCount).toBe(0);
     expect(lifecycleStore.get().phase).toBe('idle');
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);

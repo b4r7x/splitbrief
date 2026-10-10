@@ -4,6 +4,7 @@ import { StopMenu } from '../../features/workflow/stop/menu.js';
 import { readStopMenuRows, stopMenuLayout } from '../../features/workflow/stop/options.js';
 import { ResultMenu } from '../../features/workflow/result/menu.js';
 import { resultMenuHeight } from '../../features/workflow/result/options.js';
+import { resultMenuStore } from '../../stores/workflow/result-menu.js';
 import { ReviewChecksCard } from '../../features/workflow/review-checks/card.js';
 import { reviewChecksCardLayout } from '../../features/workflow/review-checks/options.js';
 import { reviewChecksPromptStore } from '../../stores/review-checks-prompt/prompt.js';
@@ -262,6 +263,10 @@ export function WorkflowScreen({
             questionWriting: questionState.focus === 'answer',
             cols,
           });
+  useLayoutEffect(() => {
+    resultMenuStore.setHeight(resultMenuOpen ? requestedPromptRows : null);
+    return () => resultMenuStore.reset();
+  }, [resultMenuOpen, requestedPromptRows]);
   const progressRows = getProgressRows({
     phase: model.phase,
     cols,

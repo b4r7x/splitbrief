@@ -67,6 +67,11 @@ import { resolveImplementerProfiles } from '../../../core/config/accessors/imple
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
 import { readRunEvents } from '../../events/replay.js';
 import { makePassingPlanner } from '#testing/helpers/planning-phase.js';
+import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
+import {
+  captureChangedFilesBaseline,
+  serializeChangedFilesBaseline,
+} from '../changed-files-baseline.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
 import {
@@ -1688,6 +1693,50 @@ describe('runWorkflow — createBranch', () => {
 const implementingState = makeImplStateWithMetadata;
 
 describe('runWorkflow — recovery resume', () => {
+  it('resumes final review without publishing planner_status before review_started', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'resume-final-review';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const savedState = persistReadyExecutionState(
+      ref,
+      makeImplStateWithMetadata([makeTask({ id: 'T001', status: 'done' })], {
+        phase: 'final-review',
+        currentTaskIndex: 1,
+        changedFilesBaseline: serializeChangedFilesBaseline(
+          await captureChangedFilesBaseline(projectDir),
+        ),
+      }),
+    );
+    const events: EngineEvent[] = [];
+    await runWorkflow({
+      feature: savedState.feature,
+      projectDir,
+      sessionId,
+      savedState,
+      config: makeConfig({
+        validation: { endChecks: false },
+        workflow: { approve: 'none' },
+      }),
+      callbacks: makeCallbacks().callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      _eventSink: (event) => events.push(event),
+      _planner: makePassingPlanner(),
+      _implementer: makeImplementer(),
+    });
+    const reviewStart = events.findIndex((event) => event.type === 'review_started');
+    expect(reviewStart).toBeGreaterThan(-1);
+    expect(events.slice(0, reviewStart).some((event) => event.type === 'workflow_resumed')).toBe(
+      true,
+    );
+    expect(events.slice(0, reviewStart).filter((event) => event.type === 'planner_status')).toEqual(
+      [],
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'review_completed', verdict: 'pass' }),
+    );
+  });
+
   it('preserves the active session when a saved pending recovery stops before planner availability checks', async () => {
     const projectDir = setupProject();
     const sessionId = 'sess-run-recovery';

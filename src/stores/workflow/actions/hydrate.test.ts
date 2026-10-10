@@ -76,8 +76,6 @@ describe('hydrateFromState', () => {
     expect(tasksStore.get().taskMap.get('T002')?.action).toBe('modify');
     expect(tasksStore.get().taskMap.get('T002')?.route).toBeUndefined();
     expect(tokensStore.get().tokenUsage).toEqual(makeUsage());
-    expect(tokensStore.get().localCount).toBe(2);
-    expect(tokensStore.get().escalatedCount).toBe(0);
     expect(tokensStore.get().completedTaskCount).toBe(2);
     expect(tokensStore.get().pricingContext).toEqual({
       plannerTool: 'claude-code',
@@ -285,37 +283,6 @@ describe('hydrateFromState', () => {
       currentCodeContextMode: 'function-level',
       routingReason: 'selected cheapest capable profile',
     });
-    expect(tokensStore.get().localCount).toBe(1);
-    expect(tokensStore.get().escalatedCount).toBe(0);
-  });
-
-  it('classifies escalated-intermediate methods as escalated even with legacy done status', () => {
-    hydrateFromState({
-      stateVersion: 1,
-      phase: 'implementing',
-      feature: 'f',
-      currentTaskIndex: 1,
-      attempt: 0,
-      tasks: [makeTask({ id: 'T001', status: 'done' })],
-      plannerSessionId: null,
-      startedAt: new Date().toISOString(),
-      tokenUsage: makeUsage({ implementerInput: 100, implementerOutput: 50 }),
-      awaitingContinue: false,
-      messageQueue: [],
-      taskBreakdowns: [
-        {
-          taskId: taskId('T001'),
-          taskTitle: 'Intermediate task',
-          method: 'escalated-intermediate',
-          implementerTokens: 150,
-          escalationTokens: 0,
-          retryCount: 1,
-        },
-      ],
-    });
-
-    expect(tokensStore.get().localCount).toBe(0);
-    expect(tokensStore.get().escalatedCount).toBe(1);
   });
 
   it('counts pending queue depth from undrained non-native messages', () => {

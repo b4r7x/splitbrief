@@ -109,6 +109,7 @@ export interface DetectionService {
    * configuration. The service deliberately retains no prior dependencies.
    */
   refreshDetection(input?: DetectionRefreshInput): Promise<DetectionServiceResult>;
+  shutdown(): Promise<void>;
 }
 
 const READINESS_TTL_MS = 5 * 60 * 1_000;
@@ -260,6 +261,7 @@ export function createDetectionService() {
   let clock: () => number = Date.now;
   const coordinator = createDetectionCoordinator({ now: () => clock() });
   let pendingSave: Promise<void> = Promise.resolve();
+  let acceptingSaves = true;
   let nextGeneration = 0;
   const pendingLoads = new Map<string, PendingLoad>();
   const persistedRequestIds = new Set<number>();
@@ -322,6 +324,7 @@ export function createDetectionService() {
       cliModels: DetectionSourceOutcome<CliModelSnapshot>;
     }>,
   ): void {
+    if (!acceptingSaves) return;
     const projectDir = input.projectDir;
     if (projectDir === undefined || input.outcome.kind !== 'fresh') return;
     // A TTL-hydrated readiness snapshot still persists when the CLI catalog
@@ -536,7 +539,13 @@ export function createDetectionService() {
     return pendingSave;
   }
 
-  return { loadDetection, invalidateDetection, refreshDetection, getPendingSave };
+  function shutdown(): Promise<void> {
+    acceptingSaves = false;
+    coordinator.shutdown();
+    return getPendingSave();
+  }
+
+  return { loadDetection, invalidateDetection, refreshDetection, getPendingSave, shutdown };
 }
 
 const defaultService = createDetectionService();

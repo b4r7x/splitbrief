@@ -61,7 +61,7 @@ describe('briefsSectionRows', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain(`   Briefs ${glyph('divider')}`);
-    expect(frame).toContain(` ${glyph('check')} T001 Add validator module`);
+    expect(frame).toContain(` ${glyph('stageDone')} T001 Add validator module`);
     expect(frame).toContain(` ${glyph('statusEscalated')} T002 Wire the validator in`);
     expect(frame).toContain('2 retries');
 

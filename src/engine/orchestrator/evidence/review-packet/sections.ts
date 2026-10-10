@@ -345,7 +345,6 @@ export function buildRun(
     completedAt: latestWorkflowComplete(events),
     totalTimeMs: opts.summary.totalTime,
     totalTasks: opts.summary.totalTasks,
-    completedLocally: opts.summary.completedByLocal,
     escalated: opts.summary.escalatedToPlanner,
     skipped: opts.summary.skipped,
     failed: opts.summary.failed,

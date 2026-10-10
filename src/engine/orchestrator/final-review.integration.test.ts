@@ -245,6 +245,30 @@ describe('runFinalReviewPhase continuation', () => {
 });
 
 describe('runFinalReviewPhase', () => {
+  it('publishes no review events when preReview halts', async () => {
+    const { projectDir, sessionId, runStartHead } = setupProject();
+    const { bus, events } = makeBusRecorder();
+    const { reviewer } = makeReviewer();
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig(),
+      callbacks: makeCallbacks().callbacks,
+      bus,
+      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      reviewer,
+      preReview: async (state) => ({ state, kind: 'stopped' }),
+    });
+    expect(result.preReview).toBe('stopped');
+    expect(reviewer.typedCall).not.toHaveBeenCalled();
+    expect(
+      events.filter(
+        (event) => event.type === 'review_started' || event.type === 'review_completed',
+      ),
+    ).toEqual([]);
+  });
+
   it('tracks the final-review phase before the reviewer is called', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
@@ -333,10 +357,22 @@ describe('runFinalReviewPhase', () => {
     expect(record.cycle).toBe(0);
     expect(result.state.review).toEqual(record);
 
-    const statusEvents = events.filter((e) => e.type === 'planner_status');
-    expect(statusEvents.length).toBeGreaterThanOrEqual(2);
-    expect(statusEvents[0]).toMatchObject({ status: 'running' });
-    expect(statusEvents.at(-1)).toMatchObject({ status: 'done' });
+    expect(events.filter((event) => event.type === 'review_started')).toEqual([
+      expect.objectContaining({ scope: 'final', tool: 'claude-code' }),
+    ]);
+    const completionsEvents = events.filter((event) => event.type === 'review_completed');
+    expect(completionsEvents).toEqual([
+      expect.objectContaining({
+        scope: 'final',
+        tool: 'claude-code',
+        verdict: 'fail',
+        findings: { blocking: 1, minor: 0 },
+      }),
+    ]);
+    expect(completionsEvents[0]?.duration).toBeGreaterThanOrEqual(0);
+    expect(completionsEvents[0]).not.toHaveProperty('afterTaskId');
+    expect(completionsEvents[0]).not.toHaveProperty('axes');
+    expect(events.filter((event) => event.type === 'planner_status')).toEqual([]);
 
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     const packetPath = join(sessionDir(projectDir, sessionId), REVIEW_PACKET_JSON_FILE);
@@ -370,13 +406,14 @@ describe('runFinalReviewPhase', () => {
       ],
     }));
 
+    const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
       projectDir,
       workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig(),
       callbacks: makeCallbacks().callbacks,
-      bus: makeBusRecorder().bus,
+      bus,
       state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
       reviewer,
       metadata: TEST_METADATA,
@@ -387,6 +424,12 @@ describe('runFinalReviewPhase', () => {
     expect(result.reviewStatus).toBe('written');
     expect(result.verdict?.outcome.kind).toBe('pass-with-notes');
     expect(result.verdict?.outcome.minor).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'review_completed')).toEqual([
+      expect.objectContaining({
+        verdict: 'pass-with-notes',
+        findings: { blocking: 0, minor: 1 },
+      }),
+    ]);
     const markdown = readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8');
     expect(markdown).toContain('### Verdict\n\npass_with_notes');
     expect(readReviewRecord(projectDir, sessionId).outcome).toBe('pass-with-notes');
@@ -1451,6 +1494,13 @@ describe('runFinalReviewPhase', () => {
     });
 
     expect(typedCall).toHaveBeenCalledTimes(1);
+    expect(events.filter((event) => event.type === 'review_started')).toHaveLength(1);
+    const completions = events.filter((event) => event.type === 'review_completed');
+    expect(completions).toEqual([
+      expect.objectContaining({ scope: 'final', verdict: 'no-verdict' }),
+    ]);
+    expect(completions[0]).not.toHaveProperty('findings');
+    expect(completions[0]?.duration).toBeGreaterThanOrEqual(0);
     expect(packetStatus(projectDir, sessionId)).toBe('failed');
     expect(readEvidenceLedger({ projectDir, sessionId })?.finalReview?.status).toBe('failed');
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
@@ -1491,7 +1541,7 @@ describe('runFinalReviewPhase', () => {
     expect(failure?.message).toContain(REVIEWER_IDENTITY);
   });
 
-  it('names the review seat, not the planner, on every status it publishes', async () => {
+  it('names the review seat on its start and completion events', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n', null);
     const { callbacks } = makeCallbacks();
@@ -1508,7 +1558,7 @@ describe('runFinalReviewPhase', () => {
       workspaceDir: projectDir,
       sessionId,
       config: makeNoValidationConfig({
-        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra', effort: 'high' },
       }),
       callbacks,
       bus,
@@ -1519,11 +1569,20 @@ describe('runFinalReviewPhase', () => {
       taskBreakdowns: [],
     });
 
-    const statuses = events.filter((event) => event.type === 'planner_status');
-    expect(statuses.map((event) => event.status)).toEqual(['running', 'done']);
-    for (const status of statuses) {
-      expect(status).toMatchObject({ tool: 'codex', model: 'gpt-6-astra' });
+    const reviews = events.filter(
+      (event) => event.type === 'review_started' || event.type === 'review_completed',
+    );
+    expect(reviews.map((event) => event.type)).toEqual(['review_started', 'review_completed']);
+    for (const review of reviews) {
+      expect(review).toMatchObject({
+        scope: 'final',
+        tool: 'codex',
+        model: 'gpt-6-astra',
+        axes: ['high'],
+      });
+      expect(review).not.toHaveProperty('afterTaskId');
     }
+    expect(events.filter((event) => event.type === 'planner_status')).toEqual([]);
   });
 
   it('does not emit workflow completion when final review is aborted', async () => {
@@ -1568,6 +1627,13 @@ describe('runFinalReviewPhase', () => {
     expect(result.reviewStatus).toBe('failed');
     expect(completions).toEqual([]);
     expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+    expect(events.filter((event) => event.type === 'review_started')).toHaveLength(1);
+    const reviewCompletions = events.filter((event) => event.type === 'review_completed');
+    expect(reviewCompletions).toEqual([
+      expect.objectContaining({ scope: 'final', verdict: 'stopped' }),
+    ]);
+    expect(reviewCompletions[0]).not.toHaveProperty('findings');
+    expect(reviewCompletions[0]?.duration).toBeGreaterThanOrEqual(0);
     expect(phaseTimings.review).toBeGreaterThanOrEqual(0);
     expect(existsSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE))).toBe(false);
   });

@@ -2,11 +2,12 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import {
   cancelRunningOperations,
   operationStatusFromFailure,
+  replaceOperation,
   startRunnerOperation,
   terminalizeKnownOperation,
   updateKnownOperation,
 } from './runner.js';
-import { closePlannerStatusFallbacks, updatePlannerStatusFallback } from './planner-status.js';
+import { closeStatusFallbacks, updateStatusFallback } from './planner-status.js';
 import {
   suiteCommandKey,
   type OpenTool,
@@ -69,8 +70,16 @@ function cancelOperations(
 ): OperationsState {
   const stageRunning =
     (state.validationStage ?? null) !== null || (state.suiteStage ?? null) !== null;
-  const settled = stageRunning ? { ...state, validationStage: null, suiteStage: null } : state;
+  const settled =
+    stageRunning || state.reviewStage != null
+      ? { ...state, validationStage: null, suiteStage: null, reviewStage: null }
+      : state;
   return cancelRunningOperations(settled, cancellation);
+}
+
+function restoreReviewFallback(state: OperationsState): OperationsState {
+  const review = state.reviewStage ?? null;
+  return state.active === null && review !== null ? replaceOperation(state, review) : state;
 }
 
 // Activity that is not a tool the seat runs: it never opens, so it never holds a silence open.
@@ -109,7 +118,7 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
     case 'full_suite':
       return applySuiteStage(state, event);
     case 'runner_call_started':
-      return startRunnerOperation(closePlannerStatusFallbacks(state, event.ts), event);
+      return startRunnerOperation(closeStatusFallbacks(state, event.ts), event);
     case 'runner_call_runtime_status':
       return updateKnownOperation(state, event.callId, (operation) =>
         operation.status === 'running' && operation.apiRuntimeStatus?.phase !== 'finished'
@@ -140,31 +149,38 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
           : operation,
       );
     case 'runner_call_completed':
-      return terminalizeKnownOperation(state, event.callId, {
-        status: 'completed',
-        endedAt: event.endedAt,
-        durationMs: event.durationMs,
-        reason: null,
-        usage: event.usage,
-        partial: false,
-      });
+      return restoreReviewFallback(
+        terminalizeKnownOperation(state, event.callId, {
+          status: 'completed',
+          endedAt: event.endedAt,
+          durationMs: event.durationMs,
+          reason: null,
+          usage: event.usage,
+          partial: false,
+        }),
+      );
     case 'runner_call_error':
-      return terminalizeKnownOperation(state, event.callId, {
-        status: operationStatusFromFailure(event.status),
-        endedAt: event.endedAt,
-        durationMs: event.durationMs,
-        reason: event.error.message,
-        usage: event.usage,
-        partial: event.partial,
-      });
+      return restoreReviewFallback(
+        terminalizeKnownOperation(state, event.callId, {
+          status: operationStatusFromFailure(event.status),
+          endedAt: event.endedAt,
+          durationMs: event.durationMs,
+          reason: event.error.message,
+          usage: event.usage,
+          partial: event.partial,
+        }),
+      );
     case 'workflow_cancelled':
     case 'turn_interrupted':
+    case 'workflow_resumed':
       return cancelOperations(state, {
         ts: event.ts,
         reason: event.type === 'workflow_cancelled' ? (event.reason ?? event.type) : event.type,
       });
     case 'planner_status':
-      return updatePlannerStatusFallback(state, event);
+    case 'review_started':
+    case 'review_completed':
+      return updateStatusFallback(state, event);
     default:
       return state;
   }

@@ -107,6 +107,20 @@ export function publishPlannerStatus(
   });
 }
 
+export function publishReviewEvent(
+  ctx: BusContext,
+  event: Pick<
+    EngineEventOf<'review_started'>,
+    'scope' | 'afterTaskId' | 'tool' | 'model' | 'axes'
+  > &
+    (
+      | { type: 'review_started' }
+      | Pick<EngineEventOf<'review_completed'>, 'type' | 'verdict' | 'findings' | 'duration'>
+    ),
+): void {
+  ctx.bus.publish({ ...event, ts: Date.now(), phase: ctx.phase });
+}
+
 // Announces the whole plan once, so consumers can show what is still coming instead of learning
 // about each task only when it starts. `task_started` stays the per-task lifecycle signal.
 export function publishTasksPlanned(

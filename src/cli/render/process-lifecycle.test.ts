@@ -10,14 +10,19 @@ import {
 } from './process-lifecycle.js';
 import { terminalSequences } from '../../lib/terminal/control.js';
 import { processError } from '../../lib/process/errors.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
 
 const lifecycleMocks = vi.hoisted(() => ({
   teardownStores: vi.fn<() => void | Promise<void>>(),
+  shutdownDetection: vi.fn<() => Promise<void>>(),
   killAllProcesses: vi.fn<() => Promise<void>>(),
   awaitActiveWorkflowShutdown: vi.fn<() => Promise<void>>(),
 }));
 
 vi.mock('../init-stores.js', () => ({ teardownStores: lifecycleMocks.teardownStores }));
+vi.mock('../../engine/detection/service.js', () => ({
+  getDefaultDetectionService: () => ({ shutdown: lifecycleMocks.shutdownDetection }),
+}));
 vi.mock('../../lib/process/registry.js', () => ({
   killAllProcesses: lifecycleMocks.killAllProcesses,
 }));
@@ -28,14 +33,57 @@ vi.mock('../../engine/orchestrator/session-lifecycle/shutdown.js', () => ({
 describe('TUI cleanup', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    preparationStore.reset();
+    lifecycleMocks.shutdownDetection.mockResolvedValue(undefined);
     lifecycleMocks.killAllProcesses.mockResolvedValue(undefined);
     lifecycleMocks.awaitActiveWorkflowShutdown.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => preparationStore.reset());
+
+  it('aborts current preparation after store teardown and before the process drain', async () => {
+    const entered = Promise.withResolvers<AbortSignal>();
+    const release = Promise.withResolvers<void>();
+    const calls: string[] = [];
+    const launch = preparationStore.submit({
+      origin: 'start',
+      stage: 'Checking tools',
+      prepare: async (signal) => {
+        signal.addEventListener('abort', () => calls.push('preparation'), { once: true });
+        entered.resolve(signal);
+        await release.promise;
+        return { kind: 'aborted' };
+      },
+      onPrepared: vi.fn(),
+    });
+    const signal = await entered.promise;
+    lifecycleMocks.teardownStores.mockImplementation(() => {
+      calls.push('stores');
+    });
+    lifecycleMocks.shutdownDetection.mockImplementation(async () => {
+      calls.push('detection');
+    });
+    lifecycleMocks.killAllProcesses.mockImplementation(async () => {
+      expect(signal.aborted).toBe(true);
+      calls.push('processes');
+    });
+    try {
+      await createTuiCleanup({ restore: vi.fn() })();
+      expect(calls).toEqual(['stores', 'preparation', 'detection', 'processes']);
+      expect(preparationStore.get().kind).toBe('idle');
+    } finally {
+      release.resolve();
+      await launch.promise;
+    }
   });
 
   it('awaits every cleanup owner in order', async () => {
     const calls: string[] = [];
     lifecycleMocks.teardownStores.mockImplementation(() => {
       calls.push('stores');
+    });
+    lifecycleMocks.shutdownDetection.mockImplementation(async () => {
+      calls.push('discovery');
     });
     lifecycleMocks.killAllProcesses.mockImplementation(async () => {
       calls.push('processes');
@@ -49,9 +97,12 @@ describe('TUI cleanup', () => {
       },
     });
 
+    const first = cleanup();
+    expect(cleanup()).toBe(first);
+    await first;
     await cleanup();
 
-    expect(calls).toEqual(['stores', 'processes', 'workflow', 'terminal']);
+    expect(calls).toEqual(['stores', 'discovery', 'processes', 'workflow', 'terminal']);
   });
 
   it('deduplicates concurrent cleanup with the same promise', async () => {
@@ -72,6 +123,7 @@ describe('TUI cleanup', () => {
     await vi.waitFor(() => expect(lifecycleMocks.killAllProcesses).toHaveBeenCalledTimes(1));
     releaseProcesses();
     await first;
+    expect(lifecycleMocks.shutdownDetection).toHaveBeenCalledTimes(1);
     expect(restore).toHaveBeenCalledTimes(1);
   });
 

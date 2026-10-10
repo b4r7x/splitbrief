@@ -87,6 +87,49 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it.each(['workflow-review-task-cadence', 'workflow-review-task-cadence-settled'])(
+    'renders %s with each review below its brief',
+    async (id) => {
+      const projection = workflowFixtureProjections.get(scenarioId(id));
+      if (projection === undefined) throw new Error('Missing task cadence scenario');
+      const frame = stripTerminalControls(await renderProjection(projection), {
+        preserveLineBreaks: true,
+      });
+      const lines = frame.split('\n');
+      const first = lines.findIndex((line) => line.includes('✓ T001'));
+      const firstReview = lines.findIndex((line) => line.includes('✓ Review T001 passed'));
+      const second = lines.findIndex((line) => line.includes('✓ T002'));
+      expect(first).toBeGreaterThanOrEqual(0);
+      expect(firstReview).toBe(first + 1);
+      expect(second).toBe(firstReview + 1);
+      expect(lines.filter((line) => line.includes('Review T001 passed'))).toHaveLength(1);
+      if (projection.atRest === undefined) {
+        expect(frame).toContain('Review · Reviewer check V1 · npm test');
+        expect(frame).toContain('Reviewer check V1');
+        expect(frame).toContain('running 0:35');
+        expect(
+          projection.events.findLast((event) => event.type === 'review_started'),
+        ).toMatchObject({
+          scope: 'task',
+          afterTaskId: 'T002',
+          tool: 'codex',
+          model: 'gpt-6.1-sol',
+          axes: ['high'],
+        });
+      } else {
+        expect(lines.filter((line) => line.includes('Review'))).toEqual(
+          expect.arrayContaining([
+            expect.stringContaining('✗ Review T002 failed  1 blocking · fixes T003 · 49.0s'),
+            expect.stringContaining('✓ Review T002 passed  49.0s'),
+            expect.stringContaining('✓ Review 1 passed  1m 2s'),
+          ]),
+        );
+        expect(lines.filter((line) => line.includes('Review 1 passed'))).toHaveLength(1);
+        expect(frame).not.toContain('running 0:');
+      }
+    },
+  );
+
   it('records the balance refusal, automatic switch, and restarted task with the fallback seat', async () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-seat-switched-balance'));
     if (projection === undefined) throw new Error('Missing balance-switch scenario');
@@ -311,7 +354,7 @@ describe('workflow visual fixtures', () => {
     expect(frame).toContain('3/3 briefs passed');
     const review = frame.indexOf('Reviewer checks');
     for (const id of ['T001', 'T002', 'T003']) {
-      const brief = frame.indexOf(`✓ ${id}`);
+      const brief = frame.indexOf(`● ${id}`);
       expect(brief).toBeGreaterThanOrEqual(0);
       expect(brief).toBeLessThan(review);
     }
@@ -321,8 +364,8 @@ describe('workflow visual fixtures', () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-at-rest-paused'));
     if (projection === undefined) throw new Error('Missing paused run scenario');
     const frame = stripTerminalControls(await renderProjection(projection));
-    expect(frame).toContain('✓ T001');
-    expect(frame).toContain('✓ T002');
+    expect(frame).toContain('● T001');
+    expect(frame).toContain('● T002');
     expect(frame).toContain('◉ T003 Add signup route tests');
     expect(frame).toContain('│ Stopped at T003');
     expect(frame).not.toContain('no events yet');
@@ -348,7 +391,7 @@ describe('workflow visual fixtures', () => {
         expect(live).toContain('Review · Reviewer check V2');
         ui.stdin.write('\u001b[H');
         await ui.waitForCheckpoint({
-          predicate: ({ output }) => stripTerminalControls(output).includes('✓ Plan'),
+          predicate: ({ output }) => stripTerminalControls(output).includes('● Plan'),
         });
         const reached = [stripTerminalControls(ui.lastFrame() ?? '')];
         for (let row = 0; row < 10; row++) {

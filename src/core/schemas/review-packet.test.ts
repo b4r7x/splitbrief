@@ -4,6 +4,16 @@ import { ReviewPacketSummarySchema } from './summary.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 describe('review packet schema verdict fields', () => {
+  it('accepts an old packet and discards its retired task tally', () => {
+    const base = ReviewPacketSchema.parse(packetBeforeVerdictFields());
+    const packet = ReviewPacketSchema.parse({
+      ...base,
+      run: { ...base.run, completedLocally: 1 },
+    });
+
+    expect(packet.run).toEqual(base.run);
+  });
+
   it('parses a packet written before the verdict fields and yields their defaults', () => {
     const packet = ReviewPacketSchema.parse(packetBeforeVerdictFields());
 
@@ -72,7 +82,6 @@ function packetBeforeVerdictFields(): unknown {
       completedAt: null,
       totalTimeMs: null,
       totalTasks: 1,
-      completedLocally: 1,
       escalated: 0,
       skipped: 0,
       failed: 0,

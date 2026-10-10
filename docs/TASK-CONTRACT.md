@@ -231,6 +231,18 @@ The retry counter lives at **`state.attempt`** (top-level on `WorkflowState`), n
 
 The review seat is a stateless, read-only call. It does not write `review.md`; it answers one typed `ReviewAnswer` containing `ReviewVerdict` and `TriageResult` (`src/core/schemas/review.ts`) through `requestTyped`, and SPLITBRIEF derives and renders the rest.
 
+A task review prompt states the reviewed tasks, due criteria, and pending tasks.
+Pending tasks provide context and do not represent missing implementation.
+
+`findingInReviewScope` (`src/core/review/verdict.ts`) checks each finding against that scope.
+A blocking finding must name a reviewed task or a due criterion. If it names both, both must be in scope.
+Check ids alone do not place a finding in scope.
+SPLITBRIEF records a finding outside the scope as a note, `Outside the task review scope: …`.
+The finding does not block the review and never becomes a fix task.
+
+The final review judges every task and every acceptance criterion, regardless of task status.
+It still accepts a finding with no task or criterion id.
+
 ```ts
 type ReviewVerdict = {
   tasks: Array<{ id: TaskId; plan: 'met' | 'partial' | 'missed'; note: string }>;
@@ -263,7 +275,14 @@ type TriageResult = {
 };
 ```
 
-Unless `ask` is set, the answer covers every blocking finding except an unverified finding. It also covers every pending input. Each id appears exactly once in `fixTasks[].findingIds`, `rejected[].findingId` or `verify[].findingId`. Rejections name pending inputs only.
+Unless `ask` is set, the answer covers every blocking finding inside the review scope except an unverified finding.
+It also covers every pending input. Each id appears exactly once in `fixTasks[].findingIds`, `rejected[].findingId` or `verify[].findingId`.
+Rejections name pending inputs only. Findings outside the scope need no answer.
+
+`triageContractErrors` (`src/engine/orchestrator/triage.ts`) refuses a fix task for a finding outside the task review scope.
+It also refuses a fix task criterion outside the scope.
+These rules also apply when `ask` is set or the fix task has no criteria.
+Pending user, Apply, and check inputs keep their existing rules.
 
 Unverified and minor findings never create fix tasks. A verification names registered plan or task checks. A fix task names only known criteria. A verdict finding assigned to a fix task names only registered checks. An unknown check id sends the answer back for its one schema repair.
 

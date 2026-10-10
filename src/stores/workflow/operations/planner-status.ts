@@ -1,4 +1,3 @@
-import type { Phase } from '../../../core/schemas/enums.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { isLivePhase } from '../../../core/phases.js';
 import {
@@ -8,21 +7,18 @@ import {
 } from './operation-text.js';
 import { compactOperationsState } from './retention.js';
 import { replaceOperation, terminalizeRunningOperation } from './runner.js';
-import type { OperationsState, RunningOperation } from './state.js';
+import type { ActiveOperation, OperationsState, RunningOperation } from './state.js';
 
-const PLANNER_STATUS_FALLBACK_PREFIX = 'planner-status:';
+const STATUS_FALLBACK_PREFIX = 'status-fallback:';
 
-function plannerStatusFallbackCallId(phase: Phase): string {
-  return `${PLANNER_STATUS_FALLBACK_PREFIX}${phase}`;
+export function isStatusFallback(operation: ActiveOperation): boolean {
+  return operation.callId.startsWith(STATUS_FALLBACK_PREFIX);
 }
 
-export function closePlannerStatusFallbacks(state: OperationsState, ts: number): OperationsState {
+export function closeStatusFallbacks(state: OperationsState, ts: number): OperationsState {
   let next = state;
   for (const operation of state.byCallId.values()) {
-    if (
-      operation.status !== 'running' ||
-      !operation.callId.startsWith(PLANNER_STATUS_FALLBACK_PREFIX)
-    ) {
+    if (operation.status !== 'running' || !isStatusFallback(operation)) {
       continue;
     }
     next = replaceOperation(
@@ -40,20 +36,25 @@ export function closePlannerStatusFallbacks(state: OperationsState, ts: number):
   return next;
 }
 
-export function updatePlannerStatusFallback(
+export function updateStatusFallback(
   state: OperationsState,
-  event: EngineEventOf<'planner_status'>,
+  event: EngineEventOf<'planner_status' | 'review_started' | 'review_completed'>,
 ): OperationsState {
-  if (event.status === 'running' && !isLivePhase(event.phase)) {
-    return closePlannerStatusFallbacks(state, event.ts);
+  const role = event.type === 'planner_status' ? 'planner' : 'review';
+  const running =
+    event.type === 'review_started' ||
+    (event.type === 'planner_status' && event.status === 'running');
+  if (running && !isLivePhase(event.phase)) {
+    return closeStatusFallbacks(state, event.ts);
   }
 
-  const callId = plannerStatusFallbackCallId(event.phase);
-  if (event.status === 'done') {
-    const operation = state.byCallId.get(callId);
-    if (operation?.status !== 'running') return state;
+  const callId = `${STATUS_FALLBACK_PREFIX}${role}:${event.phase}`;
+  if (!running) {
+    const next = event.type === 'review_completed' ? { ...state, reviewStage: null } : state;
+    const operation = next.byCallId.get(callId);
+    if (operation?.status !== 'running') return next;
     return replaceOperation(
-      state,
+      next,
       terminalizeRunningOperation(operation, {
         status: 'completed',
         endedAt: event.ts,
@@ -65,10 +66,7 @@ export function updatePlannerStatusFallback(
     );
   }
 
-  if (
-    state.active?.status === 'running' &&
-    !state.active.callId.startsWith(PLANNER_STATUS_FALLBACK_PREFIX)
-  ) {
+  if (state.active?.status === 'running' && !isStatusFallback(state.active)) {
     return state;
   }
 
@@ -76,9 +74,9 @@ export function updatePlannerStatusFallback(
   const model = cleanOptionalOperationText(event.model);
   const operation: RunningOperation = {
     callId,
-    role: 'planner',
+    role,
     phase: event.phase,
-    label: cleanOperationText(`planner ${event.phase}`),
+    label: cleanOperationText(`${role} ${event.phase}`),
     status: 'running',
     startedAt: event.ts,
     endedAt: null,
@@ -89,9 +87,16 @@ export function updatePlannerStatusFallback(
     partial: false,
     ...(runnerName !== undefined && { runnerName }),
     ...(model !== undefined && { model }),
+    ...(event.type !== 'planner_status' && event.axes !== undefined && { axes: event.axes }),
   };
-  const nextState = closePlannerStatusFallbacks(state, event.ts);
+  const nextState = closeStatusFallbacks(state, event.ts);
   const byCallId = new Map(nextState.byCallId);
   byCallId.set(operation.callId, operation);
-  return compactOperationsState({ ...nextState, active: operation, byCallId });
+  const next = {
+    ...nextState,
+    active: operation,
+    byCallId,
+    ...(role === 'review' && { reviewStage: operation }),
+  };
+  return compactOperationsState(next);
 }

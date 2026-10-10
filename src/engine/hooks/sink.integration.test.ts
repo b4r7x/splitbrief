@@ -237,6 +237,37 @@ describe('createHookSink', () => {
     expect(warnings[0]).toContain('marker');
   });
 
+  it.each(['task', 'final'] as const)(
+    'does not dispatch on_complete for a %s review',
+    async (scope) => {
+      const { bus, warnings, all } = makeBus();
+      const hooks = trust({
+        on_complete: [
+          makeCommandHookEntry({ command: 'false', name: 'marker', on_failure: 'warn' }),
+        ],
+      });
+      const sink = createHookSink(hooks, ctx, bus);
+      sink({
+        type: 'review_completed',
+        ts: 1,
+        phase: scope === 'task' ? 'implementing' : 'final-review',
+        scope,
+        ...(scope === 'task' && { afterTaskId: 'T001' }),
+        tool: 'codex',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 100,
+      });
+      await waitForNoActivity(all);
+      expect(warnings).toHaveLength(0);
+      expect(all).toHaveLength(0);
+      sink({ type: 'workflow_complete', ts: 2, phase: 'complete' });
+      await waitForWarnings(warnings, 1);
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('marker');
+    },
+  );
+
   it('dispatches on_halt for recovery_prompted with the halt payload', async () => {
     const marker = join(projectDir, 'halt-payload.json');
     const tempMarker = `${marker}.tmp`;

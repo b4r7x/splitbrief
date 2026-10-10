@@ -9,7 +9,6 @@ import {
 import type { EngineEvent } from '../../engine/events/types.js';
 import type { Phase } from '../../core/schemas/enums.js';
 import { attributePhaseTokenDelta } from '../../core/state/token-attribution.js';
-import { classifyTaskCompletionMethod } from '../../core/task-completion.js';
 import * as typeGuards from '../../utils/type-guards.js';
 
 export interface PhaseTokens {
@@ -66,8 +65,6 @@ export interface PerTaskTokens {
 }
 
 export interface TokensState {
-  localCount: number;
-  escalatedCount: number;
   tokenUsage: TokenUsage | null;
   perPhase: Partial<Record<Phase, PhaseTokens>>;
   perTask: Record<string, PerTaskTokens>;
@@ -85,8 +82,6 @@ interface PricingContext {
 }
 
 const initial: TokensState = {
-  localCount: 0,
-  escalatedCount: 0,
   tokenUsage: null,
   perPhase: {},
   perTask: {},
@@ -228,38 +223,23 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
       };
     }
 
-    case 'task_completed': {
-      let { localCount, escalatedCount } = state;
-      const completionClass = classifyTaskCompletionMethod(event.method);
-      if (completionClass === 'local') localCount += 1;
-      else if (completionClass === 'escalated') escalatedCount += 1;
+    case 'task_completed':
       return {
         ...state,
-        localCount,
-        escalatedCount,
         completedTaskCount: state.completedTaskCount + 1,
       };
-    }
 
     case 'task_reset': {
       // task_reset fires on two paths: a review redo (the task completed, so undo its
-      // counters before the next task_completed) and a recovery retry of the current,
+      // completion count before the next task_completed) and a recovery retry of the current,
       // not-yet-completed task (nothing to undo). A recorded attempt only exists when the
-      // task previously completed, so gate every decrement on the prior attempt's method.
+      // task previously completed, so gate the decrement on the prior attempt.
       // Per-attempt token rows are kept across resets.
       const attempts = state.perTask[event.taskId]?.attempts ?? [];
       const last = attempts.at(-1);
-      let { localCount, escalatedCount, completedTaskCount } = state;
-      if (last) {
-        const completionClass = classifyTaskCompletionMethod(last.method);
-        if (completionClass === 'local' && localCount > 0) {
-          localCount -= 1;
-        } else if (completionClass === 'escalated' && escalatedCount > 0) {
-          escalatedCount -= 1;
-        }
-        if (completedTaskCount > 0) completedTaskCount -= 1;
-      }
-      return { ...state, localCount, escalatedCount, completedTaskCount };
+      let { completedTaskCount } = state;
+      if (last && completedTaskCount > 0) completedTaskCount -= 1;
+      return { ...state, completedTaskCount };
     }
 
     case 'task_skipped':
@@ -335,6 +315,8 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'implementer_generate_done':
     case 'implementer_generate_failed':
     case 'validate':
+    case 'review_started':
+    case 'review_completed':
     case 'review_checks':
     case 'full_suite':
     case 'escalate':
