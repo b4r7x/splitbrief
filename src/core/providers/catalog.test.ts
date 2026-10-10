@@ -2,9 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { CLI_TOOL_CATALOG } from '../runners/cli-tool-catalog.js';
 import { API_PROVIDER_CATALOG } from './api-provider-catalog.js';
 import { PROVIDER_IDS } from '../schemas/enums.js';
-import { PROVIDER_CATALOG, getProviderBaseURL, getProviderDisplayName } from './catalog.js';
+import {
+  PROVIDER_CATALOG,
+  getProviderBaseURL,
+  getProviderDisplayName,
+  getRunnerIdentityDisplayName,
+} from './catalog.js';
 
 describe('provider catalog', () => {
+  it.each([
+    ['shell', 'Custom Shell'],
+    ['agent', 'Agent'],
+  ] as const)('names the canonical %s identity through its catalog label', (kind, label) => {
+    expect(getRunnerIdentityDisplayName(kind, kind)).toBe(label);
+    expect(getRunnerIdentityDisplayName(undefined, kind)).toBe(label);
+  });
+
+  it.each(['shell', 'agent'] as const)('keeps real %s command names literal', (kind) => {
+    for (const command of ['claude', 'opencode', 'claude-code', 'custom-command']) {
+      expect(getRunnerIdentityDisplayName(kind, command)).toBe(command);
+    }
+  });
+
   it('projects admitted Cursor as a CLI, not an API provider', () => {
     expect(Object.keys(PROVIDER_CATALOG).sort()).toEqual([...PROVIDER_IDS].sort());
     expect(PROVIDER_CATALOG.cursor).toMatchObject({

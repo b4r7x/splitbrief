@@ -1,7 +1,5 @@
-import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, cutSeatIdentity } from '../../../core/crew/identity.js';
 import { isImplementerPhase } from '../../../core/phases.js';
-import { isApiProviderId } from '../../../core/providers/api-provider-catalog.js';
-import { getProviderDisplayName } from '../../../core/providers/catalog.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
@@ -15,8 +13,9 @@ import type {
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { suiteStatusText, reviewActivityText } from './phase-verb.js';
+import { formatRecordedSeatIdentity } from './recorded-seat-identity.js';
 import { stallRunnerHint } from './live-activity.js';
-import { runnerActivityLedgerItem } from './runner-activity-display.js';
+import { runnerActivityLedgerItem, runnerActivityModelRole } from './runner-activity-display.js';
 import { buildProgressRowCount } from '../layout/chrome-rows.js';
 
 /**
@@ -38,6 +37,7 @@ export interface BuildProgress {
   attempt: { current: number; max: number } | null;
   /** What the run is doing: the seat and its operation, or the command it is inside. */
   activity: string;
+  activityIdentity: { prefix: string; identity: string; suffix: string } | null;
   /**
    * The proof of life: how long the command in `activity` has run, else the silence warning —
    * `No output for <clock>`, then the open tool or the stream hint — else how long ago a seat
@@ -60,37 +60,34 @@ function runnerTool(runnerName: string): string {
   return cliToolIdForCommand(runnerName) ?? runnerName;
 }
 
-function runnerLabel(
-  backendKind: ActiveOperation['backendKind'],
-  runnerName: string | undefined,
-): string | undefined {
-  if (runnerName === undefined) return undefined;
-  if (backendKind === 'api') {
-    // A catalogued API provider gets its display name; a custom name stays literal.
-    return isApiProviderId(runnerName) ? getProviderDisplayName(runnerName) : runnerName;
-  }
-  if (backendKind === 'shell' || backendKind === 'agent') return runnerName;
-  return getProviderDisplayName(runnerTool(runnerName));
-}
-
 // What the run is doing, not what it has spent: usage is reported where a reader asks for it,
 // through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
-function activityLine(input: DeriveBuildProgressInput): string {
+function activityLine(
+  input: DeriveBuildProgressInput,
+): Pick<BuildProgress, 'activity' | 'activityIdentity'> {
   const command = runningCommand(input.operations, input.lifecycle.phase);
-  if (command !== null) return command.label;
+  if (command !== null) return { activity: command.label, activityIdentity: null };
   const operation = input.operations.active;
+  const identity =
+    operation === null
+      ? null
+      : formatRecordedSeatIdentity({ ...operation, role: runnerActivityModelRole(operation.role) });
   if (input.lifecycle.phase === 'final-review') {
-    return reviewActivityText(
-      operation,
-      operation === null
-        ? null
-        : (runnerLabel(operation.backendKind, operation.runnerName) ?? null),
-    );
+    const activity = reviewActivityText(operation, identity);
+    return {
+      activity,
+      activityIdentity:
+        operation?.status === 'running' && operation.role === 'review' && identity !== null
+          ? { prefix: activity.slice(0, activity.length - identity.length), identity, suffix: '' }
+          : null,
+    };
   }
   if (operation === null) {
-    return input.lifecycle.phase === 'escalating'
-      ? 'Waiting for the consult answer'
-      : 'Between calls';
+    return {
+      activity:
+        input.lifecycle.phase === 'escalating' ? 'Waiting for the consult answer' : 'Between calls',
+      activityIdentity: null,
+    };
   }
   const task = operation.taskId === undefined ? '' : ` on ${operation.taskId}`;
   let seat: string | undefined;
@@ -122,9 +119,19 @@ function activityLine(input: DeriveBuildProgressInput): string {
     default:
       return assertNever(operation.role);
   }
-  return [seat, runnerLabel(operation.backendKind, operation.runnerName), doing]
-    .filter((part): part is string => part !== undefined && part !== '')
-    .join(SOFT_SEP);
+  return {
+    activity: [seat, identity, doing]
+      .filter((part): part is string => part !== undefined && part !== null && part !== '')
+      .join(SOFT_SEP),
+    activityIdentity:
+      identity === null
+        ? null
+        : {
+            prefix: seat === undefined ? '' : `${seat}${SOFT_SEP}`,
+            identity,
+            suffix: `${SOFT_SEP}${doing}`,
+          },
+  };
 }
 
 /**
@@ -230,7 +237,7 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
     attempt: retrying
       ? { current: input.tasks.currentAttempt, max: input.tasks.attemptAllowance }
       : null,
-    activity: activityLine(input),
+    ...activityLine(input),
     ...freshnessOf(input),
   };
 }
@@ -248,20 +255,69 @@ function countsText(progress: BuildProgress): string {
 /**
  * The same facts at every width, regrouped rather than dropped. Where the activity and freshness
  * share a row, the activity gives way: a long command is cut, never the clock that follows it. A
- * silence leads with its clock and ends with the tool it names, so that row is cut from its end.
+ * silence first loses its trailing description, cut from the end, then whole identity segments.
+ * The seat label, tool word, work and silence clock stay.
  */
-export function buildProgressLines(progress: BuildProgress, width: number): string[] {
-  const counts = countsText(progress);
+export function buildProgressRows(
+  progress: BuildProgress,
+  width: number,
+): { key: string; text: string; silenceStart: number | null }[] {
+  const counts = {
+    key: 'counts',
+    text: truncateTerminalDisplayText(countsText(progress), width),
+    silenceStart: null,
+  };
   if (buildProgressRowCount(width) === 2) {
-    const tail = progress.freshness.length > 0 ? `${SOFT_SEP}${progress.freshness}` : '';
+    const freshness = progress.silent
+      ? fitSilenceTail(
+          progress.freshness,
+          width - getTerminalCellWidth(progress.activity + SOFT_SEP),
+        )
+      : progress.freshness;
+    const tail = freshness.length > 0 ? `${SOFT_SEP}${freshness}` : '';
+    const activity = fitActivity(progress, Math.max(0, width - getTerminalCellWidth(tail)));
     return [
       counts,
-      progress.silent
-        ? truncateTerminalDisplayText(`${progress.activity}${tail}`, width)
-        : fitBeforeTail(progress.activity, tail, width),
+      {
+        key: 'activity',
+        text: truncateTerminalDisplayText(`${activity}${tail}`, width),
+        silenceStart: progress.silent ? activity.length + SOFT_SEP.length : null,
+      },
     ];
   }
-  return [counts, progress.activity, progress.freshness];
+  return [
+    counts,
+    {
+      key: 'activity',
+      text: truncateTerminalDisplayText(fitActivity(progress, width), width),
+      silenceStart: null,
+    },
+    {
+      key: 'freshness',
+      text: truncateTerminalDisplayText(
+        progress.silent ? fitSilenceTail(progress.freshness, width) : progress.freshness,
+        width,
+      ),
+      silenceStart: progress.silent ? 0 : null,
+    },
+  ];
+}
+
+function fitSilenceTail(freshness: string, width: number): string {
+  const clockEnd = freshness.indexOf(SOFT_SEP);
+  const clock = clockEnd === -1 ? freshness : freshness.slice(0, clockEnd);
+  return width <= getTerminalCellWidth(clock + SOFT_SEP)
+    ? clock
+    : truncateTerminalDisplayText(freshness, width);
+}
+
+function fitActivity(progress: BuildProgress, width: number): string {
+  const parts = progress.activityIdentity;
+  if (parts === null) return truncateTerminalDisplayText(progress.activity, width);
+  const budget = Math.max(0, width - getTerminalCellWidth(parts.prefix + parts.suffix));
+  const identity = cutSeatIdentity(parts.identity, budget);
+  const suffix = identity === '' ? parts.suffix.slice(SOFT_SEP.length) : parts.suffix;
+  return `${parts.prefix}${identity}${suffix}`.trimEnd();
 }
 
 /**

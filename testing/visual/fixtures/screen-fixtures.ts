@@ -80,7 +80,7 @@ export const VISUAL_WIDE_CREW: VisualConfigOverrides = {
 
 type VisualModelsDevArm = 'not-run' | 'pending' | 'failed' | { readonly catalog: ModelsDevCatalog };
 
-const BASE_PLANNER = {
+export const BASE_PLANNER = {
   kind: 'cli',
   tool: 'claude-code',
   model: 'claude-sonnet-4',
@@ -89,6 +89,8 @@ const BASE_PLANNER = {
 export const BASE_IMPLEMENTER = {
   kind: 'api',
   provider: 'ollama',
+  service: 'ollama',
+  offering: 'local',
   model: 'qwen2.5-coder:7b',
   apiBase: 'http://127.0.0.1:11434/v1',
   contextLength: 32_768,

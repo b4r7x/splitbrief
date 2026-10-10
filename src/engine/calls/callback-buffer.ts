@@ -103,6 +103,7 @@ export function createRunnerAttemptCallbackBuffer(
       backendKind: event.backendKind,
       ...(event.runnerName !== undefined && { runnerName: event.runnerName }),
       ...(event.model !== undefined && { model: event.model }),
+      ...(event.axes !== undefined && { axes: event.axes }),
       ...(event.attempt !== undefined && { attempt: event.attempt }),
       ...(event.attemptId !== undefined && { attemptId: event.attemptId }),
       ...(event.transport !== undefined && { transport: event.transport }),

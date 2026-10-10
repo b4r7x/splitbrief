@@ -62,6 +62,7 @@ const ReviewPacketRunSchema = z.object({
   phase: PhaseSchema,
   planner: ReviewPacketRunnerSchema,
   implementer: ReviewPacketRunnerSchema,
+  reviewer: ReviewPacketRunnerSchema.optional(),
   startedAt: z.string().nullable(),
   completedAt: z.string().nullable(),
   totalTimeMs: z.number().nonnegative().nullable(),

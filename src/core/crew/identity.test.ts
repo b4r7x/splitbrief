@@ -43,6 +43,45 @@ describe('formatSeatIdentity', () => {
     expect(identity).not.toContain('›');
   });
 
+  it('names a recorded call by the tool its command starts, and a shell command literally', () => {
+    expect(
+      formatSeatIdentity({ seat: { tool: 'claude', model: 'sonnet', axes: [], kind: 'cli' } }),
+    ).toMatch(/^Claude Code CLI · /);
+    expect(
+      formatSeatIdentity({ seat: { tool: 'claude', model: 'gpt-5', axes: [], kind: 'shell' } }),
+    ).toBe('claude · GPT-5');
+  });
+
+  it('keeps the configured Shell and Agent seat words when their commands are recorded separately', () => {
+    const seats: { runner: RunnerConfig; id: string; word: string }[] = [
+      {
+        runner: { kind: 'shell', command: 'claude', model: 'gpt-5' },
+        id: 'shell',
+        word: 'Custom Shell',
+      },
+      { runner: { kind: 'agent', command: 'claude', model: 'gpt-5' }, id: 'agent', word: 'Agent' },
+    ];
+    for (const { runner, id, word } of seats) {
+      expect(seatIdsOf(runner)).toEqual({ tool: id, model: 'gpt-5', axes: [], kind: runner.kind });
+      expect(formatSeatIdentity({ seat: { tool: id, model: 'gpt-5', kind: runner.kind } })).toBe(
+        `${word} · GPT-5`,
+      );
+      expect(formatSeatIdentity({ seat: runner })).toBe(`${word} · GPT-5`);
+      expect(formatSeatIdentity({ seat: seatIdsOf(runner) })).toBe(
+        formatSeatIdentity({ seat: runner }),
+      );
+    }
+  });
+
+  it('keeps a shell model alias literal in both identity forms', () => {
+    expect(
+      formatShortSeatIdentity({ seat: { tool: 'claude-code', model: 'opus' }, kind: 'shell' }),
+    ).toBe('Opus');
+    expect(
+      formatSeatIdentity({ seat: { tool: 'claude-code', model: 'opus', axes: [], kind: 'shell' } }),
+    ).toBe('claude-code · Opus');
+  });
+
   it('says the automatic word instead of resolving a catalog default', () => {
     expect(formatSeatIdentity({ seat: { kind: 'cli', tool: 'claude-code' } })).toContain('auto');
     expect(formatSeatIdentity({ seat: { kind: 'cli', tool: 'cursor', model: 'auto' } })).toBe(

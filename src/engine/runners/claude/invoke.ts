@@ -6,6 +6,7 @@ import type { CliAuthChannelId } from '../../../core/runners/cli-tool-catalog.js
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../../calls/types.js';
+import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import { runnerCallLimitWarning, runnerCallLineOutputLimit } from '../../calls/output-limit.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../cli-tools/process-invoke.js';
 import { error } from '../../../utils/error.js';
@@ -27,13 +28,22 @@ import {
 
 let claudeCallSequence = 0;
 
-function createClaudeCallContext(model: string | undefined): RunnerCallContext {
+function createClaudeCallContext(opts: {
+  model?: string | undefined;
+  effort?: EffortLevel | undefined;
+}): RunnerCallContext {
   return {
     callId: `claude-${++claudeCallSequence}`,
     role: 'planner',
     backendKind: 'cli',
     runnerName: 'claude',
-    ...(model !== undefined && { model }),
+    ...(opts.model !== undefined && { model: opts.model }),
+    axes: seatAxisWords({
+      kind: 'cli',
+      tool: 'claude-code',
+      model: opts.model,
+      effort: opts.effort,
+    }),
   };
 }
 
@@ -71,6 +81,7 @@ interface ClaudeCallRunOptions {
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
   model?: string | undefined;
   authChannel?: CliAuthChannelId | undefined;
+  effort?: EffortLevel | undefined;
   /** The runner's raw `authChannel`, kept apart from the resolved default in `authChannel`. */
   configuredAuthChannel?: CliAuthChannelId | undefined;
   executable?: CliExecutableIdentity | null | undefined;
@@ -83,7 +94,7 @@ interface ClaudeCallRunOptions {
 async function runClaudeCall(
   opts: ClaudeCallRunOptions,
 ): Promise<{ result: RunnerCallResult; sessionId: string | null }> {
-  const callContext = opts.callContext ?? createClaudeCallContext(opts.model);
+  const callContext = opts.callContext ?? createClaudeCallContext(opts);
   // Without a trusted executable nothing is spawned: resolution below refuses.
   const context =
     opts.executable === null || opts.executable === undefined
@@ -219,6 +230,7 @@ export async function runClaudePlannerStream(
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,
+    effort: opts.effort,
     configuredAuthChannel: opts.configuredAuthChannel,
     executable: opts.executable,
     signal: opts.signal,
@@ -281,6 +293,7 @@ export async function runClaudeOneShot(opts: ClaudeOneShotOpts): Promise<RunnerC
     onCallEvent: opts.onCallEvent,
     model: opts.model,
     authChannel: opts.authChannel,
+    effort: opts.effort,
     configuredAuthChannel: opts.configuredAuthChannel,
     executable: opts.executable,
     signal: opts.signal,

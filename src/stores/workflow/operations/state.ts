@@ -43,6 +43,7 @@ interface OperationBase {
   label: string;
   runnerName?: string;
   model?: string;
+  axes?: readonly string[];
   attempt?: number;
   startedAt: number;
   reason: string | null;

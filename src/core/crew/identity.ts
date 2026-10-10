@@ -40,8 +40,8 @@ const CLAUDE_BRAND = 'Claude';
 const HANGING_SEPARATOR = /[ ·]+$/u;
 
 /**
- * A seat named by ids rather than by its runner block: the tool or provider id
- * (`getRunnerDisplayName`), the configured model, the axis words the seat
+ * A seat named by ids rather than by its runner block: the tool or provider word,
+ * the configured model, the axis words the seat
  * carries and the backend it ran on. A run records its seats this way, and both
  * forms below read a configured runner through the same shape, so a recorded
  * seat is spelled exactly as the seat it was taken from.
@@ -96,13 +96,11 @@ function runnerKindOf(seat: RunnerConfig | SeatIds): RunnerKind | undefined {
 
 /**
  * The tool word of a seat identity. A custom API provider keeps its literal
- * name even when it reuses a CLI tool id; every other identity resolves through
- * the merged catalog exactly as before.
+ * name even when it reuses a CLI tool id; a CLI command names its tool,
+ * and shell and agent commands stay literal unless they name their canonical seat id.
  */
 function toolWord(seat: SeatIds, kind: RunnerKind | undefined): string {
-  return kind === 'api'
-    ? getRunnerIdentityDisplayName(kind, seat.tool)
-    : getProviderDisplayName(seat.tool);
+  return getRunnerIdentityDisplayName(kind, seat.tool);
 }
 
 function modelWord(

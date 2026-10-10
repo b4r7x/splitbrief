@@ -337,7 +337,7 @@ describe('review packet rollup final-review fields', () => {
           path: 'review.md',
           status: 'written',
           evidenceStatus: null,
-          statusText: 'Planner final review written to review.md.',
+          statusText: 'Reviewer final review written to review.md.',
           excerpt: null,
           verdict: 'fail',
           criteriaPassed: 2,

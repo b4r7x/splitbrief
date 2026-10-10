@@ -28,6 +28,7 @@ function activity(
     redacted: overrides.redacted ?? false,
     ...(overrides.target !== undefined && { target: overrides.target }),
     ...(overrides.model !== undefined && { model: overrides.model }),
+    ...(overrides.axes !== undefined && { axes: overrides.axes }),
     ...(overrides.taskId !== undefined && { taskId: overrides.taskId }),
     ...(overrides.attempt !== undefined && { attempt: overrides.attempt }),
     ...(overrides.textPartial !== undefined && { textPartial: overrides.textPartial }),
@@ -282,6 +283,25 @@ describe('activity batch tone resolution', () => {
 });
 
 describe('activity batch runner identity', () => {
+  it.each([
+    ['shell', 'Custom Shell'],
+    ['agent', 'Agent'],
+  ] as const)('names the canonical %s call in the configured seat words', (backendKind, label) => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ backendKind, runnerName: backendKind, model: 'gpt-5' })],
+    });
+    expect(model.headerRunner).toBe(`${label} · GPT-5`);
+  });
+
+  it('spells an older call with no recorded model as auto', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [activity({ runnerName: 'codex' })],
+    });
+    expect(model.headerRunner).toBe('OpenAI Codex CLI · auto');
+  });
+
   it('names a custom API call by its own provider word and the pretty model name', () => {
     const model = buildActivityBatchViewModel({
       batchKey: 'batch-1',
@@ -298,6 +318,23 @@ describe('activity batch runner identity', () => {
     });
 
     expect(model.headerRunner).toBe('OpenCode CLI · GPT-5');
+  });
+
+  it('names the seat with the axis words its call ran with, as the sidebar spells that seat', () => {
+    const model = buildActivityBatchViewModel({
+      batchKey: 'batch-1',
+      events: [
+        activity({
+          role: 'review',
+          backendKind: 'cli',
+          runnerName: 'codex',
+          model: 'gpt-5',
+          axes: ['high'],
+        }),
+      ],
+    });
+
+    expect(model.headerRunner).toBe('OpenAI Codex CLI · GPT-5 · high');
   });
 
   it('names a CLI call recorded by its command through the tool it starts', () => {

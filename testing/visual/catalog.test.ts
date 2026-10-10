@@ -146,7 +146,9 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = await handle.waitForCheckpoint();
-      expect(frame).toContain('PLAN · Claude Code CLI · answering the consult on T901');
+      expect(frame).toContain(
+        'PLAN · Claude Code CLI · Claude Sonnet 4 · answering the consult on T901',
+      );
     } finally {
       await handle.unmount();
     }
@@ -161,7 +163,9 @@ describe('visual catalog', () => {
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
       const frame = await handle.waitForCheckpoint();
-      expect(frame).toContain('REVIEW · Claude Code CLI · answering the consult on T904');
+      expect(frame).toContain(
+        'REVIEW · Claude Code CLI · Claude Sonnet 4 · answering the consult on T904',
+      );
       expect(frame).toContain('REVIEW → T904: guidance');
     } finally {
       await handle.unmount();

@@ -494,7 +494,8 @@ src/
 │   │                              event-sections
 │   │                              (other layout math lives under
 │   │                              features/workflow/layout/)
-│   ├── model-display.ts           formatToolModel, etc.
+│   ├── model-display.ts           Model names, CLI vocabulary, display-label
+│   │                              peeling and context-length extraction
 │   ├── navigation/                overlay-rect (the one overlay sizing rule:
 │   │                              density → width/height), types
 │   ├── paths.ts                   All on-disk path constants + builders
@@ -808,7 +809,7 @@ Sectioned picker display now lives in the picker display-window/ListViewport pat
 
 Two modules are load-bearing for the seat surfaces and worth naming with their paths:
 
-- `src/core/crew/identity.ts` — the single seat vocabulary: the seat ids `plan` / `build` / `review` and the identity string (`Claude Code CLI · Claude Sonnet 4`, one ` · ` separator) that the Crew section of Settings, the setup screen and the home seat block all render from.
+- `src/core/crew/identity.ts` — the single seat vocabulary: the seat ids `plan` / `build` / `review` and the identity string (`Claude Code CLI · Claude Sonnet 4`, one ` · ` separator) that Settings, Setup, home and the workflow sidebar render from. Transcript activity headers, task-start rows and Build progress use the same formatter with the model and axis words recorded for their call.
 - `src/stores/ui/picker-view.ts` — the picker's selection/filter state, a store rather than component state, so the page and the feature read the same view.
 
 ---

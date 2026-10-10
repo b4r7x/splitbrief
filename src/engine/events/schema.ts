@@ -469,6 +469,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     action: FileActionSchema,
     tool: z.string().optional(),
     model: z.string().optional(),
+    axes: runnerCallContextFields.axes,
+    backendKind: runnerCallContextFields.backendKind.optional(),
     implementerProfile: z.string().optional(),
     contextFit: TaskContextFitSchema.optional(),
     estimatedTokens: z.number().optional(),

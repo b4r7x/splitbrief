@@ -106,7 +106,9 @@ describe('workflow visual fixtures', () => {
         expect(eventsStore.get().events.filter((event) => event.type === 'user_message')).toEqual([
           expect.objectContaining({ text: answer, qa: [{ question: 'Which store?', answer }] }),
         ]);
-        expect(frame).toContain('PLAN · Claude Code CLI · answering the consult on T901');
+        expect(frame).toContain(
+          'PLAN · Claude Code CLI · Claude Sonnet 4 · answering the consult on T901',
+        );
         expect(frame).toMatch(/last event \d+s ago/);
         expect(frame).not.toContain('no update yet');
         expect(operationsStore.get().byCallId.get('visual-consult-call-001')).toMatchObject({

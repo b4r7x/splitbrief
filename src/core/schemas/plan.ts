@@ -62,7 +62,12 @@ const CriterionSchema = z.object({
 const PlanValidationSchema = z.object({
   language: z.string().nullable(),
   test: z.string().nullable(),
-  testPattern: z.string().nullable(),
+  testPattern: z
+    .string()
+    .nullable()
+    .describe(
+      "File name pattern with one `*`, such as `*.test.js` or `test_*.py`; no `/`, no `\\` and no `..`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Use null when not found.",
+    ),
 });
 
 export const PlanProposalSchema = z.object({

@@ -392,4 +392,33 @@ describe('projectRunnerCallEvent', () => {
       },
     });
   });
+
+  it('carries the seat axis words the call ran with on its start and its activity', () => {
+    const context = {
+      callId: 'call-1',
+      role: 'review',
+      backendKind: 'cli',
+      runnerName: 'codex',
+      model: 'gpt-6.1-sol',
+      axes: ['high'],
+    } as const;
+    const opts = { rootDir: '/project', phase: 'final-review', sequence: 7 } as const;
+
+    const started = projectRunnerCallEvent({ type: 'call_started', ts: 1, ...context }, opts);
+    const [, activity] = projectRunnerCallEvents(
+      {
+        type: 'call_tool_use_done',
+        ts: 2,
+        ...context,
+        channel: 'tool',
+        toolUse: { id: 'tool-1', name: 'Bash', input: { command: 'npm test' } },
+      },
+      opts,
+    );
+
+    expect(started).toMatchObject({ type: 'runner_call_started', axes: ['high'] });
+    expect(activity).toMatchObject({ type: 'runner_call_activity', axes: ['high'] });
+    expect(EngineEventSchema.safeParse(started).success).toBe(true);
+    expect(EngineEventSchema.safeParse(activity).success).toBe(true);
+  });
 });

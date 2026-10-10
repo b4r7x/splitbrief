@@ -631,6 +631,40 @@ function taskStartedEvent(
 }
 
 describe('formatTaskStartedParts', () => {
+  it.each([
+    ['shell', 'Custom Shell'],
+    ['agent', 'Agent'],
+  ] as const)('names a recorded %s build seat consistently', (backendKind, label) => {
+    expect(
+      formatTaskStartedParts(taskStartedEvent({ tool: backendKind, model: 'gpt-5', backendKind })),
+    ).toEqual(['src/validate.ts (create)', `${label} · GPT-5`]);
+    for (const command of ['claude', 'opencode']) {
+      expect(
+        formatTaskStartedParts(taskStartedEvent({ tool: command, model: 'gpt-5', backendKind })),
+      ).toEqual(['src/validate.ts (create)', `${command} · GPT-5`]);
+    }
+  });
+
+  it('resolves an older CLI command through the same model catalog as a current call', () => {
+    expect(formatTaskStartedParts(taskStartedEvent({ tool: 'claude', model: 'sonnet' }))).toEqual([
+      'src/validate.ts (create)',
+      'Claude Code CLI · Sonnet 5',
+    ]);
+  });
+
+  it('keeps the recorded build axes and backend when the runner name matches a CLI command', () => {
+    expect(
+      formatTaskStartedParts(
+        taskStartedEvent({ tool: 'codex', model: 'gpt-5', axes: ['high'], backendKind: 'cli' }),
+      ),
+    ).toEqual(['src/validate.ts (create)', 'OpenAI Codex CLI · GPT-5 · high']);
+    expect(
+      formatTaskStartedParts(
+        taskStartedEvent({ tool: 'claude', model: undefined, axes: [], backendKind: 'shell' }),
+      ),
+    ).toEqual(['src/validate.ts (create)', 'claude · auto']);
+  });
+
   it('names the build seat in the words the seat identity uses for it', () => {
     expect(formatTaskStartedParts(taskStartedEvent({}))).toEqual([
       'src/validate.ts (create)',

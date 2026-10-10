@@ -118,9 +118,9 @@ export async function buildFinalReview(opts: {
     requestedStatus === 'failed' ? 'failed' : exists ? 'written' : 'missing';
   const statusText =
     status === 'written'
-      ? `Planner final review written to ${REVIEW_FILE}.`
+      ? `Reviewer final review written to ${REVIEW_FILE}.`
       : status === 'failed'
-        ? `Planner final review failed; ${REVIEW_FILE} may be absent.`
+        ? `Reviewer final review failed; ${REVIEW_FILE} may be absent.`
         : `${REVIEW_FILE} was not available.`;
   const review = readFinalReviewRecord({ projectDir, sessionId });
   const body = review.kind === 'task-only' ? null : await readReviewBody(projectDir, sessionId);

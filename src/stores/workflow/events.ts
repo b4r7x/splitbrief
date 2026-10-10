@@ -268,6 +268,7 @@ function projectRunnerActivityForTuiEventLog(
   const rawAvailable = event.rawAvailable === true;
   const runnerName = cleanOptionalTuiEventLogText(event.runnerName);
   const model = cleanOptionalTuiEventLogText(event.model);
+  const axes = event.axes?.map(cleanOptionalTuiEventLogText).filter((axis) => axis !== undefined);
   const originalModel = cleanOptionalTuiEventLogText(event.originalModel);
   const fallbackModel = cleanOptionalTuiEventLogText(event.fallbackModel);
   const redacted =
@@ -278,6 +279,7 @@ function projectRunnerActivityForTuiEventLog(
     diagnosticPartial?.changed === true ||
     runnerName?.changed === true ||
     model?.changed === true ||
+    axes?.some((axis) => axis.changed) === true ||
     originalModel?.changed === true ||
     fallbackModel?.changed === true;
 
@@ -291,6 +293,7 @@ function projectRunnerActivityForTuiEventLog(
     backendKind: event.backendKind,
     ...(runnerName !== undefined && { runnerName: runnerName.text }),
     ...(model !== undefined && { model: model.text }),
+    ...(axes !== undefined && { axes: axes.map((axis) => axis.text) }),
     ...(event.attempt !== undefined && { attempt: event.attempt }),
     sequence: event.sequence,
     activityId: event.activityId,

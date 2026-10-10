@@ -13,6 +13,7 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       phase: 'complete',
       planner: { tool: null, model: null },
       implementer: { tool: null, model: null },
+      reviewer: { tool: null, model: null },
       startedAt: null,
       completedAt: null,
       totalTimeMs: null,

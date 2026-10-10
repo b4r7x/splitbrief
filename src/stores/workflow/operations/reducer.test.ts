@@ -216,6 +216,16 @@ describe('operationsStore', () => {
     });
   });
 
+  it('keeps the seat axis words the call started with, through to the terminal operation', () => {
+    addEvent(runnerStarted({ runnerName: 'codex', model: 'gpt-6.1-sol', axes: ['high'] }));
+
+    expect(operationsStore.get().active).toMatchObject({ model: 'gpt-6.1-sol', axes: ['high'] });
+
+    addEvent(runnerCompleted());
+
+    expect(operationsStore.get().last).toMatchObject({ axes: ['high'] });
+  });
+
   it('carries a shell backend kind from an active operation into the terminal last operation', () => {
     addEvent(runnerStarted({ backendKind: 'shell', runnerName: 'bash' }));
 

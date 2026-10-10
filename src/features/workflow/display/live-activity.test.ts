@@ -23,6 +23,53 @@ const base = {
   activeOperation: null,
 };
 
+it.each([
+  ['shell', 'Custom Shell'],
+  ['agent', 'Agent'],
+] as const)('names a recorded %s reviewer in the configured seat words', (backendKind, label) => {
+  resetWorkflow();
+  addEvent(
+    makeRunnerCallStarted({
+      phase: 'final-review',
+      role: 'review',
+      backendKind,
+      runnerName: backendKind,
+      model: 'gpt-5',
+    }),
+  );
+  expect(
+    deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      activeOperation: operationsStore.get().active,
+    })?.verb,
+  ).toBe(`Review… ${label} · GPT-5`);
+  resetWorkflow();
+});
+
+it('names the active reviewer from its recorded identity after the configured seat changes', () => {
+  resetWorkflow();
+  addEvent(
+    makeRunnerCallStarted({
+      phase: 'final-review',
+      role: 'review',
+      runnerName: 'codex',
+      model: 'gpt-5',
+      axes: ['high'],
+      ts: 60_000,
+    }),
+  );
+  expect(
+    deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      activeOperation: operationsStore.get().active,
+      reviewerLabel: 'Claude Code CLI · Sonnet 5 · low',
+    })?.verb,
+  ).toBe('Review… OpenAI Codex CLI · GPT-5 · high');
+  resetWorkflow();
+});
+
 it('leads the review byline with the render scenario and its own clock', () => {
   const status = deriveLiveStatus({
     ...base,

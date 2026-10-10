@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
 import { buildLanguageContext } from './language-context.js';
 import {
   buildPlanSessionPrompt,
@@ -63,6 +64,32 @@ describe('buildPlanSessionPrompt', () => {
     expect(prompt).toContain(
       "Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.",
     );
+  });
+
+  it('explains that a test check runs the discovered command on its file', () => {
+    expect(buildPlanSessionPrompt(input)).toContain(
+      'A `test` check runs that command on its file.',
+    );
+  });
+
+  it('asks for the test file pattern as a file name pattern without a directory', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    expect(prompt).toContain('`testPattern`');
+    expect(prompt).toContain('`*.test.js`');
+    expect(prompt).toContain('no `/`');
+    expect(prompt).toContain('no `..`');
+  });
+
+  it('sends the file name pattern rule in the planner typed-output schema', () => {
+    const schema = JSON.stringify(PLAN_ANSWER_JSON_SCHEMA);
+
+    expect(schema).toContain('File name pattern with one `*`');
+    expect(schema).toContain('`*.test.js`');
+    expect(schema).toContain('`test_*.py`');
+    expect(schema).toContain('no `/`');
+    expect(schema).toContain('no `..`');
+    expect(schema).toContain('beside the changed file');
+    expect(schema).toContain("in the stack's test folders");
   });
 
   it('bounds the questions: three per round, two rounds, each with a default', () => {

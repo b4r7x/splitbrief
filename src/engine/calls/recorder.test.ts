@@ -18,6 +18,20 @@ const context: RunnerCallContext = {
 };
 
 describe('createRunnerCallRecorder', () => {
+  it('snapshots axis words through activity and terminal result collection', () => {
+    const axes = ['high'];
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context: { ...context, axes },
+      startedAt: 1,
+      onEvent: (event) => events.push(event),
+    });
+    axes[0] = 'low';
+    recorder.text({ channel: 'assistant', text: 'done', ts: 2 });
+    expect(recorder.finishCompleted({ endedAt: 3 }).axes).toEqual(['high']);
+    expect(events.every((event) => event.axes?.join() === 'high')).toBe(true);
+  });
+
   it('stores events, calculates partial failures, and emits one terminal event', () => {
     const events: RunnerCallEvent[] = [];
     const recorder = createRunnerCallRecorder({

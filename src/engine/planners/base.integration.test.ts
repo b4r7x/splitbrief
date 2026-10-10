@@ -96,6 +96,9 @@ describe('createPlannerBase — structured summarization', () => {
     };
     let capturedSignal: AbortSignal | undefined;
     const planner = createPlannerBase({
+      runnerName: 'codex',
+      model: 'gpt-5',
+      axes: ['high'],
       invokePlan: async () => completedRunnerCall(''),
       invokeEscalate: async (opts) => {
         capturedSignal = opts.signal;
@@ -118,6 +121,9 @@ describe('createPlannerBase — structured summarization', () => {
       type: 'call_started',
       role: 'compaction',
       backendKind: 'cli',
+      runnerName: 'codex',
+      model: 'gpt-5',
+      axes: ['high'],
     });
   });
 });
@@ -166,6 +172,9 @@ describe('createPlannerBase — typedCall', () => {
     const planner = createPlannerBase({
       invokePlan,
       invokeEscalate,
+      runnerName: 'codex',
+      model: 'gpt-5',
+      axes: ['high'],
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -177,7 +186,17 @@ describe('createPlannerBase — typedCall', () => {
 
     expect(invokeEscalate).toHaveBeenCalledTimes(1);
     expect(invokeEscalate).toHaveBeenCalledWith(
-      expect.objectContaining({ accessMode: 'read-only', prompt: 'q', schema }),
+      expect.objectContaining({
+        accessMode: 'read-only',
+        prompt: 'q',
+        schema,
+        callContext: expect.objectContaining({
+          role: 'review',
+          runnerName: 'codex',
+          model: 'gpt-5',
+          axes: ['high'],
+        }),
+      }),
     );
     expect(invokePlan).not.toHaveBeenCalled();
   });

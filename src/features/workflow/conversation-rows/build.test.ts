@@ -167,7 +167,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(3);
-    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  3 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  3 updates  [${CODEX_LABEL} · auto]`);
     expect(text).not.toContain('sed -n');
     expect(text).toContain(activityLine('READ', 'CLAUDE.md :1-240'));
     expect(text).toContain(activityLine('RUN', 'wc -l CLAUDE.md'));
@@ -223,7 +223,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(2);
-    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  2 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  2 updates  [${CODEX_LABEL} · auto]`);
     expect(text.match(/npm run typecheck/g)).toHaveLength(1);
     expect(text).toContain(activityLine('READ', 'src/app.ts'));
     expect(text).not.toContain('+  ');
@@ -254,7 +254,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(renderableCount).toBe(4);
-    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  4 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  4 updates  [${CODEX_LABEL} · auto]`);
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -310,7 +310,7 @@ describe('buildConversationRows', () => {
     const text = rows.map(rowText).join('\n');
 
     expect(text).toContain(
-      `${CREW_SEAT_LABELS.plan} activity  5 updates  1 warn  [${CODEX_LABEL}]`,
+      `${CREW_SEAT_LABELS.plan} activity  5 updates  1 warn  [${CODEX_LABEL} · auto]`,
     );
     const warnLine = activityLine('WARN', 'stderr');
     expect(text).not.toContain(warnLine);
@@ -497,7 +497,7 @@ describe('buildConversationRows', () => {
 
     expect(renderableCount).toBe(4);
     expect(text.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(1);
-    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  4 updates  [${CODEX_LABEL}]`);
+    expect(text).toContain(`${CREW_SEAT_LABELS.plan} activity  4 updates  [${CODEX_LABEL} · auto]`);
     expect(text).not.toContain('a.ts');
     expect(text).toContain('b.ts');
     expect(text).toContain('c.ts');
@@ -610,7 +610,9 @@ describe('buildConversationRows', () => {
     const singleText = single.rows.map(rowText).join('\n');
 
     expect(singleText.match(new RegExp(`${CREW_SEAT_LABELS.plan} activity`, 'g'))).toHaveLength(1);
-    expect(singleText).toContain(`${CREW_SEAT_LABELS.plan} activity  8 updates  [${CODEX_LABEL}]`);
+    expect(singleText).toContain(
+      `${CREW_SEAT_LABELS.plan} activity  8 updates  [${CODEX_LABEL} · auto]`,
+    );
     expect(single.renderableCount).toBe(8);
 
     const continued: EngineEvent[] = [
@@ -691,9 +693,11 @@ describe('buildConversationRows', () => {
     expect(
       implementerText.match(new RegExp(`${CREW_SEAT_LABELS.build} activity`, 'g')),
     ).toHaveLength(1);
-    expect(plannerText).toContain(`${CREW_SEAT_LABELS.plan} activity  6 updates  [${CODEX_LABEL}]`);
+    expect(plannerText).toContain(
+      `${CREW_SEAT_LABELS.plan} activity  6 updates  [${CODEX_LABEL} · auto]`,
+    );
     expect(implementerText).toContain(
-      `${CREW_SEAT_LABELS.build} activity  6 updates  [${CLAUDE_CODE_LABEL}]`,
+      `${CREW_SEAT_LABELS.build} activity  6 updates  [${CLAUDE_CODE_LABEL} · auto]`,
     );
     expect(plannerText).toContain('+3 more');
     expect(implementerText).toContain('+3 more');

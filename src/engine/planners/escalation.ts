@@ -22,6 +22,7 @@ type PlannerEscalationConfig = {
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
+  axes?: readonly string[] | undefined;
   escalateFullMode?: 'text' | 'files';
   escalateFullPostProcess?: (
     task: Task,
@@ -42,6 +43,7 @@ function createEscalationCallContext(config: PlannerEscalationConfig): RunnerCal
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),
     ...(config.model !== undefined && { model: config.model }),
+    ...(config.axes !== undefined && { axes: config.axes }),
   };
 }
 

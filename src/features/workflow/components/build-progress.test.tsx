@@ -3,6 +3,7 @@ import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import {
+  makeRunnerCallActivity,
   makeRunnerCallStarted,
   makeRunnerCallStalled,
 } from '#testing/helpers/events/runner-call.js';
@@ -147,12 +148,77 @@ describe('BuildProgressBlock', () => {
     const frame = ui.lastFrame();
 
     expect(stripAnsiStyles(frame)).toContain(
-      'OpenCode CLI · working · No output for 5:12 · tools report when done',
+      'OpenCode CLI · auto · working · No output for 5:12 · tools report when done',
     );
     expect(frame).toContain(`${warning}No output for 5:12 · tools report when done`);
-    expect(frame).not.toContain(`${warning}OpenCode CLI · working`);
+    expect(frame).not.toContain(`${warning}OpenCode CLI · auto · working`);
 
     ui.unmount();
+  });
+
+  it('colors only the silence after a recorded identity sheds its model and axes', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    addEvent(
+      makeRunnerCallStarted({
+        ts: NOW - 312_000,
+        runnerName: 'opencode',
+        model: 'long-model-name-'.repeat(10),
+        axes: ['high'],
+      }),
+    );
+    addEvent(makeRunnerCallStalled({ ts: NOW - 12_000, silentMs: 300_000 }));
+    const warning = colorOpen(defaultTheme.warning);
+    for (const cols of [120, 80, 60]) {
+      const ui = renderFeature(<BuildProgressBlock cols={cols} />, { cols, rows: 24 });
+      const frame = ui.lastFrame();
+      const silence =
+        cols === 120 ? 'No output for 5:12' : 'No output for 5:12 · tools report when done';
+      const separator = cols === 120 ? ' · ' : '\n';
+      expect(stripAnsiStyles(frame)).toContain(`OpenCode CLI · working${separator}${silence}`);
+      expect(frame).toContain(`${warning}${silence}`);
+      expect(frame).not.toContain(`${warning}OpenCode CLI`);
+      if (cols === 120) expect(stripAnsiStyles(frame)).not.toContain('tools report when done');
+      ui.unmount();
+    }
+  });
+
+  it('colors only the silence after a full recorded identity and a cut command description', () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(NOW);
+    addEvent(
+      makeRunnerCallStarted({
+        ts: NOW - 312_000,
+        runnerName: 'codex',
+        model: 'gpt-5',
+        axes: ['high'],
+      }),
+    );
+    addEvent(
+      makeRunnerCallActivity({
+        ts: NOW - 311_000,
+        callId: 'call-2',
+        runnerName: 'codex',
+        stage: 'updated',
+        kind: 'command',
+        label: 'bash',
+        target: `npm test -- ${'src/features/workflow/'.repeat(8)}`,
+      }),
+    );
+    addEvent(makeRunnerCallStalled({ ts: NOW - 12_000, silentMs: 300_000 }));
+    const warning = colorOpen(defaultTheme.warning);
+
+    for (const cols of [120, 80, 60]) {
+      const ui = renderFeature(<BuildProgressBlock cols={cols} />, { cols, rows: 24 });
+      const frame = ui.lastFrame();
+      const separator = cols === 120 ? ' · ' : '\n';
+      expect(stripAnsiStyles(frame)).toContain(
+        `OpenAI Codex CLI · GPT-5 · high · working${separator}No output for 5:12 · running npm test`,
+      );
+      expect(frame).toContain(`${warning}No output for 5:12 · running npm test`);
+      expect(frame).not.toContain(`${warning}OpenAI Codex CLI`);
+      ui.unmount();
+    }
   });
 
   it('keeps a shell command named claude literal in its activity line', () => {
@@ -166,7 +232,7 @@ describe('BuildProgressBlock', () => {
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = stripAnsiStyles(ui.lastFrame());
 
-    expect(frame).toContain('claude · working · No output for 5:12');
+    expect(frame).toContain('claude · auto · working · No output for 5:12');
     expect(frame).not.toContain('Claude Code CLI');
 
     ui.unmount();
@@ -183,7 +249,7 @@ describe('BuildProgressBlock', () => {
     const ui = renderFeature(<BuildProgressBlock cols={160} />, { cols: 160, rows: 24 });
     const frame = stripAnsiStyles(ui.lastFrame());
 
-    expect(frame).toContain('claude-code · working · No output for 5:12');
+    expect(frame).toContain('claude-code · auto · working · No output for 5:12');
     expect(frame).not.toContain('Claude Code CLI');
 
     ui.unmount();

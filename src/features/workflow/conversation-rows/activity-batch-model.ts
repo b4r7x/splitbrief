@@ -1,12 +1,8 @@
-import { formatToolModel } from '../../../core/model-display.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
-import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from '../display/activity-display-text.js';
+import { formatRecordedSeatIdentity } from '../display/recorded-seat-identity.js';
 import {
   runnerActivityLedgerItem,
   runnerActivityModelRole,
@@ -87,6 +83,7 @@ export function buildActivityBatchViewModel(input: {
     : collapsedActivityItemsProjection(events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
   const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
   const headerText = activityBatchHeader(events, projection.headerCount, projection.severityCounts);
+  const latest = events.at(-1);
 
   return {
     batchKey: input.batchKey,
@@ -95,7 +92,10 @@ export function buildActivityBatchViewModel(input: {
     hiddenCount,
     headerCount: projection.headerCount,
     headerText,
-    headerRunner: activityBatchRunner(events),
+    headerRunner:
+      latest === undefined
+        ? null
+        : formatRecordedSeatIdentity({ ...latest, role: runnerActivityModelRole(latest.role) }),
     tone: activityBatchTone(events),
     renderableUnits: projection.headerCount,
     expandableKey: hiddenCount > 0 ? input.batchKey : null,
@@ -193,34 +193,6 @@ function activityBatchHeader(
   ]
     .filter((part): part is string => part !== null)
     .join('  ');
-}
-
-/**
- * The tool and model this batch's own call ran on, in the words the seat identity uses for them,
- * so a batch from before a seat swap keeps naming the runner that produced it.
- */
-function activityBatchRunner(events: readonly RunnerActivityEvent[]): string | null {
-  const latest = events.at(-1);
-  if (latest === undefined) return null;
-
-  const runner =
-    latest.backendKind === 'cli' && latest.runnerName !== undefined
-      ? (cliToolIdForCommand(latest.runnerName) ?? latest.runnerName)
-      : latest.runnerName;
-  const displayName =
-    runner === undefined || latest.model === undefined
-      ? undefined
-      : resolveModelDisplayName({
-          providerId: runner,
-          model: latest.model,
-          role: runnerActivityModelRole(latest.role),
-          cache: modelCacheStore,
-          kind: latest.backendKind,
-        });
-  const identity = sanitizeTerminalDisplayText(
-    formatToolModel({ tool: runner, model: latest.model, displayName, kind: latest.backendKind }),
-  );
-  return identity === '' ? null : identity;
 }
 
 function activityItemSummary(item: ActivityItemSummary): ActivityItemSummary {

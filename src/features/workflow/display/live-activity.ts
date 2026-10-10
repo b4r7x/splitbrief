@@ -2,6 +2,7 @@ import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { activeVerb, suiteStatusText, reviewActivityText } from './phase-verb.js';
+import { formatRecordedSeatIdentity } from './recorded-seat-identity.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   ActiveOperation,
@@ -96,7 +97,11 @@ export function deriveLiveStatus(input: {
   }
   if (input.activeOperation?.status === 'running' && input.activeOperation.role === 'review') {
     return {
-      verb: reviewActivityText(input.activeOperation, input.reviewerLabel),
+      verb: reviewActivityText(
+        input.activeOperation,
+        formatRecordedSeatIdentity({ ...input.activeOperation, role: 'reviewer' }) ??
+          input.reviewerLabel,
+      ),
       stageStart: Math.max(input.activeOperation.startedAt, input.resumedAt ?? 0),
       waitedMs: 0,
       tone: 'validator',

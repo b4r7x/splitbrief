@@ -213,6 +213,7 @@ export interface UsageRateRow {
 }
 
 export interface UsageBillingRow {
+  key: string;
   tool: string;
   posture: RunnerBillingPosture;
   basis: BillingAttribution['basis'];
@@ -421,6 +422,7 @@ function deriveBilling(breakdown: CostBreakdown | null): UsageBillingRow[] {
     const attribution = metadata.billingAttribution;
     const proven = attribution !== undefined && PROVEN_BASES.has(attribution.basis);
     return {
+      key,
       tool: kind === undefined ? id : getRunnerIdentityDisplayName(kind, id),
       posture: proven && attribution !== undefined ? attribution.posture : metadata.billing,
       basis: attribution?.basis ?? 'legacy-unattributed',
@@ -736,7 +738,7 @@ export function usageDetailRows(view: UsageDetailsView): UsageDetailRow[] {
   }
   for (const row of view.billing) {
     rows.push(
-      entry(`billing:${row.tool}`, row.tool, billingFacts(row), row.proven ? 'text' : 'textDim'),
+      entry(`billing:${row.key}`, row.tool, billingFacts(row), row.proven ? 'text' : 'textDim'),
     );
   }
   return rows;

@@ -150,6 +150,7 @@ export async function spawnAndCollect(
       role: 'implementer',
       backendKind: 'cli',
       runnerName: opts.command,
+      axes: [],
     } satisfies RunnerCallContext);
 
   const credentialValues =

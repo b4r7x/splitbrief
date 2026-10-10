@@ -57,6 +57,7 @@ export const runnerCallContextFields = {
   backendKind: RunnerCallBackendKindSchema,
   runnerName: boundedName.optional(),
   model: boundedName.optional(),
+  axes: z.array(boundedName).readonly().optional(),
   attempt: nonnegativeInteger.optional(),
   transport: PlannerArtifactTransportSchema.optional(),
   sessionScope: PlannerSessionScopeSchema.optional(),
