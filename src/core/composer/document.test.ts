@@ -6,9 +6,7 @@ import {
   draftError,
   draftLength,
   insertDraftImage,
-  insertDraftText,
   normalizeDraftDocument,
-  removeDraftRange,
   replaceDraftRange,
 } from './document.js';
 
@@ -32,8 +30,8 @@ describe('draft document image atoms', () => {
   it('edits text on either side of an image and deleting the atom removes only that image', () => {
     let edit = insertDraftImage(createDraftDocument('ab'), 1, image('img-1'));
     edit = insertDraftImage(edit.document, 3, image('img-2'));
-    edit = insertDraftText(edit.document, 1, 'X');
-    edit = insertDraftText(edit.document, 3, 'Y');
+    edit = replaceDraftRange(edit.document, { start: 1, end: 1 }, [{ kind: 'text', text: 'X' }]);
+    edit = replaceDraftRange(edit.document, { start: 3, end: 3 }, [{ kind: 'text', text: 'Y' }]);
 
     expect(edit.document.parts).toEqual([
       { kind: 'text', text: 'aX' },
@@ -42,7 +40,7 @@ describe('draft document image atoms', () => {
       { kind: 'image', attachment: image('img-2') },
     ]);
 
-    const removed = removeDraftRange(edit.document, { start: 2, end: 3 });
+    const removed = replaceDraftRange(edit.document, { start: 2, end: 3 }, []);
 
     expect(removed.document.parts).toEqual([
       { kind: 'text', text: 'aXYb' },
@@ -55,7 +53,7 @@ describe('draft document image atoms', () => {
     const first = image('img-1');
     let edit = insertDraftImage(createDraftDocument('one two'), 3, first);
     edit = insertDraftImage(edit.document, draftLength(edit.document), image('img-2'));
-    edit = insertDraftText(edit.document, 0, '> ');
+    edit = replaceDraftRange(edit.document, { start: 0, end: 0 }, [{ kind: 'text', text: '> ' }]);
 
     const images = edit.document.parts.flatMap((part) =>
       part.kind === 'image' ? [part.attachment] : [],
@@ -69,20 +67,26 @@ describe('draft document pastes', () => {
   const paste = 'line 1\nline 2\nline 3\nline 4';
 
   it('removes a four-line paste inserted into an empty draft completely', () => {
-    const pasted = insertDraftText(createDraftDocument(''), 0, paste);
+    const pasted = replaceDraftRange(createDraftDocument(''), { start: 0, end: 0 }, [
+      { kind: 'text', text: paste },
+    ]);
 
     expect(pasted.document.parts).toEqual([{ kind: 'text', text: paste }]);
     expect(pasted.caret).toBe(paste.length);
 
-    const removed = removeDraftRange(pasted.document, { start: 0, end: pasted.caret });
+    const removed = replaceDraftRange(pasted.document, { start: 0, end: pasted.caret }, []);
 
     expect(removed.document).toEqual({ version: 1, parts: [] });
     expect(removed.caret).toBe(0);
   });
 
   it('types after a paste without splitting the payload', () => {
-    const pasted = insertDraftText(createDraftDocument('ab'), 1, paste);
-    const typed = insertDraftText(pasted.document, pasted.caret, 'X');
+    const pasted = replaceDraftRange(createDraftDocument('ab'), { start: 1, end: 1 }, [
+      { kind: 'text', text: paste },
+    ]);
+    const typed = replaceDraftRange(pasted.document, { start: pasted.caret, end: pasted.caret }, [
+      { kind: 'text', text: 'X' },
+    ]);
 
     expect(typed.document.parts).toEqual([{ kind: 'text', text: `a${paste}Xb` }]);
     expect(typed.caret).toBe(1 + paste.length + 1);
@@ -90,7 +94,7 @@ describe('draft document pastes', () => {
 
   it('keeps literal marker-looking text as ordinary text', () => {
     const document = createDraftDocument('see [paste:x] and [Image #1]');
-    const { document: edited } = removeDraftRange(document, { start: 4, end: 5 });
+    const { document: edited } = replaceDraftRange(document, { start: 4, end: 5 }, []);
 
     expect(draftLength(document)).toBe(28);
     expect(edited.parts).toEqual([{ kind: 'text', text: 'see paste:x] and [Image #1]' }]);
@@ -102,10 +106,11 @@ describe('draft document normalization', () => {
     const document = createDraftDocument('a😀b');
 
     expect(draftLength(document)).toBe(3);
-    expect(insertDraftText(document, 2, '|').document.parts).toEqual([
-      { kind: 'text', text: 'a😀|b' },
-    ]);
-    expect(removeDraftRange(document, { start: 1, end: 2 }).document.parts).toEqual([
+    expect(
+      replaceDraftRange(document, { start: 2, end: 2 }, [{ kind: 'text', text: '|' }]).document
+        .parts,
+    ).toEqual([{ kind: 'text', text: 'a😀|b' }]);
+    expect(replaceDraftRange(document, { start: 1, end: 2 }, []).document.parts).toEqual([
       { kind: 'text', text: 'ab' },
     ]);
   });
@@ -133,17 +138,21 @@ describe('draft document normalization', () => {
   it('clamps and orders ranges at the endpoints', () => {
     const document = insertDraftImage(createDraftDocument('ab'), 2, image('img-1')).document;
 
-    expect(insertDraftText(document, -5, 'S')).toMatchObject({
+    expect(
+      replaceDraftRange(document, { start: -5, end: -5 }, [{ kind: 'text', text: 'S' }]),
+    ).toMatchObject({
       document: { parts: [{ kind: 'text', text: 'Sab' }, { kind: 'image' }] },
       caret: 1,
     });
-    expect(insertDraftText(document, 99, 'E')).toMatchObject({
+    expect(
+      replaceDraftRange(document, { start: 99, end: 99 }, [{ kind: 'text', text: 'E' }]),
+    ).toMatchObject({
       document: {
         parts: [{ kind: 'text', text: 'ab' }, { kind: 'image' }, { kind: 'text', text: 'E' }],
       },
       caret: 4,
     });
-    expect(removeDraftRange(document, { start: 99, end: 1 })).toEqual({
+    expect(replaceDraftRange(document, { start: 99, end: 1 }, [])).toEqual({
       document: { version: 1, parts: [{ kind: 'text', text: 'a' }] },
       caret: 1,
     });

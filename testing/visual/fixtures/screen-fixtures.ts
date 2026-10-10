@@ -89,24 +89,15 @@ const BASE_IMPLEMENTER = {
   temperature: 0.2,
 } as const;
 
-const BASE_WORKFLOW = {
-  maxRetries: 2,
-} as const;
-
-/**
- * A seat override replaces the whole seat — `planner`, `implementer` and
- * `reviewer` overrides must be complete. `workflow` is merged, so a scenario can
- * change one setting without losing the pinned transcript and retry settings.
- */
 /** The session every workflow fixture runs as. */
 export const VISUAL_WORKFLOW_SESSION_ID = 'visual-workflow';
 
+/** A seat override replaces the whole seat, so each seat override must be complete. */
 export function visualConfig(overrides?: VisualConfigOverrides): Config {
   return makeConfig({
     planner: BASE_PLANNER,
     implementer: BASE_IMPLEMENTER,
     ...overrides,
-    workflow: { ...BASE_WORKFLOW, ...overrides?.workflow },
   });
 }
 

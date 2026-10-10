@@ -40,7 +40,6 @@ function effectConfig(timeoutMs?: number): Config {
     },
     validation: { endChecks: false, testCommand: 'noop' },
     workflow: {
-      maxRetries: 0,
       compactionFormat: 'auto',
     },
   });

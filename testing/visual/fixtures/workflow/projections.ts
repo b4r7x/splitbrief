@@ -1850,11 +1850,6 @@ const AGY_BUILD_SEAT = {
 } as const;
 /** The isolation halts are raised only on a CLI implementer's tool calls. */
 const AGY_CREW: VisualConfigOverrides = { implementer: AGY_BUILD_SEAT };
-/** Three local retries need the retry budget that allows them. */
-const AGY_LADDER_CREW: VisualConfigOverrides = {
-  implementer: AGY_BUILD_SEAT,
-  workflow: { maxRetries: 3 },
-};
 
 const HALTED_TASK = makeTask({
   id: WORKFLOW_FIXTURE_TASK_ID,
@@ -1945,7 +1940,7 @@ const retryExhaustedRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
-  config: AGY_LADDER_CREW,
+  config: AGY_CREW,
   resumeState: haltedResumeState(retryExhaustedRecoveryIssue),
 };
 
@@ -1955,7 +1950,7 @@ const consultBoundRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
-  config: AGY_LADDER_CREW,
+  config: AGY_CREW,
   resumeState: haltedResumeState(consultBoundRecoveryIssue),
 };
 
@@ -1966,7 +1961,7 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
   inputMode: 'question',
   sidebarVisible: false,
   events: [],
-  config: AGY_LADDER_CREW,
+  config: AGY_CREW,
   resumeState: makeImplState([{ ...HALTED_TASK, status: 'done' }], {
     feature: WORKFLOW_FEATURE,
     startedAt: RESUMED_RUN_STARTED_AT,

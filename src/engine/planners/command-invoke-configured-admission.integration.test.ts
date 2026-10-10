@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { normalizeCustomCommand } from '../../core/config/custom-commands.js';
 import { matches } from '../../utils/error.js';
+import { shellQuoteArg } from '../../utils/shell-quote.js';
 import { createStagedProject } from '../orchestrator/approval/staged-project.js';
 import {
   customRunnerSecurityPosture,
@@ -18,7 +19,6 @@ import {
   itUnix,
   reviewCandidateRoot,
   runtimeFor,
-  shellLiteral,
 } from '#testing/helpers/planner-command-invoke.js';
 import { createTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -99,7 +99,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
         authorizedBin,
         "if [ \"$PLANNER_OUTPUT_CANARY\" != 'only-from-source' ]; then exit 17; fi\nprintf 'authorized output source env'",
       );
-      writeRunner(sourceOnlyBin, `printf started > ${shellLiteral(competingSentinel)}`);
+      writeRunner(sourceOnlyBin, `printf started > ${shellQuoteArg(competingSentinel)}`);
       const runner: ConfiguredCustomRunner = {
         source: 'configured',
         command: normalizeCustomCommand('configured-output-authority', {
@@ -141,7 +141,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
     const executablePath = join(sourceOnlyBin, executable);
     writeFileSync(
       executablePath,
-      `#!/bin/sh\nprintf started > ${shellLiteral(childSentinel)}\nprintf should-not-run\n`,
+      `#!/bin/sh\nprintf started > ${shellQuoteArg(childSentinel)}\nprintf should-not-run\n`,
     );
     chmodSync(executablePath, 0o755);
     const runner: ConfiguredCustomRunner = {
@@ -225,7 +225,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
         const path = join(directory, executable);
         writeFileSync(
           path,
-          `#!/bin/sh\nprintf started > ${shellLiteral(sentinel)}\nprintf diagnostic\n`,
+          `#!/bin/sh\nprintf started > ${shellQuoteArg(sentinel)}\nprintf diagnostic\n`,
         );
         chmodSync(path, 0o755);
       };

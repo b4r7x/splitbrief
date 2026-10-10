@@ -22,9 +22,6 @@ import {
   OMIT_PROVIDER_EVALUATION_ROWS,
   buildModelEvaluationEvidence,
   discoverPendingEvaluationCandidates,
-  deriveQualityVerdict,
-  scenarioMetricsMeetThresholds,
-  type ModelEvaluationScenarioMetrics,
 } from './implementer-provider.js';
 import { buildEvalConfig } from './eval-config.js';
 import {
@@ -650,37 +647,6 @@ describe('eval harness', () => {
     ]);
   });
 
-  it('scores a scenario only from supplied metrics and fails a short scenario set', () => {
-    expect(scenarioMetricsMeetThresholds(perfectScenarioMetrics())).toBe(true);
-    expect(scenarioMetricsMeetThresholds({ ...perfectScenarioMetrics(), retryRate: 0.25 })).toBe(
-      false,
-    );
-    expect(
-      scenarioMetricsMeetThresholds({ ...perfectScenarioMetrics(), unnecessaryFiles: 1 }),
-    ).toBe(false);
-    expect(
-      scenarioMetricsMeetThresholds({
-        ...perfectScenarioMetrics(),
-        extraction: { passed: 4, total: 5 },
-      }),
-    ).toBe(false);
-
-    const allScenarios = MODEL_EVALUATION_SCENARIO_IDS.map((scenarioId) => ({
-      scenarioId,
-      metrics: perfectScenarioMetrics(),
-      thresholdsMet: true,
-    }));
-    expect(deriveQualityVerdict(allScenarios)).toBe('PASS');
-    expect(deriveQualityVerdict(allScenarios.slice(1))).toBe('FAIL');
-    expect(
-      deriveQualityVerdict(
-        allScenarios.map((scenario, index) =>
-          index === 0 ? { ...scenario, thresholdsMet: false } : scenario,
-        ),
-      ),
-    ).toBe('FAIL');
-  });
-
   it('records OMIT-NOT-APPLICABLE for every pending candidate until T-080 runs', () => {
     expect(MODEL_EVALUATION_OMIT_ROWS.map((row) => `${row.provider}/${row.model}`)).toEqual(
       discoverPendingEvaluationCandidates().map(
@@ -856,16 +822,6 @@ function harnessSourceFiles(): string[] {
     .filter((entry) => entry.endsWith('.ts') && !entry.endsWith('.test.ts'))
     .filter((entry) => !entry.startsWith('fixtures/'))
     .map((entry) => join('evals', entry));
-}
-
-function perfectScenarioMetrics(): ModelEvaluationScenarioMetrics {
-  return {
-    compileTest: { passed: 5, total: 5 },
-    extraction: { passed: 5, total: 5 },
-    instructionAdherence: { passed: 5, total: 5 },
-    unnecessaryFiles: 0,
-    retryRate: 0,
-  };
 }
 
 function writeSessionArtifacts(projectDir: string, sessionId: string): void {

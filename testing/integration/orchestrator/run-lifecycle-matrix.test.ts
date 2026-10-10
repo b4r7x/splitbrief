@@ -124,7 +124,7 @@ async function runUntil(stopBeforeReview: boolean): Promise<Ref> {
       ...ref,
       feature: 'two briefs, then the result',
       config: makeNoValidationConfig({
-        workflow: { approve: 'none', maxRetries: 1, isolation: 'worktree' },
+        workflow: { approve: 'none', isolation: 'worktree' },
         approval: { feedRejectionsToPlanner: false },
       }),
     }),

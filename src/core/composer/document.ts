@@ -71,10 +71,6 @@ export function replaceDraftRange(
   return { document: next, caret: start + draftLength(inserted) };
 }
 
-export function insertDraftText(document: DraftDocument, offset: number, text: string): DraftEdit {
-  return replaceDraftRange(document, { start: offset, end: offset }, [{ kind: 'text', text }]);
-}
-
 export function insertDraftImage(
   document: DraftDocument,
   offset: number,
@@ -83,10 +79,6 @@ export function insertDraftImage(
   return replaceDraftRange(document, { start: offset, end: offset }, [
     { kind: 'image', attachment },
   ]);
-}
-
-export function removeDraftRange(document: DraftDocument, range: DraftRange): DraftEdit {
-  return replaceDraftRange(document, range, []);
 }
 
 function clamp(offset: number, length: number): number {

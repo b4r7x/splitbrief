@@ -13,12 +13,13 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
-import { selectRunningBrief, tasksStore } from '../../../../stores/workflow/tasks.js';
+import { tasksStore } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../../conversation-rows/viewport.js';
+import { queuedBriefs } from '../../conversation-rows/queued-briefs.js';
 import { row } from '../../conversation-rows/row-format/rows.js';
 import { rowLeadingCells } from '../../conversation-rows/row-markers.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
@@ -91,24 +92,17 @@ export function ConversationFlow({
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
-  // The sidebar is the persistent list and the transcript is the narrative, so the queued block
-  // stands down while the sidebar renders rather than printing the same pending titles twice, side
-  // by side. Below the sidebar's column breakpoint it is the only place pending work appears.
   const sidebarShowsTasks =
     getWorkflowSidebarWidth({
       cols: terminalSize.cols,
       sidebarVisible: controls.sidebarVisible,
     }) > 0;
-  // A run that has closed has nothing queued: the briefs it never reached are already listed, in
-  // the block that accounts for it, as the briefs it never reached.
-  const closed = tail !== undefined && tail.length > 0;
-  // The brief the run is on is the live section, not a pending one, even while a recovery has set it
-  // back to pending before its next start.
-  const runningBrief = selectRunningBrief(tasks, lifecycle.phase).current;
-  const pendingTasks =
-    sidebarShowsTasks || closed
-      ? []
-      : tasks.tasks.filter((task) => task.status === 'pending' && task !== runningBrief);
+  const pendingTasks = queuedBriefs({
+    tasks,
+    phase: lifecycle.phase,
+    sidebarShowsTasks,
+    closed: tail !== undefined && tail.length > 0,
+  });
   const viewportSplit = splitConversationViewport({
     viewportHeight,
     sections,

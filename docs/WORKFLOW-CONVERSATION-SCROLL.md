@@ -78,6 +78,16 @@ Conversation scrolling uses one semantic set of actions over the row window:
 
 Conversation shortcuts do not claim `Ctrl+B` or `Ctrl+F` while the composer owns normal-mode text focus; use physical page keys or `/scroll` for conversation paging. Review panes use the same line, page, top, and bottom semantics while a review file is open, including `Ctrl+B` and `Ctrl+F` as review-page fallbacks. `/activity` and `Ctrl+A` expand or collapse the latest activity batch with hidden rows. Compact collapsed rows show the lowercase key affordance, such as `ctrl+a`.
 
+An older run parked at `reviewing-briefs` displays its review document as markdown.
+Keyboard and wheel scrolling use the markdown frame and overflow rows, as for every other review document.
+Saved brief-load errors reserve no rows in this pane.
+
+`queuedBriefs` in `src/features/workflow/conversation-rows/queued-briefs.ts` supplies the queued tasks
+to both `ConversationFlow` and the keyboard and mouse snapshot. It excludes the running brief,
+even when recovery resets it to `pending`. It returns no queued tasks while the sidebar shows tasks
+or a closed ledger occupies the transcript tail. The snapshot reads the tail measurements from
+`transcriptTailStore`. Both callers pass the resulting count to `splitConversationViewport`.
+
 ## Projection Performance
 
 Row projection is split from row materialization:
@@ -138,6 +148,11 @@ The key regression coverage is observable Ink output, not implementation wiring:
 - `src/features/workflow/conversation-rows/build.test.ts`
   - render blocks are materialized only when they intersect the requested row window
   - compact activity rows dedupe and expose the key affordance
+- `src/features/workflow/layout/snapshot.test.ts`
+  - rendered scroll ends and mouse rows agree after a recovery resets the running brief to pending
+  - closed runs below the sidebar breakpoint reserve no queued rows
+- `src/features/workflow/hooks/use-keys.test.tsx`
+  - keyboard and wheel scrolling ignore stale brief-load errors and reach the last markdown row in an older brief review
 - `src/features/workflow/conversation-rows/markdown-rows.test.ts`
   - markdown layout is cached by identity and width
   - active cache entries survive cache-cap pressure

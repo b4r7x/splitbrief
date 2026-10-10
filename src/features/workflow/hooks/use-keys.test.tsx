@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resolve } from 'node:path';
 import { Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
@@ -20,6 +21,13 @@ import { activityBatchKey } from '../conversation-rows/activity-batch-key.js';
 import { readConversationScrollSnapshot, readReviewContentHeight } from '../layout/snapshot.js';
 import { useWorkflowKeys } from './use-keys.js';
 import { taskId } from '../../../core/schemas/task.js';
+import {
+  getReviewContentLayout,
+  getWorkflowViewportHeight,
+  REVIEW_FRAME_ROWS,
+} from '../layout/rect.js';
+import { handleWorkflowMouseWheel } from './use-mouse-scroll.js';
+import { ReviewView } from '../components/review-view.js';
 
 const CTRL_A = '\x01';
 const CTRL_B = '\x02';
@@ -381,32 +389,44 @@ describe('useWorkflowKeys', () => {
     ui.unmount();
   });
 
-  it('PageDown and End use the simple brief task viewport to reach the final task', async () => {
+  it('PageDown, End, and the wheel reach the final markdown row at reviewing-briefs', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 25, isSmall: false });
     inputHeightStore.__testReset({ rows: 3 });
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
-    reviewStore.setReviewFile('/tmp/tasks.md', 20);
+    reviewStore.setReviewFile(resolve('docs/WORKFLOW-CONVERSATION-SCROLL.md'));
     controlsStore.setInputMode('review');
-    const visibleTasks = readReviewContentHeight();
-    const maxTaskOffset = 20 - visibleTasks;
-    const ui = render(<Harness />);
+    const bodyHeight = getWorkflowViewportHeight({ rows: 25, inputRows: 3 });
+    const ui = render(
+      <>
+        <Harness />
+        <ReviewView height={bodyHeight} width={79} />
+      </>,
+    );
+    await expect.poll(() => reviewStore.get().renderedLineCount).toBeGreaterThan(bodyHeight);
+    reviewStore.setLoadError('A retired brief entry failed to load');
+    const lineCount = reviewStore.get().renderedLineCount;
+    const visibleRows = getReviewContentLayout(
+      bodyHeight - REVIEW_FRAME_ROWS,
+      lineCount,
+    ).contentHeight;
+    expect(readReviewContentHeight()).toBe(visibleRows);
+    const maxOffset = lineCount - visibleRows;
     await tick(1);
     await flushEffects();
 
     ui.stdin.write(PAGE_DOWN);
     await tick(1);
     await tick(1);
-    // One page is a full task viewport, clamped to the last reachable offset when the taller
-    // chrome-free body already shows most of the list.
-    expect(reviewStore.get().scrollOffset).toBe(Math.min(visibleTasks, maxTaskOffset));
+    expect(reviewStore.get().scrollOffset).toBe(Math.min(visibleRows, maxOffset));
 
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < Math.ceil(lineCount / visibleRows); i += 1) {
       await flushEffects();
       ui.stdin.write(PAGE_DOWN);
       await tick(1);
     }
     await tick(1);
-    expect(reviewStore.get().scrollOffset).toBe(maxTaskOffset);
+    expect(reviewStore.get().scrollOffset).toBe(maxOffset);
+    expect(ui.lastFrame()).toContain('End of file');
 
     await flushEffects();
     ui.stdin.write(HOME);
@@ -418,7 +438,38 @@ describe('useWorkflowKeys', () => {
     ui.stdin.write(END);
     await tick(1);
     await tick(1);
-    expect(reviewStore.get().scrollOffset).toBe(maxTaskOffset);
+    expect(reviewStore.get().scrollOffset).toBe(maxOffset);
+    expect(ui.lastFrame()).toContain('End of file');
+    handleWorkflowMouseWheel({
+      type: 'wheel-up',
+      x: 1,
+      y: 4,
+      button: 0,
+      shift: false,
+      meta: false,
+      ctrl: false,
+    });
+    expect(reviewStore.get().scrollOffset).toBe(maxOffset - 1);
+    handleWorkflowMouseWheel({
+      type: 'wheel-down',
+      x: 1,
+      y: 4,
+      button: 0,
+      shift: false,
+      meta: false,
+      ctrl: false,
+    });
+    expect(reviewStore.get().scrollOffset).toBe(maxOffset);
+    handleWorkflowMouseWheel({
+      type: 'wheel-down',
+      x: 1,
+      y: 4,
+      button: 0,
+      shift: false,
+      meta: false,
+      ctrl: false,
+    });
+    expect(reviewStore.get().scrollOffset).toBe(maxOffset);
     ui.unmount();
   });
 

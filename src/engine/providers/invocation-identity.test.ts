@@ -73,7 +73,7 @@ function plannerConfig(apiBase: string, model: string): Config {
       apiBase: 'http://localhost:11434/v1',
     },
     validation: { endChecks: true, testCommand: 'npm test' },
-    workflow: { maxRetries: 3, compactionFormat: 'auto' },
+    workflow: { compactionFormat: 'auto' },
   };
 }
 

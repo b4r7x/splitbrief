@@ -59,7 +59,7 @@ describe('an extracted-code writer in the run workspace', { timeout: 90_000 }, (
     });
     const config = makeConfig({
       validation: { endChecks: false, testCommand: 'noop' },
-      workflow: { approve: 'none', maxRetries: 2 },
+      workflow: { approve: 'none' },
     });
     const planner = makePlanner({ typedCall: typedCallFromTasks([task]) });
     const callDirs: string[] = [];

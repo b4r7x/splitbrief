@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { streamCompletion } from './completion.js';
 import {
   effortField,
-  extraBodyFields,
-  reasoningField,
   responseFormatField,
   temperatureField,
   toOpenAIRequest,
@@ -174,9 +172,8 @@ describe('policy-driven request fields', () => {
     expect(tokenLimitFields(syntheticPolicy, 512)).toEqual({ max_completion_tokens: 512 });
     expect(temperatureField(syntheticPolicy, 0.2)).toEqual({});
     expect(effortField(syntheticPolicy, 'medium')).toEqual({ reasoning_effort: 'high' });
-    expect(reasoningField(syntheticPolicy, 'xhigh')).toEqual({ reasoning_effort: 'xhigh' });
+    expect(effortField(syntheticPolicy, 'xhigh')).toEqual({ reasoning_effort: 'xhigh' });
     expect(usageField(syntheticPolicy)).toEqual({});
-    expect(extraBodyFields(syntheticPolicy)).toEqual({ provider_options: { trace: true } });
 
     expect(
       toOpenAIRequest({

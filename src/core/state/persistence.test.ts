@@ -188,15 +188,16 @@ describe('loadState', () => {
     const dir = makeTmp();
     const stateDir = join(dir, SPLITBRIEF_DIR, SESSIONS_DIR, SESSION_ID);
     mkdirSync(stateDir, { recursive: true });
+    const current = createInitialState('old-decision-confirms');
     const legacy = {
-      ...createInitialState('old-decision-confirms'),
+      ...current,
       decisionConfirms: { used: 20, allowance: 20 },
     };
     const snapshot = JSON.stringify(legacy);
     const statePath = join(stateDir, 'state.json');
     writeFileSync(statePath, snapshot);
 
-    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(legacy);
+    expect(loadState({ projectDir: dir, sessionId: SESSION_ID })).toEqual(current);
     expect(readFileSync(statePath, 'utf-8')).toBe(snapshot);
   });
 

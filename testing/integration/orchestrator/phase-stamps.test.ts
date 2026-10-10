@@ -89,7 +89,7 @@ async function runConsultedBrief(): Promise<EngineEvent[]> {
       config: makeConfig({
         implementer: { kind: 'agent', command: 'node', model: 'cheap-direct-agent' },
         validation: { endChecks: false, testCommand: 'node validate.mjs' },
-        workflow: { approve: 'none', review: 'task', maxRetries: 1 },
+        workflow: { approve: 'none', review: 'task' },
       }),
     }),
     callbacks: makeCallbacks().callbacks,

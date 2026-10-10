@@ -3,10 +3,8 @@ import type { RunnerCallCounterCoverage } from '../../core/runner-call-contract.
 import {
   BackendTokenUsageSchema,
   accumulateRunnerCallUsage,
-  accumulateRunnerCallUsageSamples,
   applyRunnerCallUsageSample,
   normalizeRunnerCallUsage,
-  normalizeRunnerCallUsageSample,
   toTokenDelta,
   accumulateTokenUsage,
 } from './usage.js';
@@ -445,32 +443,6 @@ describe('BackendTokenUsageSchema', () => {
   });
 });
 
-describe('normalizeRunnerCallUsageSample', () => {
-  it('attaches validated usage semantics to normalized usage', () => {
-    expect(
-      normalizeRunnerCallUsageSample({
-        raw: { inputTokens: 1, outputTokens: 2 },
-        semantics: 'final',
-      }),
-    ).toEqual({
-      semantics: 'final',
-      usage: {
-        inputTokens: 1,
-        outputTokens: 2,
-      },
-    });
-  });
-
-  it('rejects unknown usage semantics', () => {
-    expect(
-      normalizeRunnerCallUsageSample({
-        raw: { inputTokens: 1, outputTokens: 2 },
-        semantics: 'running-total',
-      }),
-    ).toBeNull();
-  });
-});
-
 describe('usage accumulation', () => {
   it('adds delta usage samples', () => {
     expect(
@@ -495,20 +467,6 @@ describe('usage accumulation', () => {
     expect(usage).toEqual({
       inputTokens: 15,
       outputTokens: 9,
-    });
-  });
-
-  it('applies mixed sample sequences without overcounting snapshots', () => {
-    const usage = accumulateRunnerCallUsageSamples([
-      { semantics: 'delta', usage: { inputTokens: 5, outputTokens: 2 } },
-      { semantics: 'delta', usage: { inputTokens: 4, outputTokens: 3 } },
-      { semantics: 'cumulative', usage: { inputTokens: 20, outputTokens: 10 } },
-      { semantics: 'final', usage: { inputTokens: 22, outputTokens: 11 } },
-    ]);
-
-    expect(usage).toEqual({
-      inputTokens: 22,
-      outputTokens: 11,
     });
   });
 

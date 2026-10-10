@@ -165,7 +165,7 @@ describe('review fix cycle', { timeout: 90_000 }, () => {
         model: 'cheap-direct-agent',
         contextLength: 4096,
       },
-      workflow: { approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none' },
     });
     const summary = await runWorkflow({
       prepared: makePreparedExecution({

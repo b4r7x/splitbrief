@@ -3,7 +3,6 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEFAULT_PROCESS_LINE_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
-import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
 import { boundEngineEventForConsumer } from '../events/bound.js';
 import { spawnAndCollect, spawnCollectError } from './spawn-collect.js';
 import { parseJsonlLine } from './parse-jsonl.js';
@@ -17,6 +16,7 @@ import type { RunnerCallEvent } from '../calls/types.js';
 import {
   replayRunnerCallEventsIntoOperations,
   runnerCallErrors,
+  runnerCallLogEntry,
   runnerCallTerminals,
 } from '#testing/helpers/runner-call-events.js';
 
@@ -207,7 +207,7 @@ describe('spawnAndCollect', () => {
     );
     const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionEntries = callbackEvents.map((event, index) =>
-      runnerCallEventToSessionLogEntry(event, {
+      runnerCallLogEntry(event, {
         rootDir: process.cwd(),
         phase: 'planning',
         sequence: index + 1,
@@ -305,7 +305,7 @@ describe('spawnAndCollect', () => {
     );
     const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionEntries = callbackEvents.map((event, index) =>
-      runnerCallEventToSessionLogEntry(event, {
+      runnerCallLogEntry(event, {
         rootDir: process.cwd(),
         phase: 'planning',
         sequence: index + 1,
@@ -404,7 +404,7 @@ describe('spawnAndCollect', () => {
       );
       const protectedEvents = projected.map((event) => boundEngineEventForConsumer(event, 'tui'));
       const sessionEntries = callbackEvents.map((event, index) =>
-        runnerCallEventToSessionLogEntry(event, {
+        runnerCallLogEntry(event, {
           rootDir: process.cwd(),
           phase: 'planning',
           sequence: index + 1,

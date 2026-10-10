@@ -1,5 +1,4 @@
 import type { DetectedModel, ExecutableIdentity } from './detection.js';
-import { assertNever } from '../../utils/type-guards.js';
 
 export type { ExecutableIdentity };
 
@@ -98,81 +97,6 @@ export type RunnerEvidence = Readonly<{
   catalog: ProbeOutcome<readonly DetectedModel[]>;
   modelRun: ModelRunFact;
 }>;
-
-export type RunnerStatus =
-  | Readonly<{ kind: 'disabled' }>
-  | Readonly<{ kind: 'not-installed' }>
-  | Readonly<{ kind: 'installation-unresolved' }>
-  | Readonly<{ kind: 'executable-missing' }>
-  | Readonly<{ kind: 'executable-unresolved' }>
-  | Readonly<{ kind: 'executable-untrusted' }>
-  | Readonly<{ kind: 'identity-drifted' }>
-  | Readonly<{ kind: 'compatibility-incompatible' }>
-  | Readonly<{ kind: 'authentication-missing' }>
-  | Readonly<{ kind: 'authentication-invalid' }>
-  | Readonly<{ kind: 'authentication-policy-denied' }>
-  | Readonly<{ kind: 'installed-configurable'; reason: 'compatibility-unknown' | AuthFact }>
-  | Readonly<{ kind: 'endpoint-unresolved'; outcome: Exclude<ProbeOutcomeKind, 'success'> }>
-  | Readonly<{ kind: 'catalog-unresolved'; outcome: Exclude<ProbeOutcomeKind, 'success'> }>
-  | Readonly<{ kind: 'catalog-empty' }>
-  | Readonly<{ kind: 'model-rejected' }>
-  | Readonly<{ kind: 'facts-complete' }>;
-
-/**
- * Derives a presentation status only. It deliberately contains no start
- * authorization decision; `admitStart` requires fresh context-bound evidence.
- */
-export function deriveRunnerStatus(evidence: RunnerEvidence): RunnerStatus {
-  if (evidence.runner.enabled === 'disabled') return { kind: 'disabled' };
-  if (evidence.installation === 'missing') return { kind: 'not-installed' };
-  if (evidence.installation === 'unknown') return { kind: 'installation-unresolved' };
-  if (evidence.executable.kind === 'missing') return { kind: 'executable-missing' };
-  if (evidence.executable.kind === 'unknown') return { kind: 'executable-unresolved' };
-  if (evidence.executable.kind === 'untrusted') return { kind: 'executable-untrusted' };
-  if (evidence.executable.kind === 'identity-drifted') return { kind: 'identity-drifted' };
-  if (evidence.compatibility.kind === 'incompatible') return { kind: 'compatibility-incompatible' };
-  if (evidence.compatibility.kind === 'unknown') {
-    return { kind: 'installed-configurable', reason: 'compatibility-unknown' };
-  }
-
-  switch (evidence.auth) {
-    case 'missing':
-      return { kind: 'authentication-missing' };
-    case 'invalid':
-      return { kind: 'authentication-invalid' };
-    case 'policy-denied':
-      return { kind: 'authentication-policy-denied' };
-    case 'not-required':
-    case 'verified':
-      break;
-    case 'not-selected':
-    case 'unknown':
-    case 'offline':
-    case 'timeout':
-    case 'malformed':
-    case 'cancelled':
-    case 'not-run':
-      return { kind: 'installed-configurable', reason: evidence.auth };
-    default:
-      return assertNever(evidence.auth);
-  }
-
-  if (evidence.runner.kind === 'api' && evidence.endpoint.kind !== 'success') {
-    return { kind: 'endpoint-unresolved', outcome: evidence.endpoint.kind };
-  }
-  if (evidence.runner.kind === 'api' && evidence.catalog.kind !== 'success') {
-    return { kind: 'catalog-unresolved', outcome: evidence.catalog.kind };
-  }
-  if (
-    evidence.runner.kind === 'api' &&
-    evidence.catalog.kind === 'success' &&
-    evidence.catalog.value.length === 0
-  ) {
-    return { kind: 'catalog-empty' };
-  }
-  if (evidence.modelRun.kind === 'rejected') return { kind: 'model-rejected' };
-  return { kind: 'facts-complete' };
-}
 
 export const START_FACTS = [
   'trusted-executable',

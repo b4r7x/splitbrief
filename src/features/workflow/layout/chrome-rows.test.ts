@@ -16,8 +16,6 @@ import {
   RAIL_MARKER_SLOT_WIDTH,
   RAIL_SHORT_LABEL,
   FIXED_CHROME_ROWS,
-  WORKFLOW_CHROME_ORDER,
-  WORKFLOW_CHROME_ROWS,
   chooseFormBVariant,
   getChromeContentWidth,
   getChromeHeight,
@@ -25,7 +23,6 @@ import {
   getContentTopRowIndex,
   getProgressRows,
   getRailDriftPassed,
-  getWorkflowChromeRows,
   measureFormB,
   railConnectorWidth,
   railFormBLabel,
@@ -74,30 +71,6 @@ describe('getChromeHeight', () => {
   it('clamps malformed composer heights to the fixed chrome rows', () => {
     expect(getChromeHeight(-4)).toBe(FIXED_CHROME_ROWS);
     expect(getChromeHeight(Number.NaN)).toBe(FIXED_CHROME_ROWS);
-  });
-});
-
-describe('workflow chrome row contract', () => {
-  it('keeps the body between the header divider and footer divider', () => {
-    expect(WORKFLOW_CHROME_ORDER).toEqual([
-      'header',
-      'header-divider',
-      'progress',
-      'body',
-      'footer-divider',
-      'feedback',
-      'composer',
-      'input-footer',
-    ]);
-  });
-
-  it('accounts for the composer as the only variable fixed-row block', () => {
-    expect(getWorkflowChromeRows(3)).toEqual({
-      ...WORKFLOW_CHROME_ROWS,
-      composer: 3,
-    });
-    expect(getWorkflowChromeRows(-2).composer).toBe(0);
-    expect(getWorkflowChromeRows(Number.POSITIVE_INFINITY).composer).toBe(0);
   });
 });
 

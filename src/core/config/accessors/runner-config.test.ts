@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  getPlannerToolId,
   getRunnerCatalogDisplayName,
   getRunnerDisplayName,
   resolveRunnerConfigContext,
@@ -66,35 +65,6 @@ function inlineProfileConfig(apiKey: string): ProfiledConfig {
     },
   };
 }
-
-describe('getPlannerToolId', () => {
-  it('returns the tool for cli kind', () => {
-    const config: PlannerConfig = { kind: 'cli', tool: 'claude-code' };
-    expect(getPlannerToolId(config)).toBe('claude-code');
-  });
-
-  it('falls back to shell for api kind, which names no planner tool', () => {
-    const config: PlannerConfig = {
-      kind: 'api',
-      provider: 'my-custom',
-      service: 'my-custom',
-      offering: 'payg',
-      apiBase: 'http://localhost:9999/v1',
-      model: 'my-model',
-    };
-    expect(getPlannerToolId(config)).toBe('shell');
-  });
-
-  it('returns shell for shell kind', () => {
-    const config: PlannerConfig = { kind: 'shell', command: 'my-planner' };
-    expect(getPlannerToolId(config)).toBe('shell');
-  });
-
-  it('returns agent (not shell) for agent kind', () => {
-    const config: PlannerConfig = { kind: 'agent', command: 'my-agent' };
-    expect(getPlannerToolId(config)).toBe('agent');
-  });
-});
 
 describe('getRunnerCatalogDisplayName maps runners to catalog display names', () => {
   it('cli opencode → OpenCode CLI', () => {

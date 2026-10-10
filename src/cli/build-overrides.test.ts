@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../core/paths.js';
-import { resolveRunConfigWithBase } from './build-overrides.js';
+import { resolveRunConfig } from './build-overrides.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -39,7 +39,7 @@ function captureStderr(): string[] {
   return chunks;
 }
 
-describe('resolveRunConfigWithBase', () => {
+describe('resolveRunConfig', () => {
   beforeEach(() => {
     tempDir = createTempDir('build-overrides-test');
   });
@@ -54,7 +54,7 @@ describe('resolveRunConfigWithBase', () => {
     chmodSync(configPath, 0o666);
     const stderrChunks = captureStderr();
 
-    resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
+    resolveRunConfig({ projectDir: tempDir, opts: {} });
 
     const permissionWarnings = stderrChunks.filter((chunk) => chunk.includes('overly permissive'));
     expect(permissionWarnings).toHaveLength(1);
@@ -64,33 +64,21 @@ describe('resolveRunConfigWithBase', () => {
     writeMinimalV3Config(tempDir, ['workflow:', '  mode: instant']);
     const stderrChunks = captureStderr();
 
-    resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
+    resolveRunConfig({ projectDir: tempDir, opts: {} });
 
     expect(
       stderrChunks.filter((chunk) => chunk.includes('workflow.mode was retired')),
     ).toHaveLength(1);
   });
 
-  it('returns the persistence snapshot from the load that produced the persisted config', () => {
-    const configPath = writeMinimalV3Config(tempDir);
-    const rawYaml = readFileSync(configPath, 'utf8');
-
-    const resolved = resolveRunConfigWithBase({ projectDir: tempDir, opts: {} });
-
-    expect(resolved.persistenceSnapshot.rawYaml).toBe(rawYaml);
-    expect(resolved.persistenceSnapshot.rawBytes).toEqual(Buffer.from(rawYaml));
-    expect(resolved.persistenceSnapshot.revision).not.toBeNull();
-  });
-
   it('merges CLI overrides over the persisted config', () => {
     writeMinimalV3Config(tempDir);
 
-    const resolved = resolveRunConfigWithBase({
+    const config = resolveRunConfig({
       projectDir: tempDir,
       opts: { implementerModel: 'qwen3-coder:30b' },
     });
 
-    expect(resolved.config.implementer).toMatchObject({ model: 'qwen3-coder:30b' });
-    expect(resolved.persistedConfig.implementer).toMatchObject({ model: 'qwen2.5-coder:7b' });
+    expect(config.implementer).toMatchObject({ model: 'qwen3-coder:30b' });
   });
 });

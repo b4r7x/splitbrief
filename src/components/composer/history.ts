@@ -1,44 +1,30 @@
 import { createDraftDocument } from '../../core/composer/document.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 
-export interface InputHistoryNavigationState<T = string> {
+export interface InputHistoryNavigationState {
   historyIndex: number | null;
-  draftValue: T;
+  draftValue: DraftDocument;
 }
 
-export interface InputHistoryNavigationResult<T = string> {
+export interface InputHistoryNavigationResult {
   changed: boolean;
-  nextValue: T;
-  nextState: InputHistoryNavigationState<T>;
+  nextValue: DraftDocument;
+  nextState: InputHistoryNavigationState;
 }
 
-export const INITIAL_INPUT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState = {
+export const INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState = {
   historyIndex: null,
-  draftValue: '',
+  draftValue: createDraftDocument(''),
 };
 
-export const INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE: InputHistoryNavigationState<DraftDocument> =
-  {
-    historyIndex: null,
-    draftValue: createDraftDocument(''),
-  };
-
-export interface StepInputHistoryInput<T = string> {
-  entries: readonly T[];
-  state: InputHistoryNavigationState<T>;
+export interface StepInputHistoryInput {
+  entries: readonly DraftDocument[];
+  state: InputHistoryNavigationState;
   direction: 'up' | 'down';
-  currentValue: T;
+  currentValue: DraftDocument;
 }
 
-export function stepDocumentHistory(
-  input: StepInputHistoryInput<DraftDocument>,
-): InputHistoryNavigationResult<DraftDocument> {
-  return stepInputHistory(input);
-}
-
-export function stepInputHistory<T>(
-  input: StepInputHistoryInput<T>,
-): InputHistoryNavigationResult<T> {
+export function stepDocumentHistory(input: StepInputHistoryInput): InputHistoryNavigationResult {
   const { entries, state, direction, currentValue } = input;
   if (entries.length === 0) {
     return { changed: false, nextValue: currentValue, nextState: state };

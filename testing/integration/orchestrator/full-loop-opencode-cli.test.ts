@@ -164,7 +164,6 @@ describe('full workflow OpenCode CLI implementer', { timeout: 90_000 }, () => {
       },
       workflow: {
         approve: 'none',
-        maxRetries: 1,
       },
     });
     const preparationId = 'full-loop-opencode-preparation';

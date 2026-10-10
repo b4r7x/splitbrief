@@ -122,7 +122,6 @@ export function checkRegistry(
 }
 
 function checkOutput(result: ValidationResult): string {
-  if (result.skipped === true) return result.skippedReason ?? result.output ?? '';
   return result.passed ? (result.output ?? '') : (result.error ?? result.output ?? '');
 }
 
@@ -153,7 +152,6 @@ async function runTestCheck(
   const result = await runValidationStep({
     cmd: planned.resolved.cmd,
     args: planned.args,
-    source: planned.resolved.source,
     cwd: opts.projectDir,
     timeout: validationTimeout(opts.config),
     runCommand: run,
@@ -171,7 +169,7 @@ async function runTestCheck(
   return {
     checkId: check.id,
     ...(result.passed
-      ? { status: result.skipped === true ? ('not-runnable' as const) : ('pass' as const) }
+      ? { status: 'pass' as const }
       : {
           status: 'fail' as const,
           failure: failureKeys(

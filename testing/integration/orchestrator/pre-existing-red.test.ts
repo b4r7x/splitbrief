@@ -187,7 +187,6 @@ describe('a red that was there before the run', { timeout: 90_000 }, () => {
       },
       workflow: {
         approve: 'none',
-        maxRetries: 1,
       },
     });
     const summary = await runWorkflow({

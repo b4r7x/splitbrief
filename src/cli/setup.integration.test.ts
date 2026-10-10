@@ -238,7 +238,7 @@ describe('canonicalizeProjectDir', () => {
 
       const result = await canonicalizeProjectDir({});
 
-      // `cd packages/web && splitbrief ps` is the ordinary case, not a
+      // `cd packages/web && splitbrief status` is the ordinary case, not a
       // mistake worth a warning — the commands simply have to agree on
       // which directory the project is.
       expect(result).toBe(real);

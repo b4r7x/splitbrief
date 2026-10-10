@@ -183,8 +183,12 @@ describe('installHistoryPersistence', () => {
     const { installHistoryPersistence, inputHistoryStore } = await loadModules();
     teardown = installHistoryPersistence();
 
-    inputHistoryStore.pushSubmission('home feature persists', { currentScreen: 'home' });
-    inputHistoryStore.pushSubmission('workflow prompt persists', { currentScreen: 'workflow' });
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('home feature persists'), {
+      currentScreen: 'home',
+    });
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('workflow prompt persists'), {
+      currentScreen: 'workflow',
+    });
     vi.advanceTimersByTime(300);
 
     expect(savedTexts()).toEqual(['workflow prompt persists', 'home feature persists']);

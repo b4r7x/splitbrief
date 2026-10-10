@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { afterAll } from 'vitest';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../src/core/runners/cli-tool-catalog.js';
 import type { CliStartGate } from '../../src/engine/runners/start-gate.js';
+import { shellQuoteArg } from '../../src/utils/shell-quote.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
 let fakeCliLauncher: { dir: string; path: string } | undefined;
@@ -45,20 +46,20 @@ export function writeFakeCli(dir: string, command: string, body: string): string
 /** Installs `dir/command` as a fake CLI that runs `script` under this Node. */
 export function writeFakeNodeCli(dir: string, command: string, script: string): string {
   writeFileSync(join(dir, `${command}.cjs`), `${script}\n`, 'utf8');
-  return writeFakeCli(dir, command, `exec ${shellQuote(process.execPath)} "$0.cjs" "$@"\n`);
+  return writeFakeCli(dir, command, `exec ${shellQuoteArg(process.execPath)} "$0.cjs" "$@"\n`);
 }
 
 export interface CommandShimOptions {
   dir: string;
   command: string;
-  /** Lines printed to stdout via printf, single-quote escaped. */
+  /** Lines printed to stdout via printf. */
   lines: string[];
   /** Seconds slept before printing — idle-watchdog tests use ~0.15. */
   sleepSeconds?: number;
 }
 
 export function writeCommandShim(opts: CommandShimOptions): string {
-  const printfLines = opts.lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`);
+  const printfLines = opts.lines.map((line) => `printf '%s\\n' ${shellQuoteArg(line)}`);
   // A shim that exits before it reads its prompt can close the pipe before
   // SPLITBRIEF writes the prompt, and spawnPipe then fails the call as stdin-incomplete.
   const script = [
@@ -141,10 +142,6 @@ export interface ContractShimOptions {
   versionLine?: string;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
-
 export function writeContractShim(opts: ContractShimOptions): string {
   const versionLine = opts.versionLine ?? opts.profile.versionLine;
   const captureDir = opts.captureDir ?? '';
@@ -154,26 +151,26 @@ export function writeContractShim(opts: ContractShimOptions): string {
   const versionExitCode = opts.versionExitCode ?? 0;
   const authExitCode = opts.authExitCode ?? 0;
   const successLines = opts.profile.successLines
-    .map((line) => `printf '%s\\n' ${shellQuote(line)}`)
+    .map((line) => `printf '%s\\n' ${shellQuoteArg(line)}`)
     .join('\n');
   const outsideWrite =
     opts.outsidePath === undefined
       ? ''
-      : `mkdir -p "$(dirname ${shellQuote(opts.outsidePath)})"\nprintf 'outside\\n' > ${shellQuote(opts.outsidePath)}`;
+      : `mkdir -p "$(dirname ${shellQuoteArg(opts.outsidePath)})"\nprintf 'outside\\n' > ${shellQuoteArg(opts.outsidePath)}`;
   const authMatch = opts.profile.authArgv
-    .map((part, index) => `[ "\${${index + 1}:-}" = ${shellQuote(part)} ]`)
+    .map((part, index) => `[ "\${${index + 1}:-}" = ${shellQuoteArg(part)} ]`)
     .join(' && ');
   const authArgCount = opts.profile.authArgv.length;
 
   const script = [
     'set -euo pipefail',
-    `PROJECT_DIR=${shellQuote(opts.projectDir)}`,
-    `CAPTURE_DIR=${shellQuote(captureDir)}`,
-    `TARGET_REL=${shellQuote(targetRelPath)}`,
-    `PROVIDER_STATE_REL=${shellQuote(providerStateRelPath)}`,
-    `MODE=${shellQuote(opts.mode)}`,
-    `TRANSPORT=${shellQuote(opts.profile.transport)}`,
-    `VERSION_LINE=${shellQuote(versionLine)}`,
+    `PROJECT_DIR=${shellQuoteArg(opts.projectDir)}`,
+    `CAPTURE_DIR=${shellQuoteArg(captureDir)}`,
+    `TARGET_REL=${shellQuoteArg(targetRelPath)}`,
+    `PROVIDER_STATE_REL=${shellQuoteArg(providerStateRelPath)}`,
+    `MODE=${shellQuoteArg(opts.mode)}`,
+    `TRANSPORT=${shellQuoteArg(opts.profile.transport)}`,
+    `VERSION_LINE=${shellQuoteArg(versionLine)}`,
     'auth_matches() {',
     `  ${authMatch}`,
     '}',
@@ -274,6 +271,6 @@ export function writeConflictProbeShim(opts: {
   return writeFakeCli(
     opts.dir,
     opts.command,
-    [`touch ${shellQuote(opts.markerPath)}`, 'exit 0', ''].join('\n'),
+    [`touch ${shellQuoteArg(opts.markerPath)}`, 'exit 0', ''].join('\n'),
   );
 }

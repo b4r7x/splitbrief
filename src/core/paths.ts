@@ -92,7 +92,6 @@ export const LOCKFILE = 'lockfile.json';
 /** The run-snapshot ledger, under `snapshotsDir`; carries the accept/reject decision. */
 export const RUN_LEDGER_FILE = 'run-ledger.json';
 export const UI_PREFS_FILE = 'ui-prefs.json';
-export const RUNTIME_CONFORMANCE_FILE = 'runtime-conformance.json';
 
 /**
  * The in-project worktree root: `.trees/<slug>`. Nothing creates one any more —

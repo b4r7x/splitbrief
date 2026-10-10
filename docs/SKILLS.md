@@ -47,7 +47,14 @@ Sync copies that reference and the explicitly listed scripts into each skill tha
 It announces that scope and prints the selected stages before dispatch.
 A run directory resumes its saved stage, including review or fixes, while preserving attempts, bounds, decisions, and completed tasks.
 It reconciles active processes before spawning. `--status` inspects the saved run without dispatch.
-`error: <review.md>` asks the reviewer for verdict and fix work, appends fix tasks with new ids, then validates and reviews again.
+`error: <review.md>` reads the saved review fix part and appends fix tasks with new ids.
+On continuation, use the fix part from `review.json` first.
+If absent, read `fixTasks`, `rejected`, `verify` and `ask` from an older run's saved `triage.json`.
+Use those fields as that review's fix part; carry rejected ids and reasons into the next review packet.
+The session writes no new `triage.json`. Reading the saved fix part spends no planner call.
+The reviewer runs the review again only when neither file holds a fix part.
+The session then validates the fixes and reviews again.
+An older run whose next stage is `triage` follows the same rule. It makes no second planner call.
 A single brief file selects one task. Unmet dependencies pause execution; completion applies to that selection only.
 A prose plan becomes the typed contract before dispatch, with its stated outcome preserved.
 A review request alone never authorizes source changes or execution of its appended fixes.
@@ -122,6 +129,17 @@ Allow 2 fix cycles globally. At end cadence, this permits up to 3 reviews; task 
 The CLI runs the end/task cadence, the decisions ledger, one typed review answer with verdict and fix work, and reviewer questions about product changes.
 The skills follow that agreed design now. Render checks are unavailable in the skills.
 
+The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one answer matching `ReviewAnswerSchema`.
+The session saves the whole answer in `review.json`. There is no separate planner call for fix work.
+The next review packet carries rejected finding ids and reasons.
+Still-red fix tasks consult the reviewer. Plan tasks consult the planner.
+Reviewer consults and review answers spend no planner decision.
+
+Seat calls have no default deadline. Only an explicit `timeout` or `idleKillMs` limits a subprocess call.
+The session warns after output silence reaches `idleWarnMs`, default `300000` ms. The warning never kills the call.
+The waiter accepts `--deadline <seconds>` for an explicit limit. Without it, the waiter never kills the call.
+Two consecutive timeouts on one brief with an explicit limit still halt the run.
+
 ## Engine command mapping
 
 | Engine command | User intent |
@@ -153,7 +171,7 @@ Standalone skill records cannot serve as engine session state for `resume`.
 | Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
 | Plain CLI output | `src/engine/events/sinks/stdout-text.ts` |
 
-Recovery actions, persistent bounds, and finding triage live in [recovery.md](../skills/splitbrief/references/recovery.md).
+Recovery actions, persistent bounds, and review fix work live in [recovery.md](../skills/splitbrief/references/recovery.md).
 Confirmed deviations reach later briefs, consults, and reviews through the decisions ledger in planning.md.
 Recorded validation decides task completion. The implementer report remains advisory.
 The review contract derives pass from complete task and criterion coverage with no blocking findings.
@@ -170,7 +188,7 @@ The entry files compose shared procedures and add only their entry-specific inpu
 | `planning.md` | Planning session, typed plan, input conversion, and decisions ledger. |
 | `brief-format.md` | Markdown brief contract and BRIEF_HOME_OF_FIELD placement. |
 | `run-protocol.md` | Dispatch, waiting, saved progress, continuation, and review cadence. |
-| `recovery.md` | Retry, consult, bounds, and finding triage; generated consult-table and fix-cycle. |
+| `recovery.md` | Retry, consult, bounds, and review fix work; generated consult-table and fix-cycle. |
 | `gates.md` | Validation resolution, baselines, registered checks, and change evidence. |
 | `implementer-prompt.md` | Prompt construction and advisory completion report. |
 | `review-format.md` | Review packet, typed answer, exact coverage, and derived pass. |
@@ -190,7 +208,7 @@ A copied skill folder contains every reference and script it names, including re
       briefs/index.md · briefs/T001.md …
       T001/attempt-N.prompt.md · attempt-N.log · attempt-N.pid · attempt-N.done
       consults.jsonl · touched-files.md · validation.md
-      review-packet.md · review/attempt-N.log · review.json · review.md · triage.json
+      review-packet.md · review/attempt-N.log · review.json · review.md
 
 Save the baseline bytes as well as hashes; hashes alone cannot reconstruct the diff.
 Keep done rows, counters, consults, confirmed decisions and the original baseline on resume and fixes.

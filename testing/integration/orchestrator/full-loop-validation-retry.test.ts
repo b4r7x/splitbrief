@@ -150,7 +150,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       workflow: {
         approve: 'none',
         review: 'task',
-        maxRetries: 1,
       },
     });
     const summary = await runTrackedWorkflow({
@@ -322,7 +321,6 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
       workflow: {
         approve: 'none',
         review: 'task',
-        maxRetries: 1,
       },
     });
     const summary = await runTrackedWorkflow({

@@ -144,7 +144,7 @@ Defined in `src/core/schemas/task.ts`. The schema is the persisted transport for
 
 | Section | Schema fields | Markdown header in `tasks.md` |
 |---|---|---|
-| Identity | `id`, `title`, `action`, `file`, `dependsOn` | YAML frontmatter |
+| Identity | `id`, `title`, `action`, `suggestedFiles`, `dependsOn` | YAML frontmatter, with `file` or `files` for paths. |
 | Intent | `description` | `### Description` |
 | Scope | `scope.inBounds`, `scope.outOfBounds`, `scope.approvedOutOfBounds` | `### Scope` |
 | Code Context | `signature`, `currentCode`, `typeDefs`, `pattern` | `### Signature`, `### Current Code`, `### Type Definitions`, `### Pattern` |
@@ -154,7 +154,9 @@ Defined in `src/core/schemas/task.ts`. The schema is the persisted transport for
 | Escalation | `escalation` | `### Escalation` |
 | Evidence | `evidence` | `### Evidence` |
 
-The planner does not write `tasks.md`. SPLITBRIEF compiles each plan task with `taskFromSpec` (`src/engine/spec/plan-tasks.ts`) and renders the briefs as markdown in `tasks.md` with `formatTasks` (`src/engine/spec/formatter.ts`): one YAML frontmatter block per brief, then `###`-headed sections. `parseTaskSourceBlocks` (`src/engine/spec/tasks/parse.ts`) reads that file back for the artifact card and the transcript rebuild.
+The planner does not write `tasks.md`. SPLITBRIEF compiles each plan task with `taskFromSpec` in `src/engine/spec/plan-tasks.ts`.
+It renders the briefs as Markdown in `tasks.md` with `formatTasks` in `src/engine/spec/formatter.ts`.
+Each brief has one YAML frontmatter block, then sections with `###` headings.
 
 Here is what a single brief looks like in `tasks.md`:
 
@@ -763,7 +765,8 @@ The planner prompt builders adapt import conventions, type annotation style, and
 
 `src/engine/spec/prompts/`
 
-The planning session has one prompt builder and a few turn builders, all in `plan-session.ts`. The Task Brief contract text lives in `tasks.ts` (`briefContract`, `criticalRules`, `GATES_ARE_SPLITBRIEFS`, `SKILLS_WITH_EVERY_BRIEF`).
+The planning session has one prompt builder and a few turn builders, all in `plan-session.ts`.
+The check and skill rules live in `tasks.ts` as `GATES_ARE_SPLITBRIEFS` and `SKILLS_WITH_EVERY_BRIEF`.
 
 **`buildPlanSessionPrompt({ feature, projectContext, languageContext, build, skillsContext?, codebaseContext?, earlierPlanning? })`** -- the first turn of the planning session. `projectContext` includes the repo map. `build` names the implementer model and the context it was measured at, so the planner sizes tasks for it. `earlierPlanning` carries the documents an older run's planning chain wrote. The prompt asks for `{ result }` against `PlanAnswerSchema`: up to 3 questions with defaults, or a plan.
 

@@ -66,7 +66,6 @@ function guardScenario(model: string | undefined) {
     feature: 'guard scenario that must never reach a real call',
     validateScript: '',
     implementerContextLength: 4096,
-    maxRetries: 0,
     tempPrefix: 'live-guard',
   };
 }

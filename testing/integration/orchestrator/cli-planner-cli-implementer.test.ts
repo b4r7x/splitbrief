@@ -193,7 +193,6 @@ async function runCliWorkflow(endChecks: boolean) {
       validation: { endChecks, testCommand: 'node validate.mjs' },
       workflow: {
         approve: 'none',
-        maxRetries: 1,
       },
     }),
   );

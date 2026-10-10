@@ -82,11 +82,6 @@ export interface ConversationRow {
   node?: ReactNode | ((focused?: boolean) => ReactNode);
 }
 
-export interface ConversationRowsResult {
-  rows: ConversationRow[];
-  renderableCount: number;
-}
-
 export interface ConversationRowBlock {
   key: string;
   rowCount: number;

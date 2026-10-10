@@ -6,7 +6,7 @@ import type { StreamingOutputState } from '../../../stores/workflow/streaming-ou
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { activityBatchKey } from './activity-batch-key.js';
-import { buildConversationRows } from './build.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRowActions } from './row-actions.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };

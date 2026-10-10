@@ -12,7 +12,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
-import { buildConversationRows } from './conversation-rows/build.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { rowText } from './conversation-rows/row-format/rows.js';
 import { addEvent } from '../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';

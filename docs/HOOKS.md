@@ -58,7 +58,6 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-review-content.ts` | Async file read via `AbortController`-cancelled `fs.readFile` + line-count sync to `reviewStore`. |
 | `use-mouse-scroll.ts` | Workflow-owned mouse-wheel handlers for conversation/review scroll. App-level dispatch decides when workflow may receive wheel events. |
 | `use-mouse-pointer.ts` | Workflow-owned hit testing for rail, brief, and conversation rows. App-level dispatch owns overlays, non-workflow screens, and prompt gating. |
-| `use-cost-stats.ts` | Cost breakdown from tokens + tasks stores, formatted for footer. |
 | `use-keys.ts` | Workflow-only keyboard: conversation/review scroll and diff/activity expansion. Mounted only when `screen === 'workflow'`. |
 
 ## Pure helpers that are not hooks
@@ -71,9 +70,10 @@ Example, `src/features/workflow/`:
 |---|---|
 | `handlers.ts` | Engine↔UI bridge. Module-scoped handler registry. |
 | `keyboard.ts` | Pure keyboard-action dispatchers (workflow-scope). |
-| `layout.ts` | Pure geometry snapshots that read from multiple stores. |
+| `layout/snapshot.ts` | Pure geometry snapshots that read from multiple stores. |
+| `usage-details-model.ts` | Derives token counts, cost amounts and rows for the usage overlay. |
 
-Tests live next to each file (`handlers.test.ts`, `layout.test.ts`). Pure functions are trivial to test — and that is the only reason they have tests.
+Tests live next to each file, such as `layout/snapshot.test.ts` and `usage-details-model.test.ts`.
 
 ## Consumption patterns
 

@@ -70,7 +70,6 @@ function makeApiPlannerConfig(provider: string): Config {
     },
     validation: { endChecks: true, testCommand: 'npm test' },
     workflow: {
-      maxRetries: 3,
       compactionFormat: 'auto',
     },
   };

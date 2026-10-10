@@ -111,7 +111,6 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
         validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          maxRetries: 1,
         },
       }),
     );

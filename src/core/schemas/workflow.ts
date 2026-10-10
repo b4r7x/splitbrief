@@ -274,8 +274,6 @@ const WorkflowStateFields = {
   messageQueue: z.array(QueuedMessageSchema).default([]),
   lineages: z.record(z.string(), LineageRecordSchema).optional(),
   plannerCalls: PlannerCallsSchema.optional(),
-  // Read and ignore this field for old sessions.
-  decisionConfirms: PlannerCallsSchema.optional(),
   userAnswers: PlannerConversationSchema.shape.answers.optional(),
   seatWait: SeatWaitSchema.optional(),
   seatSwitches: z.array(SeatSwitchRecordSchema).optional(),
@@ -366,6 +364,7 @@ const LEGACY_STATE_KEYS = [
   'permit',
   'briefRecovery',
   'budgetPauseAcknowledgedAtCost',
+  'decisionConfirms',
 ] as const;
 
 function stripLegacyStateKeys(value: unknown): unknown {

@@ -6,8 +6,8 @@ Seat failures use the diagnoses and halt rules in references/tool-recipes.md.
 
 ## Answer validation
 
-Validate consult and triage answers against their schemas before applying an action.
-Use ConsultAnswerSchema for consults and the typed triage contract below.
+Validate consult and review answers against their schemas before applying an action.
+Use ConsultAnswerSchema for consults and ReviewAnswerSchema for the complete review answer.
 If validation fails, send the invalid answer and schema errors in one repair request.
 Validate the repaired answer. If it is still invalid, record a failure of the seat that answered and apply no action.
 Use references/tool-recipes.md for seat recovery.
@@ -54,7 +54,7 @@ Record a malformed answer as a failure of the seat that answered. Apply no actio
 | `confirm` | Decision-confirm only: record the accepted decisions, then run the brief gate. |
 
 Keep lineage counters across splits and resume: 2 consults and 8 attempts.
-Keep the run counter: 10 planner decisions after planning, including the consults of both seats and triage.
+Keep the run counter: 10 planner decisions after planning. Reviewer consults and review answers spend no planner decision.
 Before dispatch, changed inputs get one successful stale consult per revision: guidance or rewrite-task.
 A stale consult spends no run planner decision. A blocked report consults at once.
 A thrown or malformed stale consult halts on the seat that answered. Never dispatch the unchanged brief.
@@ -168,29 +168,37 @@ Never restore an earlier task's snapshot over accepted changes. Never use a git 
 Record each consult in `consults.jsonl` and `evidence.md`, including diagnosis, action, and its counter effect.
 Persist lineage roots, revisions, consults, attempts, run decisions, fix cycles, and extra allowances in saved progress.
 
-## Finding triage
+## Review fix work
 
-The session answers typed triage as `{fixTasks, rejected, verify, ask}`.
-fixTasks are complete TaskSpecs with new ids. rejected entries use findingId and reason.
-verify entries use findingId and registered checkIds. ask is null or a user-only question with whyOnlyUserCanAnswer.
-Route blocking findings by kind:
+The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one review answer.
+The session saves the whole answer in `review.json`. It makes no separate planner call for fix work.
+The session writes no new `triage.json`.
 
-| Kind | Planner action |
+On continuation, use the fix part from `review.json` when present.
+If absent, read `fixTasks`, `rejected`, `verify` and `ask` from an older run's saved `triage.json`.
+Use those fields as that review's fix part without a planner call.
+Run the review again only when neither file holds a fix part.
+
+fixTasks are complete TaskSpecs with new ids and findingIds. rejected entries use findingId and reason.
+verify entries use findingId and registered checkIds. ask is null or a user-only question with question and whyOnlyUserCanAnswer.
+The reviewer addresses blocking findings by kind:
+
+| Kind | Reviewer action |
 |---|---|
 | defect | Append a fix task for the concrete code or test defect. |
 | plan-gap | Append a task within the accepted outcome; ask the user before changing what is built. |
 | unverified | Run the registered checks on the current candidate. Unavailable required checks block pass. |
-| question | Answer from the plan and code first. Ask the user only when the planner cannot answer. |
+| question | Answer from the plan and code first. Ask the user only when the user holds the missing decision. |
 
 Never route by a path substring or assign an unmatched finding to the last task.
-Save the typed answer in `triage.json`. Carry rejected finding ids and reasons into the next review packet.
+Carry rejected finding ids and reasons from the saved fix part into the next review packet.
 Use references/planning.md and references/brief-format.md to admit and render complete fix briefs.
 Use references/run-protocol.md to execute authorized fixes and prepare a fresh review.
 Before starting a fix cycle, persist its allowance use. Never charge the same saved cycle twice on continuation.
 
 <!-- generated: fix-cycle -->
-- Send blocking findings to the session for triage. Append fix tasks with new ids; done tasks stay done.
-- Run registered checks for unverified findings. Answer question findings as the planner before asking the user.
+- Read fixTasks, rejected, verify and ask from the saved review fix part. Append fix tasks with new ids; done tasks stay done.
+- Run registered checks for unverified findings. The reviewer answers question findings from the plan and code before asking the user.
 - Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.
 - Allow 2 fix cycles across the run, up to 3 reviews at end cadence. Task cadence adds reviews and shares this fix cap.
 - Prepare each fresh review with references/gates.md.
@@ -199,4 +207,4 @@ Before starting a fix cycle, persist its allowance use. Never charge the same sa
 
 When the cap is spent, show remaining findings and ask whether to fix again with a note, accept as is, or end.
 An explicit extra cycle adds one recorded allowance. Acceptance records an override, never a verified pass.
-Standalone review writes triage and new briefs; it never edits source or executes the fixes itself.
+Standalone review saves the complete review answer and new briefs. It never edits source or executes the fixes itself.

@@ -178,7 +178,6 @@ async function runCodexLoop(opts: {
       },
       workflow: {
         approve: 'none',
-        maxRetries: 1,
       },
     }),
     preparationId,

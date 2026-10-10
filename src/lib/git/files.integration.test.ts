@@ -1,14 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { writeFileSync, existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import {
   getCurrentChangedFiles,
   listTrackedAndUntrackedFiles,
   listGitlinkPaths,
-  discardSubmoduleChange,
-  discardFileChange,
-  discardChangedFiles,
   checkIgnoredPaths,
 } from './files.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -56,53 +53,6 @@ describe('getCurrentChangedFiles', () => {
   });
 });
 
-describe('discardFileChange', () => {
-  it('checks out a tracked file', async () => {
-    const dir = tracked(setupGitRepo());
-    writeFileSync(join(dir, 'init.txt'), 'modified');
-    await discardFileChange(dir, 'init.txt', 'tracked');
-    const content = readFileSync(join(dir, 'init.txt'), 'utf-8');
-    expect(content).toBe('init');
-  });
-
-  it('cleans an untracked file', async () => {
-    const dir = tracked(setupGitRepo());
-    writeFileSync(join(dir, 'created.txt'), 'new file');
-    await discardFileChange(dir, 'created.txt', 'untracked');
-    expect(existsSync(join(dir, 'created.txt'))).toBe(false);
-  });
-});
-
-describe('discardChangedFiles', () => {
-  it('discards both tracked and untracked files', async () => {
-    const dir = tracked(setupGitRepo());
-    writeFileSync(join(dir, 'init.txt'), 'modified');
-    writeFileSync(join(dir, 'created.txt'), 'new file');
-
-    await discardChangedFiles(dir, ['init.txt', 'created.txt']);
-
-    expect(readFileSync(join(dir, 'init.txt'), 'utf-8')).toBe('init');
-    expect(existsSync(join(dir, 'created.txt'))).toBe(false);
-  });
-
-  it('removes an untracked embedded git repository on a directory pathspec', async () => {
-    const dir = tracked(setupGitRepo());
-    const embedded = join(dir, 'vendored');
-    mkdirSync(embedded, { recursive: true });
-    execSync('git init', { cwd: embedded, stdio: 'pipe' });
-    execSync('git config user.email "t@t.com" && git config user.name "T"', {
-      cwd: embedded,
-      stdio: 'pipe',
-    });
-    writeFileSync(join(embedded, 'inner.txt'), 'inner');
-    execSync('git add inner.txt && git commit -m inner', { cwd: embedded, stdio: 'pipe' });
-
-    await discardChangedFiles(dir, ['vendored/']);
-
-    expect(existsSync(embedded)).toBe(false);
-  });
-});
-
 describe('submodule gitlinks', () => {
   function setupSuperproject(): string {
     const root = tracked(createTempDir('splitbrief-git-submodule'));
@@ -142,21 +92,6 @@ describe('submodule gitlinks', () => {
   it('returns an empty list for a repository without submodules', async () => {
     const dir = tracked(setupGitRepo());
     expect(await listGitlinkPaths(dir)).toEqual([]);
-  });
-
-  it('resets a moved submodule back to its recorded commit', async () => {
-    const project = setupSuperproject();
-    writeFileSync(join(project, 'sub', 'file.txt'), 'v2\n');
-    execSync('git add file.txt && git commit -qm v2', {
-      cwd: join(project, 'sub'),
-      stdio: 'pipe',
-    });
-    expect(await getCurrentChangedFiles(project)).toContain('sub');
-
-    await discardSubmoduleChange(project, 'sub');
-
-    expect(readFileSync(join(project, 'sub', 'file.txt'), 'utf-8')).toBe('v1\n');
-    expect(await getCurrentChangedFiles(project)).not.toContain('sub');
   });
 });
 

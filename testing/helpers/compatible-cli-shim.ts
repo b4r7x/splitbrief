@@ -5,6 +5,7 @@ import {
   selectCliAuthChannel,
   type CliAuthChannelId,
 } from '../../src/core/runners/cli-tool-catalog.js';
+import { shellQuoteArg } from '../../src/utils/shell-quote.js';
 
 type CompatibleCliTool = 'claude-code' | 'codex';
 
@@ -38,14 +39,10 @@ export interface InstallCompatibleCliShimOptions {
   readonly authProbe?: 'verified' | 'unverified' | undefined;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 function exactArgumentsCondition(arguments_: readonly string[]): string {
   return [
     `[ "$#" -eq ${arguments_.length} ]`,
-    ...arguments_.map((argument, index) => `[ "\${${index + 1}:-}" = ${shellQuote(argument)} ]`),
+    ...arguments_.map((argument, index) => `[ "\${${index + 1}:-}" = ${shellQuoteArg(argument)} ]`),
   ].join(' && ');
 }
 
@@ -73,7 +70,7 @@ function markerLines(marker: NonNullable<ShimInvocation['marker']> | undefined):
   if (!/^[A-Z_][A-Z0-9_]*$/u.test(marker.environment)) {
     throw new Error(`Invalid compatible CLI shim marker environment name: ${marker.environment}`);
   }
-  return [`printf '%s\\n' "\${${marker.environment}:-}" > ${shellQuote(marker.path)}`];
+  return [`printf '%s\\n' "\${${marker.environment}:-}" > ${shellQuoteArg(marker.path)}`];
 }
 
 function createSessionStateHome(
@@ -120,7 +117,7 @@ export function installCompatibleCliShim(
   const script = [
     '#!/bin/sh',
     `if ${exactArgumentsCondition(['--version'])}; then`,
-    `  printf '%s\\n' ${shellQuote(versionOutput(options.tool, version))}`,
+    `  printf '%s\\n' ${shellQuoteArg(versionOutput(options.tool, version))}`,
     '  exit 0',
     'fi',
     `if ${exactArgumentsCondition(authProbeArguments(options.tool))}; then`,
@@ -129,7 +126,9 @@ export function installCompatibleCliShim(
     `  exit ${options.authProbe === 'unverified' ? 1 : 0}`,
     'fi',
     ...markerLines(options.invocation?.marker),
-    ...(options.invocation?.stdoutLines ?? []).map((line) => `printf '%s\\n' ${shellQuote(line)}`),
+    ...(options.invocation?.stdoutLines ?? []).map(
+      (line) => `printf '%s\\n' ${shellQuoteArg(line)}`,
+    ),
     'exit 0',
     '',
   ].join('\n');

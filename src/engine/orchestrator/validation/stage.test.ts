@@ -18,7 +18,6 @@ describe('validation output redaction', () => {
     const result = await runValidationStep({
       cmd: 'npm',
       args: ['test'],
-      source: 'config',
       cwd: tempDir,
       timeout: 1000,
       runCommand: makeCommandRunner(
@@ -32,7 +31,7 @@ describe('validation output redaction', () => {
       command: 'npm test',
     });
 
-    expect(result).toMatchObject({ passed: false, stage: 'test', exitCode: 1 });
+    expect(result).toMatchObject({ passed: false, exitCode: 1 });
     expect(result.error).not.toContain('TEST123456789012345678');
     expect(result.error).toContain('REDACTED');
     expect(result.output).not.toContain('TEST123456789012345678');
@@ -42,7 +41,6 @@ describe('validation output redaction', () => {
     const result = await runValidationStep({
       cmd: 'npm',
       args: ['test'],
-      source: 'config',
       cwd: tempDir,
       timeout: 1000,
       runCommand: makeCommandRunner(
@@ -64,7 +62,6 @@ describe('validation output redaction', () => {
     const result = await runValidationStep({
       cmd: 'npm',
       args: ['test'],
-      source: 'config',
       cwd: tempDir,
       timeout: 1000,
       runCommand: makeCommandRunner({ stdout: 'x'.repeat(5000), stderr: '', code: 0 }),
@@ -91,7 +88,6 @@ describe('validation output redaction', () => {
     const result = await runValidationStep({
       cmd: 'npm',
       args: ['test'],
-      source: 'config',
       cwd: tempDir,
       timeout: 1000,
       runCommand: makeCommandRunner(
@@ -106,13 +102,6 @@ describe('validation output redaction', () => {
     });
 
     expect(result.passed).toBe(false);
-    expect(result.failingTests).toEqual([
-      {
-        file: 'src/totals.test.ts',
-        name: 'totals > adds tax',
-        message: 'AssertionError: expected 3 to be 4',
-      },
-    ]);
     expect(result.error).toContain('FAIL  src/totals.test.ts > totals > adds tax');
     expect(result.error).toContain('AssertionError: expected 3 to be 4');
     expect(result.error).not.toContain('Isolation cleanup failed');
@@ -124,7 +113,6 @@ describe('validation output redaction', () => {
     const result = await runValidationStep({
       cmd: 'npm',
       args: ['test'],
-      source: 'config',
       cwd: tempDir,
       timeout: 1000,
       runCommand: async () => ({ stdout, stderr: '', code: 0 }),

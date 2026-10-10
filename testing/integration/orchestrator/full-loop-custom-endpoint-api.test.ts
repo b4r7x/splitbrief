@@ -113,7 +113,6 @@ describe('full workflow custom-endpoint API implementer', { timeout: 90_000 }, (
       },
       workflow: {
         approve: 'none',
-        maxRetries: 1,
       },
     });
     const preparationId = 'full-loop-custom-endpoint-preparation';

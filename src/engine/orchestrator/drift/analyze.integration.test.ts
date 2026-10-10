@@ -1,43 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { analyzeBriefDrift } from './analyze.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { ACCEPTED_SCOPE_CASES } from '#testing/helpers/factories/scope-attribution-cases.js';
 import { SCOPE_ENTRY_CASES } from '#testing/helpers/scope-entries.js';
-import { withTempDir } from '#testing/helpers/temp-dir.js';
-import { createTestGitRepo } from '#testing/helpers/git.js';
 import { createEvidenceLedger, withUpdatedTask } from '../../../core/evidence/ledger-state.js';
-import {
-  captureChangedFilesBaseline,
-  inferTaskAcceptedChangedFiles,
-} from '../changed-files-baseline.js';
+import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
 
 describe('analyzeBriefDrift', () => {
   it.each(ACCEPTED_SCOPE_CASES)(
-    'matches task attribution for $label paths',
-    async ({ task: overrides, changedFile, accepted }) => {
+    'matches the declared set for $label paths',
+    ({ task: overrides, changedFile, accepted }) => {
       const task = makeTask({ ...overrides, status: 'done' });
-      await withTempDir('drift-scope-parity', async (projectDir) => {
-        createTestGitRepo(projectDir);
-        const target = join(projectDir, changedFile);
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, 'export const changed = true;\n');
-        const baseline = await captureChangedFilesBaseline(projectDir, []);
-
-        const attributed = await inferTaskAcceptedChangedFiles(projectDir, task, baseline.head);
-        const report = analyzeBriefDrift({
-          tasks: [task],
-          changedFiles: [changedFile],
-          preRunChangedFiles: [],
-        });
-        const reportedUntargeted = report.findings.some(
-          (finding) => finding.code === 'out_of_scope_file' && finding.file === changedFile,
-        );
-
-        expect(attributed.includes(changedFile)).toBe(accepted);
-        expect(reportedUntargeted).toBe(!accepted);
+      const declared = isInDeclaredSet(changedFile, taskDeclaredPatterns(task));
+      const report = analyzeBriefDrift({
+        tasks: [task],
+        changedFiles: [changedFile],
+        preRunChangedFiles: [],
       });
+      const reportedUntargeted = report.findings.some(
+        (finding) => finding.code === 'out_of_scope_file' && finding.file === changedFile,
+      );
+
+      expect(declared).toBe(accepted);
+      expect(reportedUntargeted).toBe(!accepted);
+      expect(reportedUntargeted).toBe(!declared);
     },
   );
 

@@ -27,11 +27,6 @@ export function formatCost(dollars: number): string {
   return `$${Math.max(0, dollars).toFixed(2)}`;
 }
 
-export function formatKnownCost(amount: number, priceState: 'known' | 'partial'): string {
-  if (priceState === 'known') return formatCost(amount);
-  return amount > 0 ? `${formatCost(amount)} + unknown` : 'Unknown price';
-}
-
 export function formatTruncatedList(values: string[], max: number): string {
   const visible = values.slice(0, max).join(SOFT_SEP);
   const hidden = values.length - max;

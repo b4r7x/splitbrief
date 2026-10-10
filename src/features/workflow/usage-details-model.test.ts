@@ -7,7 +7,6 @@ import {
   deriveUsageDetails,
   readRecoveryContext,
   usageDetailRows,
-  usageRowValue,
   type UsageDetailRow,
   type UsageDetailsInput,
 } from './usage-details-model.js';
@@ -40,16 +39,14 @@ function rows(input: UsageDetailsInput): UsageDetailRow[] {
   return usageDetailRows(deriveUsageDetails(input));
 }
 
-function value(input: UsageDetailsInput, key: string): string {
+function facts(input: UsageDetailsInput, key: string): readonly string[] {
   const row = rows(input).find((candidate) => candidate.key === key);
   if (row === undefined) throw new Error(`no row ${key}`);
-  return usageRowValue(row);
+  return row.facts;
 }
 
-function text(input: UsageDetailsInput): string {
-  return rows(input)
-    .map((row) => `${row.label} ${usageRowValue(row)}`)
-    .join('\n');
+function texts(input: UsageDetailsInput): string[] {
+  return rows(input).flatMap((row) => [row.label, ...row.facts]);
 }
 
 describe('usage details counters', () => {
@@ -72,9 +69,9 @@ describe('usage details counters', () => {
       costBreakdown: null,
     };
 
-    expect(value(reportedZero, 'counter:cacheRead')).toBe('0');
-    expect(value(neverReported, 'counter:cacheRead')).toBe('not reported');
-    expect(value(reportedZero, 'counter:input')).toBe('1,200');
+    expect(facts(reportedZero, 'counter:cacheRead')).toEqual(['0']);
+    expect(facts(neverReported, 'counter:cacheRead')).toEqual(['not reported']);
+    expect(facts(reportedZero, 'counter:input')).toEqual(['1,200']);
   });
 
   it('keeps a seat that reported nothing out of the sum and names it', () => {
@@ -89,8 +86,8 @@ describe('usage details counters', () => {
       costBreakdown: null,
     };
 
-    expect(value(mixed, 'counter:output')).toBe('1,300');
-    expect(value(mixed, 'counter:reasoning')).toBe('100 + unknown (BUILD)');
+    expect(facts(mixed, 'counter:output')).toEqual(['1,300']);
+    expect(facts(mixed, 'counter:reasoning')).toEqual(['100 + unknown (BUILD)']);
   });
 
   it('keeps positive legacy counters visible without claiming coverage', () => {
@@ -99,8 +96,8 @@ describe('usage details counters', () => {
       costBreakdown: null,
     };
 
-    expect(value(legacy, 'counter:output')).toBe('1,000 (legacy; coverage unknown)');
-    expect(value(legacy, 'counter:input')).toBe('not reported');
+    expect(facts(legacy, 'counter:output')).toEqual(['1,000 (legacy; coverage unknown)']);
+    expect(facts(legacy, 'counter:input')).toEqual(['not reported']);
     expect(deriveUsageDetails(legacy).counters.find((row) => row.counter === 'output')).toEqual({
       counter: 'output',
       amount: { kind: 'legacy', tokens: 1000, unreported: [] },
@@ -126,12 +123,12 @@ describe('usage details money', () => {
     };
 
     expect(deriveUsageDetails(legacy).basis).toBe('legacy-unattributed');
-    expect(value(legacy, 'money:amount')).toBe('$3.10');
-    expect(value(legacy, 'money:basis')).toBe('legacy sum, no provenance');
-    expect(value(legacy, 'rates:none')).toBe('not recorded');
-    expect(value(legacy, 'money:note')).toBe(
+    expect(facts(legacy, 'money:amount')).toEqual(['$3.10']);
+    expect(facts(legacy, 'money:basis')).toEqual(['legacy sum, no provenance']);
+    expect(facts(legacy, 'rates:none')).toEqual(['not recorded']);
+    expect(facts(legacy, 'money:note')).toEqual([
       'Recorded before per-request pricing; no rates were kept with it.',
-    );
+    ]);
   });
 
   it('carries the rates a request was priced at and calls the amount an estimate', () => {
@@ -172,11 +169,17 @@ describe('usage details money', () => {
       }),
     };
 
-    expect(value(priced, 'money:amount')).toBe('$1.00');
-    expect(value(priced, 'money:basis')).toBe('catalog estimate');
-    expect(value(priced, 'rates:0')).toContain('metered-model · models.dev');
-    expect(value(priced, 'rates:0')).toContain('rates of 2026-06-01');
-    expect(text(priced)).not.toMatch(/invoice|actual charge|billed/i);
+    expect(facts(priced, 'money:amount')).toEqual(['$1.00']);
+    expect(facts(priced, 'money:basis')).toEqual(['catalog estimate']);
+    expect(facts(priced, 'rates:0')).toEqual([
+      'metered-model',
+      'models.dev',
+      'in $1.00/M',
+      'out $10.00/M',
+      'rates of 2026-06-01',
+      '1 request',
+    ]);
+    for (const text of texts(priced)) expect(text).not.toMatch(/invoice|actual charge|billed/i);
   });
 
   it('reports an unpriceable request as not estimated rather than as zero dollars', () => {
@@ -196,9 +199,9 @@ describe('usage details money', () => {
       }),
     };
 
-    expect(value(unpriced, 'money:amount')).toBe('not estimated');
-    expect(value(unpriced, 'money:reasons')).toBe('model has no published rate');
-    expect(text(unpriced)).not.toContain('$0.00');
+    expect(facts(unpriced, 'money:amount')).toEqual(['not estimated']);
+    expect(facts(unpriced, 'money:reasons')).toEqual(['model has no published rate']);
+    for (const text of texts(unpriced)) expect(text).not.toContain('$0.00');
   });
 
   it('does not claim subscription billing from catalog metadata alone', () => {
@@ -220,8 +223,8 @@ describe('usage details money', () => {
       }),
     };
 
-    expect(value(subscription, 'money:amount')).toBe('not estimated');
-    expect(text(subscription)).not.toContain('$');
+    expect(facts(subscription, 'money:amount')).toEqual(['not estimated']);
+    for (const text of texts(subscription)) expect(text).not.toContain('$');
   });
 });
 
@@ -251,8 +254,8 @@ describe('usage details billing', () => {
     expect(deriveUsageDetails(enforced).billing).toEqual([
       { tool: 'claude-code', posture: 'api-metered', basis: 'enforced-channel', proven: true },
     ]);
-    expect(value(enforced, 'billing:claude-code')).toBe('metered · enforced channel');
-    expect(text(enforced)).not.toContain('subscription');
+    expect(facts(enforced, 'billing:claude-code')).toEqual(['metered', 'enforced channel']);
+    for (const text of texts(enforced)) expect(text).not.toContain('subscription');
   });
 
   it('marks an unproven posture as the catalogued default it is', () => {
@@ -272,7 +275,7 @@ describe('usage details billing', () => {
       }),
     };
 
-    expect(value(unproven, 'billing:codex')).toBe('subscription · no evidence, tool default');
+    expect(facts(unproven, 'billing:codex')).toEqual(['subscription', 'no evidence, tool default']);
   });
 
   it('names a kind-qualified identity in its own words, keeping the API twin literal', () => {
@@ -304,8 +307,8 @@ describe('usage details billing', () => {
       'opencode',
       'OpenCode CLI',
     ]);
-    expect(value(input, 'billing:opencode')).toBe('metered · no evidence, tool default');
-    expect(value(input, 'billing:OpenCode CLI')).toBe('provider · no evidence, tool default');
+    expect(facts(input, 'billing:opencode')).toEqual(['metered', 'no evidence, tool default']);
+    expect(facts(input, 'billing:OpenCode CLI')).toEqual(['provider', 'no evidence, tool default']);
   });
 });
 
@@ -355,19 +358,24 @@ describe('usage details context', () => {
       recovery: contextIssue(MEASURED_CONTEXT),
     };
 
-    expect(value(input, 'context:seat')).toBe('REVIEW');
-    expect(value(input, 'context:model')).toBe('qwen3-coder-30b');
-    expect(value(input, 'context:cause')).toBe('larger than the context window');
-    expect(value(input, 'context:missing')).toBe('evidence.json · drift-report.json');
-    expect(value(input, 'context:needed')).toBe(
-      '412,096 tokens · input 404,000 · margin 4,000 · output reserve 4,096',
-    );
-    expect(value(input, 'context:available')).toBe('32,768 tokens · output cap 8,192');
-    expect(value(input, 'context:budget-source')).toBe('active provider limit');
-    expect(value(input, 'context:omitted-options')).toBe(
-      'temperature · reasoning effort · stream usage',
-    );
-    expect(text(input)).not.toMatch(/invoice|charge|billed|\$/i);
+    expect(facts(input, 'context:seat')).toEqual(['REVIEW']);
+    expect(facts(input, 'context:model')).toEqual(['qwen3-coder-30b']);
+    expect(facts(input, 'context:cause')).toEqual(['larger than the context window']);
+    expect(facts(input, 'context:missing')).toEqual(['evidence.json', 'drift-report.json']);
+    expect(facts(input, 'context:needed')).toEqual([
+      '412,096 tokens',
+      'input 404,000',
+      'margin 4,000',
+      'output reserve 4,096',
+    ]);
+    expect(facts(input, 'context:available')).toEqual(['32,768 tokens', 'output cap 8,192']);
+    expect(facts(input, 'context:budget-source')).toEqual(['active provider limit']);
+    expect(facts(input, 'context:omitted-options')).toEqual([
+      'temperature',
+      'reasoning effort',
+      'stream usage',
+    ]);
+    for (const text of texts(input)) expect(text).not.toMatch(/invoice|charge|billed|\$/i);
   });
 
   it('leads with the halt and keeps the run with no counters out of the empty state', () => {
@@ -402,11 +410,11 @@ describe('usage details context', () => {
       } satisfies RecoveryIssue,
     };
 
-    expect(value(input, 'context:seat')).toBe('PLAN');
-    expect(value(input, 'context:model')).toBe('not recorded');
-    expect(value(input, 'context:needed')).toBe('not measured');
-    expect(value(input, 'context:available')).toBe('not measured');
-    expect(text(input)).not.toContain('0 tokens');
+    expect(facts(input, 'context:seat')).toEqual(['PLAN']);
+    expect(facts(input, 'context:model')).toEqual(['not recorded']);
+    expect(facts(input, 'context:needed')).toEqual(['not measured']);
+    expect(facts(input, 'context:available')).toEqual(['not measured']);
+    for (const text of texts(input)) expect(text).not.toContain('0 tokens');
   });
 
   it('keeps a legacy or unreadable section list unavailable rather than inventing an empty one', () => {
@@ -432,9 +440,9 @@ describe('usage details context', () => {
       recovery: contextIssue({ ...base, apiContextMissingSectionsJson: '[]' }),
     };
 
-    expect(value(absent, 'context:missing')).toBe('not recorded');
-    expect(value(malformed, 'context:missing')).toBe('not recorded');
-    expect(value(notStrings, 'context:missing')).toBe('not recorded');
+    expect(facts(absent, 'context:missing')).toEqual(['not recorded']);
+    expect(facts(malformed, 'context:missing')).toEqual(['not recorded']);
+    expect(facts(notStrings, 'context:missing')).toEqual(['not recorded']);
     // A list the halt recorded as empty is not a missing list: nothing was missing, so no row.
     expect(rows(recordedEmpty).map((row) => row.key)).not.toContain('context:missing');
   });

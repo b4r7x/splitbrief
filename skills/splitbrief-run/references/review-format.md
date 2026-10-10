@@ -8,10 +8,10 @@ Use one stateless read-only call per review. The session reviews from the packet
 2. Run current validation and required checks with references/gates.md.
 3. Write the packet below from the current candidate.
 4. Spawn one stateless read-only reviewer with references/tool-recipes.md, or review in this session.
-5. Use references/run-protocol.md for waiting, with `review` as the task id and the reviewer deadline.
-6. Save the typed answer in `review.json` and render `review.md`.
+5. Use references/run-protocol.md for waiting, with `review` as the task id and no default deadline.
+6. Save the whole typed answer in `review.json` and render `review.md`.
 7. Derive the verdict from exact coverage and current evidence using the generated rules below.
-8. Send unresolved findings to planner triage in references/recovery.md.
+8. Apply the fix work from that answer using references/recovery.md.
 
 Write review-packet.md with this shape:
 
@@ -39,7 +39,7 @@ Write review-packet.md with this shape:
     <reviewer check output and required checks by id, with commands, exits and artifact paths>
 
     ## Consults and user answers
-    <consult log, triage log, rejected findings with reasons, and user answers>
+    <consult log, previous review answers, rejected findings with reasons, and user answers>
 
     ## Instructions
     Check the accepted behaviour, exclusions, edge cases, tests and repository rules.
@@ -49,20 +49,25 @@ Write review-packet.md with this shape:
     Render checks are unavailable in these skills. A required render criterion stays unverified.
 
     ## Typed answer
-    Return one JSON object with tasks, criteria and findings.
+    Return one JSON object with tasks, criteria, findings, fixTasks, rejected, verify and ask.
     Tasks use plan: met, partial or missed. Criteria use status: pass, fail or unverified, with evidence.
     Findings use kind: defect, plan-gap, unverified or question; severity: blocking or minor.
+
     Use taskId to identify a task. Use checkIds or criterionId for an unverified finding.
     Include exactly one result for each completed task and each criterion due now.
+    Address every pending input in this same answer. Write fix tasks as complete TaskSpecs with new ids and findingIds.
+
+    Use rejected entries with findingId and reason. Use verify entries with findingId and registered checkIds.
+    Set ask to null or a user-only question with question and whyOnlyUserCanAnswer.
     Use this example shape, with real ids and evidence:
 
-    {"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","text":"<question>"}]}
+    {"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","file":null,"line":null,"text":"<question>","acceptance":null,"checkIds":null,"criterionId":null}],"fixTasks":[],"rejected":[],"verify":[],"ask":{"question":"<question>","whyOnlyUserCanAnswer":"<missing product decision>"}}
 
-    Use an empty findings array when there are no findings. The session derives the verdict.
+    Use empty arrays when there are no entries. Save the whole answer in review.json. The session derives the verdict.
 <!-- /generated -->
 
 Include approved plan.json, all confirmed decisions, criterion text, relevant briefs and the current run diff.
-Group changes by task. Include touchedNotSuggested paths and their reasons, check results, consults, triage and user answers.
+Group changes by task. Include touchedNotSuggested paths and their reasons, check results, consults, previous review answers and user answers.
 Use baseline bytes and hashes for the run diff. Exclude unchanged pre-existing edits and run artifacts.
 Save the current reviewer-check and required-check output with commands, exits, ids and artifact paths.
 Reject an oversized packet rather than silently dropping files or evidence.
@@ -70,7 +75,8 @@ For a malformed answer, attach the invalid answer and parser errors to the permi
 
 ## Typed reply and derived pass
 
-Write review.json with tasks, criteria and findings. Render review.md from that answer.
+The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one answer matching ReviewAnswerSchema.
+Save the whole answer in review.json. Render review.md from that answer.
 
 | Field | Typed entries |
 |---|---|
@@ -78,6 +84,10 @@ Write review.json with tasks, criteria and findings. Render review.md from that 
 | criteria | `{id, status: pass / fail / unverified, evidence}` |
 | findings | `{id, kind: defect / plan-gap / unverified / question, severity: blocking / minor, text}` |
 | finding references | taskId, file, line, acceptance, checkIds, criterionId when applicable |
+| fixTasks | Complete TaskSpecs with new ids and findingIds. |
+| rejected | `{findingId, reason}` |
+| verify | `{findingId, checkIds}` with registered check ids. |
+| ask | null or `{question, whyOnlyUserCanAnswer}`. |
 
 Unverified findings name non-empty valid checkIds or a criterionId with registered checks.
 The session never guesses a check from a finding's text. The reviewer cannot supply arbitrary commands.

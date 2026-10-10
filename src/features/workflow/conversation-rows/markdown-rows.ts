@@ -1,6 +1,5 @@
 import { configStore } from '../../../stores/project/config.js';
 import { sanitizeRowDisplayText } from './row-format/text.js';
-import type { ConversationRow } from './types.js';
 import {
   getMarkdownRowsCacheEntry,
   markdownRowsIdentityKey,
@@ -26,11 +25,6 @@ export {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
 } from './markdown-rows/cache.js';
-
-export function markdownConversationRows(input: MarkdownConversationRowsInput): ConversationRow[] {
-  const projection = markdownConversationRowsProjection(input);
-  return projection.createRows(0, projection.rowCount);
-}
 
 export function markdownConversationRowsProjection(
   input: MarkdownConversationRowsInput,

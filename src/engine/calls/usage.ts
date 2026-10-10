@@ -7,7 +7,7 @@ import {
   type RunnerCallProviderTotals,
 } from '../../core/runner-call-contract.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
-import { RunnerCallUsageSchema, RunnerCallUsageSemanticsSchema } from './schema.js';
+import { RunnerCallUsageSchema } from './schema.js';
 import type { RunnerCallUsage, RunnerCallUsageSemantics } from './types.js';
 
 const tokenCount = z.number().int().nonnegative();
@@ -87,22 +87,6 @@ export function normalizeProviderTokenUsage(raw: unknown): RunnerCallUsage | nul
   return parsed.success ? normalizeParsedUsage(parsed.data) : null;
 }
 
-export function normalizeRunnerCallUsageSample(opts: {
-  readonly raw: unknown;
-  readonly semantics: unknown;
-}): RunnerCallUsageSample | null {
-  const usage = normalizeRunnerCallUsage(opts.raw);
-  if (usage === null) return null;
-
-  const semantics = RunnerCallUsageSemanticsSchema.safeParse(opts.semantics);
-  if (!semantics.success) return null;
-
-  return {
-    semantics: semantics.data,
-    usage,
-  };
-}
-
 export function toTokenDelta(raw: unknown): TokenDelta | null {
   const usage = normalizeRunnerCallUsage(raw);
   return usage === null ? null : toTokenDeltaFromRunnerCallUsage(usage);
@@ -148,16 +132,6 @@ export function applyRunnerCallUsageSample(
   sample: RunnerCallUsageSample,
 ): RunnerCallUsage {
   return accumulateRunnerCallUsage(current, sample.usage, sample.semantics);
-}
-
-export function accumulateRunnerCallUsageSamples(
-  samples: Iterable<RunnerCallUsageSample>,
-): RunnerCallUsage | null {
-  let usage: RunnerCallUsage | null = null;
-  for (const sample of samples) {
-    usage = applyRunnerCallUsageSample(usage, sample);
-  }
-  return usage;
 }
 
 export function accumulateTokenUsage(

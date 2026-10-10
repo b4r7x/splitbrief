@@ -12,6 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { BOUNDS } from '../src/core/pipeline-spec/bounds.js';
+import { ReviewAnswerSchema } from '../src/core/schemas/review.js';
+import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner-fields.js';
 import { GENERATED_BLOCK_IDS, renderBlock } from './skill-blocks.js';
 import { runSyncCli } from './sync-skills.js';
 
@@ -30,7 +32,7 @@ const SENTINELS: Record<string, string> = {
   'closing-line': 'Edit <file>, <second file> directly in the working directory.',
   'suggested-files': 'Suggested files are guidance',
   'baseline-rule': '`baseline-sha.txt`',
-  timeouts: '--deadline 1200',
+  timeouts: 'Seat calls have no default deadline',
   'wait-protocol': 'never in the same tool call as the spawn',
   'verdict-rules': 'every task met, every criterion pass, no blocking finding',
   'fix-cycle': 'Allow 2 fix cycles',
@@ -130,6 +132,21 @@ describe('skill-blocks', () => {
     expect(fallback).toContain('reconcile the recorded PID and its implementer children');
     expect(fallback).toContain('Confirm they are gone, or stop them and confirm exit');
     expect(fallback).toContain('before recovery or another dispatch');
+  });
+
+  it('waits without a default deadline and warns on silence without killing the call', () => {
+    const timeouts = renderBlock('timeouts') ?? '';
+    expect(timeouts).toContain('default ' + RUNNER_IDLE_WARN_MS + ' ms');
+    expect(timeouts).toContain('Continue the call after the warning');
+    expect(timeouts).toContain('Without either limit, never kill a silent call');
+    expect(timeouts).toContain('2 consecutive timeouts on one brief with an explicit limit');
+    const wait = renderBlock('wait-protocol') ?? '';
+    expect(wait).toContain('Add `--deadline <seconds>` only for an explicit limit');
+    expect(wait).toContain('! kill -0 "$pid"');
+    expect(wait).toContain('[ "$elapsed" -ge "$N" ] && { echo exit=timeout; exit; }');
+    for (const text of [timeouts, wait]) {
+      expect(text).not.toMatch(/--deadline \d+|minutes per attempt|-ge 1200/u);
+    }
   });
 
   it('replaces scope checks with file guidance', () => {
@@ -268,6 +285,39 @@ describe('skill-blocks', () => {
     );
     expect(rules).toContain('With End-of-run checks off, no reviewer check runs');
     expect(rules).not.toMatch(/typecheck → lint|full suite|verification plan/iu);
+  });
+
+  it('keeps the unique gate policy and requires a passing fix command for incomplete capture', () => {
+    const rules = renderBlock('gate-rules') ?? '';
+    expect(rules).toContain('With an incomplete capture, the fix command must pass');
+    expect(rules).toContain('`not run: <id> failed`');
+    expect(rules).toContain('Makefile or justfile, CI configuration and README');
+    expect(rules).toContain('If it chooses no reviewer check, record its reason');
+    expect(rules).toContain('`mvn test`, `bundle exec rspec` or `make check`');
+    expect(rules).toContain('an environment prefix');
+    expect(rules).toContain('`npm ci`, `pip install`, `go generate`');
+    expect(rules).toContain('Keep every original red key before the base split');
+    expect(rules).toContain('The reviewer addresses every pending input in its review answer');
+    const gates = readFileSync('skills/splitbrief/references/gates.md', 'utf8');
+    expect(gates).not.toContain('### End-of-run checks');
+  });
+
+  it('returns verdict and fix work in one schema-valid review answer', () => {
+    const packet = renderBlock('review-packet') ?? '';
+    const example = packet.split('\n').find((line) => line.trim().startsWith('{"tasks":'));
+    if (example === undefined) throw new Error('review packet has no example answer');
+    const answer: unknown = JSON.parse(example);
+    const parsed = ReviewAnswerSchema.parse(answer);
+    expect(parsed.findings).toHaveLength(1);
+    expect(parsed.ask?.question).toBe(parsed.findings[0]?.text);
+    expect(packet).toContain('Save the whole answer in review.json');
+    expect(renderBlock('fix-cycle')).toContain('from the saved review fix part');
+    expect(renderBlock('consult-table')).toContain(
+      'Reviewer consults and review answers spend no planner decision',
+    );
+    for (const id of ['review-packet', 'fix-cycle', 'consult-table', 'gate-rules']) {
+      expect(renderBlock(id)).not.toMatch(/triage log|session for triage|triage turns|and triage/u);
+    }
   });
 
   it('renders typed review coverage and appends fixes instead of reopening completed tasks', () => {

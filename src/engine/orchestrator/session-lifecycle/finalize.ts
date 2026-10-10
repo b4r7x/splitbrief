@@ -41,13 +41,6 @@ function finalRunStatus(opts: Pick<SaveFinalSessionOpts, 'projectDir' | 'session
   });
 }
 
-/** Artifacts only shape `resumeAt`, so the preserve decision reads the state alone. */
-export function shouldPreserveActiveState(state: WorkflowState | null | undefined): boolean {
-  if (!state) return false;
-  const status = deriveRunStatus({ state, liveness: 'not-alive' });
-  return status.kind !== 'closed';
-}
-
 function sessionFor(opts: SaveFinalSessionOpts, status: RunStatus): Session {
   const base = {
     id: opts.sessionId,

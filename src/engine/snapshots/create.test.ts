@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { EventBus, EngineEvent } from '../events/types.js';
 import { snapshotManifestPath } from '../../core/paths.js';
 import { createSnapshot } from './create.js';
-import { restoreSnapshot } from './restore.js';
 
 let tmp: string;
 
@@ -123,10 +122,10 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(encodedNames.size).toBe(2);
   });
 
-  it('captures and restores a very long unicode path without ENAMETOOLONG', async () => {
+  it('captures a very long unicode path without ENAMETOOLONG', async () => {
     // hex(utf8(path)) doubled the byte count (worse for multi-byte chars), so a
     // deep CJK path blew past the 255-byte filename limit and lost its blob.
-    // sha256 blob names are fixed length, so the round-trip stays intact.
+    // sha256 blob names are fixed length, so capture stays intact.
     const longUnicodePath = `${'長い経路名フォルダ'.repeat(20)}.ts`;
     await writeFile(join(tmp, longUnicodePath), 'unicode content');
 
@@ -139,17 +138,6 @@ describe('createSnapshot — first call (baseline)', () => {
     const entry = baseline.manifest.fileEntries.find((e) => e.path === longUnicodePath);
     expect(entry).toBeDefined();
     expect(entry?.encodedName).toMatch(/^[a-f0-9]{64}$/);
-
-    await writeFile(join(tmp, longUnicodePath), 'clobbered');
-    const result = await restoreSnapshot({
-      projectDir: tmp,
-      sessionId: 'sess-01',
-      idOrName: baseline.manifest.id,
-      force: true,
-    });
-
-    expect(result.forcedPaths).toContain(longUnicodePath);
-    expect(await readFile(join(tmp, longUnicodePath), 'utf-8')).toBe('unicode content');
   });
 
   it('degrades on an unreadable source file: tracks the hash but writes no blob entry', async () => {

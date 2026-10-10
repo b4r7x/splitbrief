@@ -7,10 +7,9 @@ import {
 } from '../../../src/core/evidence/ledger-storage.js';
 import { captureBundleBaseline } from '../../../src/engine/implementers/bundle-baseline.js';
 import { applyFileBundle } from '../../../src/engine/implementers/apply-file-bundle.js';
-import {
-  recordPromotedFilesEvidence,
-  recordedTargetOutput,
-} from '../../../src/engine/orchestrator/evidence/task.js';
+import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
+import { findOrSeed, upsertEvidenceTask } from '../../../src/core/evidence/ledger-state.js';
+import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import {
   cleanupTargetWriteFixtures,
@@ -69,10 +68,10 @@ describe('direct API receipt limits', () => {
     if (ledger === null) throw new Error('missing ledger');
     writeEvidenceLedger(
       { projectDir, sessionId: TARGET_WRITE_SESSION_ID },
-      recordPromotedFilesEvidence({
-        ledger,
-        task: revised,
-        files: [{ path: 'src/other.ts', sha256: sha256Hex('new-worker'), mode: 0o644 }],
+      upsertEvidenceTask(ledger, {
+        ...findOrSeed(ledger, revised),
+        promotedBriefHash: hashTaskBrief([revised]),
+        promotedFiles: [{ path: 'src/other.ts', sha256: sha256Hex('new-worker'), mode: 0o644 }],
       }),
     );
     expect(

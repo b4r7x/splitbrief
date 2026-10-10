@@ -159,7 +159,7 @@ src/engine/codebase/
 ```
 src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.ts, gates.ts, halts.ts,
                              #   steps.ts (older runs' step table, read by run-status), review.ts,
-                             #   brief.ts, scope.ts, baseline.ts, timeouts.ts, divergences.ts,
+                             #   brief.ts, scope.ts, baseline.ts, timeouts.ts,
                              #   planner-documents.ts — pure data and readers, no I/O
 src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
 src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts

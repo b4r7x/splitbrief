@@ -113,10 +113,6 @@ function pushDocumentSubmission(
   });
 }
 
-function pushSubmission(value: string, opts: InputHistorySubmissionOptions): void {
-  pushDocumentSubmission(createDraftDocument(value.trim()), opts);
-}
-
 function hydrate(entries: readonly (string | DraftDocument)[]): void {
   store.set({
     entries: normalizeInputHistoryEntries(
@@ -136,17 +132,9 @@ export function getInputHistoryDocuments(
   return normalizeInputHistoryEntries([...state.workflowEntries, ...state.entries]);
 }
 
-export function getInputHistoryEntries(
-  state: InputHistoryState,
-  opts: InputHistoryEntriesOptions,
-): string[] {
-  return getInputHistoryDocuments(state, opts).map(draftDocumentText);
-}
-
 export const inputHistoryStore = {
   ...storeBase(store),
   push,
-  pushSubmission,
   pushDocumentSubmission,
   hydrate,
 };

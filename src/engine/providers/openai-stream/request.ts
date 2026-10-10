@@ -178,14 +178,3 @@ export function usageField(
 ): { stream_options: { include_usage: true } } | Record<string, never> {
   return policy.streamUsage ? { stream_options: { include_usage: true } } : {};
 }
-
-export function extraBodyFields(policy: OpenAICompatPolicy): Readonly<Record<string, unknown>> {
-  return policy.extraBody ?? {};
-}
-
-export function reasoningField(
-  policy: OpenAICompatPolicy,
-  effort: EffortLevel | undefined,
-): Pick<StreamRequestBody, 'reasoning_effort'> {
-  return effortField(policy, effort);
-}

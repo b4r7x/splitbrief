@@ -19,20 +19,6 @@ export const MODEL_EVALUATION_THRESHOLDS = Object.freeze({
   maxRetryRate: 0.2,
 } as const);
 
-export type ModelEvaluationScenarioMetrics = {
-  compileTest: { passed: number; total: 5 };
-  extraction: { passed: number; total: 5 };
-  instructionAdherence: { passed: number; total: 5 };
-  unnecessaryFiles: number;
-  retryRate: number;
-};
-
-export type ModelEvaluationScenarioResult = {
-  scenarioId: ModelEvaluationScenarioId;
-  metrics: ModelEvaluationScenarioMetrics;
-  thresholdsMet: boolean;
-};
-
 export type PendingEvaluationCandidate = {
   provider: ProviderId;
   model: string;
@@ -166,24 +152,6 @@ const EVIDENCE_AS_OF = '2026-07-31';
 
 export function discoverPendingEvaluationCandidates(): readonly PendingEvaluationCandidate[] {
   return PENDING_EVALUATION_CANDIDATE_IDS;
-}
-
-export function scenarioMetricsMeetThresholds(metrics: ModelEvaluationScenarioMetrics): boolean {
-  return (
-    metrics.compileTest.passed >= MODEL_EVALUATION_THRESHOLDS.compileTest.passed &&
-    metrics.extraction.passed >= MODEL_EVALUATION_THRESHOLDS.extraction.passed &&
-    metrics.instructionAdherence.passed >=
-      MODEL_EVALUATION_THRESHOLDS.instructionAdherence.passed &&
-    metrics.unnecessaryFiles <= MODEL_EVALUATION_THRESHOLDS.maxUnnecessaryFiles &&
-    metrics.retryRate <= MODEL_EVALUATION_THRESHOLDS.maxRetryRate
-  );
-}
-
-export function deriveQualityVerdict(
-  scenarios: readonly ModelEvaluationScenarioResult[],
-): 'PASS' | 'FAIL' {
-  if (scenarios.length !== MODEL_EVALUATION_SCENARIO_IDS.length) return 'FAIL';
-  return scenarios.every((scenario) => scenario.thresholdsMet) ? 'PASS' : 'FAIL';
 }
 
 export function buildModelEvaluationEvidence(

@@ -49,7 +49,7 @@ it.each(['initial', 'local', 'consult'] as const)(
       typeDefs: 'export const complete: boolean',
     });
     const config = makeNoValidationConfig({
-      workflow: { approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none' },
       approval: { feedRejectionsToPlanner: false },
     });
     const ref = { projectDir, sessionId };

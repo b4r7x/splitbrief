@@ -13,6 +13,7 @@ import { resolveCliExecutable } from '../../../../src/engine/runners/resolve-cli
 import { requestTyped } from '../../../../src/engine/runners/typed-output.js';
 import { redactPublicPayload } from '../../../../src/core/payload-bounds.js';
 import { isRecord } from '../../../../src/utils/type-guards.js';
+import { shellQuoteArg } from '../../../../src/utils/shell-quote.js';
 import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -110,10 +111,6 @@ function firstSemver(output: string): string {
   return match[0];
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
-
 describe('live typed-output probe', () => {
   for (const { label, tool, command, model, transport, probe } of TOOLS) {
     itLive(
@@ -139,7 +136,7 @@ describe('live typed-output probe', () => {
           wrapperPath,
           [
             '#!/bin/bash',
-            `${shellQuote(realBinary)} "$@" | tee -a ${shellQuote(recordingFile)}`,
+            `${shellQuoteArg(realBinary)} "$@" | tee -a ${shellQuoteArg(recordingFile)}`,
             // biome-ignore lint/suspicious/noTemplateCurlyInString: the wrapper must carry a literal shell ${PIPESTATUS[0]}
             'exit ${PIPESTATUS[0]}',
             '',

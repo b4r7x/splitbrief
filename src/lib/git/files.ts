@@ -50,12 +50,6 @@ export async function listGitlinkPaths(dir: string): Promise<string[]> {
   }
 }
 
-export async function discardSubmoduleChange(dir: string, submodule: string): Promise<void> {
-  await runGit(`submodule update ${submodule}`, () =>
-    getGitForDir(dir).raw(['submodule', 'update', '--init', '--recursive', '--', submodule]),
-  );
-}
-
 export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<string[]> {
   if (paths.length === 0) return [];
   return new Promise<string[]>((resolve) => {
@@ -74,36 +68,4 @@ export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<s
     });
     child.stdin.end(paths.join('\0'));
   });
-}
-
-export async function discardFileChange(
-  dir: string,
-  file: string,
-  mode: 'tracked' | 'untracked',
-): Promise<void> {
-  await runGit(`discard ${file}`, async () => {
-    const git = getGitForDir(dir);
-    if (mode === 'tracked') {
-      await git.checkout(['--', file]);
-    } else if (file.endsWith('/')) {
-      await git.raw(['clean', '-ff', '-d', '--', file]);
-    } else {
-      await git.clean('f', ['--', file]);
-    }
-  });
-}
-
-async function isTracked(dir: string, file: string): Promise<boolean> {
-  try {
-    await getGitForDir(dir).raw(['ls-files', '--error-unmatch', '--', file]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function discardChangedFiles(dir: string, files: string[]): Promise<void> {
-  for (const file of files) {
-    await discardFileChange(dir, file, (await isTracked(dir, file)) ? 'tracked' : 'untracked');
-  }
 }

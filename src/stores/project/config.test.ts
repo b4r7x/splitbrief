@@ -11,7 +11,7 @@ import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { loadConfig } from '../../core/config/load/io.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
-import { deriveConfigEdits, editsForSave } from './config-persistence.js';
+import { editsForSave } from './config-persistence.js';
 import { narrowRecord } from '../../utils/type-guards.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -389,7 +389,16 @@ describe('config persistence semantic diff', () => {
       },
     };
 
-    const edits = deriveConfigEdits(before, after);
+    const rawYaml = `implementer_profiles:
+  default: fast
+  profiles:
+    fast:
+      kind: cli
+      tool: codex
+      model: gpt-5.4-mini
+      label: Fast
+`;
+    const edits = editsForSave(before, after, rawYaml);
 
     expect(edits).toHaveLength(2);
     expect(edits).toEqual(

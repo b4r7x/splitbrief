@@ -59,7 +59,6 @@ export async function runBriefGate(opts: {
     config: wctx.config,
     bus: wctx.bus,
     phase: state.phase,
-    discoveredValidation: state.discoveredValidation,
     signal: wctx.signal,
     changedFiles,
   });

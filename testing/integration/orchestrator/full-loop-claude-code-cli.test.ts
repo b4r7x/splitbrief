@@ -137,7 +137,6 @@ describe('full workflow Claude Code CLI implementer', { timeout: 90_000 }, () =>
       },
       workflow: {
         approve: 'none',
-        maxRetries: 1,
       },
     });
     const preparationId = 'full-loop-claude-code-preparation';

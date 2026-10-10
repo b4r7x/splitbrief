@@ -5,7 +5,12 @@ import type { EvidenceLedger } from '../../src/core/schemas/evidence.js';
 import type { Task } from '../../src/core/schemas/task.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
 import { ensureSessionDir } from '../../src/core/paths-io.js';
-import { createEvidenceLedger } from '../../src/core/evidence/ledger-state.js';
+import {
+  createEvidenceLedger,
+  findOrSeed,
+  upsertEvidenceTask,
+} from '../../src/core/evidence/ledger-state.js';
+import { hashTaskBrief } from '../../src/core/evidence/brief-hash.js';
 import {
   evidenceLedgerPath,
   readEvidenceLedger,
@@ -20,10 +25,7 @@ import {
   type getChangedFilesSnapshot,
 } from '../../src/engine/orchestrator/approval/file-snapshots/capture.js';
 import { createStagedProject } from '../../src/engine/orchestrator/approval/staged-project.js';
-import {
-  recordApiApplyEvidence,
-  recordPromotedFilesEvidence,
-} from '../../src/engine/orchestrator/evidence/task.js';
+import { recordApiApplyEvidence } from '../../src/engine/orchestrator/evidence/task.js';
 import { runRetryStep } from '../../src/engine/orchestrator/escalation/step.js';
 import { makeTask } from './factories/task.js';
 import { makeImplState } from './factories/workflow-state.js';
@@ -97,19 +99,19 @@ export function writePromotedReceipt(opts: {
   task: Task;
   content: string | null;
 }): void {
+  const ledger = ledgerFor(opts.projectDir, opts.task);
+  const entry = findOrSeed(ledger, opts.task);
+  entry.promotedBriefHash = hashTaskBrief([opts.task]);
+  entry.promotedFiles = [
+    {
+      path: TARGET_WRITE_FILE,
+      sha256: opts.content === null ? null : sha256Hex(opts.content),
+      mode: opts.content === null ? null : 0o644,
+    },
+  ];
   writeEvidenceLedger(
     { projectDir: opts.projectDir, sessionId: TARGET_WRITE_SESSION_ID },
-    recordPromotedFilesEvidence({
-      ledger: ledgerFor(opts.projectDir, opts.task),
-      task: opts.task,
-      files: [
-        {
-          path: TARGET_WRITE_FILE,
-          sha256: opts.content === null ? null : sha256Hex(opts.content),
-          mode: opts.content === null ? null : 0o644,
-        },
-      ],
-    }),
+    upsertEvidenceTask(ledger, entry),
   );
 }
 

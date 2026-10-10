@@ -68,7 +68,7 @@ src/
 │   ├── layout.tsx            Structural shell (header + body + footer)
 │   ├── keys.ts               App-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts    Runtime-command wiring (useRuntimeCommands)
-│   ├── screens/              FLAT page entries: home, workflow, summary, setup
+│   ├── screens/              FLAT page entries: home, workflow, setup
 │   └── overlays/             FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
 │
 ├── cli/                      Non-React CLI logic
@@ -79,7 +79,7 @@ src/
 ├── core/                     Shared domain (no React, no engine-ness)
 │   ├── config/               YAML load + validation
 │   ├── pipeline-spec/        The countable pipeline rules (brief, retries, ladder,
-│   │                         timeouts, gates, halts, review, divergences,
+│   │                         timeouts, gates, halts, review,
 │   │                         planner-documents)
 │   ├── recovery/             Halt headline, action labels + resume-command formatting
 │   ├── scope/                declared-set matching (files + Scope bullets)
@@ -98,7 +98,7 @@ src/
 │   ├── implementers/         Four runner kinds implementing Implementer interface
 │   ├── runners/              Factory dispatching on config.kind
 │   ├── providers/            Model catalog, pricing, HTTP clients
-│   ├── spec/                 Task Brief templates + tasks.md transport/parser
+│   ├── spec/                 Task Brief templates + tasks.md writer
 │   ├── streaming/            Subprocess spawn + output parsers (stream-json, jsonl)
 │   ├── parsers/              Question/code/scope extractors
 │   ├── detection/            Auto-detect available tools on startup
@@ -111,10 +111,13 @@ src/
 │
 ├── features/                 Business features — components/hooks/helpers per concept
 │   ├── workflow/             components + hooks + pure helpers (largest feature)
+│   │   └── closed/           Closed run block, view model and rows
+│   ├── crew/                 Crew rows and seat identity rendering
+│   ├── editor/               Inline artifact editor
 │   ├── home/                 components + recent-sessions hook + logo
 │   ├── palette/              command-palette sources + result ranking
-│   ├── summary/              pure view model + copy + row builders + layout
 │   ├── settings/             items + presentation + hooks
+│   ├── start-preparation/    Startup preparation panel and lifecycle
 │   └── runners/              picker view + catalog adapter + hooks (planner / implementer runner selection)
 ├── components/               Shared UI (cross-feature): primitives + shared overlays + pickers + input
 ├── hooks/                    Shared React hooks (cross-feature primitives, flat)
@@ -502,7 +505,7 @@ src/
 │   │                              orchestrator and rendered into the skills:
 │   │                              brief, retries, ladder, timeouts, gates,
 │   │                              halts, review, baseline, scope,
-│   │                              divergences, planner-documents,
+│   │                              planner-documents,
 │   │                              steps (older runs' step table)
 │   ├── recovery/                  headline, action-label, resume-command
 │   ├── scope/                     declared-set: a brief's files plus its Scope
@@ -660,9 +663,7 @@ src/
 │   │   ├── files.ts               hashFile, collectTrackedFiles,
 │   │   │                          ALWAYS_EXCLUDED
 │   │   ├── lock.ts                acquireSnapshotLock
-│   │   ├── create.ts              createSnapshot
-│   │   ├── diff.ts                computeSnapshotDiff, formatSnapshotDiff
-│   │   └── restore.ts             resolveSnapshot, restoreSnapshot
+│   │   └── create.ts              createSnapshot
 │   ├── spec/
 │   │   ├── brief-quality.ts       Older runs' brief-quality report reader
 │   │   ├── plan-checks.ts         checkPlan — the deterministic plan checks
@@ -679,8 +680,6 @@ src/
 │   │   │                          system (implementer system
 │   │   │                          preamble per write mode),
 │   │   │                          task-format-example, tasks
-│   │   ├── tasks/                 tasks.md transport reader
-│   │   │                          (parse, blocks, sections)
 │   │   └── token-budget.ts        Implementer prompt token budget
 │   └── streaming/                 output-parsers (stream-json, jsonl,
 │                                  text, opencode), spawn-collect,
@@ -707,6 +706,8 @@ src/
 │   ├── crew/                      use-crew + rows + row-view + preset-row +
 │   │                              format (seat identity rendering, shared by
 │   │                              the Crew section of Settings and setup)
+│   ├── editor/                   editor-buffer-view, editor-viewport,
+│   │                              editor-line-segments, plan-save, use-editor-keys
 │   ├── home/                      components (recent-sessions list/shell,
 │   │                              seat-block) + layout + logo +
 │   │                              use-recent-sessions-focus
@@ -714,8 +715,7 @@ src/
 │   │                              assembly + cross-store result aggregator)
 │   ├── runners/                   picker-view, tool-row, picker-format,
 │   │                              config-transforms (seat commits),
-│   │                              custom-command-transforms (named-command
-│   │                              catalog CRUD), use-picker-actions,
+│   │                              use-picker-actions,
 │   │                              use-picker-catalog, contract-chip,
 │   │                              contract-choice-overlay,
 │   │                              model-catalog/{catalog, options, posture,
@@ -726,16 +726,14 @@ src/
 │   │                              (planner / implementer runner selection)
 │   ├── settings/                  items (section + row model, Crew first) +
 │   │                              presentation + hooks/{buffer, editor}
-│   ├── summary/                   view-model (deriveSummaryView) + copy +
-│   │                              rows/{briefs, files, run} + document +
-│   │                              layout
+│   ├── start-preparation/         panel, use-start-preparation, observe-cleanup
 │   └── workflow/                  Largest feature (entry: app/screens/workflow.tsx)
 │       ├── conversation-rows/     row-based conversation renderer
-│       ├── components/            approval-prompt, body, brief-review-*,
+│       ├── components/            approval-prompt, body,
 │       │                          chrome, conversation-flow/,
 │       │                          divider, feedback-row, frame-panel, header,
 │       │                          input-footer, prompt-body, question-prompt,
-│       │                          rail, review-view, sidebar, task-summary
+│       │                          rail, review-view.tsx, sidebar
 │       ├── display/               activity-display-text, local-share,
 │       │                          runner-activity-display
 │       ├── handlers.ts            Runtime command context actions
@@ -750,13 +748,14 @@ src/
 │       │                          workflow-screen/{use-model,
 │       │                          use-inline-edit}
 │       ├── keyboard.ts            Workflow keymap
-│       ├── layout/                layout math (brief-review, chrome-rows,
+│       ├── layout/                layout math (chrome-rows,
 │       │                          diff-height, rect, hit-test,
-│       │                          scroll-window, snapshot, task-row)
+│       │                          scroll-window, snapshot)
 │       ├── recovery-driver.ts     Recovery flow (+ recovery-prompt); its bus
 │       │                          comes from engine/orchestrator/recovery/bus
 │       ├── run-history.ts         hydrateRun — replay the log, overlay state
 │       ├── spend-text.ts          The one spend formatter every surface reads
+│       ├── usage-details-model.ts Token counts, cost amounts and usage rows
 │       ├── review-parser.ts       Review-text parser (+ review-commands)
 │       └── tui-sink.ts            EngineEvent → workflow store sink
 │
@@ -948,7 +947,7 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── state.json              Mutable WorkflowState (overwritten every transition)
         ├── session.jsonl           Append-only EngineEvent log
         ├── lockfile.json           Session lockfile (pid + heartbeat)
-        ├── tasks.md                Task-Brief transport (parsed by spec/tasks/parse.ts)
+        ├── tasks.md                Markdown briefs rendered from the plan tasks
         ├── plan.json               The checked plan (PLAN_JSON_FILE)
         ├── plan.md                 The plan card's body, rendered from plan.json
         ├── spec.md / research.md   Older runs only
@@ -1060,22 +1059,6 @@ export async function createSnapshot(opts: CreateSnapshotOptions): Promise<Creat
 ```
 
 `ALWAYS_EXCLUDED` is `INTERNAL_SKIP_DIRS` from `core/paths.ts` — `['.git', '.splitbrief', 'node_modules', '.trees']` — non-negotiable; see invariants.
-
-### `engine/snapshots/restore.ts`
-
-```ts
-export async function resolveSnapshot(projectDir, sessionId, idOrName): Promise<SnapshotManifest>
-export async function restoreSnapshot(opts: RestoreOptions): Promise<RestoreResult>
-//  RestoreResult = { snapshotId, restoredPaths, conflictedPaths, forcedPaths, missingSnapshotFiles }
-```
-
-### `engine/snapshots/diff.ts`
-
-```ts
-export async function computeSnapshotDiff(opts: DiffOptions): Promise<SnapshotDiffResult>
-export function formatSnapshotDiff(result, opts?: { color?: boolean }): string
-//  FileDiff.status: 'unchanged' | 'modified' | 'added' | 'removed'
-```
 
 ### `core/evidence/ledger-state.ts`
 

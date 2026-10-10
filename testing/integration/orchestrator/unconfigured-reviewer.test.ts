@@ -113,7 +113,7 @@ describe('run with no reviewer configured', () => {
         contextLength: 4096,
       },
       validation: { endChecks: false, testCommand: 'node validate.mjs' },
-      workflow: { approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none' },
     });
     const prepared = makePreparedExecution({
       projectDir,

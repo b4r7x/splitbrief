@@ -53,19 +53,6 @@ export function isTestFile(path: string, stack: Stack): boolean {
   return stack.testFilePatterns.some((pattern) => matchesPattern(path, pattern));
 }
 
-export function sourceForTest(path: string, stack: Stack): string | null {
-  for (const pattern of stack.testFilePatterns) {
-    if (!matchesPattern(path, pattern)) continue;
-    const { dir, prefix, suffix } = patternParts(pattern);
-    const base = basename(path);
-    const name = base.slice(prefix.length, base.length - suffix.length);
-    const extension = suffix.slice(suffix.lastIndexOf('.'));
-    const sourceDir = dir === '' ? dirname(path) : dirname(dirname(path));
-    return join(sourceDir, `${name}${extension}`);
-  }
-  return null;
-}
-
 function hasInlineTests(absolutePath: string, pattern: RegExp): boolean {
   if (!existsSync(absolutePath)) return false;
   return pattern.test(readFileSync(absolutePath, 'utf-8'));

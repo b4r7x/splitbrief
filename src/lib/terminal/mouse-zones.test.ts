@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  _resetMouseZones,
-  hitTopmostZone,
-  registerMouseZone,
-  unregisterMouseZone,
-} from './mouse-zones.js';
+import { _resetMouseZones, hitTopmostZone, registerMouseZone } from './mouse-zones.js';
 
 beforeEach(() => {
   _resetMouseZones();
@@ -42,12 +37,6 @@ describe('mouse-zones', () => {
   it('unregisters via the returned disposer', () => {
     const dispose = registerMouseZone({ id: 'a', left: 1, right: 4, top: 1, bottom: 1, z: 0 });
     dispose();
-    expect(hitTopmostZone(2, 1)).toBeUndefined();
-  });
-
-  it('unregisters by id', () => {
-    registerMouseZone({ id: 'a', left: 1, right: 4, top: 1, bottom: 1, z: 0 });
-    unregisterMouseZone('a');
     expect(hitTopmostZone(2, 1)).toBeUndefined();
   });
 

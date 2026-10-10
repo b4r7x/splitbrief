@@ -1,9 +1,7 @@
 import { resolveCliModel } from '../../providers/automatic-model.js';
 import { resolveAutoModel } from '../../providers/model-selection.js';
 import { getProviderDisplayName, getRunnerIdentityDisplayName } from '../../providers/catalog.js';
-import type { PlannerToolId } from '../../schemas/enums.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import type { Config } from '../../schemas/config.js';
 import type { ActiveRunnerConfig } from './active-runner.js';
 import type { ImplementerConfig } from '../../schemas/implementer-config.js';
 import type { PlannerConfig } from '../../schemas/planner-config.js';
@@ -99,20 +97,4 @@ export function getRunnerModelName(runner: DeepReadonly<RunnerConfig>): string |
       : resolveAutoModel(runner.model, getRunnerDisplayName(runner));
   }
   return undefined;
-}
-
-export function getPlannerToolId(config: Config['planner']): PlannerToolId {
-  switch (config.kind) {
-    case 'cli':
-      return config.tool;
-    // No API provider is a planner tool id, so an api planner scans the same
-    // scope a shell planner does.
-    case 'api':
-    case 'shell':
-      return 'shell';
-    case 'agent':
-      return 'agent';
-    default:
-      return assertNever(config);
-  }
 }

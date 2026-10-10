@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatContextLength, formatKnownCost, formatScoreSummary } from './formatting.js';
+import { formatContextLength, formatScoreSummary } from './formatting.js';
 
 describe('formatScoreSummary', () => {
   it.each([
@@ -34,20 +34,6 @@ describe('formatScoreSummary', () => {
     ],
   ] as const)('%s', (_label, score, counts, customLabel, expected) => {
     expect(formatScoreSummary(score, counts, customLabel)).toBe(expected);
-  });
-});
-
-describe('formatKnownCost', () => {
-  it('formats a fully-known cost as a plain dollar amount', () => {
-    expect(formatKnownCost(12.5, 'known')).toBe('$12.50');
-  });
-
-  it('appends "+ unknown" to a partial cost with a positive amount', () => {
-    expect(formatKnownCost(12.5, 'partial')).toBe('$12.50 + unknown');
-  });
-
-  it('reports "Unknown price" for a partial cost with no known amount', () => {
-    expect(formatKnownCost(0, 'partial')).toBe('Unknown price');
   });
 });
 
