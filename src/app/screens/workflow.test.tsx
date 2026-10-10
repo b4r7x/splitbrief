@@ -393,7 +393,7 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.unmount();
   });
 
-  it('stands the build block down while the stop ladder parks the run', async () => {
+  it('keeps queue copy on the running brief, then stands down while stopping', async () => {
     const brief = taskId('T001');
     configStore.__testReset({ config: makeConfig(), projectDir });
     terminalSizeStore.__testReset({ cols: 120, rows: 40 });
@@ -428,6 +428,15 @@ describe('WorkflowScreen chrome calibration', () => {
         tool: 'opencode',
         model: 'stand-down-model',
       });
+      publishEvent(opts, {
+        type: 'message_queued',
+        ts: FIXED_TS + 3,
+        phase: 'implementing',
+        id: 'queued-build-message',
+        seat: 'build',
+        taskId: brief,
+        preview: 'Keep every word',
+      });
       return pendingWorkflow();
     });
 
@@ -437,6 +446,10 @@ describe('WorkflowScreen chrome calibration', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('briefs passed');
     });
+
+    const runningFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(runningFrame.match(/Message BUILD on T001 · read when its call ends…/g)).toHaveLength(1);
+    expect(runningFrame).toContain('1 queued for BUILD on T001');
 
     stopStore.request('stop-now');
     stopStore.park('mid-brief', brief, null);

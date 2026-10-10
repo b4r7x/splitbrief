@@ -9,7 +9,9 @@ import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
 import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
 import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
-import { queueSeatRole } from './input-hints.js';
+import { phaseStage } from '../../core/rail-stages.js';
+import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
+import { queueCopy } from './queue-copy.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import {
   resumeTerminalAfterEditor,
@@ -269,6 +271,9 @@ export function createReviewInputHandler(
         const trimmed = text.trim();
         if (trimmed) {
           const document = composerLiveStore.get().document;
+          const seat = phaseStage(phase);
+          const taskId = selectRunningBrief(tasksStore.get(), phase).current?.id;
+          const steerable = lifecycle.steerableCall?.seat === seat;
           const result = await effects.enqueue(message, phase);
           if (!result) {
             composerDraftStore.requestDocument(document);
@@ -278,12 +283,8 @@ export function createReviewInputHandler(
             // rejection never loses what the operator typed.
             composerDraftStore.requestDocument(document);
             feedbackStore.setError(result.message);
-          } else {
-            feedbackStore.setMessage(
-              queueSeatRole(phase) === 'validator'
-                ? 'Message queued for the reviewer.'
-                : 'Message queued for the next planner turn.',
-            );
+          } else if (seat !== null) {
+            feedbackStore.setMessage(queueCopy({ seat, taskId, steerable }).feedback);
           }
         }
       } else if (

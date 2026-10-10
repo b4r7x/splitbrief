@@ -4,6 +4,7 @@ import type {
   RuntimeCommandContext,
 } from '../../src/core/runtime/commands/types.js';
 import type { Phase } from '../../src/core/schemas/enums.js';
+import { queueCopy } from '../../src/features/workflow/queue-copy.js';
 
 export const noop = () => {};
 export const noopTrue = () => true;
@@ -32,7 +33,7 @@ export function makeCtx(overrides: Partial<RuntimeCommandContext> = {}): Runtime
     resumeRun: noopTrue,
     steerRun: noopTrue,
     endRun: noopTrue,
-    getQueueDepth: () => 0,
+    getQueueCopy: (count = 0) => queueCopy({ seat: null, count }),
     clearQueue: () => ({ status: 'cleared', count: 0 }),
     attachImage: () => ({ ok: false, reason: 'not-image' }),
     detachImage: () => false,

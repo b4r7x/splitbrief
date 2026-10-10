@@ -9,11 +9,7 @@ import type {
   EvidenceTask,
 } from '../../../core/schemas/evidence.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
-import {
-  findOrSeed,
-  upsertEvidenceTask,
-  withUpdatedTask,
-} from '../../../core/evidence/ledger-state.js';
+import { findOrSeed, upsertEvidenceTask } from '../../../core/evidence/ledger-state.js';
 import { uniquePush } from '../../../utils/collections.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
@@ -98,34 +94,40 @@ function provenCreatedPaths(
   entry: EvidenceTask | undefined,
   workspacePath?: string | undefined,
 ): string[] {
-  const paths = new Set(entry?.apiCreatedPaths ?? []);
   const receipt = entry?.apiApply;
-  if (receipt?.workspacePath === undefined || receipt.workspacePath === workspacePath) {
-    const reverted = new Set(receipt?.revertedPaths ?? []);
-    for (const file of receipt?.applied ?? []) {
-      if (file.action === 'create' && file.beforeSha256 === null && !reverted.has(file.path))
-        paths.add(file.path);
-    }
+  if (receipt?.workspacePath !== undefined && receipt.workspacePath !== workspacePath) return [];
+  const reverted = new Set(receipt?.revertedPaths ?? []);
+  const paths = new Set((entry?.apiCreatedPaths ?? []).filter((path) => !reverted.has(path)));
+  for (const file of receipt?.applied ?? []) {
+    if (file.action === 'create' && file.beforeSha256 === null && !reverted.has(file.path))
+      paths.add(file.path);
   }
   return [...paths];
 }
 
-/** A checkout recovery put the receipt's applied files back, so they prove no creation. */
+/** A restore removes creation proof only for paths the snapshot puts back to absence. */
 export function recordApiRevertEvidence(input: {
   ledger: EvidenceLedger;
-  task: Task;
+  workspacePath: string;
+  removedPaths: readonly string[];
 }): EvidenceLedger {
-  return withUpdatedTask(input.ledger, input.task.id, (entry) =>
-    entry.apiApply === undefined
-      ? entry
-      : {
-          ...entry,
-          apiApply: {
-            ...entry.apiApply,
-            revertedPaths: entry.apiApply.applied.map((file) => file.path),
-          },
+  const removed = new Set(input.removedPaths);
+  return {
+    ...input.ledger,
+    tasks: input.ledger.tasks.map((entry) => {
+      if (entry.apiApply?.workspacePath !== input.workspacePath) return entry;
+      return {
+        ...entry,
+        apiCreatedPaths: provenCreatedPaths(entry, input.workspacePath).filter(
+          (path) => !removed.has(path),
+        ),
+        apiApply: {
+          ...entry.apiApply,
+          revertedPaths: [...new Set([...(entry.apiApply.revertedPaths ?? []), ...removed])],
         },
-  );
+      };
+    }),
+  };
 }
 
 /**
@@ -265,18 +267,17 @@ export type RecordApiApplyEvidenceInput = {
  */
 export function recordApiApplyEvidence(input: RecordApiApplyEvidenceInput): EvidenceLedger {
   const next = findOrSeed(input.ledger, input.task);
-  const created = provenCreatedPaths(next);
+  const created = provenCreatedPaths(next, input.workspacePath);
   next.apiApply = {
     ...apiApplyReceipt(input.result),
     ...(input.workspacePath === undefined ? {} : { workspacePath: input.workspacePath }),
   };
-  if (input.workspacePath === undefined) {
-    for (const file of next.apiApply.applied) {
-      uniquePush(next.changedFiles, file.path);
-      if (file.action === 'create' && file.beforeSha256 === null) uniquePush(created, file.path);
-    }
+  for (const file of next.apiApply.applied) {
+    if (input.workspacePath === undefined) uniquePush(next.changedFiles, file.path);
+    if (file.action === 'create' && file.beforeSha256 === null) uniquePush(created, file.path);
   }
   if (created.length > 0) next.apiCreatedPaths = created;
+  else delete next.apiCreatedPaths;
   // An application that stopped mid-bundle leaves the brief failed until
   // recovery moves it: nothing after the failing path was attempted, and the
   // prefix remains in the receipt even when checkout recovery puts it back.

@@ -200,7 +200,11 @@ it('restores exact blob bytes and permissions without changing any Git index', a
     { head: 'SNAPSHOT', files: [], dirtyFileContents: {} },
     ['existing.bin', 'created.ts'],
   );
-  expect(result).toEqual({ restoredFiles: ['existing.bin', 'created.ts'], conflictedFiles: [] });
+  expect(result).toEqual({
+    restoredFiles: ['existing.bin', 'created.ts'],
+    conflictedFiles: [],
+    removedPaths: ['created.ts'],
+  });
   expect(readFileSync(join(root, 'existing.bin'))).toEqual(bytes);
   expect(statSync(join(root, 'existing.bin')).mode & 0o777).toBe(0o755);
   expect(existsSync(join(root, 'created.ts'))).toBe(false);

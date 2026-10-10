@@ -16,6 +16,7 @@ import { parsedMalformedRecordWarning, parsedUnknownRecordWarning } from './pars
 
 export interface StreamParseResult {
   text?: string | undefined;
+  inputAck?: string | undefined;
   channel?: ParsedTextChannel | undefined;
   /** `final` closes an assistant record; its text, when present, restates streamed deltas. */
   textSemantics?: ParsedTextSemantics | undefined;
@@ -59,6 +60,9 @@ export function createStreamParser(): (line: string) => StreamParseResult {
   const messages = new Map<string, MessageUsage>();
   const openTools: OpenTools = new Map();
   let activeMessage: string | undefined;
+  let completedUsage: TokenDelta | null = null;
+  let turnUsage: TokenDelta | null = null;
+  let turnEnded = false;
 
   const collect: CollectMessageUsage = (event) => {
     // The invocation result covers the main loop, not nested subagent messages.
@@ -112,7 +116,46 @@ export function createStreamParser(): (line: string) => StreamParseResult {
       ...(allOutputsKnown && { providerTotals: { output: outputTotal } }),
     };
   };
-  return (line) => parseLine(line, collect, openTools);
+  return (line) => {
+    const parsed = parseLine(line, collect, openTools);
+    if (turnEnded && !parsed.isResult) {
+      if (turnUsage !== null) completedUsage = addTurnUsage(completedUsage, turnUsage);
+      turnUsage = null;
+      turnEnded = false;
+    }
+    if (parsed.isResult) {
+      turnUsage = parsed.usage ?? turnUsage;
+      turnEnded = true;
+      messages.clear();
+      openTools.clear();
+      activeMessage = undefined;
+      const usage = turnUsage === null ? completedUsage : addTurnUsage(completedUsage, turnUsage);
+      return {
+        ...parsed,
+        ...(usage !== null && { usage, usageSemantics: 'final' }),
+      };
+    }
+    if (parsed.usage === undefined) return parsed;
+    turnUsage = parsed.usage;
+    return { ...parsed, usage: addTurnUsage(completedUsage, turnUsage) };
+  };
+}
+
+function addTurnUsage(completed: TokenDelta | null, turn: TokenDelta): TokenDelta {
+  const total = accumulateTokenUsage(completed, turn);
+  if (completed === null) return total;
+  const input = completed.providerTotals?.input;
+  const output = completed.providerTotals?.output;
+  const turnInput = turn.providerTotals?.input;
+  const turnOutput = turn.providerTotals?.output;
+  const { providerTotals: _latest, ...counters } = total;
+  return {
+    ...counters,
+    providerTotals: {
+      ...(input !== undefined && turnInput !== undefined && { input: input + turnInput }),
+      ...(output !== undefined && turnOutput !== undefined && { output: output + turnOutput }),
+    },
+  };
 }
 
 const TextBlock = z.object({ type: z.literal('text'), text: z.string() });
@@ -129,6 +172,12 @@ const AssistantEvent = z.object({
   type: z.literal('assistant'),
   session_id: z.string().optional(),
   message: z.object({ content: z.array(z.unknown()) }),
+});
+
+const InputEchoEvent = z.object({
+  type: z.literal('user'),
+  parent_tool_use_id: z.null(),
+  message: z.object({ role: z.literal('user'), content: z.string() }),
 });
 
 const UserEvent = z.object({
@@ -185,7 +234,7 @@ function parseStreamEvent(event: Record<string, unknown>): StreamParseResult | n
         : { sessionId };
     }
     if (delta.type === 'input_json_delta') {
-      const inputDelta = firstString(delta.partial_json) ?? '';
+      const inputDelta = typeof delta.partial_json === 'string' ? delta.partial_json : '';
       const index = streamEvent.index;
       return {
         sessionId,
@@ -511,6 +560,9 @@ function parseLine(
         }),
       };
     }
+
+    const echo = InputEchoEvent.safeParse(event);
+    if (echo.success) return { inputAck: echo.data.message.content };
 
     const user = UserEvent.safeParse(event);
     if (user.success) {

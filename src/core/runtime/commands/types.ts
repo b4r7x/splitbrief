@@ -261,7 +261,7 @@ export interface RuntimeCommandContext {
   /** Stop now and continue the run with this correction. False when there is no run to steer. */
   steerRun: (text: string) => boolean;
   endRun: () => boolean;
-  getQueueDepth: () => number;
+  getQueueCopy: (count?: number) => { summary: string; clearFeedback: string };
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   insertImage?: (input: string) => AttachImageResult;
   attachImage: (input: string) => AttachImageResult;

@@ -136,7 +136,9 @@ A diagnostic key includes its path, position and message. Match exact keys first
 
 Other failures belong to other fix tasks or the next review. A check with no carried keys must pass. This includes older saved fix tasks. A timeout or a red with no named failure fails the gate. Results of `refused`, `unknown` and `not-runnable` also reject the brief. A settled fix check records `passed: true` in `checkResults`; its command evidence keeps the failure.
 
-The same rule covers carried reviewer, plan and task checks, even when a check is optional. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. A fix check runs once. It never re-runs at the run base. The run base still supplies changed-script refusal for reviewer checks.
+The same rule covers carried reviewer, plan and task checks, even when a check is optional. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration.
+
+A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base. The run base still supplies changed-script refusal for reviewer checks.
 
 The fix brief names each command by check id and shows each distinct failing output once (`fixBriefDescription`).
 
@@ -367,11 +369,12 @@ An older run can carry a pending conversation from the retired `plan` step. The 
 
 ## 4. Abort / continue / queue
 
-Four user actions during a live phase:
+The operator can take these actions during a live phase:
 
 | Action | Trigger | Effect |
 |--------|---------|--------|
-| Queue message | Type + Enter | During live planner phases, appends to `messageQueue`. Current call continues. Planners with `injectUserTurn()` also receive the message immediately. Still-pending delivery entries drain at the next safe-point. |
+| Queue message | Type + Enter | Appends to `messageQueue` for the seat of the active stage: PLAN, BUILD, or REVIEW. The current call continues. Each seat reads pending messages at its next safe break, as described below. |
+| Send now | Text + `ctrl+⏎`, or `/steer <text>` | Stops now, keeps the text until the stop completes, then continues with it as the step's steer. |
 | Stop now | `ctrl+c`, or **Stop now** on the stop sheet | `AbortController.abort()`. Current call terminates. Partial response preserved in `session.jsonl` with `interrupted: true`. Dispatches `INTERRUPT_STEP` → the step it cut is recorded, and the run parks mid-brief with its partial changes kept. |
 | Exit workflow | `ctrl+q` or `/quit` | Stop now, then exit once the run has parked or ended, so the session is on disk before the process goes. The saved state may be resumable later with `splitbrief continue <session-id>`. |
 | Pause after this brief | **Pause after this brief** on the stop sheet | Nothing is killed: the running brief finishes its checks and its review, then the run parks between briefs. Dispatches `INTERRUPT_STEP` with `cut: 'boundary'` naming the brief it stopped *before*, so leaving the screen persists as a boundary park and the run picks up there. |
@@ -384,7 +387,7 @@ Four user actions during a live phase:
 | Seat | How it continues |
 |---|---|
 | Planner | The planning session issues its call again: the plan prompt in full, with the operator's steer as a note, on the native session where the tool has one. A cut typed answer leaves no partial to carry. An unanswered question round takes the steer as its answer. |
-| Reviewer | The whole deterministic review prompt is re-issued — the request (or an older run's spec), briefs, diff, drift, evidence, rebuilt from disk — with the continuation block on the end. The review is one shot by constitution: it never resumes a session. |
+| Reviewer | The whole deterministic review prompt is re-issued — the request (or an older run's spec), briefs, diff, drift, evidence, rebuilt from disk — with the continuation block on the end. Each verdict call uses a full, stateless prompt. It never resumes a session. |
 | Implementer | The brief restarts on its own prompt, with the partial and a line naming the declared files that already changed since the task started, so the next attempt edits what is on disk. The attempt count is unchanged. |
 
 A user park keeps partial edits in the run workspace, including a stopped retry. Continue reuses that workspace at the stopped attempt while the session, brief, build seat and directory identity match. A failed continuation-record save leaves the files in place and reports that automatic continuation is unavailable. A cold crash restores the current brief's attributed workspace changes from its task snapshot and restarts that brief. Earlier completed tasks stay in the workspace.
@@ -392,13 +395,15 @@ A user park keeps partial edits in the run workspace, including a stopped retry.
 A stopped workspace keeps its private CLI state and caches. Static credential copies use mode 0400 inside mode 0700 directories; rotating OAuth bridges remain links to host state. Re-entry creates a fresh temporary sandbox and removes that sandbox when the entry ends. The run workspace survives ordinary disposal while the run stays open. Closing follows the patch rules in [Apply](#apply).
 
 
-**Queue scope.** Planner-only. Mid-task interjection at the implementer, validation, or escalation level is rejected instead of being queued or injected into the planner, because small local models lose coherence when their task prompt is perturbed mid-call.
+**Queue scope.** `phaseStage(phase)` determines the receiving seat: PLAN, BUILD, or REVIEW. See [Message queue](./ENGINE.md#message-queue) for delivery rules during calls, checks, retries, and verdicts. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support and transport details.
+
+`ctrl+⏎` with text uses the same path as `/steer <text>` to stop now and continue with the text. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal.
 
 **Abort scope.** Stop aborts the outer workflow, including model/API calls, validation, planner questions, approval and recovery waits. The engine drains owned processes and persists the interrupted step before navigation or application exit. Queue availability still depends on the live phase.
 
-**Queue lifecycle.** `ENQUEUE_USER_MSG` appends. Native delivery moves through `MARK_INJECTING_NATIVE` to `MARK_DELIVERED_NATIVE`, or back to pending with `MARK_NATIVE_DELIVERY_FAILED`. `DRAIN_QUEUE` timestamps pending-undelivered messages. `CLEAR_QUEUE` removes pending or injecting undelivered messages. On the next safe-point the orchestrator reads pending-undelivered queue entries, folds contents into the next prompt as `[user also says: ...]`, and drains.
+**Queue lifecycle.** The queued count drops at a message's first delivery to any seat. A later delivery of that id changes no count. A message that REVIEW read also goes to the next fix brief's BUILD call. After first delivery, the message is history and `/queue clear` preserves it. See [Queued count](./ENGINE.md#queued-count) for state and replay rules.
 
-Queue submissions return accepted/rejected results. Rejections include planner-unavailable phases and the 50-message cap; both publish a bounded warning. The UI shows feedback near the composer. `/queue show` reports pending-undelivered messages. `/queue clear` clears pending or injecting undelivered messages from the live workflow queue when a live clear handler is available, and otherwise reports unavailable.
+Queue submissions return accepted or rejected results. Unsupported live phases and the 50-message cap cause a rejection and a bounded warning. The UI shows feedback near the composer. `/queue show` reports the queued count. `/queue clear` removes only messages awaiting first delivery. It reports unavailable when the run has no live clear handler.
 
 **Stopping a run.** `esc` opens the inline menu above the composer; another `esc` stops resumably. A third press requests home after cleanup and persistence, even when all three presses arrive together. After stopping, the menu offers **Resume / End run / Back to sessions**. Tab returns to the composer; `/stop` or the command palette reopens these options. End run remains an explicit action; no Escape or Ctrl+C sequence closes the saved run.
 
@@ -452,7 +457,7 @@ A run saved inside `validating-task` or `escalating` resets the current task (`R
 | No native session | A transcript rebuilt from `session.jsonl`: the latest compact summary entry plus every message after it, passed as initial context to a fresh planner call. It holds the planner conversation only. It leaves out implementer output and the documents the planner landed, older logs included. It also leaves out the cut call's partial when the continuation hands that partial to the step, and the steer, which is logged after the rebuild. |
 | No transcript either | `applyRebuiltContext()` publishes a warning and continues with the Task Brief transport plus `plan.md`. |
 
-Pending queue entries remain in `state.json`. A continuation excludes still-pending queued user messages from the stateless transcript rebuild so they are not duplicated, and `hydrateFromState` reconstructs queue depth from those pending entries so the footer and `/queue show` still reflect them.
+Pending queue entries remain in `state.json`. A continuation excludes still-pending queued user messages from the stateless transcript rebuild so they are not duplicated, and `hydrateFromState` restores message ids awaiting first delivery. The footer and `/queue show` count those ids.
 
 ### Every stop, and what continuing it does
 
@@ -601,7 +606,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
       brief-gate selects checks by workflow.review:
         end → no checks (only the checks a caller names, e.g. a consult verify)
         task → the task's checks and the checks due when this task completes
-        a fix task also runs each carried check once, with no base re-run
+        a fix task also runs each carried check once per brief gate, with no base re-run
         full capture → keys; incomplete capture → placeholder → command must pass
         diagnostics pair by exact key, then message identity; tests match exactly
         each unmatched re-run key counts as another failure
@@ -707,7 +712,7 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
     (+1 cycle), Accept as is when no red check or Apply input blocks it, or end.
 ```
 
-During live model-call phases, `ctrl+c` is Stop now and parks the run; `esc` opens the stop menu. Messages typed during live planner phases queue; only still-pending delivery entries drain at the next safe-point. Request changes on the plan card to revise the plan.
+During live model calls, `ctrl+c` stops now and parks the run. `esc` opens the stop menu. Enter with text queues a message for the seat of the active stage: PLAN, BUILD, or REVIEW. That seat reads pending messages at its next safe break. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. Request changes on the plan card to revise the plan.
 
 **What the checks run.** Every check in steps 10 to 13 runs the project's own code: its tests, build scripts, `Makefile` recipes and package scripts. This applies to plan checks, reviewer checks, base re-runs, the checks of a fix task, `render` checks and the formatter. They run with your user's permissions, in the run workspace. SPLITBRIEF isolates their working directory, drops secrets from their environment, stops them at `validation.timeout_ms`, bounds their output, and kills their whole process group. It does not isolate the file system, the network or other processes: a check can read and write any file your user can, `~/.ssh` and `~/.npmrc` included. There is no OS sandbox for checks. [CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach) lists the kept environment variables. The seats are isolated differently; see [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth).
 
@@ -769,6 +774,8 @@ type QueuedMessage = {
   deliveredViaNative: boolean
   nativeDeliveryState: 'pending' | 'injecting' | 'delivered'
   drainedAt?: string
+  possibleDuplicate?: boolean
+  deliveredMidCall?: true
   origin?: 'user-input' | 'clarification'
   question?: string
 }
@@ -776,7 +783,7 @@ type QueuedMessage = {
 
 `StepRef` (`src/core/schemas/run-step.ts`) names a planner call, gate, brief attempt, review cycle or Apply. Apply uses `{ kind: 'apply' }`. New planning uses `plan`; older call and gate names remain readable. State, interruptions, failures and `resumeAt` use the same vocabulary.
 
-The closing, stopping and workspace fields are additive. States written before them still load. When `cut` is absent, `deriveRunStatus` uses `awaitingContinue` and the captured partial.
+The closing, stopping, workspace, and queue fields are additive. States written before them still load. When `cut` is absent, `deriveRunStatus` uses `awaitingContinue` and the captured partial.
 
 `createInitialState(feature)` returns a minimal state: `phase: 'idle'`, `currentTaskIndex: 0`, `attempt: 0`, `tasks: []`, `plannerSessionId: null`, `tokenUsage` zeroed, `awaitingContinue: false`, `messageQueue: []`. All optional fields are absent. The version constant is `WORKFLOW_STATE_VERSION` (`src/core/schemas/workflow.ts`) — the one home for the number; every reader and `commitWorkflowState` read it rather than spelling `4`.
 

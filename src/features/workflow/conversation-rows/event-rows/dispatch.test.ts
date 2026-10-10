@@ -147,6 +147,78 @@ describe('event row dispatch', () => {
       `BUILD ${glyph('connectorHandoff')} Claude Code CLI · ${auto ? 'automatic fallback · ' : ''}usage limit`,
     );
   });
+  it.each([
+    ['build', 'BUILD on T003', 'read when its call ends'],
+    ['plan', 'PLAN', 'read at its next call'],
+    ['review', 'REVIEW', 'read at its verdict call'],
+  ] as const)('renders the recorded steerable queue timing for %s', (seat, target, timing) => {
+    for (const steerable of [true, false, undefined]) {
+      const text = eventRows({
+        event: {
+          type: 'message_queued',
+          ts: 1,
+          phase: 'implementing',
+          seat,
+          taskId: 'T003',
+          id: 'm-1',
+          preview: 'Keep the parser changes small.',
+          ...(steerable !== undefined && { steerable }),
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 120, viewportRows: 20, streaming },
+      })
+        .map(rowText)
+        .join('\n');
+      expect(text).toBe(
+        `Queued for ${target} · ${steerable ? 'read after this tool' : timing}\nKeep the parser changes small.`,
+      );
+    }
+  });
+
+  it('keeps call capability changes out of the transcript', () => {
+    expect(
+      eventRowBlock({
+        event: {
+          type: 'steerable_call',
+          ts: 1,
+          phase: 'implementing',
+          seat: 'build',
+          taskId: 'T003',
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 120, viewportRows: 20, streaming },
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ['build', 'BUILD on T003'],
+    ['plan', 'PLAN'],
+    ['review', 'REVIEW'],
+  ] as const)('renders a mid-call delivery to %s from its event', (seat, target) => {
+    for (const count of [1, 2]) {
+      const text = eventRows({
+        event: {
+          type: 'queue_drained',
+          ts: 1,
+          phase: 'implementing',
+          seat,
+          taskId: 'T003',
+          count,
+          via: 'mid-call',
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 120, viewportRows: 20, streaming },
+      })
+        .map(rowText)
+        .join('\n');
+      expect(text).toContain(`Delivered ${count > 1 ? '2 messages ' : ''}mid-call to ${target}`);
+    }
+  });
+
   it('names the files a brief changed beyond its suggested files on one dim row', () => {
     const rows = eventRows({
       event: {
@@ -926,11 +998,9 @@ describe('event row dispatch', () => {
       .map(rowText)
       .join('\n');
 
-    expect(text).toContain('Queued  applies at the next planner prompt');
+    expect(text).toContain('Queued for BUILD · read when its call ends');
     expect(text).toContain('ship it sk-***REDACTED***');
-    expect(text).toContain(
-      'Message delivered to live session: Authorization: Bearer ***REDACTED***',
-    );
+    expect(text).toContain('Delivered to PLAN\nAuthorization: Bearer ***REDACTED***');
     expect(text).not.toContain(secret);
     expect(text).not.toContain('abcdefghijklmnopqrstuvwxyz');
     expect(text).not.toContain('\u001b');
@@ -1786,7 +1856,7 @@ describe('event row dispatch', () => {
     });
 
     const joined = rows.map(rowText).join('\n');
-    expect(joined).toContain('Queued  applies at the next planner prompt');
+    expect(joined).toContain('Queued for BUILD · read when its call ends');
     expect(joined.match(/queued/gi)).toHaveLength(1);
     expect(rows[0]?.markerTone).toBe('info');
     expect(rows[0]?.segments[0]?.tone).toBe('info');
@@ -1820,6 +1890,109 @@ describe('event row dispatch', () => {
     expect(rows[0]?.segments[1]?.tone).toBe('textDim');
     expect(rows[1] && rowText(rows[1])).toBe('clarification: Use JWT? -> Yes, use JWT');
     expect(rows[1]?.segments[0]?.tone).toBe('text');
+  });
+
+  it('uses one Delivered tone for native injection and queue delivery', () => {
+    const events: EngineEvent[] = [
+      { type: 'message_injected_native', ts: 0, phase: 'planning', id: 'm1' },
+      { type: 'queue_drained', ts: 1, phase: 'planning', seat: 'plan', count: 1 },
+    ];
+    for (const event of events) {
+      const rows = eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      });
+      expect(rows[0]?.segments[0]).toEqual({ text: 'Delivered ', tone: 'success' });
+    }
+  });
+
+  it('renders old queue events without an active phase as generic receipts', () => {
+    const events: EngineEvent[] = [
+      { type: 'message_queued', ts: 0, phase: 'idle', id: 'm1' },
+      { type: 'queue_drained', ts: 1, phase: 'complete', count: 1 },
+    ];
+    const text = events.map((event) =>
+      eventRows({
+        event,
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      })
+        .map(rowText)
+        .join('\n'),
+    );
+    expect(text).toEqual(['Queued', 'Delivered']);
+  });
+
+  it.each([
+    ['build', 'implementing', 'for BUILD on T003 · read when its call ends', 'to BUILD on T003'],
+    ['plan', 'planning', 'for PLAN · read at its next call', 'to PLAN'],
+    ['review', 'final-review', 'for REVIEW · read at its verdict call', 'to REVIEW'],
+  ] as const)('renders queued and delivered messages for %s', (seat, phase, queued, delivered) => {
+    const events: EngineEvent[] = [
+      {
+        type: 'message_queued',
+        ts: 0,
+        phase,
+        seat,
+        taskId: 'T003',
+        id: 'm-1',
+        preview: 'smaller diffs',
+      },
+      { type: 'queue_drained', ts: 1, phase, seat, taskId: 'T003', count: 1 },
+    ];
+    const text = events
+      .flatMap((event, globalIndex) =>
+        eventRows({
+          event,
+          globalIndex,
+          expanded: false,
+          ctx: { width: 120, viewportRows: 20, streaming },
+        }),
+      )
+      .map(rowText)
+      .join('\n');
+    expect(text).toContain(`Queued ${queued}\nsmaller diffs`);
+    expect(text).toContain(`Delivered ${delivered}`);
+  });
+
+  it.each([
+    ['planning', 'PLAN'],
+    ['implementing', 'BUILD'],
+    ['final-review', 'REVIEW'],
+  ] as const)('renders delivery from an old %s log without seat or taskId', (phase, label) => {
+    const event: EngineEvent = { type: 'queue_drained', ts: 0, phase, count: 2 };
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+    expect(text).toContain(`Delivered 2 messages to ${label}`);
+  });
+
+  it('uses the recorded seat and counts multiple delivered build messages', () => {
+    const event: EngineEvent = {
+      type: 'queue_drained',
+      ts: 0,
+      phase: 'final-review',
+      seat: 'build',
+      taskId: 'T003',
+      count: 2,
+    };
+    const text = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    })
+      .map(rowText)
+      .join('\n');
+    expect(text).toContain('Delivered 2 messages to BUILD on T003');
   });
 });
 

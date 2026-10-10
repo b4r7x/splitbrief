@@ -203,6 +203,8 @@ function lifecycleState(
     interruptParked: false,
     cancelled: false,
     queueDepth: 0,
+    queuedMessageIds: new Set(),
+    steerableCall: null,
     phaseFirstSeenTs: {},
     stall: null,
     lastRunnerEventTs: NOW,

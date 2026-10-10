@@ -9,14 +9,15 @@ import type {
   CliPlannerAdapter,
   CliProtocolEvent,
   CliSchemaInput,
+  CliSteeringTransport,
 } from './contract.js';
 import { validateCliArgs } from './validate-args.js';
-import {
-  createStreamParser,
-  parseStreamLine,
-  type StreamParseResult,
-} from '../../streaming/parse-stream-json.js';
+import { parseStreamLine, type StreamParseResult } from '../../streaming/parse-stream-json.js';
 import { error } from '../../../utils/error.js';
+import { isRecord } from '../../../utils/type-guards.js';
+import { createClaudeReplyParser } from './claude-reply-parser.js';
+import { spawnPipeError, type SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
+import type { SteerOutcome } from '../../calls/steering.js';
 
 const CLAUDE_COMMAND = 'claude' as const;
 const CLAUDE_ID = 'claude-code' as const;
@@ -31,6 +32,8 @@ const CLAUDE_BASE_ARGS = Object.freeze([
 const CLAUDE_PROTECTED_FLAGS = new Set([
   '-p',
   '--output-format',
+  '--input-format',
+  '--replay-user-messages',
   '--verbose',
   '--include-partial-messages',
   '--model',
@@ -199,12 +202,18 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
   });
 }
 
-function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
-  return protocolEvents(parseStreamLine(line));
+function createClaudeParser(): (line: string) => readonly CliProtocolEvent[] {
+  const parse = createClaudeReplyParser();
+  return (line) => protocolEvents(parse(line), line);
 }
 
-function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] {
+function toProtocolEvents(line: string): readonly CliProtocolEvent[] {
+  return protocolEvents(parseStreamLine(line), line);
+}
+
+function protocolEvents(parsed: StreamParseResult, line: string): readonly CliProtocolEvent[] {
   const events: CliProtocolEvent[] = [];
+  if (parsed.inputAck !== undefined) events.push({ type: 'input-ack', text: parsed.inputAck });
   if (parsed.sessionId !== undefined) {
     events.push({ type: 'session', nativeSessionId: parsed.sessionId });
   }
@@ -212,10 +221,16 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
     !parsed.isResult &&
     ((parsed.text !== undefined && parsed.text.length > 0) || parsed.textSemantics === 'final')
   ) {
+    const record: unknown = parsed.isSubagent ? JSON.parse(line) : null;
+    const subagentId =
+      isRecord(record) && typeof record.parent_tool_use_id === 'string'
+        ? record.parent_tool_use_id
+        : undefined;
     events.push({
       type: 'text',
       channel: parsed.channel ?? 'assistant',
       text: parsed.text ?? '',
+      ...(subagentId !== undefined && { subagentId }),
       ...(parsed.textSemantics !== undefined && { semantics: parsed.textSemantics }),
     });
   }
@@ -234,6 +249,14 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
       id: toolUse.id ?? null,
       name: toolUse.name,
       input: { ...toolUse.input },
+    });
+  }
+  for (const toolUse of parsed.toolUseDelta ?? []) {
+    events.push({
+      type: 'tool-use-delta',
+      id: toolUse.id ?? null,
+      name: toolUse.name ?? null,
+      inputDelta: toolUse.inputDelta,
     });
   }
   for (const toolUse of parsed.toolUse ?? []) {
@@ -284,6 +307,87 @@ function protocolEvents(parsed: StreamParseResult): readonly CliProtocolEvent[] 
   return events;
 }
 
+const CLAUDE_STEERING: CliSteeringTransport = {
+  supportsVersion: (installedVersion) =>
+    installedVersion !== undefined &&
+    classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.1.296' }) ===
+      'compatible',
+  open: async ({ invocation, prompt, onReady, onAdmissionClosed }) => {
+    const flags = ['--input-format', 'stream-json', '--replay-user-messages'];
+    const baseArgs = invocation.baseArgs ?? invocation.args;
+    let writer: SpawnStdinWriter | undefined;
+    let admissionOpen = true;
+    let promptEchoPending = true;
+    const pending: { text: string; settle: (outcome: SteerOutcome) => void }[] = [];
+    const closeAdmission = () => {
+      if (!admissionOpen) return;
+      admissionOpen = false;
+      try {
+        onAdmissionClosed();
+      } finally {
+        writer?.end();
+      }
+    };
+    return {
+      invocation: {
+        ...invocation,
+        baseArgs: [...baseArgs, ...flags],
+        args: [...baseArgs, ...flags, ...invocation.args.slice(baseArgs.length)],
+      },
+      prompt: inputLine(prompt),
+      parse: createClaudeParser(),
+      onStdinReady: (value) => {
+        writer = value;
+        if (!admissionOpen) {
+          writer.end();
+          return;
+        }
+        onReady((message) => {
+          if (!admissionOpen || writer === undefined) return Promise.resolve('deferred');
+          const delivery = Promise.withResolvers<SteerOutcome>();
+          const entry = { text: message.text, settle: delivery.resolve };
+          pending.push(entry);
+          // Writes enter Node's FIFO immediately; acknowledgements never block the next write.
+          void writer.write(inputLine(message.text)).catch((cause: unknown) => {
+            const index = pending.indexOf(entry);
+            if (index < 0) return;
+            pending.splice(index, 1);
+            entry.settle(spawnPipeError.isStdinClosed(cause) ? 'deferred' : 'uncertain');
+          });
+          return delivery.promise;
+        });
+      },
+      onLine: (_line, events) => {
+        for (const event of events) {
+          if (event.type === 'input-ack') {
+            if (promptEchoPending) {
+              if (event.text === prompt) promptEchoPending = false;
+            } else if (pending[0]?.text === event.text) {
+              pending.shift()?.settle('delivered');
+            }
+          }
+          if (event.type === 'result') {
+            closeAdmission();
+            return pending.length > 0;
+          }
+        }
+        return false;
+      },
+      close: async () => {
+        try {
+          closeAdmission();
+        } finally {
+          for (const entry of pending.splice(0)) entry.settle('uncertain');
+        }
+      },
+    };
+  },
+};
+
+function inputLine(text: string): string {
+  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
+}
+
 function createProbe() {
   return {
     version: {
@@ -310,14 +414,12 @@ function createAdapter(
     descriptor: CLI_TOOL_CATALOG[CLAUDE_ID],
     role,
     promptTransport: CLAUDE_PROMPT_TRANSPORT,
+    steering: CLAUDE_STEERING,
     validateArgs,
     environment: {},
     outputContract: { kind: 'structured-terminal', terminalEvent: 'required' } as const,
     parse: toProtocolEvents,
-    createParser: () => {
-      const parse = createStreamParser();
-      return (line: string) => protocolEvents(parse(line));
-    },
+    createParser: createClaudeParser,
     terminal: ({ events }: { events: readonly CliProtocolEvent[] }) => {
       const terminal = events.findLast((event) => event.type === 'result');
       if (terminal === undefined || terminal.type !== 'result') {

@@ -395,6 +395,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   message_injected_native: { phase: 'implementing', id: 'msg-1' },
   queue_drained: { phase: 'implementing', count: 1, ids: ['msg-1'] },
+  steerable_call: { phase: 'implementing', seat: 'build', taskId: 'T001' },
   queue_cleared: { phase: 'implementing', count: 1 },
   user_message: { phase: 'implementing', text: 'keep going' },
   planner_attachments_dropped: {
@@ -435,6 +436,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
 };
 
 const EXTRA_SHAPES: Record<string, unknown>[] = [
+  { type: 'steerable_call', phase: 'implementing' },
   {
     type: 'review_completed',
     phase: 'final-review',

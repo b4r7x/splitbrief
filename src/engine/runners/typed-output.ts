@@ -46,13 +46,14 @@ type SeatProtocolErrorData = Readonly<{
 
 export type SeatProtocolError = AppError<'seat-protocol-error', SeatProtocolErrorData>;
 
+type TypedRequestInput = Readonly<{ prompt: string; call: TypedSeatCall }>;
+
 export type RequestTypedOptions<T> = Readonly<{
-  prompt: string;
   schema: z.ZodType<T>;
   jsonSchema: Readonly<Record<string, unknown>>;
   schemaName: string;
-  call: TypedSeatCall;
-}>;
+}> &
+  (TypedRequestInput | Readonly<{ prepareCall: () => Promise<TypedRequestInput> }>);
 
 export type RequestTypedResult<T> =
   | Readonly<{ value: T; nativeSessionId: string | null; usage: TokenDelta | null }>
@@ -320,12 +321,14 @@ function transportFor(
 export async function requestTyped<T>(
   opts: RequestTypedOptions<T>,
 ): Promise<RequestTypedResult<T>> {
-  const { seat } = opts.call;
-  const transport = transportFor(opts.call.typedOutput, opts.jsonSchema);
+  const prepareCall = 'prepareCall' in opts ? opts.prepareCall : async () => opts;
+  const input = await prepareCall();
+  const { seat } = input.call;
+  const transport = transportFor(input.call.typedOutput, opts.jsonSchema);
   const schemaInput: TypedSchemaInput = { json: opts.jsonSchema, name: opts.schemaName };
   const firstPrompt =
-    transport === 'native' ? opts.prompt : opts.prompt + fallbackInstruction(opts.jsonSchema);
-  const maxInputChars = opts.call.maxInputChars;
+    transport === 'native' ? input.prompt : input.prompt + fallbackInstruction(opts.jsonSchema);
+  const maxInputChars = input.call.maxInputChars;
 
   // A continuation prompt the caller built, and the repair prompt below, can both
   // grow past what the seat's tool accepts. Refuse before sending so the halt is
@@ -335,7 +338,7 @@ export async function requestTyped<T>(
   }
 
   const first = requireCompletedCall(
-    await opts.call.invoke({
+    await input.call.invoke({
       prompt: firstPrompt,
       ...(transport === 'native' && { schema: schemaInput }),
     }),
@@ -357,17 +360,19 @@ export async function requestTyped<T>(
   }
 
   const continuesThread =
-    seat === 'planner' && opts.call.canResume && first.nativeSessionId !== null;
+    seat === 'planner' && input.call.canResume && first.nativeSessionId !== null;
+  const repairInput = await prepareCall();
   const repairPrompt = continuesThread
     ? resumeRepairPrompt(firstCheck.errors)
-    : freshRepairPrompt(opts.prompt, firstCheck.answer, firstCheck.errors);
+    : freshRepairPrompt(repairInput.prompt, firstCheck.answer, firstCheck.errors);
   const repairPromptSent =
     transport === 'fallback' ? repairPrompt + fallbackInstruction(opts.jsonSchema) : repairPrompt;
-  if (maxInputChars !== undefined && repairPromptSent.length > maxInputChars) {
-    throw inputTooLargeRefusal(repairPromptSent.length, maxInputChars);
+  const repairMaxInputChars = repairInput.call.maxInputChars;
+  if (repairMaxInputChars !== undefined && repairPromptSent.length > repairMaxInputChars) {
+    throw inputTooLargeRefusal(repairPromptSent.length, repairMaxInputChars);
   }
   const repair = requireCompletedCall(
-    await opts.call.invoke({
+    await repairInput.call.invoke({
       prompt: repairPromptSent,
       ...(transport === 'native' && { schema: schemaInput }),
     }),

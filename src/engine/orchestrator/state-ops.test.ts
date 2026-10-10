@@ -1,6 +1,5 @@
 import { plainUserMessage } from '../../core/types/user-input.js';
-
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { QueuedMessage, WorkflowState } from '../../core/schemas/workflow.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
@@ -11,8 +10,13 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
-import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder, makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
+import { clearPendingQueue } from './queue/clear.js';
+import { enqueueUserMessage } from './queue/submit.js';
+import { dispatchNativeInjection } from './queue/native-injection.js';
+import { readQueueForPrompt, releaseQueuedMessage } from './queue/drain.js';
+import { isQueuedMessagePendingDelivery } from '../../core/queue-state.js';
 import {
   transitionAndSave,
   parkStoppedRun,
@@ -159,6 +163,61 @@ describe('addUsageAndSave', () => {
 });
 
 describe('rebaseOnPersistedWorkflowState', () => {
+  it.each([false, true])('preserves a persisted clear with keepUnsaved=%s', (keepUnsaved) => {
+    const ref = setupProject();
+    try {
+      const { bus } = makeBusRecorder();
+      const stale = transitionAndSave(ref, createInitialState('feature'), {
+        type: 'ENQUEUE_USER_MSG',
+        message: makeQueuedMessage(),
+      });
+      clearPendingQueue({ ...ref, state: stale, bus });
+
+      const rebased = rebaseOnPersistedWorkflowState(ref, stale, { keepUnsaved });
+
+      expect(rebased.messageQueue).toEqual([]);
+      expect(loadState(ref)?.messageQueue).toEqual([]);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
+  it('keeps an enqueue that has not been saved at the current revision', () => {
+    const ref = setupProject();
+    try {
+      const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+      const unsaved = transition(saved, {
+        type: 'ENQUEUE_USER_MSG',
+        message: makeQueuedMessage(),
+      });
+
+      const rebased = rebaseOnPersistedWorkflowState(ref, unsaved, { keepUnsaved: true });
+
+      expect(rebased.messageQueue).toEqual([makeQueuedMessage()]);
+      expect(loadState(ref)?.messageQueue).toEqual([]);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
+  it('keeps persisted delivery markers when the caller still holds a pending message', () => {
+    const ref = setupProject();
+    try {
+      const stale = transitionAndSave(ref, createInitialState('feature'), {
+        type: 'ENQUEUE_USER_MSG',
+        message: makeQueuedMessage(),
+      });
+      const drained = transitionAndSave(ref, stale, { type: 'DRAIN_QUEUE' });
+
+      const rebased = rebaseOnPersistedWorkflowState(ref, stale, { keepUnsaved: true });
+
+      expect(rebased.messageQueue).toEqual(drained.messageQueue);
+      expect(rebased.messageQueue.some(isQueuedMessagePendingDelivery)).toBe(false);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
   it('prefers persisted rewindPending and phase over stale in-memory state', () => {
     const { projectDir, sessionId } = setupProject();
     try {
@@ -190,6 +249,58 @@ describe('rebaseOnPersistedWorkflowState', () => {
 });
 
 describe('transitionAndSave', () => {
+  it.each(['transition', 'queue', 'usage'] as const)(
+    'does not persist a cleared message through a stale %s writer',
+    (writer) => {
+      const ref = setupProject();
+      try {
+        const { bus } = makeBusRecorder();
+        const stale = transitionAndSave(ref, createInitialState('feature'), {
+          type: 'ENQUEUE_USER_MSG',
+          message: makeQueuedMessage(),
+        });
+        const cleared = clearPendingQueue({ ...ref, state: stale, bus }).state;
+        const next =
+          writer === 'usage'
+            ? addUsageAndSave({ ...ref, bus }, stale, 'implementer', {
+                inputTokens: 1,
+                outputTokens: 1,
+              })
+            : writer === 'queue'
+              ? transitionAndSave(
+                  ref,
+                  stale,
+                  { type: 'MARK_INJECTING_NATIVE', id: makeQueuedMessage().id },
+                  { expectedRevision: cleared.stateRevision },
+                )
+              : transitionAndSave(ref, stale, { type: 'START' });
+
+        expect(next.messageQueue).toEqual([]);
+        expect(loadState(ref)?.messageQueue).toEqual([]);
+      } finally {
+        cleanupTempDir(ref.projectDir);
+      }
+    },
+  );
+
+  it('saves an enqueue that the caller has not saved yet', () => {
+    const ref = setupProject();
+    try {
+      const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+      const unsaved = transition(saved, {
+        type: 'ENQUEUE_USER_MSG',
+        message: makeQueuedMessage(),
+      });
+
+      const next = transitionAndSave(ref, unsaved, { type: 'PLAN_DONE', tasks: [] });
+
+      expect(next.messageQueue).toEqual([makeQueuedMessage()]);
+      expect(loadState(ref)?.messageQueue).toEqual([makeQueuedMessage()]);
+    } finally {
+      cleanupTempDir(ref.projectDir);
+    }
+  });
+
   it('applies transitions to the latest persisted state so queued messages are not lost', () => {
     const { projectDir, sessionId } = setupProject();
     try {
@@ -208,6 +319,70 @@ describe('transitionAndSave', () => {
       cleanupTempDir(projectDir);
     }
   });
+});
+
+describe('queue callers after a persisted clear', () => {
+  it.each(['enqueue', 'clear', 'prompt', 'native'] as const)(
+    'does not restore a cleared message through %s',
+    async (caller) => {
+      const ref = setupProject();
+      try {
+        const { bus } = makeBusRecorder();
+        const saved = transitionAndSave(ref, createInitialState('feature'), { type: 'START' });
+        const stale = enqueueUserMessage({
+          ...ref,
+          state: saved,
+          message: plainUserMessage('cleared correction'),
+          phase: saved.phase,
+          bus,
+        }).state;
+        clearPendingQueue({ ...ref, state: stale, bus });
+
+        if (caller === 'enqueue') {
+          const submitted = enqueueUserMessage({
+            ...ref,
+            state: stale,
+            message: plainUserMessage('new correction'),
+            phase: stale.phase,
+            bus,
+          });
+          expect(submitted.result.status).toBe('accepted');
+          expect(submitted.state.messageQueue.map((message) => message.text)).toEqual([
+            'new correction',
+          ]);
+        } else if (caller === 'clear') {
+          expect(clearPendingQueue({ ...ref, state: stale, bus })).toMatchObject({
+            count: 0,
+            state: { messageQueue: [] },
+          });
+        } else if (caller === 'prompt') {
+          const read = readQueueForPrompt({ ...ref, state: stale });
+          for (const message of read.messages) releaseQueuedMessage(ref, message.id, 'prompt');
+          expect(read.messages).toEqual([]);
+          expect(read.state.messageQueue).toEqual([]);
+        } else {
+          const message = stale.messageQueue[0];
+          if (message === undefined) throw new Error('missing enqueued message');
+          const injectUserTurn = vi.fn().mockResolvedValue({ status: 'delivered', usage: null });
+          const result = await dispatchNativeInjection({
+            ...ref,
+            message,
+            planner: makePlanner({ injectUserTurn }),
+            getState: () => stale,
+            setState: vi.fn(),
+            bus,
+          });
+          expect(result).toEqual({ status: 'not-delivered', reason: 'cleared' });
+          expect(injectUserTurn).not.toHaveBeenCalled();
+        }
+        expect(loadState(ref)?.messageQueue.map((message) => message.text)).toEqual(
+          caller === 'enqueue' ? ['new correction'] : [],
+        );
+      } finally {
+        cleanupTempDir(ref.projectDir);
+      }
+    },
+  );
 });
 
 describe('raisePendingRecovery', () => {

@@ -13,12 +13,17 @@ import { glyph } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import { clearAllHandlers, setResumeHandler } from '../handlers.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WorkflowFooter, WorkflowHeader } from './chrome.js';
@@ -111,6 +116,7 @@ describe('WorkflowFooter', () => {
 
   afterEach(() => {
     resetAllStores();
+    clearAllHandlers();
   });
 
   function renderFooter(
@@ -167,6 +173,128 @@ describe('WorkflowFooter', () => {
       validatedAt: 1,
     });
   }
+
+  it.each([
+    ['implementing', 'Message BUILD on T003 · read when its call ends…'],
+    ['planning', 'Message PLAN · read at its next call…'],
+    ['final-review', 'Message REVIEW · read at its verdict call…'],
+  ] as const)(
+    'shows the queue destination in the composer while %s',
+    async (phase, placeholder) => {
+      lifecycleStore.__testReset({ phase, status: 'running' });
+      tasksStore.__testReset({
+        currentTask: 1,
+        totalTasks: 1,
+        tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+      });
+      const ui = renderFooter();
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(placeholder);
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    ['question', 'Type your answer…'],
+    ['review', 'Type a comment…'],
+  ] as const)(
+    'keeps the %s invitation while a prompt owns the composer',
+    async (mode, placeholder) => {
+      lifecycleStore.__testReset({ phase: 'planning', status: 'running' });
+      const ui = renderFooter({ mode });
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(placeholder);
+      expect(ui.lastFrame()).not.toContain('Message PLAN');
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    ['implementing', 'build', 'BUILD on T003'],
+    ['planning', 'plan', 'PLAN'],
+    ['final-review', 'review', 'REVIEW'],
+  ] as const)(
+    'keeps the steerable %s placeholder on one row at 60 columns',
+    async (phase, seat, target) => {
+      terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
+      lifecycleStore.__testReset({ phase, status: 'running' });
+      tasksStore.__testReset({
+        currentTask: 1,
+        totalTasks: 1,
+        tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+      });
+      addEvent({ type: 'steerable_call', ts: 1, phase, seat, taskId: 'T003' });
+      const ui = renderFooter();
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(`Message ${target} · read after this tool…`);
+      addEvent({ type: 'steerable_call', ts: 2, phase });
+      await flushEffects();
+      expect(ui.lastFrame()).not.toContain('read after this tool');
+      ui.unmount();
+    },
+  );
+
+  it('keeps wave 1 copy when the attached call belongs to another seat', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'implementing', seat: 'plan' });
+    const ui = renderFooter();
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('Message BUILD · read when its call ends…');
+    ui.unmount();
+  });
+
+  it('keeps the composer silent while stopping', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    stopStore.__testReset({ intent: 'stop-now', phase: 'requested' });
+    const ui = renderFooter();
+    await flushEffects();
+    expect(ui.lastFrame()).not.toContain('Message BUILD');
+    expect(ui.lastFrame()).not.toContain('Describe a change');
+    ui.unmount();
+  });
+
+  it('routes ctrl+enter through steer to resume a stopped run with the draft', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'paused' });
+    stopStore.__testReset({ phase: 'parked' });
+    const resumed: string[] = [];
+    const queued: string[] = [];
+    stopStore.__testReset({
+      phase: 'parked',
+      parked: {
+        kind: 'mid-brief',
+        taskId: 'T003',
+        resolve: (message) => resumed.push(message.text),
+      },
+    });
+    setResumeHandler((message) => resumed.push(message.text));
+    const ui = renderFooter({ handleInput: (submission) => queued.push(submission.message.text) });
+    await flushEffects();
+    ui.stdin.write('smaller diffs');
+    await flushEffects();
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+    expect(resumed).toEqual(['smaller diffs']);
+    expect(queued).toEqual([]);
+    expect(lifecycleStore.get().status).toBe('running');
+    ui.unmount();
+  });
+
+  it('preserves the draft when ctrl+enter is rejected during stopping', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    stopStore.__testReset({ intent: 'stop-now', phase: 'terminating' });
+    const queued: string[] = [];
+    const ui = renderFooter({ handleInput: (submission) => queued.push(submission.message.text) });
+    await flushEffects();
+    ui.stdin.write('keep every word');
+    await flushEffects();
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+
+    expect(feedbackStore.get().message).toBe('Finish stopping before steering.');
+    expect(ui.lastFrame()).toContain('keep every word');
+    expect(queued).toEqual([]);
+    ui.unmount();
+  });
 
   it('paints no money or token total for a priced run, with or without override keys', async () => {
     seedPricedRun();

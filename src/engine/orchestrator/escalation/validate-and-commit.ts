@@ -38,6 +38,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
   state = gated.state;
   const { acceptance } = gated;
   if (gated.stop !== undefined) return { state, completed: false, blockedReason: gated.stop };
+  if (gated.correction) return { state, completed: false, answer: gated.error };
   const result = await validateCommitAndAdvance({
     task,
     projectDir: ctx.projectDir,

@@ -7,7 +7,7 @@ import {
 import { assertNever, includes } from '../../../../utils/type-guards.js';
 import { isLivePhase } from '../../../phases.js';
 import { toErrorMessage } from '../../../../utils/format-errors.js';
-import { countNoun, pluralize } from '../../../../utils/pluralize.js';
+import { countNoun } from '../../../../utils/pluralize.js';
 import { formatRejectRunMessage } from '../messages.js';
 
 export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
@@ -77,12 +77,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       handler: async (args) => {
         const sub = args?.trim().toLowerCase();
         if (!sub || sub === 'show') {
-          const depth = ctx.getQueueDepth();
-          if (depth === 0) {
-            ctx.setFeedbackMessage('Queue is empty');
-          } else {
-            ctx.setFeedbackMessage(`Queue: ${countNoun(depth, 'message')} pending`);
-          }
+          ctx.setFeedbackMessage(ctx.getQueueCopy().summary);
           return;
         }
         if (sub === 'clear') {
@@ -91,13 +86,7 @@ export function workflowCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
             ctx.setFeedbackError(result.message);
             return;
           }
-          if (result.count > 0) {
-            ctx.setFeedbackMessage(
-              `Cleared ${result.count} queued ${pluralize(result.count, 'message')}`,
-            );
-          } else {
-            ctx.setFeedbackMessage('Queue is already empty');
-          }
+          ctx.setFeedbackMessage(ctx.getQueueCopy(result.count).clearFeedback);
           return;
         }
         ctx.setFeedbackError(`Unknown queue command: ${sub}. Use: /queue show or /queue clear`);

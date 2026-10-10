@@ -21,6 +21,8 @@ import {
 } from '../../core/paths.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
 import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared-set.js';
+import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
+import { phaseStage } from '../../core/rail-stages.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import {
@@ -32,7 +34,7 @@ import { error } from '../../utils/error.js';
 import { nowIso } from '../../utils/format-time.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
-import { isAbortError } from '../../utils/abort.js';
+import { isAbortError, throwIfAborted } from '../../utils/abort.js';
 import {
   triageLines,
   type ReviewPlanData,
@@ -57,14 +59,14 @@ import {
   publishWarning,
   publishWarningFromError,
 } from './events.js';
-import { transitionAndSave } from './state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
 import { runReviewerCall } from './review-call.js';
 import { touchedNotSuggestedFiles } from './task/commit.js';
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
 import { formatTasks } from '../spec/formatter.js';
 import { drainQueueForReview } from './queue/drain.js';
-import { formatDrainedMessages } from './queue/prompt.js';
+import { formatDrainedMessages, imagesFromMessages } from './queue/prompt.js';
 import { withContinuationLoop } from './continuation.js';
 import { composeContinuation } from '../spec/prompts/continuation.js';
 import { resolveRunUniverse } from './evidence/review-packet/sections-io.js';
@@ -126,6 +128,8 @@ import {
 import type { PreReviewResult } from './run/pre-review-checks.js';
 import { runReviewChecks } from './review-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
+import type { SteeringPort } from '../calls/steering.js';
+import { settleMidCallDeliveries } from './queue/mid-call.js';
 
 /** The code a failed review carries when the failure names none of its own. */
 export const REVIEW_UNAVAILABLE = 'review-unavailable';
@@ -334,6 +338,7 @@ export async function runFinalReviewPhase(opts: {
   bus: EventBus;
   state: WorkflowState;
   reviewer: Reviewer;
+  steering?: SteeringPort | undefined;
   metadata?: SpecMetadata | null;
   signal?: AbortSignal | undefined;
   sinks?: WorkflowSinks | undefined;
@@ -373,6 +378,13 @@ export async function runFinalReviewPhase(opts: {
     taskBreakdowns,
     phaseTimings,
   } = opts;
+
+  state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, { keepUnsaved: true });
+  const reviewedBeforeStart = new Set(
+    state.messageQueue
+      .filter((message) => message.deliveredTo?.reviewer !== undefined)
+      .map((message) => message.id),
+  );
 
   // On resume the state is already persisted in 'final-review' (a previously failed
   // gate); only dispatch ALL_DONE from 'implementing' on a fresh forward run. A
@@ -456,6 +468,7 @@ export async function runFinalReviewPhase(opts: {
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
+    const runStartChangedFiles = baseline.runStartChangedFiles;
     const universe = await resolveRunUniverse(workspaceDir, baseline);
     reviewScope = await resolveRunReviewScope({
       ref: { projectDir, sessionId },
@@ -542,7 +555,7 @@ export async function runFinalReviewPhase(opts: {
         changedFiles: reviewScope.provenance.promotedFiles,
         ledger,
         briefHash: hashTaskBrief(state.tasks),
-        preRunChangedFiles: baseline.runStartChangedFiles,
+        preRunChangedFiles: runStartChangedFiles,
       });
       writeDriftReport({ projectDir, sessionId }, driftReport);
       publishDriftReport(bus, state.phase, driftReport);
@@ -550,16 +563,6 @@ export async function runFinalReviewPhase(opts: {
     } catch (err) {
       warnError('Failed to compute drift report', err);
     }
-
-    const drain = drainQueueForReview({ projectDir, sessionId, state });
-    state = drain.state;
-    const queueText = drain.messages.length > 0 ? formatDrainedMessages(drain.messages) : '';
-    const promptPrefix = [
-      workspaceReadInstructions(workspaceDir),
-      ...(opts.integration !== undefined ? [opts.integration] : []),
-      ...(reviewChecksSection !== undefined ? [reviewChecksSection] : []),
-      queueText,
-    ].join('\n\n');
 
     // Coverage is a contract rule: an incomplete or invented answer fails the
     // schema, so the seat gets its one repair instead of a silent pass.
@@ -627,61 +630,42 @@ export async function runFinalReviewPhase(opts: {
     const pendingInputs = state.pendingTriage?.inputs ?? [];
     const fixCycle = fixCyclesOf(state).used + 1;
     const planningAnswers = reviewPlanningAnswers(state);
+    const promptScope = reviewScope;
+    const messagesForReview = () =>
+      state.messageQueue.filter(
+        (message) =>
+          message.deliveredTo?.reviewer !== undefined && !reviewedBeforeStart.has(message.id),
+      );
+    const preparePrompt = async (): Promise<string> => {
+      throwIfAborted(opts.signal);
+      const drain = await drainQueueForReview({ projectDir, sessionId, state, bus });
+      state = drain.state;
+      opts.setTrackedState?.(state);
+      const queueText = formatDrainedMessages(messagesForReview());
+      const promptPrefix = [
+        workspaceReadInstructions(workspaceDir),
+        ...(opts.integration !== undefined ? [opts.integration] : []),
+        ...(reviewChecksSection !== undefined ? [reviewChecksSection] : []),
+        queueText,
+      ].join('\n\n');
 
-    // An API seat reads no file of its own, so it is dispatched only once the
-    // packet it is handed carries every required source, whole and untruncated.
-    if (reviewRunner.kind === 'api') {
-      const packet = buildApiReviewContext({
-        feature: state.feature,
-        spec,
-        taskBriefs,
-        reviewKind: opts.scope ?? 'final',
-        fullDiff: universe.fullDiff,
-        changedFiles: universe.changedFiles,
-        baseline: { head: baseline.head, runStartChangedFiles: baseline.runStartChangedFiles },
-        driftSection: driftPromptSection,
-        validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
-        reviewScope,
-        queueText: promptPrefix,
-        taskIds: scope.taskIds,
-        criterionIds: scope.criterionIds,
-        plan,
-        touchedNotSuggested,
-        checkResults,
-        consultLog,
-        triageLog,
-        planningAnswers,
-        pendingInputs,
-        fixCycle,
-        ...(renders.section !== undefined && { renders: renders.section }),
-        ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
-        ...(reviewRunner.contextLength !== undefined && {
-          contextLength: reviewRunner.contextLength,
-        }),
-        ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
-      });
-      if (packet.kind === 'insufficient-context') {
-        throw apiContextError({
-          code: 'insufficient-context',
-          seat: 'review',
-          cause: packet.cause,
-          missingSections: [...packet.missingSections],
-          ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
-          requiredTokens: packet.requiredTokens,
-          availableTokens: packet.availableTokens,
-        });
-      }
-      fullPrompt = packet.text;
-    } else {
-      const result = fitReviewPrompt({
-        prefix: promptPrefix,
-        prompt: {
+      // An API seat reads no file of its own, so it is dispatched only once the
+      // packet it is handed carries every required source, whole and untruncated.
+      if (reviewRunner.kind === 'api') {
+        const packet = buildApiReviewContext({
+          feature: state.feature,
           spec,
           taskBriefs,
           reviewKind: opts.scope ?? 'final',
-          files: reviewScope.files,
-          laterDiff: reviewScope.laterDiff,
-          workspaceContext: reviewScope.workspaceContext,
+          fullDiff: universe.fullDiff,
+          changedFiles: universe.changedFiles,
+          baseline: { head: baseline.head, runStartChangedFiles },
+          driftSection: driftPromptSection,
+          validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
+          reviewScope: promptScope,
+          queueText: promptPrefix,
+          taskIds: scope.taskIds,
+          criterionIds: scope.criterionIds,
           plan,
           touchedNotSuggested,
           checkResults,
@@ -690,54 +674,100 @@ export async function runFinalReviewPhase(opts: {
           planningAnswers,
           pendingInputs,
           fixCycle,
-          taskIds: scope.taskIds,
-          criterionIds: scope.criterionIds,
-          changeCoverage: reviewScope.description,
-          driftReport: driftPromptSection,
-          checksLog,
-          renders: renders.section,
-          skillsContext: opts.skillsContext,
-        },
-        maxChars: maxInputChars,
-        declared: (path) => isInDeclaredSet(path, state.tasks.flatMap(taskDeclaredPatterns)),
-        evidencePaths,
-      });
-      if (maxInputChars !== undefined) {
-        reviewInput = {
-          chars: result.chars,
-          maxChars: maxInputChars,
-          dropped: [...result.dropped],
-        };
-        if (result.dropped.length > 0) {
-          publishWarning({
-            bus,
-            phase: state.phase,
-            message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(reviewRunner)} (${result.chars.toLocaleString('en-US')} of ${maxInputChars.toLocaleString('en-US')} characters): ${result.dropped.map((drop) => `${drop.trim}: ${drop.items.join(', ')}`).join('; ')}`,
+          ...(renders.section !== undefined && { renders: renders.section }),
+          ...(opts.skillsContext !== undefined && { skillsContext: opts.skillsContext }),
+          ...(reviewRunner.contextLength !== undefined && {
+            contextLength: reviewRunner.contextLength,
+          }),
+          ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
+        });
+        if (packet.kind === 'insufficient-context') {
+          throw apiContextError({
+            code: 'insufficient-context',
+            seat: 'review',
+            cause: packet.cause,
+            missingSections: [...packet.missingSections],
+            ...(reviewRunner.model !== undefined && { model: reviewRunner.model }),
+            requiredTokens: packet.requiredTokens,
+            availableTokens: packet.availableTokens,
           });
         }
+        fullPrompt = packet.text;
+      } else {
+        const result = fitReviewPrompt({
+          prefix: promptPrefix,
+          prompt: {
+            spec,
+            taskBriefs,
+            reviewKind: opts.scope ?? 'final',
+            files: promptScope.files,
+            laterDiff: promptScope.laterDiff,
+            workspaceContext: promptScope.workspaceContext,
+            plan,
+            touchedNotSuggested,
+            checkResults,
+            consultLog,
+            triageLog,
+            planningAnswers,
+            pendingInputs,
+            fixCycle,
+            taskIds: scope.taskIds,
+            criterionIds: scope.criterionIds,
+            changeCoverage: promptScope.description,
+            driftReport: driftPromptSection,
+            checksLog,
+            renders: renders.section,
+            skillsContext: opts.skillsContext,
+          },
+          maxChars: maxInputChars,
+          declared: (path) => isInDeclaredSet(path, state.tasks.flatMap(taskDeclaredPatterns)),
+          evidencePaths,
+        });
+        if (maxInputChars !== undefined) {
+          reviewInput = {
+            chars: result.chars,
+            maxChars: maxInputChars,
+            dropped: [...result.dropped],
+          };
+          if (result.dropped.length > 0) {
+            publishWarning({
+              bus,
+              phase: state.phase,
+              message: `Review input trimmed to fit ${getRunnerCatalogDisplayName(reviewRunner)} (${result.chars.toLocaleString('en-US')} of ${maxInputChars.toLocaleString('en-US')} characters): ${result.dropped.map((drop) => `${drop.trim}: ${drop.items.join(', ')}`).join('; ')}`,
+            });
+          }
+        }
+        if (result.kind === 'too-large') {
+          failure = {
+            kind: 'input-too-large',
+            chars: result.chars,
+            maxChars: result.maxChars,
+            largestFiles: result.largestFiles,
+          };
+          throw error('review-input-too-large', 'Review input exceeds the tool cap.');
+        }
+        fullPrompt = result.prompt;
       }
-      if (result.kind === 'too-large') {
-        failure = {
-          kind: 'input-too-large',
-          chars: result.chars,
-          maxChars: result.maxChars,
-          largestFiles: result.largestFiles,
-        };
-        throw error('review-input-too-large', 'Review input exceeds the tool cap.');
-      }
-      fullPrompt = result.prompt;
-    }
+      return fullPrompt;
+    };
 
     const reviewStep = { kind: 'review' as const, cycle: fixCyclesOf(state).used };
     // One continuation, one call: a retried review is the whole prompt again
     // with the operator's note on the end, never a session resume.
     let seed = opts.continuation?.take(reviewStep);
+    let steerImages = seed?.steer?.images ?? [];
+    const reviewImages = () =>
+      imagesFromMessages([
+        { images: renders.images },
+        { images: steerImages },
+        ...messagesForReview(),
+      ]);
 
-    const callReviewer = async (prompt: string): Promise<RequestTypedResult<ReviewAnswer>> => {
+    const callReviewer = async (): Promise<RequestTypedResult<ReviewAnswer>> => {
       if (opts.sinks === undefined) {
         const call = await runReviewerCall({
           reviewer,
-          prompt,
+          prepareCall: async () => ({ prompt: await preparePrompt(), images: reviewImages() }),
           schema: verdictSchema,
           jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
           schemaName: 'review_answer',
@@ -746,8 +776,8 @@ export async function runFinalReviewPhase(opts: {
           sessionId,
           bus,
           state,
-          ...(renders.images.length > 0 && { images: renders.images }),
           signal: opts.signal,
+          ...(opts.steering !== undefined && { steering: opts.steering }),
         });
         state = call.state;
         return call.result;
@@ -772,13 +802,21 @@ export async function runFinalReviewPhase(opts: {
         // The review is one shot by constitution: a continuation re-issues the
         // whole deterministic prompt — spec, briefs, diff, drift, evidence — with
         // the operator's note on the end. It never resumes a session.
-        body: async ({ signal: callSignal, partial, steer }) => {
+        body: async ({ signal: callSignal, partial, steer, steerInput }) => {
+          seed = steerInput === undefined ? undefined : { steer: steerInput };
+          steerImages = steerInput?.images ?? [];
           const call = await runReviewerCall({
             reviewer,
-            prompt:
-              partial === undefined && steer === undefined
-                ? prompt
-                : composeContinuation({ basePrompt: prompt, partial, steer }),
+            prepareCall: async () => {
+              const prompt = await preparePrompt();
+              return {
+                prompt:
+                  partial === undefined && steer === undefined
+                    ? prompt
+                    : composeContinuation({ basePrompt: prompt, partial, steer }),
+                images: reviewImages(),
+              };
+            },
             schema: verdictSchema,
             jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
             schemaName: 'review_answer',
@@ -787,8 +825,8 @@ export async function runFinalReviewPhase(opts: {
             sessionId,
             bus,
             state,
-            ...(renders.images.length > 0 && { images: renders.images }),
             signal: callSignal,
+            ...(opts.steering !== undefined && { steering: opts.steering }),
           });
           state = call.state;
           return call.result;
@@ -797,10 +835,24 @@ export async function runFinalReviewPhase(opts: {
       return loop.value;
     };
 
-    const typed = await callReviewer(fullPrompt);
-    if ('error' in typed) {
-      failure = { kind: 'seat-protocol-error', error: typed.error };
-      throw typed.error;
+    let typed = await callReviewer();
+    while (true) {
+      await settleMidCallDeliveries({ projectDir, sessionId });
+      state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
+        keepUnsaved: true,
+      });
+      opts.setTrackedState?.(state);
+      if (opts.signal?.aborted) return interrupted();
+      if ('error' in typed) {
+        failure = { kind: 'seat-protocol-error', error: typed.error };
+        throw typed.error;
+      }
+      if (
+        phaseStage(state.phase) !== 'review' ||
+        !state.messageQueue.some(isQueuedMessagePendingReviewer)
+      )
+        break;
+      typed = await callReviewer();
     }
     const answer = typed.value;
     const { tasks, criteria, findings } = answer;

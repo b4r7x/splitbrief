@@ -5,6 +5,7 @@ import type { RunStatus } from '../../../../src/core/sessions/run-status.js';
 import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { EngineEvent } from '../../../../src/engine/events/types.js';
 import { makeTask } from '../../../helpers/factories/task.js';
+import { makeMessage } from '../../../helpers/queue.js';
 import type {
   CostBreakdown,
   OfferingBillingPresentation,
@@ -596,7 +597,7 @@ function record(input: {
   readonly summary?: Readonly<Summary>;
   readonly ledger?: EvidenceLedger;
   readonly checkpoint?: RunRecord['checkpoint'];
-}): RunRecord {
+}): RunRecord & { hydration: { kind: 'loaded'; state: WorkflowState } } {
   return {
     ref: { projectDir: VISUAL_FIXTURE_PROJECT_DIR, sessionId: input.sessionId },
     feature: AT_REST_FIXTURE_FEATURE,
@@ -627,6 +628,22 @@ const AT_REST_PAUSED = record({
       { id: BRIEFS.docs.id, status: 'pending' },
     ],
   }),
+});
+
+const AT_REST_QUEUED = record({
+  sessionId: 'visual-at-rest-queued',
+  status: AT_REST_PAUSED.status,
+  state: {
+    ...AT_REST_PAUSED.hydration.state,
+    messageQueue: [
+      {
+        ...makeMessage('Already reviewed'),
+        id: 'reviewed',
+        deliveredTo: { reviewer: GENERATED_AT },
+      },
+      { ...makeMessage('Keep the validation API'), id: 'pending' },
+    ],
+  },
 });
 
 /** Ten minutes of build, a stop, a night at rest, five minutes more: fifteen minutes of run time. */
@@ -1643,6 +1660,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-paused',
     route: { record: AT_REST_PAUSED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
+  }),
+  atRestProjection({
+    id: 'workflow-at-rest-queued',
+    route: { record: AT_REST_QUEUED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
   }),
   atRestProjection({
     id: 'workflow-at-rest-long-park',

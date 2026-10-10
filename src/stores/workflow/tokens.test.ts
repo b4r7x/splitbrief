@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { tokensStore } from './tokens.js';
+import { tokensStore, updateTokens } from './tokens.js';
 import { addEvent } from './actions/event.js';
 import { markCancellationRequested } from './actions/interrupt.js';
 import { resetWorkflow } from './actions/reset.js';
@@ -10,6 +10,20 @@ import type { EngineEvent } from '../../engine/events/types.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 
 type TaskTokensEvent = Extract<EngineEvent, { type: 'task_tokens' }> & Partial<TaskTokenUsage>;
+
+it('leaves token totals unchanged on steerable call attach and detach', () => {
+  const state = tokensStore.get();
+  expect(
+    updateTokens(state, {
+      type: 'steerable_call',
+      ts: 1,
+      phase: 'implementing',
+      seat: 'build',
+      taskId: 'T001',
+    }),
+  ).toBe(state);
+  expect(updateTokens(state, { type: 'steerable_call', ts: 2, phase: 'implementing' })).toBe(state);
+});
 
 function makeTaskTokens(overrides?: Partial<TaskTokensEvent>): EngineEvent {
   return {

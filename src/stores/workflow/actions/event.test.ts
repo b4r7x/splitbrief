@@ -24,6 +24,74 @@ describe('addEvent — cross-bucket isolation', () => {
   });
 });
 
+describe('addEvent — first queue delivery', () => {
+  beforeEach(() => resetWorkflow());
+
+  it('counts message ids once and ignores later deliveries to another seat', () => {
+    addEvent({ type: 'message_queued', ts: 1, phase: 'final-review', id: 'reviewed' });
+    addEvent({ type: 'message_queued', ts: 2, phase: 'final-review', id: 'reviewed' });
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    addEvent({
+      type: 'queue_drained',
+      ts: 3,
+      phase: 'final-review',
+      ids: ['reviewed'],
+      count: 1,
+      seat: 'review',
+    });
+    addEvent({ type: 'message_queued', ts: 4, phase: 'implementing', id: 'pending' });
+    addEvent({ type: 'workflow_resumed', ts: 5, phase: 'implementing' });
+    addEvent({
+      type: 'queue_drained',
+      ts: 6,
+      phase: 'implementing',
+      ids: ['reviewed'],
+      count: 1,
+      seat: 'build',
+      taskId: 'T003',
+    });
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    addEvent({ type: 'message_injected_native', ts: 7, phase: 'planning', id: 'reviewed' });
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    addEvent({
+      type: 'queue_drained',
+      ts: 8,
+      phase: 'planning',
+      ids: ['pending'],
+      count: 1,
+      seat: 'plan',
+      via: 'mid-call',
+    });
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+  });
+});
+
+describe('addEvent — steerable call', () => {
+  beforeEach(() => resetWorkflow());
+
+  it.each(['build', 'plan', 'review'] as const)('sets the attached %s call', (seat) => {
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'implementing', seat, taskId: 'T003' });
+    expect(lifecycleStore.get().steerableCall).toEqual({ seat, taskId: 'T003' });
+  });
+
+  it('keeps a planner call without a brief id', () => {
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'planning', seat: 'plan' });
+    expect(lifecycleStore.get().steerableCall).toEqual({ seat: 'plan' });
+  });
+
+  it('clears the call when admission closes', () => {
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'implementing', seat: 'build' });
+    addEvent({ type: 'steerable_call', ts: 2, phase: 'implementing' });
+    expect(lifecycleStore.get().steerableCall).toBeNull();
+  });
+
+  it('clears an attached call when a new run starts', () => {
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'implementing', seat: 'build' });
+    addEvent({ type: 'workflow_started', ts: 2, phase: 'planning', feature: 'New run' });
+    expect(lifecycleStore.get().steerableCall).toBeNull();
+  });
+});
+
 describe('addEvent — runner call stall', () => {
   beforeEach(() => resetWorkflow());
 

@@ -19,12 +19,12 @@ import {
   drainQueue,
   drainQueueForReview,
   releaseQueuedMessage,
-  releaseQueueMessagesForPrompt,
   readQueueForConsult,
   readQueueForPrompt,
 } from './drain.js';
 import { transitionAndSave } from '../state-ops.js';
 import { clearPendingQueue } from './clear.js';
+import { trackMidCallDelivery } from './mid-call.js';
 
 const stateHead = vi.hoisted(() => ({ afterRead: undefined as (() => void) | undefined }));
 
@@ -50,6 +50,80 @@ afterEach(() => {
 });
 
 describe('drain', () => {
+  it.each(['implementer', 'reviewer'] as const)(
+    'persists the %s delivery and mid-call provenance in one revision',
+    (destination) => {
+      const ref = setupProject(dirs);
+      const { bus, events } = makeBusRecorder();
+      const state = transitionAndSave(ref, makeResearchingState(), {
+        type: 'ENQUEUE_USER_MSG',
+        message: makeMessage('keep the delivery atomic'),
+      });
+      const read = readQueueForPrompt({ ...ref, state });
+      const drained = commitQueueMessagesDrained({
+        ...ref,
+        state: read.state,
+        messages: read.messages,
+        bus,
+        destination,
+        via: 'mid-call',
+      });
+
+      expect(drained.state.stateRevision).toBe((state.stateRevision ?? 0) + 1);
+      expect(loadState(ref)?.messageQueue[0]).toMatchObject({
+        deliveredMidCall: true,
+        deliveredTo: { [destination]: expect.any(String) },
+      });
+      expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
+    },
+  );
+
+  it('marks possible duplicates through the queue machine without restoring cleared messages', () => {
+    const ref = setupProject(dirs);
+    const { bus } = makeBusRecorder();
+    const saved = transitionAndSave(ref, makeResearchingState(), {
+      type: 'ENQUEUE_USER_MSG',
+      message: makeMessage('possibly received'),
+    });
+    const marked = transitionAndSave(ref, saved, {
+      type: 'MARK_POSSIBLE_DUPLICATE',
+      id: 'msg-test',
+    });
+    expect(loadState(ref)?.messageQueue[0]?.possibleDuplicate).toBe(true);
+
+    clearPendingQueue({ ...ref, state: marked, bus });
+    const stale = transitionAndSave(ref, marked, {
+      type: 'MARK_POSSIBLE_DUPLICATE',
+      id: 'msg-test',
+    });
+    expect(stale.messageQueue).toEqual([]);
+    expect(loadState(ref)?.messageQueue).toEqual([]);
+  });
+
+  it('waits for a review mid-call outcome and does not deliver it twice', async () => {
+    const ref = setupProject(dirs);
+    const { bus, events } = makeBusRecorder();
+    const state = makeStateWithQueue([makeMessage('already sent to REVIEW')]);
+    saveState(ref, state);
+    const ack = Promise.withResolvers<void>();
+    trackMidCallDelivery(
+      ref,
+      'msg-test',
+      ack.promise.then(() => {
+        transitionAndSave(ref, state, {
+          type: 'DRAIN_QUEUE',
+          ids: ['msg-test'],
+          destination: 'reviewer',
+        });
+      }),
+    );
+    const pending = drainQueueForReview({ ...ref, state, bus });
+
+    ack.resolve();
+    expect((await pending).messages).toEqual([]);
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([]);
+  });
+
   it.each([false, true])(
     'keeps unsaved same-revision workflow fields when draining a queue with messages: %s',
     (queued) => {
@@ -121,7 +195,7 @@ describe('drain', () => {
     expect(result.state.messageQueue[0]?.drainedAt).toBeUndefined();
   });
 
-  it('commits only successfully applied queue messages as drained', () => {
+  it('commits only applied messages and publishes their seat and task id', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const drainedAt = new Date().toISOString();
     const first = {
@@ -152,13 +226,21 @@ describe('drain', () => {
       state,
       messages: [firstMessage, secondMessage],
       bus,
+      seat: 'build',
+      taskId: 'T001',
     });
 
     expect(result.count).toBe(1);
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
     expect(result.state.messageQueue[1]?.drainedAt).toBe(drainedAt);
     const drained = events.find((event) => event.type === 'queue_drained');
-    expect(drained).toMatchObject({ type: 'queue_drained', count: 1, ids: ['msg-1'] });
+    expect(drained).toMatchObject({
+      type: 'queue_drained',
+      count: 1,
+      ids: ['msg-1'],
+      seat: 'build',
+      taskId: 'T001',
+    });
   });
 
   it('acknowledges the claimed message and leaves a message that arrived during the prompt pending', () => {
@@ -300,7 +382,7 @@ describe('drain', () => {
     expect(result.state).toBe(state);
   });
 
-  it('returns pending messages and marks them drained + emits queue-drained event', () => {
+  it('drains pending messages and forwards the seat and task id to the event', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const state = makeStateWithQueue([
       {
@@ -318,7 +400,7 @@ describe('drain', () => {
     ]);
     const { bus, events } = makeBusRecorder();
 
-    const result = drainQueue({ projectDir, sessionId, state, bus });
+    const result = drainQueue({ projectDir, sessionId, state, bus, seat: 'build', taskId: 'T001' });
 
     expect(result.messages).toHaveLength(2);
     expect(result.messages[0]?.text).toBe('first message');
@@ -328,6 +410,8 @@ describe('drain', () => {
     expect(events.find((e) => e.type === 'queue_drained')).toMatchObject({
       type: 'queue_drained',
       count: 2,
+      seat: 'build',
+      taskId: 'T001',
     });
   });
 
@@ -525,23 +609,32 @@ describe('drain', () => {
     expect(second.messages).toEqual([]);
   });
 
-  it('keeps text consumed by a scheduled review pending for the next implementer boundary', () => {
+  it('keeps text consumed by a scheduled review pending for the next implementer boundary', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const ref = { projectDir, sessionId };
     const state = makeStateWithQueue([makeMessage('use UTC everywhere')]);
+    const { bus, events } = makeBusRecorder();
 
-    const reviewed = drainQueueForReview({ projectDir, sessionId, state });
+    const reviewed = await drainQueueForReview({ projectDir, sessionId, state, bus });
 
     expect(reviewed.messages.map((message) => message.text)).toEqual(['use UTC everywhere']);
     const persisted = loadState(ref)?.messageQueue ?? [];
     expect(persisted[0]?.deliveredTo?.reviewer).toBeDefined();
     expect(persisted[0]?.deliveredTo?.implementer).toBeUndefined();
     expect(persisted[0]?.drainedAt).toBeUndefined();
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+      expect.objectContaining({ seat: 'review', count: 1, ids: ['msg-test'] }),
+    ]);
 
-    const secondReview = drainQueueForReview({ projectDir, sessionId, state: reviewed.state });
+    const secondReview = await drainQueueForReview({
+      projectDir,
+      sessionId,
+      state: reviewed.state,
+      bus,
+    });
     expect(secondReview.messages).toEqual([]);
+    expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
 
-    const { bus } = makeBusRecorder();
     const steer = drainQueue({ projectDir, sessionId, state: reviewed.state, bus });
     expect(steer.messages.map((message) => message.text)).toEqual(['use UTC everywhere']);
   });
@@ -557,7 +650,7 @@ describe('drain', () => {
     const beforeDispatch = loadState(ref)?.messageQueue ?? [];
     expect(beforeDispatch[0]?.drainedAt).toBeUndefined();
     expect(beforeDispatch[0]?.deliveredTo?.implementer).toBeUndefined();
-    releaseQueueMessagesForPrompt(ref, first.messages);
+    for (const message of first.messages) releaseQueuedMessage(ref, message.id, 'prompt');
 
     const restart = readQueueForPrompt({ projectDir, sessionId, state: first.state });
     expect(restart.messages.map((message) => message.text)).toEqual(['use UTC everywhere']);

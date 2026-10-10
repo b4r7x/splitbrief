@@ -9,6 +9,9 @@ import {
   opencodeProtocolEvents,
 } from './opencode.js';
 import { CLI_PROMPT_SENTINEL } from './candidate-contract.js';
+import { opencodeSteeringInvocation } from './opencode-steering.js';
+import { createRunnerCallRecorder } from '../../calls/recorder.js';
+import type { CliInvocation } from './contract.js';
 
 const PROMPT = CLI_PROMPT_SENTINEL;
 const PROJECT_DIR = process.cwd();
@@ -16,6 +19,87 @@ const STREAM_JSON_FIXTURE = join(
   import.meta.dirname,
   '../../../../testing/fixtures/opencode/stream-json.ndjson',
 );
+
+describe('OpenCode steering invocation', () => {
+  it('replaces standalone with the call server for both role adapters', () => {
+    for (const adapter of [opencodePlannerAdapter, opencodeImplementerAdapter]) {
+      const args = adapter.buildArgs({
+        prompt: PROMPT,
+        model: 'provider/model',
+        variant: 'high',
+        installedVersion: '2.0.26',
+        projectDir: PROJECT_DIR,
+        configuredArgs: ['--title=fixture'],
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+      });
+      const invocation: CliInvocation = {
+        executable: {
+          path: '/opencode',
+          fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 },
+        },
+        args,
+        baseArgs: args.slice(0, -1),
+        promptTransport: adapter.promptTransport,
+        environment: { HOME: '/sandbox', EXISTING: 'value' },
+        cwd: PROJECT_DIR,
+        signal: undefined,
+      };
+      const prepared = opencodeSteeringInvocation(
+        invocation,
+        'http://127.0.0.1:1234',
+        'test-secret',
+      );
+      expect(prepared.invocation.args).toEqual([
+        'run',
+        '--server',
+        'http://127.0.0.1:1234',
+        ...args.slice(2),
+      ]);
+      expect(prepared.invocation.baseArgs).toEqual([
+        'run',
+        '--server',
+        'http://127.0.0.1:1234',
+        ...args.slice(2, -1),
+      ]);
+      expect(prepared.invocation.environment).toEqual({
+        HOME: '/sandbox',
+        EXISTING: 'value',
+        OPENCODE_PASSWORD: 'test-secret',
+      });
+      const recorder = createRunnerCallRecorder({
+        context: {
+          callId: 'password',
+          role: 'implementer',
+          backendKind: 'cli',
+          runnerName: 'opencode',
+        },
+        credentialValues: prepared.credentialValues,
+      });
+      recorder.text({ channel: 'assistant', text: 'test-secret' });
+      expect(JSON.stringify(recorder.finishCompleted())).not.toContain('test-secret');
+      expect(invocation.args).toContain('--standalone');
+      expect(invocation.environment).not.toHaveProperty('OPENCODE_PASSWORD');
+    }
+  });
+
+  it('protects server selection and only supports known OpenCode 2 releases', () => {
+    for (const adapter of [opencodePlannerAdapter, opencodeImplementerAdapter]) {
+      const baseArgs = ['run', '--format', 'json', '--agent', 'build', PROMPT];
+      for (const configured of [['--server', 'http://elsewhere'], ['--server=http://elsewhere']]) {
+        expect(
+          adapter.validateArgs({ invocationArgs: [...baseArgs, ...configured], baseArgs }),
+        ).toEqual({ valid: false, conflicts: ['--server'] });
+      }
+      expect(adapter.steering?.supportsVersion('2.0.0')).toBe(true);
+      expect(adapter.steering?.supportsVersion('2.0.26')).toBe(true);
+      for (const version of [undefined, 'unknown', 'v2.0.26', '1.9.9']) {
+        expect(adapter.steering?.supportsVersion(version)).toBe(false);
+      }
+    }
+  });
+});
 
 function plannerArgs(
   model: string | undefined,

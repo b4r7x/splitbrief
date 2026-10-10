@@ -6,6 +6,7 @@ import { createClearQueueHandler } from '../queue/clear.js';
 import { createWriteSequencer } from '../serial-executor.js';
 import type { Planner } from '../../planners/types.js';
 import type { WorkflowSinks } from '../types.js';
+import type { SteeringPort } from '../../calls/steering.js';
 
 export type InstallQueueHandlerOpts = {
   projectDir: string;
@@ -16,6 +17,7 @@ export type InstallQueueHandlerOpts = {
   bus: EventBus;
   config: Config;
   planner: Planner;
+  steering: SteeringPort;
   signal?: AbortSignal | undefined;
 };
 
@@ -30,6 +32,7 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
       bus: opts.bus,
       planner: opts.planner,
       serialize,
+      steering: opts.steering,
       ...(opts.signal !== undefined && { signal: opts.signal }),
     }),
   );

@@ -94,7 +94,7 @@ export function createCliPlanner(
   async function runOnce(opts: {
     prompt: string;
     projectDir: string;
-    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onCallEvent'>;
+    callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onCallEvent' | 'steering'>;
     callContext: RunnerCallContext;
     mode: 'plan' | 'escalate';
     threaded: boolean;
@@ -160,6 +160,8 @@ export function createCliPlanner(
         signal: effectiveSignal,
       },
       prompt,
+      steering: callbacks.steering,
+      installedVersion: trustedCli?.installedVersion,
       callContext: withCliInvocationIdentity({ runner: plannerCfg, callContext, executable }),
       onOutput: (text: string) => callbacks.onOutput(text),
       onCallEvent,
@@ -198,7 +200,7 @@ export function createCliPlanner(
     projectDir: string;
     callbacks: Pick<
       PlannerCallbacks,
-      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent'
+      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent' | 'steering'
     >;
     callContext: RunnerCallContext;
     accessMode: 'planning' | 'read-only' | 'write-files';

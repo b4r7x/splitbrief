@@ -1,4 +1,5 @@
 import { eventPhase, isInfrastructurePhaseEvent } from '../../core/event-phase.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { Phase, RunnerKind } from '../../core/schemas/enums.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { EngineEvent } from '../../engine/events/types.js';
@@ -26,6 +27,8 @@ type LifecycleStall = {
 
 interface LifecycleBase {
   queueDepth: number;
+  queuedMessageIds: ReadonlySet<string>;
+  steerableCall: { seat: CrewSeatId; taskId?: string } | null;
   phaseFirstSeenTs: PhaseFirstSeenTs;
   stall: LifecycleStall;
   /** When the run last produced any sign of life, so a silent seat can be named as silent. */
@@ -146,6 +149,8 @@ const initial: LifecycleState = {
   interruptParked: false,
   cancelled: false,
   queueDepth: 0,
+  queuedMessageIds: new Set(),
+  steerableCall: null,
   phaseFirstSeenTs: {},
   stall: null,
   lastRunnerEventTs: null,
@@ -235,6 +240,13 @@ function updatePlannerCall(state: LifecycleState, event: EngineEvent): Lifecycle
 }
 
 export function updatePhase(state: LifecycleState, event: EngineEvent): LifecycleState {
+  if (event.type === 'steerable_call') {
+    const steerableCall =
+      event.seat === undefined
+        ? null
+        : { seat: event.seat, ...(event.taskId !== undefined && { taskId: event.taskId }) };
+    return { ...state, steerableCall };
+  }
   return updatePlannerCall(updatePhaseOnly(updateRunClocks(state, event), event), event);
 }
 
@@ -245,7 +257,7 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
   if (event.type === 'workflow_started') {
     return runningLifecycleState({
       phase: phase ?? state.phase,
-      queueDepth: state.queueDepth,
+      queuedMessageIds: state.queuedMessageIds,
       phaseFirstSeenTs: phase === undefined ? {} : { [phase]: event.ts },
       startedAt: event.ts,
     });
@@ -254,7 +266,7 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
   if (event.type === 'workflow_resumed') {
     return runningLifecycleState({
       phase: phase ?? state.phase,
-      queueDepth: state.queueDepth,
+      queuedMessageIds: state.queuedMessageIds,
       phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, event.ts),
       startedAt: state.startedAt ?? event.ts,
       resumedAt: event.ts,
@@ -302,37 +314,25 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
 }
 
 export function updateQueueDepth(state: LifecycleState, event: EngineEvent): LifecycleState {
+  let queuedMessageIds: Set<string>;
   if (event.type === 'message_queued') {
-    return {
-      ...state,
-      queueDepth: state.queueDepth + 1,
-    };
+    if (state.queuedMessageIds.has(event.id)) return state;
+    queuedMessageIds = new Set(state.queuedMessageIds);
+    queuedMessageIds.add(event.id);
+  } else if (event.type === 'message_injected_native') {
+    if (!state.queuedMessageIds.has(event.id)) return state;
+    queuedMessageIds = new Set(state.queuedMessageIds);
+    queuedMessageIds.delete(event.id);
+  } else if (event.type === 'queue_drained' || event.type === 'queue_cleared') {
+    const ids = event.type === 'queue_drained' ? event.ids : undefined;
+    const deliveredIds = ids ?? [...state.queuedMessageIds].slice(0, event.count);
+    queuedMessageIds = new Set(state.queuedMessageIds);
+    for (const id of deliveredIds) queuedMessageIds.delete(id);
+    if (queuedMessageIds.size === state.queuedMessageIds.size) return state;
+  } else {
+    return state;
   }
-  if (event.type === 'message_injected_native') {
-    return {
-      ...state,
-      queueDepth: Math.max(0, state.queueDepth - 1),
-    };
-  }
-  if (event.type === 'queue_drained') {
-    if (state.queueDepth === 0) return state;
-    const ids = event.ids === undefined ? null : new Set(event.ids);
-    const drainedCount = ids?.size ?? event.count;
-    const next = Math.max(0, state.queueDepth - drainedCount);
-    return {
-      ...state,
-      queueDepth: next,
-    };
-  }
-  if (event.type === 'queue_cleared') {
-    const next = Math.max(0, state.queueDepth - event.count);
-    if (next === state.queueDepth) return state;
-    return {
-      ...state,
-      queueDepth: next,
-    };
-  }
-  return state;
+  return { ...state, queuedMessageIds, queueDepth: queuedMessageIds.size };
 }
 
 // Phase changes also clear stall, but that rule lives in applyRunningPhase:
@@ -369,6 +369,8 @@ export function markLifecycleCancellationRequested(
     interruptParked: false,
     cancelled: true,
     queueDepth: state.queueDepth,
+    queuedMessageIds: state.queuedMessageIds,
+    steerableCall: null,
     phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, cancellation.ts),
     stall: null,
     startedAt: state.startedAt,
@@ -449,6 +451,8 @@ function markLifecycleComplete(
     interruptParked: false,
     cancelled: false,
     queueDepth: state.queueDepth,
+    queuedMessageIds: state.queuedMessageIds,
+    steerableCall: null,
     phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, endedAt),
     stall: null,
     startedAt: state.startedAt,
@@ -497,6 +501,9 @@ function withPhaseFirstSeen(
 function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   const phase = next.phase ?? initial.phase;
   const queueDepth = next.queueDepth ?? initial.queueDepth;
+  const queuedMessageIds = new Set(
+    Array.from({ length: queueDepth }, (_, id) => `test-queue-${id}`),
+  );
   const phaseFirstSeenTs = next.phaseFirstSeenTs ?? initial.phaseFirstSeenTs;
   const startedAt = next.startedAt ?? null;
 
@@ -508,6 +515,8 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       interruptParked: false,
       cancelled: false,
       queueDepth,
+      queuedMessageIds,
+      steerableCall: null,
       phaseFirstSeenTs,
       stall: null,
       lastRunnerEventTs: null,
@@ -527,6 +536,8 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
       interruptParked: false,
       cancelled: true,
       queueDepth,
+      queuedMessageIds,
+      steerableCall: null,
       phaseFirstSeenTs,
       stall: null,
       lastRunnerEventTs: null,
@@ -540,12 +551,12 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
 
   if (next.status === 'interrupted') {
     return markLifecycleInterrupted(
-      runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt }),
+      runningLifecycleState({ phase, queuedMessageIds, phaseFirstSeenTs, startedAt }),
     );
   }
 
   if (next.status === 'paused') {
-    const running = runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt });
+    const running = runningLifecycleState({ phase, queuedMessageIds, phaseFirstSeenTs, startedAt });
     return {
       ...running,
       status: 'paused',
@@ -554,12 +565,13 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
   }
 
   if (next.status === 'running' || phase !== 'idle') {
-    return runningLifecycleState({ phase, queueDepth, phaseFirstSeenTs, startedAt });
+    return runningLifecycleState({ phase, queuedMessageIds, phaseFirstSeenTs, startedAt });
   }
 
   return {
     ...initial,
     queueDepth,
+    queuedMessageIds,
     phaseFirstSeenTs,
   };
 }
@@ -574,7 +586,7 @@ function applyRunningPhase(
   if (state.status === 'idle') {
     return runningLifecycleState({
       phase,
-      queueDepth: state.queueDepth,
+      queuedMessageIds: state.queuedMessageIds,
       phaseFirstSeenTs,
       startedAt: ts,
     });
@@ -587,7 +599,7 @@ function applyRunningPhase(
 
 function runningLifecycleState(input: {
   phase: Phase;
-  queueDepth: number;
+  queuedMessageIds: ReadonlySet<string>;
   phaseFirstSeenTs: PhaseFirstSeenTs;
   startedAt: number | null;
   lastRunnerEventTs?: number | null;
@@ -600,7 +612,9 @@ function runningLifecycleState(input: {
     status: 'running',
     interruptParked: false,
     cancelled: false,
-    queueDepth: input.queueDepth,
+    queueDepth: input.queuedMessageIds.size,
+    queuedMessageIds: input.queuedMessageIds,
+    steerableCall: null,
     phaseFirstSeenTs: input.phaseFirstSeenTs,
     stall: null,
     lastRunnerEventTs: input.lastRunnerEventTs ?? null,

@@ -27,6 +27,7 @@ import { gateChangedFiles } from '../approval/gate-files.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import type { OrchestratorCallbacks, ResumeContextHolder } from '../types.js';
 import type { Planner } from '../../planners/types.js';
+import { createSteeringPort, type SteeringPort } from '../../calls/steering.js';
 import { sessionResumeExpiredError } from '../../session-expiry.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { resumeContinuation } from '../run/init.js';
@@ -93,6 +94,7 @@ async function plan(opts: {
   planner?: Partial<Planner>;
   resumeHolder?: ResumeContextHolder;
   feature?: string;
+  steering?: SteeringPort;
 }) {
   const { projectDir, sessionId } = setupProject(dirs);
   opts.setup?.(projectDir);
@@ -113,6 +115,7 @@ async function plan(opts: {
       bus,
       metadata: TEST_METADATA,
       sinks: TEST_SINKS,
+      ...(opts.steering !== undefined && { steering: opts.steering }),
       ...(opts.resumeHolder !== undefined && { resumeHolder: opts.resumeHolder }),
     },
     planner,
@@ -132,6 +135,35 @@ async function plan(opts: {
 }
 
 describe('the planning thread', () => {
+  it('passes queued images and their expanded text into the next planning call', async () => {
+    const message = {
+      ...plainUserMessage('Inspect [image:queue-shot]\n\nPELICAN-42'),
+      id: 'queued-shot',
+      queuedAt: '2026-10-10T00:00:00Z',
+      phase: 'planning' as const,
+      deliveredViaNative: false,
+      nativeDeliveryState: 'pending' as const,
+      images: [
+        {
+          id: 'queue-shot',
+          kind: 'image' as const,
+          path: '/outside/shot.png',
+          mimeType: 'image/png',
+          sizeBytes: 5,
+        },
+      ],
+      attachedInputs: [{ kind: 'image' as const, path: '/outside/shot.png' }],
+    };
+    const run = await plan({
+      script: [makePlanProposal()],
+      state: (state) => ({ ...state, messageQueue: [message] }),
+    });
+
+    expect(run.prompts[0]).toContain(message.text);
+    expect(run.contexts[0]?.images).toEqual(message.images);
+    expect(loadState(run)?.messageQueue[0]?.images).toEqual(message.images);
+  });
+
   it('delivers an attached file in a planner reply and records compact text once', async () => {
     let message = plainUserMessage('');
     const run = await plan({
@@ -171,6 +203,20 @@ describe('the planning thread', () => {
     });
     await expectCompactMessage(run, run.events, message);
     await expectResumedMessage(run, message);
+  });
+
+  it('passes the same steering port to opening, answer, and repair calls', async () => {
+    const steering = createSteeringPort();
+    const run = await plan({
+      script: [questions(1), uncoveredPlan, makePlanProposal()],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
+      steering,
+    });
+
+    expect(run.result.disposition).toBe('ready-for-tasks');
+    expect(run.contexts).toHaveLength(3);
+    for (const ctx of run.contexts) expect(ctx.callbacks.steering).toBe(steering);
+    expect(steering.current()).toBeNull();
   });
 
   it('hands the rebuilt transcript to the first call only', async () => {

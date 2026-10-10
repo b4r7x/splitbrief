@@ -52,6 +52,19 @@ const COMMAND_CODE_STATUS_FIXTURE = readFileSync(
   .join('\n');
 
 describe('CLI role registries', () => {
+  it('declares mid-call steering only for Claude Code and OpenCode, never Codex', () => {
+    for (const adapters of [CLI_PLANNER_ADAPTERS, CLI_IMPLEMENTER_ADAPTERS]) {
+      for (const adapter of Object.values(adapters)) {
+        if (adapter.descriptor.id === 'claude-code' || adapter.descriptor.id === 'opencode') {
+          expect(adapter.steering).toBeDefined();
+        } else {
+          expect(adapter.steering).toBeUndefined();
+        }
+      }
+      expect(adapters.codex.steering).toBeUndefined();
+    }
+  });
+
   it('matches planner keys to the core planner tuple', () => {
     expect(Object.keys(CLI_PLANNER_ADAPTERS)).toEqual([...PLANNER_CLI_TOOL_IDS]);
     for (const id of PLANNER_CLI_TOOL_IDS) {

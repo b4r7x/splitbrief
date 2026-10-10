@@ -11,8 +11,15 @@ import {
 } from '../../../core/queue-state.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { QueueStateMutationOptions } from './types.js';
+import type { CrewSeatId } from '../../../core/crew/identity.js';
+import { settleMidCallDeliveries } from './mid-call.js';
 
-type LiveQueueOwner = 'native' | 'prompt';
+type QueueDrainOptions = QueueStateMutationOptions & {
+  seat?: CrewSeatId | undefined;
+  taskId?: string | undefined;
+};
+
+type LiveQueueOwner = 'native' | 'prompt' | 'mid-call';
 
 const liveOwners = new Map<string, Map<string, LiveQueueOwner>>();
 
@@ -45,21 +52,24 @@ export function readQueueForPrompt({
   projectDir,
   sessionId,
   state,
-}: Omit<QueueStateMutationOptions, 'bus'>): {
+  ids,
+}: Omit<QueueStateMutationOptions, 'bus'> & { ids?: readonly string[] | undefined }): {
   state: WorkflowState;
   messages: QueuedMessage[];
 } {
   const ref = { projectDir, sessionId };
   const base = rebaseOnPersistedWorkflowState(ref, state, { keepUnsaved: true });
   const messages: QueuedMessage[] = [];
+  const selected = ids === undefined ? undefined : new Set(ids);
   for (const message of base.messageQueue) {
+    if (selected !== undefined && !selected.has(message.id)) continue;
     if (!isQueuedMessagePendingDelivery(message)) continue;
     if (claimQueuedMessage(ref, message.id, 'prompt')) messages.push(message);
   }
   return { state: base, messages };
 }
 
-export function releaseQueueMessagesForPrompt(
+function releaseQueueMessagesForPrompt(
   ref: SessionRef,
   messages: readonly Pick<QueuedMessage, 'id'>[],
 ): void {
@@ -98,24 +108,32 @@ export function commitQueueMessagesConsulted({
   return { state: next, count: ids.length };
 }
 
-export function drainQueueForReview({
+export async function drainQueueForReview({
   projectDir,
   sessionId,
   state,
-}: Omit<QueueStateMutationOptions, 'bus'>): {
+  bus,
+}: QueueStateMutationOptions): Promise<{
   state: WorkflowState;
   messages: QueuedMessage[];
-} {
+}> {
   const ref = { projectDir, sessionId };
+  await settleMidCallDeliveries(ref);
   const base = rebaseOnPersistedWorkflowState(ref, state, { keepUnsaved: true });
-  const messages = base.messageQueue.filter(isQueuedMessagePendingReviewer);
-  if (messages.length === 0) return { state: base, messages };
-  const next = transitionAndSave(ref, base, {
-    type: 'DRAIN_QUEUE',
-    ids: messages.map((message) => message.id),
+  const read = readQueueForPrompt({
+    ...ref,
+    state: base,
+    ids: base.messageQueue.filter(isQueuedMessagePendingReviewer).map((message) => message.id),
+  });
+  const drained = commitQueueMessagesDrained({
+    ...ref,
+    state: read.state,
+    messages: read.messages,
+    bus,
+    seat: 'review',
     destination: 'reviewer',
   });
-  return { state: next, messages };
+  return { state: drained.state, messages: read.messages };
 }
 
 export function commitQueueMessagesDrained({
@@ -124,7 +142,15 @@ export function commitQueueMessagesDrained({
   state,
   messages,
   bus,
-}: QueueStateMutationOptions & { messages: readonly QueuedMessage[] }): {
+  seat,
+  taskId,
+  via,
+  destination = 'implementer',
+}: QueueDrainOptions & {
+  messages: readonly QueuedMessage[];
+  destination?: 'implementer' | 'reviewer' | undefined;
+  via?: 'mid-call' | undefined;
+}): {
   state: WorkflowState;
   count: number;
 } {
@@ -150,7 +176,9 @@ export function commitQueueMessagesDrained({
     .filter(
       (message) =>
         ids.has(message.id) &&
-        isQueuedMessagePendingDelivery(message) &&
+        (destination === 'reviewer'
+          ? isQueuedMessagePendingReviewer(message)
+          : isQueuedMessagePendingDelivery(message)) &&
         ownerFor(ref, message.id) === 'prompt',
     )
     .map((message) => message.id);
@@ -164,7 +192,7 @@ export function commitQueueMessagesDrained({
     const next = transitionAndSave(
       ref,
       base,
-      { type: 'DRAIN_QUEUE', ids: drained },
+      { type: 'DRAIN_QUEUE', ids: drained, destination, ...(via !== undefined && { via }) },
       { expectedRevision: base.stateRevision },
     );
     bus.publish({
@@ -173,6 +201,9 @@ export function commitQueueMessagesDrained({
       phase: next.phase,
       count: drained.length,
       ids: drained,
+      ...(seat !== undefined && { seat }),
+      ...(taskId !== undefined && { taskId }),
+      ...(via !== undefined && { via }),
     });
     return { state: next, count: drained.length };
   } finally {
@@ -180,7 +211,14 @@ export function commitQueueMessagesDrained({
   }
 }
 
-export function drainQueue({ projectDir, sessionId, state, bus }: QueueStateMutationOptions): {
+export function drainQueue({
+  projectDir,
+  sessionId,
+  state,
+  bus,
+  seat,
+  taskId,
+}: QueueDrainOptions): {
   state: WorkflowState;
   messages: QueuedMessage[];
 } {
@@ -193,6 +231,8 @@ export function drainQueue({ projectDir, sessionId, state, bus }: QueueStateMuta
     state: read.state,
     messages: read.messages,
     bus,
+    seat,
+    taskId,
   });
 
   return { state: committed.state, messages: read.messages };

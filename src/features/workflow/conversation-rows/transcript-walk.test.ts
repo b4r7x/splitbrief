@@ -4,6 +4,7 @@ import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
+import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { walkTranscript } from './transcript-walk.js';
 
 describe('walkTranscript', () => {
@@ -50,6 +51,51 @@ describe('walkTranscript', () => {
     seat: 'build',
     outcome: 'retry-current-task',
   };
+
+  it('keeps one activity batch across steerable call attachment and detachment', () => {
+    const first = makeRunnerCallActivity({ ts: 1, callId: 'c1' });
+    const second = makeRunnerCallActivity({ ts: 3, callId: 'c1', sequence: 3 });
+    const attached: EngineEvent = {
+      type: 'steerable_call',
+      ts: 2,
+      phase: 'implementing',
+      seat: 'build',
+      taskId: 'T003',
+    };
+    const detached: EngineEvent = { type: 'steerable_call', ts: 4, phase: 'implementing' };
+    const steps = [...walkTranscript(groupEventsIntoSections([first, attached, second, detached]))];
+    expect(steps.filter((step) => step.kind === 'activity-batch')).toEqual([
+      {
+        kind: 'activity-batch',
+        batch: { callId: 'c1', firstIndex: 0, events: [first, second], lastEvent: second },
+      },
+    ]);
+  });
+
+  it('keeps one recovery fold across steerable call changes', () => {
+    const detached: EngineEvent = { type: 'steerable_call', ts: 1_500, phase: 'implementing' };
+    const steps = [
+      ...walkTranscript(groupEventsIntoSections([prompted, detached, selected, resolved])),
+    ];
+    expect(steps.filter((step) => step.kind === 'recovery')).toEqual([
+      {
+        kind: 'recovery',
+        recovery: { firstIndex: 0, issueId: prompted.issueId, prompted, selected, resolved },
+      },
+    ]);
+  });
+
+  it('keeps halt deduplication across a steerable call change', () => {
+    const halt: EngineEvent = {
+      type: 'error',
+      ts: 0,
+      phase: 'implementing',
+      message: prompted.headline,
+    };
+    const detached: EngineEvent = { type: 'steerable_call', ts: 500, phase: 'implementing' };
+    const steps = [...walkTranscript(groupEventsIntoSections([halt, detached, prompted]))];
+    expect(steps.filter((step) => step.kind === 'recovery')).toEqual([]);
+  });
 
   it.each([true, false])(
     'folds a seat switch with auto=%s into one recovery followed by its switch',

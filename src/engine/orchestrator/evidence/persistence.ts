@@ -9,7 +9,6 @@ import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { mutateEvidenceLedger, readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import {
   recordApiApplyEvidence,
-  recordApiRevertEvidence,
   recordLocalTaskEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
@@ -104,7 +103,7 @@ export async function persistTaskEvidence(opts: {
  * attempt then finds no proof of ownership and parks, which is the safe answer.
  */
 export function persistApiApplyEvidence(opts: {
-  wctx: WorkflowContext;
+  wctx: Pick<WorkflowContext, 'projectDir' | 'sessionId' | 'bus'>;
   state: WorkflowState;
   task: Task;
   result: BundleApplyResult;
@@ -142,12 +141,6 @@ export async function raiseApiApplyRecovery(opts: {
   const inPlace = state.workspace?.kind === 'checkout';
   if (inPlace) {
     await workspace.revert(await workspace.changedFiles());
-    mutateEvidenceLedger(wctx, (existing) =>
-      recordApiRevertEvidence({
-        ledger: existing ?? getOrCreateLedger({ ref: wctx, state }),
-        task,
-      }),
-    );
   }
   const landed = result.applied.map((file) => file.path).join(', ');
   const message =

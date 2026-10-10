@@ -4,6 +4,12 @@ import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types
 import { isTranscriptRowlessEvent } from './visibility.js';
 
 describe('isTranscriptRowlessEvent', () => {
+  it.each(['build', undefined] as const)('hides a steerable call with seat %s', (seat) => {
+    expect(
+      isTranscriptRowlessEvent({ type: 'steerable_call', ts: 0, phase: 'implementing', seat }),
+    ).toBe(true);
+  });
+
   it('is true for row-less event types and false for visible rows', () => {
     const heartbeat: EngineEvent = {
       type: 'planner_heartbeat',

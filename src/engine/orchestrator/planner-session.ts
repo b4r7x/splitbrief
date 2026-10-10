@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { RunnerCallEvent } from '../calls/types.js';
+import type { SteeringPort } from '../calls/steering.js';
 import type { EventBus } from '../events/types.js';
 import type { Planner, PriorMessage } from '../planners/types.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
@@ -39,6 +40,7 @@ export type PlannerSessionContext = Readonly<{
   /** The state the call starts on: the thread it names is the one a resumed turn continues. */
   state: WorkflowState;
   signal?: AbortSignal | undefined;
+  steering?: SteeringPort | undefined;
   /** Receives every state the call saves: a thread reset, or an answer's new native handle. */
   onStateChange?: ((state: WorkflowState) => void) | undefined;
 }>;
@@ -94,6 +96,7 @@ export async function askPlannerSession<T>(
             onOutput: () => {},
             ...(call.onCallEvent !== undefined && { onCallEvent: call.onCallEvent }),
             ...(ctx.signal !== undefined && { signal: ctx.signal }),
+            ...(ctx.steering !== undefined && { steering: ctx.steering }),
           },
           ...(call.images !== undefined && { images: [...call.images] }),
           ...(priorMessages !== undefined && priorMessages.length > 0 && { priorMessages }),

@@ -1,35 +1,28 @@
 import type { InputMode } from '../../core/navigation/types.js';
-import { getActiveRailStage, railStageRole, type RailRole } from '../../core/rail-stages.js';
+import type { CrewSeatId } from '../../core/crew/identity.js';
+import { phaseStage } from '../../core/rail-stages.js';
 import type { Phase } from '../../core/schemas/enums.js';
+import { queueCopy } from './queue-copy.js';
 
 export interface InputHintInput {
   inputHint: string;
   inputMode: InputMode;
 }
 
-// The seat a queued message reaches: the planner while it shapes the run, the reviewer during the
-// final review, where the queue drains to the reviewer. The placeholder and the confirmation both
-// read this one decision so they cannot name different seats.
-export function queueSeatRole(phase: Phase): RailRole | undefined {
-  const stage = getActiveRailStage(phase);
-  return stage === null ? undefined : railStageRole(stage.stage);
-}
-
-// A message queued during planning leads the planner's next call, and one queued during the final
-// review leads the reviewer's, so the invitation names that seat rather than a brief that is not
-// building. Nothing to say leaves the composer's own placeholder in place: the brief while one
-// builds, the answer or comment while a prompt owns it, silence while the run is being torn down.
 export function queuePlaceholder(input: {
   phase: Phase;
   inputMode: InputMode;
   running: boolean;
   stopping: boolean;
+  taskId?: string | null | undefined;
+  steerableSeat?: CrewSeatId | null | undefined;
 }): string | undefined {
   if (input.inputMode !== 'normal' || !input.running || input.stopping) return undefined;
-  const role = queueSeatRole(input.phase);
-  if (role === 'planner') return 'Queue a message for the planner…';
-  if (role === 'validator') return 'Queue a message for the reviewer…';
-  return undefined;
+  const seat = phaseStage(input.phase);
+  return seat === null
+    ? undefined
+    : queueCopy({ seat, taskId: input.taskId, steerable: input.steerableSeat === seat })
+        .placeholder;
 }
 
 // A gate that is on screen is its own legend: the review and question panels spell out every live

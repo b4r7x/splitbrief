@@ -1,3 +1,16 @@
+import { taskId } from '../../../core/schemas/task.js';
+import { setTimeout as delay } from 'node:timers/promises';
+import { readFileSync } from 'node:fs';
+import {
+  createSteeringPort,
+  deliverToRunningCall,
+  type RunningCall,
+  type SteerOutcome,
+  type SteerMessage,
+} from '../../calls/steering.js';
+import { formatMessageInput } from '../../orchestrator/queue/prompt.js';
+import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
+import { prependPath } from '#testing/helpers/command-shim.js';
 import type { ChildProcess } from 'node:child_process';
 import {
   chmodSync,
@@ -11,7 +24,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  installOpencodeSteeringShim,
+  type OpencodeSteeringShimMode,
+} from '#testing/helpers/opencode-steering-shim.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -29,7 +46,11 @@ import { requireCompletedCall } from '../../planners/require-completed-call.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
 import { claudeCodeImplementerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
-import { opencodeImplementerAdapter, opencodeProtocolEvents } from './opencode.js';
+import {
+  opencodeImplementerAdapter,
+  opencodePlannerAdapter,
+  opencodeProtocolEvents,
+} from './opencode.js';
 import { invokeCliAdapter, toCliEnvironment } from '../invoke-cli-adapter.js';
 import {
   resolveCliExecutable,
@@ -209,6 +230,143 @@ async function run(
 
 const emitPromptScript = (source: string) =>
   `const emit=v=>process.stdout.write('TEXT:'+Buffer.from(v).toString('base64')+'\\nRESULT\\n');${source};`;
+
+describe('process steering lifecycle boundary', () => {
+  itUnix.each(['timeout', 'abort'] as const)('covers %s during transport startup', async (mode) => {
+    const controller = new AbortController();
+    let startupSignal: AbortSignal | undefined;
+    const selected = adapter({ kind: 'stdin' });
+    const result = await invokeProcessCli(
+      {
+        ...selected,
+        steering: {
+          supportsVersion: () => true,
+          open: async (input) => {
+            startupSignal = input.invocation.signal;
+            if (mode === 'abort') setTimeout(() => controller.abort(), 10);
+            await delay(100, undefined, { signal: startupSignal });
+            throw new Error('startup exceeded the call deadline');
+          },
+        },
+      },
+      {
+        invocation: invocation({
+          script: '',
+          signal: controller.signal,
+          timeoutMs: mode === 'timeout' ? 10 : 1_000,
+        }),
+        prompt: 'initial',
+        steering: createSteeringPort(),
+        callContext,
+      },
+    );
+    expect(result).toMatchObject({ status: mode === 'timeout' ? 'timeout' : 'aborted' });
+    expect(startupSignal).not.toBe(controller.signal);
+    expect(startupSignal?.aborted).toBe(true);
+  });
+
+  itUnix.each(['completion', 'setup'] as const)(
+    'records rejected cleanup after %s as one failure',
+    async (mode) => {
+      const selected = adapter({ kind: 'file', mode: 0o600 });
+      const events: RunnerCallEvent[] = [];
+      const port = createSteeringPort();
+      let promptPath: string | undefined;
+      let closed = false;
+      const result = await invokeProcessCli(
+        {
+          ...selected,
+          steering: {
+            supportsVersion: () => true,
+            open: async (input) => {
+              input.onReady(async () => 'delivered');
+              return {
+                invocation: {
+                  ...input.invocation,
+                  promptTransport: mode === 'setup' ? { kind: 'stdin' } : selected.promptTransport,
+                },
+                prompt: input.prompt,
+                parse: selected.parse,
+                onLine: () => false,
+                close: async () => {
+                  expect(
+                    events.some(
+                      (event) => event.type === 'call_completed' || event.type === 'call_error',
+                    ),
+                  ).toBe(false);
+                  closed = true;
+                  throw new Error('cleanup failed');
+                },
+              };
+            },
+          },
+        },
+        {
+          invocation: invocation({
+            script: "console.log('RESULT')",
+            args: ['<PROMPT>'],
+            promptTransport: selected.promptTransport,
+          }),
+          prompt: 'initial',
+          steering: port,
+          callContext,
+          onSpawned: (proc) => {
+            promptPath = proc.spawnargs.at(-1);
+          },
+          onEvent: (event) => {
+            events.push(event);
+          },
+        },
+      );
+      expect(closed).toBe(true);
+      expect(result).toMatchObject({
+        status: 'failed',
+        error: { code: 'steering-transport-error', message: 'cleanup failed' },
+      });
+      expect(events.filter((event) => event.type === 'call_error')).toHaveLength(1);
+      expect(events.filter((event) => event.type === 'call_completed')).toHaveLength(0);
+      expect(port.current()).toBeNull();
+      if (mode === 'completion') {
+        expect(promptPath).toBeDefined();
+        expect(existsSync(promptPath ?? '')).toBe(false);
+      }
+    },
+  );
+
+  itUnix('keeps the call timeout active during cleanup', async () => {
+    const selected = adapter({ kind: 'stdin' });
+    let cleanupStarted = false;
+    const result = await invokeProcessCli(
+      {
+        ...selected,
+        steering: {
+          supportsVersion: () => true,
+          open: async (input) => ({
+            invocation: input.invocation,
+            prompt: input.prompt,
+            parse: selected.parse,
+            onLine: () => false,
+            close: async () => {
+              cleanupStarted = true;
+              await delay(1_200);
+            },
+          }),
+        },
+      },
+      {
+        invocation: invocation({
+          script: "process.stdin.resume(); process.stdin.on('end',()=>console.log('RESULT'))",
+          timeoutMs: 1_000,
+        }),
+        prompt: 'initial',
+        steering: createSteeringPort(),
+        callContext,
+      },
+    );
+    expect(cleanupStarted).toBe(true);
+    expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+  });
+});
 
 function o4DirectEnvelopeExitScript(envelope: string): string {
   const encoded = Buffer.from(envelope, 'utf8').toString('base64');
@@ -1886,4 +2044,587 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
       });
     },
   );
+});
+
+describe('Claude Code process steering', () => {
+  itUnix('keeps queued image and text attachments in the live Claude user turn', async () => {
+    await withTempDir('claude-steering-attachments', async (dir) => {
+      const shim = installClaudeSteeringShim(dir);
+      const port = createSteeringPort();
+      const images = [
+        {
+          id: 'shot',
+          kind: 'image' as const,
+          path: '/outside/shot.png',
+          mimeType: 'image/png',
+          sizeBytes: 8,
+        },
+      ];
+      const turn: SteerMessage = {
+        id: 'attached',
+        text: formatMessageInput({ text: 'Use these notes:\nattached text contents', images }),
+        images,
+        attachedInputs: [
+          { kind: 'text', path: '/outside/notes.txt' },
+          { kind: 'image', path: '/outside/shot.png' },
+        ],
+      };
+      let delivery: Promise<SteerOutcome> | undefined;
+      const result = await invokeCliAdapter({
+        adapter: claudeCodeImplementerAdapter,
+        invocation: {
+          executable: executableIdentity(shim.executable),
+          args: ['-p'],
+          baseArgs: ['-p'],
+          promptTransport: { kind: 'stdin' },
+          environment: toCliEnvironment(process.env),
+          cwd: dir,
+          signal: undefined,
+          timeoutMs: 5_000,
+        },
+        prompt: 'initial',
+        installedVersion: '2.1.296',
+        steering: port,
+        callContext,
+        onCallEvent: (event) => {
+          if (event.type === 'call_tool_use_delta')
+            delivery = deliverToRunningCall(port.current(), turn);
+        },
+      });
+      expect(result.status).toBe('completed');
+      expect(await delivery).toBe('delivered');
+      const received = readFileSync(shim.stdinFile, 'utf8')
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line).message.content);
+      expect(received).toEqual(['initial', turn.text]);
+      expect(received[1]).toContain('attached text contents');
+      expect(received[1]).toContain('[image:shot] = /outside/shot.png');
+    });
+  });
+
+  itUnix.each(['tool', 'follow-up', 'repeated'] as const)(
+    'acknowledges %s input and keeps the last result',
+    async (mode) => {
+      await withTempDir('claude-steering', async (dir) => {
+        const shim = installClaudeSteeringShim(dir, mode);
+        const restorePath = prependPath(dir);
+        try {
+          let captured: RunningCall | null = null;
+          let late: Promise<SteerOutcome> | undefined;
+          const port = createSteeringPort({
+            onChange: (call) => {
+              if (call !== null) captured = call;
+              else late = deliverToRunningCall(captured, { id: 'late', text: 'never written' });
+            },
+          });
+          const sends: Promise<SteerOutcome>[] = [];
+          let started = false;
+          const result = await invokeCliAdapter({
+            adapter: claudeCodeImplementerAdapter,
+            invocation: {
+              executable: executableIdentity(shim.executable),
+              args: ['-p'],
+              baseArgs: ['-p'],
+              promptTransport: { kind: 'stdin' },
+              environment: toCliEnvironment(process.env),
+              cwd: dir,
+              signal: undefined,
+              timeoutMs: 5_000,
+            },
+            installedVersion: '2.1.296',
+            steering: port,
+            prompt: 'initial',
+            callContext: { ...callContext, taskId: taskId('T001') },
+            onCallEvent: (event) => {
+              if (event.type === 'call_tool_use_delta' && !started) {
+                started = true;
+                expect(port.current()).toMatchObject({
+                  callId: callContext.callId,
+                  role: 'implementer',
+                  taskId: 'T001',
+                });
+                sends.push(deliverToRunningCall(port.current(), { id: 'one', text: 'same' }));
+                if (mode === 'repeated')
+                  sends.push(deliverToRunningCall(port.current(), { id: 'two', text: 'same' }));
+              }
+            },
+          });
+          expect(result.status).toBe('completed');
+          expect(result.text).toBe('last');
+          expect(result).toMatchObject({ structured: { answer: 'last' } });
+          expect(result.usage).toMatchObject(
+            mode === 'follow-up'
+              ? { inputTokens: 13, outputTokens: 12 }
+              : { inputTokens: 10, outputTokens: 5 },
+          );
+          expect(await Promise.all(sends)).toEqual(
+            mode === 'repeated' ? ['delivered', 'delivered'] : ['delivered'],
+          );
+          expect(await late).toBe('deferred');
+          expect(port.current()).toBeNull();
+          const input = readFileSync(shim.stdinFile, 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line).message.content);
+          expect(input).toEqual(
+            mode === 'repeated' ? ['initial', 'same', 'same'] : ['initial', 'same'],
+          );
+          expect(JSON.parse(readFileSync(shim.argvFile, 'utf8'))).toEqual([
+            '-p',
+            '--input-format',
+            'stream-json',
+            '--replay-user-messages',
+          ]);
+        } finally {
+          restorePath();
+        }
+      });
+    },
+  );
+
+  itUnix.each(['exit', 'abort', 'unsolicited'] as const)(
+    'settles sends and detaches on %s',
+    async (mode) => {
+      await withTempDir('claude-steering-close', async (dir) => {
+        const shim = installClaudeSteeringShim(dir, mode);
+        const port = createSteeringPort();
+        const controller = new AbortController();
+        const sends: Promise<SteerOutcome>[] = [];
+        let started = false;
+        const result = await invokeProcessCli(claudeCodeImplementerAdapter, {
+          invocation: {
+            executable: executableIdentity(shim.executable),
+            args: ['-p'],
+            promptTransport: { kind: 'stdin' },
+            environment: toCliEnvironment(process.env),
+            cwd: dir,
+            signal: controller.signal,
+            timeoutMs: 5_000,
+          },
+          installedVersion: '2.1.296',
+          steering: port,
+          prompt: 'initial',
+          callContext,
+          onEvent: (event) => {
+            if (event.type === 'call_tool_use_delta' && !started) {
+              started = true;
+              sends.push(deliverToRunningCall(port.current(), { id: 'one', text: 'one' }));
+              if (mode === 'abort') {
+                sends.push(deliverToRunningCall(port.current(), { id: 'two', text: 'two' }));
+                controller.abort();
+              }
+            }
+          },
+        });
+        expect(await Promise.all(sends)).toEqual(
+          mode === 'unsolicited'
+            ? ['delivered']
+            : mode === 'abort'
+              ? ['uncertain', 'uncertain']
+              : ['uncertain'],
+        );
+        expect(result.status).toBe(
+          mode === 'abort' ? 'aborted' : mode === 'exit' ? 'incomplete' : 'failed',
+        );
+        if (mode === 'unsolicited')
+          expect(result.error).toMatchObject({ code: 'protocol-failure' });
+        expect(port.current()).toBeNull();
+      });
+    },
+  );
+
+  itUnix.each([
+    { version: '2.1.296', hasPort: false },
+    { version: '2.1.295', hasPort: true },
+    { version: undefined, hasPort: true },
+    { version: 'unknown', hasPort: true },
+  ])(
+    'keeps one-shot stdin with version $version and port $hasPort',
+    async ({ version, hasPort }) => {
+      await withTempDir('claude-one-shot', async (dir) => {
+        const shim = installClaudeSteeringShim(dir);
+        const port = createSteeringPort();
+        const result = await invokeProcessCli(claudeCodeImplementerAdapter, {
+          invocation: {
+            executable: executableIdentity(shim.executable),
+            args: ['-p'],
+            promptTransport: { kind: 'stdin' },
+            environment: toCliEnvironment(process.env),
+            cwd: dir,
+            signal: undefined,
+            timeoutMs: 5_000,
+          },
+          installedVersion: version,
+          steering: hasPort ? port : undefined,
+          prompt: 'plain\ntext',
+          callContext,
+        });
+        expect(result.status).toBe('completed');
+        expect(readFileSync(shim.stdinFile, 'utf8')).toBe('plain\ntext');
+        expect(JSON.parse(readFileSync(shim.argvFile, 'utf8'))).toEqual(['-p']);
+        expect(port.current()).toBeNull();
+      });
+    },
+  );
+});
+
+describe('OpenCode process steering', () => {
+  function setup(dir: string, mode: OpencodeSteeringShimMode = 'tool') {
+    const shim = installOpencodeSteeringShim(dir, mode);
+    const home = join(dir, 'sandbox-home');
+    mkdirSync(home);
+    const port = createSteeringPort();
+    const events: RunnerCallEvent[] = [];
+    const run = (
+      opts: {
+        role?: 'planner' | 'implementer' | 'review';
+        version?: string;
+        steering?: boolean;
+        signal?: AbortSignal;
+        timeoutMs?: number;
+        onEvent?: (event: RunnerCallEvent) => void;
+        onSpawned?: (proc: ChildProcess) => void;
+        parserFailure?: boolean;
+      } = {},
+    ) => {
+      const role = opts.role ?? 'implementer';
+      const selected = role === 'implementer' ? opencodeImplementerAdapter : opencodePlannerAdapter;
+      const input = {
+        prompt: '<PROMPT>',
+        model: 'provider/model',
+        variant: 'high',
+        projectDir: dir,
+        configuredArgs: ['--title=fixture'],
+        installedVersion: opts.version ?? '2.0.26',
+        mode: 'plan' as const,
+        sessionId: null,
+        effort: undefined,
+      };
+      const baseArgs = selected.baseArgs(input);
+      return invokeProcessCli(
+        opts.parserFailure
+          ? {
+              ...selected,
+              steering:
+                selected.steering === undefined
+                  ? undefined
+                  : {
+                      ...selected.steering,
+                      open: async (value) => {
+                        const session = await selected.steering?.open(value);
+                        if (session === undefined) throw new Error('steering missing');
+                        return {
+                          ...session,
+                          parse: (line) => {
+                            if (JSON.parse(line).type === 'error')
+                              throw new Error('invalid protocol');
+                            return session.parse(line);
+                          },
+                        };
+                      },
+                    },
+            }
+          : selected,
+        {
+          invocation: {
+            executable: executableIdentity(shim.executable),
+            args: selected.buildArgs(input),
+            baseArgs,
+            promptTransport: selected.promptTransport,
+            environment: {
+              ...toCliEnvironment(process.env),
+              HOME: home,
+              PATH: `${dir}:${process.env['PATH'] ?? ''}`,
+            },
+            cwd: dir,
+            signal: opts.signal,
+            timeoutMs: opts.timeoutMs ?? 8_000,
+          },
+          prompt: 'initial',
+          installedVersion: input.installedVersion,
+          ...(opts.steering !== false && { steering: port }),
+          callContext: { ...callContext, role },
+          onSpawned: opts.onSpawned,
+          onEvent: (event) => {
+            events.push(event);
+            opts.onEvent?.(event);
+          },
+        },
+      );
+    };
+    const assertReaped = (file: string) => {
+      const { pid } = JSON.parse(readFileSync(file, 'utf8'));
+      expect(() => process.kill(pid, 0)).toThrow();
+    };
+    return { shim, port, events, run, home, assertReaped };
+  }
+
+  itUnix('keeps queued image and text attachments in the live OpenCode user turn', async () => {
+    await withTempDir('opencode-steering-attachments', async (dir) => {
+      const fixture = setup(dir);
+      const images = [
+        {
+          id: 'shot',
+          kind: 'image' as const,
+          path: '/outside/shot.png',
+          mimeType: 'image/png',
+          sizeBytes: 8,
+        },
+      ];
+      const turn: SteerMessage = {
+        id: 'attached',
+        text: formatMessageInput({ text: 'Use these notes:\nattached text contents', images }),
+        images,
+        attachedInputs: [
+          { kind: 'text', path: '/outside/notes.txt' },
+          { kind: 'image', path: '/outside/shot.png' },
+        ],
+      };
+      let delivery: Promise<SteerOutcome> | undefined;
+      const result = await fixture.run({
+        onEvent: (event) => {
+          if (event.type === 'call_tool_use_delta')
+            delivery = deliverToRunningCall(fixture.port.current(), turn);
+        },
+      });
+      expect(result.status, JSON.stringify(result.error)).toBe('completed');
+      expect(await delivery).toBe('delivered');
+      expect(JSON.parse(readFileSync(fixture.shim.requestsFile, 'utf8'))).toEqual({
+        text: turn.text,
+        delivery: 'steer',
+      });
+      fixture.assertReaped(fixture.shim.serverFile);
+    });
+  });
+
+  itUnix.each(['planner', 'implementer', 'review'] as const)(
+    'delivers during a tool step for %s and redacts the password',
+    async (role) => {
+      await withTempDir('opencode-steering', async (dir) => {
+        const fixture = setup(dir);
+        let captured: RunningCall | null = null;
+        let delivery: Promise<SteerOutcome> | undefined;
+        const result = await fixture.run({
+          role,
+          onEvent: (event) => {
+            if (event.type !== 'call_tool_use_delta') return;
+            captured = fixture.port.current();
+            expect(captured).toMatchObject({ role, callId: callContext.callId });
+            delivery = deliverToRunningCall(captured, { id: 'mid', text: 'PINEAPPLE' });
+          },
+        });
+        expect(await delivery).toBe('delivered');
+        expect(result.status).toBe('completed');
+        expect(result.text).toContain('PINEAPPLE');
+        expect(result.usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+        expect(result.nativeSessionId).toBe('ses-steering');
+        expect(JSON.stringify({ result, events: fixture.events })).not.toContain(
+          fixture.shim.password,
+        );
+        expect(fixture.events.filter((event) => event.type === 'call_started')).toHaveLength(1);
+        const run = JSON.parse(readFileSync(fixture.shim.captureFile, 'utf8'));
+        const server = JSON.parse(readFileSync(fixture.shim.serverFile, 'utf8'));
+        expect(run.args).toContain('--server');
+        expect(run.args).not.toContain('--standalone');
+        expect(run.password).toBe(fixture.shim.password);
+        expect(run.args).not.toContain(fixture.shim.password);
+        expect(server.args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '0']);
+        expect(run.home).toBe(fixture.home);
+        expect(server.home).toBe(fixture.home);
+        expect(realpathSync(run.cwd)).toBe(realpathSync(dir));
+        expect(realpathSync(server.cwd)).toBe(realpathSync(dir));
+        expect(JSON.parse(readFileSync(fixture.shim.requestsFile, 'utf8'))).toEqual({
+          text: 'PINEAPPLE',
+          delivery: 'steer',
+        });
+        expect(fixture.port.current()).toBeNull();
+        expect(await deliverToRunningCall(captured, { id: 'late', text: 'too late' })).toBe(
+          'deferred',
+        );
+        fixture.assertReaped(fixture.shim.captureFile);
+        fixture.assertReaped(fixture.shim.serverFile);
+      });
+    },
+  );
+
+  itUnix(
+    'posts another message while the first still awaits consumption, preserving FIFO',
+    async () => {
+      await withTempDir('opencode-repeated', async (dir) => {
+        const fixture = setup(dir, 'repeated');
+        const deliveries: Promise<SteerOutcome>[] = [];
+        const result = await fixture.run({
+          onEvent: (event) => {
+            if (event.type !== 'call_tool_use_delta') return;
+            for (const id of ['first', 'second']) {
+              deliveries.push(deliverToRunningCall(fixture.port.current(), { id, text: 'same' }));
+            }
+          },
+        });
+        expect(result.status).toBe('completed');
+        expect(result.text).toContain('same|same');
+        expect(await Promise.all(deliveries)).toEqual(['delivered', 'delivered']);
+        fixture.assertReaped(fixture.shim.serverFile);
+      });
+    },
+  );
+
+  itUnix.each([
+    ['late', 'uncertain'],
+    ['unconsumed', 'uncertain'],
+    ['reject', 'deferred'],
+    ['disconnect', 'uncertain'],
+  ] as const)('settles %s admission as %s', async (mode, outcome) => {
+    await withTempDir('opencode-admission', async (dir) => {
+      const fixture = setup(dir, mode);
+      let delivery: Promise<SteerOutcome> | undefined;
+      const result = await fixture.run({
+        onEvent: (event) => {
+          if (event.type === 'call_tool_use_delta') {
+            delivery = deliverToRunningCall(fixture.port.current(), { id: 'one', text: 'steer' });
+          }
+        },
+      });
+      expect(result.status).toBe('completed');
+      expect(await delivery).toBe(outcome);
+      expect(fixture.port.current()).toBeNull();
+      fixture.assertReaped(fixture.shim.captureFile);
+      fixture.assertReaped(fixture.shim.serverFile);
+    });
+  });
+
+  itUnix.each(['no-url', 'no-password', 'serve-exit'] as const)(
+    'fails clearly and reaps a sidecar with %s',
+    async (mode) => {
+      await withTempDir('opencode-startup', async (dir) => {
+        const fixture = setup(dir, mode);
+        const result = await fixture.run();
+        expect(result).toMatchObject({
+          status: 'failed',
+          error: { code: 'steering-transport-error' },
+        });
+        expect(result.error?.message).toContain('OpenCode sidecar');
+        expect(JSON.stringify(result)).not.toContain(fixture.shim.password);
+        expect(existsSync(fixture.shim.captureFile)).toBe(false);
+        fixture.assertReaped(fixture.shim.serverFile);
+      });
+    },
+  );
+
+  itUnix.each(['abort', 'timeout', 'protocol-failure', 'server-exit'] as const)(
+    'reaps both processes and settles pending sends on %s',
+    async (mode) => {
+      await withTempDir('opencode-cleanup', async (dir) => {
+        const fixture = setup(dir, mode === 'timeout' ? 'abort' : mode);
+        const controller = new AbortController();
+        let delivery: Promise<SteerOutcome> | undefined;
+        const running = fixture.run({
+          signal: controller.signal,
+          timeoutMs: mode === 'timeout' ? 750 : 8_000,
+          parserFailure: mode === 'protocol-failure',
+          onEvent: (event) => {
+            if (event.type === 'call_tool_use_delta') {
+              delivery = deliverToRunningCall(fixture.port.current(), {
+                id: 'pending',
+                text: 'steer',
+              });
+            }
+          },
+        });
+        if (mode === 'abort') {
+          await vi.waitFor(() => expect(existsSync(fixture.shim.requestsFile)).toBe(true));
+          controller.abort();
+        }
+        const result = await running;
+        expect(result.status).toBe(
+          mode === 'abort' ? 'aborted' : mode === 'timeout' ? 'timeout' : 'failed',
+        );
+        expect(await delivery).toBe('uncertain');
+        expect(fixture.port.current()).toBeNull();
+        fixture.assertReaped(fixture.shim.captureFile);
+        fixture.assertReaped(fixture.shim.serverFile);
+      });
+    },
+  );
+
+  itUnix('redacts a password repeated in a provider failure', async () => {
+    await withTempDir('opencode-error-secret', async (dir) => {
+      const fixture = setup(dir, 'error-secret');
+      const result = await fixture.run();
+      expect(result.status).toBe('failed');
+      expect(JSON.stringify({ result, events: fixture.events })).not.toContain(
+        fixture.shim.password,
+      );
+      fixture.assertReaped(fixture.shim.serverFile);
+    });
+  });
+
+  itUnix('aborts and reaps a sidecar while waiting for its startup lines', async () => {
+    await withTempDir('opencode-startup-abort', async (dir) => {
+      const fixture = setup(dir, 'no-url');
+      const controller = new AbortController();
+      const running = fixture.run({ signal: controller.signal });
+      await vi.waitFor(() => expect(existsSync(fixture.shim.serverFile)).toBe(true));
+      controller.abort();
+      expect((await running).status).toBe('aborted');
+      expect(existsSync(fixture.shim.captureFile)).toBe(false);
+      fixture.assertReaped(fixture.shim.serverFile);
+    });
+  });
+
+  itUnix('times out and reaps a sidecar while waiting for its startup lines', async () => {
+    await withTempDir('opencode-startup-timeout', async (dir) => {
+      const fixture = setup(dir, 'no-url');
+      const result = await fixture.run({ timeoutMs: 500 });
+      expect(result).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
+      expect(existsSync(fixture.shim.captureFile)).toBe(false);
+      fixture.assertReaped(fixture.shim.serverFile);
+    });
+  });
+
+  itUnix.each([
+    { steering: false, version: '2.0.26' },
+    { steering: true, version: '1.9.9' },
+    { steering: true, version: 'unknown' },
+  ])('preserves the existing invocation with %j', async (opts) => {
+    await withTempDir('opencode-one-shot', async (dir) => {
+      const fixture = setup(dir);
+      const result = await fixture.run(opts);
+      expect(result.status).toBe('completed');
+      expect(result.text).toBe('standalone');
+      const run = JSON.parse(readFileSync(fixture.shim.captureFile, 'utf8'));
+      const expected =
+        opts.version === '2.0.26'
+          ? [
+              'run',
+              '--standalone',
+              '--model',
+              'provider/model#high',
+              '--format',
+              'json',
+              '--agent',
+              'build',
+              'initial',
+              '--title=fixture',
+            ]
+          : [
+              'run',
+              '--model',
+              'provider/model',
+              '--variant',
+              'high',
+              '--format',
+              'json',
+              '--agent',
+              'build',
+              'initial',
+              '--title=fixture',
+            ];
+      expect(run.args).toEqual(expected);
+      expect(run.password).toBeUndefined();
+      expect(existsSync(fixture.shim.serverFile)).toBe(false);
+      expect(fixture.port.current()).toBeNull();
+    });
+  });
 });

@@ -502,6 +502,7 @@ export async function runTasksAndReview(
       config: wctx.config,
       callbacks,
       bus: wctx.bus,
+      steering: wctx.steering,
       state,
       reviewer: wctx.reviewer,
       metadata: wctx.metadata,

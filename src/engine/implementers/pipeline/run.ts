@@ -585,6 +585,8 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         phase,
         ...(temperature !== undefined && { temperature }),
         signal: opts.signal,
+        steering: opts.steering,
+        images: opts.images,
         onCallEvent: (event) => {
           if (phase)
             baseConfig.publisher?.publishCallEvent({

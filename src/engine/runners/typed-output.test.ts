@@ -228,6 +228,57 @@ describe('extractLastJsonObject', () => {
 
 describe('requestTyped', () => {
   it.each(['native', 'fallback'] satisfies TypedOutputCapability[])(
+    'prepares each %s invocation and stops after one invalid repair',
+    async (typedOutput) => {
+      const { call, invokes } = makeSeatCall({
+        seat: 'reviewer',
+        typedOutput,
+        results: [completed('invalid first answer'), completed('invalid repair answer')],
+      });
+      let preparations = 0;
+      const result = await requestTyped({
+        schema: probeSchema,
+        jsonSchema,
+        schemaName: 'probe',
+        prepareCall: async () => ({ prompt: `Current input ${++preparations}`, call }),
+      });
+
+      expect(expectError(result).data.attempts).toBe(2);
+      expect(invokes).toHaveLength(2);
+      expect(invokes[0]?.prompt).toContain('Current input 1');
+      expect(invokes[1]?.prompt).toContain('Current input 2');
+      expect(invokes[1]?.prompt).not.toContain('Current input 1');
+      expect(invokes[1]?.prompt).toContain('invalid first answer');
+      expect(preparations).toBe(2);
+    },
+  );
+
+  it('checks the refreshed repair input against its binding cap before dispatch', async () => {
+    const { call, invokes } = makeSeatCall({
+      seat: 'reviewer',
+      typedOutput: 'native',
+      results: [completed('invalid answer')],
+    });
+    let preparations = 0;
+
+    await expect(
+      requestTyped({
+        schema: probeSchema,
+        jsonSchema,
+        schemaName: 'probe',
+        prepareCall: async () => {
+          const first = ++preparations === 1;
+          return {
+            prompt: first ? 'Review the diff' : 'Queued input '.repeat(100),
+            call: { ...call, maxInputChars: first ? 10_000 : 100 },
+          };
+        },
+      }),
+    ).rejects.toMatchObject({ kind: 'input-too-large' });
+    expect(invokes).toHaveLength(1);
+  });
+
+  it.each(['native', 'fallback'] satisfies TypedOutputCapability[])(
     'refuses an oversized first %s prompt before invoking the seat',
     async (typedOutput) => {
       const prompt = 'Answer the question';

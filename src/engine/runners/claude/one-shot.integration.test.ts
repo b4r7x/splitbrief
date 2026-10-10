@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { runClaudeOneShot as runClaudeOneShotImpl } from './invoke.js';
+import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-invoke.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
@@ -48,13 +48,13 @@ function trustedClaudeExecutable(): CliExecutableIdentity {
   };
 }
 
-function runClaudeOneShot(
-  opts: Parameters<typeof runClaudeOneShotImpl>[0],
-): ReturnType<typeof runClaudeOneShotImpl> {
-  return runClaudeOneShotImpl({ ...opts, executable: trustedClaudeExecutable() });
+function invokeTrustedClaude(
+  opts: Parameters<typeof invokeTestClaude>[0],
+): ReturnType<typeof invokeTestClaude> {
+  return invokeTestClaude({ ...opts, executable: trustedClaudeExecutable() });
 }
 
-describe('runClaudeOneShot', () => {
+describe('shared Claude stateless invocation', () => {
   it('keeps streaming past the 1 MB raw stdout retention bound', async () => {
     // A ~13-character text delta rides in a ~200-byte stream_event envelope, so
     // this 104 KB reply is ~1.6 MB of stdout — the volume that used to end the call.
@@ -74,7 +74,7 @@ for (let i = 0; i < 8000; i += 1) {
 write({ type: 'result', result: chunk.repeat(8000), usage: { input_tokens: 1, output_tokens: 8000 } });`,
     );
 
-    const result = await runClaudeOneShot({
+    const result = await invokeTrustedClaude({
       prompt: 'p',
       projectDir,
       mode: 'escalate',
@@ -96,7 +96,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     process.env['ANTHROPIC_API_KEY'] = 'anthropic-canary';
     process.env['OPENAI_API_KEY'] = 'openai-canary';
 
-    await runClaudeOneShot({
+    await invokeTrustedClaude({
       prompt: 'p',
       projectDir,
       mode: 'escalate',
@@ -113,7 +113,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
       '{"type":"result","result":"reply","usage":{"input_tokens":3,"output_tokens":1}}',
     ]);
 
-    const result = await runClaudeOneShot({
+    const result = await invokeTrustedClaude({
       prompt: 'hi',
       projectDir,
       mode: 'escalate',
@@ -138,7 +138,7 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
   it('passes effort as an --effort argv flag and leaves stdin as the raw prompt', async () => {
     const { argvFile, stdinFile } = installClaudeRecordingShim(shimDir);
 
-    await runClaudeOneShot({
+    await invokeTrustedClaude({
       prompt: 'escalate me',
       projectDir,
       mode: 'escalate',

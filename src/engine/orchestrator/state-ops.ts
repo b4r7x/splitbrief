@@ -1,7 +1,10 @@
 import { existsSync, readFileSync, realpathSync, statSync, type BigIntStats } from 'node:fs';
 import { join } from 'node:path';
 import type { MachineAction } from '../../core/state/types.js';
-import { transition } from '../../core/state/machine.js';
+import { briefCorrections, transition } from '../../core/state/machine.js';
+import { lineageIdOf } from '../../core/state/task-insert.js';
+import type { TaskId } from '../../core/schemas/task.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import { loadState } from '../../core/state/persistence.js';
 import { revisionFromBytes, serializedState } from '../../core/state/state-file.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -20,6 +23,7 @@ import type { EventBus } from '../events/types.js';
 import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
+import { imagesFromMessages } from './queue/prompt.js';
 
 export const MAX_STATE_CONFLICT_RETRIES = 3;
 const DEFAULT_STATE_CONFLICT_RETRIES = 1;
@@ -179,11 +183,14 @@ function mergeNativeDeliveryState(
 }
 
 function mergeQueues(
-  persisted: WorkflowState['messageQueue'],
-  current: WorkflowState['messageQueue'],
+  persisted: WorkflowState,
+  current: WorkflowState,
 ): WorkflowState['messageQueue'] {
-  const byId = new Map(persisted.map((message) => [message.id, message]));
-  for (const message of current) {
+  // Only a shared revision proves an absent message is unsaved. An older queue
+  // can contain messages a later writer cleared or delivered.
+  if (persisted.stateRevision !== current.stateRevision) return persisted.messageQueue;
+  const byId = new Map(persisted.messageQueue.map((message) => [message.id, message]));
+  for (const message of current.messageQueue) {
     const persistedMessage = byId.get(message.id);
     byId.set(
       message.id,
@@ -223,7 +230,7 @@ export function rebaseOnPersistedWorkflowState(
     state.phase === persisted.phase
       ? state
       : persisted;
-  return { ...current, messageQueue: mergeQueues(persisted.messageQueue, state.messageQueue) };
+  return { ...current, messageQueue: mergeQueues(persisted, state) };
 }
 
 function expectedIdentity(expected: StateOperationExpectedRevision | undefined): ExpectedIdentity {
@@ -303,6 +310,7 @@ function queueAction(action: MachineAction): boolean {
     case 'MARK_INJECTING_NATIVE':
     case 'MARK_DELIVERED_NATIVE':
     case 'MARK_NATIVE_DELIVERY_FAILED':
+    case 'MARK_POSSIBLE_DUPLICATE':
     case 'DRAIN_QUEUE':
     case 'CLEAR_QUEUE':
       return true;
@@ -435,13 +443,13 @@ function mutateState(input: MutationInput): WorkflowState {
                 input.state.phase === head.state.phase
                   ? input.state
                   : head.state),
-                messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
+                messageQueue: mergeQueues(head.state, input.state),
               }
             : head.state
           : input.operation === 'usage'
             ? {
                 ...head.state,
-                messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
+                messageQueue: mergeQueues(head.state, input.state),
               }
             : {
                 // Older engine seams pass the semantic state they are about to
@@ -451,7 +459,7 @@ function mutateState(input: MutationInput): WorkflowState {
                 ...input.state,
                 stateVersion: head.state.stateVersion,
                 stateRevision: head.state.stateRevision ?? 0,
-                messageQueue: mergeQueues(head.state.messageQueue, input.state.messageQueue),
+                messageQueue: mergeQueues(head.state, input.state),
               };
     const recordedBase =
       head?.state.resumeUserMessages === undefined
@@ -496,6 +504,55 @@ export function transitionAndSave(
         return base;
       }
       return transition(base, action);
+    },
+  });
+}
+
+export function recordBriefCorrection(
+  ref: SessionRef,
+  state: WorkflowState,
+  taskId: TaskId,
+  text: string,
+  images: readonly Attachment[] = [],
+): WorkflowState {
+  const current = rebaseOnPersistedWorkflowState(ref, state);
+  const task = current.tasks.find((task) => task.id === taskId);
+  const key = task === undefined ? taskId : lineageIdOf(task);
+  const priorImages = current.lineages?.[key]?.correctionImages ?? [];
+  if (
+    briefCorrections(current, taskId).includes(text) &&
+    images.every((image) => priorImages.some((prior) => prior.id === image.id))
+  )
+    return current;
+  return mutateState({
+    ref,
+    state: current,
+    operation: 'transition',
+    options: undefined,
+    rederivable: false,
+    mergeQueue: false,
+    derive: (base) => {
+      const corrected = briefCorrections(base, taskId).includes(text)
+        ? base
+        : transition(base, { type: 'RECORD_CORRECTION', taskId, text });
+      if (images.length === 0) return corrected;
+      return {
+        ...corrected,
+        lineages: Object.fromEntries(
+          Object.entries(corrected.lineages ?? {}).map(([id, lineage]) => [
+            id,
+            id === key
+              ? {
+                  ...lineage,
+                  correctionImages: imagesFromMessages([
+                    { images: lineage.correctionImages ?? [] },
+                    { images },
+                  ]),
+                }
+              : lineage,
+          ]),
+        ),
+      };
     },
   });
 }

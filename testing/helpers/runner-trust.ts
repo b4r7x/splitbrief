@@ -1,4 +1,5 @@
 import { resolveImplementerProfiles } from '../../src/core/config/accessors/implementer-profiles.js';
+import { resolveReviewerRunner } from '../../src/core/config/accessors/reviewer-runner.js';
 import {
   inlineRunnerCommand,
   isCustomCommandRunner,
@@ -27,6 +28,7 @@ export async function trustDeclaredRunners(
 ): Promise<void> {
   const slots = [
     { role: 'planner' as const, runner: input.config.planner },
+    { role: 'planner' as const, runner: resolveReviewerRunner(input.config).runner },
     ...resolveImplementerProfiles(input.config).profiles.map((profile) => ({
       role: 'implementer' as const,
       runner: profile.config,

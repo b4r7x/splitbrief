@@ -238,7 +238,11 @@ describe('restoreDirtyFilesFromSnapshot', () => {
           'retargeted',
         ]);
 
-        expect(result).toEqual({ restoredFiles: ['replaced', 'retargeted'], conflictedFiles: [] });
+        expect(result).toEqual({
+          restoredFiles: ['replaced', 'retargeted'],
+          conflictedFiles: [],
+          removedPaths: [],
+        });
         expect(readlinkSync(join(dir, 'retargeted'))).toBe('real.txt');
         expect(readlinkSync(join(dir, 'replaced'))).toBe('real.txt');
       } finally {
@@ -266,7 +270,11 @@ describe('restoreDirtyFilesFromSnapshot', () => {
         beforeApproval,
       );
 
-      expect(result).toEqual({ restoredFiles: [], conflictedFiles: ['replaced'] });
+      expect(result).toEqual({
+        restoredFiles: [],
+        conflictedFiles: ['replaced'],
+        removedPaths: [],
+      });
       expect(readFileSync(join(dir, 'replaced'), 'utf-8')).toBe('user\n');
     } finally {
       cleanupTempDir(dir);

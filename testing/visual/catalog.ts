@@ -471,6 +471,57 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-queued',
+      title: 'Workflow · a message queued for the running brief',
+      surface: screenSurface('workflow'),
+      viewports: REQUIRED_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-queued',
+        title: 'Message queued for BUILD',
+        kind: 'implementation',
+        marker: '1 queued for BUILD on T003',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Queued message transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-delivered',
+      title: 'Workflow · a message delivered to the running brief',
+      surface: screenSurface('workflow'),
+      viewports: REQUIRED_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-delivered',
+        title: 'Message delivered to BUILD',
+        kind: 'implementation',
+        marker: 'Delivered',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Delivered message transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-implementation-steerable',
+      title: 'Workflow · a message delivered during the running BUILD call',
+      surface: screenSurface('workflow'),
+      viewports: REQUIRED_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-steerable',
+        title: 'Mid-call delivery to BUILD',
+        kind: 'implementation',
+        marker: 'Delivered',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Mid-call delivery transcript' },
+        { id: 'composer', title: 'Steerable workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-crew-wide',
       title: 'Workflow · a wide crew during implementation',
       surface: screenSurface('workflow'),
@@ -1346,6 +1397,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-at-rest-queued',
+      title: 'Workflow · a reopened run with an unread message',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-queued',
+        title: 'The count excludes a message already read by REVIEW',
+        kind: 'ready',
+        marker: '1 queued',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer and queued count' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-at-rest-long-park',
       title: 'Workflow · a run at rest after a night stopped',
       surface: screenSurface('workflow'),
@@ -1552,6 +1618,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Closed run ledger' },
         { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-queued',
+      title: 'Workflow · ended with a pending BUILD message',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended',
+        title: 'Ended run with pending-message history',
+        kind: 'failure',
+        marker: 'visual-closed-queued',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Pending-message history and closed run ledger' },
+        { id: 'composer', title: 'Closed run composer' },
       ],
     }),
     defineScenario({

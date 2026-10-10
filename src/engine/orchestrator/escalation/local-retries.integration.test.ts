@@ -1,8 +1,16 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { transition } from '../../../core/state/machine.js';
+import { briefCorrections, transition } from '../../../core/state/machine.js';
 import { loadState } from '../../../core/state/persistence.js';
+import type { Implementer } from '../../implementers/types.js';
+import { createSteeringPort } from '../../calls/steering.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { clearPendingQueue } from '../queue/clear.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
+import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -24,6 +32,7 @@ import type { EscalationContext } from './types.js';
 
 let dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
@@ -65,6 +74,308 @@ function makeLocalRetriesCtx(opts: {
     dependsOnFiles: [],
   };
 }
+
+describe('runLocalRetries — corrections during checks', () => {
+  it('keeps steering attached through a local retry and its correction pass', async () => {
+    const ref = setupProject();
+    const task = makeTask();
+    const state = makeValidatingState();
+    const { bus } = makeBusRecorder();
+    const steering = createSteeringPort();
+    const received: string[] = [];
+    const retry: Implementer['retry'] = async (opts) => {
+      const detach = opts.steering?.attach({
+        callId: 'local-retry',
+        role: 'implementer',
+        taskId: task.id,
+        send: async ({ text }) => {
+          received.push(text);
+          return 'delivered';
+        },
+      });
+      try {
+        await steering.current()?.send({ id: 'live-retry', text: 'keep the alias' });
+        const current = loadState(ref);
+        if (current === null) throw new Error('missing state during retry');
+        enqueueUserMessage({
+          ...ref,
+          state: current,
+          message: plainUserMessage('keep the export too'),
+          phase: current.phase,
+          bus,
+        });
+        return { success: true, output: 'fixed' };
+      } finally {
+        detach?.();
+      }
+    };
+    const implement: Implementer['implement'] = async (opts) => {
+      const detach = opts.steering?.attach({
+        callId: 'local-correction',
+        role: 'implementer',
+        taskId: task.id,
+        send: async ({ text }) => {
+          received.push(text);
+          return 'delivered';
+        },
+      });
+      try {
+        await steering.current()?.send({ id: 'live-correction', text: 'keep the type too' });
+        return { success: true, output: 'corrected' };
+      } finally {
+        detach?.();
+      }
+    };
+
+    const outcome = await runLocalRetries({
+      ctx: {
+        ...makeLocalRetriesCtx({ ...ref, implementer: makeImplementer({ retry, implement }), bus }),
+        steering,
+        taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+      },
+      task,
+      state,
+      lastError: 'failed check',
+      lastDiagnosis: 'failed check',
+    });
+
+    expect(outcome.result).toMatchObject({ completed: true, method: 'local' });
+    expect(received).toEqual(['keep the alias', 'keep the type too']);
+    expect(steering.current()).toBeNull();
+    expect(briefCorrections(outcome.state, task.id)).toEqual([
+      expect.stringContaining('keep the export too'),
+    ]);
+  });
+
+  it('delivers a second message queued during correction profile preparation without spending another rung', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = transition(transition(makeImplState([task]), { type: 'TASK_SENT' }), {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+    });
+    const { bus, events } = makeBusRecorder();
+    const retry = vi.fn<Implementer['retry']>(async () => ({ success: true, output: 'fixed' }));
+    const implementer = makeImplementer({ retry });
+    const createImplementer = vi.fn(async () => {
+      await Promise.resolve();
+      if (retry.mock.calls.length === 1) {
+        const current = loadState(ref);
+        if (current === null) throw new Error('missing state during profile preparation');
+        enqueueUserMessage({
+          ...ref,
+          state: current,
+          message: plainUserMessage('also keep the export'),
+          phase: current.phase,
+          bus,
+        });
+      }
+      return implementer;
+    });
+    let checks = 0;
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      checks += 1;
+      if (checks === 1) {
+        const current = loadState(ref);
+        if (current === null) throw new Error('missing state during checks');
+        enqueueUserMessage({
+          ...ref,
+          state: current,
+          message: plainUserMessage('keep the alias'),
+          phase: current.phase,
+          bus,
+        });
+      }
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+
+    const outcome = await runLocalRetries({
+      ctx: {
+        ...makeLocalRetriesCtx({
+          ...ref,
+          implementer,
+          bus,
+          config: makeNoValidationConfig({
+            workflow: { review: 'task' },
+            implementerProfiles: {
+              default: 'correction',
+              profiles: { correction: { kind: 'cli', tool: 'codex' } },
+            },
+          }),
+        }),
+        createImplementer,
+        retryProfileOverride: 'correction',
+        taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+      },
+      task,
+      state,
+      lastError: 'check K1 failed',
+      lastDiagnosis: 'check K1 failed',
+    });
+
+    expect(createImplementer).toHaveBeenCalledTimes(2);
+    expect(retry).toHaveBeenCalledTimes(2);
+    const correctionCall = retry.mock.calls[1]?.[0];
+    expect(retry.mock.calls[0]?.[0].allowNoChange).toBe(false);
+    expect(correctionCall).toMatchObject({
+      error: CORRECTION_AFTER_CHECKS,
+      attempt: 1,
+      allowNoChange: true,
+    });
+    expect(correctionCall?.continuation?.steer).toContain('keep the alias');
+    expect(correctionCall?.continuation?.steer).toContain('also keep the export');
+    expect(runCommand).toHaveBeenCalledTimes(2);
+    expect(outcome.result).toMatchObject({ completed: true, method: 'local', attempts: 1 });
+    expect(outcome.state.tasks[0]?.status).toBe('done');
+    expect(outcome.state.lineages?.T001).toMatchObject({
+      attempts: 3,
+      attemptAllowance: 8,
+      consults: 0,
+    });
+    expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+      expect.objectContaining({ count: 2, seat: 'build', taskId: 'T001' }),
+    ]);
+    expect(loadState(ref)).toMatchObject({
+      implementerTool: 'codex',
+      messageQueue: [
+        expect.objectContaining({ deliveredTo: { implementer: expect.any(String) } }),
+        expect.objectContaining({ deliveredTo: { implementer: expect.any(String) } }),
+      ],
+    });
+  });
+
+  it('completes the retry without an answer attempt when its correction is cleared after recorded checks', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = transition(transition(makeImplState([task]), { type: 'TASK_SENT' }), {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+    });
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe((event) => {
+      if (event.type !== 'checks_run') return;
+      const checked = loadState(ref);
+      if (checked === null) throw new Error('missing recorded checks');
+      clearPendingQueue({ ...ref, state: checked, bus });
+    });
+    const retry = vi.fn<Implementer['retry']>(async () => ({ success: true, output: 'fixed' }));
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      const current = loadState(ref);
+      if (current === null) throw new Error('missing state during checks');
+      enqueueUserMessage({
+        ...ref,
+        state: current,
+        message: plainUserMessage('cleared correction'),
+        phase: current.phase,
+        bus,
+      });
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+
+    const outcome = await runLocalRetries({
+      ctx: {
+        ...makeLocalRetriesCtx({
+          ...ref,
+          implementer: makeImplementer({ retry }),
+          bus,
+          config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+        }),
+        taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+      },
+      task,
+      state,
+      lastError: 'check K1 failed',
+      lastDiagnosis: 'check K1 failed',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(1);
+    expect(runCommand).toHaveBeenCalledTimes(1);
+    expect(outcome.result).toMatchObject({ completed: true, method: 'local', attempts: 1 });
+    expect(outcome.state.tasks[0]?.status).toBe('done');
+    expect(outcome.state.currentTaskIndex).toBe(1);
+    expect(outcome.state.lineages?.T001).toMatchObject({
+      attempts: 2,
+      attemptAllowance: 8,
+      consults: 0,
+    });
+    expect(briefCorrections(outcome.state, task.id)).toEqual([]);
+    expect(outcome.state.messageQueue).toEqual([]);
+    expect(loadState(ref)?.messageQueue).toEqual([]);
+    expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([]);
+  });
+
+  it('runs one more answer attempt after green retry checks receive a message', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = transition(transition(makeImplState([task]), { type: 'TASK_SENT' }), {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+    });
+    const { bus, events } = makeBusRecorder();
+    const retry = vi.fn<Implementer['retry']>(async () => {
+      return { success: true, output: 'fixed' };
+    });
+    let checks = 0;
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      checks += 1;
+      if (checks === 1) {
+        const current = loadState(ref);
+        if (current === null) throw new Error('missing state during checks');
+        enqueueUserMessage({
+          ...ref,
+          state: current,
+          message: plainUserMessage('keep the alias'),
+          phase: current.phase,
+          bus,
+        });
+      }
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+
+    const outcome = await runLocalRetries({
+      ctx: {
+        ...makeLocalRetriesCtx({
+          ...ref,
+          implementer: makeImplementer({ retry }),
+          bus,
+          config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+        }),
+        taskStartSnapshot: await getChangedFilesSnapshot(ref.projectDir),
+      },
+      task,
+      state,
+      lastError: 'check K1 failed',
+      lastDiagnosis: 'check K1 failed',
+    });
+
+    expect(retry).toHaveBeenCalledTimes(2);
+    expect(retry.mock.calls[1]?.[0]).toMatchObject({ error: CORRECTION_AFTER_CHECKS, attempt: 1 });
+    expect(retry.mock.calls[1]?.[0].continuation?.steer).toContain('keep the alias');
+    expect(runCommand).toHaveBeenCalledTimes(2);
+    expect(outcome.result).toMatchObject({ completed: true, method: 'local', attempts: 1 });
+    expect(outcome.state.tasks[0]?.status).toBe('done');
+    expect(outcome.state.lineages?.T001).toMatchObject({
+      attempts: 3,
+      attemptAllowance: 8,
+      consults: 0,
+    });
+    expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
+    expect(outcome.state.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
+  });
+});
 
 describe('runLocalRetries — aborted outcomes', () => {
   it('consumes zero retries when the initial implementer call was aborted', async () => {

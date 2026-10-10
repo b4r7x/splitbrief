@@ -18,6 +18,7 @@ import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factor
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { taskId } from '../../../core/schemas/task.js';
 import {
+  disposeWctxIsolations,
   makeBusRecorder,
   makeCallbacks,
   makePlanner,
@@ -33,8 +34,11 @@ import { saveState } from '../../../core/state/persistence.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { createSteeringPort } from '../../calls/steering.js';
 import type { FinalReviewResult } from '../final-review.js';
-import type { Planner } from '../../planners/types.js';
+import type { Planner, TypedCallContext } from '../../planners/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
@@ -50,7 +54,8 @@ const CODEX_INPUT_TOO_LARGE =
   'Error: turn/start: turn/start failed: Input exceeds the maximum length of 1048576 characters. (code -32602), data: {"input_error_code":"input_too_large","max_chars":1048576,"actual_chars":1106026}';
 
 const dirs: string[] = [];
-afterEach(() => {
+afterEach(async () => {
+  await disposeWctxIsolations();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -849,4 +854,83 @@ describe('runScheduledReview saved recovery', () => {
     expect(resumed.state.pendingScheduledReview).toBeUndefined();
     expect(events.filter((event) => event.type === 'workflow_complete')).toEqual([]);
   });
+});
+
+describe('scheduled review steering', () => {
+  it.each([false, true])(
+    'forwards the run port to each scheduled verdict with separateReviewer=%s',
+    async (separateReviewer) => {
+      const ref = setupProject();
+      const done = makeTask({ id: 'T001', status: 'done' });
+      const state = makeImplState([done, makeTask({ id: 'T002' })], {
+        currentTaskIndex: 1,
+        changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+      });
+      saveState(ref, state);
+      writeEvidenceLedger(
+        ref,
+        createEvidenceLedger({
+          sessionId: ref.sessionId,
+          feature: state.feature,
+          tasks: state.tasks,
+        }),
+      );
+      const steering = createSteeringPort();
+      const calls: Array<{ context: TypedCallContext; schemaName: string | undefined }> = [];
+      const typedCall = typedCallPlanAndReview(
+        () => planFromTasks([]),
+        (prompt, call) => ({
+          ...passingReviewVerdict(prompt),
+          ...(call === 1
+            ? { ask: { question: 'Keep the API?', whyOnlyUserCanAnswer: 'The API is public.' } }
+            : { rejected: [{ findingId: 'A1', reason: 'Keep the approved API.' }] }),
+        }),
+      );
+      const reviewer = makePlanner({
+        typedCall: (ctx) => {
+          const call = typedCall(ctx);
+          return {
+            ...call,
+            invoke: (input) => {
+              calls.push({ context: ctx, schemaName: input.schema?.name });
+              return call.invoke(input);
+            },
+          };
+        },
+      });
+      const callbacks = makeCallbacks({
+        onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('Keep the API')),
+      }).callbacks;
+      const wctx = makeWctx({
+        ...ref,
+        steering,
+        callbacks,
+        planner: separateReviewer ? makePlanner() : reviewer,
+        reviewer,
+        config: makeNoValidationConfig({
+          workflow: { review: 'task' },
+          validation: { endChecks: true },
+          ...(separateReviewer && { reviewer: { kind: 'cli', tool: 'claude-code' } }),
+        }),
+      });
+
+      const result = await runScheduledReview({
+        wctx,
+        state,
+        callbacks,
+        afterTaskId: done.id,
+        setTrackedState: vi.fn(),
+      });
+
+      expect(result.status).toBe('continue');
+      expect(result.state.pendingScheduledReview).toBeUndefined();
+      expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
+      const verdicts = calls.filter((call) => call.schemaName === 'review_answer');
+      expect(verdicts).toHaveLength(2);
+      for (const call of verdicts) expect(call.context.callbacks.steering).toBe(steering);
+      const helpers = calls.filter((call) => call.schemaName === 'review_checks');
+      expect(helpers).toHaveLength(1);
+      expect(helpers[0]?.context.callbacks).not.toHaveProperty('steering');
+    },
+  );
 });

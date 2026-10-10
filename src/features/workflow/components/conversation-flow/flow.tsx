@@ -1,3 +1,4 @@
+import { INLINE_LABEL_GAP } from '../../conversation-rows/row-format/label-card.js';
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
@@ -226,7 +227,7 @@ export function ConversationFlow({
             marginLeft={rowLeadingCells('message')}
           >
             <Text color={t.textDim}>
-              {`Pending ${pendingTasks.length}${viewportSplit.queuedRows === 1 && hiddenPending > 0 ? `${SOFT_SEP}+${hiddenPending} more` : ''}`}
+              {`Pending${INLINE_LABEL_GAP}${pendingTasks.length}${viewportSplit.queuedRows === 1 && hiddenPending > 0 ? `${SOFT_SEP}+${hiddenPending} more` : ''}`}
             </Text>
           </Box>
           {queuedRows.map((queuedRow) => (

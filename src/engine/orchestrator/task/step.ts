@@ -559,66 +559,75 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   if (gated.stop !== undefined) return state;
   const { acceptance } = gated;
 
-  const commitResult = await validateCommitAndAdvance({
-    task,
-    projectDir,
-    sessionId,
-    config,
-    bus: wctx.bus,
-    state,
-    method: 'local',
-    transitionType: 'VALIDATION_PASS',
-    taskStartTime,
-    acceptance,
-    implementerProfile: wctx.implementerProfile,
-    taskChangedFiles,
-    applyResult: implState.implResult.applyResult,
-  });
-  if (commitResult.completed) {
-    await captureTaskReviewChanges({
-      ref: { projectDir, sessionId },
-      workspaceDir: wctx.workspaceDir,
+  if (!gated.correction) {
+    const commitResult = await validateCommitAndAdvance({
       task,
-      taskStartSnapshot,
-    });
-    state = commitResult.state;
-    setTrackedState(state);
-    opts.onTaskAcceptedFiles?.(taskChangedFiles);
-    recordTaskUsage({
-      task,
-      method: 'local',
-      tokensBefore,
-      currentUsage: state.tokenUsage,
+      projectDir,
+      sessionId,
+      config,
       bus: wctx.bus,
       state,
-      taskBreakdowns,
-      tool: getRunnerDisplayName(config.implementer),
-      ...(config.implementer.model !== undefined && { model: config.implementer.model }),
-      ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
-      ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      taskStartTime,
+      acceptance,
+      implementerProfile: wctx.implementerProfile,
+      taskChangedFiles,
+      applyResult: implState.implResult.applyResult,
     });
-    await persistTaskEvidence({
-      wctx,
-      state,
-      task,
-      recordKind: 'local',
-      details: {
-        status: 'done',
+    if (commitResult.completed) {
+      await captureTaskReviewChanges({
+        ref: { projectDir, sessionId },
+        workspaceDir: wctx.workspaceDir,
+        task,
+        taskStartSnapshot,
+      });
+      state = commitResult.state;
+      setTrackedState(state);
+      opts.onTaskAcceptedFiles?.(taskChangedFiles);
+      recordTaskUsage({
+        task,
         method: 'local',
-        retries: 0,
-        durationMs: commitResult.durationMs,
-        changedFiles: taskChangedFiles,
-      },
-    });
-    return state;
+        tokensBefore,
+        currentUsage: state.tokenUsage,
+        bus: wctx.bus,
+        state,
+        taskBreakdowns,
+        tool: getRunnerDisplayName(config.implementer),
+        ...(config.implementer.model !== undefined && { model: config.implementer.model }),
+        ...(wctx.implementerProfile !== undefined && {
+          implementerProfile: wctx.implementerProfile,
+        }),
+        ...(wctx.routingDecision !== undefined && { routingDecision: wctx.routingDecision }),
+      });
+      await persistTaskEvidence({
+        wctx,
+        state,
+        task,
+        recordKind: 'local',
+        details: {
+          status: 'done',
+          method: 'local',
+          retries: 0,
+          durationMs: commitResult.durationMs,
+          changedFiles: taskChangedFiles,
+        },
+      });
+      return state;
+    }
   }
 
   if (wctx.signal?.aborted) return state;
 
+  if (gated.correction) {
+    state = transitionAndSave(wctx, state, { type: 'RESUME_TASK' });
+    setTrackedState(state);
+  }
   const retry = await retryAndRecord({
     wctx,
     task,
     initialError: gated.error,
+    ...(gated.correction && { initialAnswer: gated.error }),
     initialDiagnosis: gated.diagnosis,
     state,
     taskStartTime,

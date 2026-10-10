@@ -56,10 +56,12 @@ function park(kind: StopParkKind, taskId: string | null, resolve: StopResolver |
   store.set((s) => ({ ...s, phase: 'parked', parked: { kind, taskId, resolve } }));
 }
 
-function resume(steer: UserMessageInput): void {
-  const resolve = store.get().parked?.resolve;
+function resume(steer: UserMessageInput): boolean {
+  const { phase, parked } = store.get();
+  if (phase !== 'parked' || parked === null || parked.resolve === null) return false;
   store.set(initial);
-  resolve?.(steer);
+  parked.resolve(steer);
+  return true;
 }
 
 function end(): void {

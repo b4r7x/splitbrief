@@ -7,6 +7,7 @@ import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { readMessages } from '../../../src/core/sessions/log-reader.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { readInterruptedPartial } from '../../../src/engine/orchestrator/continuation.js';
@@ -29,6 +30,7 @@ function setup() {
   const workspaceDir = join(projectDir, 'isolated');
   mkdirSync(workspaceDir);
   const sessionId = 'sess-cut';
+  ensureSessionDir(projectDir, sessionId);
   const controller = new AbortController();
   const narration = 'The first edit is in progress.';
   const implementer = createImplementerBase(

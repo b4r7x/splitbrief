@@ -158,6 +158,7 @@ export const RunnerCallEventSchema = z.discriminatedUnion('type', [
   callEvent('call_text_delta', {
     channel: RunnerCallTextChannelSchema,
     text: z.string(),
+    subagentId: boundedId.optional(),
     semantics: RunnerCallTextSemanticsSchema.optional(),
   }),
   callEvent('call_stderr_delta', {

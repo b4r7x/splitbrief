@@ -1,4 +1,6 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import type { TokenDelta } from '../../../core/schemas/tokens.js';
+import { accumulateTokenUsage } from '../../calls/usage.js';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -569,6 +571,92 @@ describe('Claude Code role adapters', () => {
 });
 
 describe('Claude Code stream protocol adapter', () => {
+  it.each([claudeCodePlannerAdapter, claudeCodeImplementerAdapter])(
+    'carries every fragmented tool input with its identity for the $role seat',
+    (adapter) => {
+      const parse = adapter.createParser?.();
+      if (parse === undefined) throw new Error('Claude requires a stateful parser');
+      parse(
+        JSON.stringify({
+          type: 'stream_event',
+          event: {
+            type: 'content_block_start',
+            index: 1,
+            content_block: { type: 'tool_use', id: 'tool-read', name: 'Read', input: {} },
+          },
+        }),
+      );
+      for (const inputDelta of ['{"file_path":', '"src/app.ts"}']) {
+        const events = parse(
+          JSON.stringify({
+            type: 'stream_event',
+            event: {
+              type: 'content_block_delta',
+              index: 1,
+              delta: { type: 'input_json_delta', partial_json: inputDelta },
+            },
+          }),
+        );
+        expect(events.filter((event) => event.type === 'tool-use-delta')).toEqual([
+          { type: 'tool-use-delta', id: 'tool-read', name: 'Read', inputDelta },
+        ]);
+      }
+    },
+  );
+
+  it('keeps the subagent identity and assistant channel on deltas and complete records', () => {
+    const records = [
+      {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'subagent answer' },
+        },
+      },
+      {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'subagent answer' }] },
+      },
+    ];
+    expect(
+      records.flatMap((record) =>
+        claudeProtocolEvents(JSON.stringify({ ...record, parent_tool_use_id: 'agent-1' })),
+      ),
+    ).toEqual([
+      {
+        type: 'text',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'subagent answer',
+        semantics: 'delta',
+      },
+      {
+        type: 'text',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'subagent answer',
+        semantics: 'final',
+      },
+    ]);
+  });
+
+  it.each([claudeCodePlannerAdapter, claudeCodeImplementerAdapter])(
+    'rebuilds max_tokens continuation for the $role seat',
+    (adapter) => {
+      const fixtures = join(import.meta.dirname, '../../../../testing/fixtures/claude-code');
+      const parse = adapter.createParser?.();
+      if (parse === undefined) throw new Error('Claude requires a stateful parser');
+      const events = readFileSync(join(fixtures, 'claude-planner-max-tokens.jsonl'), 'utf8')
+        .split('\n')
+        .flatMap(parse);
+      const terminal = events.findLast((event) => event.type === 'result');
+      expect(terminal).toMatchObject({
+        status: 'completed',
+        text: readFileSync(join(fixtures, 'claude-planner-max-tokens.expected.txt'), 'utf8'),
+      });
+    },
+  );
+
   it('projects assistant/session/usage records and a required terminal result', () => {
     const events = claudeProtocolEvents(
       JSON.stringify({
@@ -777,4 +865,145 @@ describe('Claude Code stream protocol adapter', () => {
       code: 'malformed_stream_json',
     });
   });
+});
+
+describe('Claude steering transport', () => {
+  it('gates only canonical proven releases', () => {
+    const transport = claudeCodeImplementerAdapter.steering;
+    expect(transport).toBeDefined();
+    expect(transport?.supportsVersion('2.1.296')).toBe(true);
+    expect(transport?.supportsVersion('2.1.297')).toBe(true);
+    expect(transport?.supportsVersion('2.1.295')).toBe(false);
+    expect(transport?.supportsVersion(undefined)).toBe(false);
+    expect(transport?.supportsVersion('unknown')).toBe(false);
+  });
+
+  it.each(['--input-format', '--replay-user-messages'])('rejects configured %s', (flag) => {
+    expect(
+      claudeCodeImplementerAdapter.validateArgs({
+        invocationArgs: ['-p', flag, 'stream-json'],
+        baseArgs: ['-p'],
+      }),
+    ).toEqual({ valid: false, conflicts: [flag] });
+  });
+
+  it('parses input echoes separately from tool results and subagents', () => {
+    expect(
+      claudeProtocolEvents(
+        JSON.stringify({
+          type: 'user',
+          parent_tool_use_id: null,
+          message: { role: 'user', content: 'same' },
+        }),
+      ),
+    ).toEqual([{ type: 'input-ack', text: 'same' }]);
+    expect(
+      claudeProtocolEvents(
+        JSON.stringify({
+          type: 'user',
+          parent_tool_use_id: null,
+          message: { content: [{ type: 'tool_result', tool_use_id: 't' }] },
+        }),
+      ),
+    ).not.toContainEqual({ type: 'input-ack', text: 'same' });
+    expect(
+      claudeProtocolEvents(
+        JSON.stringify({
+          type: 'user',
+          parent_tool_use_id: 'nested',
+          message: { role: 'user', content: 'same' },
+        }),
+      ),
+    ).not.toContainEqual({ type: 'input-ack', text: 'same' });
+  });
+
+  it('sums turn finals while replacing each turn streaming snapshots and keeps the last answer', () => {
+    const parse = claudeCodeImplementerAdapter.createParser?.();
+    if (parse === undefined) throw new Error('missing parser');
+    const lines = [
+      {
+        type: 'assistant',
+        message: { id: 'a', content: [], usage: { input_tokens: 100, output_tokens: 0 } },
+      },
+      {
+        type: 'result',
+        result: 'first',
+        usage: { input_tokens: 10, output_tokens: 5 },
+        total_cost_usd: 1,
+      },
+      { type: 'system', subtype: 'init' },
+      {
+        type: 'assistant',
+        message: { id: 'a', content: [], usage: { input_tokens: 2, output_tokens: 0 } },
+      },
+      {
+        type: 'result',
+        result: 'last',
+        structured_output: { answer: 'last' },
+        usage: { input_tokens: 3, output_tokens: 7 },
+        total_cost_usd: 2,
+      },
+    ];
+    const events = lines.flatMap((line) => parse(JSON.stringify(line)));
+    let usage: TokenDelta | null = null;
+    for (const event of events)
+      if (event.type === 'usage') usage = accumulateTokenUsage(usage, event.usage, event.semantics);
+    expect(usage).toMatchObject({ inputTokens: 13, outputTokens: 12 });
+    expect(events.filter((event) => event.type === 'usage').at(-2)).toMatchObject({
+      usage: { inputTokens: 12, outputTokens: 5 },
+      semantics: 'cumulative',
+    });
+    expect(
+      claudeCodeImplementerAdapter.terminal({
+        outputContract: claudeCodeImplementerAdapter.outputContract,
+        events,
+        stderr: '',
+        exitCode: 0,
+        signal: null,
+      }),
+    ).toMatchObject({
+      text: 'last',
+      structured: { answer: 'last' },
+      usage: { inputTokens: 13, outputTokens: 12 },
+    });
+  });
+});
+
+it('opens a Claude steering session with adapter-owned flags and JSON-line stdin', async () => {
+  const transport = claudeCodePlannerAdapter.steering;
+  if (transport === undefined) throw new Error('transport missing');
+  const invocation = {
+    executable: { path: '/claude', fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 } },
+    args: ['-p', '--label', 'fixture'],
+    baseArgs: ['-p'],
+    promptTransport: { kind: 'stdin' as const },
+    environment: {},
+    cwd: '/project',
+    signal: undefined,
+  };
+  const session = await transport.open({
+    invocation,
+    prompt: 'initial\ntext',
+    onReady: () => {},
+    onAdmissionClosed: () => {},
+  });
+  expect(session.invocation.args).toEqual([
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--replay-user-messages',
+    '--label',
+    'fixture',
+  ]);
+  expect(session.invocation.baseArgs).toEqual([
+    '-p',
+    '--input-format',
+    'stream-json',
+    '--replay-user-messages',
+  ]);
+  expect(session.prompt).toBe(
+    JSON.stringify({ type: 'user', message: { role: 'user', content: 'initial\ntext' } }) + '\n',
+  );
+  expect(invocation.args).toEqual(['-p', '--label', 'fixture']);
+  await session.close();
 });

@@ -78,6 +78,7 @@ export async function restoreDirtyFilesFromSnapshot(
 ): Promise<RestoreChangedFilesResult> {
   const restoredFiles: string[] = [];
   const conflictedFiles: string[] = [];
+  const removedPaths: string[] = [];
   const gitlinks = new Set(snapshot.gitlinks ?? []);
 
   for (const file of files) {
@@ -113,6 +114,7 @@ export async function restoreDirtyFilesFromSnapshot(
         await readConfinedEntry(projectDir, file);
         const entry = await entryToRestore(projectDir, snapshot, file, store);
         await writeConfinedEntry(projectDir, file, entry, assertUnchanged);
+        if (entry.kind === 'absent') removedPaths.push(file);
       }
       restoredFiles.push(file);
     } catch (err) {
@@ -121,5 +123,5 @@ export async function restoreDirtyFilesFromSnapshot(
       conflictedFiles.push(file);
     }
   }
-  return { restoredFiles, conflictedFiles };
+  return { restoredFiles, conflictedFiles, removedPaths };
 }

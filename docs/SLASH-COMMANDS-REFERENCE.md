@@ -18,7 +18,7 @@ Each command may also declare a `guard`, which returns one true sentence when th
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts`; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
-The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 22 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
+The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 23 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
 A composer line is a slash command only when its first word is `/name` without another `/`; `/Users/me/notes.md` goes to the planner as text.
 
@@ -168,15 +168,27 @@ Commands that act on the active run: stop, resume or end the run, manage the que
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`.
 - **See also**: `/resume`, `/run`.
 
+### `/steer <text>`
+
+- **Purpose**: Stop now and continue the run with a correction.
+- **Screens**: `workflow`.
+- **Args**: The correction text.
+- **Example**: `/steer Keep the current files and add the missing check.`
+- **Shortcut**: `ctrl+⏎` with text in the composer, also called `ctrl+enter`.
+- **Behavior**: `requestSteer` keeps the text until the stop completes, then continues with the text as the step's steer. A terminal without extended keys reports `ctrl+⏎` as Enter, which queues the message. `/steer` works in every terminal.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; `requestSteer` in `src/features/workflow/handlers.ts`.
+- **See also**: `/queue`, `/resume`, `/stop`.
+
 ### `/queue [show|clear]`
 
-- **Purpose**: Inspect or clear the planner message queue. Messages typed during a planner call are queued and replayed on the next planner turn if they are still pending delivery; `/queue` lets you see how many are pending and discard pending-undelivered entries if you change your mind.
+- **Purpose**: Inspect the queued count or clear messages awaiting first delivery to any seat.
 - **Screens**: `workflow`.
+- **Delivery**: Enter with text queues a message for the seat of the active stage. See [Message queue](./ENGINE.md#message-queue) for delivery rules, corrections, retries, and verdicts. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support and transport details.
 - **Args**: `show` (default when no argument is given) or `clear` (the `QUEUE_ACTIONS` tuple in `src/core/runtime/commands/types.ts`). Any other value prints `"Unknown queue command: <sub>. Use: /queue show or /queue clear"`.
 - **Example**: `/queue`, `/queue show`, `/queue clear`.
-- **Behavior**: `show` prints `"Queue is empty"` or `"Queue: N message(s) pending"`. `clear` prints `"Cleared N queued message(s)"` or `"Queue is already empty"`. Delivered native messages and already-drained history are not cleared.
+- **Behavior**: `show` prints `Queue is empty` or the shared byline copy, such as `2 queued for BUILD on T003`. `clear` prints `"Cleared N queued message(s)"` or `"Queue is already empty"`. The queued count drops at first delivery to any seat. A message that REVIEW read also goes to the next fix brief's BUILD call without changing the count again. Clearing removes only messages awaiting first delivery and preserves delivered history. See [Queued count](./ENGINE.md#queued-count).
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; depth read from `lifecycleStore.get().queueDepth`; clearing routes through `requestClearQueue()` in `src/features/workflow/handlers.ts`.
-- **See also**: `/stop`.
+- **See also**: `/steer`, `/stop`.
 
 ### `/run accept|reject`
 
@@ -365,6 +377,8 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 
 | Key | Action | Source |
 |---|---|---|
+| `Enter` with text | Queue a message for the active stage's seat while the run is live | composer submit handler |
+| `ctrl+⏎` with text | Stop now and continue with the text, like `/steer <text>` | composer submit handler, `requestSteer` |
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts` `handleWorkflowCtrlChords` |
 | `Esc` | Open the stop menu while a run is live; go home on a run at rest | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
@@ -479,7 +493,7 @@ Alphabetical, for fast lookup.
 - [`/home`](#home) — navigate to the home screen.
 - [`/image`](#image-pathlistremove) — attach, list, or remove images for the next planner call.
 - [`/palette`](#palette) — open the command palette.
-- [`/queue`](#queue-showclear) — inspect or clear the planner message queue.
+- [`/queue`](#queue-showclear) — inspect or clear messages awaiting first delivery to any seat.
 - [`/quit`](#quit) — exit the application.
 - [`/refresh`](#refresh) — re-run tool detection.
 - [`/resume`](#resume) — continue a paused or stopped run.
@@ -490,6 +504,7 @@ Alphabetical, for fast lookup.
 - [`/sidebar`](#sidebar) — show or hide the workflow sidebar.
 - [`/stop`](#stop) — open the inline session-options menu.
 - [`/skills`](#skills) — pick skills for every seat, bare or by id.
+- [`/steer`](#steer-text) — stop now and continue with a correction.
 - [`/tasks`](#tasks) — show the brief list.
 - [`/usage`](#usage) — open token and monetary details for the run.
 

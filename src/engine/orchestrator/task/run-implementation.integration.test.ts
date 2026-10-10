@@ -1,6 +1,12 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
-
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CONFIRM_PHRASE } from '../../../core/approval/types.js';
@@ -14,19 +20,29 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { transitionAndSave } from '../state-ops.js';
-import { enqueueUserMessage } from '../queue/submit.js';
+import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { recordedApiCreatedPaths } from '../evidence/task.js';
+import { makeImplementerRetryInvoker } from '../escalation/make-implementer-retry-invoker.js';
+import { buildLanguageContext } from '../../spec/prompts/language-context.js';
+import { addUsageAndSave, transitionAndSave } from '../state-ops.js';
+import { raiseApiApplyRecovery } from '../evidence/persistence.js';
+import { createQueueHandler, enqueueUserMessage } from '../queue/submit.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import {
   makeBusRecorder,
   makeCallbacks,
   makeCopyingIsolation,
   makeImplementer,
+  makePlanner,
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { createContinuationHolder } from '../continuation.js';
-import type { RunIsolation } from '../isolation/types.js';
-import type { Implementer, ImplementerOptions } from '../../implementers/types.js';
+import type { AttemptWorkspace, RunIsolation } from '../isolation/types.js';
+import type { Implementer, ImplementerOptions, RetryOptions } from '../../implementers/types.js';
+import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
+import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
+import { createWriteSequencer } from '../serial-executor.js';
+import type { InvokeOpts } from '../../implementers/types.js';
 import {
   customRunnerSecurityPosture,
   type ConfiguredCustomRunner,
@@ -618,6 +634,88 @@ describe('runImplementation correction at a stop', () => {
 
   const stopped = () => new DOMException('The operation was aborted', 'AbortError');
 
+  it.each(['throw', 'return'] as const)(
+    'counts completed calls once after an interrupted correction exits by %s and continues',
+    async (exit) => {
+      const { projectDir } = setupProject(`correction-interrupted-${exit}`);
+      const ref = { projectDir, sessionId: `correction-interrupted-${exit}` };
+      ensureSessionDir(projectDir, ref.sessionId);
+      const task = makeTask({ id: 'T063', action: 'create', suggestedFiles: ['src/retry.ts'] });
+      const state = makeImplState([task]);
+      saveState(ref, state);
+      const { bus } = makeBusRecorder();
+      const holder: { abort: { call: (() => void) | null } } = { abort: { call: null } };
+      const calls: ImplementerOptions[] = [];
+      const implementer = makeImplementer({
+        implement: async (call) => {
+          calls.push(call);
+          if (calls.length <= 2) {
+            enqueueUserMessage({
+              ...ref,
+              state,
+              bus,
+              phase: 'implementing',
+              message: plainUserMessage(`correction ${calls.length}`),
+            });
+            return {
+              success: true,
+              output: 'completed',
+              usage:
+                calls.length === 1
+                  ? { inputTokens: 10, outputTokens: 4 }
+                  : { inputTokens: 7, outputTokens: 5 },
+            };
+          }
+          if (calls.length === 3) {
+            call.onOutput?.('partial correction');
+            holder.abort.call?.();
+            if (exit === 'throw') throw stopped();
+            return { success: false, output: '', usage: { inputTokens: 2, outputTokens: 1 } };
+          }
+          return { success: true, output: 'continued', usage: { inputTokens: 3, outputTokens: 2 } };
+        },
+      });
+      const { wctx, abort } = stoppingWctx({ ...ref, implementer });
+      holder.abort = abort;
+      const continuation = vi.fn(async () => {
+        expect(loadState(ref)?.tokenUsage.implementerInput).toBe(17);
+        return plainUserMessage(correction);
+      });
+      wctx.bus = bus;
+      wctx.callbacks.onContinuationNeeded = continuation;
+
+      try {
+        const result = await runImplementation({
+          wctx,
+          task,
+          state,
+          taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+          setTrackedState: vi.fn(),
+          recordApprovalDenial: vi.fn(),
+        });
+        expect(calls).toHaveLength(4);
+        expect(continuation).toHaveBeenCalledTimes(1);
+        expect(calls[3]?.continuation?.partial).toContain('partial correction');
+        expect(calls[3]?.continuation?.steer).toContain(correction);
+        expect(result.state.attempt).toBe(state.attempt);
+        expect(result.implResult.usage).toEqual({ inputTokens: 3, outputTokens: 2 });
+        const accounted = addUsageAndSave(
+          { ...ref, bus },
+          result.state,
+          'implementer',
+          result.implResult.usage,
+        );
+        expect(accounted.tokenUsage).toMatchObject({
+          implementerInput: 20,
+          implementerOutput: 11,
+        });
+        expect(loadState(ref)?.tokenUsage).toEqual(accounted.tokenUsage);
+      } finally {
+        await wctx.isolation.dispose();
+      }
+    },
+  );
+
   it('persists the correction when it is given, beside usage written after it', async () => {
     const { projectDir } = setupProject('stop-correction-usage');
     const sessionId = 'stop-correction-usage-session';
@@ -1093,7 +1191,396 @@ describe('runImplementation fix tasks', () => {
   });
 });
 
+describe.each(['implementation', 'retry-invoker'] as const)(
+  '%s file-bundle corrections',
+  (caller) => {
+    it('revokes every removed creation after multi-file correction failure recovery', async () => {
+      const { projectDir } = setupProject(`bundle-rollback-${caller}`);
+      const ref = { projectDir, sessionId: `bundle-rollback-${caller}` };
+      ensureSessionDir(projectDir, ref.sessionId);
+      const locked = join(projectDir, 'src/locked');
+      mkdirSync(locked, { recursive: true });
+      chmodSync(locked, 0o555);
+      const task = makeTask({
+        id: 'T076',
+        action: 'create',
+        suggestedFiles: ['src/a.ts', 'src/b.ts', 'src/locked/c.ts'],
+      });
+      const state = makeImplState([task], {
+        workspace: { kind: 'checkout', path: projectDir, base: { snapshotId: 'base', head: null } },
+      });
+      saveState(ref, state);
+      const { bus } = makeBusRecorder();
+      let calls = 0;
+      const invoke = vi.fn(async () => {
+        calls += 1;
+        if (calls === 1)
+          enqueueUserMessage({
+            ...ref,
+            state,
+            bus,
+            phase: 'implementing',
+            message: plainUserMessage('also create B and C'),
+          });
+        return makeRunnerCallResult({
+          status: 'completed',
+          text: JSON.stringify({
+            version: 1,
+            files:
+              calls === 1
+                ? [{ path: 'src/a.ts', action: 'create', content: 'A\n' }]
+                : [
+                    { path: 'src/b.ts', action: 'create', content: 'B\n' },
+                    { path: 'src/locked/c.ts', action: 'create', content: 'C\n' },
+                  ],
+          }),
+        });
+      });
+      const implementer = createImplementerBase(
+        makeBaseConfig({ outputContract: 'file-bundle-v1', invoke }),
+      );
+      const wctx = makeWctx({ ...ref, implementer, bus });
+      const snapshot = await getChangedFilesSnapshot(projectDir);
+      try {
+        const initialWorkspace =
+          caller === 'retry-invoker'
+            ? await wctx.isolation.acquire({ role: 'implementer', config: wctx.config })
+            : undefined;
+        const invoker = makeImplementerRetryInvoker({
+          context: wctx.context,
+          kind: 'local',
+          sessionId: ref.sessionId,
+          languageContext: buildLanguageContext('typescript'),
+          phase: 'implementing',
+        });
+        const run =
+          caller === 'implementation'
+            ? await runImplementation({
+                wctx,
+                task,
+                state,
+                taskStartSnapshot: snapshot,
+                setTrackedState: vi.fn(),
+                recordApprovalDenial: vi.fn(),
+              })
+            : undefined;
+        const result =
+          run?.implResult ??
+          (await invoker({
+            task,
+            lastError: 'validation failed',
+            attempts: state.attempt,
+            projectDir,
+            implementer,
+            config: wctx.config,
+            createdByThisTask: [],
+            seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
+          }));
+        const workspace = run?.workspace ?? initialWorkspace;
+        if (workspace === undefined) throw new Error('Missing attempt workspace');
+        expect(result.applyResult).toMatchObject({
+          status: 'partial',
+          failedPath: 'src/locked/c.ts',
+          applied: [{ path: 'src/b.ts', action: 'create' }],
+        });
+        expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual(['src/a.ts', 'src/b.ts']);
+        const receipt = result.applyResult;
+        if (receipt?.status !== 'partial') throw new Error('Expected partial application');
+        await raiseApiApplyRecovery({
+          wctx,
+          state: loadState(ref) ?? state,
+          task,
+          result: receipt,
+          workspace,
+        });
+
+        expect(existsSync(join(projectDir, 'src/a.ts'))).toBe(false);
+        expect(existsSync(join(projectDir, 'src/b.ts'))).toBe(false);
+        expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual([]);
+        expect(readEvidenceLedger(ref)?.tasks[0]?.apiApply?.revertedPaths).toEqual([
+          'src/a.ts',
+          'src/b.ts',
+        ]);
+
+        writeFileSync(join(projectDir, 'src/a.ts'), 'operator replacement\n');
+        const coldInvoke = vi.fn(async () =>
+          makeRunnerCallResult({ status: 'completed', text: '' }),
+        );
+        const coldImplementer = createImplementerBase(
+          makeBaseConfig({ outputContract: 'file-bundle-v1', invoke: coldInvoke }),
+        );
+        const cold = await invoker({
+          task,
+          lastError: 'partial application',
+          attempts: state.attempt,
+          projectDir,
+          implementer: coldImplementer,
+          config: wctx.config,
+          createdByThisTask: [],
+          seat: {
+            ref: { ...ref, bus },
+            state: loadState(ref) ?? state,
+            usageCategory: 'implementer',
+          },
+        });
+        expect(cold.applyResult).toMatchObject({ status: 'rejected', code: 'baseline-conflict' });
+        expect(coldInvoke).not.toHaveBeenCalled();
+        expect(readFileSync(join(projectDir, 'src/a.ts'), 'utf8')).toBe('operator replacement\n');
+      } finally {
+        chmodSync(locked, 0o755);
+        await wctx.isolation.dispose();
+      }
+    });
+
+    it.each(['modify', 'transport-failure', 'modify-then-failure'] as const)(
+      'keeps creation evidence through %s and a cold continuation',
+      async (ending) => {
+        const { projectDir } = setupProject(`bundle-correction-${caller}-${ending}`);
+        const ref = { projectDir, sessionId: `bundle-${caller}-${ending}` };
+        ensureSessionDir(projectDir, ref.sessionId);
+        const task = makeTask({ id: 'T075', suggestedFiles: ['src/owned.ts'], action: 'create' });
+        const state = makeImplState([task], {
+          workspace: {
+            kind: 'checkout',
+            path: projectDir,
+            base: { snapshotId: 'base', head: null },
+          },
+        });
+        saveState(ref, state);
+        const taskStartSnapshot = await getChangedFilesSnapshot(projectDir);
+        const { bus } = makeBusRecorder();
+        const requests: InvokeOpts[] = [];
+        const invoke = vi.fn(async (request: InvokeOpts) => {
+          requests.push(request);
+          const count = requests.length;
+          if (count > 1) {
+            expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual(['src/owned.ts']);
+            expect(request.prompt).toContain('keep the ownership proof');
+          }
+          if (count === 1 || (ending === 'modify-then-failure' && count === 2)) {
+            enqueueUserMessage({
+              ...ref,
+              state,
+              bus,
+              phase: 'implementing',
+              message: plainUserMessage(
+                count === 1 ? 'keep the ownership proof' : 'check it once more',
+              ),
+            });
+          }
+          if (
+            (ending === 'transport-failure' && count === 2) ||
+            (ending === 'modify-then-failure' && count === 3)
+          ) {
+            return makeRunnerCallResult({
+              status: 'failed',
+              text: '',
+              error: { code: 'transport-error', message: 'connection lost' },
+              usage: { inputTokens: 10, outputTokens: 4 },
+            });
+          }
+          return makeRunnerCallResult({
+            status: 'completed',
+            text: JSON.stringify({
+              version: 1,
+              files: [
+                {
+                  path: 'src/owned.ts',
+                  action: count === 1 ? 'create' : 'modify',
+                  content: `export const owned = ${count};\n`,
+                },
+              ],
+            }),
+            usage: { inputTokens: 10, outputTokens: 4 },
+          });
+        });
+        const implementer = createImplementerBase(
+          makeBaseConfig({ outputContract: 'file-bundle-v1', invoke }),
+        );
+        const wctx = makeWctx({ ...ref, implementer, bus });
+        const call = async (activeImplementer: Implementer) => {
+          const current = loadState(ref) ?? state;
+          if (caller === 'retry-invoker') {
+            const invoker = makeImplementerRetryInvoker({
+              context: wctx.context,
+              kind: 'local',
+              sessionId: ref.sessionId,
+              languageContext: buildLanguageContext('typescript'),
+              phase: 'implementing',
+            });
+            return invoker({
+              task,
+              lastError: 'validation failed',
+              attempts: current.attempt,
+              projectDir,
+              implementer: activeImplementer,
+              config: wctx.config,
+              fileIgnoreProjectDir: projectDir,
+              createdByThisTask: recordedApiCreatedPaths(ref, task, projectDir),
+              seat: { ref: { ...ref, bus }, state: current, usageCategory: 'implementer' },
+            });
+          }
+          const result = await runImplementation({
+            wctx: { ...wctx, implementer: activeImplementer },
+            task,
+            state: current,
+            taskStartSnapshot,
+            setTrackedState: vi.fn(),
+            recordApprovalDenial: vi.fn(),
+          });
+          await result.workspace.retain?.();
+          return result.implResult;
+        };
+
+        try {
+          const result = await call(implementer);
+          expect(invoke).toHaveBeenCalledTimes(ending === 'modify-then-failure' ? 3 : 2);
+          expect(result.success).toBe(ending === 'modify');
+          expect(result.usage).toEqual(
+            ending === 'modify-then-failure'
+              ? { inputTokens: 30, outputTokens: 12 }
+              : { inputTokens: 20, outputTokens: 8 },
+          );
+          expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual(['src/owned.ts']);
+          const receipt = readEvidenceLedger(ref)?.tasks.find(
+            (entry) => entry.id === task.id,
+          )?.apiApply;
+          expect(receipt?.applied[0]).toMatchObject({
+            path: 'src/owned.ts',
+            action: ending === 'transport-failure' ? 'create' : 'modify',
+          });
+          expect(readFileSync(join(projectDir, 'src/owned.ts'), 'utf8')).toBe(
+            `export const owned = ${ending === 'transport-failure' ? 1 : 2};\n`,
+          );
+          expect(
+            loadState(ref)?.messageQueue.every(
+              (message) => message.deliveredTo?.implementer !== undefined,
+            ),
+          ).toBe(true);
+
+          const coldInvoke = vi.fn(async () =>
+            makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify({
+                version: 1,
+                files: [
+                  { path: 'src/owned.ts', action: 'modify', content: 'export const owned = 4;\n' },
+                ],
+              }),
+            }),
+          );
+          const coldResult = await call(
+            createImplementerBase(
+              makeBaseConfig({ outputContract: 'file-bundle-v1', invoke: coldInvoke }),
+            ),
+          );
+          expect(coldResult, JSON.stringify(coldResult)).toMatchObject({ success: true });
+          expect(coldInvoke).toHaveBeenCalledTimes(1);
+          expect(readFileSync(join(projectDir, 'src/owned.ts'), 'utf8')).toBe(
+            'export const owned = 4;\n',
+          );
+        } finally {
+          await wctx.isolation.dispose();
+        }
+      },
+    );
+  },
+);
+
 describe('runImplementation corrections against the persisted head', () => {
+  it.each(['implement', 'retry'] as const)(
+    'delivers an attachment received during the first %s call in a correction pass before returning',
+    async (firstCall) => {
+      const { projectDir } = setupProject('call-boundary-correction');
+      const sessionId = 'call-boundary-correction-session';
+      ensureSessionDir(projectDir, sessionId);
+      const task = makeTask({ id: 'T074', suggestedFiles: ['src/corrected.ts'], action: 'create' });
+      const state = makeImplState([task], { attempt: 2 });
+      saveState({ projectDir, sessionId }, state);
+      const message = attachedMessage(projectDir);
+      const imagePath = join(projectDir, 'reference.png');
+      writeFileSync(imagePath, 'image fixture');
+      message.images = [
+        {
+          id: 'correction-shot',
+          kind: 'image',
+          path: imagePath,
+          mimeType: 'image/png',
+          sizeBytes: 13,
+        },
+      ];
+      message.attachedInputs.push({ kind: 'image', path: imagePath });
+      const snapshot = await getChangedFilesSnapshot(projectDir);
+      const { bus, events } = makeBusRecorder();
+      const calls: ImplementerOptions[] = [];
+      const implementer = makeImplementer({
+        implement: vi.fn(async (call: ImplementerOptions) => {
+          calls.push(call);
+          if (calls.length === 1) {
+            mkdirSync(join(call.projectDir, 'src'), { recursive: true });
+            writeFileSync(
+              join(call.projectDir, 'src/corrected.ts'),
+              'export const corrected = 1;\n',
+            );
+            enqueueUserMessage({
+              projectDir,
+              sessionId,
+              state,
+              bus,
+              phase: 'implementing',
+              message,
+            });
+            return { success: true, output: 'first', usage: { inputTokens: 10, outputTokens: 4 } };
+          }
+          return { success: true, output: 'corrected', usage: { inputTokens: 7, outputTokens: 5 } };
+        }),
+      });
+      if (firstCall === 'retry') implementer.retry = vi.fn((call) => implementer.implement(call));
+      const wctx = makeWctx({ projectDir, sessionId, implementer, bus });
+
+      const result = await runImplementation({
+        wctx,
+        task,
+        state,
+        taskStartSnapshot: snapshot,
+        setTrackedState: vi.fn(),
+        recordApprovalDenial: vi.fn(),
+        ...(firstCall === 'retry' && { retryError: 'previous check failed' }),
+      });
+
+      expect(implementer.implement).toHaveBeenCalledTimes(2);
+      if (firstCall === 'retry') expect(implementer.retry).toHaveBeenCalledTimes(1);
+      const pass = calls[1];
+      expect(pass?.task.id).toBe(task.id);
+      expect(pass?.continuation?.steer).toContain(message.text);
+      expect(pass?.continuation?.steer).toContain(`[image:correction-shot] = ${imagePath}`);
+      expect(pass?.images).toEqual(message.images);
+      expect(pass?.continuation?.partial).toBeUndefined();
+      expect(pass?.continuation?.extra).toContain('src/corrected.ts');
+      expect(pass?.allowNoChange).toBe(true);
+      expect(pass?.onOutput).toBe(calls[0]?.onOutput);
+      expect(pass?.approveWrite).toBe(calls[0]?.approveWrite);
+      expect(result.implResult).toMatchObject({
+        success: true,
+        output: 'corrected',
+        usage: { inputTokens: 17, outputTokens: 9 },
+      });
+      for (const finalState of [result.state, loadState({ projectDir, sessionId })]) {
+        expect(finalState?.attempt).toBe(2);
+        expect(finalState?.messageQueue[0]).toMatchObject(message);
+        expect(finalState?.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
+        expect(finalState?.lineages?.T074?.corrections).toEqual([
+          expect.stringContaining(message.text),
+        ]);
+      }
+      expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+        expect.objectContaining({ seat: 'build', taskId: task.id, count: 1 }),
+      ]);
+      result.workspace.cleanup();
+      await wctx.isolation.dispose();
+    },
+  );
+
   it.each(['seed', 'parked'] as const)(
     'keeps exact attachment text from a %s correction beside saved corrections',
     async (route) => {
@@ -1238,23 +1725,131 @@ describe('runImplementation corrections against the persisted head', () => {
       phase: 'implementing',
       bus,
     }).state;
+    const isolation = makeCopyingIsolation({ projectDir, sessionId });
+    const acquire = isolation.acquire;
     let cleared = false;
-    const setTrackedState = vi.fn((tracked: WorkflowState) => {
-      if (cleared) return;
+    isolation.acquire = async (opts) => {
+      const workspace = await acquire(opts);
+      clearPendingQueue({ projectDir, sessionId, state, bus });
       cleared = true;
-      clearPendingQueue({ projectDir, sessionId, state: tracked, bus });
-    });
+      return workspace;
+    };
 
-    await runImplementation({
-      wctx: makeWctx({ projectDir, sessionId, implementer: makeImplementer(), bus }),
+    const result = await runImplementation({
+      wctx: makeWctx({ projectDir, sessionId, implementer: makeImplementer(), bus, isolation }),
       task,
       state,
       taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-      setTrackedState,
+      setTrackedState: vi.fn(),
       recordApprovalDenial: vi.fn(),
     });
 
     expect(cleared).toBe(true);
     expect(loadState({ projectDir, sessionId })?.lineages?.T072?.corrections).toBeUndefined();
+    result.workspace.cleanup();
+    await isolation.dispose();
   });
+});
+
+describe('BUILD steering wiring', () => {
+  it.each([undefined, 'checks failed'])(
+    'passes one port to the initial call and correction with retryError=%s',
+    async (retryError) => {
+      const { projectDir } = setupProject('build-steering');
+      const ref = { projectDir, sessionId: 'build-steering-session' };
+      ensureSessionDir(projectDir, ref.sessionId);
+      const task = makeTask();
+      const state = makeImplState([task]);
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+      const steering = createSteeringPort();
+      const delivery = Promise.withResolvers<SteerOutcome>();
+      const acquired = Promise.withResolvers<void>();
+      const detach = steering.attach({
+        callId: 'prior-build',
+        role: 'implementer',
+        taskId: task.id,
+        send: () => delivery.promise,
+      });
+      const handler = createQueueHandler({
+        ...ref,
+        steering,
+        bus,
+        planner: makePlanner(),
+        serialize: createWriteSequencer(),
+        getState: () => state,
+        setState: () => {},
+      });
+      await handler(plainUserMessage('keep this correction on retries'), state.phase);
+      detach();
+      const calls: ImplementerOptions[] = [];
+      const run = async (call: ImplementerOptions) => {
+        calls.push(call);
+        if (calls.length === 1)
+          enqueueUserMessage({
+            ...ref,
+            state,
+            bus,
+            message: plainUserMessage('keep the API'),
+            phase: state.phase,
+          });
+        return { success: true, output: '' };
+      };
+      const implement = vi.fn(run);
+      const retry = vi.fn((call: RetryOptions) => run(call));
+      const workspace: AttemptWorkspace = {
+        projectDir: ref.projectDir,
+        sandboxEnv: {},
+        snapshot: { head: GIT_EMPTY_TREE_HASH, files: [], dirtyFileContents: {} },
+        targetBaseline: undefined,
+        cleanup: () => {},
+        changedFiles: async () => [],
+        revert: async () => {},
+      };
+      const isolation: RunIsolation = {
+        open: async () => ({
+          kind: 'checkout',
+          projectDir: ref.projectDir,
+          head: null,
+          keptFiles: [],
+        }),
+        acquire: async () => {
+          acquired.resolve();
+          return workspace;
+        },
+        dispose: async () => {},
+      };
+      const running = runImplementation({
+        wctx: makeWctx({
+          ...ref,
+          bus,
+          steering,
+          isolation,
+          implementer: makeImplementer({ implement, retry }),
+        }),
+        task,
+        state,
+        taskStartSnapshot: workspace.snapshot,
+        setTrackedState: () => {},
+        recordApprovalDenial: () => {},
+        retryError,
+      });
+      await acquired.promise;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      const callsBeforeDelivery = calls.length;
+      delivery.resolve('delivered');
+      const result = await running;
+      expect(callsBeforeDelivery).toBe(0);
+      expect(result.implResult.success).toBe(true);
+      expect(calls).toHaveLength(2);
+      for (const call of calls) expect(call.steering).toBe(steering);
+      expect(calls[0]?.continuation?.steer).toContain('keep this correction on retries');
+      expect(events).toContainEqual(
+        expect.objectContaining({ type: 'queue_drained', via: 'mid-call' }),
+      );
+      expect(calls[1]?.continuation?.steer).toContain('keep the API');
+      expect(retry).toHaveBeenCalledTimes(retryError === undefined ? 0 : 1);
+      expect(steering.current()).toBeNull();
+    },
+  );
 });

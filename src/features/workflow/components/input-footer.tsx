@@ -6,10 +6,12 @@ import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
-import { getActiveRailStage } from '../../../core/rail-stages.js';
+import { getActiveRailStage, phaseStage } from '../../../core/rail-stages.js';
 import { deriveLiveStatus, PAUSED_LIVE_STATUS_VERB } from '../display/live-activity.js';
 import { colorForTone } from '../display/tone-color.js';
 import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
+import { getChromeContentWidth } from '../layout/chrome-rows.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
 import {
   selectRunningBrief,
@@ -19,7 +21,11 @@ import {
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { useStopByline } from '../stop/use-stop-byline.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
-import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../engine/events/workflow-cancel.js';
@@ -33,6 +39,7 @@ import { configuredReviewerRunner } from '../../../core/config/accessors/reviewe
 import { formatSeatIdentity } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { queueCopy } from '../queue-copy.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
@@ -64,6 +71,9 @@ export function InputFooter({
     s.screen === 'workflow' && s.execution.kind === 'local'
       ? s.execution.prepared.runtime.worktreeName
       : undefined,
+  );
+  const atRestStatus = routerStore.use((s) =>
+    s.screen === 'workflow' && s.execution.kind === 'at-rest' ? s.run.status.kind : null,
   );
   const taskListView = selectTaskListView(tasks);
   const stopped = useStopByline();
@@ -190,27 +200,39 @@ export function InputFooter({
                       }
                     : { lead: stageLead, leadColor: null, hintText: null };
 
-  // During a brief the composer is queueing for the boundary that brief owns, so the footer names
-  // it: "queued for after T003" says where the text lands, where a bare count would not. Outside a
-  // brief — planning, final review, a run at rest — the queue is the planner's or reviewer's and
-  // the count is the whole truth.
   const runningBriefId = selectRunningBrief(tasks, lifecycle.phase).current?.id ?? null;
-  const queuedText =
-    lifecycle.queueDepth > 0
-      ? runningBriefId !== null
-        ? `queued for after ${runningBriefId}`
-        : `${lifecycle.queueDepth} queued`
+  const seat = phaseStage(lifecycle.phase);
+  const queuedCopy =
+    lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
+      ? queueCopy({
+          seat,
+          taskId: runningBriefId,
+          count: lifecycle.queueDepth,
+        })
       : null;
 
-  const byline = buildInputFooterByline({
+  const atRestByline = givenByline !== undefined && stopped === null;
+  const bylineLead = atRestByline ? `${' '.repeat(MARK_SLOT_CELLS)}${givenByline}` : lead;
+  const bylineInput = {
     // Raw width in; the builder owns the framed text measure.
     cols: Math.max(1, width ?? cols),
-    lead,
-    leadClock,
-    hintText,
-    queuedText,
-    worktreeLabel: worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
-  });
+    lead:
+      atRestByline && queuedCopy !== null
+        ? truncateTerminalDisplayText(
+            bylineLead,
+            getChromeContentWidth(width ?? cols) -
+              getTerminalCellWidth(`${SOFT_SEP}${queuedCopy.shortByline}`),
+          )
+        : bylineLead,
+    leadClock: atRestByline ? undefined : leadClock,
+    hintText: atRestByline ? null : hintText,
+    queuedText: queuedCopy?.byline ?? null,
+    worktreeLabel: !atRestByline && worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
+  };
+  let byline = buildInputFooterByline(bylineInput);
+  if (queuedCopy !== null && byline.queued.length === 0) {
+    byline = buildInputFooterByline({ ...bylineInput, queuedText: queuedCopy.shortByline });
+  }
 
   if (checkingStage !== null) {
     return (
@@ -222,23 +244,14 @@ export function InputFooter({
     );
   }
 
-  // The only byline with no pip of its own: it keeps an empty mark slot and opens its words on the
-  // text column, where the live bylines' words and the legend's keys open too.
-  if (givenByline !== undefined && stopped === null) {
-    return (
-      <Box width="100%" height={1} flexShrink={0}>
-        <Text color={t.textDim} wrap="truncate-end">
-          {' '.repeat(MARK_SLOT_CELLS)}
-          {givenByline}
-        </Text>
-      </Box>
-    );
-  }
-
   return (
     <Box width="100%" height={1} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
-        {leadColor !== null ? <Text color={leadColor}>{byline.lead}</Text> : byline.lead}
+        {!atRestByline && leadColor !== null ? (
+          <Text color={leadColor}>{byline.lead}</Text>
+        ) : (
+          byline.lead
+        )}
         {byline.hint}
         {byline.queued.length > 0 ? <Text color={t.info}>{byline.queued}</Text> : null}
         {byline.rest}

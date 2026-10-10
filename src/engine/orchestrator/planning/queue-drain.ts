@@ -2,14 +2,16 @@ import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflo
 import type { EventBus } from '../../events/types.js';
 import { drainQueue } from '../queue/drain.js';
 import { formatDrainedMessages } from '../queue/prompt.js';
+import { settleMidCallDeliveries } from '../queue/mid-call.js';
 
-export function drainAndFormat(
+export async function drainAndFormat(
   projectDir: string,
   sessionId: string,
   state: WorkflowState,
   bus: EventBus,
-): { state: WorkflowState; prefix: string; messages: QueuedMessage[] } {
-  const drain = drainQueue({ projectDir, sessionId, state, bus });
+): Promise<{ state: WorkflowState; prefix: string; messages: QueuedMessage[] }> {
+  await settleMidCallDeliveries({ projectDir, sessionId });
+  const drain = drainQueue({ projectDir, sessionId, state, bus, seat: 'plan' });
   return {
     state: drain.state,
     prefix: formatDrainedMessages(drain.messages),

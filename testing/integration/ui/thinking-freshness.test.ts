@@ -3,7 +3,10 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { makeRunnerCallStalled } from '#testing/helpers/events/runner-call.js';
 import { taskId } from '../../../src/core/schemas/task.js';
 import { projectRunnerCallEvents } from '../../../src/engine/calls/event-projection.js';
-import { createStreamHandler } from '../../../src/engine/runners/claude/stream.js';
+import { createRunnerCallRecorder } from '../../../src/engine/calls/recorder.js';
+import { claudeCodeImplementerAdapter } from '../../../src/engine/runners/cli-tools/claude-code.js';
+import { recordCliProtocolEvent } from '../../../src/engine/runners/cli-tools/process-invoke.js';
+import { createCliTextForwarder } from '../../../src/engine/runners/invoke-cli-adapter.js';
 import { deriveBuildProgress } from '../../../src/features/workflow/display/build-progress.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
@@ -21,14 +24,12 @@ function freshness(now: number): string {
   }).freshness;
 }
 
-/**
- * Claude Code frames through the Claude stream handler, its call recorder and the event projection
- * into the stores. A live build call parses them in the claude-code CLI adapter instead; both end
- * in the same recorder heartbeat.
- */
 function claudeBuildCall(): (frame: Record<string, unknown>) => void {
   let sequence = 0;
-  const { handleLine } = createStreamHandler({
+  const adapter = claudeCodeImplementerAdapter;
+  const parse = adapter.createParser?.() ?? adapter.parse;
+  const forwardText = createCliTextForwarder(undefined);
+  const recorder = createRunnerCallRecorder({
     context: {
       callId: 'thinking-freshness',
       role: 'implementer',
@@ -36,8 +37,7 @@ function claudeBuildCall(): (frame: Record<string, unknown>) => void {
       runnerName: 'claude-code',
       taskId: taskId('T001'),
     },
-    onOutput: () => {},
-    onCallEvent: (event) => {
+    onEvent: (event) => {
       for (const projected of projectRunnerCallEvents(event, {
         rootDir: '/project',
         phase: 'implementing',
@@ -45,9 +45,14 @@ function claudeBuildCall(): (frame: Record<string, unknown>) => void {
       })) {
         addEvent(projected);
       }
+      if (event.type === 'call_text_delta') forwardText(event);
     },
   });
-  return (frame) => handleLine(JSON.stringify({ session_id: 'sess-thinking', ...frame }));
+  return (frame) => {
+    for (const event of parse(JSON.stringify({ session_id: 'sess-thinking', ...frame }))) {
+      recordCliProtocolEvent(recorder, event);
+    }
+  };
 }
 
 describe('build block freshness while Claude Code thinks', () => {

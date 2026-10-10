@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig, defaultContext } from '#testing/helpers/factories/config.js';
@@ -43,6 +43,68 @@ afterEach(() => {
 });
 
 describe('api implementer — OpenAI-compatible path', () => {
+  it.each(['implement', 'retry'] as const)(
+    'sends structured images in the outgoing %s request beside the correction text',
+    async (method) => {
+      const imagePath = join(projectDir, 'reference.png');
+      const png = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=',
+        'base64',
+      );
+      writeFileSync(imagePath, png);
+      const bodies: unknown[] = [];
+      fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        if (request.method === 'POST') bodies.push(JSON.parse(await request.text()));
+        return makeOpenAiSseResponse([
+          { content: bundle('src/image.ts', 'create', 'export const image = true;\n') },
+        ]);
+      });
+      const config = makeConfig({ implementer: remoteImplementerSeat });
+      const implementer = createApiImplementer(config);
+      const call = {
+        task: makeTask({ suggestedFiles: ['src/image.ts'], action: 'create' }),
+        projectDir,
+        config,
+        context: defaultContext,
+        onOutput: vi.fn(),
+        images: [
+          {
+            id: 'reference',
+            kind: 'image' as const,
+            path: imagePath,
+            mimeType: 'image/png',
+            sizeBytes: png.length,
+          },
+        ],
+        continuation: { steer: `Use this screenshot.\n[image:reference] = ${imagePath}` },
+      };
+      const result =
+        method === 'implement'
+          ? await implementer.implement(call)
+          : await implementer.retry({ ...call, kind: 'local', attempt: 1, error: 'fix layout' });
+
+      expect(result.success).toBe(true);
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toMatchObject({
+        messages: [
+          { role: 'system', content: expect.any(String) },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: expect.stringContaining(`[image:reference] = ${imagePath}`) },
+              {
+                type: 'image_url',
+                image_url: { url: `data:image/png;base64,${png.toString('base64')}` },
+              },
+            ],
+          },
+        ],
+      });
+      expect(readFileSync(join(projectDir, 'src/image.ts'), 'utf8')).toContain('image = true');
+    },
+  );
+
   it('reports the default local implementer unavailable when the endpoint refuses the connection, after contacting the model list', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
 

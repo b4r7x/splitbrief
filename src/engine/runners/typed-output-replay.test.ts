@@ -3,11 +3,10 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
-import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import type { RunnerCallResult } from '../calls/types.js';
 import { isRecord } from '../../utils/type-guards.js';
-import { createStreamHandler, finishClaudeStream } from './claude/stream.js';
 import { antigravityPlannerAdapter, antigravityProtocolEvents } from './cli-tools/antigravity.js';
-import { claudeProtocolEvents } from './cli-tools/claude-code.js';
+import { claudeCodePlannerAdapter } from './cli-tools/claude-code.js';
 import { codexPlannerAdapter, codexProtocolEvents } from './cli-tools/codex.js';
 import { extractLastJsonObject, requestTyped, type TypedSeatCall } from './typed-output.js';
 
@@ -61,23 +60,16 @@ async function replayedValue(input: { text: string; structured?: unknown }): Pro
   return result.value;
 }
 
-function claudeContext(): RunnerCallContext {
-  return {
-    callId: 'typed-output-replay-claude',
-    role: 'review',
-    backendKind: 'cli',
-    runnerName: 'claude',
-  };
-}
-
 describe('typed-output fixture replay', () => {
-  it('replays the recorded claude-code call through the protocol parser and the stream handler', async () => {
+  it('replays the recorded claude-code call through the production adapter', async () => {
     const lines = fixtureLines(CLAUDE_FIXTURE);
     const resultRecord = lines.map(jsonRecord).find((record) => record.type === 'result');
     if (resultRecord === undefined) throw new Error('claude fixture has no result record');
     const structuredOutput = resultRecord.structured_output;
 
-    const events = lines.flatMap((line) => claudeProtocolEvents(line));
+    const parse = claudeCodePlannerAdapter.createParser?.();
+    if (parse === undefined) throw new Error('Claude requires a stateful parser');
+    const events = lines.flatMap(parse);
     const results = events.filter((event) => event.type === 'result');
     expect(results).toHaveLength(1);
     const terminal = results[0];
@@ -87,12 +79,13 @@ describe('typed-output fixture replay', () => {
     expect(terminal.structured).toEqual(structuredOutput);
     expect(schema.parse(terminal.structured)).toEqual(expected);
 
-    const { state, handleLine } = createStreamHandler({
-      context: claudeContext(),
-      onOutput: () => {},
+    const streamed = claudeCodePlannerAdapter.terminal({
+      outputContract: claudeCodePlannerAdapter.outputContract,
+      events,
+      stderr: '',
+      exitCode: 0,
+      signal: null,
     });
-    for (const line of lines) handleLine(line);
-    const streamed = finishClaudeStream(state);
     expect(streamed.status).toBe('completed');
     if (streamed.status !== 'completed') throw new Error('expected a completed claude stream');
     expect(streamed.structured).toEqual(structuredOutput);

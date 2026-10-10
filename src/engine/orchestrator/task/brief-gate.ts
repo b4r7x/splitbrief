@@ -2,6 +2,8 @@ import type { Task } from '../../../core/schemas/task.js';
 import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import { dueCriterionIds } from '../../../core/review/verdict.js';
 import { fixCheckKeys } from '../../../core/review/fix-task.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
+import { rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import type { WorkflowContext } from '../types.js';
 import type { ValidationAcceptance } from '../validation/acceptance.js';
 import { checkFailureText } from '../validation/failure-text.js';
@@ -14,6 +16,9 @@ type BriefGateContext = Pick<
   WorkflowContext,
   'projectDir' | 'workspaceDir' | 'sessionId' | 'config' | 'bus' | 'signal' | 'validator'
 >;
+
+export const CORRECTION_AFTER_CHECKS =
+  'The operator sent a correction while the checks ran. It is in your steer: apply it, then hand back.';
 
 export async function runBriefGate(opts: {
   wctx: BriefGateContext;
@@ -78,6 +83,7 @@ export async function runBriefGate(opts: {
       return {
         state,
         stop: 'skipped' as const,
+        correction: false,
         acceptance: { accepted: false } satisfies ValidationAcceptance,
         error: '',
         diagnosis: '',
@@ -103,18 +109,25 @@ export async function runBriefGate(opts: {
         !settled.has(run.checkId) &&
         registry.get(run.checkId)?.required === true,
   );
-  const acceptance: ValidationAcceptance = {
-    accepted: failedChecks.length === 0 && !wctx.signal?.aborted,
-  };
+  const checksAccepted = failedChecks.length === 0 && !wctx.signal?.aborted;
+  if (checksAccepted) {
+    state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
+    track(state);
+  }
+  const correction = checksAccepted && state.messageQueue.some(isQueuedMessagePendingDelivery);
+  const acceptance: ValidationAcceptance = { accepted: checksAccepted && !correction };
   const carried = fixCheckKeys(task);
   const firstFailedCheck = failedChecks[0];
   return {
     state,
     stop: wctx.signal?.aborted ? ('aborted' as const) : undefined,
+    correction,
     acceptance,
-    error: failedChecks
-      .map((run) => checkFailureText(run, { carried: carried.get(run.checkId) }))
-      .join('\n\n'),
+    error: correction
+      ? CORRECTION_AFTER_CHECKS
+      : failedChecks
+          .map((run) => checkFailureText(run, { carried: carried.get(run.checkId) }))
+          .join('\n\n'),
     diagnosis: firstFailedCheck === undefined ? '' : `check ${firstFailedCheck.checkId} failed`,
   };
 }

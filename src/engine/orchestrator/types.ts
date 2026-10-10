@@ -12,6 +12,7 @@ import type { Summary } from '../../core/schemas/summary.js';
 import type { Validator } from './validation/types.js';
 import type { RunIsolation } from './isolation/types.js';
 import type { EventBus } from '../events/types.js';
+import type { SteeringPort } from '../calls/steering.js';
 import type {
   ApprovalReviewResult,
   ReviewChecksApprovalAnswer,
@@ -94,6 +95,7 @@ export interface WorkflowContext {
   callbacks: OrchestratorCallbacks;
   bus: EventBus;
   planner: Planner;
+  steering?: SteeringPort | undefined;
   reviewer: Reviewer;
   context: ProjectContext;
   implementer: Implementer;
@@ -142,6 +144,7 @@ export type PlannerCallbacksContext = Pick<
   | 'plannerContext'
   | 'detectedContextLength'
   | 'continuation'
+  | 'steering'
 > & {
   /** The run's skills block, as `context.skillsContext` carries it. */
   skillsContext?: string | undefined;

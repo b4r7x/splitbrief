@@ -1,3 +1,5 @@
+import { createSteeringPort, deliverToRunningCall, type SteerOutcome } from '../calls/steering.js';
+import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { writeFileSync, chmodSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -1409,3 +1411,44 @@ describe('createCliPlanner — typed calls', () => {
     expect(repairArgv).toContain('codex-typed-thread');
   });
 });
+
+itUnix.each(['planner', 'reviewer'] as const)(
+  'forwards steering through the %s typed call',
+  async (seat) => {
+    installClaudeSteeringShim(shimDir);
+    const port = createSteeringPort();
+    const sends: Promise<SteerOutcome>[] = [];
+    let started = false;
+    const planner = createCliPlanner(
+      makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      null,
+      {
+        trustedCli: {
+          ...trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+          installedVersion: '2.1.296',
+        },
+      },
+    );
+    const call = planner.typedCall({
+      projectDir,
+      seat,
+      callbacks: {
+        onOutput: () => {},
+        steering: port,
+        onCallEvent: (event) => {
+          if (event.type === 'call_tool_use_delta' && !started) {
+            started = true;
+            sends.push(deliverToRunningCall(port.current(), { id: 'forwarded', text: 'steer' }));
+          }
+        },
+      },
+    });
+    const result = await call.invoke({
+      prompt: 'initial',
+      schema: { json: { type: 'object' }, name: 'answer' },
+    });
+    expect(result.status).toBe('completed');
+    expect(await Promise.all(sends)).toEqual(['delivered']);
+    expect(port.current()).toBeNull();
+  },
+);

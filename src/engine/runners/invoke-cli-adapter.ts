@@ -1,3 +1,4 @@
+import type { SteeringPort } from '../calls/steering.js';
 import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import type {
@@ -8,11 +9,14 @@ import type {
 import { onlyAddsLineBreaks, reconcileFinalText } from '../streaming/final-text.js';
 import { invokeProcessCli, type ToolUseGuard } from './cli-tools/process-invoke.js';
 import { SANDBOX_CREDENTIAL_VALUES, sandboxCredentialValues } from './sandbox-credential-values.js';
+import { boundedRunnerCallMessage } from '../calls/status.js';
 
 type InvokeCliOptions = {
   adapter: CliPlannerAdapter | CliImplementerAdapter;
   invocation: CliInvocation;
   prompt: string;
+  steering?: SteeringPort | undefined;
+  installedVersion?: string | undefined;
   callContext: RunnerCallContext;
   onOutput?: ((text: string, opts?: { messageStart?: boolean | undefined }) => void) | undefined;
   onSessionId?: ((id: string) => void) | undefined;
@@ -38,28 +42,55 @@ export function toCliEnvironment(environment: NodeJS.ProcessEnv): Readonly<Recor
   return result;
 }
 
-export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCallResult> {
+export function createCliTextForwarder(
+  onOutput:
+    | ((
+        text: string,
+        opts: Parameters<NonNullable<InvokeCliOptions['onOutput']>>[1],
+        event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>,
+      ) => void)
+    | undefined,
+): (event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>) => void {
+  const forwardMain = createCliTextReconciler(onOutput);
+  const subagents = new Map<string, ReturnType<typeof createCliTextReconciler>>();
+  return (event) => {
+    if (event.subagentId === undefined) {
+      forwardMain(event);
+      return;
+    }
+    let forwardSubagent = subagents.get(event.subagentId);
+    if (forwardSubagent === undefined) {
+      forwardSubagent = createCliTextReconciler(onOutput);
+      subagents.set(event.subagentId, forwardSubagent);
+    }
+    forwardSubagent(event);
+  };
+}
+
+function createCliTextReconciler(
+  onOutput: Parameters<typeof createCliTextForwarder>[0],
+): ReturnType<typeof createCliTextForwarder> {
   let streamedText = '';
   let blockText = '';
   let nextAssistantStartsMessage = false;
   const stream = (
     text: string,
-    channel: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['channel'],
+    event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>,
   ): void => {
     if (text.length === 0) return;
     streamedText += text;
     blockText += text;
-    const messageStart = channel === 'assistant' && nextAssistantStartsMessage;
-    opts.onOutput?.(text, { messageStart });
+    const messageStart = event.channel === 'assistant' && nextAssistantStartsMessage;
+    onOutput?.(text, { messageStart }, event);
     if (messageStart) nextAssistantStartsMessage = false;
   };
   const forwardText = (event: Extract<RunnerCallEvent, { type: 'call_text_delta' }>): void => {
     if (!contributesToStreamedText(event.channel)) {
-      opts.onOutput?.(event.text);
+      onOutput?.(event.text, undefined, event);
       return;
     }
     if (event.semantics !== 'final') {
-      stream(event.text, event.channel);
+      stream(event.text, event);
       return;
     }
     // `final` text restates rather than extends: an assistant record restates
@@ -68,7 +99,7 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
     const alreadyStreamed = event.channel === 'result' ? streamedText : blockText;
     const reconciliation = reconcileFinalText(alreadyStreamed, event.text);
     if (reconciliation.kind === 'full' || reconciliation.kind === 'suffix') {
-      stream(reconciliation.text, event.channel);
+      stream(reconciliation.text, event);
     } else if (reconciliation.kind === 'replace') {
       if (event.channel === 'result') {
         if (streamedText.endsWith(reconciliation.text)) return;
@@ -77,41 +108,101 @@ export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCa
         if (reconciliation.text.startsWith(streamedText)) {
           const tail = reconciliation.text.slice(streamedText.length);
           streamedText = reconciliation.text;
-          if (tail.length > 0) opts.onOutput?.(tail);
+          if (tail.length > 0) onOutput?.(tail, undefined, event);
         } else {
           streamedText = reconciliation.text;
-          opts.onOutput?.(reconciliation.text);
+          onOutput?.(reconciliation.text, undefined, event);
         }
       } else {
         blockText = '';
-        stream(reconciliation.text, event.channel);
+        stream(reconciliation.text, event);
       }
     }
     if (event.channel !== 'result') blockText = '';
   };
 
-  return invokeProcessCli(opts.adapter, {
+  return (event) => {
+    forwardText(event);
+    // A final assistant record closes one message after reconciling its streamed deltas.
+    // Only the next assistant text starts a new transcript row.
+    if (event.channel === 'assistant' && event.semantics === 'final') {
+      nextAssistantStartsMessage = true;
+    }
+  };
+}
+
+export async function invokeCliAdapter(opts: InvokeCliOptions): Promise<RunnerCallResult> {
+  const forwardText = createCliTextForwarder((text, outputOpts, event) => {
+    opts.onOutput?.(text, outputOpts);
+    if (event.subagentId !== undefined) {
+      opts.onCallEvent?.({ ...event, text, semantics: 'delta' });
+    }
+  });
+  let stderr = '';
+  const redactProcessPath = (text: string): string =>
+    text.replaceAll(opts.invocation.executable.path, opts.adapter.descriptor.command);
+  const failure = (detail: NonNullable<RunnerCallResult['error']>) => ({
+    ...detail,
+    message: boundedRunnerCallMessage(
+      redactProcessPath(
+        detail.code === 'non-zero-exit' && stderr.trim().length > 0
+          ? `${detail.message}: ${stderr.trim()}`
+          : detail.message,
+      ),
+    ),
+  });
+
+  const result = await invokeProcessCli(opts.adapter, {
     invocation: opts.invocation,
     prompt: opts.prompt,
+    steering: opts.steering,
+    installedVersion: opts.installedVersion,
     callContext: opts.callContext,
     idle: {
       warnMs: opts.idle?.warnMs ?? RUNNER_IDLE_WARN_MS,
       killMs: opts.idle?.killMs,
     },
     toolUseGuard: opts.toolUseGuard,
-    onEvent: (event) => {
+    onEvent: (rawEvent) => {
+      const event: RunnerCallEvent =
+        rawEvent.type === 'call_stderr_delta'
+          ? { ...rawEvent, text: redactProcessPath(rawEvent.text) }
+          : rawEvent.type === 'call_warning'
+            ? {
+                ...rawEvent,
+                warning: {
+                  ...rawEvent.warning,
+                  message: redactProcessPath(rawEvent.warning.message),
+                },
+              }
+            : rawEvent.type === 'call_error'
+              ? {
+                  ...rawEvent,
+                  error: failure(rawEvent.error),
+                  ...(rawEvent.rawTail !== undefined && {
+                    rawTail: redactProcessPath(rawEvent.rawTail),
+                  }),
+                }
+              : rawEvent;
+      if (event.type === 'call_stderr_delta') stderr = `${stderr}${event.text}`.slice(-8_192);
+      if (event.type === 'call_text_delta' && event.subagentId !== undefined) {
+        forwardText(event);
+        return;
+      }
       opts.onCallEvent?.(event);
       if (event.type === 'call_text_delta') {
         forwardText(event);
-        // A final assistant record closes one message after reconciling its streamed deltas.
-        // Only the next assistant text starts a new transcript row.
-        if (event.channel === 'assistant' && event.semantics === 'final') {
-          nextAssistantStartsMessage = true;
-        }
       }
       if (event.type === 'call_session_id') opts.onSessionId?.(event.nativeSessionId);
     },
   });
+  const warnings = result.warnings.map((warning) => ({
+    ...warning,
+    message: redactProcessPath(warning.message),
+  }));
+  return result.status === 'completed'
+    ? { ...result, warnings }
+    : { ...result, error: failure(result.error), warnings };
 }
 
 function contributesToStreamedText(

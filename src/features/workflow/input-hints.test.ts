@@ -1,31 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  hintStateSeverity,
-  queuePlaceholder,
-  queueSeatRole,
-  resolveInputHint,
-} from './input-hints.js';
-
-describe('queueSeatRole', () => {
-  it.each(['researching', 'specifying', 'planning', 'analyzing'] as const)(
-    'names the planner while %s',
-    (phase) => {
-      expect(queueSeatRole(phase)).toBe('planner');
-    },
-  );
-
-  it('names the validator during the final review', () => {
-    expect(queueSeatRole('final-review')).toBe('validator');
-  });
-
-  it('names the implementer while a brief runs', () => {
-    expect(queueSeatRole('implementing')).toBe('implementer');
-  });
-
-  it.each(['idle', 'complete'] as const)('names no seat while %s', (phase) => {
-    expect(queueSeatRole(phase)).toBeUndefined();
-  });
-});
+import { hintStateSeverity, queuePlaceholder, resolveInputHint } from './input-hints.js';
 
 describe('queuePlaceholder', () => {
   const working = { inputMode: 'normal' as const, running: true, stopping: false };
@@ -38,21 +12,48 @@ describe('queuePlaceholder', () => {
     'planning',
     'analyzing',
   ] as const)('invites a message for the planner while %s', (phase) => {
-    expect(queuePlaceholder({ ...working, phase })).toBe('Queue a message for the planner…');
+    expect(queuePlaceholder({ ...working, phase })).toBe('Message PLAN · read at its next call…');
   });
 
   it('invites a message for the reviewer during the final review, where no brief runs', () => {
     expect(queuePlaceholder({ ...working, phase: 'final-review' })).toBe(
-      'Queue a message for the reviewer…',
+      'Message REVIEW · read at its verdict call…',
     );
   });
 
+  it.each([
+    ['implementing', 'build', 'BUILD on T003'],
+    ['planning', 'plan', 'PLAN'],
+    ['final-review', 'review', 'REVIEW'],
+  ] as const)('names the tool boundary only for the receiving %s seat', (phase, seat, target) => {
+    expect(queuePlaceholder({ ...working, phase, taskId: 'T003', steerableSeat: seat })).toBe(
+      `Message ${target} · read after this tool…`,
+    );
+    expect(
+      queuePlaceholder({ ...working, phase, taskId: 'T003', steerableSeat: null }),
+    ).not.toContain('read after this tool');
+    expect(
+      queuePlaceholder({
+        ...working,
+        phase,
+        taskId: 'T003',
+        steerableSeat: seat === 'build' ? 'plan' : 'build',
+      }),
+    ).not.toContain('read after this tool');
+  });
+
   it.each(['implementing', 'validating-task', 'escalating'] as const)(
-    'leaves the composer its own brief placeholder while %s',
+    'names the running brief while %s',
     (phase) => {
-      expect(queuePlaceholder({ ...working, phase })).toBeUndefined();
+      expect(queuePlaceholder({ ...working, phase, taskId: 'T003' })).toBe(
+        'Message BUILD on T003 · read when its call ends…',
+      );
     },
   );
+
+  it.each(['idle', 'complete'] as const)('names no queue destination while %s', (phase) => {
+    expect(queuePlaceholder({ ...working, phase })).toBeUndefined();
+  });
 
   it('says nothing while a prompt owns the composer, the run is parked, or it is stopping', () => {
     const question = { ...working, phase: 'planning', inputMode: 'question' } as const;

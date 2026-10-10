@@ -24,7 +24,7 @@ interface CommandContextFactoryOptions {
   resumeRun: () => boolean;
   steerRun: (text: string) => boolean;
   endRun: () => boolean;
-  getQueueDepth: () => number;
+  getQueueCopy: RuntimeCommandContext['getQueueCopy'];
   clearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
   insertImage?: (input: {
     path: string;
@@ -79,7 +79,7 @@ export function createCommandContext(opts: CommandContextFactoryOptions): Runtim
     resumeRun: opts.resumeRun,
     steerRun: opts.steerRun,
     endRun: opts.endRun,
-    getQueueDepth: opts.getQueueDepth,
+    getQueueCopy: opts.getQueueCopy,
     clearQueue: opts.clearQueue,
     insertImage: (path) => {
       const supportsImages = opts.plannerSupportsImages();

@@ -32,6 +32,7 @@ export type StateAction =
   | { type: 'BEGIN_IMPLEMENTATION' }
   | { type: 'START_TASK'; taskId: TaskId }
   | { type: 'TASK_SENT' }
+  | { type: 'RESUME_TASK' }
   | { type: 'VALIDATION_PASS' }
   | { type: 'VALIDATION_FAIL' }
   | { type: 'ESCALATE' }
@@ -123,9 +124,15 @@ export type StateAction =
   | { type: 'CORRECT_PLAN'; comment: string }
   | { type: 'ENQUEUE_USER_MSG'; message: QueuedMessage }
   | { type: 'MARK_INJECTING_NATIVE'; id: string; attempt?: number }
-  | { type: 'MARK_DELIVERED_NATIVE'; id: string }
+  | { type: 'MARK_DELIVERED_NATIVE'; id: string; via?: 'mid-call' }
   | { type: 'MARK_NATIVE_DELIVERY_FAILED'; id: string }
-  | { type: 'DRAIN_QUEUE'; ids?: string[]; destination?: 'implementer' | 'consult' | 'reviewer' }
+  | { type: 'MARK_POSSIBLE_DUPLICATE'; id: string }
+  | {
+      type: 'DRAIN_QUEUE';
+      ids?: string[];
+      destination?: 'implementer' | 'consult' | 'reviewer';
+      via?: 'mid-call';
+    }
   | { type: 'CLEAR_QUEUE' }
   | { type: 'SET_PENDING_RECOVERY'; issue: RecoveryIssue }
   | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction }

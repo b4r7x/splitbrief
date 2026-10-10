@@ -20,6 +20,8 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
+import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { stopStore } from '../../stores/workflow/stop.js';
 import { tokensStore } from '../../stores/workflow/tokens.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -31,6 +33,249 @@ import { COMMANDS_ONLY_NOTICE, Composer } from './composer.js';
 vi.mock('node:fs', async (original) => ({
   ...(await original<typeof import('node:fs')>()),
 }));
+
+describe('Composer send now', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+  });
+
+  it.each(['running', 'parked'] as const)(
+    'sends ctrl+enter to onSendNow while %s',
+    async (status) => {
+      lifecycleStore.__testReset({
+        phase: 'implementing',
+        status: status === 'running' ? 'running' : 'paused',
+      });
+      if (status === 'parked') stopStore.__testReset({ phase: 'parked' });
+      const queued: string[] = [];
+      const sent: string[] = [];
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="normal"
+          hint=""
+          onSubmit={(submission) => queued.push(submission.message.text)}
+          onSendNow={(submission) => {
+            sent.push(submission.message.text);
+            return true;
+          }}
+          onRuntimeCommand={() => {}}
+        />,
+      );
+      await flushEffects();
+      ui.stdin.write('  smaller diffs  ');
+      await flushEffects();
+      ui.stdin.write('\x1b[13;5u');
+      await flushEffects();
+      expect(sent).toEqual(['smaller diffs']);
+      expect(queued).toEqual([]);
+      expect(ui.lastFrame()).not.toContain('smaller diffs');
+      ui.unmount();
+    },
+  );
+
+  it('preserves a rejected send-now draft for retry and records only the accepted submission', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    const queued: string[] = [];
+    const sent: string[] = [];
+    let accepted = false;
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => queued.push(submission.message.text)}
+        onSendNow={(submission) => {
+          if (!accepted) return false;
+          sent.push(submission.message.text);
+          return true;
+        }}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('keep every word');
+    await flushEffects();
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+
+    expect(ui.lastFrame()).toContain('keep every word');
+    expect(
+      getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
+    ).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(queued).toEqual([]);
+
+    accepted = true;
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+    expect(sent).toEqual(['keep every word']);
+    expect(queued).toEqual([]);
+    expect(ui.lastFrame()).not.toContain('keep every word');
+    expect(
+      getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
+    ).toHaveLength(1);
+    ui.unmount();
+  });
+
+  it('keeps plain Enter on onSubmit when onSendNow exists', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    const queued: string[] = [];
+    const sent: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => queued.push(submission.message.text)}
+        onSendNow={(submission) => {
+          sent.push(submission.message.text);
+          return true;
+        }}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('smaller diffs');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(queued).toEqual(['smaller diffs']);
+    expect(sent).toEqual([]);
+    ui.unmount();
+  });
+
+  it('treats ctrl+enter as Enter without onSendNow', async () => {
+    const submissions: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => submissions.push(submission.message.text)}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('new change');
+    await flushEffects();
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+    expect(submissions).toEqual(['new change']);
+    ui.unmount();
+  });
+
+  it('ignores ctrl+enter on an empty draft while running', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    const submissions: string[] = [];
+    const empty: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => submissions.push(submission.message.text)}
+        onSendNow={(submission) => {
+          submissions.push(submission.message.text);
+          return true;
+        }}
+        onEmptySubmit={() => empty.push('empty')}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+    expect(submissions).toEqual([]);
+    expect(empty).toEqual([]);
+    ui.unmount();
+  });
+
+  it.each(['command', 'reference'] as const)(
+    'lets open %s suggestions handle ctrl+enter without steering',
+    async (suggestions) => {
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      configStore.__testReset({ config: makeConfig(), projectDir: '/tmp/composer-project' });
+      const sent: string[] = [];
+      const queued: string[] = [];
+      const dispatched: string[] = [];
+      const ui = renderDockedComposer({
+        commands: [
+          {
+            kind: 'noarg',
+            name: '/usage',
+            label: 'Usage',
+            description: 'Show usage',
+            category: 'navigate',
+            validScreens: ['workflow'],
+            handler: () => {},
+          },
+        ],
+        listProjectFiles: async () => ['src/parser.ts'],
+        currentScreen: 'workflow',
+        mode: 'normal',
+        hint: '',
+        onSubmit: (submission) => queued.push(submission.message.text),
+        onSendNow: (submission) => {
+          sent.push(submission.message.text);
+          return true;
+        },
+        onRuntimeCommand: (text) => dispatched.push(text),
+      });
+      await flushEffects();
+      ui.stdin.write(suggestions === 'command' ? '/us' : '@src');
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(suggestions === 'command' ? 'Show usage' : 'src/parser.ts');
+      ui.stdin.write('\x1b[13;5u');
+      await flushEffects();
+      expect(sent).toEqual([]);
+      expect(queued).toEqual([]);
+      expect(dispatched).toEqual(suggestions === 'command' ? ['/usage'] : []);
+      if (suggestions === 'reference') expect(ui.lastFrame()).toContain('@src/parser.ts');
+      ui.unmount();
+    },
+  );
+
+  it('dispatches a runtime command on ctrl+enter when suggestions are closed', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    const sent: string[] = [];
+    const queued: string[] = [];
+    const dispatched: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={(submission) => queued.push(submission.message.text)}
+        onSendNow={(submission) => {
+          sent.push(submission.message.text);
+          return true;
+        }}
+        onRuntimeCommand={(text) => dispatched.push(text)}
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('/usage ');
+    await flushEffects();
+    ui.stdin.write('\x1b[13;5u');
+    await flushEffects();
+    expect(dispatched).toEqual(['/usage']);
+    expect(sent).toEqual([]);
+    expect(queued).toEqual([]);
+    expect(ui.lastFrame()).not.toContain('/usage');
+    expect(
+      getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
+    ).toHaveLength(1);
+    ui.unmount();
+  });
+});
 
 describe('Composer file submission', () => {
   let projectDir: string;
@@ -55,6 +300,92 @@ describe('Composer file submission', () => {
     cleanupTempDir(projectDir);
     cleanupTempDir(externalDir);
   });
+
+  it('publishes pending images and history before the plain Enter callback', async () => {
+    const file = join(externalDir, 'shot.png');
+    writeFileSync(file, 'image');
+    const onSubmit = vi.fn((submission: Extract<DraftSubmission, { ok: true }>) => {
+      expect(attachmentsStore.peek()).toEqual(submission.message.images);
+      expect(
+        getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' }),
+      ).toHaveLength(1);
+    });
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        onSubmit={onSubmit}
+        onRuntimeCommand={() => {}}
+        listProjectFiles={async () => []}
+      />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    ui.stdin.write(`read @${file}`);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledOnce();
+  });
+
+  it.each(['text', 'image'] as const)(
+    'sends ctrl+enter with an outside %s attachment and preserves a refused draft',
+    async (kind) => {
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      const file = join(externalDir, kind === 'text' ? 'note.md' : 'shot.png');
+      writeFileSync(file, kind === 'text' ? 'Keep the existing API.' : 'image');
+      const onSubmit = vi.fn();
+      let accepted = false;
+      const onSendNow = vi.fn(() => accepted);
+      const ui = renderFeature(
+        <Composer
+          commands={[]}
+          currentScreen="workflow"
+          mode="normal"
+          hint=""
+          onSubmit={onSubmit}
+          onSendNow={onSendNow}
+          onRuntimeCommand={() => {}}
+          listProjectFiles={async () => []}
+        />,
+      );
+      unmount = ui.unmount;
+      await flushEffects();
+      ui.stdin.write(`correct this @${file}`);
+      await flushEffects();
+      const draft = composerLiveStore.get().document;
+      const pending = attachmentsStore.get();
+      ui.stdin.write('\x1b[13;5u');
+      await flushEffects();
+      expect(composerLiveStore.get().document).toEqual(draft);
+      expect(attachmentsStore.get()).toBe(pending);
+      expect(
+        getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
+      ).toEqual([]);
+      expect(onSendNow).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.objectContaining({
+            attachedInputs: [{ path: realpathSync(file), kind }],
+            images: kind === 'image' ? [expect.objectContaining({ path: realpathSync(file) })] : [],
+            text: expect.stringContaining(
+              kind === 'text' ? 'Keep the existing API.' : 'correct this [image:',
+            ),
+          }),
+        }),
+      );
+      accepted = true;
+      ui.stdin.write('\x1b[13;5u');
+      await flushEffects();
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(onSendNow).toHaveBeenCalledTimes(2);
+      expect(composerLiveStore.get().document).toEqual(createDraftDocument(''));
+      expect(
+        getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'workflow' }),
+      ).toHaveLength(1);
+    },
+  );
 
   it.each([
     ['not-found', 'file not found. Check the path and try again.'],

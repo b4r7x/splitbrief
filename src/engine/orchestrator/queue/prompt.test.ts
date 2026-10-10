@@ -3,8 +3,49 @@ import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect } from 'vitest';
 import type { QueuedMessage } from '../../../core/schemas/workflow.js';
 import { formatDrainedMessages, formatMessage } from './prompt.js';
+import { makeMessage } from '#testing/helpers/queue.js';
 
 describe('formatMessage', () => {
+  it('keeps expanded attachment text and identifies each image by its path', () => {
+    const message = {
+      ...makeMessage('Use @notes.md\n\nPELICAN-42'),
+      images: [
+        {
+          id: 'image-1',
+          kind: 'image' as const,
+          path: '/outside/shot.png',
+          mimeType: 'image/png',
+          sizeBytes: 5,
+        },
+      ],
+      attachedInputs: [
+        { kind: 'text' as const, path: '/outside/notes.md' },
+        { kind: 'image' as const, path: '/outside/shot.png' },
+      ],
+    };
+    const prompt = formatDrainedMessages([message]);
+    expect(prompt).toContain('Use @notes.md\n\nPELICAN-42');
+    expect(prompt).toContain('[image:image-1] = /outside/shot.png');
+  });
+
+  it.each(['user-input', 'clarification'] as const)(
+    'prefixes an uncertain %s message with a duplicate warning',
+    (origin) => {
+      const message = {
+        ...makeMessage('use UTC'),
+        origin,
+        question: 'Which timezone?',
+        possibleDuplicate: true,
+      };
+      expect(formatMessage(message)).toMatch(
+        /^You may have seen this message already during your last call:\n/,
+      );
+      expect(formatDrainedMessages([message])).toContain(
+        '1. You may have seen this message already during your last call:\n',
+      );
+    },
+  );
+
   it('formats user-input message with [user also says] wrapper', () => {
     const msg: QueuedMessage = {
       id: 'msg-1',

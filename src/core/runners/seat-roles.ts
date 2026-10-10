@@ -1,5 +1,6 @@
 import { assertNever } from '../../utils/type-guards.js';
 import type { CrewSeatId } from '../crew/identity.js';
+import type { RUNNER_CALL_ROLES } from '../runner-call-contract.js';
 
 export type RunnerRole = 'planner' | 'implementer';
 
@@ -21,6 +22,24 @@ export const PICKER_ROLE_SEAT_IDS: Readonly<Record<SeatPickerRole, CrewSeatId>> 
   implementer: 'build',
   reviewer: 'review',
 };
+
+export function seatForRunningCall(call: {
+  readonly role: (typeof RUNNER_CALL_ROLES)[number];
+}): CrewSeatId | null {
+  switch (call.role) {
+    case 'planner':
+    case 'implementer':
+      return PICKER_ROLE_SEAT_IDS[call.role];
+    case 'review':
+      return PICKER_ROLE_SEAT_IDS.reviewer;
+    case 'summary':
+    case 'compaction':
+    case 'escalation':
+      return null;
+    default:
+      return assertNever(call.role);
+  }
+}
 
 /** The config seat a picker role reads its catalog and policies from. */
 export function seatPickerLane(role: SeatPickerRole): ActiveRunnerRole {

@@ -146,6 +146,7 @@ function implementerBaseArgs(input: CodexImplementerBuildInput): string[] {
     '--ask-for-approval',
     'never',
     'exec',
+    ...(input.imagePaths ?? []).flatMap((path) => ['--image', path]),
     '--ignore-user-config',
     '--json',
     '--skip-git-repo-check',

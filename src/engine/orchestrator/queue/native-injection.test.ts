@@ -12,8 +12,7 @@ import type { RunnerCallContext } from '../../calls/types.js';
 import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { fauxPlanner } from '#testing/helpers/faux/planner.js';
-import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { readQueueForPrompt, releaseQueueMessagesForPrompt } from './drain.js';
+import { readQueueForPrompt, releaseQueuedMessage } from './drain.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { makeResearchingState, setupProject } from '#testing/helpers/queue.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
@@ -26,7 +25,7 @@ const message: QueuedMessage = {
   id: 'msg-1',
   ...plainUserMessage('please continue'),
   queuedAt: new Date().toISOString(),
-  phase: 'implementing',
+  phase: 'researching',
   deliveredViaNative: false,
   nativeDeliveryState: 'pending',
 };
@@ -39,6 +38,61 @@ afterEach(() => {
 });
 
 describe('dispatchNativeInjection', () => {
+  it('delivers expanded text, image references and attachment metadata on the planning seat', async () => {
+    const ref = setupProject(dirs);
+    const attached = {
+      ...message,
+      text: 'Use @notes.md\n\nPELICAN-42',
+      images: [
+        {
+          id: 'image-1',
+          kind: 'image' as const,
+          path: '/outside/shot.png',
+          mimeType: 'image/png',
+          sizeBytes: 5,
+        },
+      ],
+      attachedInputs: [
+        { kind: 'text' as const, path: '/outside/notes.md' },
+        { kind: 'image' as const, path: '/outside/shot.png' },
+      ],
+    };
+    let state = { ...makeResearchingState(), messageQueue: [attached] };
+    saveState(ref, state);
+    const { planner } = fauxPlanner();
+    let received: unknown;
+    planner.injectUserTurn = async (turn) => {
+      received = turn;
+      return { status: 'delivered', usage: null };
+    };
+    const result = await dispatchNativeInjection({
+      ...ref,
+      message: attached,
+      planner,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus: createEventBus(),
+    });
+
+    expect(result.status).toBe('delivered');
+    expect(received).toMatchObject({
+      text: expect.stringContaining(attached.text),
+      images: attached.images,
+      attachedInputs: attached.attachedInputs,
+    });
+    expect(received).toMatchObject({
+      text: expect.stringContaining('[image:image-1] = /outside/shot.png'),
+    });
+    expect(loadState(ref)?.messageQueue[0]).toMatchObject({
+      text: attached.text,
+      images: attached.images,
+      attachedInputs: attached.attachedInputs,
+      deliveredViaNative: true,
+    });
+  });
+
   it('keeps a correction pending for the next prompt when a fresh Claude seat has no native session', async () => {
     const shimDir = createTempDir('native-injection-claude-shim');
     dirs.push(shimDir);
@@ -84,7 +138,7 @@ describe('dispatchNativeInjection', () => {
     expect(events.some((event) => event.type === 'message_injected_native')).toBe(false);
     expect(events.some((event) => event.type === 'cost_update')).toBe(false);
 
-    const next = drainAndFormat(projectDir, sessionId, state, bus);
+    const next = await drainAndFormat(projectDir, sessionId, state, bus);
     expect(next.prefix).toContain('use JWT instead');
     expect(next.state.messageQueue[0]?.drainedAt).toBeDefined();
     expect(events.filter((event) => event.type === 'queue_drained')).toHaveLength(1);
@@ -96,7 +150,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     const planner = withPlannerCallPublishing(faux, { bus, getPhase: () => state.phase });
     const dispatch = () =>
       dispatchNativeInjection({
@@ -130,7 +184,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     planner.injectUserTurn = async () => {
       saveState({ projectDir, sessionId }, { ...state, messageQueue: [] });
       return { status: 'not-delivered', reason: 'not-ready' };
@@ -164,7 +218,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
 
     await expect(
       dispatchNativeInjection({
@@ -217,7 +271,7 @@ describe('dispatchNativeInjection', () => {
     bus.subscribe((e) => events.push(e));
 
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     const before = state.tokenUsage.plannerInput;
 
     const result = await dispatchNativeInjection({
@@ -268,7 +322,7 @@ describe('dispatchNativeInjection', () => {
     bus.subscribe((e) => events.push(e));
 
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
 
     const result = await dispatchNativeInjection({
       message: {
@@ -304,7 +358,7 @@ describe('dispatchNativeInjection', () => {
     const events: EngineEvent[] = [];
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
-    const state = makeImplState([]);
+    const state = makeResearchingState();
     const controller = new AbortController();
     controller.abort(new Error('cancelled'));
 
@@ -337,7 +391,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     const beforeInput = state.tokenUsage.plannerInput;
 
     const result = await dispatchNativeInjection({
@@ -365,7 +419,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     const beforeInput = state.tokenUsage.plannerInput;
     planner.injectUserTurn = async () => {
       saveState({ projectDir, sessionId }, { ...state, messageQueue: [] });
@@ -397,7 +451,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((e) => events.push(e));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     saveState({ projectDir, sessionId }, state);
     planner.injectUserTurn = async () => {
       saveState(
@@ -447,7 +501,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     const native = dispatchNativeInjection({
       message,
       planner,
@@ -489,7 +543,7 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
     const { projectDir, sessionId } = setupProject(dirs);
-    let state: WorkflowState = { ...makeImplState([]), messageQueue: [message] };
+    let state: WorkflowState = { ...makeResearchingState(), messageQueue: [message] };
     const prompt = readQueueForPrompt({ projectDir, sessionId, state });
 
     expect(prompt.messages).toEqual([expect.objectContaining({ id: message.id })]);
@@ -508,6 +562,6 @@ describe('dispatchNativeInjection', () => {
     ).resolves.toEqual({ status: 'not-delivered', reason: 'already-owned' });
     expect(events.filter((event) => event.type === 'message_injected_native')).toHaveLength(0);
     expect(state.tokenUsage.plannerInput).toBe(0);
-    releaseQueueMessagesForPrompt({ projectDir, sessionId }, [message]);
+    releaseQueuedMessage({ projectDir, sessionId }, message.id, 'prompt');
   });
 });

@@ -6,10 +6,15 @@ import type { Reviewer } from '../reviewers/types.js';
 import type { EventBus } from '../events/types.js';
 import { requestTyped, type RequestTypedResult } from '../runners/typed-output.js';
 import { addUsageAndSave } from './state-ops.js';
+import type { SteeringPort } from '../calls/steering.js';
+
+type ReviewerCallInput = Readonly<{
+  prompt: string;
+  images?: readonly Attachment[] | undefined;
+}>;
 
 export type RunReviewerCallOptions<T> = {
   reviewer: Pick<Reviewer, 'typedCall'>;
-  prompt: string;
   /** The answer contract: the verdict with its coverage refinement, or the plan call's answer. */
   schema: z.ZodType<T>;
   jsonSchema: Readonly<Record<string, unknown>>;
@@ -19,12 +24,11 @@ export type RunReviewerCallOptions<T> = {
   sessionId: string;
   bus: EventBus;
   state: WorkflowState;
-  /** The render images the reviewer takes, when its seat accepts them. */
-  images?: readonly Attachment[] | undefined;
   signal?: AbortSignal | undefined;
+  steering?: SteeringPort | undefined;
   /** Receives the call's runner events: a consult publishes them under its task. */
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;
-};
+} & (ReviewerCallInput | { prepareCall: () => Promise<ReviewerCallInput> });
 
 export type RunReviewerCallResult<T> = {
   state: WorkflowState;
@@ -39,23 +43,29 @@ export type RunReviewerCallResult<T> = {
 export async function runReviewerCall<T>(
   opts: RunReviewerCallOptions<T>,
 ): Promise<RunReviewerCallResult<T>> {
-  const { reviewer, prompt, projectDir, workspaceDir, sessionId, bus } = opts;
-  const call = reviewer.typedCall({
-    projectDir: workspaceDir,
-    seat: 'reviewer',
-    callbacks: {
-      onOutput: () => {},
-      ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
-      signal: opts.signal,
-    },
-    ...(opts.images !== undefined && { images: [...opts.images] }),
-  });
+  const { reviewer, projectDir, workspaceDir, sessionId, bus } = opts;
   const result = await requestTyped({
-    prompt,
+    prepareCall: async () => {
+      const input = 'prepareCall' in opts ? await opts.prepareCall() : opts;
+      return {
+        prompt: input.prompt,
+        call: reviewer.typedCall({
+          projectDir: workspaceDir,
+          seat: 'reviewer',
+          callbacks: {
+            onOutput: () => {},
+            ...(opts.onCallEvent !== undefined && { onCallEvent: opts.onCallEvent }),
+            signal: opts.signal,
+            ...(opts.steering !== undefined && { steering: opts.steering }),
+          },
+          ...(input.images !== undefined &&
+            input.images.length > 0 && { images: [...input.images] }),
+        }),
+      };
+    },
     schema: opts.schema,
     jsonSchema: opts.jsonSchema,
     schemaName: opts.schemaName,
-    call,
   });
   const state = addUsageAndSave(
     { projectDir, sessionId, bus },

@@ -326,6 +326,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'clarifications_collected':
     case 'clarification_answered':
     case 'message_queued':
+    case 'steerable_call':
     case 'message_injected_native':
     case 'queue_drained':
     case 'queue_cleared':

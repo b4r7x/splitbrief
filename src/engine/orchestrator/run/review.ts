@@ -389,6 +389,7 @@ export async function runScheduledReview(args: {
       config: wctx.config,
       callbacks,
       bus: wctx.bus,
+      steering: wctx.steering,
       state,
       reviewer: wctx.reviewer,
       metadata: wctx.metadata,

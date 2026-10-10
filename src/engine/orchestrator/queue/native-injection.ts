@@ -12,6 +12,8 @@ import { publishRunnerCallEvent, publishWarningFromError } from '../events.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
+import { phaseStage } from '../../../core/rail-stages.js';
+import { formatMessageInput } from './prompt.js';
 
 export type DispatchNativeInjectionOptions = {
   message: QueuedMessage;
@@ -53,6 +55,7 @@ export async function dispatchNativeInjection(
   if (wasCleared(ref, message.id)) return { status: 'not-delivered', reason: 'cleared' };
 
   const current = rebaseOnPersistedWorkflowState(ref, getState(), { keepUnsaved: true });
+  if (phaseStage(current.phase) !== 'plan') return { status: 'not-delivered', reason: 'not-ready' };
   const queued = findQueuedMessage(current, message.id);
   if (!queued) return { status: 'not-delivered', reason: 'cleared' };
   if (!isQueuedMessagePendingDelivery(queued)) {
@@ -64,25 +67,29 @@ export async function dispatchNativeInjection(
 
   try {
     throwIfAborted(signal);
+    const text = formatMessageInput(message);
     const injectionText =
       message.origin === 'clarification' && message.question
-        ? `[clarification answer]\nQ: ${message.question}\nA: ${message.text}\n[/clarification answer]`
-        : message.text;
+        ? `[clarification answer]\nQ: ${message.question}\nA: ${text}\n[/clarification answer]`
+        : text;
 
     const injecting = transitionAndSave(ref, current, {
       type: 'MARK_INJECTING_NATIVE',
       id: message.id,
     });
     setState(injecting);
-    const injection = await planner.injectUserTurn({
+    const turn = {
       text: injectionText,
+      images: message.images,
+      attachedInputs: message.attachedInputs,
       projectDir,
       ...(signal !== undefined && { signal }),
       callbacks: {
-        onCallEvent: (event) =>
+        onCallEvent: (event: Parameters<typeof publishRunnerCallEvent>[1]) =>
           publishRunnerCallEvent({ bus, phase: getState().phase, rootDir: projectDir }, event),
       },
-    });
+    };
+    const injection = await planner.injectUserTurn(turn);
     throwIfAborted(signal);
     if (wasCleared(ref, message.id)) {
       return { status: 'not-delivered', reason: 'cleared' };

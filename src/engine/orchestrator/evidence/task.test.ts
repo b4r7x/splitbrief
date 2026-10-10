@@ -9,6 +9,7 @@ import {
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { evidenceLedgerPath, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../../core/schemas/evidence.js';
+import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import {
   checkEntries,
   recordLocalTaskEvidence,
@@ -16,6 +17,7 @@ import {
   recordSkippedTaskEvidence,
   recordedTargetOutput,
   recordApiApplyEvidence,
+  recordApiRevertEvidence,
   recordedApiCreatedPaths,
 } from './task.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -405,6 +407,164 @@ describe('recordedApiCreatedPaths', () => {
 
   afterEach(() => {
     cleanupTempDir(projectDir);
+  });
+
+  function application(
+    action: 'create' | 'modify',
+  ): Extract<BundleApplyResult, { status: 'applied' }> {
+    return {
+      callId: action,
+      status: 'applied',
+      candidatePaths: ['src/a.ts'],
+      applied: [
+        {
+          path: 'src/a.ts',
+          action,
+          beforeSha256: action === 'create' ? null : 'a1',
+          afterSha256: action === 'create' ? 'a1' : 'a2',
+          diff: '',
+          linesAdded: 1,
+          linesRemoved: action === 'create' ? 0 : 1,
+        },
+      ],
+      noops: [],
+      untouched: [],
+    };
+  }
+
+  const rejected: BundleApplyResult = {
+    callId: 'rejected',
+    status: 'rejected',
+    code: 'baseline-conflict',
+    error: 'baseline changed',
+    candidatePaths: ['src/a.ts'],
+    applied: [],
+    noops: [],
+    untouched: ['src/a.ts'],
+  };
+
+  it.each(['modify', 'rejected'] as const)(
+    'keeps workspace creation proof when a %s receipt replaces it',
+    (replacement) => {
+      const task = makeTask({ action: 'create', suggestedFiles: ['src/a.ts'] });
+      const ref = { projectDir, sessionId: 'sess-1' };
+      const created = recordApiApplyEvidence({
+        ledger: createEvidenceLedger({ sessionId: ref.sessionId, feature: 'feat', tasks: [task] }),
+        task,
+        workspacePath: '/tmp/workspace-a',
+        result: application('create'),
+      });
+      const updated = recordApiApplyEvidence({
+        ledger: created,
+        task,
+        workspacePath: '/tmp/workspace-a',
+        result: replacement === 'modify' ? application('modify') : rejected,
+      });
+      writeEvidenceLedger(ref, updated);
+
+      expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-a')).toEqual(['src/a.ts']);
+      expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-b')).toEqual([]);
+      expect(updated.tasks[0]?.apiApply?.callId).toBe(replacement);
+      expect(updated.tasks[0]?.changedFiles).toEqual([]);
+      expect(updated.tasks[0]?.promotedFiles).toBeUndefined();
+    },
+  );
+
+  it('does not transfer accumulated creation proof to another workspace', () => {
+    const task = makeTask({ action: 'create', suggestedFiles: ['src/a.ts'] });
+    const ref = { projectDir, sessionId: 'sess-1' };
+    let ledger = createEvidenceLedger({ sessionId: ref.sessionId, feature: 'feat', tasks: [task] });
+    for (const action of ['create', 'modify'] as const) {
+      ledger = recordApiApplyEvidence({
+        ledger,
+        task,
+        workspacePath: '/tmp/workspace-a',
+        result: application(action),
+      });
+    }
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-a')).toEqual(['src/a.ts']);
+
+    ledger = recordApiApplyEvidence({
+      ledger,
+      task,
+      workspacePath: '/tmp/workspace-b',
+      result: rejected,
+    });
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-b')).toEqual([]);
+    expect(recordedApiCreatedPaths(ref, task, '/tmp/workspace-a')).toEqual([]);
+  });
+
+  it('removes reverted creation proof before the next receipt replaces it', () => {
+    const task = makeTask({ action: 'create', suggestedFiles: ['src/a.ts'] });
+    const ref = { projectDir, sessionId: 'sess-1' };
+    let ledger = createEvidenceLedger({ sessionId: ref.sessionId, feature: 'feat', tasks: [task] });
+    for (const action of ['create', 'modify'] as const) {
+      ledger = recordApiApplyEvidence({
+        ledger,
+        task,
+        workspacePath: projectDir,
+        result: application(action),
+      });
+    }
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual(['src/a.ts']);
+
+    ledger = recordApiRevertEvidence({
+      ledger,
+      workspacePath: projectDir,
+      removedPaths: ['src/a.ts'],
+    });
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual([]);
+
+    ledger = recordApiApplyEvidence({ ledger, task, workspacePath: projectDir, result: rejected });
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual([]);
+  });
+
+  it('removes accumulated creations absent from the latest receipt and preserves other workspaces', () => {
+    const task = makeTask({ action: 'create', suggestedFiles: ['src/a.ts', 'src/b.ts'] });
+    const other = makeTask({ id: 'T002', action: 'create', suggestedFiles: ['src/a.ts'] });
+    const ref = { projectDir, sessionId: 'sess-1' };
+    let ledger = createEvidenceLedger({
+      sessionId: ref.sessionId,
+      feature: 'feat',
+      tasks: [task, other],
+    });
+    ledger = recordApiApplyEvidence({
+      ledger,
+      task: other,
+      workspacePath: '/tmp/other-workspace',
+      result: application('create'),
+    });
+    for (const path of ['src/a.ts', 'src/b.ts']) {
+      const result = application('create');
+      ledger = recordApiApplyEvidence({
+        ledger,
+        task,
+        workspacePath: projectDir,
+        result: {
+          ...result,
+          candidatePaths: [path],
+          applied: result.applied.map((file) => ({ ...file, path })),
+        },
+      });
+    }
+    ledger = recordApiRevertEvidence({
+      ledger,
+      workspacePath: projectDir,
+      removedPaths: ['src/a.ts', 'src/b.ts'],
+    });
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual([]);
+    expect(recordedApiCreatedPaths(ref, other, '/tmp/other-workspace')).toEqual(['src/a.ts']);
+    expect(ledger.tasks[0]?.apiApply?.revertedPaths).toEqual(['src/a.ts', 'src/b.ts']);
+
+    ledger = recordApiApplyEvidence({ ledger, task, workspacePath: projectDir, result: rejected });
+    writeEvidenceLedger(ref, ledger);
+    expect(recordedApiCreatedPaths(ref, task, projectDir)).toEqual([]);
   });
 
   it('proves a creation only in the workspace whose receipt recorded it', () => {

@@ -6,6 +6,7 @@ export type FileContentSnapshot = Record<string, string | null>;
 export type RestoreChangedFilesResult = {
   restoredFiles: string[];
   conflictedFiles: string[];
+  removedPaths: string[];
 };
 
 export function uniqueProjectFiles(files: string[]): string[] {

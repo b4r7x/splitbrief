@@ -258,7 +258,7 @@ function applyRunnerCallEvent(state: RunnerCallCollectionState, event: RunnerCal
       state.startedAt = event.ts;
       return;
     case 'call_text_delta':
-      if (contributesToResultText(event.channel)) {
+      if (event.subagentId === undefined && contributesToResultText(event.channel)) {
         const limiter = event.semantics === 'final' ? createTextLimiter() : state.textLimiter;
         // An explicit `delta` is a partial slice of one record: the byte budget
         // bounds it, the event budget counts records.

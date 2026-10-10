@@ -6,6 +6,32 @@ import type { RunnerCallEvent } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
 describe('projectRunnerCallEvent', () => {
+  it('keeps subagent identity without creating system activity', () => {
+    const events = projectRunnerCallEvents(
+      {
+        type: 'call_text_delta',
+        ts: 0,
+        callId: 'subagent-call',
+        role: 'planner',
+        backendKind: 'cli',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'subagent answer',
+        semantics: 'delta',
+      },
+      { rootDir: '/workspace', phase: 'planning', sequence: 1 },
+    );
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'runner_call_text_delta',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'subagent answer',
+      }),
+    ]);
+    expect(EngineEventSchema.parse(events[0])).toMatchObject({ subagentId: 'agent-1' });
+  });
+
   it('keeps a native session event without adding session activity', () => {
     const events = projectRunnerCallEvents(
       {

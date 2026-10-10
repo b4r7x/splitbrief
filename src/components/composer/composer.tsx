@@ -96,7 +96,6 @@ function promptColorForMode(
 
 function placeholderForMode(input: {
   mode: InputMode;
-  running: boolean;
   stopping: boolean;
   hint?: string | undefined;
 }): string {
@@ -107,9 +106,6 @@ function placeholderForMode(input: {
   // A run being torn down takes no new work, and the legend row above already says so; repeating
   // an invitation to queue here would contradict it.
   if (input.stopping) return '';
-  // While a brief is building, anything typed here waits for the boundary. The placeholder says so
-  // rather than inviting a change the run will not pick up now.
-  if (input.running) return 'Queue a message for after this brief…';
   return 'Describe a change…';
 }
 
@@ -119,6 +115,7 @@ export interface ComposerBoxHints {
 
 interface ComposerProps {
   onSubmit?: ((submission: Extract<DraftSubmission, { ok: true }>) => void) | undefined;
+  onSendNow?: ((submission: Extract<DraftSubmission, { ok: true }>) => boolean) | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];
   mode: InputMode;
@@ -172,6 +169,7 @@ export function Composer(props: ComposerProps) {
 function ComposerInput({
   sessionRef,
   onSubmit,
+  onSendNow,
   onRuntimeCommand,
   commands,
   mode,
@@ -466,7 +464,11 @@ function ComposerInput({
 
   // One send path for every mode: the serializer decides what the runner reads, and the images it
   // validated are the ones parked for the call. Only the gates in front of it differ.
-  const send = (candidate: DraftDocument, record: boolean): boolean => {
+  const send = (
+    candidate: DraftDocument,
+    record: boolean,
+    deliverNow?: ComposerProps['onSendNow'],
+  ): boolean => {
     // Submitted text crosses this boundary exactly once, so this is where typing residue comes
     // off; the draft itself keeps what was typed, whitespace included.
     const submission = prepareDraftSubmission(trimDraftDocument(candidate), {
@@ -478,6 +480,7 @@ function ComposerInput({
       feedbackStore.setError(formatSubmissionFailure(submission));
       return false;
     }
+    if (deliverNow?.(submission) === false) return false;
     const currentImageIds = new Set(submission.message.images.map((image) => image.id));
     const historicalImageIds = new Set(
       getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen }).flatMap((entry) =>
@@ -494,11 +497,11 @@ function ComposerInput({
     }
     submittedImageIdsRef.current = submission.message.images.map((image) => image.id);
     if (record) inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
-    onSubmit?.(submission);
+    if (deliverNow === undefined) onSubmit?.(submission);
     return true;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = (deliverNow?: ComposerProps['onSendNow']) => {
     if (pasteQueueRef.current.length > 0) {
       feedbackStore.setMessage(
         imagePaste?.matchingText === undefined ? 'Pasting image…' : 'Pasting…',
@@ -514,7 +517,7 @@ function ComposerInput({
     const trimmed = trimDraftDocument(document);
     const trimmedText = draftDocumentText(trimmed);
     if (trimmed.parts.length === 0) {
-      onEmptySubmit?.();
+      if (deliverNow === undefined) onEmptySubmit?.();
       return;
     }
 
@@ -531,7 +534,7 @@ function ComposerInput({
       return;
     }
 
-    if (send(document, true) && !submitKeepsDraft) clearDraft();
+    if (send(document, true, deliverNow) && !submitKeepsDraft) clearDraft();
   };
 
   const textDraftEmpty = draftLength(document) === 0;
@@ -582,6 +585,7 @@ function ComposerInput({
       })
     : 0;
   const lifecycleRunning = lifecycleStore.use((state) => state.status === 'running');
+  const parked = stopStore.use((state) => state.phase === 'parked');
   const stopping = stopStore.use((state) => state.intent !== 'none');
   const reserveHomeHint = currentScreen === 'home';
   // A check the screen is waiting on owns the row while it runs. An affordance never rides a
@@ -649,7 +653,7 @@ function ComposerInput({
                 caretRef.current = index;
               }}
               onChange={handleChange}
-              onSubmit={handleSubmit}
+              onSubmit={() => handleSubmit()}
               onPaste={(text, at) => {
                 if (!supportsImages || commandsOnly === true) return false;
                 enqueueImagePaste(at, text);
@@ -659,6 +663,16 @@ function ComposerInput({
               columns={inputColumns}
               focus={!disabled}
               shouldHandleInput={(input, key) => {
+                if (
+                  key.return &&
+                  key.ctrl &&
+                  onSendNow !== undefined &&
+                  mode === 'normal' &&
+                  (lifecycleRunning || parked)
+                ) {
+                  handleSubmit(onSendNow);
+                  return false;
+                }
                 if (onTab !== undefined && (key.tab || (key.shift && key.tab))) {
                   onTab();
                   return false;
@@ -671,7 +685,6 @@ function ComposerInput({
               }}
               placeholder={placeholderForMode({
                 mode,
-                running: lifecycleRunning,
                 stopping,
                 hint,
               })}

@@ -1,3 +1,4 @@
+import type { SpawnStdinWriter } from './lifecycle.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -531,5 +532,110 @@ describe('spawnPipe stdin failure', () => {
     expect(result).toEqual({ code: 0, signal: null });
     expect(stdout).toBe('the prompt');
     expect(stderr).toBe('read');
+  });
+});
+
+describe('spawnPipe held stdin', () => {
+  itUnix('fails an incomplete initial prompt while stdin is held and reaps the child', async () => {
+    let pid = 0;
+    const ready = vi.fn();
+    await expect(
+      spawnPipe({
+        command: process.execPath,
+        args: ['-e', "require('node:fs').closeSync(0);setTimeout(()=>process.exit(0),50)"],
+        detached: true,
+        stdin: 'x'.repeat(16 * 1024 * 1024),
+        onStdinReady: ready,
+        onSpawned: (proc) => {
+          pid = proc.pid ?? 0;
+        },
+        onStdout: () => undefined,
+        onStderr: () => undefined,
+        onClose: (code) => code,
+      }),
+    ).rejects.toMatchObject({ kind: 'process-stdin-incomplete' });
+    expect(ready).not.toHaveBeenCalled();
+    expect(pid).toBeGreaterThan(1);
+    expect(processIsAbsent(pid)).toBe(true);
+  });
+
+  itUnix('returns a real EPIPE to the follow-up writer and completes after reaping', async () => {
+    let pid = 0;
+    let writer: SpawnStdinWriter | undefined;
+    let write: Promise<void> | undefined;
+    let writeError: unknown;
+    const result = await spawnPipe({
+      command: process.execPath,
+      args: [
+        '-e',
+        "process.stdin.once('data',()=>{process.stdin.once('close',()=>{console.log('closed');setTimeout(()=>process.exit(0),100)});process.stdin.destroy()})",
+      ],
+      detached: true,
+      stdin: 'prompt',
+      onStdinReady: (value) => {
+        writer = value;
+      },
+      onSpawned: (proc) => {
+        pid = proc.pid ?? 0;
+      },
+      onStdout: () => {
+        if (writer === undefined) throw new Error('writer unavailable');
+        write = writer.write('x'.repeat(16 * 1024 * 1024)).catch((cause) => {
+          writeError = cause;
+        });
+        return undefined;
+      },
+      onStderr: () => undefined,
+      onClose: (code) => code,
+    });
+    await write;
+    expect(writeError).toMatchObject({ code: 'EPIPE' });
+    expect(result).toBe(0);
+    expect(pid).toBeGreaterThan(1);
+    expect(processIsAbsent(pid)).toBe(true);
+  });
+
+  itUnix('writes the initial prompt and follow-up before the owner ends stdin', async () => {
+    let output = '';
+    const result = await spawnPipe({
+      command: process.execPath,
+      args: [
+        '-e',
+        "process.stdin.setEncoding('utf8');process.stdin.on('data',c=>process.stdout.write(c));process.stdin.on('end',()=>process.stdout.write('EOF'))",
+      ],
+      detached: true,
+      stdin: 'prompt\n',
+      onStdinReady: (writer) => {
+        void writer.write('steer\n').then(() => writer.end());
+      },
+      onStdout: (chunk) => {
+        output += chunk;
+        return undefined;
+      },
+      onStderr: () => undefined,
+      onClose: (code) => code,
+    });
+    expect(result).toBe(0);
+    expect(output).toBe('prompt\nsteer\nEOF');
+  });
+
+  itUnix('allows exit with held stdin and rejects later writes only to the owner', async () => {
+    let writer: SpawnStdinWriter | undefined;
+    const result = await spawnPipe({
+      command: process.execPath,
+      args: ['-e', "process.stdin.once('data',()=>process.exit(0))"],
+      detached: true,
+      stdin: 'prompt',
+      onStdinReady: (value) => {
+        writer = value;
+      },
+      onStdout: () => undefined,
+      onStderr: () => undefined,
+      onClose: (code) => code,
+    });
+    expect(result).toBe(0);
+    if (writer === undefined) throw new Error('writer unavailable');
+    await expect(writer.write('late')).rejects.toBeInstanceOf(Error);
+    writer.end();
   });
 });

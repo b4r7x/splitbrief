@@ -65,6 +65,8 @@ export const QueuedMessageSchema = z
     phase: PhaseSchema,
     deliveredViaNative: z.boolean(),
     nativeDeliveryState: z.enum(['pending', 'injecting', 'delivered']).default('pending'),
+    possibleDuplicate: z.boolean().optional(),
+    deliveredMidCall: z.literal(true).optional(),
     drainedAt: z.string().optional(),
     deliveredTo: z
       .object({
@@ -150,6 +152,7 @@ export const LineageRecordSchema = z.object({
   notes: z.array(z.string()).default([]),
   carriedFailure: z.string().optional(),
   corrections: z.array(z.string()).optional(),
+  correctionImages: z.array(AttachmentSchema).optional(),
 });
 export type LineageRecord = z.infer<typeof LineageRecordSchema>;
 

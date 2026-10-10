@@ -41,6 +41,32 @@ function runnerWarning(input: RunnerCallWarningInput) {
 }
 
 describe('collectRunnerCallResult', () => {
+  it('excludes subagent deltas and complete records when replaying the answer', () => {
+    const events: RunnerCallEvent[] = [
+      { type: 'call_started', ...base },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'Main ' },
+      {
+        type: 'call_text_delta',
+        ...base,
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'Subagent.',
+        semantics: 'delta',
+      },
+      {
+        type: 'call_text_delta',
+        ...base,
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'Subagent.',
+        semantics: 'final',
+      },
+      { type: 'call_text_delta', ...base, channel: 'assistant', text: 'answer.' },
+      { type: 'call_completed', ...base, status: 'completed', ...completedTerminal },
+    ];
+    expect(collectRunnerCallResult(events).text).toBe('Main answer.');
+  });
+
   it('collects text, usage, session, tools, artifacts, warnings, and terminal success', () => {
     const events: RunnerCallEvent[] = [
       { type: 'call_started', ...base },

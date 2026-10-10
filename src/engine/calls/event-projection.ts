@@ -61,6 +61,7 @@ export function projectRunnerCallEvent(
         ...base,
         channel: event.channel,
         text: event.text,
+        ...(event.subagentId !== undefined && { subagentId: event.subagentId }),
         semantics: event.semantics ?? 'delta',
       };
     case 'call_stderr_delta':

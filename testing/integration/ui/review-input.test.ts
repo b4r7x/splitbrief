@@ -177,7 +177,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     expect(enqueue).toHaveBeenCalledWith(plainUserMessage(input), phase);
     expect(feedbackStore.get()).toMatchObject({
       isError: false,
-      message: 'Message queued for the next planner turn.',
+      message: 'Queued for PLAN · ctrl+⏎ sends now',
     });
   });
 

@@ -161,6 +161,7 @@ export function createApiImplementer(
         model,
         messages,
         temperature,
+        ...(opts.images !== undefined && { images: [...opts.images] }),
         onProgress: onOutput,
         maxTokens,
         runtimeObservation: admission.context,

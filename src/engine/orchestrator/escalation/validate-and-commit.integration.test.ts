@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Config } from '../../../core/schemas/config.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
@@ -5,13 +6,17 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
-import { makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import { makeBusRecorder, makeWctx } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Validator } from '../validation/types.js';
 import type { EscalationContext } from './types.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { clearPendingQueue } from '../queue/clear.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 import { validateAndCommit } from './validate-and-commit.js';
 
 let dirs: string[] = [];
@@ -75,6 +80,96 @@ async function makeValidateCtx(opts: {
 }
 
 describe('validateAndCommit', () => {
+  it('completes without an answer when a correction is cleared after recorded checks', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = makeImplState([task]);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe((event) => {
+      if (event.type !== 'checks_run') return;
+      const checked = loadState(ref);
+      if (checked === null) throw new Error('missing recorded checks');
+      clearPendingQueue({ ...ref, state: checked, bus });
+    });
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      enqueueUserMessage({
+        ...ref,
+        state,
+        message: plainUserMessage('cleared correction'),
+        phase: state.phase,
+        bus,
+      });
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+    const ctx = await makeValidateCtx({
+      ...ref,
+      validator: { formatChangedFiles: vi.fn().mockResolvedValue(undefined) },
+    });
+
+    const result = await validateAndCommit({
+      ctx: { ...ctx, bus },
+      task,
+      state,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      retryCount: 1,
+      preApprovedChangedFiles: [],
+    });
+
+    expect(runCommand).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ completed: true });
+    expect(result).not.toHaveProperty('answer');
+    expect(result.state.tasks[0]?.status).toBe('done');
+    expect(result.state.currentTaskIndex).toBe(1);
+    expect(result.state.messageQueue).toEqual([]);
+    expect(loadState(ref)?.messageQueue).toEqual([]);
+    expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([]);
+  });
+
+  it('returns an answer without completing when a message arrives during green checks', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = makeImplState([task]);
+    const { bus, events } = makeBusRecorder();
+    vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      enqueueUserMessage({
+        ...ref,
+        state,
+        message: plainUserMessage('keep the public name'),
+        phase: state.phase,
+        bus,
+      });
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+    const ctx = await makeValidateCtx({
+      ...ref,
+      validator: { formatChangedFiles: vi.fn().mockResolvedValue(undefined) },
+    });
+
+    const result = await validateAndCommit({
+      ctx: { ...ctx, bus },
+      task,
+      state,
+      method: 'local',
+      transitionType: 'VALIDATION_PASS',
+      retryCount: 1,
+      preApprovedChangedFiles: [],
+    });
+
+    expect(result).toMatchObject({ completed: false, answer: CORRECTION_AFTER_CHECKS });
+    expect(result.state.currentTaskIndex).toBe(0);
+    expect(result.state.tasks[0]?.status).not.toBe('done');
+    expect(result.state.messageQueue[0]?.drainedAt).toBeUndefined();
+    expect(events.filter((event) => event.type === 'task_completed')).toEqual([]);
+  });
+
   it('does not commit retry results when the signal aborts during validation', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T011', suggestedFiles: ['src/abort.ts'] });

@@ -3,10 +3,12 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
+import { createRunnerCallRecorder } from '../calls/recorder.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
-import { claudeCodeImplementerAdapter } from './cli-tools/claude-code.js';
-import type { CliInvocation } from './cli-tools/contract.js';
-import { invokeCliAdapter } from './invoke-cli-adapter.js';
+import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './cli-tools/claude-code.js';
+import type { CliInvocation, CliProtocolEvent } from './cli-tools/contract.js';
+import { recordCliProtocolEvent } from './cli-tools/process-invoke.js';
+import { createCliTextForwarder, invokeCliAdapter } from './invoke-cli-adapter.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
@@ -188,7 +190,221 @@ function terminalRows(events: readonly RunnerCallEvent[]): RunnerCallEvent[] {
   return events.filter((event) => event.type === 'call_completed' || event.type === 'call_error');
 }
 
+describe('synchronous CLI frame consumers', () => {
+  it('reconciles interleaved subagent restatements apart from the main answer and system text', () => {
+    const output: { text: string; messageStart: boolean }[] = [];
+    const sourceEvents: RunnerCallEvent[] = [];
+    const forwardText = createCliTextForwarder((text, opts, event) => {
+      output.push({ text, messageStart: opts?.messageStart === true });
+      sourceEvents.push(event);
+    });
+    const recorder = createRunnerCallRecorder({
+      context: callContext,
+      onEvent: (event) => {
+        if (event.type === 'call_text_delta') forwardText(event);
+      },
+    });
+    const protocol: readonly CliProtocolEvent[] = [
+      { type: 'text', channel: 'assistant', text: 'Main ', semantics: 'delta' },
+      {
+        type: 'text',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'subagent answer',
+        semantics: 'delta',
+      },
+      {
+        type: 'text',
+        channel: 'assistant',
+        subagentId: 'agent-2',
+        text: 'subagent answer',
+        semantics: 'delta',
+      },
+      { type: 'text', channel: 'system', text: 'System activity.' },
+      {
+        type: 'text',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'subagent answer',
+        semantics: 'final',
+      },
+      {
+        type: 'text',
+        channel: 'assistant',
+        subagentId: 'agent-2',
+        text: 'subagent answer extended',
+        semantics: 'final',
+      },
+      { type: 'text', channel: 'assistant', text: 'Main answer.', semantics: 'final' },
+      { type: 'text', channel: 'assistant', text: 'Next.', semantics: 'final' },
+      { type: 'text', channel: 'result', text: 'Main answer.Next.', semantics: 'final' },
+    ];
+    for (const event of protocol) recordCliProtocolEvent(recorder, event);
+    expect(output).toEqual([
+      { text: 'Main ', messageStart: false },
+      { text: 'subagent answer', messageStart: false },
+      { text: 'subagent answer', messageStart: false },
+      { text: 'System activity.', messageStart: false },
+      { text: ' extended', messageStart: false },
+      { text: 'answer.', messageStart: false },
+      { text: 'Next.', messageStart: true },
+    ]);
+    expect(sourceEvents).toMatchObject([
+      { channel: 'assistant', text: 'Main ', semantics: 'delta' },
+      { subagentId: 'agent-1', text: 'subagent answer', semantics: 'delta' },
+      { subagentId: 'agent-2', text: 'subagent answer', semantics: 'delta' },
+      { channel: 'system', text: 'System activity.' },
+      { subagentId: 'agent-2', text: 'subagent answer extended', semantics: 'final' },
+      { channel: 'assistant', text: 'Main answer.', semantics: 'final' },
+      { channel: 'assistant', text: 'Next.', semantics: 'final' },
+    ]);
+    expect(recorder.snapshot().text).toBe('Main answer.Next.');
+  });
+
+  itUnix('produces the same Claude text, activity and usage as a process call', async () => {
+    const lines = claudeCaptureWithSystemFrames(['Reading ', 'the parser.']);
+    const output: string[] = [];
+    const messageStarts: boolean[] = [];
+    const events: RunnerCallEvent[] = [];
+    const forwardText = createCliTextForwarder((text, opts) => {
+      output.push(text);
+      messageStarts.push(opts?.messageStart === true);
+    });
+    const recorder = createRunnerCallRecorder({
+      context: callContext,
+      onEvent: (event) => {
+        events.push(event);
+        if (event.type === 'call_text_delta') forwardText(event);
+      },
+    });
+    const parse = claudeCodePlannerAdapter.createParser?.() ?? claudeCodePlannerAdapter.parse;
+    for (const line of lines) {
+      for (const event of parse(line)) recordCliProtocolEvent(recorder, event);
+    }
+    const processCall = await run({ script: EMIT_ALL, lines });
+
+    expect(output).toEqual(['Reading ', 'the parser.']);
+    expect(processCall.output).toEqual(output);
+    expect(processCall.messageStarts).toEqual(messageStarts);
+    expect(recorder.snapshot()).toMatchObject({
+      text: processCall.result.text,
+      usage: processCall.result.usage,
+      nativeSessionId: SESSION_ID,
+    });
+    const activity = (events: readonly RunnerCallEvent[]) =>
+      activityRows(events).map(({ kind, label, diagnosticPartial }) => ({
+        kind,
+        label,
+        diagnosticPartial,
+      }));
+    expect(activity(events)).toEqual(activity(processCall.events));
+    expect(events.some((event) => event.type === 'call_heartbeat')).toBe(true);
+  });
+
+  it('reconciles final text and preserves assistant boundaries around other channels', () => {
+    const output: { text: string; messageStart: boolean }[] = [];
+    const forwardText = createCliTextForwarder((text, opts) => {
+      output.push({ text, messageStart: opts?.messageStart === true });
+    });
+    const recorder = createRunnerCallRecorder({
+      context: callContext,
+      onEvent: (event) => {
+        if (event.type === 'call_text_delta') forwardText(event);
+      },
+    });
+    const protocol: readonly CliProtocolEvent[] = [
+      { type: 'text', channel: 'assistant', text: 'Read', semantics: 'delta' },
+      { type: 'text', channel: 'assistant', text: 'Reading.', semantics: 'final' },
+      { type: 'text', channel: 'system', text: 'Subagent.' },
+      { type: 'text', channel: 'assistant', text: '', semantics: 'delta' },
+      { type: 'text', channel: 'assistant', text: 'Done.', semantics: 'final' },
+      { type: 'text', channel: 'result', text: 'Reading.\n\nDone.', semantics: 'final' },
+      { type: 'text', channel: 'result', text: 'Reading.\n\nDone.\nOK', semantics: 'final' },
+    ];
+    for (const event of protocol) recordCliProtocolEvent(recorder, event);
+
+    expect(output).toEqual([
+      { text: 'Read', messageStart: false },
+      { text: 'ing.', messageStart: false },
+      { text: 'Subagent.', messageStart: false },
+      { text: 'Done.', messageStart: true },
+      { text: 'Reading.\n\nDone.\nOK', messageStart: false },
+    ]);
+    expect(recorder.snapshot().text).toBe('Reading.\n\nDone.\nOK');
+  });
+});
+
 describe('invokeCliAdapter streaming a Claude Code capture', () => {
+  itUnix(
+    'publishes reconciled subagent records without changing main message boundaries',
+    async () => {
+      const subagent = (id: string, event: Record<string, unknown>) =>
+        JSON.stringify({ ...event, parent_tool_use_id: id });
+      const assistant = (text: string) => ({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text }] },
+      });
+      const delta = {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'subagent answer' },
+        },
+      };
+      const { result, output, messageStarts, events } = await run({
+        script: EMIT_ALL,
+        lines: [
+          streamEvent({ type: 'message_start' }),
+          textDelta('Main '),
+          subagent('agent-1', { type: 'stream_event', event: { type: 'message_start' } }),
+          subagent('agent-1', delta),
+          subagent('agent-2', delta),
+          subagent('agent-1', assistant('subagent answer')),
+          subagent('agent-2', assistant('subagent answer')),
+          JSON.stringify(assistant('Main answer.')),
+          subagent('agent-1', assistant('subagent answer')),
+          streamEvent({ type: 'message_start' }),
+          JSON.stringify(assistant('Next.')),
+          JSON.stringify({ type: 'result', result: '' }),
+        ],
+      });
+      expect(result.text).toBe('Next.');
+      expect(output).toEqual([
+        'Main ',
+        'subagent answer',
+        'subagent answer',
+        'answer.',
+        'subagent answer',
+        'Next.',
+      ]);
+      expect(messageStarts).toEqual([false, false, false, false, true, true]);
+      const subagentEvents = events.filter(
+        (event) => event.type === 'call_text_delta' && event.subagentId !== undefined,
+      );
+      expect(subagentEvents).toEqual([
+        expect.objectContaining({
+          subagentId: 'agent-1',
+          channel: 'assistant',
+          text: 'subagent answer',
+          semantics: 'delta',
+        }),
+        expect.objectContaining({
+          subagentId: 'agent-2',
+          channel: 'assistant',
+          text: 'subagent answer',
+          semantics: 'delta',
+        }),
+        expect.objectContaining({
+          subagentId: 'agent-1',
+          channel: 'assistant',
+          text: 'subagent answer',
+          semantics: 'delta',
+        }),
+      ]);
+      expect(activityRows(events).some((event) => event.label === 'system activity')).toBe(false);
+    },
+  );
+
   itUnix(
     'marks the next assistant message after a final snapshot without repeating deltas',
     async () => {
