@@ -18,6 +18,63 @@ const context: RunnerCallContext = {
 };
 
 describe('createRunnerCallRecorder', () => {
+  it('keeps subagent text and its budget apart from the returned answer', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({ context, onEvent: (event) => events.push(event) });
+    recorder.text({ channel: 'assistant', text: 'Main ' });
+    recorder.text({
+      channel: 'assistant',
+      subagentId: 'agent-1',
+      text: 'Subagent.',
+      semantics: 'delta',
+    });
+    recorder.text({
+      channel: 'assistant',
+      subagentId: 'agent-1',
+      text: 'Subagent.',
+      semantics: 'final',
+    });
+    recorder.text({ channel: 'assistant', text: 'answer.' });
+    expect(recorder.snapshot().text).toBe('Main answer.');
+    recorder.text({
+      channel: 'assistant',
+      subagentId: 'agent-1',
+      text: 'x'.repeat(RUNNER_CALL_OUTPUT_MAX_BYTES + 1),
+    });
+    expect(recorder.finishCompleted()).toMatchObject({ status: 'completed', text: 'Main answer.' });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        channel: 'assistant',
+        subagentId: 'agent-1',
+        text: 'Subagent.',
+      }),
+    );
+  });
+
+  it('redacts the subagent identity in recorded text', () => {
+    const credential = 'opaque-subagent-credential-7d93c612';
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context,
+      credentialValues: [credential],
+      onEvent: (event) => events.push(event),
+    });
+    recorder.text({
+      channel: 'assistant',
+      subagentId: credential,
+      text: 'Subagent.',
+      semantics: 'final',
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'call_text_delta',
+        subagentId: '***REDACTED***',
+      }),
+    );
+    expect(JSON.stringify(events)).not.toContain(credential);
+  });
+
   it('snapshots axis words through activity and terminal result collection', () => {
     const axes = ['high'];
     const events: RunnerCallEvent[] = [];

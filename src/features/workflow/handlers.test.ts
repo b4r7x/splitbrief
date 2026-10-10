@@ -224,6 +224,13 @@ describe('resumeParkedRun', () => {
   it('reports no park when the run is at rest', () => {
     expect(resumeParkedRun(plainUserMessage(''))).toBe(false);
   });
+
+  it('leaves a resolverless park for the saved-state continuation', () => {
+    stopStore.park('mid-brief', 'T001', null);
+
+    expect(resumeParkedRun(plainUserMessage('keep the greeting API'))).toBe(false);
+    expect(stopStore.get().phase).toBe('parked');
+  });
 });
 
 describe('requestSteer', () => {
@@ -260,6 +267,47 @@ describe('requestSteer', () => {
 
   it('reports nothing to steer when no run is on screen', () => {
     expect(requestSteer(plainUserMessage('nope'))).toBe(false);
+  });
+
+  it('hands a resolverless park to the run continuation with its attachments', () => {
+    const resume = vi.fn();
+    setResumeHandler(resume);
+    stopStore.park('mid-brief', 'T001', null);
+    const message = {
+      ...plainUserMessage('keep the greeting API'),
+      attachedInputs: [{ path: '/tmp/send-now-note.md', kind: 'text' as const }],
+    };
+
+    expect(requestSteer(message)).toBe(true);
+    expect(resume).toHaveBeenCalledExactlyOnceWith(message);
+  });
+
+  it.each([
+    ['stop', requestStopNow],
+    ['end run', requestEndRun],
+  ] as const)('an explicit %s supersedes a pending steer', (_name, stop) => {
+    lifecycleStore.__testReset({ phase: 'implementing', cancelled: false });
+    setStopHandler(vi.fn());
+    setCancelHandler(vi.fn());
+    createAbortHandlerScope()(vi.fn());
+    expect(requestSteer(plainUserMessage('keep the greeting API'))).toBe(true);
+
+    expect(stop()).toBe(true);
+    const resolve = vi.fn();
+    stopStore.park('mid-brief', 'T001', resolve);
+
+    expect(resolve).not.toHaveBeenCalled();
+    expect(stopStore.get().phase).toBe('parked');
+  });
+
+  it('delivers the steer exactly once when the stop parks synchronously', () => {
+    const resolve = vi.fn();
+    setStopHandler(() => stopStore.park('mid-brief', 'T001', resolve));
+    const message = plainUserMessage('keep the greeting API');
+
+    expect(requestSteer(message)).toBe(true);
+    expect(resolve).toHaveBeenCalledExactlyOnceWith(message);
+    expect(stopStore.get().phase).toBe('idle');
   });
 });
 

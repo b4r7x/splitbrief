@@ -337,6 +337,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   strictCallPhaseEvent('runner_call_text_delta').extend({
     channel: RunnerCallTextChannelSchema,
     text: z.string(),
+    subagentId: CallIdSchema.optional(),
     semantics: RunnerCallTextSemanticsSchema.optional(),
   }),
   strictCallPhaseEvent('runner_call_usage').extend({
@@ -732,11 +733,21 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     id: z.string(),
     preview: z.string().optional(),
     origin: z.enum(['user-input', 'clarification']).optional(),
+    seat: z.enum(CREW_SEAT_IDS).optional(),
+    taskId: z.string().optional(),
+    steerable: z.boolean().optional(),
   }),
   phaseEvent('message_injected_native').extend({ id: z.string(), preview: z.string().optional() }),
   phaseEvent('queue_drained').extend({
     count: z.number().int().nonnegative(),
     ids: z.array(z.string()).optional(),
+    seat: z.enum(CREW_SEAT_IDS).optional(),
+    taskId: z.string().optional(),
+    via: z.literal('mid-call').optional(),
+  }),
+  phaseEvent('steerable_call').extend({
+    seat: z.enum(CREW_SEAT_IDS).optional(),
+    taskId: z.string().optional(),
   }),
   phaseEvent('queue_cleared').extend({ count: z.number().int().nonnegative() }),
   phaseEvent('user_message').extend({

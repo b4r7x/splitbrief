@@ -102,7 +102,7 @@ import {
   type PlanTurn,
 } from './plan-session.js';
 import { drainAndFormat } from './queue-drain.js';
-import { formatDrainedMessages } from '../queue/prompt.js';
+import { formatDrainedMessages, formatMessageInput, imagesFromMessages } from '../queue/prompt.js';
 import { sanitizeDiscoveredValidation } from './sanitize-discovered-validation.js';
 import type { PlanningPhaseOptions, PlanningPhaseResult, PlanningProducerResult } from './types.js';
 
@@ -288,7 +288,10 @@ export async function runPlanningSession(
     pending === undefined ? steerAnswer?.text : undefined,
   );
   let resumedAnswer = pending === undefined ? undefined : steerAnswer;
-  const standing = [lead, steerAnswer === undefined ? steer?.text : undefined]
+  const standing = [
+    lead,
+    steerAnswer === undefined && steer !== undefined ? formatMessageInput(steer) : undefined,
+  ]
     .filter((part): part is string => part !== undefined && part !== '')
     .join('\n\n');
   // A session continued after a stop at its questions: a planner on its own session still holds
@@ -298,7 +301,10 @@ export async function runPlanningSession(
     .join('\n\n');
   let standingHeard = false;
   let note = '';
-  let images = opts.attachments;
+  let images = imagesFromMessages([
+    { images: opts.attachments ?? [] },
+    ...(steer === undefined ? [] : [steer]),
+  ]);
   let priorMessages = wctx.resumeHolder?.messages;
 
   if (state.pendingPlannerConversation !== undefined && pending === undefined) {
@@ -382,9 +388,14 @@ export async function runPlanningSession(
           ...planRepairWarning(turn.errors),
         });
       }
-      const drained = drainAndFormat(projectDir, sessionId, state, bus);
+      const drained = await drainAndFormat(projectDir, sessionId, state, bus);
       state = drained.state;
       note = [drained.prefix.trim(), note].filter((part) => part !== '').join('\n\n');
+      images = imagesFromMessages([
+        { images },
+        ...drained.messages,
+        ...(turn.kind === 'answers' ? [turn.reply.message] : []),
+      ]);
 
       const loop = await withContinuationLoop<RequestTypedResult<PlanAnswer>>({
         ctx: {
@@ -400,7 +411,11 @@ export async function runPlanningSession(
         onStateChange: (next) => {
           state = next;
         },
-        body: async ({ signal, steer: interruptSteer }) => {
+        body: async ({ signal, steer: interruptSteer, steerInput }) => {
+          const callImages = imagesFromMessages([
+            { images },
+            ...(steerInput === undefined ? [] : [steerInput]),
+          ]);
           const heartbeat = startPlannerHeartbeat(bus, state.phase, Date.now());
           try {
             const asked = await askPlannerSession(
@@ -409,6 +424,7 @@ export async function runPlanningSession(
                 sessionId,
                 bus,
                 planner,
+                ...(wctx.steering !== undefined && { steering: wctx.steering }),
                 state,
                 signal,
                 onStateChange: (next) => {
@@ -419,7 +435,7 @@ export async function runPlanningSession(
                 schema: PlanAnswerSchema,
                 jsonSchema: PLAN_ANSWER_JSON_SCHEMA,
                 schemaName: 'plan_result',
-                ...(images !== undefined && { images }),
+                ...(callImages.length > 0 && { images: callImages }),
                 ...(priorMessages !== undefined && { priorMessages }),
                 compose: ({ onSession, priorMessages: prior }) =>
                   compose(turn, onSession, interruptSteer, prior),
@@ -439,7 +455,7 @@ export async function runPlanningSession(
       // an expired thread resets the session it names, and an answer saves the handle it returned.
       note = '';
       standingHeard = true;
-      images = undefined;
+      images = [];
       priorMessages = undefined;
       const answered = loop.value;
       state = addUsageAndSave(wctx, state, 'planner', answered.usage);
@@ -696,7 +712,7 @@ export async function runPlanApproval(
     }
     if (signal?.aborted) return { disposition: 'terminal', state: current, outcome: 'cancelled' };
     const reviewed = readSpecFileOrEmpty(ref, PLAN_JSON_FILE);
-    const queued = drainAndFormat(projectDir, sessionId, current, bus);
+    const queued = await drainAndFormat(projectDir, sessionId, current, bus);
     current = queued.state;
     let correction = queued.prefix.trim();
     let displayCorrection = formatDrainedMessages(

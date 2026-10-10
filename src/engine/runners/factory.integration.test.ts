@@ -30,6 +30,10 @@ import { resolveCliExecutableAliases } from './resolve-cli-executable.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { CUSTOM_ONLY_CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerCreationOptions } from './factory.js';
+import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
+import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
+import { createSteeringPort, deliverToRunningCall, type SteerOutcome } from '../calls/steering.js';
+import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 
 function withPlanner(planner: Config['planner']): Config {
   return { ...makeConfig(), planner };
@@ -227,6 +231,100 @@ function customRuntime(): CustomRunnerRuntimePort {
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe('factory Claude mid-call steering', () => {
+  it.each(['planner', 'reviewer'] as const)(
+    'delivers a message to the running %s call',
+    async (seat) => {
+      const dir = createTempDir('factory-claude-steering');
+      const projectDir = createTempDir('factory-claude-steering-project');
+      const restorePath = activateSafeCliShimPath(dir);
+      const port = createSteeringPort();
+      const sends: Promise<SteerOutcome>[] = [];
+      try {
+        const { stdinFile, argvFile } = installClaudeSteeringShim(dir);
+        const { executable } = await resolveCliExecutableAliases({
+          commands: ['claude'],
+          projectDir,
+        });
+        const claude = {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'sonnet',
+          effort: 'high',
+        } as const;
+        const config = makeConfig({ planner: claude, reviewer: claude });
+        const preparationId = 'factory-claude-steering';
+        const slot: RunnerSlot = { role: seat };
+        const gate = makeRunnerGate(claude, slot, preparationId);
+        if (gate.kind !== 'cli') throw new Error('expected a CLI gate');
+        const authority = {
+          preparedConfig: config,
+          preparationId,
+          slot,
+          gates: [
+            {
+              ...gate,
+              executable: CliExecutableReceiptSchema.parse(executable),
+              installedVersion: '2.1.296',
+            },
+          ],
+          initialSessionId: seat === 'planner' ? 'steering-session' : null,
+          skillRoots: ['/tmp/factory-steering-skills'],
+        };
+        let sent = false;
+        const callbacks = {
+          onOutput: () => {},
+          steering: port,
+          onCallEvent: (event: RunnerCallEvent) => {
+            if (event.type !== 'call_tool_use_delta' || sent) return;
+            sent = true;
+            sends.push(deliverToRunningCall(port.current(), { id: seat, text: `STEER_${seat}` }));
+          },
+        };
+        if (seat === 'planner') {
+          const planner = await createPreparedPlanner(config, authority);
+          const result = await planner.typedCall({ projectDir, seat, callbacks }).invoke({
+            prompt: 'Plan the change',
+            schema: { json: { type: 'object' }, name: 'plan' },
+          });
+          expect(result).toMatchObject({ status: 'completed', structured: { answer: 'last' } });
+        } else {
+          const reviewer = await createPreparedReviewer(config, authority);
+          const result = await reviewer.typedCall({ projectDir, seat, callbacks }).invoke({
+            prompt: 'Final Implementation Review',
+            schema: { json: { type: 'object' }, name: 'verdict' },
+          });
+          expect(result).toMatchObject({ status: 'completed', structured: { answer: 'last' } });
+        }
+        expect(await Promise.all(sends)).toEqual(['delivered']);
+        expect(port.current()).toBeNull();
+        const turns = readFileSync(stdinFile, 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line));
+        expect(turns).toHaveLength(2);
+        expect(turns[1]).toMatchObject({ type: 'user', message: { content: `STEER_${seat}` } });
+        const argv = JSON.parse(readFileSync(argvFile, 'utf8'));
+        expect(argv).toEqual(
+          expect.arrayContaining([
+            '--input-format',
+            'stream-json',
+            '--replay-user-messages',
+            '--effort',
+            'high',
+            '--settings',
+          ]),
+        );
+        expect(argv.includes('--resume')).toBe(seat === 'planner');
+      } finally {
+        restorePath();
+        cleanupTempDir(dir);
+        cleanupTempDir(projectDir);
+      }
+    },
+  );
 });
 
 describe('createPlanner', () => {

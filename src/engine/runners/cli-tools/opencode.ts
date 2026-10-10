@@ -7,6 +7,7 @@ import { validateCliArgs } from './validate-args.js';
 import { errorLineProtocolEvents, errorLineTerminal } from './final-group.js';
 import { parseOpencodeLine } from '../../streaming/parse-opencode.js';
 import type { ParsedLine } from '../types.js';
+import { createOpencodeSteering } from './opencode-steering.js';
 
 const OPENCODE_ID = 'opencode' as const;
 const OPENCODE_COMMAND = 'opencode' as const;
@@ -22,6 +23,7 @@ const OPENCODE_PROTECTED_FLAGS = new Set([
   '--format',
   '--model',
   '--prompt',
+  '--server',
   '--standalone',
   '--variant',
   '-m',
@@ -165,6 +167,7 @@ function createPlannerAdapter(): CliPlannerAdapter<'opencode'> {
     supportsSessionResume: false,
     supportsEffort: CLI_TOOL_CATALOG.opencode.supportsEffort,
     promptTransport: OPENCODE_PROMPT_TRANSPORT,
+    steering: createOpencodeSteering(opencodeProtocolEvents),
     baseArgs: plannerBaseArgs,
     buildArgs: (input) => [...plannerBaseArgs(input), ...input.configuredArgs],
     validateArgs,
@@ -181,6 +184,7 @@ function createImplementerAdapter(): CliImplementerAdapter<'opencode'> {
     descriptor: CLI_TOOL_CATALOG.opencode,
     role: 'implementer',
     promptTransport: OPENCODE_PROMPT_TRANSPORT,
+    steering: createOpencodeSteering(opencodeProtocolEvents),
     baseArgs: implementerBaseArgs,
     buildArgs: (input) => [...implementerBaseArgs(input), ...input.configuredArgs],
     validateArgs,

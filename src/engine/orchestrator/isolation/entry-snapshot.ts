@@ -4,6 +4,8 @@ import { join, relative } from 'node:path';
 import { sessionDir } from '../../../core/paths.js';
 import type { ChangedFilesSnapshot } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import { evidenceLedgerPath, mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { evidenceError } from '../../../core/evidence/errors.js';
 import { SECURE_FILE_MODE } from '../../../lib/fs.js';
 import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
@@ -22,6 +24,7 @@ import {
   restoreDirtyFilesFromSnapshot,
 } from '../approval/file-snapshots/restore.js';
 import { retentionError } from './retention.js';
+import { recordApiRevertEvidence } from '../evidence/task.js';
 
 /**
  * Snapshots for a directory git cannot describe on its own — a staged copy, or a
@@ -90,7 +93,8 @@ async function restoreEntryFiles(
   snapshot: ChangedFilesSnapshot,
   files: readonly string[],
   store: string,
-): Promise<string[]> {
+): Promise<{ restoredFiles: string[]; removedPaths: string[] }> {
+  const removedPaths: string[] = [];
   for (const file of files) {
     await removeConfinedSymlink(dir, file);
     const link = snapshot.symlinks?.[file];
@@ -99,13 +103,15 @@ async function restoreEntryFiles(
       continue;
     }
     try {
-      await writeConfinedEntry(dir, file, await entryToRestore(dir, snapshot, file, store));
+      const entry = await entryToRestore(dir, snapshot, file, store);
+      await writeConfinedEntry(dir, file, entry);
+      if (entry.kind === 'absent') removedPaths.push(file);
     } catch (err) {
       if (isENOENT(err)) throw retentionError.unavailable();
       throw err;
     }
   }
-  return [...files];
+  return { restoredFiles: [...files], removedPaths };
 }
 
 /** Whether git describes `dir` itself: its own work tree top, with a commit to diff against. */
@@ -189,11 +195,25 @@ export async function restoreWorkspaceFiles(input: {
       ? await saveReplacedEntries(ref, files)
       : undefined;
   let restoredFiles: string[];
+  let removedPaths: string[];
   if (snapshot.baselineFileHashes !== undefined) {
-    restoredFiles = await restoreEntryFiles(dir, snapshot, files, entryStoreDir(ref));
+    ({ restoredFiles, removedPaths } = await restoreEntryFiles(
+      dir,
+      snapshot,
+      files,
+      entryStoreDir(ref),
+    ));
   } else {
     for (const file of files) await removeConfinedSymlink(dir, file);
-    restoredFiles = (await restoreDirtyFilesFromSnapshot(dir, snapshot, [...files])).restoredFiles;
+    ({ restoredFiles, removedPaths } = await restoreDirtyFilesFromSnapshot(dir, snapshot, [
+      ...files,
+    ]));
+  }
+  if (removedPaths.length > 0 && existsSync(evidenceLedgerPath(ref))) {
+    mutateEvidenceLedger(ref, (current) => {
+      if (current === null) throw evidenceError.ledgerNotFound();
+      return recordApiRevertEvidence({ ledger: current, workspacePath: dir, removedPaths });
+    });
   }
   return { restoredFiles, ...(savedTo !== undefined && { savedTo }) };
 }

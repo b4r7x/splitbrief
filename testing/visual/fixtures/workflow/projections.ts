@@ -7,6 +7,7 @@ import type { DriftFinding } from '../../../../src/core/schemas/drift.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
+import { closedQueueProjection } from './closed-queue-projection.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
@@ -31,10 +32,9 @@ import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-proj
 import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder.js';
 import { createImplementerCallContext } from '../../../../src/engine/implementers/pipeline/call-result.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
-import {
-  createStreamHandler,
-  finishClaudeStream,
-} from '../../../../src/engine/runners/claude/stream.js';
+import { claudeCodePlannerAdapter } from '../../../../src/engine/runners/cli-tools/claude-code.js';
+import { recordCliProtocolEvent } from '../../../../src/engine/runners/cli-tools/process-invoke.js';
+import { createCliTextForwarder } from '../../../../src/engine/runners/invoke-cli-adapter.js';
 import type { ApprovalPromptState } from '../../../../src/stores/approval-prompt/prompt.js';
 import type {
   ReviewChecksApprovalRequest,
@@ -643,6 +643,88 @@ const implementationProjection: WorkflowFixtureProjection = {
   streaming: {
     lines: ['Reading fixture contract', 'Projecting bounded activity'],
   },
+};
+
+const implementationQueuedProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-implementation-queued'),
+  config: { implementer: BASE_PLANNER },
+  events: [
+    ...implementationProjection.events.map((event): EngineEvent => {
+      if (event.type === 'task_started') {
+        return { ...event, taskId: taskId('T003'), tool: 'claude-code', model: BASE_PLANNER.model };
+      }
+      if (event.type === 'runner_call_started' || event.type === 'runner_call_activity') {
+        return {
+          ...event,
+          taskId: taskId('T003'),
+          backendKind: 'cli',
+          runnerName: 'claude',
+          model: BASE_PLANNER.model,
+          axes: seatAxisWords(BASE_PLANNER),
+        };
+      }
+      if (event.type === 'tasks_planned') {
+        return {
+          ...event,
+          tasks: event.tasks.map((task) => ({
+            ...task,
+            id: task.id === WORKFLOW_FIXTURE_TASK_ID ? taskId('T003') : task.id,
+          })),
+        };
+      }
+      if ('taskId' in event && event.taskId === WORKFLOW_FIXTURE_TASK_ID) {
+        return { ...event, taskId: taskId('T003') };
+      }
+      return event;
+    }),
+    {
+      type: 'message_queued',
+      ts: FIXED_TS + 400,
+      phase: 'implementing',
+      id: 'visual-build-message',
+      seat: 'build',
+      taskId: 'T003',
+      preview: 'Keep the parser changes small.',
+    },
+  ],
+};
+
+const implementationDeliveredProjection: WorkflowFixtureProjection = {
+  ...implementationQueuedProjection,
+  scenarioId: scenarioId('workflow-implementation-delivered'),
+  events: [
+    ...implementationQueuedProjection.events,
+    {
+      type: 'queue_drained',
+      ts: FIXED_TS + 500,
+      phase: 'implementing',
+      count: 1,
+      ids: ['visual-build-message'],
+      seat: 'build',
+      taskId: 'T003',
+    },
+  ],
+};
+
+const implementationSteerableProjection: WorkflowFixtureProjection = {
+  ...implementationDeliveredProjection,
+  scenarioId: scenarioId('workflow-implementation-steerable'),
+  events: implementationDeliveredProjection.events.flatMap((event): EngineEvent[] => {
+    if (event.type === 'message_queued') {
+      return [
+        {
+          type: 'steerable_call',
+          ts: FIXED_TS + 350,
+          phase: 'implementing',
+          seat: 'build',
+          taskId: 'T003',
+        },
+        { ...event, steerable: true },
+      ];
+    }
+    return [event.type === 'queue_drained' ? { ...event, via: 'mid-call' } : event];
+  }),
 };
 
 const buildConsultProjection: WorkflowFixtureProjection = {
@@ -3810,7 +3892,19 @@ const CLAUDE_PLAN_FRAMES = [
 function claudePlanFrameEvents(): EngineEvent[] {
   const events: EngineEvent[] = [];
   const stamp = (): number => FIXED_TS + 300 + events.length;
-  const { state, handleLine } = createStreamHandler({
+  const adapter = claudeCodePlannerAdapter;
+  const parse = adapter.createParser?.() ?? adapter.parse;
+  const forwardText = createCliTextForwarder((text, opts) => {
+    events.push({
+      type: 'planner_text',
+      ts: stamp(),
+      phase: 'planning',
+      text,
+      content: 'markdown',
+      ...(opts?.messageStart === true && { messageStart: true }),
+    });
+  });
+  const recorder = createRunnerCallRecorder({
     context: {
       callId: 'visual-claude-plan-001',
       role: 'planner',
@@ -3820,28 +3914,21 @@ function claudePlanFrameEvents(): EngineEvent[] {
       axes: seatAxisWords(BASE_PLANNER),
       attempt: 1,
     },
-    onOutput: (text) => {
-      events.push({
-        type: 'planner_text',
-        ts: stamp(),
-        phase: 'planning',
-        text,
-        content: 'markdown',
-      });
-    },
-    onCallEvent: (event) => {
+    onEvent: (event) => {
       events.push(
         ...projectRunnerCallEvents(
           { ...event, ts: stamp() },
           { rootDir: VISUAL_FIXTURE_PROJECT_DIR, phase: 'planning', sequence: events.length },
         ),
       );
+      if (event.type === 'call_text_delta') forwardText(event);
     },
   });
   for (const frame of CLAUDE_PLAN_FRAMES) {
-    handleLine(JSON.stringify({ session_id: 'visual-claude-session', ...frame }));
+    for (const event of parse(JSON.stringify({ session_id: 'visual-claude-session', ...frame }))) {
+      recordCliProtocolEvent(recorder, event);
+    }
   }
-  finishClaudeStream(state);
   return events.filter(
     (event) => event.type === 'planner_text' || event.type === 'runner_call_activity',
   );
@@ -4760,6 +4847,9 @@ const projections = [
   planCompiledProjection,
   firstBriefAfterPlanProjection,
   implementationProjection,
+  implementationQueuedProjection,
+  implementationDeliveredProjection,
+  implementationSteerableProjection,
   {
     ...implementationProjection,
     scenarioId: scenarioId('workflow-crew-wide'),
@@ -4994,10 +5084,9 @@ const projections = [
 
 export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixtureProjection> =
   new Map(
-    [...projections, retainedWorkspaceProjection, ...atRestProjections].map((projection) => [
-      projection.scenarioId,
-      projection,
-    ]),
+    [...projections, retainedWorkspaceProjection, closedQueueProjection, ...atRestProjections].map(
+      (projection) => [projection.scenarioId, projection],
+    ),
   );
 
 /** The text the question panel prints: a clarification prompt, or the halt the resumed state carries. */

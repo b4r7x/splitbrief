@@ -1,3 +1,4 @@
+import type { SteeringPort } from '../calls/steering.js';
 import type { ChangeDetectionKind } from '../change-detection.js';
 import type { ProjectContext } from '../../core/state/types.js';
 import type { Task, TaskId } from '../../core/schemas/task.js';
@@ -15,6 +16,7 @@ import type { BundleApplyResult } from './file-bundle.js';
 import type { ImplementerReport } from '../../core/schemas/consult.js';
 import type { PlanContext } from '../spec/prompt-formatter.js';
 import type { lineageAttemptsOf } from '../../core/schemas/workflow.js';
+import type { Attachment } from '../../core/schemas/attachment.js';
 
 export interface ImplementerResult {
   success: boolean;
@@ -87,7 +89,8 @@ export interface ImplementerFactoryOptions {
   slot?: Extract<RunnerSlot, { role: 'implementer' }> | undefined;
 }
 
-export interface ImplementerOptions extends UndeclaredWritesPolicy {
+export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeOpts, 'images'> {
+  steering?: SteeringPort | undefined;
   task: Task;
   projectDir: string;
   config: Config;
@@ -135,6 +138,8 @@ export interface RetryOptions extends ImplementerOptions {
 }
 
 export interface InvokeOpts extends UndeclaredWritesPolicy {
+  images?: readonly Attachment[] | undefined;
+  steering?: SteeringPort | undefined;
   callContext: RunnerCallContext;
   prompt: string;
   task: Task;

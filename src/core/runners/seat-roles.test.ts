@@ -4,10 +4,24 @@ import { CREW_SEAT_ROLES } from '../crew/seats.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
+  seatForRunningCall,
   SEAT_PICKER_ROLES,
   type ActiveRunnerRole,
   type SeatPickerRole,
 } from './seat-roles.js';
+
+describe('seatForRunningCall', () => {
+  it.each([
+    ['planner', 'plan'],
+    ['implementer', 'build'],
+    ['review', 'review'],
+    ['summary', null],
+    ['compaction', null],
+    ['escalation', null],
+  ] as const)('maps %s to %s', (role, seat) => {
+    expect(seatForRunningCall({ role })).toBe(seat);
+  });
+});
 
 describe('seatPickerLane', () => {
   it('reads every picker role through its own seat lane', () => {

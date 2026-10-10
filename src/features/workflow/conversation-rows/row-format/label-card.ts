@@ -3,6 +3,8 @@ import type { ConversationRow } from '../types.js';
 import { row, segmentedRow } from './rows.js';
 import { sanitizeRowDisplayText, wrappedProseTexts } from './text.js';
 
+export const INLINE_LABEL_GAP = ' ';
+
 export interface CardRowsLayout {
   labelText: string;
   hasValue: boolean;
@@ -25,10 +27,11 @@ export function cardRowsLayout(input: {
   label: string;
   value: string | undefined;
   width: number;
+  labelGap?: string | undefined;
 }): CardRowsLayout {
   const cleanLabel = sanitizeRowDisplayText(input.label);
   const cleanValue = input.value === undefined ? undefined : sanitizeRowDisplayText(input.value);
-  const labelText = cleanValue ? `${cleanLabel}  ` : cleanLabel;
+  const labelText = cleanValue ? `${cleanLabel}${input.labelGap ?? '  '}` : cleanLabel;
   return {
     labelText,
     hasValue: cleanValue !== undefined && cleanValue !== '',

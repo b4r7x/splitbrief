@@ -91,7 +91,9 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 **Publishes `workflow_started`** (or `workflow_resumed` for a resume) and saves the initial state to disk.
 
-After initialization, `runWorkflow()` installs a queue handler (for messages the user types while the planner is working) and proceeds to planning.
+After initialization, `runWorkflow()` installs a queue handler for messages that the operator types during a live run. Enter with text queues a message for the seat of the active stage: PLAN, BUILD, or REVIEW. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal. The run then proceeds to planning.
+
+The queue handler shares one run-scoped `SteeringPort` with foreground BUILD, planning-session, and verdict calls. It captures the attached call before enqueue work. After persistence, it offers the message only when the call's seat matches the active stage. Helper calls receive no port. See [Delivery to a running call](./ENGINE.md#delivery-to-a-running-call) for queue outcomes. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support and transport details.
 
 ---
 
@@ -109,6 +111,8 @@ After initialization, `runWorkflow()` installs a queue handler (for messages the
 An older run parked in a retired planning phase or at an older gate continues as this one session; the session reads the run's earlier research, spec, plan and `tasks.md` as "Earlier Planning".
 
 Before the session starts, `openingPlanPrompt` (`src/engine/orchestrator/planning/session.ts`) builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase.
+
+PLAN reads pending messages at its next planner call. A Claude Code planner can also receive them in its native session when no call is attached or the offer is deferred. Native injection runs only in plan phases. An uncertain offer skips native injection. See [Message queue](./ENGINE.md#message-queue) for delivery rules.
 
 During planning, `planner_heartbeat` events (`src/engine/orchestrator/planning/heartbeat.ts`) fire every 2 seconds after a 5-second threshold, carrying `phase`, `elapsedMs` (restarts when `callId` changes), optional `callId`. These are proof-of-life signals during long waits — the TUI shows them as a spinning indicator. The planning session streams no narration, because its answer is typed JSON.
 
@@ -153,14 +157,18 @@ Filesystem snapshots, diffs, and validation remain available; the Git index and 
 5. Calls `gateAttemptChanges()` (`src/engine/orchestrator/task/attempt-gate.ts`) on the attempt's changed files. The [protected gate](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation) restores denied files inside the workspace. Task completion records before/after entries with `taskId` and `briefHash` through `captureTaskReviewChanges()` (`src/engine/orchestrator/evidence/review-capture.ts`).
 6. Calls `runBriefGate()` in `src/engine/orchestrator/task/brief-gate.ts`. End cadence runs no check for ordinary briefs. Task cadence runs the task's checks and its due checks. A fix task also runs the checks of the red it answers (`task.fix.findings[].checkIds`) through `runTaskChecks()` (`src/engine/orchestrator/task/task-checks.ts`). A carried reviewer check runs by the command its finding carries through `runReviewCheck()` (`src/engine/orchestrator/review-checks.ts`). A carried plan or task check runs by id through `runChecks()`.
 
-   Each fix check runs once under the same command policy, with no base re-run. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys come from the full process capture. An incomplete capture is a placeholder and requires a passing command.
+   Each fix check runs once per brief gate under the same command policy, with no base re-run. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys come from the full process capture. An incomplete capture is a placeholder and requires a passing command.
 
    Every unmatched re-run key counts as another failure. The red must show an original other key before it can settle. A check with no carried keys, or a re-run with no named failure, must pass its command. A carried failure that remains rejects the brief even when the check is optional. Results of `refused`, `unknown` and `not-runnable` also reject the brief. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration.
 
    The final review runs the reviewer checks. The first reviewer check with new failures stops the list. The reviewer returns the fix work for it.
 
-7. On pass: transitions to `VALIDATION_PASS` and records evidence
-8. On fail: retries once with the error message, then consults a seat for one typed answer (the planner for a plan task, the review seat for a fix task) — guidance, a rewritten or split brief, a check re-run, or one question for you — and a spent bound halts for recovery
+7. If the checks pass with pending messages, SPLITBRIEF runs a counted BUILD answer attempt on the same brief before accepting it. The attempt keeps the files and spends no retry rung. `runLocalRetries` dispatches `COUNT_ATTEMPT`, which increases the displayed lineage attempt count. The attempt remains subject to the attempt bound, which can halt delivery. SPLITBRIEF runs the checks again after the attempt.
+
+   With no pending correction and a passing gate, SPLITBRIEF dispatches `VALIDATION_PASS` and records evidence.
+8. If the checks fail, the ordinary retry path delivers pending messages and spends a retry rung. BUILD retries once with the error message. SPLITBRIEF then consults the planner for a plan task or REVIEW for a fix task. The seat returns guidance, a rewritten or split brief, a check re-run, or a question. A spent bound halts for recovery.
+
+See [Message queue](./ENGINE.md#message-queue) for BUILD corrections before calls, after calls, and during checks.
 
 ---
 
@@ -248,6 +256,8 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 ## Final review and shutdown
 
 When all tasks complete, `runTasksAndReview()` calls `runFinalReviewPhase()` (`src/engine/orchestrator/final-review.ts`).
+
+The reviewer reads the queue at each verdict call. See [Message queue](./ENGINE.md#message-queue) for messages received during a verdict call and REVIEW messages retained for BUILD.
 
 The function transitions to `ALL_DONE`. The reviewer reads the full workspace diff against `plan.md`, or `spec.md` on an older run without `state.plan`. Brief drift compares the requested and actual changes. `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`) sends that context, records reviewer usage, and writes `review.md` in the session folder.
 

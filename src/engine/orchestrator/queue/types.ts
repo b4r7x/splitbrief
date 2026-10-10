@@ -2,6 +2,7 @@ import type { EventBus } from '../../events/types.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
+import type { SteeringPort } from '../../calls/steering.js';
 
 export const MAX_QUEUE_SIZE = 50;
 
@@ -11,6 +12,7 @@ export type QueueHandlerContext = {
   getState: () => WorkflowState | undefined;
   setState: (s: WorkflowState) => void;
   bus: EventBus;
+  steering?: SteeringPort;
 };
 
 export interface EnqueueUserMessageOptions {
@@ -21,6 +23,7 @@ export interface EnqueueUserMessageOptions {
   phase: Phase;
   bus: EventBus;
   enforcePhasePolicy?: boolean | undefined;
+  steerable?: boolean | undefined;
 }
 
 export interface QueueStateMutationOptions {

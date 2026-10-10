@@ -1,3 +1,4 @@
+import { INLINE_LABEL_GAP } from '../row-format/label-card.js';
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
@@ -8,7 +9,7 @@ import {
   truncateTerminalDisplayText,
 } from '../../../../utils/display-text.js';
 import { assertNever } from '../../../../utils/type-guards.js';
-import { pluralize, countNoun } from '../../../../utils/pluralize.js';
+import { countNoun } from '../../../../utils/pluralize.js';
 import { runnerActivityBatchRowBlock } from '../activity-rows.js';
 import { borderedCardRowsBlock } from '../bordered-card-block.js';
 import { calloutRowsBlock } from '../callout-block.js';
@@ -47,6 +48,8 @@ import { stopPoint } from '../../stop/copy.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { RecoveryFold, SettledTranscriptSection } from '../transcript-walk.js';
+import { phaseStage } from '../../../../core/rail-stages.js';
+import { queueCopy } from '../../queue-copy.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
 export const COLLAPSED_DRIFT_FINDING_LIMIT = 3;
@@ -270,12 +273,30 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'success',
       });
-    case 'message_queued': {
-      const header = queuedMessageHeader(event.origin);
+    case 'message_queued':
+    case 'message_injected_native': {
+      const seat =
+        event.type === 'message_injected_native' ? 'plan' : (event.seat ?? phaseStage(event.phase));
+      const copy = queueCopy({
+        seat,
+        taskId: event.type === 'message_queued' ? event.taskId : undefined,
+        steerable: event.type === 'message_queued' && event.steerable,
+      });
+      const header =
+        event.type === 'message_injected_native'
+          ? { ...copy.delivered, tone: 'success' as const }
+          : event.origin === 'clarification'
+            ? {
+                label: 'Answered',
+                value: 'recorded — applied at the next planner call',
+                tone: 'success' as const,
+              }
+            : { ...copy.queued, tone: 'info' as const };
       return compositeBlock(keyPrefix, [
         cardRowsBlock({
           keyPrefix: `${keyPrefix}-header-0`,
           label: header.label,
+          labelGap: header.label === 'Answered' ? undefined : INLINE_LABEL_GAP,
           value: header.value,
           width: ctx.width,
           labelTone: header.tone,
@@ -292,30 +313,30 @@ export function eventRowBlock(options: {
           : null,
       ]);
     }
-    case 'message_injected_native':
+    case 'queue_drained': {
+      const seat = event.seat ?? phaseStage(event.phase);
+      const copy = queueCopy({ seat, taskId: event.taskId, count: event.count, via: event.via });
       return cardRowsBlock({
         keyPrefix,
-        label: 'Injected',
-        value: queueMessageValue('Message delivered to live session', event.preview),
+        label: copy.delivered.label,
+        labelGap: INLINE_LABEL_GAP,
+        value: copy.delivered.value,
         width: ctx.width,
         labelTone: 'success',
+        valueTone: 'textDim',
+        markerTone: 'success',
       });
-    case 'queue_drained':
+    }
+    case 'queue_cleared': {
+      const copy = queueCopy({ seat: null, count: event.count });
       return cardRowsBlock({
         keyPrefix,
-        label: 'Drained',
-        value: `${event.count} queued ${pluralize(event.count, 'message')} folded into next prompt`,
+        label: copy.cleared.label,
+        value: copy.cleared.value,
         width: ctx.width,
         labelTone: 'textDim',
       });
-    case 'queue_cleared':
-      return cardRowsBlock({
-        keyPrefix,
-        label: 'Queue cleared',
-        value: `${event.count} pending ${pluralize(event.count, 'message')} removed`,
-        width: ctx.width,
-        labelTone: 'textDim',
-      });
+    }
     case 'user_message': {
       const body =
         event.qa !== undefined && event.qa.length > 0
@@ -434,20 +455,6 @@ export function implementerFailureCard(
     value: cut && expanded ? cause : truncateTerminalDisplayText(cause, valueWidth),
     expandable: cut,
   };
-}
-
-function queueMessageValue(base: string, preview: string | undefined): string {
-  return preview ? `${base}: ${preview}` : base;
-}
-
-function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']): {
-  label: string;
-  value: string;
-  tone: ConversationRowTone;
-} {
-  return origin === 'clarification'
-    ? { label: 'Answered', value: 'recorded — applied at the next planner call', tone: 'success' }
-    : { label: 'Queued', value: 'applies at the next planner prompt', tone: 'info' };
 }
 
 function consultAnsweredText(event: EngineEventOf<'consult_answered'>): string {

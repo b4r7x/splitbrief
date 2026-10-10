@@ -58,7 +58,7 @@ src/stores/
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
 │   ├── tasks.ts              # Task map + counters
 │   ├── tokens.ts             # Token usage + completion count
-│   ├── lifecycle.ts          # Phase, cancelled, queue depth
+│   ├── lifecycle.ts          # Phase, cancelled, queued ids and count
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
 │   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections)
 │   ├── stop.ts               # Stop/quit intent + termination phase (stopStore)
@@ -207,7 +207,7 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, currentAttempt, attemptAllowance, totalTasks, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, completedTaskCount, pricingContext }` | internal writes via `actions.addEvent` |
-| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt, bankedRunMs }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it, `bankedRunMs` is the run time of the stretches before the last resume, so the header clock (`runElapsedMs`) leaves parks out | internal writes via `actions.addEvent` / local cancel intent |
+| `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, queuedMessageIds, steerableCall, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt, bankedRunMs }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it, `bankedRunMs` is the run time of the stretches before the last resume, so the header clock (`runElapsedMs`) leaves parks out | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
 | `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
@@ -236,12 +236,22 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
 | `resetWorkflow()` | Resets the workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `loadEvents(events)` (`load.ts`) | The hydration counterpart of `addEvent`: resets first, then folds a whole replayed log through the same reducers and commits each store once. |
-| `hydrateFromState(state, { endedAt? })` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queue depth. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`, and the header clock freezes at the last event the log carries, without the parks the log records. |
+| `hydrateFromState(state, { endedAt? })` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queued count. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`, and the header clock freezes at the last event the log carries, without the parks the log records. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
 **Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations/reducer.ts` exports `updateOperations`. They are pure functions and can be tested directly.
 
-`lifecycle.ts` owns queue count state. `message_queued` increments `queueDepth`; `message_injected_native`, `queue_drained`, and `queue_cleared` decrement it. `hydrateFromState(state)` reconstructs depth from undrained, non-native queue entries so a continued run shows the same pending queue count near the composer.
+`lifecycle.ts` derives the queued count, `queueDepth`, from `queuedMessageIds`. `message_queued` adds its id. `message_injected_native` or `queue_drained` removes that id at its first delivery to any seat. A repeated delivery id changes nothing and cannot lower another message's count. `queue_cleared` removes cleared entries from the set. Older drain events without ids retain count-based replay compatibility.
+
+`hydrateFromState(state)` restores ids through `isQueuedMessagePendingFirstDelivery`. It includes messages during native injection until confirmation. It excludes messages with an implementer, reviewer, native, or mid-call delivery record. A message that REVIEW read remains available to the next fix brief's BUILD call, but it no longer counts as queued. `/queue clear` preserves it as history. See [Queued count](./ENGINE.md#queued-count).
+
+The lifecycle store also holds `steerableCall: { seat: CrewSeatId; taskId?: string } | null`. `steerable_call` events set the receiving seat and brief, or clear the value when both fields are absent. Run start and hydration reset it to `null`; replay cannot imply that a stopped call accepts messages. This state changes the delivery copy, not the queued count.
+
+`message_queued` and `queue_drained` carry optional `seat` and `taskId` fields. A delivery into the running call adds `via: 'mid-call'` to `queue_drained`. The UI uses these fields to name the receiving seat and brief. Older events without these fields still render. The queued count includes only messages awaiting first delivery to any seat.
+
+The byline remains `1 queued for BUILD on T003` until the first delivery event removes that message id. A narrow byline uses `1 queued`. The UI sets `queueCopy`'s `steerable` input when `steerableCall.seat` matches the receiving seat. See [FEATURES.md](./FEATURES.md#input-footer) for the copy.
+
+`message_queued.steerable` is an optional boolean. The event records whether the queue captured a matching steerable call. The transcript uses it for the pending row's delivery timing.
 
 `operations/state.ts` and `operations/reducer.ts` own compact runner lifecycle for operation-state consumers: active/last call identity, terminal status, frozen timing, warning count/detail, usage, partial output, runner, and model. It does not decide what activity text belongs in chrome. Conversation rows render safe `runner_call_activity` events from the retained event log as batched per-call activity blocks; assistant/result text, prompts, task bodies, full descriptions, and raw tool payloads remain transcript-bearing and must not update status chrome.
 

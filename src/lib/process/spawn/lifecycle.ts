@@ -40,6 +40,8 @@ export const spawnPipeError = {
       undefined,
       cause,
     ),
+  stdinClosed: () => error('process-stdin-closed', 'Process stdin is closed'),
+  isStdinClosed: matches('process-stdin-closed'),
   isStdinIncomplete: matches('process-stdin-incomplete'),
 } as const;
 
@@ -53,6 +55,11 @@ export interface SpawnIdleOptions {
   onClear?: (() => void) | undefined;
 }
 
+export type SpawnStdinWriter = Readonly<{
+  write: (text: string) => Promise<void>;
+  end: () => void;
+}>;
+
 interface SpawnPipeOptions<T> {
   command: string;
   args: string[];
@@ -62,6 +69,7 @@ interface SpawnPipeOptions<T> {
   ledger?: boolean | undefined;
   stdin?: string | undefined;
   stdinOptional?: boolean | undefined;
+  onStdinReady?: ((writer: SpawnStdinWriter) => void) | undefined;
   signal?: AbortSignal | undefined;
   idle?: SpawnIdleOptions | undefined;
   outputBudgetBytes?: number | undefined;
@@ -386,7 +394,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
       if (
         opts.stdin !== undefined &&
         !opts.stdinOptional &&
-        (!stdinWriteComplete || !stdinEndComplete)
+        (!stdinWriteComplete || (opts.onStdinReady === undefined && !stdinEndComplete))
       ) {
         terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete() });
         return;
@@ -408,6 +416,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     });
 
     stdin.on('error', (err: NodeJS.ErrnoException) => {
+      if (opts.onStdinReady !== undefined && stdinWriteComplete) return;
       if ((opts.stdin === undefined || opts.stdinOptional) && isStdinReaderGone(err)) return;
       terminate(
         opts.stdin === undefined
@@ -446,6 +455,29 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     if (opts.onSpawned !== undefined && !invokeVoidGuarded(() => opts.onSpawned?.(proc))) return;
     armIdleTimers();
 
+    const writer: SpawnStdinWriter = {
+      write: (text) =>
+        new Promise<void>((resolveWrite, rejectWrite) => {
+          if (phase !== 'active' || stdin.destroyed || stdin.writableEnded) {
+            rejectWrite(spawnPipeError.stdinClosed());
+            return;
+          }
+          stdin.write(text, (err) => {
+            if (err) rejectWrite(err);
+            else resolveWrite();
+          });
+        }),
+      end: () => {
+        if (stdin.destroyed || stdin.writableEnded) return;
+        stdin.end(() => {
+          stdinEndComplete = true;
+        });
+      },
+    };
+    if (opts.stdin === undefined && opts.onStdinReady !== undefined) {
+      invokeVoidGuarded(() => opts.onStdinReady?.(writer));
+      return;
+    }
     if (opts.stdin === undefined) {
       stdin.end(() => {
         stdinEndComplete = true;
@@ -460,7 +492,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         return;
       }
       stdinWriteComplete = true;
+      if (opts.onStdinReady !== undefined) {
+        invokeVoidGuarded(() => opts.onStdinReady?.(writer));
+      }
     });
+    if (opts.onStdinReady !== undefined) return;
     stdin.end(() => {
       stdinEndComplete = true;
     });

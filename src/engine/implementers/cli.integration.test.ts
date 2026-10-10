@@ -1,5 +1,16 @@
+import { createSteeringPort, deliverToRunningCall, type SteerOutcome } from '../calls/steering.js';
+import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
+import { installOpencodeSteeringShim } from '#testing/helpers/opencode-steering-shim.js';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, chmodSync, existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import {
+  writeFileSync,
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { Config } from '../../core/schemas/config.js';
 import type { CliImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -121,9 +132,132 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   restorePath();
   cleanupTempDir(shimDir);
   cleanupTempDir(projectDir);
+});
+
+it('attaches the shared steering port to the fallback implementer after a Codex refusal', async () => {
+  writeFileSync(
+    join(shimDir, 'codex'),
+    '#!/bin/sh\ncat > /dev/null\nprintf \'%s\\n\' \'{"type":"error","message":"Insufficient Balance"}\'\nexit 1\n',
+  );
+  chmodSync(join(shimDir, 'codex'), 0o755);
+  installClaudeSteeringShim(shimDir);
+  const port = createSteeringPort();
+  const task = makeTask();
+  const call = {
+    task,
+    projectDir,
+    config: makeCodexConfig(),
+    context: { ...defaultContext, dir: projectDir },
+    onOutput: () => {},
+    steering: port,
+    phase: 'implementing' as const,
+    allowNoChange: true,
+  };
+  const refused = await createCliImplementer(cliCodexImplementer).implement(call);
+  expect(refused.success).toBe(false);
+  expect(port.current()).toBeNull();
+  let delivery: Promise<SteerOutcome> | undefined;
+  const fallback = createCliImplementer(cliClaudeImplementer, {
+    trustedCli: {
+      ...trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+      installedVersion: '2.1.296',
+    },
+    publisher: {
+      publishRunning: () => {},
+      publishDone: () => {},
+      publishFailed: () => {},
+      publishWarning: () => {},
+      publishCallEvent: ({ event }) => {
+        if (event.type === 'call_tool_use_delta') {
+          expect(port.current()).toMatchObject({ role: 'implementer', taskId: task.id });
+          delivery = deliverToRunningCall(port.current(), {
+            id: 'fallback',
+            text: 'fallback correction',
+          });
+        }
+      },
+    },
+  });
+  const result = await fallback.implement({ ...call, config: makeClaudeConfig() });
+  expect(result.success).toBe(true);
+  expect(await delivery).toBe('delivered');
+  expect(port.current()).toBeNull();
+});
+
+it('steers OpenCode through the implementer sandbox with bridged credentials and XDG paths', async () => {
+  const shim = installOpencodeSteeringShim(shimDir);
+  const hostHome = join(shimDir, 'host-home');
+  const hostConfig = join(hostHome, '.config');
+  const hostData = join(hostHome, '.local', 'share');
+  mkdirSync(join(hostData, 'opencode'), { recursive: true });
+  writeFileSync(
+    join(hostData, 'opencode', 'auth.json'),
+    JSON.stringify({ fixture: { type: 'api', key: 'fixture-provider-key-1234567890' } }),
+  );
+  vi.stubEnv('HOME', hostHome);
+  vi.stubEnv('XDG_CONFIG_HOME', hostConfig);
+  vi.stubEnv('XDG_DATA_HOME', hostData);
+  vi.stubEnv('UNRELATED_HOST_SECRET', 'must-not-reach-child');
+  const runner: CliImplementerConfig = {
+    kind: 'cli',
+    tool: 'opencode',
+    authChannel: 'provider-dependent',
+    contextLength: 8192,
+    temperature: 0.3,
+  };
+  const port = createSteeringPort();
+  let delivery: Promise<SteerOutcome> | undefined;
+  const implementer = createCliImplementer(runner, {
+    trustedCli: {
+      ...trustedShimGate({ dir: shimDir, tool: 'opencode' }),
+      installedVersion: '2.0.26',
+    },
+    publisher: {
+      publishRunning: () => {},
+      publishDone: () => {},
+      publishFailed: () => {},
+      publishWarning: () => {},
+      publishCallEvent: ({ event }) => {
+        if (event.type === 'call_tool_use_delta')
+          delivery = deliverToRunningCall(port.current(), {
+            id: 'sandbox',
+            text: 'sandbox correction',
+          });
+      },
+    },
+  });
+  const result = await implementer.implement({
+    task: makeTask(),
+    projectDir,
+    config: makeConfig({ implementer: runner }),
+    context: { ...defaultContext, dir: projectDir },
+    onOutput: () => {},
+    steering: port,
+    phase: 'implementing',
+    allowNoChange: true,
+  });
+  expect(result.success).toBe(true);
+  expect(await delivery).toBe('delivered');
+  const run = JSON.parse(readFileSync(shim.captureFile, 'utf8'));
+  const server = JSON.parse(readFileSync(shim.serverFile, 'utf8'));
+  for (const child of [run, server]) {
+    expect(realpathSync(child.cwd)).toBe(realpathSync(projectDir));
+    expect(child.home).not.toBe(hostHome);
+    expect(child.xdgConfig).toBe(join(child.home, '..', 'config'));
+    expect(child.xdgData).toBe(join(child.home, '..', 'data'));
+    expect(JSON.parse(child.auth)).toEqual({
+      fixture: { type: 'api', key: 'fixture-provider-key-1234567890' },
+    });
+    expect(child.unrelatedSecret).toBeUndefined();
+    expect(processIsAbsent(child.pid)).toBe(true);
+  }
+  expect(run.args).toContain('--server');
+  expect(run.password).toBe(shim.password);
+  expect(port.current()).toBeNull();
 });
 
 describe('createCliImplementer (claude-code)', () => {
@@ -850,6 +984,47 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
 });
 
 describe('createCliImplementer (codex usage capture)', () => {
+  it.each(['implement', 'retry'] as const)(
+    'passes correction images to Codex on %s and retains the prompt paths',
+    async (method) => {
+      const { argvFile, stdinFile } = installRecordingCodexShim('src/hello.ts', [
+        '{"type":"item.completed","item":{"type":"agent_message","text":"done"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":5}}',
+      ]);
+      const imagePath = join(projectDir, 'reference.png');
+      writeFileSync(imagePath, 'image fixture');
+      const call = {
+        task: makeTask(),
+        projectDir,
+        config: makeCodexConfig(),
+        context: defaultContext,
+        onOutput: vi.fn(),
+        images: [
+          {
+            id: 'reference',
+            kind: 'image' as const,
+            path: imagePath,
+            mimeType: 'image/png',
+            sizeBytes: 13,
+          },
+        ],
+        continuation: { steer: `Use the screenshot.\n[image:reference] = ${imagePath}` },
+      };
+      const implementer = createCliImplementer(cliCodexImplementer);
+      const result =
+        method === 'implement'
+          ? await implementer.implement(call)
+          : await implementer.retry({ ...call, kind: 'local', attempt: 1, error: 'fix layout' });
+      expect(result.success).toBe(true);
+      const args = readArgv(argvFile);
+      const imageIndex = args.indexOf('--image');
+      expect(imageIndex).toBeGreaterThan(-1);
+      expect(args[imageIndex + 1]).toBe(imagePath);
+      expect(args.filter((arg) => arg === '--image')).toHaveLength(1);
+      expect(readFileSync(stdinFile, 'utf8')).toContain(`[image:reference] = ${imagePath}`);
+    },
+  );
+
   it('reports turn usage as implementer usage, excluding cached input from input tokens', async () => {
     const { argvFile, stdinFile } = installRecordingCodexShim('src/hello.ts', [
       '{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":4,"cached_input_tokens":6}}',
@@ -1203,3 +1378,48 @@ describe('createCliImplementer (timeout surfacing)', () => {
     expect((thrown as Error).message).not.toMatch(/operation was aborted/i);
   });
 });
+
+it.each(['implement', 'retry'] as const)(
+  'forwards steering from %s through the pipeline and CLI wrapper',
+  async (method) => {
+    installClaudeSteeringShim(shimDir);
+    const port = createSteeringPort();
+    const sends: Promise<SteerOutcome>[] = [];
+    let started = false;
+    const implementer = createCliImplementer(cliClaudeImplementer, {
+      trustedCli: {
+        ...trustedShimGate({ dir: shimDir, tool: 'claude-code' }),
+        installedVersion: '2.1.296',
+      },
+      publisher: {
+        publishRunning: () => {},
+        publishDone: () => {},
+        publishFailed: () => {},
+        publishWarning: () => {},
+        publishCallEvent: ({ event }) => {
+          if (event.type === 'call_tool_use_delta' && !started) {
+            started = true;
+            sends.push(deliverToRunningCall(port.current(), { id: 'forwarded', text: 'steer' }));
+          }
+        },
+      },
+    });
+    const options = {
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: { ...defaultContext, dir: projectDir },
+      onOutput: () => {},
+      steering: port,
+      phase: 'implementing' as const,
+      allowNoChange: true,
+    };
+    const result =
+      method === 'implement'
+        ? await implementer.implement(options)
+        : await implementer.retry({ ...options, error: 'retry', attempt: 1, kind: 'local' });
+    expect(result.success).toBe(true);
+    expect(await Promise.all(sends)).toEqual(['delivered']);
+    expect(port.current()).toBeNull();
+  },
+);

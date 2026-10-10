@@ -138,6 +138,7 @@ export function cardRowsBlock(input: {
   valueTone?: ConversationRowTone;
   kind?: ConversationRowKind;
   markerTone?: ConversationRowTone;
+  labelGap?: string | undefined;
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
   const wrapWidth = wrapWidthFor(input.kind ?? 'card', input.width);
@@ -145,7 +146,12 @@ export function cardRowsBlock(input: {
   const valueTone = input.valueTone;
   const kind = input.kind;
   const markerTone = input.markerTone;
-  const layout = cardRowsLayout({ label: input.label, value: input.value, width: wrapWidth });
+  const layout = cardRowsLayout({
+    label: input.label,
+    value: input.value,
+    width: wrapWidth,
+    labelGap: input.labelGap,
+  });
   const rowCount = layout.wrapped.length;
   if (rowCount === 0) return null;
 

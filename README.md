@@ -136,11 +136,14 @@ export SPLITBRIEF_CONTEXT_LENGTH=32768
 
 | Action | Key | Effect |
 |--------|-----|--------|
-| Queue a message | Type + Enter | During live planner phases, queues text for the next safe point; planners with `injectUserTurn()` also receive it immediately |
+| Queue a message | Type + Enter | Queues text for the active stage's seat (PLAN, BUILD, REVIEW) |
+| Send now | Text + `ctrl+⏎`, or `/steer <text>` | Stops now and continues with the text, like `/steer` |
 | Stop options | `esc` (with or without a draft; on the plan card the first `esc` clears a comment) | Opens the stop sheet — stop now, pause after this brief, or end the run. No option reverts files, and your draft is kept |
 | Stop now | `ctrl+c` (one press) | Aborts the in-flight call, starts no new brief, and parks the run with its partial changes kept |
 | Quit | `ctrl+q` or `/quit` | Stops the run safely, saves the session, then exits; continue later with `splitbrief continue <session-id>` if the saved state is resumable |
 | Resume | `/resume`, or type + Enter | Restarts a parked run; typed text steers it. A blank Enter resumes a parked run and a continuable run at rest |
+
+See [Message queue](./docs/ENGINE.md#message-queue) for delivery rules and [Mid-call steering](./docs/PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support. Terminals without extended keys report `ctrl+⏎` as Enter; `/steer` works in every terminal.
 
 ## Commands
 
@@ -164,8 +167,8 @@ With `workflow.approve: plan` (the default) the plan card waits for your approva
 
 | Command | What it does |
 |---------|-------------|
-| `/queue show` | Show queued messages |
-| `/queue clear` | Clear the message queue |
+| `/queue show` | Show the count awaiting first delivery |
+| `/queue clear` | Remove messages awaiting first delivery |
 
 Those are the ones you reach for mid-run. The full set — `/crew`, `/diff`, `/usage`, `/stop` — is in [docs/SLASH-COMMANDS-REFERENCE.md](./docs/SLASH-COMMANDS-REFERENCE.md).
 

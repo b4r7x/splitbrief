@@ -23,6 +23,32 @@ afterEach(() => {
 });
 
 describe('clear', () => {
+  it('clears only first-delivery pending messages and preserves reviewer history for BUILD', async () => {
+    const ref = setupProject(dirs);
+    const reviewed = {
+      ...makeMessage('reviewed'),
+      id: 'reviewed',
+      deliveredTo: { reviewer: new Date().toISOString() },
+    };
+    let state = makeStateWithQueue([reviewed, makeMessage('pending')]);
+    const { bus, events } = makeBusRecorder();
+    const clear = createClearQueueHandler({
+      ...ref,
+      getState: () => state,
+      setState: (next) => {
+        state = next;
+      },
+      bus,
+      serialize: createWriteSequencer(),
+    });
+
+    expect(await clear()).toEqual({ status: 'cleared', count: 1 });
+    expect(state.messageQueue.map((message) => message.id)).toEqual(['reviewed']);
+    expect(loadState(ref)?.messageQueue[0]?.deliveredTo?.reviewer).toBeDefined();
+    expect(events).toContainEqual(expect.objectContaining({ type: 'queue_cleared', count: 1 }));
+    expect(await clear()).toEqual({ status: 'cleared', count: 0 });
+  });
+
   it('removes pending messages from live state and emits queue_cleared', async () => {
     const { projectDir, sessionId } = setupProject(dirs);
     let state: WorkflowState | undefined = makeStateWithQueue([

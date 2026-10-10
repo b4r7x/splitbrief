@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { renderFeature } from '#testing/helpers/ink.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -37,6 +38,9 @@ import { hydrateFromState } from '../../../stores/workflow/actions/hydrate.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeMessage } from '#testing/helpers/queue.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 
 function runningOn(runnerName: string): RunningOperation {
   return {
@@ -738,6 +742,111 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it.each([120, 80, 60])(
+    'keeps the first-delivery count beside a reopened run byline at %s columns',
+    (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: false });
+      const state = makeWorkflowState({
+        phase: 'implementing',
+        interruptedStep: {
+          step: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
+          source: 'user',
+          at: '2026-10-11T00:00:00.000Z',
+          cut: 'mid-step',
+        },
+        messageQueue: [
+          {
+            ...makeMessage(),
+            id: 'reviewed',
+            deliveredTo: { reviewer: '2026-10-11T00:00:00.000Z' },
+          },
+          { ...makeMessage(), id: 'pending' },
+        ],
+      });
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({
+          status: deriveRunStatus({ state, liveness: 'not-alive' }),
+          hydration: { kind: 'loaded', state },
+        }),
+        execution: { kind: 'at-rest' },
+      });
+      hydrateFromState(state);
+      tasksStore.__testReset({
+        currentTask: 1,
+        totalTasks: 1,
+        tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+      });
+      const ui = renderFeature(
+        <InputFooter byline="Stopped at T003 · type a correction or ⏎ to continue" />,
+        { cols, rows: 24 },
+      );
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame).toContain('Stopped at T003');
+      expect(frame).toContain('1 queued');
+      expect(frame.match(/1 queued/gu)).toHaveLength(1);
+      expect(frame).not.toContain('2 queued');
+      if (cols === 120) expect(frame).toContain('1 queued for BUILD on T003');
+      ui.unmount();
+    },
+  );
+
+  it.each([120, 80, 60])(
+    'hides the queue on an ended BUILD byline at %s columns without clearing it',
+    (cols) => {
+      terminalSizeStore.__testReset({ cols, rows: 24, isSmall: false });
+      const state = makeWorkflowState({
+        phase: 'implementing',
+        tasks: [makeTask({ id: 'T001', status: 'in_progress' })],
+        closed: { as: 'ended', at: '2026-10-11T00:00:00.000Z' },
+        messageQueue: [makeMessage('Keep the validation API')],
+      });
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({
+          status: deriveRunStatus({ state, liveness: 'not-alive' }),
+          hydration: { kind: 'loaded', state },
+        }),
+        execution: { kind: 'at-rest' },
+      });
+      hydrateFromState(state);
+
+      const ui = renderFeature(<InputFooter byline="Ended · Build 0/1" />, { cols, rows: 24 });
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame.trim()).toBe('Ended · Build 0/1');
+      expect(lifecycleStore.get().queueDepth).toBe(1);
+      ui.unmount();
+    },
+  );
+
+  it('hides the queue while the run waits for Apply', () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    const state = makeWorkflowState({
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'worktree',
+        path: '/tmp/reviewed-workspace',
+        base: { snapshotId: 'reviewed-base', head: null },
+      },
+      messageQueue: [makeMessage('Keep the validation API')],
+    });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        status: deriveRunStatus({ state, liveness: 'not-alive' }),
+        hydration: { kind: 'loaded', state },
+      }),
+      execution: { kind: 'at-rest' },
+    });
+    hydrateFromState(state);
+
+    const ui = renderFeature(<InputFooter byline="Ready to apply" />);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('Ready to apply');
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    ui.unmount();
+  });
+
   it('queued count renders as an info byline segment that survives narrow widths', () => {
     lifecycleStore.__testReset({ phase: 'implementing', status: 'complete', queueDepth: 2 });
 
@@ -749,6 +858,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
     const narrow = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(narrow.lastFrame() ?? '')).toContain('2 queued');
+    expect(stripAnsiStyles(narrow.lastFrame() ?? '')).not.toContain('for BUILD');
     narrow.unmount();
 
     // The frame costs the two gutter cells, so a 19-column terminal cannot seat the queued
@@ -763,6 +873,62 @@ describe('InputFooter', () => {
     terminalSizeStore.reset();
   });
 
+  it('keeps the short queued count beside a long check at 60 columns', () => {
+    terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+    });
+    operationsStore.__testReset({
+      suiteStage: {
+        id: 'V1',
+        command: 'npm run test:integration',
+        moment: 'brief',
+        stageStartedTs: Date.now() - 62_000,
+      },
+    });
+    const ui = renderFeature(<InputFooter />, { cols: 60, rows: 18 });
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('Fix check V1 · npm run test:integration 1:02 · 1 queued');
+    expect(frame).not.toContain('for BUILD');
+    expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(58);
+    ui.unmount();
+    terminalSizeStore.reset();
+  });
+
+  it('keeps the queued byline until the attached BUILD call delivers the message', async () => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+    });
+    addEvent({
+      type: 'steerable_call',
+      ts: 1,
+      phase: 'implementing',
+      seat: 'build',
+      taskId: 'T003',
+    });
+    const ui = renderFeature(<InputFooter />);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('1 queued for BUILD on T003');
+    addEvent({
+      type: 'queue_drained',
+      ts: 2,
+      phase: 'implementing',
+      seat: 'build',
+      taskId: 'T003',
+      count: 1,
+      via: 'mid-call',
+    });
+    await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('queued for BUILD');
+    ui.unmount();
+  });
+
   it('names the brief the queue waits for while a brief is building', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'implementing', status: 'running', queueDepth: 1 });
@@ -770,15 +936,15 @@ describe('InputFooter', () => {
       currentTask: 1,
       totalTasks: 2,
       tasks: [
-        { id: 'T001', title: 'T1', status: 'in_progress' as const },
-        { id: 'T002', title: 'T2', status: 'pending' as const },
+        { id: 'T003', title: 'T3', status: 'in_progress' as const },
+        { id: 'T004', title: 'T4', status: 'pending' as const },
       ],
     });
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('queued for after T001');
+    expect(frame).toContain('1 queued for BUILD on T003');
     ui.unmount();
     terminalSizeStore.reset();
   });

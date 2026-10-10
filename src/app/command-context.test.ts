@@ -42,6 +42,8 @@ import type { SkillMeta } from '../core/skills/types.js';
 import { addEvent } from '../stores/workflow/actions/event.js';
 import { getSections } from '../stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../stores/workflow/conversation-scroll.js';
+import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { queueCopy } from '../features/workflow/queue-copy.js';
 import { tasksStore } from '../stores/workflow/tasks.js';
 import { controlsStore } from '../stores/ui/controls.js';
 import { feedbackStore } from '../stores/ui/feedback.js';
@@ -170,14 +172,78 @@ describe('buildCommandContext', () => {
     expect(attachmentsStore.peek()).toEqual([]);
   });
 
-  it('delegates queue clearing to the live workflow handler', () => {
-    setClearQueueHandler(() => ({ status: 'cleared', count: 2 }));
-
-    expect(build().clearQueue()).toEqual({
-      status: 'cleared',
-      count: 2,
+  it('shows /queue with shared copy and counts each id only until first delivery', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    tasksStore.__testReset({
+      currentTask: 2,
+      totalTasks: 3,
+      tasks: [
+        { id: 'T001', title: 'Done', status: 'done' },
+        { id: 'T901', title: 'Inserted fix', status: 'in_progress' },
+        { id: 'T002', title: 'Pending', status: 'pending' },
+      ],
     });
+    addEvent({ type: 'message_queued', ts: 1, phase: 'implementing', id: 'read' });
+    addEvent({ type: 'message_queued', ts: 2, phase: 'implementing', id: 'pending' });
+    addEvent({
+      type: 'queue_drained',
+      ts: 3,
+      phase: 'implementing',
+      seat: 'review',
+      ids: ['read'],
+      count: 1,
+    });
+    addEvent({
+      type: 'queue_drained',
+      ts: 4,
+      phase: 'implementing',
+      seat: 'build',
+      ids: ['read'],
+      count: 1,
+    });
+    const commands = workflowCommands(build());
+    await executeRuntimeCommand(commands, '/queue show', {
+      screen: 'workflow',
+      phase: 'implementing',
+      plannerSupportsImages: true,
+      openRunAtRest: false,
+      onError: () => {},
+    });
+    expect(feedbackStore.get().message).toBe(
+      queueCopy({ seat: 'build', taskId: 'T901', count: 1 }).byline,
+    );
+    addEvent({
+      type: 'queue_drained',
+      ts: 5,
+      phase: 'implementing',
+      seat: 'build',
+      ids: ['pending'],
+      count: 1,
+    });
+    await executeRuntimeCommand(commands, '/queue', {
+      screen: 'workflow',
+      phase: 'implementing',
+      plannerSupportsImages: true,
+      openRunAtRest: false,
+      onError: () => {},
+    });
+    expect(feedbackStore.get().message).toBe('Queue is empty');
   });
+
+  it.each([0, 2])(
+    'delegates /queue clear and formats its result with shared copy for %s messages',
+    async (count) => {
+      setClearQueueHandler(() => ({ status: 'cleared', count }));
+      await executeRuntimeCommand(workflowCommands(build()), '/queue clear', {
+        screen: 'workflow',
+        phase: 'implementing',
+        plannerSupportsImages: true,
+        openRunAtRest: false,
+        onError: () => {},
+      });
+      expect(feedbackStore.get().message).toBe(queueCopy({ seat: null, count }).clearFeedback);
+    },
+  );
 
   it('copies a non-empty port-resolved message to the clipboard', async () => {
     const result = await build().copyTarget('message');

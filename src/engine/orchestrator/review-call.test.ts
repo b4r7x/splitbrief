@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Attachment } from '../../core/schemas/attachment.js';
 import { createInitialState } from '../../core/state/machine.js';
 import { loadState } from '../../core/state/persistence.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
@@ -8,6 +9,7 @@ import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js'
 import type { Reviewer } from '../reviewers/types.js';
 import type { TypedCallContext } from '../planners/types.js';
 import type { RunnerCallResult } from '../calls/types.js';
+import { createSteeringPort } from '../calls/steering.js';
 import {
   REVIEW_ANSWER_JSON_SCHEMA,
   ReviewAnswerSchema,
@@ -66,6 +68,101 @@ function typedReviewer(
 }
 
 describe('runReviewerCall', () => {
+  describe.each(['direct', 'prepared'])('with %s input', (inputKind) => {
+    it.each([
+      { label: 'omitted', images: undefined },
+      { label: 'empty', images: [] },
+      {
+        label: 'non-empty',
+        images: [
+          {
+            id: 'render',
+            kind: 'image',
+            path: '/renders/frame.png',
+            mimeType: 'image/png',
+            sizeBytes: 1,
+          },
+        ],
+      },
+    ] satisfies { label: string; images: readonly Attachment[] | undefined }[])(
+      'preserves the attachment contract for $label images through a verdict repair',
+      async ({ images }) => {
+        const ref = setupProjectDir();
+        const { bus } = makeBusRecorder();
+        const contexts: TypedCallContext[] = [];
+        const base = typedReviewer(async () =>
+          makeRunnerCallResult({
+            status: 'completed',
+            text: contexts.length === 1 ? 'invalid verdict' : JSON.stringify(VERDICT),
+          }),
+        );
+        const reviewer: Reviewer = {
+          ...base,
+          typedCall: (ctx) => {
+            contexts.push(ctx);
+            return base.typedCall(ctx);
+          },
+        };
+        const input = { prompt: 'review the diff', images };
+
+        const result = await runReviewerCall({
+          ...ref,
+          reviewer,
+          workspaceDir: ref.projectDir,
+          ...(inputKind === 'direct' ? input : { prepareCall: async () => input }),
+          schema: ReviewAnswerSchema,
+          jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+          schemaName: 'review_answer',
+          bus,
+          state: createInitialState('feature'),
+        });
+
+        expect('value' in result.result && result.result.value).toEqual(VERDICT);
+        expect(contexts).toHaveLength(2);
+        for (const context of contexts) {
+          if (images === undefined || images.length === 0) {
+            expect(context).not.toHaveProperty('images');
+          } else {
+            expect(context.images).toEqual(images);
+          }
+        }
+      },
+    );
+  });
+
+  it('passes an explicit port to verdict callbacks and leaves helper callbacks without it', async () => {
+    const ref = setupProjectDir();
+    const { bus } = makeBusRecorder();
+    const steering = createSteeringPort();
+    const contexts: TypedCallContext[] = [];
+    const base = typedReviewer(async () =>
+      makeRunnerCallResult({ status: 'completed', text: JSON.stringify(VERDICT) }),
+    );
+    const reviewer: Reviewer = {
+      ...base,
+      typedCall: (ctx) => {
+        contexts.push(ctx);
+        return base.typedCall(ctx);
+      },
+    };
+    const opts = {
+      ...ref,
+      reviewer,
+      workspaceDir: ref.projectDir,
+      prompt: 'review the diff',
+      schema: ReviewAnswerSchema,
+      jsonSchema: REVIEW_ANSWER_JSON_SCHEMA,
+      schemaName: 'review_answer',
+      bus,
+      state: createInitialState('feature'),
+    };
+    const verdict = await runReviewerCall({ ...opts, steering });
+    await runReviewerCall({ ...opts, state: verdict.state });
+
+    expect(contexts[0]?.callbacks.steering).toBe(steering);
+    expect(contexts[1]?.callbacks).not.toHaveProperty('steering');
+  });
+
   it('returns the typed verdict and attributes the usage to the reviewer bucket', async () => {
     const { projectDir, sessionId } = setupProjectDir();
     const { bus } = makeBusRecorder();

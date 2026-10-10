@@ -6,7 +6,7 @@ import {
   type ChangedFilesSnapshot,
   type WorkflowState,
 } from '../../../core/schemas/workflow.js';
-import { briefCorrections } from '../../../core/state/machine.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
@@ -15,7 +15,7 @@ import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
 import { gateChangedFiles, type GateChangedFilesDenial } from '../approval/gate-files.js';
-import { persistApiApplyEvidence, persistApprovalEvidence } from '../evidence/persistence.js';
+import { persistApprovalEvidence } from '../evidence/persistence.js';
 import { resolveDependsOnFiles } from './resolve-deps.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -24,16 +24,17 @@ import { implementerSeatAttempt, runSeatCall } from '../escalation/seat-wait.js'
 import {
   addUsageAndSave,
   rebaseOnPersistedWorkflowState,
-  transitionAndSave,
+  recordBriefCorrection,
 } from '../state-ops.js';
 import { isResumableWorkspaceStop, retentionError } from '../isolation/retention.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
 import {
-  commitQueueMessagesDrained,
-  readQueueForPrompt,
-  releaseQueueMessagesForPrompt,
-} from '../queue/drain.js';
-import { formatDrainedMessages } from '../queue/prompt.js';
+  absorbBuildCorrections,
+  buildCorrectionInput,
+  runWithCorrectionPasses,
+} from '../queue/build-corrections.js';
+import { settleMidCallDeliveries } from '../queue/mid-call.js';
+import { formatMessageInput } from '../queue/prompt.js';
 
 /**
  * The brief's own declared files that already moved since it started. A restarted
@@ -94,38 +95,21 @@ export async function runImplementation(opts: {
 
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
   const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
-  // Each correction is written against the saved head, so one already on disk is never replaced.
-  const recordCorrection = (text: string | undefined): void => {
+  const recordCorrection = (text: string | undefined, images: readonly Attachment[] = []): void => {
     if (!text?.trim()) return;
-    state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-    if (briefCorrections(state, task.id).includes(text)) return;
-    state = transitionAndSave({ projectDir, sessionId }, state, {
-      type: 'RECORD_CORRECTION',
-      taskId: task.id,
-      text,
-    });
+    state = recordBriefCorrection({ projectDir, sessionId }, state, task.id, text, images);
     setTrackedState(state);
   };
   state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-  recordCorrection(seed?.steer?.text);
+  recordCorrection(
+    seed?.steer === undefined ? undefined : formatMessageInput(seed.steer),
+    seed?.steer?.images,
+  );
   const workspace: AttemptWorkspace = await wctx.isolation.acquire({
     role: 'implementer',
     config,
     resume: seed?.keepWorkspace === true,
   });
-  // Text queued while an earlier brief ran is delivered here, at the boundary this brief owns:
-  // it rides the implementer's steer so the brief starts already knowing the correction.
-  const queued = readQueueForPrompt({ projectDir, sessionId, state });
-  if (queued.messages.length > 0) {
-    state = queued.state;
-    setTrackedState(state);
-  }
-  const queuedSteer = formatDrainedMessages(queued.messages).trim();
-  const createdByThisTask = recordedApiCreatedPaths(
-    { projectDir, sessionId },
-    task,
-    workspace.projectDir,
-  );
   // A direct writer narrates between tool calls; that text has one home, the transcript rows
   // textHandler feeds. The preview under `working on <file>…` is for the code an extractor
   // streams: it splits lines, not messages, so narration there would repeat and run together.
@@ -150,29 +134,25 @@ export async function runImplementation(opts: {
       step,
       ...(seed === undefined ? {} : { seed }),
       onStateChange: setTrackedState,
-      body: async ({ signal, partial, steer, recordOutput }) => {
+      body: async ({ signal, partial, steer, steerInput, recordOutput }) => {
         // The brief restarts on its own prompt. What the cut attempt already
         // wrote is still on disk, so it is named rather than re-derived.
-        recordCorrection(steer);
-        const corrections = briefCorrections(state, task.id);
-        const combinedSteer =
-          [...corrections, ...(corrections.includes(queuedSteer) ? [] : [queuedSteer])]
-            .filter((part) => part !== '')
-            .join('\n\n') || undefined;
-        const continuation =
-          partial === undefined && combinedSteer === undefined
-            ? undefined
-            : {
-                ...(partial !== undefined && { partial }),
-                ...(combinedSteer !== undefined && { steer: combinedSteer }),
-                ...(await changedDeclaredFilesNote(
-                  workspace.projectDir,
-                  task,
-                  opts.taskStartSnapshot,
-                )),
-              };
+        recordCorrection(steer, steerInput?.images);
+        const absorb = (): number => {
+          const absorbed = absorbBuildCorrections({
+            projectDir,
+            sessionId,
+            state,
+            taskId: task.id,
+            bus: wctx.bus,
+          });
+          state = absorbed.state;
+          setTrackedState(state);
+          return absorbed.count;
+        };
         const call: ImplementerOptions = {
           task,
+          ...(wctx.steering !== undefined && { steering: wctx.steering }),
           projectDir: workspace.projectDir,
           config,
           context,
@@ -191,10 +171,6 @@ export async function runImplementation(opts: {
           sandboxEnv: workspace.sandboxEnv,
           fileIgnoreProjectDir: projectDir,
           changeDetection: workspace.changeDetection,
-          ...(continuation !== undefined && { continuation }),
-          ...((createdByThisTask.length > 0 || state.workspace?.kind === 'checkout') && {
-            createdByThisTask,
-          }),
           phase: state.phase,
           lineageAttempts: lineageAttemptsOf(state, task),
           approveWrite: async (file) => {
@@ -225,37 +201,87 @@ export async function runImplementation(opts: {
             return { allow: true };
           },
         };
+        const creationOwnership = (): Pick<ImplementerOptions, 'createdByThisTask'> => {
+          const createdByThisTask = recordedApiCreatedPaths(
+            { projectDir, sessionId },
+            task,
+            workspace.projectDir,
+          );
+          return createdByThisTask.length > 0 || state.workspace?.kind === 'checkout'
+            ? { createdByThisTask }
+            : {};
+        };
         const produce = async (attemptSignal: AbortSignal): Promise<ImplementerResult> => {
-          if (queued.messages.length > 0) {
-            const delivered = commitQueueMessagesDrained({
-              projectDir,
-              sessionId,
-              state,
-              messages: queued.messages,
-              bus: wctx.bus,
-            });
-            state = delivered.state;
-            setTrackedState(state);
-            if (delivered.count > 0) recordCorrection(queuedSteer);
-          }
-          // A fix task already has its code on disk when the findings need none; its brief
-          // carries the findings, and a no-change attempt completes instead of failing.
-          if (task.fix !== undefined && opts.retryError === undefined) {
-            return wctx.implementer.implement({
-              ...call,
-              signal: attemptSignal,
-              allowNoChange: true,
-            });
-          }
-          return opts.retryError === undefined
-            ? wctx.implementer.implement({ ...call, signal: attemptSignal })
-            : wctx.implementer.retry({
+          await settleMidCallDeliveries({ projectDir, sessionId });
+          absorb();
+          const correction = buildCorrectionInput(state, task);
+          const combinedSteer = correction.continuation?.steer;
+          const continuation =
+            partial === undefined && combinedSteer === undefined
+              ? undefined
+              : {
+                  ...(partial !== undefined && { partial }),
+                  ...(combinedSteer !== undefined && { steer: combinedSteer }),
+                  ...(await changedDeclaredFilesNote(
+                    workspace.projectDir,
+                    task,
+                    opts.taskStartSnapshot,
+                  )),
+                };
+          const firstCall: ImplementerOptions = {
+            ...call,
+            ...correction,
+            signal: attemptSignal,
+            ...creationOwnership(),
+            ...(continuation !== undefined && { continuation }),
+          };
+          return runWithCorrectionPasses({
+            ref: { projectDir, sessionId },
+            first: () => {
+              // A fix task may already have its code on disk when none of its findings needs a change.
+              if (task.fix !== undefined && opts.retryError === undefined) {
+                return wctx.implementer.implement({ ...firstCall, allowNoChange: true });
+              }
+              return opts.retryError === undefined
+                ? wctx.implementer.implement(firstCall)
+                : wctx.implementer.retry({
+                    ...firstCall,
+                    error: opts.retryError,
+                    attempt: 1,
+                    kind: 'local',
+                  });
+            },
+            pass: async () => {
+              const correction = buildCorrectionInput(state, task);
+              return wctx.implementer.implement({
                 ...call,
+                ...correction,
                 signal: attemptSignal,
-                error: opts.retryError,
-                attempt: 1,
-                kind: 'local',
+                ...creationOwnership(),
+                continuation: {
+                  ...correction.continuation,
+                  ...(await changedDeclaredFilesNote(
+                    workspace.projectDir,
+                    task,
+                    opts.taskStartSnapshot,
+                  )),
+                },
+                allowNoChange: true,
               });
+            },
+            absorb,
+            signal: attemptSignal,
+            onDiscardedUsage: (usage) => {
+              state = addUsageAndSave(seatRef, state, 'implementer', usage);
+              setTrackedState(state);
+            },
+            application: {
+              wctx,
+              state: () => state,
+              task,
+              workspacePath: workspace.projectDir,
+            },
+          });
         };
 
         const seatRef = { projectDir, sessionId, bus: wctx.bus };
@@ -288,24 +314,10 @@ export async function runImplementation(opts: {
     else if (!retentionError.isFailed(err)) workspace.cleanup();
     throw err;
   } finally {
-    releaseQueueMessagesForPrompt({ projectDir, sessionId }, queued.messages);
     streamingFeed.stop();
   }
 
   state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, loop.state);
-
-  // The receipt lands before the caller decides what the attempt was, so a brief
-  // that stopped mid-application still names the prefix it already wrote.
-  const applyResult = loop.value.applyResult;
-  if (applyResult !== undefined) {
-    persistApiApplyEvidence({
-      wctx,
-      state,
-      task,
-      result: applyResult,
-      workspacePath: workspace.projectDir,
-    });
-  }
 
   // A seat that cannot work parks its brief: the workspace is kept so the
   // continued attempt reads the partial edits it already wrote.

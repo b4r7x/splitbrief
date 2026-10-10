@@ -39,7 +39,7 @@ import {
 } from '../../core/paths.js';
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { loadState } from '../../core/state/persistence.js';
+import { loadState, saveState } from '../../core/state/persistence.js';
 import { ReviewRecordSchema } from '../../core/schemas/workflow.js';
 import { taskId, type Task } from '../../core/schemas/task.js';
 import type { ReviewVerdict } from '../../core/schemas/review.js';
@@ -54,6 +54,8 @@ import { createEvidenceLedger, withUpdatedTask } from '../../core/evidence/ledge
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { appendReviewChanges } from '../../core/evidence/review-changes.js';
 import { readConfinedEntry } from './approval/file-snapshots/entry.js';
+import { enqueueUserMessage } from './queue/submit.js';
+import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 
 let dirs: string[] = [];
 
@@ -440,12 +442,21 @@ describe('runFinalReviewPhase', () => {
   it('repairs a verdict missing a task once, then fails the seat', async () => {
     const { projectDir, sessionId, runStartHead } = setupProject();
     writeSpecFile({ projectDir, sessionId }, SPEC_FILE, '# Spec\n\nAdd auth.\n', null);
-    const { reviewer, prompts } = makeReviewer((prompt) => ({
-      ...passingReviewVerdict(prompt),
-      tasks: [],
-    }));
-
     const { bus, events } = makeBusRecorder();
+    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
+    const { reviewer, prompts } = makeReviewer((prompt, call) => {
+      if (call === 1)
+        enqueueUserMessage({
+          projectDir,
+          sessionId,
+          state: loadState({ projectDir, sessionId }) ?? state,
+          bus,
+          phase: 'final-review',
+          message: plainUserMessage('Check the missing authentication guard'),
+        });
+      return { ...passingReviewVerdict(prompt), tasks: [] };
+    });
+
     const result = await runFinalReviewPhase({
       projectDir,
       workspaceDir: projectDir,
@@ -453,16 +464,24 @@ describe('runFinalReviewPhase', () => {
       config: makeNoValidationConfig(),
       callbacks: makeCallbacks().callbacks,
       bus,
-      state: allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead),
+      state,
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,
       taskBreakdowns: [],
     });
 
-    // The reviewer's own one repair, then the seat answer still fails coverage.
     expect(prompts).toHaveLength(2);
     expect(prompts[1]).toContain('Task T001 is missing from the verdict.');
+    expect(prompts[0]).not.toContain('Check the missing authentication guard');
+    expect(prompts[1]).toContain('Check the missing authentication guard');
+    expect(result.state.messageQueue.filter(isQueuedMessagePendingReviewer)).toHaveLength(0);
+    expect(
+      loadState({ projectDir, sessionId })?.messageQueue[0]?.deliveredTo?.reviewer,
+    ).toBeDefined();
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+      expect.objectContaining({ seat: 'review', count: 1 }),
+    ]);
     expect(result.reviewStatus).toBe('failed');
     expect(result.verdict).toBeNull();
     expect(result.failure).toMatchObject({
@@ -1205,6 +1224,71 @@ describe('runFinalReviewPhase', () => {
     expect(planned.state.pendingPlannerConversation).toBeUndefined();
     writeEvidenceLedger({ projectDir, sessionId }, ledger);
     const { reviewer, prompts } = makeReviewer();
+    const reviewState: WorkflowState = {
+      ...planned.state,
+      ...allTasksDoneState(tasks, runStartHead),
+      plan: {
+        summary: 'Greet people by name.',
+        decisions: [{ text: 'Keep the greeting pure', taskId: null }],
+        criteria: [
+          { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
+          { id: 'C2', text: 'Empty names are refused', checkIds: [] },
+        ],
+        checks: [],
+        validation: null,
+      },
+      lineages: {
+        T001: {
+          consults: 1,
+          attempts: 1,
+          consultAllowance: 3,
+          attemptAllowance: 2,
+          staleConsultedRevision: {},
+          consultRecords: [
+            {
+              reason: 'failed',
+              action: 'guidance',
+              diagnosis: 'the greeting handled empty names',
+              at: '2026-01-01T00:00:00.000Z',
+              taskId: taskId('T001'),
+              revision: 1,
+              answer: {
+                answer: {
+                  diagnosis: 'the greeting handled empty names',
+                  action: 'guidance',
+                  instructions: 'guard the empty name',
+                  context: null,
+                },
+              },
+            },
+          ],
+          replacedParents: [],
+          notes: [],
+        },
+      },
+      triage: [
+        {
+          cycle: 1,
+          at: '2026-01-02T00:00:00Z',
+          reviewAt: '2026-01-01T00:00:00Z',
+          inputIds: ['F9'],
+          result: {
+            fixTasks: [],
+            rejected: [],
+            verify: [{ findingId: 'F9', checkIds: ['K9'] }],
+            ask: null,
+          },
+          verification: [
+            {
+              id: 'finding:F9',
+              status: 'fail',
+              output: 'check K9 did not pass (fail): EXACT triage output',
+            },
+          ],
+        },
+      ],
+    };
+    saveState({ projectDir, sessionId }, reviewState);
     await runFinalReviewPhase({
       projectDir,
       workspaceDir: projectDir,
@@ -1212,70 +1296,7 @@ describe('runFinalReviewPhase', () => {
       config: makeNoValidationConfig(),
       callbacks: makeCallbacks().callbacks,
       bus: makeBusRecorder().bus,
-      state: {
-        ...planned.state,
-        ...allTasksDoneState(tasks, runStartHead),
-        plan: {
-          summary: 'Greet people by name.',
-          decisions: [{ text: 'Keep the greeting pure', taskId: null }],
-          criteria: [
-            { id: 'C1', text: 'A name gets a greeting', checkIds: ['K1'] },
-            { id: 'C2', text: 'Empty names are refused', checkIds: [] },
-          ],
-          checks: [],
-          validation: null,
-        },
-        lineages: {
-          T001: {
-            consults: 1,
-            attempts: 1,
-            consultAllowance: 3,
-            attemptAllowance: 2,
-            staleConsultedRevision: {},
-            consultRecords: [
-              {
-                reason: 'failed',
-                action: 'guidance',
-                diagnosis: 'the greeting handled empty names',
-                at: '2026-01-01T00:00:00.000Z',
-                taskId: taskId('T001'),
-                revision: 1,
-                answer: {
-                  answer: {
-                    diagnosis: 'the greeting handled empty names',
-                    action: 'guidance',
-                    instructions: 'guard the empty name',
-                    context: null,
-                  },
-                },
-              },
-            ],
-            replacedParents: [],
-            notes: [],
-          },
-        },
-        triage: [
-          {
-            cycle: 1,
-            at: '2026-01-02T00:00:00Z',
-            reviewAt: '2026-01-01T00:00:00Z',
-            inputIds: ['F9'],
-            result: {
-              fixTasks: [],
-              rejected: [],
-              verify: [{ findingId: 'F9', checkIds: ['K9'] }],
-              ask: null,
-            },
-            verification: [
-              {
-                id: 'finding:F9',
-                status: 'fail',
-                output: 'check K9 did not pass (fail): EXACT triage output',
-              },
-            ],
-          },
-        ],
-      },
+      state: reviewState,
       reviewer,
       metadata: TEST_METADATA,
       summaryBase: SUMMARY_BASE,

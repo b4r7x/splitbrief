@@ -1,3 +1,4 @@
+import type { SteeringPort } from '../calls/steering.js';
 import type { Task } from '../../core/schemas/task.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -89,6 +90,7 @@ export type PlannerUserTurnResult =
   | { status: 'not-delivered'; reason: 'not-ready' };
 
 export interface PlannerCallbacks {
+  steering?: SteeringPort | undefined;
   onOutput: (text: string) => void;
   /** Emitted when the backend reports its native session handle (e.g. Claude Code stream-json session_id). */
   onSessionId?: ((sessionId: string) => void) | undefined;
@@ -101,6 +103,7 @@ export interface PlannerCallbacks {
 }
 
 export interface PlannerOutputCallbacks {
+  steering?: SteeringPort | undefined;
   onOutput: (text: string) => void;
   signal?: AbortSignal | undefined;
   onCallEvent?: ((event: RunnerCallEvent) => void) | undefined;

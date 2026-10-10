@@ -40,6 +40,7 @@ const anytimeActions = [
   'MARK_INJECTING_NATIVE',
   'MARK_DELIVERED_NATIVE',
   'MARK_NATIVE_DELIVERY_FAILED',
+  'MARK_POSSIBLE_DUPLICATE',
   'DRAIN_QUEUE',
   'CLEAR_QUEUE',
   'SET_PENDING_RECOVERY',
@@ -105,7 +106,12 @@ const phaseActions = {
     'QUEUE_TRIAGE',
     'ACCEPT_AS_IS',
   ],
-  'validating-task': [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'VALIDATION_FAIL', 'ESCALATE'],
+  'validating-task': [
+    ...VALIDATION_OR_ESCALATION_SHARED_ACTIONS,
+    'RESUME_TASK',
+    'VALIDATION_FAIL',
+    'ESCALATE',
+  ],
   escalating: [...VALIDATION_OR_ESCALATION_SHARED_ACTIONS, 'UPDATE_TASK_CODE'],
   'final-review': [
     'REVIEW_DONE',
@@ -293,6 +299,9 @@ export function transition(
       const cleaned = sentId ? stripCurrentCode(state, sentId) : state;
       return { ...cleaned, phase: 'validating-task' };
     }
+
+    case 'RESUME_TASK':
+      return { ...state, phase: 'implementing' };
 
     case 'VALIDATION_PASS':
       return advanceTask(state, taskStatusForCompletionMethod('local'));
@@ -858,7 +867,12 @@ export function transition(
         ...state,
         messageQueue: state.messageQueue.map((m) =>
           m.id === action.id
-            ? { ...m, deliveredViaNative: true, nativeDeliveryState: 'delivered' }
+            ? {
+                ...m,
+                deliveredViaNative: true,
+                nativeDeliveryState: 'delivered',
+                ...(action.via === 'mid-call' && { deliveredMidCall: true }),
+              }
             : m,
         ),
       };
@@ -870,6 +884,14 @@ export function transition(
           m.id === action.id && m.nativeDeliveryState === 'injecting'
             ? { ...m, nativeDeliveryState: 'pending' }
             : m,
+        ),
+      };
+
+    case 'MARK_POSSIBLE_DUPLICATE':
+      return {
+        ...state,
+        messageQueue: state.messageQueue.map((m) =>
+          m.id === action.id ? { ...m, possibleDuplicate: true } : m,
         ),
       };
 
@@ -887,10 +909,19 @@ export function transition(
           }
           if (destination === 'reviewer') {
             if (m.deliveredTo?.reviewer !== undefined) return m;
-            return { ...m, deliveredTo: { ...m.deliveredTo, reviewer: ts } };
+            return {
+              ...m,
+              deliveredTo: { ...m.deliveredTo, reviewer: ts },
+              ...(action.via === 'mid-call' && { deliveredMidCall: true }),
+            };
           }
           if (!isQueuedMessagePendingDelivery(m)) return m;
-          return { ...m, drainedAt: ts, deliveredTo: { ...m.deliveredTo, implementer: ts } };
+          return {
+            ...m,
+            drainedAt: ts,
+            deliveredTo: { ...m.deliveredTo, implementer: ts },
+            ...(action.via === 'mid-call' && { deliveredMidCall: true }),
+          };
         }),
       };
     }

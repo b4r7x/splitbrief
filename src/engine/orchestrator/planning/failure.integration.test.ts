@@ -25,7 +25,7 @@ import { createPlannerBase, type PlannerBaseConfig } from '../../planners/base.j
 import { createShellPlanner } from '../../planners/shell.js';
 import type { Planner } from '../../planners/types.js';
 import { streamCompletion } from '../../providers/openai-stream/completion.js';
-import { interruptedError } from '../../runners/claude/stream.js';
+import { interruptedError } from '../../planners/claude-invoke.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';

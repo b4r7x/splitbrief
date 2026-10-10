@@ -22,10 +22,19 @@ export function isQueuedMessagePendingReviewer(message: QueuedMessage): boolean 
   return isQueuedMessagePendingDelivery(message) && message.deliveredTo?.reviewer === undefined;
 }
 
-export function isQueuedMessageClearable(message: QueuedMessage): boolean {
+export function isQueuedMessagePendingFirstDelivery(message: QueuedMessage): boolean {
   return (
-    !message.drainedAt && !message.deliveredViaNative && message.nativeDeliveryState !== 'delivered'
+    message.deliveredTo?.implementer === undefined &&
+    message.deliveredTo?.reviewer === undefined &&
+    !message.drainedAt &&
+    !message.deliveredViaNative &&
+    !message.deliveredMidCall &&
+    message.nativeDeliveryState !== 'delivered'
   );
+}
+
+export function isQueuedMessageClearable(message: QueuedMessage): boolean {
+  return isQueuedMessagePendingFirstDelivery(message);
 }
 
 function recoverInterruptedQueuedMessage(message: QueuedMessage): QueuedMessage {

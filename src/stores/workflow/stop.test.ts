@@ -56,10 +56,20 @@ describe('stopStore', () => {
     expect(stopStore.get().intent).toBe('none');
   });
 
-  it('parks a boundary pause with no resolver and resumes without throwing', () => {
+  it('leaves a resolverless park for saved-state continuation', () => {
     stopStore.request('pause-after-brief');
     stopStore.park('boundary', null, null);
-    stopStore.resume(plainUserMessage(''));
-    expect(stopStore.get().phase).toBe('idle');
+    expect(stopStore.resume(plainUserMessage(''))).toBe(false);
+    expect(stopStore.get().phase).toBe('parked');
+  });
+
+  it('does not resolve a park while the workflow is stopping', () => {
+    const resolve = vi.fn();
+    stopStore.park('boundary', 'T001', resolve);
+    stopStore.request('stop-now');
+
+    expect(stopStore.resume(plainUserMessage(''))).toBe(false);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(stopStore.get().phase).toBe('requested');
   });
 });

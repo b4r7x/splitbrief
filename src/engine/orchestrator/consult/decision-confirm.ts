@@ -98,6 +98,7 @@ export async function confirmAttemptDecisions(opts: {
     outcome.answer,
     opts.snapshot,
   );
+  if (applied.action === 'correction') return { kind: 'answer', state, answer: applied.answer };
   if (applied.action === 'guidance') {
     return {
       kind: 'answer',

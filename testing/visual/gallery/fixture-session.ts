@@ -1,3 +1,5 @@
+import { queueCopy } from '../../../src/features/workflow/queue-copy.js';
+import { phaseStage } from '../../../src/core/rail-stages.js';
 import { isAbsolute, relative, resolve } from 'node:path';
 import type { AppInteractionDeps, AppProps } from '../../../src/app/root.js';
 import type { AppKeyDeps } from '../../../src/app/keys.js';
@@ -31,7 +33,7 @@ import { projectFilesStore } from '../../../src/stores/ui/project-files.js';
 import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { detachImage, listAttachments } from '../../../src/stores/workflow/attachments.js';
 import { lifecycleStore } from '../../../src/stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../src/stores/workflow/tasks.js';
+import { selectRunningBrief, tasksStore } from '../../../src/stores/workflow/tasks.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
 import {
   CheckpointDefinitionSchema,
@@ -253,7 +255,14 @@ function createPreviewCommandContext(): RuntimeCommandContext {
     resumeRun: () => false,
     steerRun: () => false,
     endRun: () => false,
-    getQueueDepth: () => lifecycleStore.get().queueDepth,
+    getQueueCopy: (count) => {
+      const lifecycle = lifecycleStore.get();
+      return queueCopy({
+        seat: phaseStage(lifecycle.phase),
+        taskId: selectRunningBrief(tasksStore.get(), lifecycle.phase).current?.id,
+        count: count ?? lifecycle.queueDepth,
+      });
+    },
     clearQueue: () => unavailable,
     attachImage: unavailableInPreview,
     plannerSupportsImages: () => false,

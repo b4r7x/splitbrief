@@ -27,6 +27,8 @@ import {
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
 import type { Planner, TypedCallContext } from '../../planners/types.js';
+import type { Implementer } from '../../implementers/types.js';
+import { createSteeringPort } from '../../calls/steering.js';
 import type { TypedSeatCall } from '../../runners/typed-output.js';
 import { handleRetryAndEscalation } from './handle.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
@@ -40,6 +42,9 @@ import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { createImplementerPublisher } from '../events.js';
 import { attemptBoundSpent } from '../recovery/builders/consult.js';
+import * as commandRunner from '../../../lib/process/spawn/run-command.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
@@ -60,6 +65,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await disposeWctxIsolations();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
@@ -134,6 +140,128 @@ function failingImplementer(): ReturnType<typeof makeImplementer> {
 // Validation disabled so runValidationWithEvents returns [] → treated as all-pass.
 // Commit strategy 'none' so we don't need a dirty repo for every happy-path test.
 describe('handleRetryAndEscalation', () => {
+  it('delivers a live message to the consult-guided retry through the run steering port', async () => {
+    const ref = setupProject();
+    const task = makeTask();
+    const steering = createSteeringPort();
+    const received: string[] = [];
+    const { planner } = consultPlanner([
+      guidanceAnswer('The export is missing', 'Add the named export.'),
+    ]);
+    const implementer = makeImplementer({
+      retry: async (opts) => {
+        if (opts.kind === 'local') return { success: false, output: '', error: 'still broken' };
+        const detach = opts.steering?.attach({
+          callId: 'consult-retry',
+          role: 'implementer',
+          taskId: task.id,
+          send: async ({ text }) => {
+            received.push(text);
+            return 'delivered';
+          },
+        });
+        try {
+          await steering.current()?.send({ id: 'live-consult-retry', text: 'keep the alias' });
+          return { success: true, output: 'fixed' };
+        } finally {
+          detach?.();
+        }
+      },
+    });
+
+    const outcome = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
+      wctx: makeWctx({ ...ref, implementer, planner, steering }),
+      task,
+      initialError: 'type error',
+      currentState: makeValidatingState(),
+    });
+
+    expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 2 });
+    expect(received).toEqual(['keep the alias']);
+    expect(steering.current()).toBeNull();
+  });
+
+  it('delivers a correction from green verify checks during the final allowed consult without another retry rung', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const currentState = transition(transition(makeImplState([task]), { type: 'TASK_SENT' }), {
+      type: 'COUNT_ATTEMPT',
+      taskId: task.id,
+    });
+    const { bus, events } = makeBusRecorder();
+    const retry = vi
+      .fn<Implementer['retry']>()
+      .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
+      .mockResolvedValueOnce({ success: false, output: '', error: 'still broken' })
+      .mockResolvedValueOnce({ success: true, output: 'fixed' });
+    const { planner, prompts } = consultPlanner([
+      guidanceAnswer('The export is missing', 'Add the named export.'),
+      {
+        answer: {
+          diagnosis: 'The change now meets the brief',
+          action: 'verify',
+          checkIds: ['K1'],
+          reason: 'Verify K1',
+        },
+      },
+    ]);
+    let checks = 0;
+    const runCommand = vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+      checks += 1;
+      if (checks === 1) {
+        const state = loadState(ref);
+        if (state === null) throw new Error('missing state during verify checks');
+        expect(state.lineages?.T001).toMatchObject({ consults: 2, consultAllowance: 2 });
+        enqueueUserMessage({
+          ...ref,
+          state,
+          message: plainUserMessage('keep the alias'),
+          phase: state.phase,
+          bus,
+        });
+      }
+      return { stdout: 'ok', stderr: '', code: 0 };
+    });
+
+    const outcome = await handleRetryAndEscalation({
+      taskStartTime: Date.now(),
+      wctx: makeWctx({
+        ...ref,
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+        planner,
+        implementer: makeImplementer({ retry }),
+        bus,
+      }),
+      task,
+      initialError: 'check K1 failed',
+      currentState,
+    });
+
+    expect(prompts).toHaveLength(2);
+    expect(retry).toHaveBeenCalledTimes(3);
+    expect(retry.mock.calls[2]?.[0]).toMatchObject({ error: CORRECTION_AFTER_CHECKS });
+    expect(retry.mock.calls[2]?.[0].continuation?.steer).toContain('keep the alias');
+    expect(runCommand).toHaveBeenCalledTimes(2);
+    expect(outcome.result).toMatchObject({ completed: true, method: 'consulted', attempts: 3 });
+    expect(outcome.state.tasks[0]?.status).toBe('done');
+    expect(outcome.state.lineages?.T001).toMatchObject({
+      consults: 2,
+      consultAllowance: 2,
+      attempts: 4,
+      attemptAllowance: 8,
+    });
+    expect(outcome.state.pendingRecovery).toBeUndefined();
+    expect(events.filter((event) => event.type === 'task_retry')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+      expect.objectContaining({ count: 1, seat: 'build', taskId: task.id }),
+    ]);
+    expect(loadState(ref)?.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
+  });
+
   it('retry succeeds on attempt 1 → completed with method=local', async () => {
     const { projectDir, sessionId } = setupProject();
     const { callbacks } = makeCallbacks();

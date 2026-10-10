@@ -156,7 +156,10 @@ describe('/queue command', () => {
     let feedback: string | undefined;
     const commands = createRuntimeCommands(
       makeCtx({
-        getQueueDepth: () => 2,
+        getQueueCopy: () => ({
+          summary: '2 queued for BUILD on T003',
+          clearFeedback: 'Queue is already empty',
+        }),
         setFeedbackMessage: (message) => {
           feedback = message;
         },
@@ -165,13 +168,18 @@ describe('/queue command', () => {
 
     runCommandInTest({ commands: commands, raw: '/queue show', screen: 'workflow', onError: noop });
 
-    expect(feedback).toBe('Queue: 2 messages pending');
+    expect(feedback).toBe('2 queued for BUILD on T003');
   });
 
   it('clears pending queue messages', async () => {
     let feedback: string | undefined;
+    const formattedCounts: Array<number | undefined> = [];
     const commands = createRuntimeCommands(
       makeCtx({
+        getQueueCopy: (count) => {
+          formattedCounts.push(count);
+          return { summary: '', clearFeedback: 'Cleared 3 queued messages' };
+        },
         clearQueue: () => ({ status: 'cleared', count: 3 }),
         setFeedbackMessage: (message) => {
           feedback = message;
@@ -187,6 +195,7 @@ describe('/queue command', () => {
     });
 
     expect(feedback).toBe('Cleared 3 queued messages');
+    expect(formattedCounts).toEqual([3]);
   });
 
   it('surfaces unknown queue subcommands before clearing', () => {

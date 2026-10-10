@@ -18,6 +18,34 @@ import type {
   RunnerCallUsageSemantics,
 } from '../../calls/types.js';
 
+import type { SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
+import type { RunningCall } from '../../calls/steering.js';
+
+export type CliSteeringSession = Readonly<{
+  invocation: CliInvocation;
+  prompt: string;
+  parse: (line: string) => readonly CliProtocolEvent[];
+  credentialValues?: readonly string[] | undefined;
+  failureSignal?: AbortSignal | undefined;
+  onAdmissionClosed?: (() => void) | undefined;
+  onStdinReady?: ((writer: SpawnStdinWriter) => void) | undefined;
+  /** True when this line ends a turn while admitted input still awaits acknowledgement. */
+  onLine: (line: string, events: readonly CliProtocolEvent[]) => boolean;
+  close: () => Promise<void>;
+}>;
+
+export type CliSteeringTransport = Readonly<{
+  supportsVersion: (installedVersion: string | undefined) => boolean;
+  open: (
+    input: Readonly<{
+      invocation: CliInvocation;
+      prompt: string;
+      onReady: (send: RunningCall['send']) => void;
+      onAdmissionClosed: () => void;
+    }>,
+  ) => Promise<CliSteeringSession>;
+}>;
+
 export type CliPromptTransport =
   | Readonly<{ kind: 'stdin' }>
   /**
@@ -60,11 +88,18 @@ export type CliProtocolEvent =
       type: 'text';
       channel: RunnerCallTextChannel | 'stderr';
       text: string;
+      subagentId?: string | undefined;
       /** `final` restates a block already emitted as deltas; absent means append. */
       semantics?: RunnerCallTextSemantics | undefined;
     }>
   | Readonly<{ type: 'usage'; usage: TokenDelta; semantics: RunnerCallUsageSemantics }>
   | Readonly<{ type: 'session'; nativeSessionId: string }>
+  | Readonly<{
+      type: 'tool-use-delta';
+      id: string | null;
+      name: string | null;
+      inputDelta: string;
+    }>
   | Readonly<{
       type: 'tool-use';
       id: string | null;
@@ -88,6 +123,7 @@ export type CliProtocolEvent =
     }>
   /** A frame with nothing to show that still proves the tool is working. */
   | Readonly<{ type: 'heartbeat' }>
+  | Readonly<{ type: 'input-ack'; text: string }>
   | CliProtocolTerminalEvent;
 
 export type CliOutputContract =
@@ -250,6 +286,7 @@ type CliAdapterContract<
   descriptor: (typeof CLI_TOOL_CATALOG)[Tool];
   role: Role;
   promptTransport: CliPromptTransport;
+  steering?: CliSteeringTransport | undefined;
   baseArgs: (input: BuildArgsInput) => readonly string[];
   buildArgs: (input: BuildArgsInput) => readonly string[];
   validateArgs: (input: {
@@ -305,6 +342,8 @@ export type CliImplementerBuildArgsInput = Readonly<{
   installedVersion?: string | undefined;
   /** The run's global skills, which the call may read and never write. */
   skillRoots?: readonly string[] | undefined;
+  /** Image file paths the seat can take as images, when its tool has a flag for them. */
+  imagePaths?: readonly string[] | undefined;
   /** The JSON Schema the final answer must match; absent for a text call. */
   schema?: CliSchemaInput | undefined;
 }>;
@@ -334,6 +373,7 @@ export type CliProcessAdapter = Readonly<{
     auth: Readonly<{ channels: readonly Readonly<{ env: readonly string[] }>[] }>;
   }>;
   promptTransport: CliPromptTransport;
+  steering?: CliSteeringTransport | undefined;
   validateArgs: (input: {
     invocationArgs: readonly string[];
     baseArgs: readonly string[];

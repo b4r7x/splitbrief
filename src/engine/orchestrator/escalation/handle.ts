@@ -403,6 +403,7 @@ export async function handleRetryAndEscalation(
       profileOverride: ctx.retryProfileOverride,
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
+        steering: ctx.steering,
         kind: 'consult',
         sessionId: ctx.sessionId,
         languageContext: buildProjectLanguageContext(
@@ -543,6 +544,10 @@ export async function handleRetryAndEscalation(
     }
     if (applied.action === 'skipped') {
       return { state, result: { completed: false, method: 'skipped', attempts } };
+    }
+    if (applied.action === 'correction') {
+      answer = applied.answer;
+      continue;
     }
     if (applied.action === 'failed') {
       lastError = applied.reason;

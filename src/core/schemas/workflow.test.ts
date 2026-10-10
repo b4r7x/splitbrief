@@ -5,6 +5,7 @@ import {
   QueuedMessageSchema,
   WorkflowStateSchema,
 } from './workflow.js';
+import { makeMessage } from '#testing/helpers/queue.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { PlanSchema } from './plan.js';
@@ -101,6 +102,22 @@ describe('WorkflowStateSchema v4', () => {
     expect(
       WorkflowStateSchema.parse(JSON.parse(JSON.stringify(parsed))).messageQueue[0],
     ).toMatchObject(message);
+  });
+
+  it('loads old queue entries and preserves the mid-call fields', () => {
+    const old = makeMessage('old message');
+    const midCall = { ...makeMessage('live message'), id: 'live', deliveredMidCall: true };
+    const uncertain = {
+      ...makeMessage('uncertain message'),
+      id: 'uncertain',
+      possibleDuplicate: true,
+    };
+    const parsed = WorkflowStateSchema.parse({
+      ...state(),
+      messageQueue: [old, midCall, uncertain],
+    });
+    expect(parsed.messageQueue).toEqual([old, midCall, uncertain]);
+    expect(QueuedMessageSchema.safeParse({ ...old, deliveredMidCall: false }).success).toBe(false);
   });
 
   it('preserves account details on seat-switch records', () => {

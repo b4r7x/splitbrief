@@ -54,6 +54,8 @@ import {
 } from '../state-ops.js';
 import { sessionDir } from '../../../core/paths.js';
 import { deriveRunStatus, resumeStep } from '../../../core/sessions/run-status.js';
+import { createSteeringPort } from '../../calls/steering.js';
+import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 
 function resolveSessionStart(savedState: WorkflowState | undefined): number {
   if (!savedState) return Date.now();
@@ -293,8 +295,21 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             getPhase: () => trackedState?.phase ?? createInitialState(feature).phase,
           };
           const publishingPlanner = withPlannerCallPublishing(init.wctx.planner, callPublisher);
+          const steering = createSteeringPort({
+            onChange: (call) => {
+              const seat = call === null ? null : seatForRunningCall(call);
+              init.wctx.bus.publish({
+                type: 'steerable_call',
+                ts: Date.now(),
+                phase: trackedState?.phase ?? init.state.phase,
+                ...(seat !== null && { seat }),
+                ...(call !== null && call.taskId !== null && { taskId: call.taskId }),
+              });
+            },
+          });
           wctx = {
             ...init.wctx,
+            steering,
             planner: publishingPlanner,
             reviewer:
               init.wctx.reviewer === init.wctx.planner
@@ -313,6 +328,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             bus: wctx.bus,
             config,
             planner: wctx.planner,
+            steering,
             ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });
 

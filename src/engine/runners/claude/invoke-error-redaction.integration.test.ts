@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { prependPath } from '#testing/helpers/command-shim.js';
-import { runClaudeOneShot } from './invoke.js';
+import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-invoke.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 
 let shimDir: string;
@@ -51,7 +51,7 @@ describe('Claude invoke process diagnostics', () => {
     const executable = installFailingClaudeShim();
     const events: RunnerCallEvent[] = [];
 
-    const caught = await runClaudeOneShot({
+    const caught = await invokeTestClaude({
       prompt: 'prompt',
       projectDir,
       mode: 'escalate',
@@ -61,8 +61,8 @@ describe('Claude invoke process diagnostics', () => {
     }).catch((err: unknown) => err);
 
     expect(caught).toMatchObject({
-      kind: 'process-output',
-      message: 'claude exited with code 23: failure from claude',
+      kind: 'runner-call-failed',
+      message: 'Claude runner call failed: CLI exited with code 23: failure from claude',
     });
     const data = JSON.stringify((caught as { data?: unknown }).data);
     expect(data).toContain('claude');
@@ -74,8 +74,8 @@ describe('Claude invoke process diagnostics', () => {
         expect.objectContaining({
           type: 'call_error',
           error: expect.objectContaining({
-            code: 'process-output',
-            message: 'claude exited with code 23: failure from claude',
+            code: 'non-zero-exit',
+            message: 'CLI exited with code 23: failure from claude',
           }),
         }),
       ]),
@@ -99,7 +99,7 @@ describe('Claude invoke process diagnostics', () => {
     };
     const events: RunnerCallEvent[] = [];
     await expect(
-      runClaudeOneShot({
+      invokeTestClaude({
         prompt: 'prompt',
         projectDir,
         mode: 'escalate',
@@ -110,8 +110,8 @@ describe('Claude invoke process diagnostics', () => {
         onCallEvent: (event) => events.push(event),
       }),
     ).rejects.toMatchObject({
-      kind: 'process-output',
-      message: 'claude exited with code 23: quota exceeded: ***REDACTED***',
+      kind: 'runner-call-failed',
+      message: expect.stringContaining('quota exceeded: ***REDACTED***'),
     });
 
     const persisted = JSON.stringify(events);

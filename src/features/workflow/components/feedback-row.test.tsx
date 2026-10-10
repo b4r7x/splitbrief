@@ -24,14 +24,14 @@ describe('FeedbackRow', () => {
   });
 
   it('opens a message on the text column, leaving the mark slot empty', () => {
-    feedbackStore.setMessage('Message queued for the next planner turn.');
+    feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
 
     const ui = renderFeature(<FeedbackRow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     // The footer's gutter puts the row on column 1; the row insets itself by the mark slot so its
     // words land on the text column without putting a letter where a mark would stand.
-    expect(frame.indexOf('Message queued')).toBe(MARK_SLOT_CELLS);
+    expect(frame.indexOf('Queued for PLAN')).toBe(MARK_SLOT_CELLS);
 
     ui.unmount();
   });
@@ -181,12 +181,12 @@ describe('FeedbackRow', () => {
   });
 
   it('lets live feedback own the row instead of gluing the hint after it', () => {
-    feedbackStore.setMessage('Message queued for the next planner turn.');
+    feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
 
     const ui = renderFeature(<FeedbackRow inputHint="approve · ctrl+e/e edit" />);
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('Message queued for the next planner turn.');
+    expect(frame).toContain('Queued for PLAN · ctrl+⏎ sends now');
     expect(frame).not.toContain('approve · ctrl+e/e edit');
 
     ui.unmount();
@@ -251,11 +251,11 @@ describe('FeedbackRow', () => {
   });
 
   it('keeps the row when a message resolves above a panel that owns the footer', () => {
-    feedbackStore.setMessage('Message queued for the next planner turn.');
+    feedbackStore.setMessage('Queued for PLAN · ctrl+⏎ sends now');
     const ui = renderFeature(<FeedbackRow panelBelow />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Message queued for the next planner turn.');
+    expect(frame).toContain('Queued for PLAN · ctrl+⏎ sends now');
     ui.unmount();
   });
 });

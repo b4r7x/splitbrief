@@ -74,6 +74,7 @@ export interface RunnerCallRecorder {
   text: (opts: {
     channel: RunnerCallTextChannel;
     text: string;
+    subagentId?: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['subagentId'];
     semantics?: Extract<RunnerCallEvent, { type: 'call_text_delta' }>['semantics'];
     ts?: number | undefined;
   }) => void;
@@ -151,6 +152,7 @@ export function createRunnerCallRecorder(opts: {
   let toolUseLimitExceeded = false;
   const emittedLimitWarnings = new Set<string>();
   let textLimiter = createTextLimiter();
+  const subagentTextLimiter = createTextLimiter();
   const stderrLimiter = createRunnerCallDeltaLimiter({
     code: 'runner_call_stderr_limit',
     label: 'runner call stderr diagnostics',
@@ -432,12 +434,19 @@ export function createRunnerCallRecorder(opts: {
     startedAt,
     hasTerminal: () => hasTerminalEvent,
     text: (eventOpts) => {
-      if (eventOpts.semantics === 'final') textLimiter = createTextLimiter();
+      const isSubagent = eventOpts.subagentId !== undefined;
+      if (!isSubagent && eventOpts.semantics === 'final') textLimiter = createTextLimiter();
       // An explicit `delta` is a partial slice of one record: the byte budget
       // bounds it, the event budget counts records.
-      const accepted = textLimiter.accept(redactCredential(eventOpts.text));
+      const accepted = (isSubagent ? subagentTextLimiter : textLimiter).accept(
+        redactCredential(eventOpts.text),
+      );
       const eventText = accepted.text;
-      if (accepted.limit === null && resultLimit?.code === 'runner_call_text_limit') {
+      if (
+        !isSubagent &&
+        accepted.limit === null &&
+        resultLimit?.code === 'runner_call_text_limit'
+      ) {
         resultLimit = null;
       }
       if (eventText.length > 0 || (eventOpts.semantics === 'final' && accepted.limit === null)) {
@@ -447,10 +456,14 @@ export function createRunnerCallRecorder(opts: {
           ...context,
           channel: eventOpts.channel,
           text: eventText,
+          ...(eventOpts.subagentId !== undefined && { subagentId: eventOpts.subagentId }),
           ...(eventOpts.semantics !== undefined && { semantics: eventOpts.semantics }),
         });
       }
-      if (accepted.limit !== null && resultLimit === null) resultLimit = accepted.limit;
+      if (accepted.limit !== null) {
+        if (isSubagent) noteLimit(accepted.limit, 'diagnostic-only');
+        else if (resultLimit === null) resultLimit = accepted.limit;
+      }
     },
     stderr: (eventOpts) => {
       const accepted = stderrLimiter.accept(redactCredential(eventOpts.text));

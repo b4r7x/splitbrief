@@ -1,3 +1,5 @@
+import { queueCopy } from '../../features/workflow/queue-copy.js';
+import { phaseStage } from '../../core/rail-stages.js';
 import { beforeEach, afterEach, describe, it, expect } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { render } from 'ink-testing-library';
@@ -61,7 +63,11 @@ function createTestCommands(): RuntimeCommandDef[] {
     toggleSkill: () => ({ status: 'unknown' }),
     refreshSkills: async () => {},
     getCurrentPhase: () => lifecycleStore.get().phase,
-    getQueueDepth: () => lifecycleStore.get().queueDepth,
+    getQueueCopy: (count) =>
+      queueCopy({
+        seat: phaseStage(lifecycleStore.get().phase),
+        count: count ?? lifecycleStore.get().queueDepth,
+      }),
     clearQueue: () => ({ status: 'cleared', count: 0 }),
     attachImage: () => ({ ok: false, reason: 'not-found' }),
     detachImage: () => false,

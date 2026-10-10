@@ -218,6 +218,7 @@ export function createCliImplementer(
           variant: config.variant,
           installedVersion: trustedCli?.installedVersion,
           skillRoots: opts.skillRoots,
+          imagePaths: opts.images?.map((image) => image.path),
         });
 
         const result = await invokeCliAdapter({
@@ -233,6 +234,8 @@ export function createCliImplementer(
             signal: composedSignal,
           },
           prompt,
+          steering: opts.steering,
+          installedVersion: trustedCli?.installedVersion,
           callContext: withCliInvocationIdentity({ runner: config, callContext, executable }),
           onOutput,
           onCallEvent: opts.onCallEvent,

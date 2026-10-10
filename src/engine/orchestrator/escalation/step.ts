@@ -1,6 +1,6 @@
 import { loadState } from '../../../core/state/persistence.js';
 import { ImplementerReportSchema, type ImplementerReport } from '../../../core/schemas/consult.js';
-import { addUsageAndSave } from '../state-ops.js';
+import { addUsageAndSave, rebaseOnPersistedWorkflowState } from '../state-ops.js';
 import { refreshAndPersistCode } from '../task/refresh-code.js';
 import { gateAttemptChanges } from '../task/attempt-gate.js';
 import { captureTaskReviewChanges } from '../evidence/review-capture.js';
@@ -12,7 +12,7 @@ import { validateAndCommit } from './validate-and-commit.js';
 import { boundedHandBack, failedRetry } from './types.js';
 import type { RetryInvokeResult, RetryStepOpts, RetryStepOutcome } from './types.js';
 import { recordedApiCreatedPaths } from '../evidence/task.js';
-import { persistApiApplyEvidence, raiseApiApplyRecovery } from '../evidence/persistence.js';
+import { raiseApiApplyRecovery } from '../evidence/persistence.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { isResumableWorkspaceStop } from '../isolation/retention.js';
@@ -73,6 +73,7 @@ export async function runRetryStep(opts: RetryStepOpts): Promise<RetryStepResult
   ({ task, state } = await refreshAndPersistCode(task, ctx, state, ctx.workspaceDir));
 
   const retryRuntime = await createRetryRuntime(ctx, profileOverride);
+  state = rebaseOnPersistedWorkflowState(ctx, state);
   if (retryRuntime.profile !== undefined) {
     state = stateForRetryProfile(state, retryRuntime.profile);
   }
@@ -158,13 +159,10 @@ async function runRetryStepAttempt(
     else workspace.cleanup();
     throw err;
   }
+  state = rebaseOnPersistedWorkflowState(ctx, state);
   state = addUsageAndSave(ctx, state, usageCategory, retryResult.usage);
 
   const applyResult = retryResult.applyResult;
-  const workspacePath = workspace.projectDir;
-  if (applyResult !== undefined) {
-    persistApiApplyEvidence({ wctx: ctx, state, task, result: applyResult, workspacePath });
-  }
   if (
     applyResult?.status === 'partial' ||
     (applyResult?.status === 'failed' && applyResult.code === 'write-uncertain')
@@ -285,6 +283,15 @@ async function runRetryStepAttempt(
       ctx.taskStartSnapshot,
     ),
   });
+  if ('answer' in commitResult) {
+    return {
+      state: commitResult.state,
+      task,
+      lastError: commitResult.answer,
+      attempts,
+      answer: commitResult.answer,
+    };
+  }
   if ('blockedReason' in commitResult) {
     return {
       state: commitResult.state,

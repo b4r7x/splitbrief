@@ -270,15 +270,69 @@ This means Stop now during a planner call doesn't kill the workflow — it pause
 
 ## Message queue
 
-`src/engine/orchestrator/queue/submit.ts` (live-queue entry), with drain/clear/prompt in sibling `queue/` modules. While the planner is running, the user can type messages. These are queued, not dropped.
+`src/engine/orchestrator/queue/submit.ts` accepts messages during a live run. The sibling `queue/` modules read, drain, and clear pending messages. Enter with text queues a message while the current call continues. `ctrl+⏎` stops now and continues with the text through `requestSteer`, like `/steer <text>`.
 
-`enqueueUserMessage()` adds a `QueuedMessage` to `state.messageQueue` (capped at 50 messages). Each message is persisted as a message record and a `message_queued` event is published. The event carries a sanitized bounded preview for local UI and replay consumers.
+`enqueueUserMessage()` adds a `QueuedMessage` to `state.messageQueue`, which caps messages awaiting first delivery at 50. It persists the message and publishes `message_queued` with a sanitized, bounded preview. `phaseStage(phase)` in `src/core/rail-stages.ts` names the receiving seat: `plan`, `build`, or `review`. `message_queued` carries optional `seat` and `taskId` fields. For BUILD, `taskId` names the running brief.
 
-Queue submission is planner-only. The shared enqueue boundary rejects messages outside live planner phases and rejects when the cap is full; callers receive an explicit rejection result and the engine publishes a bounded warning. The TUI shows anchored feedback instead of pretending success.
+The shared enqueue function rejects messages outside supported live phases or when the cap is full. It returns the rejection and publishes a bounded warning. The TUI shows feedback near the composer.
 
-At safe points — end of the current planner call — the orchestrator calls `drainQueue()`, which marks pending-undelivered messages as drained and publishes `queue_drained`. The drained messages get formatted into the next planner prompt as `[user also says during <phase>]` blocks.
+Without a matching steerable call, each seat uses the queue delivery path. PLAN reads pending messages at the next planner call. `drainQueue()` marks them drained and publishes `queue_drained`. `formatDrainedMessages` formats typed messages as `[user also says during <phase>]` blocks.
 
-**Native injection.** For backends that support `injectUserTurn` (e.g., Claude Code's conversation API), messages bypass the queue entirely. `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` calls `planner.injectUserTurn()` to push the message as a real user turn into the active conversation. Only confirmed native delivery marks `deliveredViaNative`; a not-ready session leaves the message pending independently of whether usage counters were returned. Prompt acknowledgement drains only the supplied message IDs, so a correction arriving during regeneration stays pending without replaying the delivered correction.
+BUILD takes pending messages into the brief's corrections before every call, including retries. After a successful call, SPLITBRIEF runs a correction pass for messages that remain pending from that call, before the brief's checks. The pass uses the same brief and attempt, keeps the files, and uses the corrections as the steer. `runWithCorrectionPasses` starts the pass only while the run continues. After a failed or stopped call, messages stay pending until the next BUILD call after retry or continuation.
+
+A message during checks goes to the same brief. BUILD runs a correction and checks again. If the checks pass with a pending message, BUILD runs a counted answer attempt on the same brief before accepting it. The attempt keeps the files and spends no retry rung. It increases the displayed lineage attempt count and remains subject to the attempt bound. A spent bound can halt delivery. SPLITBRIEF runs the checks again after the attempt.
+
+If the checks fail, the ordinary retry path delivers pending messages and spends a retry rung.
+
+`absorbBuildCorrections` in `src/engine/orchestrator/queue/build-corrections.ts` is the shared delivery function. It takes `{ projectDir, sessionId, state, taskId, bus }` and returns `{ state, count }`. It claims all pending messages through `readQueueForPrompt`. It commits them through `commitQueueMessagesDrained` with destination implementer, seat `build`, and the brief's `taskId`. It records `formatDrainedMessages(...).trim()` once through `RECORD_CORRECTION`, unless the brief already has that correction.
+
+BUILD delivery requires both the drain through `DRAIN_QUEUE` and the brief correction through `RECORD_CORRECTION`. `count` is the number of messages delivered by this call. Later correction passes act only on messages still pending.
+
+REVIEW reads messages that it has not read at the start of each verdict call. `drainQueueForReview` publishes `queue_drained` with seat `review` when it drains messages. After a successful call, SPLITBRIEF issues another verdict call if the run continues and messages remain unread by REVIEW. SPLITBRIEF uses the new verdict. After failure or stop, unread messages wait for retry or continuation.
+
+A message that REVIEW read also goes to the next fix brief's BUILD call. Its reviewer delivery record prevents another REVIEW drain. Its implementer delivery record remains absent until BUILD absorbs it as a correction.
+
+`commitQueueMessagesDrained` and `drainQueue` accept optional `seat` and `taskId` fields and include them in `queue_drained`. Older events without these fields still render during replay.
+
+**Native injection.** `dispatchNativeInjection()` in `src/engine/orchestrator/queue/native-injection.ts` runs only while PLAN owns the phase. A Claude Code planner can receive pending messages through `planner.injectUserTurn()` in its native session. The queue handler attempts native injection when no matching call is attached or the offer is `deferred`. An `uncertain` offer skips native injection and keeps the message for the next planner prompt.
+
+Messages stay in the queue history. Only confirmed native delivery marks `deliveredViaNative`. A session that is not ready leaves the message pending, regardless of usage counters. Prompt acknowledgement drains only the supplied message IDs. Messages that arrive during a call stay pending until their delivery.
+
+### Queued count
+
+The byline and `/queue show` count a message until its first delivery to any seat. BUILD and REVIEW drains, PLAN native delivery, and confirmed mid-call delivery each end that count for the message. Delivery to another seat does not lower the count again. A message that REVIEW read can therefore await BUILD while its queued count is already zero.
+
+The lifecycle store derives `queueDepth` from `queuedMessageIds`. `message_queued` adds its id. The first delivery event removes that id; a repeated id changes nothing and cannot remove another queued message. Older drain events without ids retain count-based replay compatibility.
+
+Hydration restores ids through `isQueuedMessagePendingFirstDelivery`. It includes messages during native injection until confirmation. It excludes messages with an implementer, reviewer, native, or mid-call delivery record. `/queue clear` removes only messages awaiting first delivery, including unconfirmed native injection. After first delivery, a message is history and `/queue clear` preserves it.
+
+### Delivery to a running call
+
+The orchestrator creates one `SteeringPort` per run through `createSteeringPort({ onChange })`. It creates the port when `run/workflow.ts` installs the queue handler through `session-lifecycle/install-queue.ts`. `WorkflowContext.steering` holds this port. A port with no attached call keeps the queue delivery path.
+
+BUILD implementation, retry, and correction calls receive the port. The planning session calls and the final-review verdict call receive it too. Helper calls receive no port. These include consults, hints, compaction, summaries, and probes.
+
+`onChange(call)` publishes `steerable_call` when a runner attaches or detaches a call. The event has optional `seat: CrewSeatId` and `taskId: string` fields. `seatForRunningCall` uses the existing `PICKER_ROLE_SEAT_IDS` mapping. The call roles `implementer`, `planner`, and `review` map to BUILD, PLAN, and REVIEW. Both fields are absent when no call is attached.
+
+`createQueueHandler` captures `steering.current()` synchronously before enqueue work. It offers the message only when that call's seat equals `phaseStage(phase)`. After persistence, it calls `deliverToRunningCall(call, { id, text, images, attachedInputs })` outside the write sequencer. The captured handle cannot redirect the message to a later call. Queue messages retain their image attachments and resolved file records. Every delivery path carries these records. Text files travel in the resolved message text.
+
+`message_queued` has optional `steerable: boolean`. The handler sets it to `true` when it captures a matching call. Transcript rows use this saved value to select delivery timing.
+
+| Outcome | Queue behavior |
+|---|---|
+| `delivered` | SPLITBRIEF records delivery to the receiving seat and skips native injection. |
+| `deferred` | SPLITBRIEF leaves the message pending for the queue delivery path. In plan phases, it can attempt native injection. |
+| `uncertain` | SPLITBRIEF leaves the message pending, sets `possibleDuplicate: true`, and skips native injection. |
+
+For `delivered`, BUILD drains exactly that message id to the implementer through `DRAIN_QUEUE`. It also records the formatted text once through `RECORD_CORRECTION`, so retries carry the correction. PLAN uses `MARK_DELIVERED_NATIVE` because the message entered its live session. REVIEW drains the message to the reviewer. Each seat publishes `queue_drained` with its `seat`, any `taskId`, and `via: 'mid-call'`.
+
+`QueuedMessage` has optional `deliveredMidCall: true` and `possibleDuplicate: boolean` fields. Older saved states without them still load. `queue_drained.via` is optional, so older events still render.
+
+An uncertain message remains eligible for the queue delivery path. Its next message block starts with `You may have seen this message already during your last call:`. The seat can identify a possible duplicate.
+
+`queue/mid-call.ts` owns the in-flight registry. `trackMidCallDelivery(ref, id, promise)` tracks both delivery and persistence of its outcome. `settleMidCallDeliveries(ref): Promise<void>` waits for every tracked promise, including outcome persistence. `runWithCorrectionPasses`, the planner queue drain, and the review drain await it before reading the queue. This prevents the queue delivery path from repeating a confirmed delivery to the same seat. REVIEW messages still go to BUILD as described above. An uncertain delivery can repeat with the warning above.
+
+See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support, transports, and acknowledgement meanings. Runtime support depends on an attached call.
 
 ---
 
@@ -399,8 +453,9 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // command at the run base with the same command text; its done event counts the
 // failures that are new, pre-existing and not verified at the run base, and a red
 // base done event's `detail` says why a failure is not verified. `moment: 'brief'`
-// is a fix brief's check, run once with no base re-run. A reviewer check uses the
-// command the finding carries, under the reviewer command policy. A fix check
+// is a fix brief's check, run once per brief gate with no base re-run.
+// A reviewer check uses the command the finding carries, under the reviewer
+// command policy. A fix check
 // done event counts `own` carried failures, `ownLeft` failures still present and
 // `others` every unmatched re-run key. `proven` is true on green, or when the
 // red still shows an original other key. Diagnostics pair by exact key, then

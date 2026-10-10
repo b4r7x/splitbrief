@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -8,10 +9,13 @@ import { makeBusRecorder, makeWctx } from '#testing/helpers/orchestrator-factori
 import { withApplyRun, type ApplyRun } from '#testing/helpers/apply-run.js';
 import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import { processError } from '../../../lib/process/errors.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { clearPendingQueue } from '../queue/clear.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
-import { runBriefGate } from './brief-gate.js';
+import { CORRECTION_AFTER_CHECKS, runBriefGate } from './brief-gate.js';
 
 const FILES = {
   'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
@@ -30,6 +34,147 @@ function setup() {
 }
 
 describe('brief gate', () => {
+  it.each([
+    { name: 'green checks with a pending message', green: true, queued: true },
+    { name: 'green checks without a message', green: true, queued: false },
+    { name: 'red checks with a pending message', green: false, queued: true },
+  ])('returns the gate result for $name', async ({ green, queued }) => {
+    const ref = setup();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const runCommand: ValidationCommandRunner = async () => {
+      if (queued) {
+        enqueueUserMessage({
+          ...ref,
+          state,
+          message: plainUserMessage('keep the public name'),
+          phase: state.phase,
+          bus,
+        });
+      }
+      if (!green) {
+        throw processError.exitCode({ command: 'node', code: 1, stderr: 'broken' });
+      }
+      return { stdout: 'ok', stderr: '', code: 0 };
+    };
+
+    const result = await runBriefGate({
+      wctx: makeWctx({
+        ...ref,
+        bus,
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+      }),
+      state,
+      task,
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand,
+    });
+
+    expect(result.acceptance.accepted).toBe(green && !queued);
+    expect(result.correction).toBe(green && queued);
+    if (green) expect(result.error).toBe(queued ? CORRECTION_AFTER_CHECKS : '');
+    else expect(result.error).toMatch(/^check K1 did not pass \(fail\): broken/);
+    expect(result.diagnosis).toBe(green ? '' : 'check K1 failed');
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: green }]);
+    expect(result.state.messageQueue.filter(isQueuedMessagePendingDelivery)).toHaveLength(
+      queued ? 1 : 0,
+    );
+    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([]);
+  });
+
+  it('reads a message persisted after the checks are recorded before accepting', async () => {
+    const ref = setup();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    bus.subscribe((event) => {
+      if (event.type === 'checks_run') {
+        enqueueUserMessage({
+          ...ref,
+          state,
+          message: plainUserMessage('also update the alias'),
+          phase: state.phase,
+          bus,
+        });
+      }
+    });
+
+    const result = await runBriefGate({
+      wctx: makeWctx({
+        ...ref,
+        bus,
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+      }),
+      state,
+      task,
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand: async () => ({ stdout: 'ok', stderr: '', code: 0 }),
+    });
+
+    expect(result.correction).toBe(true);
+    expect(result.acceptance.accepted).toBe(false);
+    expect(result.state.messageQueue[0]?.text).toBe('also update the alias');
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+  });
+
+  it('accepts when a correction is cleared after the checks are recorded', async () => {
+    const ref = setup();
+    const task = makeTask({
+      id: 'T001',
+      checks: [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = makeImplState([task]);
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe((event) => {
+      if (event.type !== 'checks_run') return;
+      const checked = loadState(ref);
+      if (checked === null) throw new Error('missing recorded checks');
+      clearPendingQueue({ ...ref, state: checked, bus });
+    });
+
+    const result = await runBriefGate({
+      wctx: makeWctx({
+        ...ref,
+        bus,
+        config: makeNoValidationConfig({ workflow: { review: 'task' } }),
+      }),
+      state,
+      task,
+      changedFiles: [],
+      taskStartSnapshot: null,
+      runCommand: async () => {
+        enqueueUserMessage({
+          ...ref,
+          state,
+          message: plainUserMessage('cleared correction'),
+          phase: state.phase,
+          bus,
+        });
+        return { stdout: 'ok', stderr: '', code: 0 };
+      },
+    });
+
+    expect(events.filter((event) => event.type === 'queue_cleared')).toHaveLength(1);
+    expect(result.correction).toBe(false);
+    expect(result.acceptance).toEqual({ accepted: true });
+    expect(result.error).toBe('');
+    expect(result.state.messageQueue).toEqual([]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(loadState(ref)?.messageQueue).toEqual([]);
+  });
+
   it('accepts end cadence with no check run and still formats its own files', async () => {
     const ref = setup();
     const task = makeTask({ id: 'T001' });

@@ -1,5 +1,6 @@
 import { definedTaskUsageFields, TASK_USAGE_ATTEMPT_KEYS } from '../../../core/schemas/tokens.js';
-import type { QueuedMessage, WorkflowState } from '../../../core/schemas/workflow.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
 import { _tasksInternal, type TasksState, type WorkflowTask } from '../tasks.js';
 import {
   _tokensInternal,
@@ -37,11 +38,15 @@ function lifecycleFromState(
   lastEventTs: number | null,
 ): LifecycleState {
   const startedAt = timestampFromIso(state.startedAt);
-  const queueDepth = pendingQueueMessages(state.messageQueue).length;
+  const queuedMessageIds = new Set(
+    state.messageQueue.filter(isQueuedMessagePendingFirstDelivery).map((message) => message.id),
+  );
   const base = {
     interruptParked: false,
     cancelled: false,
-    queueDepth,
+    queueDepth: queuedMessageIds.size,
+    queuedMessageIds,
+    steerableCall: null,
     phaseFirstSeenTs: current.phaseFirstSeenTs,
     stall: null,
     lastRunnerEventTs: current.lastRunnerEventTs ?? null,
@@ -74,16 +79,6 @@ function lifecycleFromState(
     endedAt: null,
     durationMs: runMsUntil(lastEventTs),
   };
-}
-
-function pendingQueueMessages(messages: readonly QueuedMessage[]): QueuedMessage[] {
-  return messages.filter(
-    (message) =>
-      !message.drainedAt &&
-      !message.deliveredViaNative &&
-      message.nativeDeliveryState !== 'delivered' &&
-      message.nativeDeliveryState !== 'injecting',
-  );
 }
 
 function tasksStateFromState(

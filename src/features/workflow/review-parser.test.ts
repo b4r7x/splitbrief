@@ -11,6 +11,8 @@ import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
+import { addEvent } from '../../stores/workflow/actions/event.js';
+import { tasksStore } from '../../stores/workflow/tasks.js';
 import { reviewStore } from '../../stores/workflow/review.js';
 import { setActiveTerminalHandover } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
@@ -211,6 +213,7 @@ describe('review input effects', () => {
     composerDraftStore.reset();
     clearAllHandlers();
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
+    tasksStore.__testReset();
     vi.stubEnv('VISUAL', 'mock-editor');
     // The handover is the last thing that runs before the editor is spawned, so a paused
     // stdin is the proof a real process was about to take the terminal.
@@ -321,7 +324,7 @@ describe('review input effects', () => {
     {
       label: 'accepted',
       outcome: { status: 'accepted' as const, messageId: 'm-1' },
-      feedback: { message: 'Message queued for the next planner turn.', isError: false },
+      feedback: { message: 'Queued for PLAN · ctrl+⏎ sends now', isError: false },
     },
     {
       label: 'rejected',
@@ -358,8 +361,51 @@ describe('review input effects', () => {
     },
   );
 
+  it.each([
+    ['implementing', 'build', 'BUILD on T003'],
+    ['planning', 'plan', 'PLAN'],
+    ['final-review', 'review', 'REVIEW'],
+  ] as const)(
+    'confirms tool-boundary delivery to %s using the call attached at submit',
+    async (phase, seat, target) => {
+      lifecycleStore.__testReset({ phase, status: 'running' });
+      tasksStore.__testReset({
+        currentTask: 1,
+        totalTasks: 1,
+        tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+      });
+      addEvent({ type: 'steerable_call', ts: 1, phase, seat, taskId: 'T003' });
+      const effects = makeEffects(async () => {
+        addEvent({ type: 'steerable_call', ts: 2, phase });
+        return { status: 'accepted', messageId: 'm-1' };
+      });
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('smaller diffs'),
+      );
+      expect(feedbackStore.get()).toEqual({
+        message: `Sent to ${target} · read after this tool · ctrl+⏎ interrupts`,
+        isError: false,
+      });
+    },
+  );
+
+  it('keeps queue feedback when the attached call belongs to another seat', async () => {
+    lifecycleStore.__testReset({ phase: 'final-review', status: 'running' });
+    addEvent({ type: 'steerable_call', ts: 1, phase: 'final-review', seat: 'plan' });
+    const effects = makeEffects(async () => ({ status: 'accepted', messageId: 'm-1' }));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('check the icons'),
+    );
+    expect(feedbackStore.get().message).toBe('Queued for REVIEW · ctrl+⏎ sends now');
+  });
+
   it('queues a correction typed during a brief instead of refusing it', async () => {
     lifecycleStore.__testReset({ phase: 'implementing' });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
+    });
     const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
 
     await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
@@ -371,7 +417,7 @@ describe('review input effects', () => {
       'implementing',
     );
     expect(feedbackStore.get()).toEqual({
-      message: 'Message queued for the next planner turn.',
+      message: 'Queued for BUILD on T003 · ctrl+⏎ sends now',
       isError: false,
     });
   });
@@ -389,7 +435,7 @@ describe('review input effects', () => {
       'final-review',
     );
     expect(feedbackStore.get()).toEqual({
-      message: 'Message queued for the reviewer.',
+      message: 'Queued for REVIEW · ctrl+⏎ sends now',
       isError: false,
     });
   });
@@ -425,7 +471,7 @@ describe('review input effects', () => {
 
     expect(registered).toHaveBeenCalledWith(plainUserMessage('make it simpler'), 'specifying');
     expect(feedbackStore.get()).toEqual({
-      message: 'Message queued for the next planner turn.',
+      message: 'Queued for PLAN · ctrl+⏎ sends now',
       isError: false,
     });
   });

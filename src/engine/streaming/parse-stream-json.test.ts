@@ -12,6 +12,26 @@ function expectNoTerminalResult(parsed: ReturnType<typeof parseStreamLine>): voi
   expect(parsed.isError).toBeUndefined();
 }
 
+it('replaces restated turn usage before adding a subsequent steered turn', () => {
+  const parse = createStreamParser();
+  const result = (input: number, output: number) =>
+    jsonLine({
+      type: 'result',
+      result: 'done',
+      usage: { input_tokens: input, output_tokens: output },
+    });
+  expect(parse(result(10, 5)).usage).toMatchObject({ inputTokens: 10, outputTokens: 5 });
+  expect(parse(result(12, 6)).usage).toMatchObject({ inputTokens: 12, outputTokens: 6 });
+  parse(jsonLine({ type: 'system', subtype: 'init', session_id: 'same-session' }));
+  expect(parse(result(3, 7)).usage).toMatchObject({ inputTokens: 15, outputTokens: 13 });
+  expect(parse(result(3, 7)).usage).toMatchObject({ inputTokens: 15, outputTokens: 13 });
+  parse(jsonLine({ type: 'system', subtype: 'init', session_id: 'same-session' }));
+  expect(parse(jsonLine({ type: 'result', result: 'no usage' })).usage).toMatchObject({
+    inputTokens: 15,
+    outputTokens: 13,
+  });
+});
+
 describe('parseStreamLine', () => {
   it.each([
     [
@@ -521,6 +541,32 @@ describe('parseStreamLine', () => {
       textSemantics: 'delta',
       sessionId: 'sess-verbatim',
     });
+  });
+
+  it.each([
+    ['leading space', ['{"path":"hello', ' world"}'], '{"path":"hello world"}'],
+    [
+      'trailing, whitespace-only and empty slices',
+      ['{"path":"hello ', '', ' ', 'world', '"}'],
+      '{"path":"hello  world"}',
+    ],
+  ])('keeps tool input fragments verbatim with %s', (_name, fragments, input) => {
+    const deltas = fragments.flatMap((partial_json) => {
+      const parsed = parseStreamLine(
+        jsonLine({
+          type: 'stream_event',
+          event: {
+            type: 'content_block_delta',
+            index: 1,
+            delta: { type: 'input_json_delta', partial_json },
+          },
+        }),
+      );
+      return parsed.toolUseDelta?.map((delta) => delta.inputDelta) ?? [];
+    });
+
+    expect(deltas).toEqual(fragments);
+    expect(deltas.join('')).toBe(input);
   });
 
   it('preserves result text and isResult when usage is malformed', () => {

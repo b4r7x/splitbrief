@@ -123,6 +123,39 @@ describe('parseEngineEvent', () => {
   });
 
   it.each([
+    { type: 'message_queued', id: 'm1', seat: 'build', taskId: 'T001', steerable: true },
+    { type: 'message_queued', id: 'old' },
+    {
+      type: 'queue_drained',
+      count: 1,
+      ids: ['m1'],
+      seat: 'build',
+      taskId: 'T001',
+      via: 'mid-call',
+    },
+    { type: 'queue_drained', count: 1 },
+    { type: 'steerable_call', seat: 'build', taskId: 'T001' },
+    { type: 'steerable_call', seat: 'plan' },
+    { type: 'steerable_call', seat: 'review' },
+    { type: 'steerable_call' },
+  ])('loads old and mid-call events without losing fields: $type', (fields) => {
+    const event = { ts: 1, phase: 'implementing', ...fields };
+    expect(parseEngineEvent(event)).toEqual(event);
+  });
+
+  it('rejects an unsupported delivery method', () => {
+    expect(
+      parseEngineEvent({
+        type: 'queue_drained',
+        ts: 1,
+        phase: 'implementing',
+        count: 1,
+        via: 'unknown',
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
     ['all', 'plan'],
     ['spec', 'plan'],
     ['default', 'plan'],
@@ -628,6 +661,18 @@ describe('parseEngineEvent', () => {
         preview: 'pending preview',
       }),
     );
+  });
+
+  it.each([
+    { type: 'message_queued', id: 'msg-1' },
+    { type: 'queue_drained', count: 1, ids: ['msg-1'] },
+  ])('validates the optional seat and task id on $type', (fields) => {
+    const event = { ...fields, ts: 1, phase: 'implementing', seat: 'build', taskId: 'T001' };
+    expect(parseEngineEvent(event)).toMatchObject(event);
+    expect(parseEngineEvent({ ...event, seat: 'planner' })).toBeNull();
+    expect(parseEngineEvent({ ...event, taskId: 1 })).toBeNull();
+    const oldEvent = { ...fields, ts: 1, phase: 'implementing' };
+    expect(parseEngineEvent(oldEvent)).toMatchObject(oldEvent);
   });
 
   it('accepts queued message events tagged with a clarification origin', () => {

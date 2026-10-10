@@ -27,7 +27,9 @@ import { controlsStore } from '../stores/ui/controls.js';
 import { terminalSizeStore } from '../stores/ui/terminal-size.js';
 import { isOpenRunAtRest, routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
-import { tasksStore } from '../stores/workflow/tasks.js';
+import { queueCopy } from '../features/workflow/queue-copy.js';
+import { phaseStage } from '../core/rail-stages.js';
+import { selectRunningBrief, tasksStore } from '../stores/workflow/tasks.js';
 import { projectFilesStore } from '../stores/ui/project-files.js';
 import { skillsStore } from '../stores/project/skills.js';
 import { refreshSkills } from './refresh-skills.js';
@@ -387,7 +389,14 @@ export function buildCommandContext({
       return requestSteer(submission.message);
     },
     endRun: requestEndRun,
-    getQueueDepth: () => lifecycleStore.get().queueDepth,
+    getQueueCopy: (count) => {
+      const lifecycle = lifecycleStore.get();
+      return queueCopy({
+        seat: phaseStage(lifecycle.phase),
+        taskId: selectRunningBrief(tasksStore.get(), lifecycle.phase).current?.id,
+        count: count ?? lifecycle.queueDepth,
+      });
+    },
     clearQueue: workflow.requestClearQueue,
     insertImage: insertImageIntoComposer,
     attachImage,

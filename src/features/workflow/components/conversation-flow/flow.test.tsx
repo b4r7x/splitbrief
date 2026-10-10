@@ -727,6 +727,42 @@ describe('ConversationFlow', () => {
     ui.unmount();
   });
 
+  it('uses one space after Queued, Delivered and Pending labels', () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+    tasksStore.__testReset({
+      tasks: [{ id: taskId('T004'), title: 'Next brief', status: 'pending' }],
+    });
+    const ui = renderConversation(
+      [
+        {
+          type: 'message_queued',
+          ts: 1,
+          phase: 'implementing',
+          seat: 'build',
+          taskId: 'T003',
+          id: 'message',
+          preview: 'Keep the API',
+        },
+        {
+          type: 'queue_drained',
+          ts: 2,
+          phase: 'implementing',
+          seat: 'build',
+          taskId: 'T003',
+          ids: ['message'],
+          count: 1,
+        },
+      ],
+      12,
+      90,
+    );
+    const rows = normalizedRows(ui.lastFrame() ?? '');
+    expect(rows).toContain('Queued for BUILD on T003 · read when its call ends');
+    expect(rows).toContain('Delivered to BUILD on T003');
+    expect(rows).toContain('Pending 1');
+    ui.unmount();
+  });
+
   it('says how many briefs the pending block cannot show, inside its own row budget', () => {
     const events = makeActivityReads(['src/a.ts']);
     const titles = ['one', 'two', 'three', 'four', 'five', 'six'].map((word) => `brief ${word}`);

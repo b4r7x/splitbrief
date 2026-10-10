@@ -13,6 +13,19 @@ import { makeTaskStart, makeTaskComplete } from '#testing/helpers/events/task.js
 describe('resetWorkflow', () => {
   beforeEach(() => resetWorkflow());
 
+  it('clears the live call on reset', () => {
+    addEvent({
+      type: 'steerable_call',
+      ts: 1,
+      phase: 'implementing',
+      seat: 'build',
+      taskId: 'T003',
+    });
+    expect(lifecycleStore.get().steerableCall).toEqual({ seat: 'build', taskId: 'T003' });
+    resetWorkflow();
+    expect(lifecycleStore.get().steerableCall).toBeNull();
+  });
+
   it('closes a pending tiered approval prompt with the cancelled decision', async () => {
     const pending = openApprovalPrompt({
       tier: 'confirm',

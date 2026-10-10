@@ -14,9 +14,75 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
+import { makeMessage } from '#testing/helpers/queue.js';
 
 describe('hydrateFromState', () => {
   beforeEach(() => resetWorkflow());
+
+  it('keeps the first-delivery count through replay, hydrate and a later BUILD delivery', () => {
+    const reviewed = {
+      ...makeMessage('review history'),
+      id: 'reviewed',
+      deliveredTo: { reviewer: new Date().toISOString() },
+    };
+    const pending = { ...makeMessage('pending'), id: 'pending' };
+    loadEvents([
+      { type: 'message_queued', ts: 1, phase: 'final-review', id: reviewed.id },
+      {
+        type: 'queue_drained',
+        ts: 2,
+        phase: 'final-review',
+        ids: [reviewed.id],
+        count: 1,
+        seat: 'review',
+      },
+      { type: 'message_queued', ts: 3, phase: 'implementing', id: pending.id },
+      {
+        type: 'queue_drained',
+        ts: 4,
+        phase: 'implementing',
+        ids: [reviewed.id],
+        count: 1,
+        seat: 'build',
+      },
+    ]);
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    hydrateFromState(
+      makeWorkflowState({ phase: 'implementing', messageQueue: [reviewed, pending] }),
+    );
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    addEvent({
+      type: 'queue_drained',
+      ts: 5,
+      phase: 'implementing',
+      ids: [reviewed.id],
+      count: 1,
+      seat: 'build',
+    });
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    addEvent({ type: 'queue_cleared', ts: 6, phase: 'implementing', count: 1 });
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+  });
+
+  it('counts a native injection until it is acknowledged after hydration', () => {
+    const injecting = { ...makeMessage(), nativeDeliveryState: 'injecting' as const };
+    hydrateFromState(makeWorkflowState({ messageQueue: [injecting] }));
+    expect(lifecycleStore.get().queueDepth).toBe(1);
+    addEvent({ type: 'message_injected_native', ts: 1, phase: 'planning', id: injecting.id });
+    expect(lifecycleStore.get().queueDepth).toBe(0);
+  });
+
+  it.each(['implementing', 'complete'] as const)(
+    'clears a replayed live call on %s hydration',
+    (phase) => {
+      loadEvents([
+        { type: 'steerable_call', ts: 1, phase: 'implementing', seat: 'build', taskId: 'T003' },
+      ]);
+      expect(lifecycleStore.get().steerableCall).toEqual({ seat: 'build', taskId: 'T003' });
+      hydrateFromState(makeWorkflowState({ phase }));
+      expect(lifecycleStore.get().steerableCall).toBeNull();
+    },
+  );
 
   it('keeps replayed lineage attempts and allowance after state hydration', () => {
     loadEvents([

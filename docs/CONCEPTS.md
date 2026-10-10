@@ -227,20 +227,19 @@ The active session is pointed to by `.splitbrief/active`, a plain text file cont
 
 This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened in its place).
 
-## Queue & Interjection
+## Message queue
 
-The **queue** is a workflow-scoped buffer of user messages that the user types while the planner is actively generating. The engine stores queued messages on `WorkflowState.messageQueue`; the TUI stores only the pending queue depth in the workflow lifecycle store. It solves the problem of "I want to add something without restarting the phase".
+The **queue** stores messages that the operator sends during a live run. Each message goes to the seat of the active stage: PLAN, BUILD, or REVIEW. The engine stores messages on `WorkflowState.messageQueue`. The workflow lifecycle store keeps the queued count until each message's first delivery to any seat.
 
-Flow:
+Enter with text queues a message and lets the current call continue. See [Message queue](./ENGINE.md#message-queue) for delivery rules and [Input footer](./FEATURES.md#input-footer) for the copy. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support and transport details.
 
-1. During a live planner phase, the TUI composer accepts text. Pressing **Enter with text** appends the message to the queue — it does **not** abort the current call.
-2. At the next safe point (end of current planner call, boundary between phases), the orchestrator drains the queue and prepends its contents to the next planner prompt as `[user also says: ...]` blocks.
-3. For backends that expose a native session with mid-conversation inject (Claude Code via `--session-id`), each queued message is *also* dispatched as a parallel `user` turn into the live session. The planner sees it on its next model turn without waiting for our orchestrator to start a new phase.
-4. Queue drains at safe-points only, never mid-model-output.
-
-**Scope:** the queue is **planner-only**. Implementers (small local models) do not receive queued messages. Mid-task interjection is explicitly disallowed because small models lose coherence when their single-shot task prompt is perturbed. If the user needs to change something during implementation, they stop the run (`ctrl+c`).
+`ctrl+⏎` with text stops the run now and continues with the text, like `/steer <text>`. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal.
 
 **Message origin.** Each `QueuedMessage` carries an `origin` discriminator: `'user-input'` for text the user typed directly, and `'clarification'` for answers routed from the clarification Q&A flow. The drain block formats them differently: clarification answers use `[clarification answer during <phase>]\nQ: ...\nA: ...\n[/clarification answer]` while user-initiated interjections use the generic `[user also says during <phase>]` wrapper.
+
+**Mid-call steering** delivers a message after the running call's current tool result. The tool continues without interruption. Claude Code and opencode support this path. Codex never uses it. Other seats read the message after their call.
+
+`createSteeringPort` holds the call, and `deliverToRunningCall` sends the message. `delivered` confirms acknowledgement in that call. `deferred` leaves the message pending. `uncertain` keeps it pending with a possible duplicate warning. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for versions and transport details.
 
 ## Stop sheet
 

@@ -12,7 +12,6 @@ import { reviewChecksPromptStore } from '../../stores/review-checks-prompt/promp
 import { showRunDiff } from '../../features/workflow/result/show-diff.js';
 import { filesView } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
@@ -64,7 +63,6 @@ import {
   formatRecoveryPrompt,
   recoveryComposerHint,
 } from '../../features/workflow/recovery-prompt.js';
-import { queuePlaceholder } from '../../features/workflow/input-hints.js';
 import { REVIEW_COMMENT_DRAFT } from '../../features/workflow/review-commands.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../lib/terminal/typeahead-grace.js';
 import { navigateIndex } from '../../utils/indexing.js';
@@ -101,8 +99,6 @@ export function WorkflowScreen({
   const { cols, rows } = terminal;
   useStores(stopStore, tasksStore);
   const stopMenuOpen = overlayStore.use((state) => state.active === 'stop-sheet');
-  const running = lifecycleStore.use((state) => state.status === 'running');
-  const stopping = stopStore.use((state) => state.intent !== 'none');
   const parked = stopStore.use((state) => state.phase === 'parked');
   const inputRows = input.rows;
   const sidebarVisible = controlsStore.use((s) => s.sidebarVisible);
@@ -438,12 +434,6 @@ export function WorkflowScreen({
                     ? model.inputMode.hint
                     : model.inputHint
             }
-            placeholder={queuePlaceholder({
-              phase: model.phase,
-              inputMode: model.inputMode.mode,
-              running,
-              stopping,
-            })}
             questionPanelFocused={structuredQuestion && questionState.focus !== 'composer'}
             onReturnToQuestion={structuredQuestion ? returnToQuestion : undefined}
             questionEpoch={model.questionEpoch}

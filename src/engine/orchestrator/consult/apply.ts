@@ -60,6 +60,7 @@ export type ConsultApplyOutcome =
   | Readonly<{ action: 'rewrite-task'; task: Task }>
   | Readonly<{ action: 'split-task'; tasks: Task[] }>
   | Readonly<{ action: 'completed'; task: Task; durationMs: number }>
+  | Readonly<{ action: 'correction'; answer: string }>
   | Readonly<{ action: 'confirm'; decisions: ConfirmAction['decisions'] }>
   | Readonly<{ action: 'failed'; reason: string }>
   | Readonly<{ action: 'skipped' }>;
@@ -254,6 +255,7 @@ async function applyVerify(
     setTrackedState: ctx.onStateChange,
   });
   if (gated.stop === 'skipped') return { action: 'skipped' };
+  if (gated.correction) return { action: 'correction', answer: gated.error };
   const { acceptance } = gated;
   if (gated.stop !== undefined || !acceptance.accepted)
     return { action: 'failed', reason: gated.error || 'the brief gate stopped' };

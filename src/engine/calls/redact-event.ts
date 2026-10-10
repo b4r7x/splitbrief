@@ -10,6 +10,11 @@ export function redactRunnerCallEventInput(
 ): RunnerCallEventInput {
   switch (input.type) {
     case 'call_text_delta':
+      return {
+        ...input,
+        text: redact(input.text),
+        ...(input.subagentId !== undefined && { subagentId: redact(input.subagentId) }),
+      };
     case 'call_stderr_delta':
       return { ...input, text: redact(input.text) };
     case 'call_tool_use_delta':

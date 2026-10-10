@@ -42,6 +42,17 @@ describe('createInitialState', () => {
   });
 });
 describe('transition', () => {
+  it.each(['implementing', 'escalating', 'planning', 'final-review'] as const)(
+    'refuses RESUME_TASK outside validation in %s',
+    (phase) => {
+      const state: WorkflowState = { ...createInitialState('feat'), phase };
+
+      expect(() => transition(state, { type: 'RESUME_TASK' })).toThrow(
+        `Cannot apply RESUME_TASK while workflow is in ${phase}.`,
+      );
+    },
+  );
+
   it.each(['implementing', 'validating-task', 'escalating'] as const)(
     'preserves the task phase across a consult question in %s',
     (phase) => {
@@ -991,6 +1002,22 @@ describe('consult and split state operations', () => {
       ...overrides,
     };
   }
+
+  it('RESUME_TASK returns to BUILD without changing the brief or spending an attempt', () => {
+    const state: WorkflowState = {
+      ...createInitialState('feat'),
+      phase: 'validating-task',
+      attempt: 1,
+      tasks: [makeTask({ status: 'in_progress' })],
+      lineages: { T001: lineage({ attempts: 3, consults: 1 }) },
+      messageQueue: [makeQueuedMessage({ phase: 'validating-task' })],
+    };
+
+    expect(transition(state, { type: 'RESUME_TASK' })).toEqual({
+      ...state,
+      phase: 'implementing',
+    });
+  });
 
   it('REPLACE_TASK keeps the id, criteria and position and records the new revision', () => {
     const tasks = [

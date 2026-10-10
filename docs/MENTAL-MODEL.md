@@ -53,7 +53,9 @@ A typical run, step by step:
 9. The review seat reviews the final result against the briefs and the request — the planner, unless a `reviewer` is configured
 10. The summary is written to disk. A passing workspace review makes the result [ready to apply](./WORKFLOW.md#apply).
 
-The user can stop a run at any time — `esc` opens the stop options, `ctrl+c` stops now, and no option reverts files — queue messages while the planner is working, request changes on the plan, or skip individual tasks.
+The user can stop a run at any time. `esc` opens the stop options. `ctrl+c` stops now. The stop options keep file changes.
+
+The user can queue messages for PLAN during planning, BUILD during a brief, and REVIEW during the final review. With a matching steerable call attached, the receiving seat reads the message after its current tool. Otherwise, it reads pending messages at its next safe break. See [Message queue](./ENGINE.md#message-queue) for delivery and recovery. The user can also request changes on the plan or skip individual tasks.
 
 ---
 

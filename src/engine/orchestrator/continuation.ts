@@ -12,6 +12,7 @@ import { engineEventFromLogEntry } from '../events/replay.js';
 import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { PARTIAL_MAX_CHARS } from '../spec/prompts/continuation.js';
+import { formatMessageInput } from './queue/prompt.js';
 
 /**
  * The cut call's assistant stream, bounded to the continuation prompt's
@@ -183,6 +184,7 @@ export interface ContinuationLoopBodyArgs {
   partial: string | undefined;
   /** What the operator typed when they resumed. */
   steer: string | undefined;
+  steerInput: UserMessageInput | undefined;
   recordOutput: (text: string) => void;
 }
 
@@ -285,7 +287,13 @@ export async function withContinuationLoop<T>(
         signal: ctx.signal,
         run: (signal) => {
           bodySignal = signal;
-          return body({ signal, partial, steer: steer?.text, recordOutput });
+          return body({
+            signal,
+            partial,
+            steer: steer === undefined ? undefined : formatMessageInput(steer),
+            steerInput: steer,
+            recordOutput,
+          });
         },
       });
     } catch (err) {

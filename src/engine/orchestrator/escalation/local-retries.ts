@@ -214,6 +214,7 @@ export async function runLocalRetries(
       profileOverride: ctx.retryProfileOverride,
       invokeRetry: makeImplementerRetryInvoker({
         context: ctx.context,
+        steering: ctx.steering,
         kind: 'local',
         sessionId: ctx.sessionId,
         languageContext: buildProjectLanguageContext(

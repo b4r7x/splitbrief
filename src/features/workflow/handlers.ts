@@ -45,7 +45,6 @@ let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
 /** The seat changes saved under the running brief, keyed by seat: the revision each was seen at. */
 const pendingSeatChanges = new Map<CrewSeatId, string>();
-let pendingSteer: UserMessageInput | null = null;
 let steerUnsubscribe: (() => void) | undefined;
 let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
 let unsubscribeDeparture: (() => void) | undefined;
@@ -68,7 +67,6 @@ export function clearAllHandlers(): void {
 }
 
 function clearPendingSteer(): void {
-  pendingSteer = null;
   steerUnsubscribe?.();
   steerUnsubscribe = undefined;
 }
@@ -96,6 +94,7 @@ export function abortTurn(): boolean {
 }
 
 export function requestCancel(): boolean {
+  clearPendingSteer();
   const mutated = markCancellationRequested();
   if (!mutated) return false;
   handlers.cancel?.();
@@ -165,6 +164,7 @@ export function consumeSeatChange(
 // A stop that has nothing to stop is not announced: the byline would report a run terminating
 // while no process was ever asked to.
 export function requestStopNow(): boolean {
+  clearPendingSteer();
   const state = stopStore.get();
   if (state.phase === 'parked' || state.phase === 'ended') return false;
   if (state.intent !== 'none' && state.intent !== 'pause-after-brief' && state.phase !== 'failed')
@@ -194,8 +194,7 @@ export function requestResume(message: UserMessageInput): boolean {
 
 /** Settles a park this process is holding. False when the run is at rest. */
 export function resumeParkedRun(steer: UserMessageInput): boolean {
-  if (stopStore.get().phase !== 'parked') return false;
-  stopStore.resume(steer);
+  if (!stopStore.resume(steer)) return false;
   markWorkflowResumed();
   return true;
 }
@@ -207,12 +206,8 @@ export function resumeParkedRun(steer: UserMessageInput): boolean {
  */
 export function requestSteer(message: UserMessageInput): boolean {
   if (message.text.trim() === '') return false;
-  if (stopStore.get().phase === 'parked') {
-    stopStore.resume(message);
-    markWorkflowResumed();
-    return true;
-  }
   const stop = stopStore.get();
+  if (stop.phase === 'parked') return resumeParkedRun(message) || requestResume(message);
   if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'failed') {
     feedbackStore.setMessage('Finish stopping before steering.');
     return false;
@@ -220,24 +215,16 @@ export function requestSteer(message: UserMessageInput): boolean {
   if (!handlers.stop && abortHandlers.length === 0 && !handlers.cancel) {
     return requestResume(message);
   }
-  pendingSteer = message;
-  steerUnsubscribe?.();
-  steerUnsubscribe = stopStore.subscribe(() => {
-    if (pendingSteer === null || stopStore.get().phase !== 'parked') return;
-    const steer = pendingSteer;
+  clearPendingSteer();
+  if (stop.intent === 'pause-after-brief') cancelBoundaryPause();
+  if (!abortTurn() && !requestStopNow()) return false;
+  const resumeSteer = () => {
+    if (stopStore.get().phase !== 'parked') return;
     clearPendingSteer();
-    stopStore.resume(steer);
-    markWorkflowResumed();
-  });
-  if (!requestStopNow()) {
-    clearPendingSteer();
-    return false;
-  }
-  if (stopStore.get().phase === 'parked') {
-    clearPendingSteer();
-    stopStore.resume(message);
-    markWorkflowResumed();
-  }
+    if (!resumeParkedRun(message)) requestResume(message);
+  };
+  steerUnsubscribe = stopStore.subscribe(resumeSteer);
+  resumeSteer();
   return true;
 }
 

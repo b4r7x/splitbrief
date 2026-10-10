@@ -7,6 +7,7 @@ export function plannerCallbacksContextOf(wctx: WorkflowContext): PlannerCallbac
     config: wctx.config,
     callbacks: wctx.callbacks,
     bus: wctx.bus,
+    steering: wctx.steering,
     signal: wctx.signal,
     metadata: wctx.metadata,
     sinks: wctx.sinks,

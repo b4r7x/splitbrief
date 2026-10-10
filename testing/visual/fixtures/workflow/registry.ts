@@ -267,6 +267,15 @@ const checkpointPredicates = [
     checkpointId('continuous-transcript-ready'),
     includesTranscript('● Review 1 passed', 'Plan check K1', 'Plan check K2', 'Reviewer check V1'),
   ],
+  [
+    checkpointId('implementation-queued'),
+    includesAll('Queued', 'Keep the parser changes small.', '1 queued for BUILD on T003'),
+  ],
+  [checkpointId('implementation-delivered'), includesAll('Delivered', 'to BUILD on T003')],
+  [
+    checkpointId('implementation-steerable'),
+    includesAll('mid-call to BUILD on T003', 'Message BUILD on T003 · read after this tool…'),
+  ],
   [checkpointId('implementation-retry'), includesAll('briefs passed')],
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
@@ -373,6 +382,7 @@ const checkpointPredicates = [
   // closed block states in full and the open byline carries. Nothing else is width-stable — the
   // byline sheds its reason and then its alternative as the terminal narrows.
   [checkpointId('at-rest-paused'), includesAll()],
+  [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
   [checkpointId('at-rest-long-park'), includesAll('15:00')],
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],

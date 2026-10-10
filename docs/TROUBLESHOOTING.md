@@ -633,6 +633,23 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ---
 
+### Symptom: A message waits while BUILD works on a brief
+
+**Likely cause:** The current tool or call has not returned, or checks still run. Enter queues the message and lets work continue. A matching steerable call uses the `read after this tool` timing. Otherwise, BUILD takes the message at its next safe break. See [Message queue](./ENGINE.md#message-queue) for delivery during calls and checks. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support.
+
+**Fix:**
+
+1. Read the byline for the receiving seat and brief, for example `1 queued for BUILD on T003`.
+2. Use `/queue show` to inspect the queued count.
+3. Use `/queue clear` to remove messages awaiting first delivery.
+4. To send now, press `ctrl+⏎` with text or use `/steer <text>`.
+
+`ctrl+⏎` stops now and continues with the text. A terminal without extended keys reports this key as Enter, which queues the message. `/steer` works in every terminal. See [Input footer](./FEATURES.md#input-footer) for transcript delivery rows.
+
+**Prevention:** Check the composer placeholder before sending. Enter delivers at the earliest supported break; `/steer` stops now. The queued count drops only at first delivery. `/queue clear` preserves delivered history, including messages that REVIEW read and BUILD still needs. See [Queued count](./ENGINE.md#queued-count).
+
+---
+
 ### Symptom: I want to stop a run and I am not sure which key does what
 
 **Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window, and quitting was a ladder of its own. The interrupt ladder is gone: `esc` opens the **Stop options** sheet, and `ctrl+c` stops a live run in one press. Quitting still asks once: from home or on a run at rest, the first `ctrl+c` shows `Press ctrl+c again to quit` and the second press within two seconds exits.
@@ -752,7 +769,9 @@ The policy does not catch database-drop tasks: `rails db:drop`, `rake db:drop`, 
 
 **Likely cause:** A brief check fails on a failure the tree had before the run. This can occur with `workflow.review: task` or a consult `verify`. Its failure retries the brief once with the exact errors, then consults a seat: the planner for a plan task, the reviewer for a fix task. Only a red reviewer check at review re-runs at the run base, with the same command text.
 
-A fix check runs once and never re-runs there. It judges the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
+A fix check runs once per brief gate. Each new BUILD attempt runs the checks again. A fix check never re-runs at the run base.
+
+It judges the failure keys its findings carry for that check id. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once.
 
 Test failures match by name. Keys with no file match exactly. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. Other failures belong to other fix tasks or the next review.
 

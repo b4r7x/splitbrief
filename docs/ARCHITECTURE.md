@@ -164,7 +164,7 @@ Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow 
    `saveState()` writes to `.splitbrief/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
 8. For user-gated moments (approval, clarification, continuation, edit conflicts, and protected-write confirmations), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onPlannerReply(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onUserEditConflict(…)`, and `callbacks.onTieredApproval(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
-9. **Queue**: during live planner phases, the user may type and press Enter without aborting. The message is appended to `WorkflowState.messageQueue`; workflow lifecycle stores keep the UI queue indicators in sync. The orchestrator drains the queue at safe-points (end of current call) and appends queued messages to the next planner prompt. For planners that implement `injectUserTurn()`, each queued message is also dispatched in parallel as a native user turn into the live session.
+9. **Queue**: Enter with text appends a message to `WorkflowState.messageQueue` during a live run. `phaseStage(phase)` names its seat: PLAN, BUILD, or REVIEW. The lifecycle store counts message ids until their first delivery to any seat. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. See [Message queue](./ENGINE.md#message-queue) for delivery rules, corrections, retries, and verdicts.
 10. **Stop**: `ctrl+c` stops active work; another press quits after cleanup. `esc` opens the inline stop menu; another `esc` stops resumably. The state records `interruptedStep`, including whether the stop cut a call or landed at a boundary. `/resume` continues it. `/end` uses the shared close path, preserving unapplied workspace work first. See [WORKFLOW.md](./WORKFLOW.md#4-abort--continue--queue) and [Global keys](./SLASH-COMMANDS-REFERENCE.md#global-any-screen).
 11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` derives the run's status, writes `summary.json`, and releases `.splitbrief/active` only if the run closed. The UI does not unmount: the run settles at rest on the screen it was already on, and the route's `execution` flips to `at-rest`.
 
@@ -272,7 +272,7 @@ One more per-seat property sits outside this struct: typed output. The tool fact
 |---|---|---|---|---|---|---|
 | Typed output | native (`--json-schema`, from 2.1.287) | strict-native (`--output-schema`, from 0.157.1) | native (`--json-schema`, from 1.2.14) | native (`response_format`) | fallback | fallback |
 
-Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. The planning session and the consult of a plan task resume the saved thread; the consult of a fix task is one stateless call on the review seat; the review is one shot on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withExpiredSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
+Claude Code resumes via `claude --resume <id>`. Codex resumes via `codex exec resume … --json <id> -`, with the prompt on stdin and the id captured from the `thread.started` JSONL event. The planning session and the consult of a plan task resume the saved thread. The consult of a fix task uses one stateless call on REVIEW. Each verdict call uses a full, stateless prompt on every seat. A resumed run falls back to a transcript rebuild (`src/engine/orchestrator/transcript/rebuild.ts`) when its planner cannot resume a session, when the PLAN seat moved to another tool, or when the state holds no `plannerSessionId` because the tool reported none or its thread expired. A planning call whose thread expires mid-run, a step or a revision, is issued again once, on a fresh session with the same rebuilt transcript (`withExpiredSessionReissue`, `src/engine/orchestrator/resume-context.ts`).
 
 `shell` and `agent` defaults are all-false but can be narrowed or partially declared per project. The schema rejects `supportsSessionResume`, `supportsEffort`, and `supportsImages` when set to `true` because command-based adapters have no session-handle, effort, or image-attachment channel.
 
@@ -292,7 +292,7 @@ planner:
 When a capability is missing, the orchestrator falls back:
 
 - **No session resume?** → Rebuild context from `session.jsonl` messages on resume. See `src/engine/orchestrator/transcript/rebuild.ts` — for api-kind backends the messages are injected as a `messages[]` array; for CLI backends without native resume, as a `<!-- prior conversation -->` prompt prefix.
-- **No `injectUserTurn`?** → Queue user messages, drain at next phase boundary (backends that implement `injectUserTurn` get them dispatched immediately as native user turns).
+- **No steerable call or injectUserTurn?** → PLAN reads queued messages at its next call. Native injection runs only in plan phases. See [Message queue](./ENGINE.md#message-queue) for BUILD and REVIEW delivery rules.
 - **No conversational planning?** → No fallback: the planning session's questions are part of its typed answer (`PlanResultSchema`), so every planner can ask them, and the orchestrator does not read this flag.
 
 Adding a new capability means extending `PlannerCapabilities`, setting it per backend, and adding the fallback branch in the orchestrator. No backend-identity `if` chains.
@@ -409,7 +409,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Multi-agent coordination — we have exactly two roles. See `docs/VISION.md`.
 - Parallel task execution — tasks run sequentially so validation and git stay linear.
 - Concurrent foreground workflows in the same project directory — one active session at a time, enforced by the `.splitbrief/active` lock.
-- Mid-task interjection at the implementer level — small models lose coherence when their self-contained task prompt is perturbed. User messages during implementing are not queued into the implementer; the user stops the run instead.
+- Steering for every runner. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support and transport details.
 - A SPLITBRIEF-defined tool-call protocol for the implementer — an `extracted-code` implementer answers with the file body in plain text; a `direct` implementer uses whatever tools its own harness already gives it. We do not define a third calling convention in between.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
 - Anything Windows-specific — not tested there.
@@ -604,7 +604,7 @@ src/
 │   │   ├── final-review.ts        Final-review phase
 │   │   ├── review-checks.ts       Reviewer checks: the plan call,
 │   │   │                          the run, the base re-run and the stop rule
-│   │   ├── queue/                 Message queue (submit, drain, clear, prompt, native-injection)
+│   │   ├── queue/                 Message queue (submit, drain, clear, prompt, build-corrections, mid-call, native-injection)
 │   │   ├── planning/              run, session (planning session, plan
 │   │   │                          card), plan-session, plan-context-fit,
 │   │   │                          api-packet, call-loop, queue-drain, failure
@@ -905,14 +905,22 @@ S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/appl
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
 **Validation / escalation / git (8):**
-`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` | `skipped` — the chosen `commands`, the `declined` tests and the `reason`; `skipped` follows `planned` when `validation.approve_checks: ask` ran none of the commands), `full_suite` (one event per reviewer check state: its `id`, `command`, `moment` — `pre-review` | `base` | `brief`, where `brief` is a fix brief's check, run once with no base re-run — and `status` `running` | `done` | `not-run` | `refused`, with pass/fail and duration on done, the `own`, `ownLeft` and `others` counts on a judged brief done event, the `newFailures`, `preExisting` and `notVerified` counts on a red base done, and a `detail` on not-run and refused or, on a red base done, the reason a failure is not verified at the run base; an event without `id` is an older session's full-suite `stage`), `checks_run` (the per-check results of a brief gate, a consult `verify` included, and of the plan and task checks before the final review, once per task that owns them; it fires `post_validation` with `taskId` and `results`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
+`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` | `skipped` — the chosen `commands`, the `declined` tests and the `reason`; `skipped` follows `planned` when `validation.approve_checks: ask` ran none of the commands), `full_suite` (one event per reviewer check state: its `id`, `command`, `moment` — `pre-review` | `base` | `brief`, where `brief` is a fix brief's check, run once per brief gate with no base re-run — and `status` `running` | `done` | `not-run` | `refused`, with pass/fail and duration on done, the `own`, `ownLeft` and `others` counts on a judged brief done event, the `newFailures`, `preExisting` and `notVerified` counts on a red base done, and a `detail` on not-run and refused or, on a red base done, the reason a failure is not verified at the run base; an event without `id` is an older session's full-suite `stage`), `checks_run` (the per-check results of a brief gate, a consult `verify` included, and of the plan and task checks before the final review, once per task that owns them; it fires `post_validation` with `taskId` and `results`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
 
 A judged plan or task check in a fix brief also emits a `full_suite` done event. It has no running event or duration. Its `own` count names the carried failures. Its `ownLeft` count names those still present. Its `others` count names every unmatched re-run key. Its `proven` flag states whether the re-run proved the same failure source ran, or the command passed. A green re-run shows the ownership verdict too.
 
 A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass.
 
-**Clarifications / queue / messages (7):**
-`clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`
+**Clarifications / queue / messages (8):**
+`clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`, `steerable_call`
+
+`message_queued` and `queue_drained` carry optional `seat` and `taskId` fields. `seat` is a `CrewSeatId`: `plan`, `build`, or `review`. BUILD events name the running brief with `taskId`. `commitQueueMessagesDrained` and `drainQueue` include these fields when callers supply them. `drainQueueForReview` publishes `queue_drained` with seat `review` when it drains messages.
+
+`message_queued` also carries optional `steerable: boolean`. The queue sets it to `true` when it captures a matching steerable call. The transcript uses this saved value for delivery timing.
+
+`queue_drained` also has optional `via: 'mid-call'` for delivery into a running call. `steerable_call` has optional `seat: CrewSeatId` and `taskId: string`. Both fields are absent when no steerable call is attached. The lifecycle store resets this live capability on run start and hydration.
+
+Older logs without these fields still render. `message_injected_native` keeps its existing fields and occurs only in plan phases. `QueuedMessage` adds optional `possibleDuplicate: boolean` and `deliveredMidCall: true`; older saved states still load.
 
 **Attachments (1):**
 `planner_attachments_dropped`
@@ -1151,9 +1159,9 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 ---
 
-## 10. Runtime commands (full list, 22)
+## 10. Runtime commands (full list, 23)
 
-The registry holds 22 commands in five categories. `/mode`, `/revise-spec`, `/revise-plan` and `/approval` are removed: typing one prints a one-line pointer (`REMOVED_COMMANDS`, `src/core/runtime/commands/types.ts`). Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
+The registry holds 23 commands in five categories. `/mode`, `/revise-spec`, `/revise-plan` and `/approval` are removed: typing one prints a one-line pointer (`REMOVED_COMMANDS`, `src/core/runtime/commands/types.ts`). Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
 
 **Navigate**
 
@@ -1182,6 +1190,7 @@ The registry holds 22 commands in five categories. `/mode`, `/revise-spec`, `/re
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/stop` | Open stop and session options |
 | `/resume` | Continue a paused or stopped run |
+| `/steer <text>` | Stop now and continue with the text |
 | `/end` | Close the run, keeping every change on disk |
 
 **View**

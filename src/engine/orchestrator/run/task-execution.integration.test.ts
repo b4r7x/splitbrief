@@ -11,6 +11,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
 import {
+  disposeWctxIsolations,
   makeCopyingIsolation,
   makeWorktreeIsolation,
   makeBusRecorder,
@@ -49,7 +50,9 @@ import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { createSteeringPort } from '../../calls/steering.js';
+import type { TypedCallContext } from '../../planners/types.js';
 import { sessionDir } from '../../../core/paths.js';
 import { readMessages } from '../../../core/sessions/log-reader.js';
 import { listSnapshots, readManifest } from '../../snapshots/manifest.js';
@@ -86,8 +89,9 @@ function pauseOnceSinks(): WorkflowSinks {
 
 let dirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  await disposeWctxIsolations();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
@@ -1852,4 +1856,70 @@ describe('runTasksAndReview required-checks halt retry', { timeout: 120_000 }, (
       await resumed.options.wctx.isolation.dispose();
     }
   });
+});
+
+describe('task execution review steering', () => {
+  it.each([
+    { phase: 'implementing', separateReviewer: false },
+    { phase: 'implementing', separateReviewer: true },
+    { phase: 'final-review', separateReviewer: false },
+    { phase: 'final-review', separateReviewer: true },
+  ] as const)(
+    'forwards the run port to the $phase verdict with separateReviewer=$separateReviewer',
+    async ({ phase, separateReviewer }) => {
+      const ref = setupProject();
+      const state = makeImplState([makeTask({ status: 'done' })], {
+        phase,
+        changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+      });
+      saveState(ref, state);
+      writeEvidenceLedger(
+        ref,
+        createEvidenceLedger({
+          sessionId: ref.sessionId,
+          feature: state.feature,
+          tasks: state.tasks,
+        }),
+      );
+      const steering = createSteeringPort();
+      const contexts: TypedCallContext[] = [];
+      const typedCall = typedCallPlanAndReview(() => planFromTasks([]), passingReviewVerdict);
+      const reviewer = makePlanner({
+        typedCall: (ctx) => {
+          contexts.push(ctx);
+          return typedCall(ctx);
+        },
+      });
+      const wctx = makeWctx({
+        ...ref,
+        steering,
+        planner: separateReviewer ? makePlanner() : reviewer,
+        reviewer,
+        config: makeNoValidationConfig({
+          ...(separateReviewer && { reviewer: { kind: 'cli', tool: 'claude-code' } }),
+        }),
+      });
+
+      const result = await runTasksAndReview({
+        wctx,
+        state,
+        planning: { disposition: 'ready-for-tasks', state, tasks: state.tasks },
+        summaryBase: {
+          ...ref,
+          feature: state.feature,
+          startTime: Date.now(),
+          plannerTool: 'claude-code',
+          implementerTool: 'ollama',
+        },
+        phaseTimings: {},
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+
+      expect(result.completed).toBe(true);
+      expect(contexts).toHaveLength(1);
+      expect(contexts[0]?.callbacks.steering).toBe(steering);
+      expect(wctx.implementer.implement).not.toHaveBeenCalled();
+    },
+  );
 });

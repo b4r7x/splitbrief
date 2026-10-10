@@ -13,7 +13,7 @@ import type { PlannerConversation, WorkflowState } from '../../../core/schemas/w
 import type { OrchestratorCallbacks } from '../types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
-import { saveState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { processError } from '../../../lib/process/errors.js';
 import type { EngineEvent } from '../../events/types.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -27,6 +27,8 @@ import {
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtures.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import { enqueueUserMessage } from '../queue/submit.js';
+import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
 
@@ -130,6 +132,43 @@ function harness(opts: {
 }
 
 describe('applyConsultAnswer verify', () => {
+  it('returns a correction without completing when a message arrives during green verify checks', async () => {
+    const ref = setupRepo();
+    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
+    const task = makeTask({ id: 'T003', status: 'in_progress', criteria: ['C1'], checks });
+    const { ctx, states, events } = harness({
+      ...ref,
+      task,
+      plan: planWith(checks),
+      runCommand: async () => {
+        const state = loadState(ref);
+        if (state === null) throw new Error('missing state during verify checks');
+        enqueueUserMessage({
+          ...ref,
+          state,
+          message: plainUserMessage('keep the alias'),
+          phase: state.phase,
+          bus: ctx.bus,
+        });
+        return { stdout: 'ok', stderr: '', code: 0 };
+      },
+    });
+
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      verify(['K1'], 'Verify K1'),
+      await getChangedFilesSnapshot(ref.projectDir),
+    );
+
+    expect(result).toEqual({ action: 'correction', answer: CORRECTION_AFTER_CHECKS });
+    expect(states.at(-1)?.messageQueue[0]?.text).toBe('keep the alias');
+    expect(loadState(ref)?.tasks[0]?.status).toBe('in_progress');
+    expect(loadState(ref)?.currentTaskIndex).toBe(0);
+    expect(loadState(ref)?.messageQueue[0]?.deliveredTo).toBeUndefined();
+    expect(events.filter((event) => event.type === 'task_completed')).toEqual([]);
+  });
+
   it('formats the changed files, runs the selected checks and completes the task as consulted', async () => {
     const { projectDir, sessionId } = setupRepo();
     const task = makeTask({

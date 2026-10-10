@@ -1,5 +1,10 @@
 import { error } from '../../utils/error.js';
-import type { Planner, EscalationResult, PlannerUserTurnResult } from './types.js';
+import type {
+  Planner,
+  PlannerCallbacks,
+  EscalationResult,
+  PlannerUserTurnResult,
+} from './types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
@@ -8,7 +13,7 @@ import { createPlannerCallContext } from './call-context.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
-import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invoke.js';
+import { invokeClaudePlanner } from './claude-invoke.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
 import {
@@ -78,36 +83,13 @@ export function createClaudeCodePlanner(opts: {
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 
-  /**
-   * One prep for every specialized path (plan stream, one-shot escalate, user
-   * injection): the admitted vector is model + auth channel + trusted
-   * executable + effort + configured tail + idle bounds, assembled exactly
-   * once so no path can diverge on what reaches the child. The prompt itself
-   * is the only instruction channel — everything else stays the adapter's
-   * admitted argv.
-   */
-  function claudeRunnerPrep(input: {
-    env: NodeJS.ProcessEnv;
-    signal?: AbortSignal | undefined;
-  }): Readonly<{
-    model: string | undefined;
-    authChannel: CliAuthChannelId;
-    configuredAuthChannel: CliAuthChannelId | undefined;
-    env: NodeJS.ProcessEnv;
-    executable?: CliExecutableIdentity | undefined;
-    effort?: EffortLevel | undefined;
-    configuredArgs: readonly string[] | undefined;
-    skillRoots?: readonly string[] | undefined;
-    signal?: AbortSignal | undefined;
-    idleWarnMs?: number | undefined;
-    idleKillMs?: number | undefined;
-  }> {
+  function claudeRunnerPrep(input: { env: NodeJS.ProcessEnv; signal?: AbortSignal | undefined }) {
     return {
       model: resolvedModel,
       authChannel,
       configuredAuthChannel: opts.authChannel,
       env: input.env,
-      ...(trustedCli !== undefined && { executable: trustedCli.executable }),
+      trustedCli,
       ...(effort !== undefined && { effort }),
       configuredArgs: args,
       ...(skillRoots !== undefined && { skillRoots }),
@@ -120,12 +102,10 @@ export function createClaudeCodePlanner(opts: {
   async function invokeOnSession(
     prompt: string,
     projectDir: string,
-    callbacks: {
-      onOutput: (text: string) => void;
-      onSessionId?: ((id: string) => void) | undefined;
-      onSessionExpired?: ((id: string) => void) | undefined;
-      onCallEvent?: Parameters<typeof runClaudePlannerStream>[0]['onCallEvent'];
-    },
+    callbacks: Pick<
+      PlannerCallbacks,
+      'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent' | 'steering'
+    >,
     callContext: RunnerCallContext,
     images?: Attachment[] | undefined,
     signal?: AbortSignal | undefined,
@@ -140,39 +120,42 @@ export function createClaudeCodePlanner(opts: {
     const attemptCallbacks = callbackBuffer?.callbacks ?? callbacks;
     try {
       const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
-      const result = await runClaudePlannerStream({
+      const result = await invokeClaudePlanner({
         prompt,
         projectDir,
+        mode: 'plan',
         sessionId: resumeId ?? null,
-        onOutput: attemptCallbacks.onOutput,
-        onSessionInit: (id) => {
-          if (resumeId !== undefined && id !== resumeId) {
-            mismatchedId = id;
-            return;
-          }
-          if (id === resumeId && mismatchedId === undefined) {
-            resumeConfirmed = true;
-            callbackBuffer?.flush();
-          }
+        callbacks: {
+          ...attemptCallbacks,
+          steering: callbacks.steering,
+          onSessionInit: (id) => {
+            if (resumeId !== undefined && id !== resumeId) {
+              mismatchedId = id;
+              return;
+            }
+            if (id === resumeId && mismatchedId === undefined) {
+              resumeConfirmed = true;
+              callbackBuffer?.flush();
+            }
+          },
+          // The native id is captured as it streams, not after the call returns:
+          // the next phase resumes the same conversation even when this one is
+          // interrupted, and a run cut mid-call still has a thread to pick up.
+          onSessionId: (id: string) => {
+            if (resumeId !== undefined && id !== resumeId) {
+              mismatchedId = id;
+              return;
+            }
+            session.capture(id);
+            attemptCallbacks.onSessionId?.(id);
+          },
         },
-        // The native id is captured as it streams, not after the call returns:
-        // the next phase resumes the same conversation even when this one is
-        // interrupted, and a run cut mid-call still has a thread to pick up.
-        onSessionId: (id: string) => {
-          if (resumeId !== undefined && id !== resumeId) {
-            mismatchedId = id;
-            return;
-          }
-          session.capture(id);
-          attemptCallbacks.onSessionId?.(id);
-        },
-        onCallEvent: attemptCallbacks.onCallEvent,
         callContext,
         ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         ...(images && images.length > 0 ? { images } : {}),
         ...(schema !== undefined && { schema: { json: schema.json } }),
       });
-      const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
+      const returnedSessionId = mismatchedId ?? result.nativeSessionId;
       if (resumeId !== undefined && returnedSessionId !== null && returnedSessionId !== resumeId) {
         throw sessionResumeMismatchError(resumeId, returnedSessionId);
       }
@@ -220,12 +203,12 @@ export function createClaudeCodePlanner(opts: {
     }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
       const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner'));
-      return runClaudeOneShot({
+      return invokeClaudePlanner({
         prompt,
         projectDir,
         mode: accessMode === 'write-files' ? 'escalate' : 'plan',
-        onOutput: callbacks.onOutput,
-        onCallEvent: callbacks.onCallEvent,
+        sessionId: null,
+        callbacks,
         callContext,
         ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         ...(images !== undefined && images.length > 0 ? { images } : {}),
@@ -250,26 +233,28 @@ export function createClaudeCodePlanner(opts: {
       let mismatchedId: string | undefined;
       try {
         const env = await createRunnerSandboxEnv(injection.projectDir, runnerConfig, 'planner');
-        const result = await runClaudePlannerStream({
+        const result = await invokeClaudePlanner({
           prompt: injection.text,
           projectDir: injection.projectDir,
+          mode: 'plan',
           sessionId,
-          onOutput: callbackBuffer.callbacks.onOutput,
-          onSessionId: (id) => {
-            if (id !== sessionId) mismatchedId = id;
+          callbacks: {
+            ...callbackBuffer.callbacks,
+            onSessionId: (id) => {
+              if (id !== sessionId) mismatchedId = id;
+            },
+            onSessionInit: (id) => {
+              if (id !== sessionId) mismatchedId = id;
+              if (id === sessionId && mismatchedId === undefined) {
+                resumeConfirmed = true;
+                callbackBuffer.flush();
+              }
+            },
           },
-          onSessionInit: (id) => {
-            if (id !== sessionId) mismatchedId = id;
-            if (id === sessionId && mismatchedId === undefined) {
-              resumeConfirmed = true;
-              callbackBuffer.flush();
-            }
-          },
-          onCallEvent: callbackBuffer.callbacks.onCallEvent,
           callContext: injection.callContext ?? createPlannerCallContext(identityConfig, 'planner'),
           ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         });
-        const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;
+        const returnedSessionId = mismatchedId ?? result.nativeSessionId ?? sessionId;
         if (returnedSessionId !== null && returnedSessionId !== sessionId) {
           flushCallbacks = false;
           throw sessionResumeMismatchError(sessionId, returnedSessionId);

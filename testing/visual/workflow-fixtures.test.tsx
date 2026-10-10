@@ -36,6 +36,19 @@ import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 
+it.each(['queued', 'delivered', 'steerable'])(
+  'uses one Claude Code BUILD seat in the %s queue fixture',
+  (state) => {
+    const projection = workflowFixtureProjections.get(
+      scenarioId(`workflow-implementation-${state}`),
+    );
+    if (projection === undefined) throw new Error(`Missing ${state} queue fixture`);
+    expect(projection.config?.implementer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
+    const call = projection.events.find((event) => event.type === 'runner_call_started');
+    expect(call).toMatchObject({ backendKind: 'cli', runnerName: 'claude', taskId: 'T003' });
+  },
+);
+
 it.each(['workflow-continuous-transcript', 'workflow-continuous-transcript-ready'])(
   'records the max effort on every started brief in %s',
   (id) => {

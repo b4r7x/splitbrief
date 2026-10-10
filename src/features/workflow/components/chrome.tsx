@@ -9,11 +9,15 @@ import { FeedbackRow } from './feedback-row.js';
 import { InputFooter } from './input-footer.js';
 import { Divider } from '../../../components/divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
-import type { ComposerBoxHintOverride } from '../input-hints.js';
+import { queuePlaceholder, type ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { getChromeContentWidth, WORKFLOW_GUTTER_X, type RailForm } from '../layout/chrome-rows.js';
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
+import { selectRunningBrief, tasksStore } from '../../../stores/workflow/tasks.js';
+import { stopStore } from '../../../stores/workflow/stop.js';
+import { requestSteer } from '../handlers.js';
 
 export function WorkflowHeader({
   startedAt,
@@ -61,7 +65,6 @@ export function WorkflowFooter({
   commands,
   mode,
   inputHint,
-  placeholder,
   feedbackHint,
   boxHintOverride,
   commandsOnly,
@@ -90,8 +93,6 @@ export function WorkflowFooter({
   commands: RuntimeCommandDef[];
   mode: InputMode;
   inputHint: string;
-  /** What the composer invites while no hint owns it; absent, the composer keeps its own words. */
-  placeholder?: string | undefined;
   feedbackHint?: string | undefined;
   boxHintOverride?: ComposerBoxHintOverride | undefined;
   /** A stopped run that cannot be resumed has nothing to take but commands. */
@@ -125,6 +126,19 @@ export function WorkflowFooter({
   // The width the composer box actually renders at — the terminal inside the gutter — so the
   // input's own wrap math budgets the same cells the box paints.
   const composerWidth = getChromeContentWidth(terminalSizeStore.use((s) => s.cols));
+  const phase = lifecycleStore.use((state) => state.phase);
+  const running = lifecycleStore.use((state) => state.status === 'running');
+  const steerableSeat = lifecycleStore.use((state) => state.steerableCall?.seat ?? null);
+  const taskId = tasksStore.use((state) => selectRunningBrief(state, phase).current?.id);
+  const stopping = stopStore.use((state) => state.intent !== 'none');
+  const placeholder = queuePlaceholder({
+    phase,
+    inputMode: mode,
+    running,
+    stopping,
+    taskId,
+    steerableSeat,
+  });
   const footer = (
     <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
       <FeedbackRow
@@ -138,6 +152,7 @@ export function WorkflowFooter({
         key={composerSession}
         width={composerWidth}
         onSubmit={handleInput}
+        onSendNow={(submission) => requestSteer(submission.message)}
         readClipboardImage={readClipboardImage}
         listProjectFiles={listProjectFiles}
         onEmptySubmit={onEmptySubmit}
