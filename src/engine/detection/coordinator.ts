@@ -1,4 +1,6 @@
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
+import { deepFreeze } from '../../utils/deep-freeze.js';
+import { assertNever } from '../../utils/type-guards.js';
 import {
   type CliModelsSourceHydration,
   type CliModelsSourceRequest,
@@ -19,6 +21,18 @@ import {
   type ReadinessSourceRequest,
 } from './types.js';
 
+function copySourceValue<Value extends object>(source: DetectionSourceId, value: Value): Value {
+  switch (source) {
+    case 'models-dev':
+      return deepFreeze(value);
+    case 'readiness':
+    case 'cli-models':
+      return structuredClone(value);
+    default:
+      return assertNever(source);
+  }
+}
+
 function cloneError(error: DetectionSourceError): DetectionSourceError {
   return { kind: error.kind, message: error.message };
 }
@@ -34,7 +48,7 @@ function cloneSnapshot<Value extends object>(
     fetchedAt: snapshot.fetchedAt,
     validatedAt: snapshot.validatedAt,
     stale: snapshot.stale,
-    value: structuredClone(snapshot.value),
+    value: copySourceValue(snapshot.source, snapshot.value),
     ...(snapshot.error === undefined ? {} : { error: cloneError(snapshot.error) }),
   };
 }
@@ -66,7 +80,7 @@ function staleSnapshot(
     fetchedAt: input.snapshot.fetchedAt,
     validatedAt: input.validatedAt,
     stale: true,
-    value: structuredClone(input.snapshot.value),
+    value: copySourceValue(input.snapshot.source, input.snapshot.value),
     error: cloneError(input.error),
   };
 }
@@ -185,7 +199,7 @@ export function createDetectionCoordinator(
         fetchedAt: observedAt,
         validatedAt: observedAt,
         stale: false,
-        value: structuredClone(value),
+        value: copySourceValue(input.source, value),
       };
       snapshots.set(request.scopeKey, snapshot);
       return { kind: 'fresh', origin: 'request', snapshot: cloneSnapshot(snapshot) };
@@ -395,7 +409,7 @@ export function createDetectionCoordinator(
       fetchedAt: input.fetchedAt,
       validatedAt: input.validatedAt,
       stale: input.stale ?? false,
-      value: structuredClone(input.value),
+      value: copySourceValue(input.source, input.value),
       ...(input.error === undefined ? {} : { error: cloneError(input.error) }),
     };
     snapshots.set(detectionSourceContextKey(input), snapshot);

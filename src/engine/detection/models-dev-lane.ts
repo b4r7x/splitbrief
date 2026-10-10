@@ -18,11 +18,9 @@ export interface ModelsDevCatalogRequest {
   readonly signal: AbortSignal;
 }
 
-export type ModelsDevCatalogFetchResult = ModelsDevCatalogCacheOutcome | ModelsDevCatalog;
-
 /** The subset of `DetectionDeps` this lane reads; the full deps satisfy it. */
 export interface ModelsDevLaneDeps {
-  fetchModelsDevCatalog(input: ModelsDevCatalogRequest): Promise<ModelsDevCatalogFetchResult>;
+  fetchModelsDevCatalog(input: ModelsDevCatalogRequest): Promise<ModelsDevCatalogCacheOutcome>;
   readonly offline?: boolean | undefined;
 }
 
@@ -76,43 +74,6 @@ function modelsDevSourceError(failure: ModelsDevCacheFailure): DetectionSourceEr
   }
 }
 
-function catalogState(catalog: ModelsDevCatalog): ModelsDevCatalogSnapshot['catalogState'] {
-  return Object.keys(catalog).length === 0 ? 'empty' : 'populated';
-}
-
-function isModelsDevCatalogCacheOutcome(
-  value: ModelsDevCatalogFetchResult,
-): value is ModelsDevCatalogCacheOutcome {
-  if (!('kind' in value)) return false;
-  switch (value.kind) {
-    case 'cached':
-    case 'fresh':
-    case 'not-modified':
-    case 'stale':
-    case 'failed':
-      return true;
-    default:
-      return false;
-  }
-}
-
-function normalizeModelsDevCatalogOutcome(
-  input: Readonly<{ value: ModelsDevCatalogFetchResult; observedAt: number }>,
-): ModelsDevCatalogCacheOutcome {
-  if (isModelsDevCatalogCacheOutcome(input.value)) return input.value;
-  return {
-    kind: 'fresh',
-    snapshot: {
-      sourceUrl: 'legacy-detection-dependency',
-      parserVersion: 'legacy-detection-dependency',
-      catalog: structuredClone(input.value),
-      catalogState: catalogState(input.value),
-      fetchedAt: input.observedAt,
-      validatedAt: input.observedAt,
-    },
-  };
-}
-
 function modelsDevSnapshot(
   input: Readonly<{
     cacheSnapshot: ModelsDevCatalogSnapshot;
@@ -130,7 +91,7 @@ function modelsDevSnapshot(
     fetchedAt: input.cacheSnapshot.fetchedAt,
     validatedAt: input.cacheSnapshot.validatedAt,
     stale: input.failure !== undefined,
-    value: structuredClone(input.cacheSnapshot.catalog),
+    value: input.cacheSnapshot.catalog,
     ...(input.failure === undefined ? {} : { error: modelsDevSourceError(input.failure) }),
   };
 }
@@ -141,7 +102,7 @@ export function modelsDevCatalogValue(outcome: ModelsDevRefreshOutcome): ModelsD
     case 'fresh':
     case 'not-modified':
     case 'stale':
-      return structuredClone(outcome.snapshot.value);
+      return outcome.snapshot.value;
     case 'failed':
     case 'not-run':
       return null;
@@ -157,7 +118,6 @@ export async function refreshModelsDev(
     mode: 'automatic' | 'manual';
     coordinator: DetectionCoordinator;
     cacheOutcomes: Map<string, ModelsDevCatalogCacheOutcome>;
-    now: () => number;
   }>,
 ): Promise<ModelsDevRefreshOutcome> {
   const scopeKey = detectionSourceContextKey({
@@ -173,10 +133,7 @@ export async function refreshModelsDev(
     load: async (signal) => {
       let outcome: ModelsDevCatalogCacheOutcome;
       try {
-        outcome = normalizeModelsDevCatalogOutcome({
-          value: await input.deps.fetchModelsDevCatalog({ mode: input.mode, signal }),
-          observedAt: input.now(),
-        });
+        outcome = await input.deps.fetchModelsDevCatalog({ mode: input.mode, signal });
       } catch {
         throwIfAborted(signal);
         outcome = {
@@ -193,7 +150,7 @@ export async function refreshModelsDev(
         case 'fresh':
         case 'not-modified':
         case 'stale':
-          return structuredClone(outcome.snapshot.catalog);
+          return outcome.snapshot.catalog;
         case 'failed':
           throw outcome.failure;
         default:

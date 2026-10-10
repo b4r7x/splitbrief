@@ -45,6 +45,109 @@ function failedSource(): DetectionSourceError {
 }
 
 describe('detection coordinator', () => {
+  it('shares the Models.dev value across refresh, reads, hydration, TTL reuse, and stale outcomes', async () => {
+    const coordinator = createDetectionCoordinator();
+    const value = {
+      openai: { id: 'openai', models: { demo: { id: 'demo', limit: { context: 128_000 } } } },
+    };
+    const request = {
+      source: 'models-dev' as const,
+      contextKey: 'models-dev-context',
+      ttlMs: 1_000,
+      mode: 'automatic' as const,
+      load: async () => value,
+      error: failedSource,
+    };
+    const outcome = await coordinator.refresh(request);
+    if (outcome.kind !== 'fresh') throw new Error('Expected a fresh Models.dev snapshot.');
+    expect(outcome.snapshot.value).toBe(value);
+    expect(() => {
+      value.openai.models.demo.limit.context = 1;
+    }).toThrow(TypeError);
+    expect(coordinator.snapshot(request)?.value).toBe(value);
+
+    coordinator.hydrate({ ...outcome.snapshot, source: 'models-dev' });
+    expect(coordinator.snapshot(request)?.value).toBe(value);
+    const cached = await coordinator.refresh(request);
+    if (cached.kind !== 'fresh') throw new Error('Expected a cached Models.dev snapshot.');
+    expect(cached.origin).toBe('snapshot');
+    expect(cached.snapshot.value).toBe(value);
+
+    const stale = await coordinator.refresh({
+      ...request,
+      mode: 'manual',
+      load: async () => {
+        throw new Error('Catalog refresh failed.');
+      },
+    });
+    if (stale.kind !== 'stale') throw new Error('Expected a stale Models.dev snapshot.');
+    expect(stale.snapshot.value).toBe(value);
+    expect(coordinator.snapshot(request)?.value).toBe(value);
+  });
+
+  it('copies readiness values on refresh, reads, and hydration', async () => {
+    const coordinator = createDetectionCoordinator();
+    const value = readiness('first');
+    const context = { source: 'readiness' as const, contextKey: 'readiness-context' };
+    const outcome = await coordinator.refresh({
+      ...context,
+      ttlMs: 1_000,
+      mode: 'automatic',
+      load: async () => value,
+      error: failedSource,
+    });
+    if (outcome.kind !== 'fresh') throw new Error('Expected a fresh readiness snapshot.');
+    expect(outcome.snapshot.value).not.toBe(value);
+    expect(outcome.snapshot.value).toEqual(value);
+    const readBack = coordinator.snapshot(context)?.value;
+    expect(readBack).not.toBe(value);
+    expect(readBack).not.toBe(outcome.snapshot.value);
+    expect(readBack).toEqual(value);
+
+    coordinator.hydrate({ ...outcome.snapshot, ...context, value });
+    const hydrated = coordinator.snapshot(context)?.value;
+    expect(hydrated).not.toBe(value);
+    expect(hydrated).toEqual(value);
+  });
+
+  it('keeps CLI values isolated and freezes Models.dev values supplied through hydration', async () => {
+    const coordinator = createDetectionCoordinator();
+    const catalog = { openai: { id: 'openai', models: { demo: { id: 'demo' } } } };
+    coordinator.hydrate({
+      source: 'models-dev',
+      contextKey: 'hydrated-models-dev',
+      value: catalog,
+      fetchedAt: 1,
+      validatedAt: 1,
+    });
+    expect(
+      coordinator.snapshot({ source: 'models-dev', contextKey: 'hydrated-models-dev' })?.value,
+    ).toBe(catalog);
+    expect(() => {
+      catalog.openai.models.demo.id = 'mutated';
+    }).toThrow(TypeError);
+
+    const value = [
+      {
+        connection: { tool: 'opencode', contextKey: 'cli-options' },
+        outcome: { kind: 'success', value: [{ id: 'original' }] },
+      },
+    ] satisfies CliModelSnapshot;
+    const context = { source: 'cli-models' as const, contextKey: 'cli-options' };
+    const outcome = await coordinator.refresh({
+      ...context,
+      ttlMs: 1_000,
+      mode: 'automatic',
+      load: async () => value,
+      error: failedSource,
+    });
+    if (outcome.kind !== 'fresh') throw new Error('Expected a CLI snapshot.');
+    expect(outcome.snapshot.value).not.toBe(value);
+    expect(coordinator.snapshot(context)?.value).not.toBe(outcome.snapshot.value);
+    value.length = 0;
+    expect(coordinator.snapshot(context)?.value).toHaveLength(1);
+  });
+
   it('scopes source contexts per source and encodes the opaque credential domain', () => {
     const context = detectionContextKey({
       platform: 'darwin',

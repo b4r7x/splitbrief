@@ -29,7 +29,6 @@ import { cloneScopedCliCatalogAttempt } from './cli-catalog-outcomes.js';
 import { createLaneChannel, type DetectionLaneListener, type LaneChannel } from './lane-channel.js';
 import {
   modelsDevCatalogValue,
-  type ModelsDevCatalogFetchResult,
   type ModelsDevCatalogRequest,
   type ModelsDevRefreshOutcome,
   refreshModelsDev,
@@ -64,7 +63,7 @@ export interface CliModelsLaneRequest extends DetectionLaneRequest {
 
 export interface DetectionDeps {
   detectAll(input: DetectionLaneRequest): Promise<DetectionProjection>;
-  fetchModelsDevCatalog(input: ModelsDevCatalogRequest): Promise<ModelsDevCatalogFetchResult>;
+  fetchModelsDevCatalog(input: ModelsDevCatalogRequest): Promise<ModelsDevCatalogCacheOutcome>;
   discoverAllCliTools(input: CliModelsLaneRequest): Promise<CliModelSnapshot>;
   readonly offline?: boolean | undefined;
   readonly now?: (() => number) | undefined;
@@ -434,7 +433,6 @@ export function createDetectionService() {
         mode: input.mode,
         coordinator,
         cacheOutcomes: modelsDevCacheOutcomes,
-        now: () => clock(),
       }).then((outcome) => {
         input.channel.announce({ lane: 'modelsDev', outcome });
         return outcome;

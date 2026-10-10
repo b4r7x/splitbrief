@@ -8,7 +8,8 @@ import type {
   DetectionProjection,
   DetectionSourceOutcome,
 } from '../../../engine/detection/types.js';
-import { freezeCatalog, freezeModels } from './freeze.js';
+import { deepFreeze } from '../../../utils/deep-freeze.js';
+import { freezeModels } from './freeze.js';
 import {
   configuredProviderValues,
   freezeConfiguredProviders,
@@ -177,7 +178,7 @@ function modelsDevApplied(
   const catalog = modelsDevValue(outcome);
   return {
     ...current,
-    modelsDevCatalog: catalog === null ? current.modelsDevCatalog : freezeCatalog(catalog),
+    modelsDevCatalog: catalog === null ? current.modelsDevCatalog : deepFreeze(catalog),
     modelsDevFetchedAt: catalog === null ? current.modelsDevFetchedAt : modelsDev.fetchedAt,
     refresh,
   };

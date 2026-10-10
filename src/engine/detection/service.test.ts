@@ -7,6 +7,7 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
+import { deepFreeze } from '../../utils/deep-freeze.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { detectionContextKey } from './types.js';
 import { loadRememberedSnapshot, saveDetectionCache } from './cache.js';
@@ -43,7 +44,7 @@ function modelsDevOutcome(catalog: ModelsDevCatalog): ModelsDevCatalogCacheOutco
     snapshot: {
       sourceUrl: 'https://models.dev/api.json',
       parserVersion: 'test-parser',
-      catalog,
+      catalog: deepFreeze(catalog),
       catalogState: Object.keys(catalog).length === 0 ? 'empty' : 'populated',
       fetchedAt: 1_700_000_000_000,
       validatedAt: 1_700_000_000_000,
@@ -238,7 +239,7 @@ describe('createDetectionService', () => {
   });
 
   it('shuts down without waiting for an observation that has not settled', async () => {
-    const remote = Promise.withResolvers<ModelsDevCatalog>();
+    const remote = Promise.withResolvers<ModelsDevCatalogCacheOutcome>();
     const signals: AbortSignal[] = [];
     const refresh = service.loadDetection({
       deps: makeDeps({
@@ -252,14 +253,14 @@ describe('createDetectionService', () => {
       await service.shutdown();
       expect(signals.every((signal) => signal.aborted)).toBe(true);
     } finally {
-      remote.resolve({});
+      remote.resolve(modelsDevOutcome({}));
       await refresh;
     }
   });
 
   it('refuses a late cache save after readiness succeeds and shutdown settles', async () => {
     const ready = Promise.withResolvers<void>();
-    const remote = Promise.withResolvers<ModelsDevCatalog>();
+    const remote = Promise.withResolvers<ModelsDevCatalogCacheOutcome>();
     const refresh = service.loadDetection({
       projectDir: tempDir,
       deps: makeDeps({ fetchModelsDevCatalog: () => remote.promise }),
@@ -275,7 +276,7 @@ describe('createDetectionService', () => {
       const acceptedSaves = service.getPendingSave();
       expect(service.shutdown()).toBe(acceptedSaves);
       await acceptedSaves;
-      remote.resolve({});
+      remote.resolve(modelsDevOutcome({}));
       await refresh;
       await service.getPendingSave();
       expect(service.getPendingSave()).toBe(acceptedSaves);
@@ -283,7 +284,7 @@ describe('createDetectionService', () => {
         readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json')),
       ).rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
-      remote.resolve({});
+      remote.resolve(modelsDevOutcome({}));
       await refresh;
     }
   });
@@ -359,6 +360,21 @@ describe('createDetectionService', () => {
     });
     expect(second.cliTools[0]?.installedVersion).toBe('gen-1');
     expect(outcomes(second).readiness).toMatchObject({ kind: 'fresh', origin: 'snapshot' });
+  });
+
+  it('keeps a Models.dev catalog from a cache outcome frozen by identity', async () => {
+    const catalog = {
+      openai: { id: 'openai', models: { demo: { id: 'demo', limit: { context: 128_000 } } } },
+    };
+    const result = await service.loadDetection({
+      deps: makeDeps({ fetchModelsDevCatalog: async () => modelsDevOutcome(catalog) }),
+    });
+
+    expect(result.catalog).toBe(catalog);
+    expect(Object.isFrozen(catalog.openai.models.demo.limit)).toBe(true);
+    expect(() => {
+      catalog.openai.models.demo.limit.context = 1;
+    }).toThrow(TypeError);
   });
 
   it('keeps private readiness separate when project, channel, endpoint, and configuration context change', async () => {
@@ -912,6 +928,7 @@ describe('createDetectionService', () => {
     const cliGate = Promise.withResolvers<void>();
     const modelsDevPublished = Promise.withResolvers<void>();
     const publishedLanes: string[] = [];
+    let publishedCatalog: ModelsDevCatalog | undefined;
     const deps = makeDeps({
       sourceContexts: contexts,
       detectAll: async () => {
@@ -931,13 +948,17 @@ describe('createDetectionService', () => {
       onLane: (lane) => {
         publishedLanes.push(lane.lane);
         detectionStore.publishLane({ lane, request });
-        if (lane.lane === 'modelsDev') modelsDevPublished.resolve();
+        if (lane.lane === 'modelsDev' && lane.outcome.kind === 'fresh') {
+          publishedCatalog = lane.outcome.snapshot.value;
+          modelsDevPublished.resolve();
+        }
       },
     });
     await modelsDevPublished.promise;
 
     expect(publishedLanes).toEqual(['modelsDev']);
-    expect(modelCacheStore.getModelsDevCatalog()).toEqual(catalog);
+    expect(publishedCatalog).toBe(catalog);
+    expect(modelCacheStore.getModelsDevCatalog()).toBe(catalog);
     expect(detectionStore.get().refresh.modelsDev).toMatchObject({
       outcome: 'fresh',
       refreshing: false,
@@ -950,7 +971,8 @@ describe('createDetectionService', () => {
 
     readinessGate.resolve();
     cliGate.resolve();
-    await load;
+    const result = await load;
+    expect(result.catalog).toBe(catalog);
 
     expect(publishedLanes[0]).toBe('modelsDev');
     expect([...publishedLanes].sort()).toEqual(['cliModels', 'modelsDev', 'readiness']);
@@ -1067,7 +1089,7 @@ describe('createDetectionService', () => {
       },
       fetchModelsDevCatalog: async () => {
         remoteSources.push('models-dev');
-        return {};
+        return modelsDevOutcome({});
       },
       discoverAllCliTools: async () => {
         remoteSources.push('cli-models');

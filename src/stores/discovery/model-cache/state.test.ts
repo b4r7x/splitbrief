@@ -728,13 +728,19 @@ describe('modelCacheStore', () => {
     ]);
   });
 
-  it('clones Models.dev catalogs on write so later input mutation does not leak', () => {
+  it('keeps the supplied Models.dev catalog and freezes it so later input mutation throws', () => {
     const mutableCatalog: ModelsDevCatalog = {
       openai: { id: 'openai', models: { 'gpt-4o': { id: 'gpt-4o', limit: { context: 128000 } } } },
     };
 
     hydrateCatalog(mutableCatalog);
-    mutableCatalog.openai!.models['gpt-4o']!.limit = { context: 1 };
+    expect(modelCacheStore.getModelsDevCatalog()).toBe(mutableCatalog);
+    expect(Object.isFrozen(mutableCatalog)).toBe(true);
+    expect(Object.isFrozen(mutableCatalog.openai?.models['gpt-4o'])).toBe(true);
+    expect(Object.isFrozen(mutableCatalog.openai?.models['gpt-4o']?.limit)).toBe(true);
+    expect(() => {
+      mutableCatalog.openai!.models['gpt-4o']!.limit!.context = 1;
+    }).toThrow(TypeError);
 
     expect(modelCacheStore.getModelsDevCatalog()?.openai?.models['gpt-4o']?.limit?.context).toBe(
       128000,
@@ -752,6 +758,7 @@ describe('modelCacheStore', () => {
 
     // No per-read clone: reads share the same cached reference.
     expect(first).toBe(second);
+    expect(first).toBe(mutableCatalog);
     expect(Object.isFrozen(first)).toBe(true);
     expect(Object.isFrozen(first?.openai)).toBe(true);
     expect(Object.isFrozen(first?.openai?.models['gpt-4o']?.limit)).toBe(true);
@@ -783,7 +790,17 @@ describe('modelCacheStore', () => {
         ],
         cliTools: [],
       }),
-      fetchModelsDevCatalog: async () => ({}),
+      fetchModelsDevCatalog: async () => ({
+        kind: 'fresh',
+        snapshot: {
+          sourceUrl: 'https://models.dev/api.json',
+          parserVersion: 'test-parser',
+          catalog: {},
+          catalogState: 'empty',
+          fetchedAt: REMEMBERED_CATALOG_FETCHED_AT,
+          validatedAt: REMEMBERED_CATALOG_VALIDATED_AT,
+        },
+      }),
       discoverAllCliTools: async () => [],
       sourceContexts: { ...expected, modelsDev: 'foreign-models-dev-context' },
     };

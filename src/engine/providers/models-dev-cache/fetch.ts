@@ -1,6 +1,6 @@
 import { throwIfAborted } from '../../../utils/abort.js';
 import type { ModelsDevCacheFailure, ModelsDevCacheFailureKind } from '../models-dev-cache.js';
-import { MODELS_DEV_ETAG_MAX_LENGTH } from './store.js';
+import { MODELS_DEV_ETAG_MAX_LENGTH } from './record.js';
 
 export function cacheFailure(
   kind: ModelsDevCacheFailureKind,
