@@ -23,7 +23,8 @@ import type { DetectionServiceResult } from '../../../engine/detection/service.j
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
 import type { ScopedCliCatalogRuntime } from '../../../engine/detection/cli-catalog-outcomes.js';
 import { includes } from '../../../utils/type-guards.js';
-import { deepFreeze, freezeCatalog, freezeModels, frozenSlice } from './freeze.js';
+import { deepFreeze } from '../../../utils/deep-freeze.js';
+import { freezeModels, frozenSlice } from './freeze.js';
 import { demotedForContextChange, laneApplied, providerModels } from './apply-lanes.js';
 import {
   cliCatalogValues,
@@ -407,7 +408,7 @@ export const modelCacheStore = {
     const refresh: DiscoveryRefreshState = { ...current.refresh, modelsDev };
     commit({
       ...current,
-      modelsDevCatalog: freezeCatalog(input.catalog),
+      modelsDevCatalog: deepFreeze(input.catalog),
       modelsDevFetchedAt: input.fetchedAt,
       refresh,
     });

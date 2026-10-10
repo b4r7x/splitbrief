@@ -68,6 +68,15 @@ The draft remains editable during preparation; start and continue wait for curre
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md#data-flow-one-task) for the cleanup order, process exit, and caller-requested unmount.
 
+The models.dev cache shares one pending read per cache key between the catalog seed and live detection.
+Its private worker parses JSON and validates the catalog, so the main thread can render and handle keys during parsing.
+HTTP responses and cache-pruning records use the same worker parser.
+Pruning receives only validated metadata, without the catalog.
+
+The cache freezes the received catalog and snapshot envelope, then detection and the model store share that catalog by reference.
+Readiness and CLI model snapshots keep their separate copies.
+Missing or corrupt cache records remain misses; stale catalogs retain the existing refresh behavior.
+
 ## Rules for adding bootstrap steps
 
 ### 1. One file until it hurts

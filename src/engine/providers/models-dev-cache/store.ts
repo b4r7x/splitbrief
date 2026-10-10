@@ -3,22 +3,26 @@ import { constants, type Stats } from 'node:fs';
 import { lstat, open, readdir, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { z } from 'zod';
 import { SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { ModelsDevCatalogSchema, type ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
+import type { ModelsDevCatalog } from '../../../core/schemas/models-dev.js';
 import { writeSecureFileAsync } from '../../../lib/fs.js';
+import { deepFreeze } from '../../../utils/deep-freeze.js';
 import { error } from '../../../utils/error.js';
 import type {
   ModelsDevCatalogCacheOptions,
   ModelsDevCatalogSnapshot,
 } from '../models-dev-cache.js';
+import { parseModelsDevPayload } from './parse.js';
+import {
+  MODELS_DEV_CACHE_VERSION,
+  MODELS_DEV_SOURCE_URL_MAX_LENGTH,
+  type ModelsDevCacheRecord,
+  type ModelsDevCacheMetadata,
+} from './record.js';
 
 export const MODELS_DEV_CATALOG_URL = 'https://models.dev/api.json';
 export const MODELS_DEV_CATALOG_PARSER_VERSION = 'models-dev-api-json-v1';
 export const MODELS_DEV_CATALOG_MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
-export const MODELS_DEV_ETAG_MAX_LENGTH = 4_096;
-
-const MODELS_DEV_CACHE_VERSION = 1;
 const MODELS_DEV_CACHE_DIRECTORY = 'cache';
 const MODELS_DEV_CACHE_FILE_PREFIX = 'models-dev-catalog';
 const MODELS_DEV_CACHE_MAX_ENTRIES = 4;
@@ -28,20 +32,6 @@ const MODELS_DEV_CACHE_FILE_NAME_PATTERN = new RegExp(
 const MODELS_DEV_CACHE_METADATA_BYTES = 64 * 1024;
 const MODELS_DEV_CACHE_MAX_FILE_BYTES =
   MODELS_DEV_CATALOG_MAX_PAYLOAD_BYTES + MODELS_DEV_CACHE_METADATA_BYTES;
-const MODELS_DEV_SOURCE_URL_MAX_LENGTH = 2_048;
-
-const ModelsDevCacheRecordSchema = z
-  .object({
-    version: z.literal(MODELS_DEV_CACHE_VERSION),
-    sourceUrl: z.string().min(1).max(MODELS_DEV_SOURCE_URL_MAX_LENGTH),
-    parserVersion: z.string().min(1).max(256),
-    catalog: ModelsDevCatalogSchema,
-    etag: z.string().min(1).max(MODELS_DEV_ETAG_MAX_LENGTH).optional(),
-    fetchedAt: z.number().finite().nonnegative(),
-    validatedAt: z.number().finite().nonnegative(),
-  })
-  .strict();
-type ModelsDevCacheRecord = z.infer<typeof ModelsDevCacheRecordSchema>;
 
 export interface ModelsDevCacheIdentity {
   readonly cacheKey: string;
@@ -66,6 +56,7 @@ interface ModelsDevCacheDiskEntry extends ModelsDevCacheFileIdentity {
 }
 
 const snapshots = new Map<string, ModelsDevCatalogSnapshot>();
+const pendingReads = new Map<string, Promise<ModelsDevCatalogSnapshot | null>>();
 
 function normalizeSourceUrl(sourceUrl: string): string {
   let parsed: URL;
@@ -121,20 +112,13 @@ export function catalogState(catalog: ModelsDevCatalog): ModelsDevCatalogSnapsho
   return Object.keys(catalog).length === 0 ? 'empty' : 'populated';
 }
 
-export function cloneSnapshot(snapshot: ModelsDevCatalogSnapshot): ModelsDevCatalogSnapshot {
-  return {
-    sourceUrl: snapshot.sourceUrl,
-    parserVersion: snapshot.parserVersion,
-    catalog: structuredClone(snapshot.catalog),
-    catalogState: snapshot.catalogState,
-    ...(snapshot.etag === undefined ? {} : { etag: snapshot.etag }),
-    fetchedAt: snapshot.fetchedAt,
-    validatedAt: snapshot.validatedAt,
-  };
+export function freezeSnapshot(snapshot: ModelsDevCatalogSnapshot): ModelsDevCatalogSnapshot {
+  deepFreeze(snapshot.catalog);
+  return Object.freeze(snapshot);
 }
 
 function snapshotFromRecord(record: ModelsDevCacheRecord): ModelsDevCatalogSnapshot {
-  return {
+  return freezeSnapshot({
     sourceUrl: record.sourceUrl,
     parserVersion: record.parserVersion,
     catalog: record.catalog,
@@ -142,7 +126,7 @@ function snapshotFromRecord(record: ModelsDevCacheRecord): ModelsDevCatalogSnaps
     ...(record.etag === undefined ? {} : { etag: record.etag }),
     fetchedAt: record.fetchedAt,
     validatedAt: record.validatedAt,
-  };
+  });
 }
 
 function recordFromSnapshot(snapshot: ModelsDevCatalogSnapshot): ModelsDevCacheRecord {
@@ -159,7 +143,7 @@ function recordFromSnapshot(snapshot: ModelsDevCatalogSnapshot): ModelsDevCacheR
 
 export function rememberSnapshot(cacheKey: string, snapshot: ModelsDevCatalogSnapshot): void {
   snapshots.delete(cacheKey);
-  snapshots.set(cacheKey, cloneSnapshot(snapshot));
+  snapshots.set(cacheKey, snapshot);
   while (snapshots.size > MODELS_DEV_CACHE_MAX_ENTRIES) {
     const oldestKey = snapshots.keys().next().value;
     if (oldestKey === undefined) return;
@@ -208,19 +192,7 @@ async function readBoundedCacheFile(path: string): Promise<BoundedModelsDevCache
   }
 }
 
-function parseModelsDevCacheRecord(raw: string): ModelsDevCacheRecord | null {
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-
-  const parsed = ModelsDevCacheRecordSchema.safeParse(json);
-  return parsed.success ? parsed.data : null;
-}
-
-function isCacheRecordAtExpectedPath(record: ModelsDevCacheRecord, fileName: string): boolean {
+function isCacheRecordAtExpectedPath(record: ModelsDevCacheMetadata, fileName: string): boolean {
   try {
     return (
       normalizeSourceUrl(record.sourceUrl) === record.sourceUrl &&
@@ -242,7 +214,7 @@ async function validatedDiskEntries(cacheDir: string): Promise<ModelsDevCacheDis
     const file = await readBoundedCacheFile(cachePath);
     if (file === null) continue;
 
-    const record = parseModelsDevCacheRecord(file.raw);
+    const record = await parseModelsDevPayload({ kind: 'metadata', raw: file.raw });
     if (record === null || !isCacheRecordAtExpectedPath(record, entry.name)) continue;
 
     validEntries.push({
@@ -301,23 +273,34 @@ export async function readCachedSnapshot(
   identity: ModelsDevCacheIdentity,
 ): Promise<ModelsDevCatalogSnapshot | null> {
   const remembered = snapshots.get(identity.cacheKey);
-  if (remembered !== undefined) return cloneSnapshot(remembered);
+  if (remembered !== undefined) return remembered;
 
-  const file = await readBoundedCacheFile(identity.cachePath);
-  if (file === null) return null;
+  const pending = pendingReads.get(identity.cacheKey);
+  if (pending !== undefined) return pending;
 
-  const parsed = parseModelsDevCacheRecord(file.raw);
-  if (
-    parsed === null ||
-    parsed.sourceUrl !== identity.sourceUrl ||
-    parsed.parserVersion !== identity.parserVersion
-  ) {
-    return null;
-  }
+  const read = Promise.resolve()
+    .then(async () => {
+      const file = await readBoundedCacheFile(identity.cachePath);
+      if (file === null) return null;
 
-  const snapshot = snapshotFromRecord(parsed);
-  rememberSnapshot(identity.cacheKey, snapshot);
-  return cloneSnapshot(snapshot);
+      const parsed = await parseModelsDevPayload({ kind: 'record', raw: file.raw });
+      if (
+        parsed === null ||
+        parsed.sourceUrl !== identity.sourceUrl ||
+        parsed.parserVersion !== identity.parserVersion
+      ) {
+        return null;
+      }
+
+      const snapshot = snapshotFromRecord(parsed);
+      rememberSnapshot(identity.cacheKey, snapshot);
+      return snapshot;
+    })
+    .finally(() => {
+      pendingReads.delete(identity.cacheKey);
+    });
+  pendingReads.set(identity.cacheKey, read);
+  return read;
 }
 
 export async function persistSnapshot(

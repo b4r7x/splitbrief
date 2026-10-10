@@ -22,6 +22,7 @@ import {
 } from './models-dev-cache.js';
 import {
   MODELS_DEV_CATALOG_MAX_PAYLOAD_BYTES,
+  MODELS_DEV_CATALOG_PARSER_VERSION,
   resolveModelsDevCatalogCachePath,
   resolveModelsDevUserCacheDir,
 } from './models-dev-cache/store.js';
@@ -85,6 +86,21 @@ describe('models.dev user cache', () => {
     };
   }
 
+  function writeCachedCatalog(): void {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(
+      resolveModelsDevCatalogCachePath(options()),
+      JSON.stringify({
+        version: 1,
+        sourceUrl,
+        parserVersion: MODELS_DEV_CATALOG_PARSER_VERSION,
+        catalog: catalog(),
+        fetchedAt: currentTime,
+        validatedAt: currentTime,
+      }),
+    );
+  }
+
   beforeEach(async () => {
     cacheRoot = createTempDir('models-dev-user-cache');
     cacheDir = join(cacheRoot, '.splitbrief', 'cache');
@@ -109,9 +125,91 @@ describe('models.dev user cache', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     server.closeAllConnections();
     if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
     cleanupTempDir(cacheRoot);
+  });
+
+  it('shares one deep-frozen catalog across concurrent cold reads and a refresh within TTL', async () => {
+    writeCachedCatalog();
+
+    const [first, second] = await Promise.all([
+      loadModelsDevCatalogCache(options()),
+      loadModelsDevCatalogCache(options()),
+    ]);
+    if (first === null || second === null) throw new Error('Expected cached snapshots.');
+
+    expect(first.catalog).toEqual(catalog());
+    expect(second).toBe(first);
+    expect(second.catalog).toBe(first.catalog);
+    const model = first.catalog['provider-a']?.models['model-a'];
+    if (model?.limit === undefined) throw new Error('Expected a model with limits.');
+    const limit = model.limit;
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(first.catalog)).toBe(true);
+    expect(Object.isFrozen(model)).toBe(true);
+    expect(Object.isFrozen(limit)).toBe(true);
+    expect(() => {
+      limit.context = 1;
+    }).toThrow(TypeError);
+    expect(limit.context).toBe(200_000);
+
+    currentTime += 1_000;
+    const refreshed = await refreshModelsDevCatalogCache(options({ mode: 'automatic' }));
+    if (refreshed.kind !== 'cached') throw new Error('Expected a cached outcome within TTL.');
+    expect(refreshed.snapshot).toBe(first);
+    expect(refreshed.snapshot.catalog).toBe(first.catalog);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('does not remember concurrent corrupt reads and loads a repaired cache on the next read', async () => {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(resolveModelsDevCatalogCachePath(options()), '{invalid-json');
+
+    expect(
+      await Promise.all([
+        loadModelsDevCatalogCache(options()),
+        loadModelsDevCatalogCache(options()),
+      ]),
+    ).toEqual([null, null]);
+
+    writeCachedCatalog();
+    const repaired = await loadModelsDevCatalogCache(options());
+    expect(repaired?.catalog).toEqual(catalog());
+  });
+
+  it('retries a missing cache and preserves a stale disk catalog after a failed automatic refresh', async () => {
+    expect(await loadModelsDevCatalogCache(options())).toBeNull();
+    writeCachedCatalog();
+    const cached = await loadModelsDevCatalogCache(options());
+    if (cached === null) throw new Error('Expected a repaired cache.');
+
+    currentTime += 60 * 60 * 1_000;
+    responses.push({ status: 500 });
+    const stale = await refreshModelsDevCatalogCache(options({ mode: 'automatic' }));
+    if (stale.kind !== 'stale') throw new Error('Expected a stale disk catalog.');
+    expect(stale.failure.kind).toBe('http-error');
+    expect(stale.snapshot).toBe(cached);
+    expect(stale.snapshot.validatedAt).toBe(1_700_000_000_000);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('keeps catalog JSON parsing off the main thread for cold reads, responses, and pruning', async () => {
+    writeCachedCatalog();
+    const mainThreadParse = vi.spyOn(JSON, 'parse');
+    const loaded = await loadModelsDevCatalogCache(options());
+    expect(loaded?.catalog).toEqual(catalog());
+
+    responses.push({ status: 200, body: JSON.stringify(catalog('replacement-model')) });
+    const refreshed = await refreshModelsDevCatalogCache(options());
+    expect(refreshed).toMatchObject({
+      kind: 'fresh',
+      snapshot: { catalog: catalog('replacement-model') },
+    });
+    expect(mainThreadParse.mock.calls.filter(([raw]) => raw.includes('"provider-a":{'))).toEqual(
+      [],
+    );
   });
 
   it('uses ETags without provider credentials and persists a 304 validation time', async () => {
@@ -148,11 +246,21 @@ describe('models.dev user cache', () => {
     });
     expect(requests[1]?.headers['if-none-match']).toBe('"catalog-v1"');
 
+    if (first.kind !== 'fresh' || revalidated.kind !== 'not-modified') {
+      throw new Error('Expected a fresh catalog followed by revalidation.');
+    }
+    expect(Object.isFrozen(first.snapshot)).toBe(true);
+    expect(Object.isFrozen(first.snapshot.catalog)).toBe(true);
+    expect(Object.isFrozen(revalidated.snapshot)).toBe(true);
+    expect(revalidated.snapshot).not.toBe(first.snapshot);
+    expect(revalidated.snapshot.catalog).toBe(first.snapshot.catalog);
+
     const fromDisk = await loadModelsDevCatalogCache(options());
     expect(fromDisk).toMatchObject({
       catalog: catalog(),
       validatedAt: currentTime,
     });
+    expect(fromDisk).toBe(revalidated.snapshot);
   });
 
   it('does not write the cache when aborted during 304 body cancellation', async () => {
@@ -286,7 +394,8 @@ describe('models.dev user cache', () => {
 
   it('preserves the last good catalog across bounded transport and parsing failures', async () => {
     responses.push({ status: 200, body: JSON.stringify(catalog()) });
-    await refreshModelsDevCatalogCache(options());
+    const first = await refreshModelsDevCatalogCache(options());
+    if (first.kind !== 'fresh') throw new Error('Expected a fresh catalog.');
 
     const failures: PlannedResponse[] = [
       {
@@ -310,6 +419,8 @@ describe('models.dev user cache', () => {
         failure: { kind: expectedKinds[index] },
         snapshot: { catalog: catalog(), catalogState: 'populated' },
       });
+      if (result.kind !== 'stale') throw new Error('Expected a stale catalog after failure.');
+      expect(result.snapshot).toBe(first.snapshot);
     }
 
     expect(

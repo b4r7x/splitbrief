@@ -17,7 +17,24 @@ const discovery = getDefaultDetectionService().loadDetection({
   deps: {
     detectAll: async () => ({ providers: [], cliTools: [] }),
     discoverAllCliTools: async () => [],
-    fetchModelsDevCatalog: () => new Promise((resolve) => setTimeout(() => resolve({}), 60_000)),
+    fetchModelsDevCatalog: () =>
+      new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              kind: 'fresh',
+              snapshot: {
+                sourceUrl: 'https://models.dev/api.json',
+                parserVersion: 'test-parser',
+                catalog: Object.freeze({}),
+                catalogState: 'empty',
+                fetchedAt: 1_700_000_000_000,
+                validatedAt: 1_700_000_000_000,
+              },
+            }),
+          60_000,
+        ),
+      ),
   },
 });
 

@@ -1,4 +1,4 @@
-import { ModelsDevCatalogSchema, type ModelsDevCatalog } from '../../core/schemas/models-dev.js';
+import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { endpointPolicyError } from '../../core/providers/endpoint-policy.js';
 import {
   createEndpointPolicyFetch,
@@ -6,6 +6,7 @@ import {
 } from '../../lib/http/policy-fetch.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { error } from '../../utils/error.js';
+import { parseModelsDevPayload } from './models-dev-cache/parse.js';
 import {
   cacheFailure,
   cancelResponseBody,
@@ -17,7 +18,7 @@ import {
   MODELS_DEV_CATALOG_MAX_PAYLOAD_BYTES,
   cacheIdentity,
   catalogState,
-  cloneSnapshot,
+  freezeSnapshot,
   persistSnapshot,
   readCachedSnapshot,
   rememberSnapshot,
@@ -95,7 +96,7 @@ function staleOrFailed(
   failure: ModelsDevCacheFailure,
 ): ModelsDevCatalogCacheOutcome {
   if (snapshot === null) return { kind: 'failed', failure };
-  return { kind: 'stale', snapshot: cloneSnapshot(snapshot), failure };
+  return { kind: 'stale', snapshot, failure };
 }
 
 export async function loadModelsDevCatalogCache(
@@ -158,11 +159,11 @@ export async function refreshModelsDevCatalogCache(
     }
 
     const etag = responseEtag(response);
-    const snapshot: ModelsDevCatalogSnapshot = {
+    const snapshot = freezeSnapshot({
       ...cached,
       ...(etag === undefined ? {} : { etag }),
       validatedAt: requestedAt,
-    };
+    });
     try {
       await persistSnapshot(identity, snapshot);
     } catch {
@@ -172,7 +173,7 @@ export async function refreshModelsDevCatalogCache(
       );
     }
     rememberSnapshot(identity.cacheKey, snapshot);
-    return { kind: 'not-modified', snapshot: cloneSnapshot(snapshot) };
+    return { kind: 'not-modified', snapshot };
   }
 
   if (response.status !== 200) {
@@ -199,18 +200,16 @@ export async function refreshModelsDevCatalogCache(
   }
   throwIfAborted(options.signal);
 
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
+  const parsed = await parseModelsDevPayload({ kind: 'catalog', raw });
+  throwIfAborted(options.signal);
+  if (parsed.kind === 'invalid-json') {
     return staleOrFailed(
       cached,
       cacheFailure('invalid-json', 'Models.dev catalog response was not valid JSON.'),
     );
   }
 
-  const parsed = ModelsDevCatalogSchema.safeParse(json);
-  if (!parsed.success) {
+  if (parsed.kind === 'invalid-schema') {
     return staleOrFailed(
       cached,
       cacheFailure(
@@ -221,15 +220,15 @@ export async function refreshModelsDevCatalogCache(
   }
 
   const etag = responseEtag(response);
-  const snapshot: ModelsDevCatalogSnapshot = {
+  const snapshot = freezeSnapshot({
     sourceUrl: identity.sourceUrl,
     parserVersion: identity.parserVersion,
-    catalog: parsed.data,
-    catalogState: catalogState(parsed.data),
+    catalog: parsed.catalog,
+    catalogState: catalogState(parsed.catalog),
     ...(etag === undefined ? {} : { etag }),
     fetchedAt: requestedAt,
     validatedAt: requestedAt,
-  };
+  });
   try {
     await persistSnapshot(identity, snapshot);
   } catch {
@@ -239,5 +238,5 @@ export async function refreshModelsDevCatalogCache(
     );
   }
   rememberSnapshot(identity.cacheKey, snapshot);
-  return { kind: 'fresh', snapshot: cloneSnapshot(snapshot) };
+  return { kind: 'fresh', snapshot };
 }

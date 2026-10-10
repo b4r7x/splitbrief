@@ -251,7 +251,17 @@ describe('buildCommandContext', () => {
           ],
         };
       },
-      fetchModelsDevCatalog: vi.fn().mockResolvedValue({}),
+      fetchModelsDevCatalog: async () => ({
+        kind: 'fresh',
+        snapshot: {
+          sourceUrl: 'https://models.dev/api.json',
+          parserVersion: 'test-parser',
+          catalog: {},
+          catalogState: 'empty',
+          fetchedAt: 1_700_000_000_000,
+          validatedAt: 1_700_000_000_000,
+        },
+      }),
       discoverAllCliTools: vi.fn().mockResolvedValue({}),
       sourceContexts: {
         readiness: 'old-command-context-readiness',

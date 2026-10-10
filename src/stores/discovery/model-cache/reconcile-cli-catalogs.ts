@@ -10,7 +10,7 @@ import type {
   ScopedCliCatalogConnection,
   ScopedCliCatalogRuntime,
 } from '../../../engine/detection/cli-catalog-outcomes.js';
-import { deepFreeze } from './freeze.js';
+import { deepFreeze } from '../../../utils/deep-freeze.js';
 
 /** The context a catalog remembered on disk hydrates under: no live executable backs it. */
 export const REMEMBERED_CLI_CATALOG_CONTEXT = 'remembered-detection-cache';

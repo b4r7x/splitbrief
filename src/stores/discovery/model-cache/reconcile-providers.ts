@@ -5,7 +5,7 @@ import type {
   ConfiguredProviderRuntime,
 } from '../../../engine/detection/provider-outcomes.js';
 import type { ProviderCatalogFailureKind } from '../../../engine/providers/types.js';
-import { deepFreeze } from './freeze.js';
+import { deepFreeze } from '../../../utils/deep-freeze.js';
 
 export function configuredProviderRoleKey(
   connection: Pick<ConfiguredProviderRuntime['connection'], 'role' | 'provider'>,
