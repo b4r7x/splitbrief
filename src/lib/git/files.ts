@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawnPipe } from '../process/spawn/lifecycle.js';
 import type { GitClient } from './client.js';
 import { getGitForDir, gitBinary, parseNulSeparated, runGit } from './client.js';
 
@@ -52,20 +52,25 @@ export async function listGitlinkPaths(dir: string): Promise<string[]> {
 
 export async function checkIgnoredPaths(dir: string, paths: string[]): Promise<string[]> {
   if (paths.length === 0) return [];
-  return new Promise<string[]>((resolve) => {
-    const child = spawn(gitBinary(), ['check-ignore', '--stdin', '-z'], { cwd: dir });
-    const chunks: Buffer[] = [];
-    child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-    child.on('error', () => resolve([]));
-    child.on('close', (code: number | null) => {
-      if (code !== 0 && code !== 1) {
-        resolve([]);
-        return;
-      }
-      const output = Buffer.concat(chunks).toString('utf8');
-      const ignored = output.split('\0').filter(Boolean);
-      resolve(ignored);
+  const chunks: string[] = [];
+  try {
+    return await spawnPipe({
+      command: gitBinary(),
+      args: ['check-ignore', '--stdin', '-z'],
+      cwd: dir,
+      detached: true,
+      ledger: false,
+      stdin: paths.join('\0'),
+      onStdout: (chunk) => {
+        chunks.push(chunk);
+      },
+      onStderr: () => undefined,
+      onClose: (code) => {
+        if (code !== 0 && code !== 1) return [];
+        return parseNulSeparated(chunks.join(''));
+      },
     });
-    child.stdin.end(paths.join('\0'));
-  });
+  } catch {
+    return [];
+  }
 }

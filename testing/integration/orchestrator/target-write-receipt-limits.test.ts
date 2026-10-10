@@ -1,15 +1,9 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  readEvidenceLedger,
-  writeEvidenceLedger,
-} from '../../../src/core/evidence/ledger-storage.js';
 import { captureBundleBaseline } from '../../../src/engine/implementers/bundle-baseline.js';
 import { applyFileBundle } from '../../../src/engine/implementers/apply-file-bundle.js';
 import { recordedTargetOutput } from '../../../src/engine/orchestrator/evidence/task.js';
-import { findOrSeed, upsertEvidenceTask } from '../../../src/core/evidence/ledger-state.js';
-import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import { sha256Hex } from '../../../src/utils/sha256.js';
 import {
   cleanupTargetWriteFixtures,
@@ -64,16 +58,29 @@ describe('direct API receipt limits', () => {
     const { projectDir, task } = createTargetWriteProject();
     writePromotedReceipt({ projectDir, task, content: 'old-worker' });
     const revised = { ...task, description: 'New brief definition' };
-    const ledger = readEvidenceLedger({ projectDir, sessionId: TARGET_WRITE_SESSION_ID });
-    if (ledger === null) throw new Error('missing ledger');
-    writeEvidenceLedger(
-      { projectDir, sessionId: TARGET_WRITE_SESSION_ID },
-      upsertEvidenceTask(ledger, {
-        ...findOrSeed(ledger, revised),
-        promotedBriefHash: hashTaskBrief([revised]),
-        promotedFiles: [{ path: 'src/other.ts', sha256: sha256Hex('new-worker'), mode: 0o644 }],
-      }),
-    );
+    writeApiReceipt({
+      projectDir,
+      task: revised,
+      result: {
+        callId: 'call-revised-brief',
+        status: 'applied',
+        candidatePaths: ['src/other.ts'],
+        applied: [
+          {
+            path: 'src/other.ts',
+            action: 'create',
+            beforeSha256: null,
+            afterSha256: sha256Hex('new-worker'),
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 0,
+          },
+        ],
+        noops: [],
+        untouched: [],
+      },
+    });
     expect(
       recordedTargetOutput({ projectDir, sessionId: TARGET_WRITE_SESSION_ID }, revised).files.map(
         (file) => file.path,

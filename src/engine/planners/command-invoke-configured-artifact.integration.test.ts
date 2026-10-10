@@ -79,6 +79,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script: [
+          "require('node:fs').readFileSync(0);",
           "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'reviewed artifact');",
           "process.stdout.write('diagnostic stdout');",
         ].join(''),
@@ -102,7 +103,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script:
-          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'leased artifact');",
+          "require('node:fs').readFileSync(0);require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'leased artifact');",
       }),
       runtimeFor({
         projectDir,
@@ -162,7 +163,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script:
-          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'must not promote');",
+          "require('node:fs').readFileSync(0);require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'must not promote');",
       }),
       runtimeFor({
         projectDir,
@@ -188,7 +189,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script:
-          "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'original artifact');",
+          "require('node:fs').readFileSync(0);require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'original artifact');",
       }),
       runtimeFor({
         projectDir,
@@ -218,6 +219,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script: [
+          "require('node:fs').readFileSync(0);",
           "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'declared');",
           "require('node:fs').writeFileSync('undeclared-write.txt', 'reject');",
         ].join(''),
@@ -299,6 +301,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script: [
+          "require('node:fs').readFileSync(0);",
           "if (process.env.CUSTOM_PLANNER_CANARY !== 'only-from-source') process.exit(17);",
           "require('node:fs').writeFileSync(process.env.SPLITBRIEF_DECLARED_ARTIFACT_PATH, 'source env used');",
         ].join(''),
@@ -381,6 +384,7 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       configuredPlanner({
         contract: 'direct',
         script: [
+          "require('node:fs').readFileSync(0);",
           "require('node:fs').writeFileSync('full-escalation-change.txt', 'outer stage only');",
           "process.stdout.write('full escalation diagnostic');",
         ].join(''),
