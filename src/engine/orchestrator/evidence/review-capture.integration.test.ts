@@ -56,7 +56,6 @@ describe('captureTaskReviewChanges', () => {
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const workspaceDir = (await isolation.open({ config })).projectDir;
     const wctx = makeTaskWorkflowContext({
@@ -119,7 +118,6 @@ describe('captureTaskReviewChanges', () => {
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const workspaceDir = (await isolation.open({ config })).projectDir;
     // The brief check fails on the first attempt and passes once the retry writes src/b.ts.

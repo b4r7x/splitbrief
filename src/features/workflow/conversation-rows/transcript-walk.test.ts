@@ -1,12 +1,99 @@
 import { describe, expect, it } from 'vitest';
 import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
-import type { EngineEvent } from '../../../engine/events/types.js';
+import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { walkTranscript } from './transcript-walk.js';
 
 describe('walkTranscript', () => {
+  const prompted: EngineEventOf<'recovery_prompted'> = {
+    type: 'recovery_prompted',
+    ts: 1_000,
+    phase: 'implementing',
+    issueId: 'balance-1',
+    reason: 'runner-usage-limit',
+    headline: 'Balance spent on OpenCode CLI',
+    files: [],
+    affectedTaskIds: [],
+    availableActions: ['switch-seat'],
+    recommendedAction: 'switch-seat',
+    resumeCommand: 'splitbrief continue',
+  };
+  const selected: EngineEventOf<'recovery_action_selected'> = {
+    type: 'recovery_action_selected',
+    ts: 2_000,
+    phase: 'implementing',
+    issueId: prompted.issueId,
+    reason: prompted.reason,
+    action: 'switch-seat',
+    seat: 'build',
+  };
+  const switched: EngineEventOf<'seat_switched'> = {
+    type: 'seat_switched',
+    ts: 3_000,
+    phase: 'implementing',
+    seat: 'build',
+    from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+    cause: prompted.reason,
+    auto: true,
+    configRevision: 'test-revision',
+  };
+  const resolved: EngineEventOf<'recovery_resolved'> = {
+    type: 'recovery_resolved',
+    ts: 4_000,
+    phase: 'implementing',
+    issueId: prompted.issueId,
+    reason: prompted.reason,
+    action: 'switch-seat',
+    seat: 'build',
+    outcome: 'retry-current-task',
+  };
+
+  it.each([true, false])(
+    'folds a seat switch with auto=%s into one recovery followed by its switch',
+    (auto) => {
+      const switchEvent = { ...switched, auto };
+      const steps = [
+        ...walkTranscript(groupEventsIntoSections([prompted, selected, switchEvent, resolved])),
+      ];
+
+      expect(steps).toEqual([
+        {
+          kind: 'recovery',
+          recovery: { firstIndex: 0, issueId: prompted.issueId, prompted, selected, resolved },
+        },
+        { kind: 'event', event: switchEvent, globalIndex: 2 },
+      ]);
+    },
+  );
+
+  it('keeps an unrelated row between recovery groups', () => {
+    const message: EngineEvent = {
+      type: 'planner_text',
+      ts: 3_500,
+      phase: 'implementing',
+      text: 'A separate update.',
+    };
+    const steps = [
+      ...walkTranscript(groupEventsIntoSections([prompted, selected, switched, message, resolved])),
+    ];
+
+    expect(steps).toEqual([
+      {
+        kind: 'recovery',
+        recovery: { firstIndex: 0, issueId: prompted.issueId, prompted, selected },
+      },
+      { kind: 'event', event: switched, globalIndex: 2 },
+      { kind: 'event', event: message, globalIndex: 3 },
+      {
+        kind: 'recovery',
+        recovery: { firstIndex: 4, issueId: resolved.issueId, resolved },
+      },
+    ]);
+  });
+
   it.each(['passed', 'failed'] as const)(
     'yields one settled terminal %s Review after the brief',
     (review) => {

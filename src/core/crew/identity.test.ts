@@ -5,6 +5,8 @@ import {
   cutSeatIdentity,
   formatCollapsedSeatLine,
   formatCollapsedSeatLineFromIdentities,
+  formatSeatCandidateIdentity,
+  formatSeatChangeIdentities,
   formatSeatIdentity,
   formatShortSeatIdentity,
   PLANNER_INHERITANCE,
@@ -32,6 +34,200 @@ const openCodeMax: RunnerConfig = {
   model: 'openai/gpt-5.6-luna',
   variant: 'max',
 };
+
+describe('formatSeatChangeIdentities', () => {
+  const from: RunnerConfig = {
+    kind: 'cli',
+    tool: 'opencode',
+    model: 'deepseek/deepseek-flash',
+  };
+  const to: RunnerConfig = {
+    kind: 'cli',
+    tool: 'opencode',
+    model: 'opencode-go/deepseek-v4.1-flash',
+    variant: 'high',
+  };
+  const displayName = 'DeepSeek V4.1 Flash';
+
+  it('uses configured model ids when two models share a display name', () => {
+    expect(
+      formatSeatChangeIdentities({ seat: from, displayName }, { seat: to, displayName }),
+    ).toEqual({
+      from: 'OpenCode CLI · deepseek/deepseek-flash',
+      to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+    });
+    expect(formatSeatIdentity({ seat: from, displayName })).toBe(
+      'OpenCode CLI · DeepSeek V4.1 Flash',
+    );
+    expect(formatSeatIdentity({ seat: to, displayName })).toBe(
+      'OpenCode CLI · DeepSeek V4.1 Flash · high',
+    );
+    expect(formatSeatCandidateIdentity(to, displayName)).toBe(
+      'OpenCode CLI · DeepSeek V4.1 Flash · high',
+    );
+    const shortIdentity = formatShortSeatIdentity({ seat: to, displayName });
+    expect(shortIdentity).toBe('DeepSeek V4.1 Flash');
+    expect(shortIdentity).not.toContain('high');
+  });
+
+  it('distinguishes same-name model ids even when both sides carry equal axes', () => {
+    expect(
+      formatSeatChangeIdentities(
+        { seat: { ...from, variant: 'high' }, displayName },
+        { seat: to, displayName },
+      ),
+    ).toEqual({
+      from: 'OpenCode CLI · deepseek/deepseek-flash · high',
+      to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+    });
+  });
+
+  it('keeps display words when the model words differ', () => {
+    expect(
+      formatSeatChangeIdentities(
+        { seat: from, displayName },
+        { seat: openCodeMax, displayName: 'GPT-5.6 Luna' },
+      ),
+    ).toEqual({
+      from: 'OpenCode CLI · DeepSeek V4.1 Flash',
+      to: 'OpenCode CLI · GPT-5.6 Luna · max',
+    });
+  });
+
+  it('keeps display words for an axis-only switch on the same model id', () => {
+    expect(
+      formatSeatChangeIdentities(
+        { seat: from, displayName },
+        { seat: { ...from, variant: 'high' }, displayName },
+      ),
+    ).toEqual({
+      from: 'OpenCode CLI · DeepSeek V4.1 Flash',
+      to: 'OpenCode CLI · DeepSeek V4.1 Flash · high',
+    });
+  });
+
+  it.each([
+    [undefined, undefined],
+    ['Claude Opus 5 High', 'Claude Opus 5 Xhigh'],
+  ])(
+    'keeps model words for an axis-only Cursor switch with labels %s and %s',
+    (fromName, toName) => {
+      expect(
+        formatSeatChangeIdentities(
+          {
+            seat: { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-high' },
+            displayName: fromName,
+          },
+          {
+            seat: { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-xhigh' },
+            displayName: toName,
+          },
+        ),
+      ).toEqual({
+        from: 'Cursor Agent CLI · Claude Opus 5 · high',
+        to: 'Cursor Agent CLI · Claude Opus 5 · xhigh',
+      });
+    },
+  );
+
+  it('normalizes configured ids before comparing model changes', () => {
+    expect(
+      formatSeatChangeIdentities(
+        { seat: { ...from, model: ` ${from.model} ` }, displayName },
+        { seat: { ...from, variant: 'high' }, displayName },
+      ),
+    ).toEqual({
+      from: 'OpenCode CLI · DeepSeek V4.1 Flash',
+      to: 'OpenCode CLI · DeepSeek V4.1 Flash · high',
+    });
+  });
+
+  it('peels comparison axes only for model-id effort channels', () => {
+    expect(
+      formatSeatChangeIdentities(
+        {
+          seat: { tool: 'cursor', model: 'claude-opus-5-high', axes: [], kind: 'api' },
+          displayName: 'Claude Opus 5',
+        },
+        {
+          seat: { tool: 'cursor', model: 'claude-opus-5-xhigh', axes: [], kind: 'api' },
+          displayName: 'Claude Opus 5',
+        },
+      ),
+    ).toEqual({
+      from: 'cursor · claude-opus-5-high',
+      to: 'cursor · claude-opus-5-xhigh',
+    });
+  });
+
+  it('compares sanitized model words independently of axes', () => {
+    expect(
+      formatSeatChangeIdentities(
+        { seat: from, displayName: '\u001b[31mDeepSeek V4.1 Flash\u001b[0m' },
+        { seat: to, displayName },
+      ),
+    ).toEqual({
+      from: 'OpenCode CLI · deepseek/deepseek-flash',
+      to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+    });
+  });
+
+  it('accepts two recovery candidates with their model-id axes', () => {
+    expect(
+      formatSeatChangeIdentities(
+        { tool: 'cursor', model: 'claude-opus-5-high' },
+        { tool: 'cursor', model: 'claude-opus-5-xhigh' },
+      ),
+    ).toEqual({
+      from: 'Cursor Agent CLI · Claude Opus 5 · high',
+      to: 'Cursor Agent CLI · Claude Opus 5 · xhigh',
+    });
+  });
+
+  it('keeps tool-only identities for recovery candidates without a model', () => {
+    expect(formatSeatChangeIdentities({ tool: 'codex' }, { tool: 'cursor' })).toEqual({
+      from: 'OpenAI Codex CLI',
+      to: 'Cursor Agent CLI',
+    });
+  });
+});
+
+describe('formatSeatCandidateIdentity', () => {
+  it.each([undefined, 'Claude Opus 5 Xhigh'])(
+    'shares the configured Cursor model words and axes with catalog label %s',
+    (displayName) => {
+      const candidate = { tool: 'cursor', model: 'claude-opus-5-xhigh' };
+      expect(formatSeatCandidateIdentity(candidate, displayName)).toBe(
+        'Cursor Agent CLI · Claude Opus 5 · xhigh',
+      );
+      expect(formatSeatCandidateIdentity(candidate, displayName)).toBe(
+        formatSeatIdentity({
+          seat: { kind: 'cli', tool: 'cursor', model: candidate.model },
+          displayName,
+        }),
+      );
+    },
+  );
+
+  it('shares the configured Cursor axis order and channel', () => {
+    expect(
+      formatSeatCandidateIdentity(
+        { ...cursorMultiAxis, effort: 'low', variant: 'max' },
+        'Claude Opus 5 Xhigh Thinking Fast',
+      ),
+    ).toBe('Cursor Agent CLI · Claude Opus 5 · xhigh · thinking · fast');
+  });
+
+  it('reads candidate axes through the tool effort channel', () => {
+    expect(formatSeatCandidateIdentity({ ...openCodeMax, effort: 'low' }, 'GPT-5.6 Luna')).toBe(
+      'OpenCode CLI · GPT-5.6 Luna · max',
+    );
+  });
+
+  it('keeps candidates without a model tool-only', () => {
+    expect(formatSeatCandidateIdentity({ tool: 'cursor' })).toBe('Cursor Agent CLI');
+  });
+});
 
 describe('formatSeatIdentity', () => {
   it('names the tool and the model, separated once', () => {

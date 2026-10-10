@@ -1,8 +1,42 @@
-import { describe, expect, it } from 'vitest';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
+import { writeConfig } from '../../core/config/load/io.js';
+import { configStore } from './config.js';
 import { editsForSave, persistedConfigForSave } from './config-persistence.js';
 
 describe('config persistence', () => {
+  afterEach(() => configStore.__testReset());
+
+  it.each([
+    { existingConfig: true, existingIgnore: true },
+    { existingConfig: false, existingIgnore: true },
+    { existingConfig: true, existingIgnore: false },
+    { existingConfig: false, existingIgnore: false },
+  ])('a settings save never initializes gitignore', async ({ existingConfig, existingIgnore }) => {
+    await withTempDir('settings-ignore', async (projectDir) => {
+      const config = createDefaultConfig();
+      if (existingConfig) writeConfig(projectDir, config);
+      const ignorePath = join(projectDir, '.gitignore');
+      if (existingIgnore) writeFileSync(ignorePath, 'node_modules/\n');
+      configStore.load(projectDir);
+
+      const result = await configStore.save({
+        ...config,
+        workflow: { ...config.workflow, approve: 'none' },
+      });
+
+      expect(result.kind).toBe('saved');
+      if (existingIgnore) {
+        expect(readFileSync(ignorePath, 'utf8')).toBe('node_modules/\n');
+      } else {
+        expect(existsSync(ignorePath)).toBe(false);
+      }
+    });
+  });
+
   it('keeps an unchanged effective override out of the persisted config', () => {
     const persisted = createDefaultConfig();
     const effective = {

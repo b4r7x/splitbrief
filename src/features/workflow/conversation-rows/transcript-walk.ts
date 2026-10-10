@@ -40,6 +40,7 @@ export type TranscriptWalkStep =
 // event (yielded before that event), or the end of the transcript; row-less events never split it.
 // A recovery folds the same way: its prompt or its selection opens the fold, and the selection,
 // the reset and the outcome of that issue join it until another row-producing event closes it.
+// Its seat switch waits for the fold to close, then follows the Recovery row it belongs to.
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 export function* walkTranscript(
@@ -47,14 +48,17 @@ export function* walkTranscript(
 ): Generator<TranscriptWalkStep> {
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
+  let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
   let lastRowEvent: EngineEvent | null = null;
   let openHeader: EngineEventOf<'task_started'> | null = null;
 
   function* flush(): Generator<TranscriptWalkStep> {
     if (activityBatch !== null) yield { kind: 'activity-batch', batch: activityBatch };
     if (recovery !== null) yield { kind: 'recovery', recovery };
+    if (recoverySwitch !== null) yield recoverySwitch;
     activityBatch = null;
     recovery = null;
+    recoverySwitch = null;
   }
 
   for (const section of sections) {
@@ -88,6 +92,15 @@ export function* walkTranscript(
         continue;
       }
 
+      if (
+        event.type === 'seat_switched' &&
+        recovery !== null &&
+        recovery.resolved === undefined &&
+        recoverySwitch === null
+      ) {
+        recoverySwitch = { kind: 'event', event, globalIndex };
+        continue;
+      }
       if (recovery !== null && joinsRecovery(recovery, event)) continue;
       yield* flush();
       if (event.type === 'recovery_prompted' && restatesHalt(lastRowEvent, event)) continue;

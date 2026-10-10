@@ -23,6 +23,7 @@ import {
   type SeatSwapChoice,
 } from '../../../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
+import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
 import {
   WORKFLOW_CANCEL_REASON_USER,
   WORKFLOW_USER_CANCELLED_ABORT_REASON,
@@ -118,6 +119,7 @@ export function useRunLoop({
   continueAtRest,
 }: UseRunLoopOptions): UseRunLoopResult {
   const abortedRef = useRef(false);
+  const retentionNoticeHandled = useRef(true);
   const [startedAt] = useState(() => nowIso());
   const { runId, inlineResume, setInlineResume, handleResume } = continuation;
 
@@ -127,6 +129,7 @@ export function useRunLoop({
 
   const startWorkflow = useEffectEvent(async (controller: AbortController) => {
     if (prepared === undefined) return;
+    retentionNoticeHandled.current = true;
     const { session } = prepared;
     // A fresh abort-handler scope per run: a superseded run's late pops (its
     // aborted body settles after the rewind cleanup) drain its own scope and
@@ -242,7 +245,7 @@ export function useRunLoop({
         state: next,
         modelCache: modelCacheStore,
       });
-      settleRun(session.ref);
+      await settleRun(session.ref, true);
     };
 
     // A seat saved under the running brief is picked up at the next brief boundary: the run
@@ -288,6 +291,7 @@ export function useRunLoop({
             prepared: preparedForRun,
             inputMode,
             abortedRef,
+            retentionNoticeHandled,
             sink: addTuiEvent,
             setInlineResume: (state) => setInlineResume({ prepared, state }),
           });
@@ -322,7 +326,7 @@ export function useRunLoop({
                 modelCache: modelCacheStore,
               });
             }
-            settleRun(session.ref);
+            await settleRun(session.ref, true);
             return;
           }
           if (recovery.prepared !== undefined) preparedForRun = recovery.prepared;
@@ -356,6 +360,7 @@ export function useRunLoop({
             prepare: prepareExecutionFn,
             onSeatSwapped: (swappedPrepared) => {
               preparedForRun = swappedPrepared;
+              configStore.refreshFromExecution(session.ref.projectDir, swappedPrepared.config);
               if (
                 swappedSeat !== undefined &&
                 consumeSeatChange({ seat: swappedSeat, configRevision: swapRevision })
@@ -383,6 +388,7 @@ export function useRunLoop({
                 switchSeat: { seat: spent.seat, candidates: spent.candidates },
               },
             };
+            continue;
           }
         }
 
@@ -412,7 +418,7 @@ export function useRunLoop({
                   ? `Cannot resume: ${readinessBlockerMessage(reprepared.report)}`
                   : `Cannot resume: ${toErrorMessage(reprepared.error)}`,
             });
-            settleRun(session.ref);
+            await settleRun(session.ref, true);
             return;
           }
           preparedForRun = reprepared.execution;
@@ -425,6 +431,7 @@ export function useRunLoop({
         };
 
         const detectedContextLength = configStore.getDetectedContextLength();
+        retentionNoticeHandled.current = false;
         await runWorkflowFn({
           prepared: preparedForRun,
           sinks,
@@ -450,8 +457,8 @@ export function useRunLoop({
           if (stopStore.get().intent === 'end-run') await finishStoppedRun();
           else if (seatChangedAtBoundary) {
             stopStore.reset();
-            continueAtRest?.(settleRun(session.ref));
-          } else settleRun(session.ref);
+            continueAtRest?.(await settleRun(session.ref, false));
+          } else await settleRun(session.ref, true);
           return;
         }
 
@@ -465,7 +472,7 @@ export function useRunLoop({
             phase: lifecycleStore.get().phase,
             message: resumeFailureMessage(hydrated),
           });
-          settleRun(session.ref);
+          await settleRun(session.ref, true);
           return;
         }
         const saved = hydrated.kind === 'loaded' ? hydrated.state : null;
@@ -474,7 +481,7 @@ export function useRunLoop({
         // process, answers, and re-enters the engine. Every other return is the run at rest, and
         // the screen it is already on paints it from its re-read record.
         if (!saved?.pendingRecovery) {
-          settleRun(session.ref);
+          await settleRun(session.ref, true);
           return;
         }
 
@@ -500,7 +507,7 @@ export function useRunLoop({
         });
         overlayStore.open('stop-sheet');
       } else {
-        settleRun(session.ref);
+        await settleRun(session.ref, true);
       }
     } finally {
       offConfig();
@@ -551,8 +558,19 @@ export function useRunLoop({
   // The run loop returned: the run is at rest, on the screen it never left. One re-read of the
   // record is the whole hand-off — the screen paints open or closed from it, and the session list
   // shows what it shows everywhere else.
-  const settleRun = (ref: PreparedExecution['session']['ref']): RunRecord => {
+  const settleRun = async (
+    ref: PreparedExecution['session']['ref'],
+    handoff: boolean,
+  ): Promise<RunRecord> => {
     const record = readRunRecord(ref);
+    if (handoff && !retentionNoticeHandled.current && record.hydration.kind === 'loaded') {
+      await publishRetainedWorkspaceNotice({
+        ...ref,
+        state: record.hydration.state,
+        bus: createRecoveryBus({ ...ref, sink: addTuiEvent }),
+      });
+      retentionNoticeHandled.current = true;
+    }
     const wasStopping = stopStore.get().intent !== 'none';
     setStopHandler(null);
     setCancelHandler(null);

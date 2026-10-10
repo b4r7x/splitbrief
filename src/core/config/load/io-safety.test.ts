@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createHash } from 'node:crypto';
-import { mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -59,6 +59,55 @@ describe('config load safety', () => {
       }
     });
 
+    it('explicit initialization preserves a tracked-config exception', async () => {
+      const dir = createTempDir('config-init-exception');
+      const ignorePath = join(dir, '.gitignore');
+      const before = 'node_modules/\n.splitbrief/*\n!.splitbrief/config.yaml\n.trees/\n';
+      try {
+        writeFileSync(ignorePath, before);
+
+        await initConfig(dir);
+
+        expect(readFileSync(ignorePath, 'utf8')).toBe(before);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    });
+
+    it.each([writeConfig, writeConfigDocument])(
+      'ordinary synchronous writers leave existing ignore rules unchanged: %s',
+      (write) => {
+        const dir = createTempDir('config-write-ignore');
+        const ignorePath = join(dir, '.gitignore');
+        const before = 'node_modules/\n';
+        try {
+          writeFileSync(ignorePath, before);
+          if (write === writeConfig) writeConfig(dir, createDefaultConfig());
+          else writeConfigDocument(dir, 'version: 3\n', []);
+
+          expect(readFileSync(ignorePath, 'utf8')).toBe(before);
+        } finally {
+          cleanupTempDir(dir);
+        }
+      },
+    );
+
+    itUnix('explicit initialization refuses a symlinked ignore file', async () => {
+      const dir = createTempDir('config-init-ignore-symlink');
+      const outside = createTempDir('config-init-ignore-outside');
+      const sentinel = join(outside, '.gitignore');
+      try {
+        writeFileSync(sentinel, 'external sentinel\n');
+        symlinkSync(sentinel, join(dir, '.gitignore'));
+
+        await expect(initConfig(dir)).rejects.toThrow(/refusing to write through symlink/);
+        expect(readFileSync(sentinel, 'utf8')).toBe('external sentinel\n');
+      } finally {
+        cleanupTempDir(outside);
+        cleanupTempDir(dir);
+      }
+    });
+
     itUnix('keeps an external gitignore target unchanged when serializing config', () => {
       const dir = createTempDir('config-gitignore-serialize');
       const outside = createTempDir('config-gitignore-serialize-outside');
@@ -67,9 +116,9 @@ describe('config load safety', () => {
         writeFileSync(sentinel, 'external sentinel\n');
         symlinkSync(sentinel, join(dir, '.gitignore'));
 
-        expect(() => writeConfig(dir, createDefaultConfig())).toThrow(
-          /refusing to write through symlink/,
-        );
+        writeConfig(dir, createDefaultConfig());
+
+        expect(loadConfig(dir).config).toEqual(createDefaultConfig());
         expect(readFileSync(sentinel, 'utf-8')).toBe('external sentinel\n');
       } finally {
         cleanupTempDir(outside);
@@ -77,7 +126,7 @@ describe('config load safety', () => {
       }
     });
 
-    it('preserves hand-edited config content while applying gitignore policy', () => {
+    it('preserves hand-edited config content without initializing gitignore', () => {
       const dir = createTempDir('config-gitignore-document');
       const rawYaml = '# keep this note\nversion: 3\ncustom: retained\n';
       try {
@@ -89,9 +138,7 @@ describe('config load safety', () => {
         expect(written).toContain('custom: retained');
         expect(written).toContain('approve: none');
         expect(readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8')).toBe(written);
-        const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8');
-        expect(ignored).toContain(`${SPLITBRIEF_DIR}/`);
-        expect(ignored).toContain(`${TREES_DIR}/`);
+        expect(existsSync(join(dir, '.gitignore'))).toBe(false);
       } finally {
         cleanupTempDir(dir);
       }
@@ -107,9 +154,9 @@ describe('config load safety', () => {
           writeFileSync(sentinel, 'external sentinel\n');
           symlinkSync(sentinel, join(dir, '.gitignore'));
 
-          expect(() => writeConfigDocument(dir, 'version: 3\n', [])).toThrow(
-            /refusing to write through symlink/,
-          );
+          const written = writeConfigDocument(dir, 'version: 3\n', []);
+
+          expect(readFileSync(configPath(dir), 'utf8')).toBe(written);
           expect(readFileSync(sentinel, 'utf-8')).toBe('external sentinel\n');
         } finally {
           cleanupTempDir(outside);

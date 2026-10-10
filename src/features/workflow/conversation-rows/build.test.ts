@@ -1145,6 +1145,34 @@ describe('one recovery reads as one block', () => {
     expect(lines.at(-1)).toBe('Recovery  Try again');
   });
 
+  it.each([true, false])('shows one recovery then its seat switch with auto=%s', (auto) => {
+    const headline = 'Balance spent on OpenCode CLI';
+    const { lines } = transcript([
+      { ...halt, message: headline },
+      { ...prompted, headline, availableActions: ['switch-seat'] },
+      { ...selected, action: 'switch-seat' },
+      {
+        ...at,
+        type: 'seat_switched',
+        seat: 'build',
+        from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        to: { tool: 'opencode' },
+        cause: 'runner-usage-limit',
+        headline,
+        auto,
+        configRevision: 'test-revision',
+      },
+      { ...resolved, action: 'switch-seat' },
+    ]);
+
+    expect(lines).toEqual([
+      'Error',
+      headline,
+      `Recovery  Change BUILD tool${arrowSep()}retried`,
+      `BUILD${arrowSep()}OpenCode CLI${SOFT_SEP}${headline}`,
+    ]);
+  });
+
   it('keeps the prompted card as one quiet row when no error before it names the halt', () => {
     const { lines, rows } = transcript([prompted]);
 

@@ -43,6 +43,45 @@ function state(
 }
 
 describe('WorkflowStateSchema v4', () => {
+  it('preserves account details on seat-switch records', () => {
+    const parsed = WorkflowStateSchema.parse({
+      ...state(),
+      seatSwitches: [
+        {
+          seat: 'build',
+          from: 'old seat',
+          to: 'new seat',
+          cause: 'runner-usage-limit',
+          accountCause: 'balance',
+          headline: 'Balance spent on OpenCode CLI',
+          auto: true,
+          configRevision: 'revision',
+          ts: '2026-10-10T12:57:12.126Z',
+        },
+      ],
+    });
+
+    expect(parsed.seatSwitches?.[0]?.accountCause).toBe('balance');
+    expect(parsed.seatSwitches?.[0]?.headline).toBe('Balance spent on OpenCode CLI');
+  });
+
+  it('loads seat-switch records without account details unchanged', () => {
+    const record = {
+      seat: 'build',
+      from: 'old seat',
+      to: 'new seat',
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'revision',
+      ts: '2026-10-10T12:57:12.126Z',
+    };
+    const parsed = WorkflowStateSchema.parse({ ...state(), seatSwitches: [record] });
+
+    expect(parsed.seatSwitches?.[0]).toEqual(record);
+    expect(parsed.seatSwitches?.[0]?.accountCause).toBeUndefined();
+    expect(parsed.seatSwitches?.[0]?.headline).toBeUndefined();
+  });
+
   it('parses the complete changed-files snapshot contract', () => {
     const snapshot = {
       head: 'abc123',

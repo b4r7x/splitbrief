@@ -1,6 +1,11 @@
 import type { CheckResult, Task, TaskId } from '../schemas/task.js';
-import type { QueuedMessage, WorkflowState, PlannerConversation } from '../schemas/workflow.js';
-import type { RecoveryAction, RecoveryReason, ReviewStatus } from '../schemas/enums.js';
+import type {
+  QueuedMessage,
+  WorkflowState,
+  PlannerConversation,
+  SeatSwitchRecord,
+} from '../schemas/workflow.js';
+import type { RecoveryAction, ReviewStatus } from '../schemas/enums.js';
 import type { ConsultAnswer, ConsultReason, ConsultSeat } from '../schemas/consult.js';
 import type { CrewSeatId } from '../crew/identity.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
@@ -126,15 +131,7 @@ export type StateAction =
   | { type: 'MARK_RECOVERY_APPLYING'; action: RecoveryAction }
   | { type: 'RESOLVE_PENDING_RECOVERY' }
   | { type: 'RESTART_ATTEMPT_ON_SEAT'; taskId: TaskId }
-  | {
-      type: 'RECORD_SEAT_SWITCH';
-      seat: CrewSeatId;
-      from: string;
-      to: string;
-      cause: RecoveryReason;
-      auto: boolean;
-      configRevision: string;
-    };
+  | ({ type: 'RECORD_SEAT_SWITCH' } & Omit<SeatSwitchRecord, 'ts'>);
 
 export interface TokenBudget {
   system: number;

@@ -133,7 +133,6 @@ describe('runRetryStep', () => {
         sessionId,
         strategy: 'none',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const opened = await isolation.open({ config });
       const state = makeImplState([task], {
@@ -712,7 +711,6 @@ describe('runRetryStep', () => {
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const promoted = 'export const shared = true;\n';
 
@@ -793,7 +791,6 @@ describe('runRetryStep', () => {
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const firstAttempt = 'export const dirty = "written by the attempt that failed";\n';
     const rewritten = 'export const dirty = "rewritten by the retry";\n';

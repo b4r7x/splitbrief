@@ -27,6 +27,8 @@ import type { ReviewArtifact } from '../../../../src/features/workflow/prompt-ro
 import { getWorkflowPromptRows } from '../../../../src/features/workflow/prompt-rows/workflow.js';
 import { formatRecoveryPrompt } from '../../../../src/features/workflow/recovery-prompt.js';
 import { projectRunnerCallEvents } from '../../../../src/engine/calls/event-projection.js';
+import { createRunnerCallRecorder } from '../../../../src/engine/calls/recorder.js';
+import { createImplementerCallContext } from '../../../../src/engine/implementers/pipeline/call-result.js';
 import type { RunnerCallEvent } from '../../../../src/engine/calls/types.js';
 import {
   createStreamHandler,
@@ -89,6 +91,14 @@ import {
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner-fields.js';
 import { seatAxisWords } from '../../../../src/core/runners/effort-channel.js';
+import { formatSeatChangeIdentities } from '../../../../src/core/crew/identity.js';
+import { formatSeatChangeNotice } from '../../../../src/core/state/seats.js';
+import { formatRecoveryHeadline } from '../../../../src/core/recovery/headline.js';
+import type { ScopedCliCatalogAttempt } from '../../../../src/engine/detection/cli-catalog-outcomes.js';
+import {
+  publishSeatSwitched,
+  publishTaskStart,
+} from '../../../../src/engine/orchestrator/events.js';
 import { atRestProjections } from './at-rest-projections.js';
 
 type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
@@ -204,6 +214,7 @@ export interface WorkflowFixtureProjection {
   readonly streaming?: FixtureStreaming;
   /** The crew and workflow settings the saved run ran under, when they are not the gallery default. */
   readonly config?: VisualConfigOverrides;
+  readonly cliModels?: readonly ScopedCliCatalogAttempt[];
   /**
    * The saved run the screen resumes; the production resume path hydrates it from disk, so a halt it
    * carries is prompted by the real recovery driver instead of staged by the fixture.
@@ -2680,6 +2691,148 @@ const seatSwitchedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const BALANCE_SWITCH_FALLBACK = { ...SEAT_FALLBACK, variant: 'high' } as const;
+const BALANCE_SWITCH_RUNNER = {
+  kind: 'cli',
+  ...BALANCE_SWITCH_FALLBACK,
+  fallback: BALANCE_SWITCH_FALLBACK,
+} as const;
+const BALANCE_SWITCH_MODEL_NAME = 'DeepSeek V4.1 Flash';
+const balanceSwitchIdentities = formatSeatChangeIdentities(
+  { seat: OPENCODE_BALANCE_SEAT, displayName: BALANCE_SWITCH_MODEL_NAME },
+  { seat: BALANCE_SWITCH_RUNNER, displayName: BALANCE_SWITCH_MODEL_NAME },
+);
+const balanceSeatSwitchProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-seat-switched-balance'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { implementer: BALANCE_SWITCH_RUNNER },
+  cliModels: [
+    {
+      connection: { tool: 'opencode', contextKey: 'build-opencode-visual' },
+      outcome: {
+        kind: 'success',
+        value: [OPENCODE_BALANCE_SEAT, BALANCE_SWITCH_FALLBACK].map((seat) => ({
+          id: seat.model,
+          displayName: BALANCE_SWITCH_MODEL_NAME,
+        })),
+      },
+    },
+  ],
+  get events(): EngineEvent[] {
+    const issue = balanceSpentRecoveryIssue();
+    const start = {
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: 'Add endpoint',
+      index: 0,
+      total: 1,
+      lineageAttempt: 1,
+      attemptAllowance: BOUNDS.attemptsPerLineage,
+      file: 'src/endpoint.ts',
+      files: ['src/endpoint.ts'],
+      action: 'modify',
+      tool: OPENCODE_BALANCE_SEAT.tool,
+      backendKind: 'cli',
+      implementerProfile: 'default',
+    } as const;
+    return publishedEvents(FIXED_TS, (bus) => {
+      const ctx = { bus, phase: 'implementing' } as const;
+      let sequence = 0;
+      const onCallEvent = (event: RunnerCallEvent): void => {
+        for (const projected of projectRunnerCallEvents(event, {
+          rootDir: VISUAL_FIXTURE_PROJECT_DIR,
+          phase: ctx.phase,
+          sequence: sequence++,
+        }))
+          bus.publish(projected);
+      };
+      bus.publish({
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: ctx.phase,
+        feature: WORKFLOW_FEATURE,
+      });
+      publishTaskStart(ctx, {
+        ...start,
+        files: [...start.files],
+        model: OPENCODE_BALANCE_SEAT.model,
+        axes: seatAxisWords(OPENCODE_BALANCE_SEAT),
+      });
+      const failedCall = createRunnerCallRecorder({
+        context: {
+          ...createImplementerCallContext({
+            config: visualConfig({ implementer: OPENCODE_BALANCE_SEAT }),
+            attempt: 0,
+            taskId: start.taskId,
+          }),
+          callId: 'visual-opencode-balance-failed',
+        },
+        startedAt: FIXED_TS + 2,
+        onEvent: onCallEvent,
+      });
+      failedCall.finishFailed({
+        status: 'failed',
+        error: { code: 'opencode-error', message: BALANCE_WORDS },
+        endedAt: FIXED_TS + 3,
+      });
+      publishError({ ...ctx, message: issue.message });
+      publishRecoveryPrompted(ctx, VISUAL_WORKFLOW_SESSION_ID, issue);
+      publishRecoveryActionSelected({ ...ctx, issue, action: 'switch-seat' });
+      publishSeatSwitched(ctx, {
+        seat: 'build',
+        from: { tool: OPENCODE_BALANCE_SEAT.tool, model: OPENCODE_BALANCE_SEAT.model },
+        to: BALANCE_SWITCH_FALLBACK,
+        cause: issue.reason,
+        accountCause: 'balance',
+        headline: formatRecoveryHeadline(issue),
+        auto: true,
+        configRevision: 'visual-config-revision',
+      });
+      publishRecoveryResolved({
+        ...ctx,
+        issue,
+        action: 'switch-seat',
+        outcome: 'retry-current-task',
+        implementerProfile: 'default',
+      });
+      publishWarning({
+        ...ctx,
+        message: formatSeatChangeNotice({
+          seat: 'build',
+          before: balanceSwitchIdentities.from,
+          after: balanceSwitchIdentities.to,
+        }),
+      });
+      publishTaskStart(ctx, {
+        ...start,
+        files: [...start.files],
+        model: BALANCE_SWITCH_FALLBACK.model,
+        axes: seatAxisWords(BALANCE_SWITCH_RUNNER),
+      });
+      const restartedCall = createRunnerCallRecorder({
+        context: {
+          ...createImplementerCallContext({
+            config: visualConfig({ implementer: BALANCE_SWITCH_RUNNER }),
+            attempt: 0,
+            taskId: start.taskId,
+          }),
+          callId: 'visual-opencode-balance-restarted',
+        },
+        startedAt: FIXED_TS + 12,
+        onEvent: onCallEvent,
+      });
+      restartedCall.toolUseDelta({
+        toolUseId: 'visual-endpoint-read',
+        name: 'read',
+        inputDelta: JSON.stringify({ path: start.file }),
+        stage: 'started',
+        ts: FIXED_TS + 13,
+      });
+    });
+  },
+};
+
 /**
  * A plan seat that ran out on Codex and was moved onto Claude Code, the planner this fixture's
  * config names — so the header, which reads the seat of record, shows the seat after the swap.
@@ -4031,6 +4184,7 @@ const projections = [
     }),
   },
   balanceSpentRecoveryProjection,
+  balanceSeatSwitchProjection,
   stopSheetRecoveryProjection,
   buildConsultProjection,
   buildReviewConsultProjection,

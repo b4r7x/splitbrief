@@ -326,6 +326,38 @@ describe('ensureSecureDir', () => {
 describe('ensureGitignore', () => {
   const itUnix = process.platform === 'win32' ? it.skip : it;
 
+  it.each([
+    '.splitbrief/',
+    '/.splitbrief/',
+    '.splitbrief/*',
+    '/.splitbrief/*',
+    '.splitbrief/**',
+    '/.splitbrief/**',
+  ])('recognizes directory-content rules without defeating config exceptions', (rule) => {
+    const projectDir = makeTmp();
+    const ignorePath = join(projectDir, '.gitignore');
+    const before = `node_modules/\n${rule}\n!.splitbrief/config.yaml\n`;
+    writeFileSync(ignorePath, before);
+
+    ensureGitignore(projectDir, '.splitbrief/');
+
+    expect(readFileSync(ignorePath, 'utf8')).toBe(before);
+  });
+
+  it.each(['!.splitbrief/config.yaml', '!/.splitbrief/config.yaml', '!.splitbrief/'])(
+    'inserts child coverage before an existing exception: %s',
+    (exception) => {
+      const projectDir = makeTmp();
+      const ignorePath = join(projectDir, '.gitignore');
+      writeFileSync(ignorePath, `node_modules/\n${exception}\n`);
+
+      ensureGitignore(projectDir, '.splitbrief/');
+      ensureGitignore(projectDir, '.splitbrief/');
+
+      expect(readFileSync(ignorePath, 'utf8')).toBe(`node_modules/\n.splitbrief/*\n${exception}\n`);
+    },
+  );
+
   it('creates .gitignore with entry when file does not exist', () => {
     const dir = makeTmp();
     ensureGitignore(dir, '.splitbrief/');

@@ -135,7 +135,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const first = await acquireDirect(handle);
@@ -174,7 +173,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: (reason) => reasons.push(reason),
-        onRetained: () => {},
       });
 
       const first = await acquireDirect(handle);
@@ -205,7 +203,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -228,7 +225,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const worktreeWs = await acquireDirect(worktreeHandle);
       expect(worktreeWs.snapshot.baselineFileHashes).toBeUndefined();
@@ -238,7 +234,6 @@ describe('createRunIsolation', () => {
         sessionId: `${SESSION_ID}-staged`,
         strategy: 'staged-copy',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const stagedWs = await acquireDirect(stagedHandle);
       expect(stagedWs.snapshot.baselineFileHashes).toBeDefined();
@@ -259,7 +254,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: (reason) => reasons.push(reason),
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -286,7 +280,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: (reason) => reasons.push(reason),
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -310,14 +303,12 @@ describe('createRunIsolation', () => {
       mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
       symlinkSync('../../skills/babysit', join(dir, '.claude', 'skills', 'babysit'), 'dir');
       const reasons: string[] = [];
-      const retained: string[] = [];
       const isolation = () =>
         createRunIsolation({
           projectDir: dir,
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: (reason) => reasons.push(reason),
-          onRetained: (worktreeDir) => retained.push(worktreeDir),
         });
 
       const first = await acquireDirect(isolation());
@@ -336,7 +327,9 @@ describe('createRunIsolation', () => {
       await continued.dispose();
 
       expect(reasons).toEqual([]);
-      expect(retained).toEqual([]);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
@@ -354,7 +347,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -391,7 +383,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -430,7 +421,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const first = await handle.acquire({
@@ -479,7 +469,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const implementer = await handle.acquire({
@@ -513,7 +502,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const implementer = await handle.acquire({
@@ -552,7 +540,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const planner = await handle.acquire({
@@ -591,7 +578,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const codexProfile = await handle.acquire({
@@ -637,7 +623,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -658,13 +643,11 @@ describe('createRunIsolation', () => {
     const dir = createTempDir('isolation-retain-accepted');
     try {
       createTestGitRepo(dir, { 'README.md': '# test\n' });
-      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
       const ws = await acquireDirect(handle);
@@ -675,7 +658,9 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(retained).toEqual([]);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
       expect(existsSync(isolationRoot(dir))).toBe(true);
       expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
@@ -693,13 +678,11 @@ describe('createRunIsolation', () => {
       // An untracked file the operator appends to for the whole run — the
       // run's own event log in the incident this guards against.
       writeFileSync(join(dir, 'run.ndjson'), 'line1\n');
-      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
       const ws = await acquireDirect(handle);
@@ -711,7 +694,9 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(retained).toEqual([]);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
       expect((await createGitClient(dir).branch()).all).toContain(`splitbrief/${SLUG}`);
     } finally {
@@ -733,7 +718,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
         warningPublisher,
       });
 
@@ -767,7 +751,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
         warningPublisher,
       });
 
@@ -796,13 +779,11 @@ describe('createRunIsolation', () => {
     try {
       createTestGitRepo(dir, { 'README.md': '# test\n' });
       writeFileSync(join(dir, 'notes.txt'), 'draft\n');
-      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
       const ws = await acquireDirect(handle);
@@ -810,7 +791,9 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(retained).toEqual([]);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
@@ -846,13 +829,11 @@ describe('createRunIsolation', () => {
         createTestGitRepo(dir, { 'skills/a/SKILL.md': '# a\n', 'skills/b/SKILL.md': '# b\n' });
         mkdirSync(join(dir, '.claude', 'skills'), { recursive: true });
         symlinkSync('../../skills/a', join(dir, '.claude', 'skills', 'current'), 'dir');
-        const retained: string[] = [];
         const handle = createRunIsolation({
           projectDir: dir,
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: (worktreeDir) => retained.push(worktreeDir),
         });
 
         const ws = await acquireDirect(handle);
@@ -865,7 +846,9 @@ describe('createRunIsolation', () => {
           stderrSpy.mockRestore();
         }
 
-        expect(retained).toEqual([]);
+        expect(
+          (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+        ).toBe(false);
         expect(readlinkSync(join(dir, '.claude', 'skills', 'current'))).toBe('../../skills/a');
       } finally {
         cleanupTempDir(dir);
@@ -879,19 +862,11 @@ describe('createRunIsolation', () => {
     const dir = createTempDir('isolation-retain-unpromoted');
     try {
       createTestGitRepo(dir, { 'README.md': '# test\n' });
-      let cacheExistedAtAnnouncement: boolean | undefined;
-      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => {
-          cacheExistedAtAnnouncement = existsSync(
-            join(worktreeDir, SANDBOX_DIR, 'implementer', 'codex', 'npm-cache'),
-          );
-          retained.push(worktreeDir);
-        },
       });
 
       const ws = await acquireDirect(handle);
@@ -904,8 +879,9 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(retained).toEqual([ws.projectDir]);
-      expect(cacheExistedAtAnnouncement).toBe(true);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(true);
       expect(existsSync(join(npmCache, 'cached-package.tgz'))).toBe(true);
       expect(existsSync(npmCache)).toBe(true);
       expect(existsSync(join(ws.projectDir, 'unpromoted.txt'))).toBe(true);
@@ -922,13 +898,11 @@ describe('createRunIsolation', () => {
     const dir = createTempDir('isolation-gate-denied');
     try {
       createTestGitRepo(dir, { 'package.json': '{}\n' });
-      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
       const ws = await acquireDirect(handle);
@@ -966,7 +940,9 @@ describe('createRunIsolation', () => {
 
       await handle.dispose();
 
-      expect(retained).toEqual([]);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
@@ -986,7 +962,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -1024,13 +999,11 @@ describe('createRunIsolation', () => {
         'src/app.ts': 'export const app = true;\n',
         'src/other.ts': 'export const other = true;\n',
       });
-      const retained: string[] = [];
       const handle = createRunIsolation({
         projectDir: dir,
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: (worktreeDir) => retained.push(worktreeDir),
       });
 
       const ws = await acquireDirect(handle);
@@ -1054,7 +1027,9 @@ describe('createRunIsolation', () => {
         stderrSpy.mockRestore();
       }
 
-      expect(retained).toEqual([]);
+      expect(
+        (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+      ).toBe(false);
       expect(existsSync(isolationWorktree(dir))).toBe(true);
     } finally {
       cleanupTempDir(dir);
@@ -1073,7 +1048,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const cut = await handle.acquire({
         role: 'implementer',
@@ -1090,7 +1064,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const next = await nextHandle.acquire({
         role: 'implementer',
@@ -1122,7 +1095,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const first = await acquireDirect(handle);
@@ -1159,7 +1131,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
 
         const first = await acquireDirect(handle);
@@ -1185,7 +1156,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const first = await acquireDirect(handle);
@@ -1240,13 +1210,11 @@ describe('createRunIsolation', () => {
       const dir = createTempDir('isolation-fallback-cleanup');
       try {
         prepare(dir);
-        const retained: string[] = [];
         const handle = createRunIsolation({
           projectDir: dir,
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: (worktreeDir) => retained.push(worktreeDir),
         });
 
         const ws = await acquireDirect(handle);
@@ -1255,7 +1223,9 @@ describe('createRunIsolation', () => {
 
         await handle.dispose();
 
-        expect(retained).toEqual([]);
+        expect(
+          (await readWorkspaceRecord({ projectDir: dir, sessionId: SESSION_ID }))?.retained,
+        ).toBe(false);
         const usesWorktree = ws.projectDir === isolationWorktree(dir);
         expect(existsSync(isolationWorktree(dir))).toBe(usesWorktree);
         const branches = await createGitClient(dir).branch();
@@ -1285,7 +1255,6 @@ describe('createRunIsolation', () => {
           sessionId: SESSION_ID,
           strategy: 'worktree',
           onFallback: () => {},
-          onRetained: () => {},
         });
         const ws = await acquireDirect(handle);
 
@@ -1308,7 +1277,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -1337,7 +1305,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const ws = await acquireDirect(handle);
 
@@ -1374,7 +1341,6 @@ describe('createRunIsolation', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: (reason) => reasons.push(reason),
-        onRetained: () => {},
       });
 
       const ws = await acquireDirect(handle);
@@ -1405,7 +1371,6 @@ describe('one workspace per run', () => {
       sessionId: SESSION_ID,
       strategy: 'worktree',
       onFallback,
-      onRetained: () => {},
     });
   }
 
@@ -1534,7 +1499,6 @@ describe('one workspace per run', () => {
         sessionId: SESSION_ID,
         strategy: 'staged-copy',
         onFallback: () => {},
-        onRetained: () => {},
       });
 
       const opened = await handle.open({ config });
@@ -1633,7 +1597,6 @@ describe('one workspace per run', () => {
         sessionId: `${SESSION_ID}-staged`,
         strategy: 'staged-copy',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const copy = await staged.open({ config });
       await staged.dispose();
@@ -1703,7 +1666,6 @@ describe('run workspace attempts', () => {
       sessionId: SESSION_ID,
       strategy,
       onFallback: () => {},
-      onRetained: () => {},
     });
   }
 
@@ -1882,7 +1844,6 @@ describe('the checkout mode (workflow.isolation: none)', () => {
       onFallback: () => {
         throw new Error('the checkout mode never falls back');
       },
-      onRetained: () => {},
       warningPublisher: (message) => warnings.push(message),
     });
   }
@@ -1982,7 +1943,6 @@ describe('the checkout mode (workflow.isolation: none)', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const opened = await first.open({ config });
       await first.dispose();
@@ -2013,7 +1973,6 @@ describe('the checkout mode (workflow.isolation: none)', () => {
         sessionId: SESSION_ID,
         strategy: 'worktree',
         onFallback: () => {},
-        onRetained: () => {},
       });
       const reopened = await next.open({ config, recorded: 'checkout' });
 

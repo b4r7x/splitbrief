@@ -78,7 +78,6 @@ async function openWorkspaceRun(strategy: 'worktree' | 'staged-copy') {
     ...ref,
     strategy,
     onFallback: () => {},
-    onRetained: () => {},
   });
   const opened = await isolation.open({ config: createDefaultConfig() });
   await reconcileWorkspaceToBase({

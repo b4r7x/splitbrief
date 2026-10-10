@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { retainedWorkspaceNotice, retentionError } from '../isolation/retention.js';
+import { retentionError } from '../isolation/retention.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
@@ -231,15 +231,6 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         bus,
         phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
         message: `Isolation worktree unavailable; falling back to a staged copy: ${reason}`,
-      });
-    },
-    onRetained: (dir): void => {
-      const bus = wctx?.bus ?? workflowBus;
-      if (!bus) return;
-      publishWarning({
-        bus,
-        phase: trackedState?.phase ?? workflowPhase ?? createInitialState(feature).phase,
-        message: retainedWorkspaceNotice(dir),
       });
     },
     warningPublisher: (message: string): void => {

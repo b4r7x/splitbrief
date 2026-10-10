@@ -4,6 +4,7 @@ import type {
   ReviewPacket,
   ReviewPacketCheckpoint,
 } from '../../../../core/schemas/review-packet.js';
+import { ReviewPacketSeatSwitchSchema } from '../../../../core/schemas/review-packet.js';
 import {
   RECOVERY_ACTIONS,
   RECOVERY_REASONS,
@@ -140,6 +141,7 @@ export function readReadiness(
   return {
     path: READINESS_FILE,
     present: true,
+    generatedAt: record.generatedAt,
     status: record.status,
     nextAction: record.nextAction,
     blockerCount: record.blockerCount,
@@ -162,6 +164,8 @@ export async function readPacketEvents(
   const events: PacketEvent[] = [];
   for await (const entry of readEvents({ projectDir: projectDir, sessionId: sessionId })) {
     const data = narrowRecord(entry.data) ?? {};
+    const switchRecord =
+      entry.type === 'seat_switched' ? ReviewPacketSeatSwitchSchema.parse(data) : undefined;
     const reason = recoveryReason(data.reason);
     const action = recoveryAction(data.action);
     const files = strings(data.files);
@@ -169,6 +173,7 @@ export async function readPacketEvents(
     const availableActions = recoveryActions(data.availableActions);
     const recommendedAction = recoveryAction(data.recommendedAction);
     const message =
+      (entry.type.startsWith('recovery_') ? optionalString(data.headline) : undefined) ??
       optionalString(data.message) ??
       optionalString(data.error) ??
       optionalString(data.reason) ??
@@ -180,6 +185,10 @@ export async function readPacketEvents(
       ts: entry.ts,
       type: entry.type,
       phase: entry.phase,
+      ...(switchRecord !== undefined && switchRecord),
+      ...(optionalString(data.headline) !== undefined && {
+        headline: optionalString(data.headline),
+      }),
       ...(entry.taskId !== undefined && { taskId: entry.taskId }),
       ...(optionalString(data.issueId) !== undefined && { issueId: optionalString(data.issueId) }),
       ...(reason !== undefined && { reason }),

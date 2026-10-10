@@ -9,6 +9,8 @@ import { countBySeverity, countByValue, uniqueSorted } from '../../../../utils/c
 import type { DriftFinding, DriftReport } from '../../../../core/schemas/drift.js';
 import type { BuildReviewPacketOptions, BriefQualityArtifact, PacketEvent } from './types.js';
 import { retryCountsFromEvents } from '../retry-counts.js';
+import { readSeatIdentities } from '../../../../core/state/seats.js';
+import type { SeatIds } from '../../../../core/crew/identity.js';
 
 function taskEvidence(task: Task, ledger: EvidenceLedger | null): EvidenceTask | undefined {
   return ledger?.tasks.find((entry) => entry.id === task.id);
@@ -278,12 +280,19 @@ function latestWorkflowComplete(events: PacketEvent[]): string | null {
 function packetSeat(
   summary: { tool?: string | undefined; model?: string | undefined; kind?: RunnerKind | undefined },
   state: { tool?: string | undefined; model?: string | undefined; kind?: RunnerKind | undefined },
+  recorded: SeatIds | undefined,
 ): ReviewPacket['run']['planner'] {
   const record = summary.tool !== undefined ? summary : state;
+  const matchesRecorded =
+    recorded !== undefined &&
+    record.tool === recorded.tool &&
+    record.model === recorded.model &&
+    (record.kind === undefined || record.kind === recorded.kind);
   return {
     tool: record.tool ?? null,
     model: record.model ?? null,
     kind: record.kind ?? null,
+    ...(matchesRecorded && recorded.axes !== undefined && { axes: [...recorded.axes] }),
   };
 }
 
@@ -297,6 +306,7 @@ export function buildRun(
   opts: BuildReviewPacketOptions,
   events: PacketEvent[],
 ): ReviewPacket['run'] {
+  const recorded = readSeatIdentities(opts)?.ids;
   const planner = packetSeat(
     {
       tool: opts.summary.plannerTool,
@@ -308,8 +318,9 @@ export function buildRun(
       model: opts.state.plannerModel,
       kind: opts.state.plannerKind,
     },
+    recorded?.plan,
   );
-  const reviewer = packetSeat(reviewSeat(opts.summary), reviewSeat(opts.state));
+  const reviewer = packetSeat(reviewSeat(opts.summary), reviewSeat(opts.state), recorded?.review);
   return {
     sessionId: opts.sessionId,
     feature: opts.summary.feature,
@@ -327,6 +338,7 @@ export function buildRun(
         model: opts.state.implementerModel,
         kind: opts.state.implementerKind,
       },
+      recorded?.build,
     ),
     reviewer,
     startedAt: opts.state.startedAt ?? null,

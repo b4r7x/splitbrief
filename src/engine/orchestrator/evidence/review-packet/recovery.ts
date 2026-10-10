@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { formatSeatChangeIdentities } from '../../../../core/crew/identity.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import type { RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
@@ -62,7 +63,31 @@ function buildRecovery(
   events: PacketEvent[],
   missing: string[],
 ): RecoveryWithoutSources {
-  const recoveryEvents = events.filter((event) => event.type.startsWith('recovery_'));
+  const recoveryEvents = events.filter(
+    (event) => event.type.startsWith('recovery_') || event.type === 'seat_switched',
+  );
+  const loggedSwitches = recoveryEvents.filter((event) => event.type === 'seat_switched');
+  for (const record of state.seatSwitches ?? []) {
+    const loggedIndex = loggedSwitches.findIndex((event) => {
+      const identities =
+        typeof event.from === 'object' && typeof event.to === 'object'
+          ? formatSeatChangeIdentities(event.from, event.to)
+          : { from: event.from, to: event.to };
+      return (
+        event.seat === record.seat &&
+        event.configRevision === record.configRevision &&
+        event.auto === record.auto &&
+        event.cause === record.cause &&
+        identities.from === record.from &&
+        identities.to === record.to
+      );
+    });
+    if (loggedIndex >= 0) {
+      loggedSwitches.splice(loggedIndex, 1);
+    } else {
+      recoveryEvents.push({ type: 'seat_switched', ...record });
+    }
+  }
   const selectedActions: RecoverySelectedAction[] = recoveryEvents
     .filter(isSelectedActionEvent)
     .map((event) => ({
@@ -76,10 +101,14 @@ function buildRecovery(
     .filter((event) => event.type === 'recovery_resolved')
     .map((event) => {
       const status = RECOVERY_RESOLVED_STATUS[event.outcome ?? ''] ?? 'unresolved';
+      const message = recoveryEvents.find(
+        (prompted) => prompted.type === 'recovery_prompted' && prompted.issueId === event.issueId,
+      )?.headline;
       return {
         issueId: event.issueId ?? null,
         ...(event.action !== undefined && { action: event.action }),
         status,
+        ...(message !== undefined && { message }),
       };
     });
 

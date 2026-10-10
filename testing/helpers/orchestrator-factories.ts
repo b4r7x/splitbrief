@@ -37,7 +37,6 @@ export function makeCopyingIsolation(opts: {
     sessionId: opts.sessionId,
     strategy: 'staged-copy',
     onFallback: () => {},
-    onRetained: () => {},
   });
 }
 
@@ -50,7 +49,6 @@ export function makeWorktreeIsolation(opts: {
     sessionId: opts.sessionId,
     strategy: 'worktree',
     onFallback: () => {},
-    onRetained: () => {},
   });
 }
 
@@ -63,7 +61,6 @@ export function makeCheckoutIsolation(opts: {
     sessionId: opts.sessionId,
     strategy: 'none',
     onFallback: () => {},
-    onRetained: () => {},
   });
 }
 

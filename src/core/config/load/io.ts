@@ -157,7 +157,6 @@ export function loadConfig(projectDir: string): LoadConfigResult {
 
 export function writeConfig(projectDir: string, config: Config): string {
   const text = YAML.stringify(toYaml(config));
-  ensureConfigGitignore(projectDir);
   confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;
@@ -221,7 +220,6 @@ async function transactConfigDocumentWithWriter(
       revision: snapshot.revision,
     };
     parseLoadedConfig(projectDir, intendedSnapshot);
-    ensureConfigGitignore(projectDir);
     confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
 
     const targetPath = canonicalConfigTarget(projectDir);
@@ -278,7 +276,6 @@ export function writeConfigDocument(
   const doc = parseDocument(rawYaml);
   applyConfigDocumentEdits(doc, edits);
   const text = doc.toString();
-  ensureConfigGitignore(projectDir);
   confinedEnsureDir(projectDir, SPLITBRIEF_DIR);
   confinedWriteFile(projectDir, CONFIG_RELATIVE_PATH, text);
   return text;
@@ -304,4 +301,5 @@ export async function initConfig(
     ]);
     throw configError.saveFailed(path, cause);
   }
+  ensureConfigGitignore(projectDir);
 }

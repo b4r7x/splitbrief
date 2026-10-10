@@ -37,7 +37,6 @@ async function fixture(input: { cli?: boolean } = {}) {
       ? { implementer: { kind: 'cli', tool: 'codex', authChannel: 'api-key' } }
       : undefined,
   );
-  const notices: string[] = [];
   const warnings: string[] = [];
   const ref = { projectDir, sessionId };
   const makeIsolation = () =>
@@ -45,7 +44,6 @@ async function fixture(input: { cli?: boolean } = {}) {
       ...ref,
       strategy: 'staged-copy',
       onFallback: () => {},
-      onRetained: (path) => notices.push(path),
       warningPublisher: (message) => warnings.push(message),
     });
   const options = {
@@ -66,7 +64,6 @@ async function fixture(input: { cli?: boolean } = {}) {
     workspace,
     options,
     makeIsolation,
-    notices,
     warnings,
     canonical: join(sessionDir(projectDir, sessionId), 'retained-workspace.json'),
   };
@@ -115,7 +112,6 @@ it('keeps the complete stopped sandbox without reporting a cleanup failure', asy
   await f.run.dispose();
   verify();
   expect(f.warnings).toEqual([]);
-  expect(f.notices).toEqual([f.workspace.projectDir]);
   expect((await readWorkspaceRecord(f.ref))?.retained).toBe(true);
 });
 

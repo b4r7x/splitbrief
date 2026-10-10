@@ -7,8 +7,9 @@ import { configStore } from './config.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { expectApi, expectCli } from '#testing/helpers/config-narrowing.js';
-import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE } from '../../core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
 import { loadConfig } from '../../core/config/load/io.js';
+import { readConfigDocument } from '../../core/config/load/document.js';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
 import type { Config } from '../../core/schemas/config.js';
 import { editsForSave } from './config-persistence.js';
@@ -89,6 +90,59 @@ describe('configStore.load', () => {
     expect(implementer.provider).toBe('ollama');
     expect(implementer.model).toBe('qwen3-coder:30b');
     expect(implementer.contextLength).toBeUndefined();
+  });
+
+  it('refreshes persisted metadata while keeping the prepared config and runtime provenance', () => {
+    writeConfigYaml();
+    configStore.load(tmpDir, { implementer: { model: 'override-model' } });
+    configStore.setContextLength(131072, true);
+    const prepared = {
+      ...loadedConfig(),
+      implementer: {
+        ...loadedConfig().implementer,
+        model: 'prepared-model',
+      },
+    };
+    writeConfigYaml({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        variant: 'high',
+      },
+    });
+    const save = vi.spyOn(configStore, 'save');
+
+    configStore.refreshFromExecution(tmpDir, prepared);
+
+    expect(loadedConfig()).toEqual(prepared);
+    expect(configStore.get().diskConfig?.implementer).toMatchObject({ variant: 'high' });
+    expect(configStore.get().rawYaml).toContain('variant: high');
+    expect(configStore.get().revision?.rawSha256).toBe(
+      readConfigDocument(tmpDir).revision?.rawSha256,
+    );
+    expect(configStore.get().overrides).toEqual({ implementer: { model: 'override-model' } });
+    expect(configStore.getDetectedContextLength()).toBe(131072);
+    expect(save).not.toHaveBeenCalled();
+    save.mockRestore();
+  });
+
+  it('refreshes a memory-only execution without replacing it with disk defaults', () => {
+    configStore.load(tmpDir);
+    const config = {
+      ...loadedConfig(),
+      implementer: {
+        kind: 'cli' as const,
+        tool: 'opencode' as const,
+        model: 'opencode-go/deepseek-v4.1-flash',
+        variant: 'high',
+      },
+    };
+    configStore.refreshFromExecution(tmpDir, config);
+    expect(loadedConfig()).toEqual(config);
+    expect(configStore.get().revision).toBeNull();
+    expect(configStore.get().rawYaml).toBe('');
+    expect(existsSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
   });
 
   it('applies implementer override to provider and model', () => {
@@ -496,7 +550,7 @@ my_custom_key: "keep: this # exactly"
     expect(reloaded.implementerProfiles?.profiles.fast?.model).toBe('gpt-5.4-mini');
   });
 
-  it('preserves hand-edited document and creates .splitbrief/ and .splitbrief/trees/ gitignore entries once when absent', async () => {
+  it('preserves hand-edited document without initializing gitignore', async () => {
     expect(existsSync(join(tmpDir, '.gitignore'))).toBe(false);
     writeRawConfig(HAND_EDITED);
     configStore.load(tmpDir);
@@ -510,9 +564,7 @@ my_custom_key: "keep: this # exactly"
     expect(raw).toContain('# my favourite model');
     expect(raw).toContain('my_custom_key: keep-this-too');
     expect(raw).toMatch(/enabled: true/);
-    const gitignore = readFileSync(join(tmpDir, '.gitignore'), 'utf-8');
-    expect(gitignore.split('\n').filter((line) => line === `${SPLITBRIEF_DIR}/`)).toHaveLength(1);
-    expect(gitignore.split('\n').filter((line) => line === `${TREES_DIR}/`)).toHaveLength(1);
+    expect(existsSync(join(tmpDir, '.gitignore'))).toBe(false);
   });
 
   it('preserves comments, key order, and unknown keys when saving one setting', async () => {

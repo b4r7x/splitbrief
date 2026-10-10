@@ -65,10 +65,9 @@ export function createRunIsolation(opts: {
   sessionId: string;
   strategy: IsolationStrategy;
   onFallback: (reason: string) => void;
-  onRetained: (dir: string) => void;
   warningPublisher?: (message: string) => void;
 }): RunIsolation {
-  const { projectDir, sessionId, strategy, onFallback, onRetained, warningPublisher } = opts;
+  const { projectDir, sessionId, strategy, onFallback, warningPublisher } = opts;
 
   let latchedStrategy: IsolationStrategy = strategy;
   let fallbackReported = false;
@@ -82,9 +81,6 @@ export function createRunIsolation(opts: {
   let directory: RetainedWorkspace['directory'] | undefined;
   let owner: WorkspaceOwner | undefined;
   let retainedAttempt: RetainedWorkspace | null = null;
-  // Whether the record last saved holds a retained attempt; disposal reports it without reading
-  // the record again, so an unreadable record cannot fail the stop that keeps the bytes.
-  let recordRetained = false;
   let ownedWorkspace: IsolatedWorkspace | undefined;
   let openPromise: Promise<RunWorkspace> | undefined;
   let disposePromise: Promise<void> | undefined;
@@ -247,7 +243,6 @@ export function createRunIsolation(opts: {
       { projectDir, sessionId },
       { workspace, owner, location, retained },
     );
-    recordRetained = retained;
   }
 
   function open(input: Parameters<RunIsolation['open']>[0]): Promise<RunWorkspace> {
@@ -527,7 +522,6 @@ export function createRunIsolation(opts: {
           });
         }
       }
-      if (runWorkspace !== undefined && recordRetained) onRetained(runWorkspace.projectDir);
     } finally {
       for (const root of resumedSandboxRoots) {
         await rm(root, { recursive: true, force: true });

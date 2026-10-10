@@ -5,7 +5,7 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'ink-testing-library';
 import { Box, Text } from 'ink';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { tick } from '#testing/helpers/ink.js';
@@ -18,13 +18,20 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { Implementer } from '../../../engine/implementers/types.js';
 import type { ClarificationQuestion } from '../../../core/schemas/question.js';
 import { questionsText } from '../../../core/state/planning-conversation.js';
 import type { PlannerConfig } from '../../../core/schemas/planner-config.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { buildRequiredChecksUnrunnableRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/checks.js';
 import { writeConfig } from '../../../core/config/load/io.js';
+import { readConfigDocument } from '../../../core/config/load/document.js';
+import { makeImplementer, makePlanner } from '#testing/helpers/orchestrator-factories.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { runWorkflow } from '../../../engine/orchestrator/run/workflow.js';
+import { createRunIsolation } from '../../../engine/orchestrator/isolation/create.js';
+import { readWorkspaceRecord } from '../../../engine/orchestrator/isolation/retention.js';
+import { createSnapshot } from '../../../engine/snapshots/create.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
 import type { PrepareExecutionInput } from '../../../engine/runners/prepare-execution/prepare-execution.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
@@ -274,6 +281,415 @@ afterEach(() => {
 });
 
 describe('useRunLoop', () => {
+  async function saveRetainedRun(sessionId: string, state: WorkflowState) {
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
+    const isolation = createRunIsolation({ ...ref, strategy: 'staged-copy', onFallback: () => {} });
+    const workspace = await isolation.acquire({ role: 'implementer', config: makeConfig() });
+    await workspace.retain?.();
+    await isolation.dispose();
+    const retained = {
+      ...state,
+      workspace: {
+        kind: 'staged-copy' as const,
+        path: workspace.projectDir,
+        base: { snapshotId: base.manifest.id, head: workspace.snapshot.head },
+      },
+    };
+    saveState(ref, retained);
+    return retained;
+  }
+
+  it.each([
+    ['malformed', 'halt'],
+    ['unreadable', 'halt'],
+    ['malformed', 'failure'],
+    ['unreadable', 'failure'],
+  ] as const)(
+    'settles a retained %s record at a %s without losing the handoff',
+    async (record, outcome) => {
+      const sessionId = `retention-${record}-${outcome}`;
+      const ref = { projectDir, sessionId };
+      const state = await saveRetainedRun(
+        sessionId,
+        makeImplState([], {
+          ...(outcome === 'halt' && { pendingRecovery: makeRecoveryIssue() }),
+          ...(outcome === 'failure' && {
+            lastFailure: {
+              message: 'call failed',
+              step: { kind: 'review', cycle: 0 },
+              at: '2026-10-10T00:00:00.000Z',
+            },
+          }),
+        }),
+      );
+      const path = join(sessionDir(projectDir, sessionId), 'retained-workspace.json');
+      if (record === 'malformed') writeFileSync(path, '{invalid');
+      else chmodSync(path, 0o000);
+      await expect(readWorkspaceRecord(ref)).rejects.toThrow(
+        record === 'malformed' ? 'The stopped workspace could not be verified.' : 'EACCES',
+      );
+      const prepared = preparedExecution({
+        projectDir,
+        sessionId,
+        feature: state.feature,
+      });
+      const inst = renderHarness({ prepared, runWorkflow: async () => makeSummary() });
+      if (outcome === 'halt') {
+        await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+        requestStopNow();
+      }
+      await vi.waitFor(() => expect(settledRun()?.status.kind).toBe('open'));
+      expect(errorMessages()).toEqual([
+        record === 'malformed'
+          ? 'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.'
+          : expect.stringContaining('EACCES'),
+      ]);
+      expect(
+        eventsStore
+          .get()
+          .events.filter(
+            (event) => event.type === 'warning' && event.message.startsWith('Workspace kept at '),
+          ),
+      ).toEqual([]);
+      expect(loadState(ref)?.pendingRecovery).toEqual(state.pendingRecovery);
+      expect(loadState(ref)?.lastFailure).toEqual(state.lastFailure);
+      inst.unmount();
+    },
+  );
+
+  it('does not publish additional retention notices when the same halt is reopened twice', async () => {
+    const sessionId = 'retained-halt-reopened-twice';
+    const ref = { projectDir, sessionId };
+    const initial = makeImplState([makeTask({ id: 'T001', status: 'failed' })]);
+    ensureSessionDir(projectDir, sessionId);
+    saveState(ref, initial);
+    const prepared = preparedExecution({
+      projectDir,
+      sessionId,
+      feature: initial.feature,
+      resumeState: initial,
+    });
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const run = recordedEngine({
+      1: async () => {
+        await saveRetainedRun(sessionId, {
+          ...initial,
+          pendingRecovery: makeRecoveryIssue(),
+        });
+        return makeSummary();
+      },
+    });
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+    const halted = loadState(ref);
+    const workspaceDir = halted?.workspace?.path;
+    expect(workspaceDir).toBeDefined();
+    const continueNotices = () =>
+      eventsStore
+        .get()
+        .events.flatMap((event) =>
+          event.type === 'warning' && event.message.startsWith('Workspace kept at ')
+            ? [event.message]
+            : [],
+        );
+    const originalNotices = [
+      `Workspace kept at ${workspaceDir} for Continue, with its private CLI state and caches.`,
+    ];
+    expect(continueNotices()).toEqual(originalNotices);
+
+    for (let reopen = 0; reopen < 2; reopen += 1) {
+      await tick(60);
+      expect(requestStopNow()).toBe(true);
+      await vi.waitFor(() => {
+        expect(controlsStore.get().inputMode).toBe('normal');
+        expect(stopStore.get().phase).toBe('parked');
+      });
+      const runner = captureRunner.current;
+      if (runner === null) throw new Error('expected captureRunner.current to be populated');
+      stopStore.reset();
+      runner.handleResume();
+      await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+      expect(run.entered).toHaveLength(1);
+      expect(loadState(ref)?.pendingRecovery).toEqual(halted?.pendingRecovery);
+      expect(continueNotices()).toEqual(originalNotices);
+    }
+
+    requestStopNow();
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'));
+    expect(continueNotices()).toEqual(originalNotices);
+    inst.unmount();
+  });
+
+  it.each(['replayed retry', 'replayed End run', 'supplied correction'] as const)(
+    'keeps retention unpublished during %s before any panel opens',
+    async (decision) => {
+      const sessionId = `retained-${decision.replaceAll(' ', '-')}`;
+      const ref = { projectDir, sessionId };
+      const correction = decision === 'supplied correction';
+      const state = await saveRetainedRun(
+        sessionId,
+        makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+          pendingRecovery: makeRecoveryIssue({
+            ...(correction
+              ? {
+                  reason: 'plan-checks-failed',
+                  taskId: undefined,
+                  phase: 'planning',
+                  availableActions: ['revise', 'end-run'],
+                  recommendedAction: 'revise',
+                }
+              : {
+                  status: 'applying',
+                  selectedAction: decision === 'replayed retry' ? 'retry-same-worker' : 'end-run',
+                }),
+          }),
+        }),
+      );
+      const prepared = preparedExecution({
+        projectDir,
+        sessionId,
+        feature: state.feature,
+        resumeState: state,
+      });
+      let entered = false;
+      let noticesAtEntry: string[] = [];
+      const inst = renderHarness({
+        prepared,
+        ...(correction && { steer: 'log the error and rethrow' }),
+        runWorkflow: async () => {
+          entered = true;
+          noticesAtEntry = eventsStore
+            .get()
+            .events.flatMap((event) =>
+              event.type === 'warning' && event.message.startsWith('Workspace kept at ')
+                ? [event.message]
+                : [],
+            );
+          const current = loadState(ref);
+          if (current === null) throw new Error('expected resumed state');
+          saveState(ref, { ...current, phase: 'complete', reviewStatus: 'passed' });
+          return makeSummary();
+        },
+      });
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull());
+      expect(entered).toBe(decision !== 'replayed End run');
+      expect(noticesAtEntry).toEqual([]);
+      expect(controlsStore.get().inputMode).not.toBe('question');
+      expect(
+        eventsStore
+          .get()
+          .events.filter(
+            (event) => event.type === 'warning' && event.message.startsWith('Workspace kept at '),
+          ),
+      ).toEqual([]);
+      expect(settledRun()?.status.kind).toBe(
+        decision === 'replayed End run' ? 'closed' : 'ready-to-apply',
+      );
+      inst.unmount();
+    },
+  );
+
+  async function automaticBalanceSwitch(outcome: 'admitted' | 'refused' | 'conflict') {
+    const sessionId = `balance-${outcome}`;
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'deepseek/deepseek-flash',
+        fallback: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      },
+      workflow: { isolation: 'staged-copy', approve: 'none' },
+      validation: { endChecks: false, testCommand: 'true' },
+    });
+    writeConfig(projectDir, config);
+    configStore.load(projectDir);
+    const originalRawYaml = configStore.get().rawYaml;
+    await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode']));
+    const state = makeImplState([
+      makeTask({
+        id: 'T001',
+        action: 'create',
+        suggestedFiles: ['fallback.txt'],
+        scope: { inBounds: ['fallback.txt'] },
+      }),
+    ]);
+    saveState(ref, state);
+    const prepared = makePreparedExecution({
+      ...ref,
+      config,
+      feature: state.feature,
+      resumeState: state,
+      active: reactivateExistingSession(ref),
+    });
+    const save = vi.spyOn(configStore, 'save');
+    let fallbackStarted = false;
+    const implementer = makeImplementer({
+      implement: vi.fn<Implementer['implement']>(async (input) => {
+        if (input.config.implementer.model === 'deepseek/deepseek-flash') {
+          return {
+            success: false,
+            output: '',
+            error: 'provider.quota: Insufficient Balance',
+            outcome: 'usage-limit',
+          };
+        }
+        fallbackStarted = true;
+        writeFileSync(join(input.projectDir, 'fallback.txt'), 'fallback work\n');
+        return { success: true, output: 'done' };
+      }),
+    });
+    const admit = reprepareSameSession();
+    const prepare: PrepareExecutionFn = async (input) => {
+      if (outcome === 'refused')
+        return { kind: 'blocked', report: { ...prepared.report, status: 'blocked' } };
+      if (outcome === 'conflict')
+        writeConfig(projectDir, {
+          ...config,
+          implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
+        });
+      return admit(input);
+    };
+    const engine: RunWorkflowFn = (options) =>
+      runWorkflow({ ...options, _planner: makePlanner(), _implementer: implementer });
+    const inst = renderHarness({ prepared, runWorkflow: engine, prepareExecution: prepare });
+    await vi.waitFor(() => {
+      if (outcome === 'admitted') expect(fallbackStarted).toBe(true);
+      else expect(controlsStore.get().inputMode).toBe('question');
+    });
+    const workspaceDir = loadState(ref)?.workspace?.path;
+    expect(workspaceDir).toBeDefined();
+    return { inst, save, ref, workspaceDir, fallbackStarted, originalRawYaml };
+  }
+
+  it.each(['admitted', 'refused'] as const)(
+    'publishes retention only when an automatic switch returns to the user',
+    async (outcome) => {
+      const { inst, save, workspaceDir } = await automaticBalanceSwitch(outcome);
+      const continueNotices = eventsStore
+        .get()
+        .events.flatMap((event) =>
+          event.type === 'warning' && event.message.startsWith('Workspace kept at ')
+            ? [event.message]
+            : [],
+        );
+      if (outcome === 'admitted') {
+        const continueNoticesBeforeFallback = continueNotices;
+        expect(continueNoticesBeforeFallback).toEqual([]);
+        await vi.waitFor(() => expect(settledRun()).not.toBeNull());
+      } else {
+        expect(continueNotices).toEqual([
+          `Workspace kept at ${workspaceDir} for Continue, with its private CLI state and caches.`,
+        ]);
+        requestStopNow();
+        await vi.waitFor(() => expect(settledRun()).not.toBeNull());
+        expect(
+          eventsStore
+            .get()
+            .events.filter(
+              (event) => event.type === 'warning' && event.message.startsWith('Workspace kept at '),
+            ),
+        ).toHaveLength(1);
+      }
+      inst.unmount();
+      save.mockRestore();
+    },
+  );
+
+  it('refreshes the displayed crew after an automatic switch without another save', async () => {
+    const { inst, save } = await automaticBalanceSwitch('admitted');
+    expect(configStore.get().config?.implementer).toMatchObject({
+      tool: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      variant: 'high',
+    });
+    expect(configStore.get().diskConfig?.implementer).toMatchObject({ variant: 'high' });
+    expect(configStore.get().rawYaml).toContain('variant: high');
+    expect(configStore.get().revision?.rawSha256).toBe(
+      readConfigDocument(projectDir).revision?.rawSha256,
+    );
+    expect(configStore.save).not.toHaveBeenCalled();
+    expect(consumeSeatChange()).toBe(false);
+    expect(stopStore.get().intent).toBe('none');
+    await vi.waitFor(() => expect(settledRun()?.status.kind).toBe('ready-to-apply'));
+    inst.unmount();
+    save.mockRestore();
+  });
+
+  it('refreshes a memory-only switched seat without creating a config', async () => {
+    const sessionId = 'memory-only-switch';
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    const candidate = {
+      tool: 'opencode' as const,
+      model: 'opencode-go/deepseek-v4.1-flash',
+      variant: 'high',
+    };
+    const state = makeImplState([makeTask({ id: 'T001', status: 'failed' })], {
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'runner-usage-limit',
+        availableActions: ['switch-seat', 'end-run'],
+        recommendedAction: 'switch-seat',
+        switchSeat: { seat: 'build', candidates: [candidate] },
+      }),
+    });
+    saveState(ref, state);
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    });
+    configStore.__testReset({ projectDir, config });
+    const prepared = makePreparedExecution({
+      ...ref,
+      config,
+      feature: state.feature,
+      resumeState: state,
+      active: reactivateExistingSession(ref),
+    });
+    const captureRunner: HarnessProps['captureRunner'] = { current: null };
+    const save = vi.spyOn(configStore, 'save');
+    const run = recordedEngine({ 1: async () => makeSummary() });
+    const inst = renderHarness({ prepared, captureRunner, runWorkflow: run.engine });
+    await answerRecoveryPanel(captureRunner, 'switch');
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('implementer-picker'));
+    configStore.__testReset({
+      projectDir,
+      config: { ...config, implementer: { kind: 'cli', ...candidate } },
+    });
+    overlayStore.close();
+    await vi.waitFor(() => expect(run.returned()).toBe(1));
+    expect(configStore.get().config?.implementer).toMatchObject({
+      tool: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      variant: 'high',
+    });
+    expect(configStore.get().revision).toBeNull();
+    expect(existsSync(join(projectDir, '.splitbrief', 'config.yaml'))).toBe(false);
+    expect(configStore.save).not.toHaveBeenCalled();
+    expect(run.entered[0]?.config.implementer).toMatchObject(candidate);
+    await vi.waitFor(() => expect(settledRun()).not.toBeNull());
+    inst.unmount();
+    save.mockRestore();
+  });
+
+  it.each(['refused', 'conflict'] as const)(
+    'never displays an uncommitted %s switch',
+    async (outcome) => {
+      const { inst, save, ref, fallbackStarted, originalRawYaml } =
+        await automaticBalanceSwitch(outcome);
+      expect(fallbackStarted).toBe(false);
+      expect(configStore.get().config?.implementer.model).toBe('deepseek/deepseek-flash');
+      expect(configStore.get().rawYaml).toBe(originalRawYaml);
+      expect(loadState(ref)?.seatSwitches ?? []).toEqual([]);
+      requestStopNow();
+      await vi.waitFor(() => expect(settledRun()).not.toBeNull());
+      inst.unmount();
+      save.mockRestore();
+    },
+  );
+
   it('runs once from prepared config session report and gates', async () => {
     const prepared = preparedExecution({ projectDir, feature: 'prepared authority' });
     const received: PreparedExecution[] = [];

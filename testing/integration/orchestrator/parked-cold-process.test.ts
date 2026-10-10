@@ -302,7 +302,6 @@ it('cold continuation keeps one staged directory and revokes disposed handles', 
       ...ref,
       strategy: 'staged-copy',
       onFallback: () => {},
-      onRetained: () => {},
     });
   const first = makeIsolation();
   const workspace = await first.acquire({ ...options, resume: false });

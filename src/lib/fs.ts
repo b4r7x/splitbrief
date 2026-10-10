@@ -267,8 +267,26 @@ export function ensureGitignore(projectDir: string, entry: string): void {
   const gitignorePath = getWritableGitignorePath(projectDir);
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, 'utf-8');
-    if (content.split('\n').some((line) => line.trim() === entry)) return;
+    const normalizedEntry = entry.replace(/^\//, '');
+    const coveringRules = normalizedEntry.endsWith('/')
+      ? [normalizedEntry, `${normalizedEntry}*`, `${normalizedEntry}**`]
+      : [normalizedEntry];
+    const lines = content.split('\n');
+    if (lines.some((line) => coveringRules.includes(line.trim().replace(/^\//, '')))) return;
+    const exceptionIndex = normalizedEntry.endsWith('/')
+      ? lines.findIndex((line) => {
+          const rule = line.trim().replace(/^!\//, '!');
+          return (
+            rule.startsWith(`!${normalizedEntry}`) || rule === `!${normalizedEntry.slice(0, -1)}`
+          );
+        })
+      : -1;
     getWritableGitignorePath(projectDir);
+    if (exceptionIndex >= 0) {
+      lines.splice(exceptionIndex, 0, `${entry}*`);
+      writeFileSync(gitignorePath, lines.join('\n'));
+      return;
+    }
     const prefix = content.endsWith('\n') ? '' : '\n';
     appendFileSync(gitignorePath, `${prefix}${entry}\n`);
   } else {

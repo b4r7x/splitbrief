@@ -83,15 +83,15 @@ describe('resultMenuHeight', () => {
 });
 
 describe('resultMenuTitle', () => {
-  it('counts the files Apply would write and says the checkout is untouched', () => {
+  it('describes the unapplied result without asserting checkout cleanliness', () => {
     expect(resultMenuTitle({ override: false, findings: [], confirming: false, files: 4 })).toBe(
-      'Ready to apply · 4 files changed · your checkout is untouched',
+      'Ready to apply · 4 files changed · run changes await Apply',
     );
   });
 
   it('leaves the count out when the run recorded no changed set', () => {
     expect(resultMenuTitle({ override: false, findings: [], confirming: false, files: null })).toBe(
-      'Ready to apply · your checkout is untouched',
+      'Ready to apply · run changes await Apply',
     );
   });
 

@@ -16,12 +16,12 @@ describe('renderReviewPacketMarkdown review seat', () => {
       run: {
         ...packet.run,
         planner: { tool: 'claude-code', model: 'sonnet' },
-        reviewer: { tool: 'codex', model: 'gpt-6.1-sol' },
+        reviewer: { tool: 'codex', model: 'gpt-5' },
       },
     });
 
     expect(rendered).toContain('## Reviewer Final Review');
-    expect(rendered).toContain('- Reviewer: codex (gpt-6.1-sol)');
+    expect(rendered).toContain('- Reviewer: OpenAI Codex CLI · GPT-5');
     expect(rendered.toLowerCase()).not.toContain('planner final review');
   });
 
@@ -34,6 +34,138 @@ describe('renderReviewPacketMarkdown review seat', () => {
 
     expect(saved.run.reviewer).toBeUndefined();
     expect(renderReviewPacketMarkdown(saved)).toContain('- Reviewer: n/a\n');
+  });
+});
+
+describe('packet switch and admission evidence', () => {
+  it('renders the switch, recorded seat axes, and admission scope', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown(
+      ReviewPacketSchema.parse({
+        ...packet,
+        run: {
+          ...packet.run,
+          planner: { tool: 'codex', model: 'gpt-5', kind: 'cli', axes: ['xhigh'] },
+          implementer: {
+            tool: 'opencode',
+            model: 'opencode-go/deepseek-v4.1-flash',
+            kind: 'cli',
+            axes: ['high'],
+          },
+          reviewer: { tool: 'codex', model: 'gpt-5', kind: 'cli', axes: ['high'] },
+        },
+        readiness: {
+          ...packet.readiness,
+          present: true,
+          generatedAt: '2026-10-10T12:56:00.000Z',
+          checks: [
+            {
+              id: 'implementer',
+              severity: 'warning',
+              summary:
+                'Default implementer opencode (deepseek/deepseek-flash) can execute commands on this machine.',
+            },
+          ],
+        },
+        recoveryDecisions: {
+          ...packet.recoveryDecisions,
+          events: [
+            {
+              ts: '2026-10-10T12:57:12.126Z',
+              type: 'seat_switched',
+              seat: 'build',
+              from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+              to: { tool: 'codex', model: 'gpt-5', effort: 'high' },
+              cause: 'runner-usage-limit',
+              accountCause: 'balance',
+              headline: 'Balance spent on OpenCode CLI',
+              auto: true,
+              configRevision: 'revision',
+            },
+          ],
+          outcomes: [
+            {
+              issueId: 'rec_balance',
+              action: 'switch-seat',
+              status: 'retry-current-task',
+              message: 'Balance spent on OpenCode CLI',
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(rendered).toContain('- Planner: OpenAI Codex CLI · GPT-5 · xhigh');
+    expect(rendered).toContain(
+      '- BUILD switched automatically: OpenCode CLI · DeepSeek V4.1 Flash → OpenAI Codex CLI · GPT-5 · high; Balance spent on OpenCode CLI',
+    );
+    expect(rendered).toContain('- Implementer: OpenCode CLI · DeepSeek V4.1 Flash · high');
+    expect(rendered).toContain('- Reviewer: OpenAI Codex CLI · GPT-5 · high');
+    expect(rendered).toContain('## Admission readiness');
+    expect(rendered).toContain(
+      '- Scope: Recorded at admission; later seat switches are listed under Recovery Decisions.',
+    );
+    expect(rendered).toContain('- Captured: 2026-10-10T12:56:00.000Z');
+    expect(rendered).toContain(
+      '- retry-current-task via switch-seat (rec_balance): Balance spent on OpenCode CLI',
+    );
+    expect(rendered).toContain(
+      'Default implementer opencode (deepseek/deepseek-flash) can execute commands on this machine.',
+    );
+  });
+
+  it('preserves Cursor model-ID axes on both sides of an axis-only switch', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown({
+      ...packet,
+      recoveryDecisions: {
+        ...packet.recoveryDecisions,
+        events: [
+          {
+            type: 'seat_switched',
+            ts: '2026-10-10T12:57:12.126Z',
+            seat: 'build',
+            from: { tool: 'cursor', model: 'claude-opus-5-thinking' },
+            to: { tool: 'cursor', model: 'claude-opus-5-thinking-high-fast' },
+            cause: 'runner-usage-limit',
+            accountCause: 'balance',
+            headline: 'Balance spent on Cursor Agent CLI',
+            auto: true,
+          },
+        ],
+      },
+    });
+
+    expect(rendered).toContain(
+      '- BUILD switched automatically: Cursor Agent CLI · Claude Opus 5 · thinking → Cursor Agent CLI · Claude Opus 5 · high · thinking · fast; Balance spent on Cursor Agent CLI',
+    );
+  });
+
+  it('renders a manual legacy switch from state labels without inventing a cause', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown({
+      ...packet,
+      recoveryDecisions: {
+        ...packet.recoveryDecisions,
+        events: [
+          {
+            type: 'seat_switched',
+            ts: '2026-10-10T12:57:12.126Z',
+            seat: 'plan',
+            from: 'old recorded seat',
+            to: 'new recorded seat',
+            cause: 'runner-usage-limit',
+            auto: false,
+          },
+        ],
+      },
+    });
+
+    expect(rendered).toContain(
+      '- PLAN switched manually: old recorded seat → new recorded seat; usage limit',
+    );
+    expect(rendered).not.toContain('Balance spent');
+    expect(rendered).not.toContain('- No recovery decisions recorded.');
   });
 });
 

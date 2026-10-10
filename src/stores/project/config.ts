@@ -84,6 +84,18 @@ function load(projectDir: string, overrides: CLIOverrides = {}) {
   store.set(loadedState(projectDir, overrides));
 }
 
+function refreshFromExecution(projectDir: string, config: Config): void {
+  const { config: diskConfig, rawYaml, revision } = loadConfig(projectDir);
+  store.set((state) => ({
+    ...state,
+    projectDir,
+    config: cloneConfig(config),
+    diskConfig: cloneConfig(diskConfig),
+    rawYaml,
+    revision,
+  }));
+}
+
 async function saveOnce(
   updated: Config,
   expectedRevision: ExpectedConfigRevision,
@@ -200,6 +212,7 @@ function __testReset(next?: Partial<ConfigState>): void {
 export const configStore = {
   ...storeBase(store),
   load,
+  refreshFromExecution,
   save,
   useConfig,
   setContextLength,

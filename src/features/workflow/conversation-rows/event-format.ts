@@ -34,9 +34,6 @@ export function formatTaskStartedParts(
     role: 'implementer',
   });
   if (identity !== null) parts.push(identity);
-  // The recovery panel names this value `Worker`. The routing sentence (`Selected profile default
-  // (fits, estimated …)`) restates the worker and the fit, so it stays in the run log.
-  if (event.implementerProfile) parts.push(`worker ${event.implementerProfile}`);
   if (event.contextFit && event.contextFit !== 'fits') {
     parts.push(formatEventContextFit(event.contextFit, event.estimatedTokens, event.contextLength));
   }
