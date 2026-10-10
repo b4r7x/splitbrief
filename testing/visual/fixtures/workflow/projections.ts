@@ -100,7 +100,11 @@ import {
   publishSeatSwitched,
   publishTaskStart,
 } from '../../../../src/engine/orchestrator/events.js';
-import { atRestProjections, reviewTaskCadenceProjection } from './at-rest-projections.js';
+import {
+  atRestProjections,
+  reviewTaskCadenceProjection,
+  reviewTaskOutOfScopeProjection,
+} from './at-rest-projections.js';
 
 type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
 
@@ -1169,7 +1173,7 @@ function finalReviewCompleted({
     ...finalReviewStarted(ts, seat),
     type: 'review_completed',
     verdict,
-    findings: { blocking: verdict === 'fail' ? 1 : 0, minor: 0 },
+    findings: { blocking: verdict === 'fail' ? 1 : 0, minor: 0, outOfScope: 0 },
     duration,
   };
 }
@@ -3819,12 +3823,6 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
     orphanBriefStarted(FIXTURE_PLANNED_BRIEFS[2], FIXED_TS + 400),
     fixtureBriefPassed(FIXTURE_PLANNED_BRIEFS[2], FIXED_TS + 500),
     finalReviewStarted(FIXED_TS + 1_000, BASE_PLANNER),
-    {
-      type: 'planner_text',
-      ts: FIXED_TS + 1_000,
-      phase: 'final-review',
-      text: 'Check the fixture.',
-    },
     finalReviewCompleted({
       ts: FIXED_TS + 8_000,
       duration: 7_000,
@@ -3839,7 +3837,6 @@ const reviewCorrectedProjection: WorkflowFixtureProjection = {
       text: 'The fixture is updated.',
     },
     finalReviewStarted(FIXED_TS + 9_000, BASE_PLANNER),
-    { type: 'planner_text', ts: FIXED_TS + 10_000, phase: 'final-review', text: 'Checking again.' },
     finalReviewCompleted({
       ts: FIXED_TS + 14_000,
       duration: 5_000,
@@ -4367,6 +4364,7 @@ const projections = [
   finalReviewProjection,
   reviewCorrectedProjection,
   reviewTaskCadenceProjection,
+  reviewTaskOutOfScopeProjection,
   ...['clean', 'found'].map(
     (drift): WorkflowFixtureProjection => ({
       scenarioId: scenarioId(`workflow-review-drift-${drift}`),

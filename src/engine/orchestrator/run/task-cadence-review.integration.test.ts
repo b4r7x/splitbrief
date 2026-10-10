@@ -221,7 +221,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
         model: 'gpt-6.1-sol',
         axes: ['high'],
         verdict: 'pass',
-        findings: { blocking: 0, minor: 0 },
+        findings: { blocking: 0, minor: 0, outOfScope: 0 },
         ...(afterTaskId !== undefined && { afterTaskId }),
       });
       expect(completion?.duration).toBeGreaterThanOrEqual(0);
@@ -313,7 +313,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
         scope: 'task',
         afterTaskId: 'T001',
         verdict: 'fail',
-        findings: { blocking: 1, minor: 0 },
+        findings: { blocking: 1, minor: 0, outOfScope: 0 },
       }),
     ]);
     expect(events.findIndex((event) => event.type === 'review_fix_started')).toBeGreaterThan(

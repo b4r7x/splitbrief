@@ -27,6 +27,13 @@ const ReviewFindingSchema = z.object({
   criterionId: z.string().nullable(),
 });
 
+export const ReviewFindingCountsSchema = z.object({
+  blocking: z.number().int().nonnegative(),
+  minor: z.number().int().nonnegative(),
+  outOfScope: z.number().int().nonnegative().optional(),
+});
+export type ReviewFindingCounts = z.infer<typeof ReviewFindingCountsSchema>;
+
 export const ReviewVerdictSchema = z.object({
   tasks: z.array(ReviewTaskResultSchema),
   criteria: z.array(ReviewCriterionResultSchema),

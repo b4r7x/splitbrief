@@ -366,7 +366,7 @@ describe('runFinalReviewPhase', () => {
         scope: 'final',
         tool: 'claude-code',
         verdict: 'fail',
-        findings: { blocking: 1, minor: 0 },
+        findings: { blocking: 1, minor: 0, outOfScope: 0 },
       }),
     ]);
     expect(completionsEvents[0]?.duration).toBeGreaterThanOrEqual(0);
@@ -427,7 +427,7 @@ describe('runFinalReviewPhase', () => {
     expect(events.filter((event) => event.type === 'review_completed')).toEqual([
       expect.objectContaining({
         verdict: 'pass-with-notes',
-        findings: { blocking: 0, minor: 1 },
+        findings: { blocking: 0, minor: 1, outOfScope: 0 },
       }),
     ]);
     const markdown = readFileSync(join(sessionDir(projectDir, sessionId), REVIEW_FILE), 'utf-8');

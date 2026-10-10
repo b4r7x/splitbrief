@@ -174,7 +174,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
-  [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review…', 'Codex CLI')],
+  [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
     checkpointId('review-render-running'),
     includesAll(
@@ -194,6 +194,7 @@ const checkpointPredicates = [
       includesAll('Review 1 passed')(context) &&
       (context.viewport.cols < 80 || includesAll('Review T002 failed', 'fixes T003')(context)),
   ],
+  [checkpointId('review-task-out-of-scope'), includesAll('Review T001 passed', '3 notes')],
   [checkpointId('review-settled-passed'), includesAll('● Review 1 passed', '7.0s')],
   [checkpointId('review-settled-failed'), includesAll('✗ Review 1 failed', '7.0s')],
   [checkpointId('review-drift-clean'), includesAll('Drift · clean')],
@@ -209,7 +210,7 @@ const checkpointPredicates = [
   [checkpointId('review-compaction'), includesAll('Review · Compaction')],
   [
     checkpointId('review-checks-off'),
-    includesAll('End-of-run checks', 'off', 'Review…', 'Codex CLI'),
+    includesAll('End-of-run checks', 'off', 'Review · OpenAI Codex CLI'),
   ],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],

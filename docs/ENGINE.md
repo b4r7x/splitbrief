@@ -360,7 +360,9 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'review_completed'; scope: 'final' | 'task'; afterTaskId?: string;
   tool: string; model?: string; axes?: string[];
   verdict: 'pass' | 'pass-with-notes' | 'fail' | 'no-verdict' | 'stopped';
-  findings?: { blocking: number; minor: number }; duration: number }
+  findings?: { blocking: number; minor: number; outOfScope?: number }; duration: number }
+// New findings carry outOfScope. Older logs may omit it.
+// The transcript review row counts notes as minor + (outOfScope ?? 0).
 
 // Review fix cycle — the review answer appended fix tasks and START_FIX_CYCLE sent the run back
 { type: 'review_fix_started'; cycle: number; taskIds: TaskId[] }

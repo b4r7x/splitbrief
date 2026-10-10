@@ -39,6 +39,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-settled-failed', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-cadence', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-cadence-settled', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-task-out-of-scope', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '200x50']],
   ['home-recent-sessions', ['120x40', '80x24']],
@@ -64,6 +65,7 @@ describe('visual catalog', () => {
   it.each([
     ['workflow-review-task-cadence', 'Review T001 passed'],
     ['workflow-review-task-cadence-settled', 'Review 1 passed'],
+    ['workflow-review-task-out-of-scope', 'Review T001 passed'],
   ])('registers %s with its review checkpoint and sidebar viewport', (id, marker) => {
     const scenario = findVisualScenario(id);
     expect(scenario?.checkpoints[0]?.marker).toBe(marker);

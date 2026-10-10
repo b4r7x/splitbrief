@@ -510,6 +510,23 @@ describe('readRunEvents', () => {
     expect(events.slice(1, -1)).toEqual(corpus);
   });
 
+  it.each([undefined, 3])('replays review notes with outOfScope=%s', async (outOfScope) => {
+    const findings = { blocking: 0, minor: 1, ...(outOfScope !== undefined && { outOfScope }) };
+    const data = { ...SAMPLES.review_completed, verdict: 'pass-with-notes', findings };
+    createSessionLogAppender(ref())({
+      kind: 'event',
+      ts: new Date(TS).toISOString(),
+      type: 'review_completed',
+      phase: 'implementing',
+      data,
+    });
+
+    const { events, diagnostics } = await readRunEvents(ref());
+
+    expect(diagnostics).toEqual({ total: 1, skipped: 0, unknownTypes: [] });
+    expect(events[1]).toMatchObject({ type: 'review_completed', findings });
+  });
+
   it('wraps the replayed events in replay_started and replay_complete', async () => {
     const first = sampleFor('workflow_started');
     const last = sampleFor('workflow_complete', { ts: TS + 5_000 });

@@ -87,6 +87,26 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it.each(WIDE_VIEWPORTS)(
+    'counts out-of-scope task review notes at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-review-task-out-of-scope');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing out-of-scope review scenario');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+          preserveLineBreaks: true,
+        });
+        const row = frame.split('\n').find((line) => line.includes('Review T001 passed'));
+        expect(row).toContain('3 notes');
+        expect(frame).not.toContain('0 notes');
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
   it.each(['workflow-review-task-cadence', 'workflow-review-task-cadence-settled'])(
     'renders %s with each review below its brief',
     async (id) => {
@@ -96,9 +116,9 @@ describe('workflow visual fixtures', () => {
         preserveLineBreaks: true,
       });
       const lines = frame.split('\n');
-      const first = lines.findIndex((line) => line.includes('✓ T001'));
-      const firstReview = lines.findIndex((line) => line.includes('✓ Review T001 passed'));
-      const second = lines.findIndex((line) => line.includes('✓ T002'));
+      const first = lines.findIndex((line) => line.includes('● T001'));
+      const firstReview = lines.findIndex((line) => line.includes('● Review T001 passed'));
+      const second = lines.findIndex((line) => line.includes('● T002'));
       expect(first).toBeGreaterThanOrEqual(0);
       expect(firstReview).toBe(first + 1);
       expect(second).toBe(firstReview + 1);
@@ -120,8 +140,8 @@ describe('workflow visual fixtures', () => {
         expect(lines.filter((line) => line.includes('Review'))).toEqual(
           expect.arrayContaining([
             expect.stringContaining('✗ Review T002 failed  1 blocking · fixes T003 · 49.0s'),
-            expect.stringContaining('✓ Review T002 passed  49.0s'),
-            expect.stringContaining('✓ Review 1 passed  1m 2s'),
+            expect.stringContaining('● Review T002 passed  49.0s'),
+            expect.stringContaining('● Review 1 passed  1m 2s'),
           ]),
         );
         expect(lines.filter((line) => line.includes('Review 1 passed'))).toHaveLength(1);

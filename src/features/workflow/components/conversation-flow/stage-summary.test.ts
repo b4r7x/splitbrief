@@ -35,15 +35,33 @@ describe('stageSummaryRow', () => {
   });
 
   it.each([
-    ['final', 'passed', undefined, '✓ Review 1 passed  1m 2s'],
-    ['final', 'passed-with-notes', { blocking: 0, minor: 2 }, '✓ Review 1 passed  2 notes · 1m 2s'],
+    ['final', 'passed', undefined, '● Review 1 passed  1m 2s'],
+    ['final', 'passed-with-notes', { blocking: 0, minor: 2 }, '● Review 1 passed  2 notes · 1m 2s'],
     [
       'final',
       'failed',
       { blocking: 2, minor: 0 },
       '✗ Review 1 failed  2 blocking · npm test, 1 check · fixes T006 · 1m 2s',
     ],
-    ['task', 'passed', undefined, '✓ Review T001 passed  1m 2s'],
+    ['task', 'passed', undefined, '● Review T001 passed  1m 2s'],
+    [
+      'task',
+      'passed-with-notes',
+      { blocking: 0, minor: 0, outOfScope: 1 },
+      '● Review T001 passed  1 note · 1m 2s',
+    ],
+    [
+      'task',
+      'passed-with-notes',
+      { blocking: 0, minor: 0, outOfScope: 3 },
+      '● Review T001 passed  3 notes · 1m 2s',
+    ],
+    [
+      'final',
+      'passed-with-notes',
+      { blocking: 0, minor: 2, outOfScope: 3 },
+      '● Review 1 passed  5 notes · 1m 2s',
+    ],
     [
       'task',
       'failed',
