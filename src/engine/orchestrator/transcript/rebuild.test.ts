@@ -6,7 +6,12 @@ import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sessionDir, SESSION_LOG_FILE } from '../../../core/paths.js';
 import { saveState } from '../../../core/state/persistence.js';
 import { createInitialState } from '../../../core/state/machine.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { buildResumeContext } from './rebuild.js';
+import { attachedMessage } from '#testing/helpers/user-message.js';
+import { createEventBus } from '../../events/bus.js';
+import { recordSteer } from '../continuation.js';
+import { transitionAndSave } from '../state-ops.js';
 
 let dirs: string[] = [];
 
@@ -29,6 +34,174 @@ function writeSessionLog(projectDir: string, sessionId: string, entries: unknown
 }
 
 describe('buildResumeContext', () => {
+  it('reports a missing saved attachment answer as a typed error', async () => {
+    const ref = setupProject();
+    const ts = '2026-10-10T00:00:00.000Z';
+    saveState(ref, {
+      ...createInitialState('feature'),
+      phase: 'planning',
+      resumeUserMessages: [{ ts, phase: 'planning', displayText: '@notes.md', answerIndex: 0 }],
+    });
+    writeSessionLog(ref.projectDir, ref.sessionId, [
+      { kind: 'message', ts, role: 'user', phase: 'planning', text: '@notes.md' },
+    ]);
+    await expect(buildResumeContext({ ref })).rejects.toMatchObject({
+      kind: 'transcript-missing-attachment-answer',
+      message: 'Saved attachment answer is missing.',
+      data: { answerIndex: 0 },
+    });
+  });
+
+  it.each(['native', 'prompt'] as const)(
+    'restores a delivered %s attachment by queueMessageId after compaction',
+    async (delivery) => {
+      const ref = setupProject();
+      const message = attachedMessage(ref.projectDir);
+      const queuedAt = '2026-10-10T00:00:03.000Z';
+      saveState(ref, {
+        ...createInitialState('feature'),
+        phase: 'planning',
+        messageQueue: [
+          {
+            id: 'delivered',
+            ...message,
+            queuedAt,
+            phase: 'planning',
+            deliveredViaNative: delivery === 'native',
+            nativeDeliveryState: delivery === 'native' ? 'delivered' : 'pending',
+            ...(delivery === 'prompt' && { drainedAt: queuedAt }),
+          },
+        ],
+      });
+      writeSessionLog(ref.projectDir, ref.sessionId, [
+        { kind: 'message', ts: 1000, role: 'user', text: 'old request' },
+        { kind: 'summary', ts: 2000, text: 'Earlier work', summarizedUpTo: 1000 },
+        {
+          kind: 'message',
+          ts: queuedAt,
+          role: 'user',
+          phase: 'planning',
+          text: message.displayText,
+          queuedAt,
+          queueMessageId: 'delivered',
+        },
+        {
+          kind: 'message',
+          ts: queuedAt,
+          role: 'assistant',
+          phase: 'planning',
+          text: message.displayText,
+          queueMessageId: 'delivered',
+        },
+      ]);
+
+      expect((await buildResumeContext({ ref })).messages).toEqual([
+        { role: 'user', content: 'Earlier work' },
+        { role: 'user', content: message.text },
+        { role: 'assistant', content: message.displayText },
+      ]);
+    },
+  );
+
+  it('excludes a pending attachment whose compact text differs from its queue text', async () => {
+    const ref = setupProject();
+    const message = attachedMessage(ref.projectDir);
+    const queuedAt = '2026-10-10T00:00:03.000Z';
+    saveState(ref, {
+      ...createInitialState('feature'),
+      phase: 'planning',
+      messageQueue: [
+        {
+          id: 'pending',
+          ...message,
+          queuedAt,
+          phase: 'planning',
+          deliveredViaNative: false,
+          nativeDeliveryState: 'pending',
+        },
+      ],
+    });
+    writeSessionLog(ref.projectDir, ref.sessionId, [
+      {
+        kind: 'message',
+        ts: queuedAt,
+        role: 'user',
+        phase: 'planning',
+        text: message.displayText,
+        queuedAt,
+        queueMessageId: 'pending',
+      },
+      {
+        kind: 'message',
+        ts: queuedAt,
+        role: 'user',
+        phase: 'planning',
+        text: message.displayText,
+        queuedAt,
+      },
+    ]);
+    expect((await buildResumeContext({ ref })).messages).toEqual([]);
+  });
+
+  it('keeps each steer body when the same reference is submitted again and the file changes', async () => {
+    const ref = setupProject();
+    saveState(ref, { ...createInitialState('feature'), phase: 'planning' });
+    const message = attachedMessage(ref.projectDir);
+    const nextMessage = { ...message, text: message.text.replace('PELICAN-42', 'HERON-73') };
+    const ctx = { ...ref, bus: createEventBus() };
+    recordSteer(ctx, 'planning', message);
+    recordSteer(ctx, 'planning', nextMessage);
+    writeFileSync(message.attachedInputs[0]?.path ?? '', 'CHANGED ON DISK');
+
+    expect((await buildResumeContext({ ref })).messages).toEqual([
+      { role: 'user', content: message.text },
+      { role: 'user', content: nextMessage.text },
+    ]);
+  });
+
+  it('keeps a recorded steer body through a transition from an older in-memory state', async () => {
+    const ref = setupProject();
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    saveState(ref, state);
+    const message = attachedMessage(ref.projectDir);
+    recordSteer({ ...ref, bus: createEventBus() }, state.phase, message);
+    transitionAndSave(ref, state, { type: 'SET_PLANNER_SESSION_ID', sessionId: 'new-native' });
+
+    expect((await buildResumeContext({ ref })).messages).toEqual([
+      { role: 'user', content: message.text },
+    ]);
+  });
+
+  it('restores the later body when compaction cuts identical references at the same timestamp', async () => {
+    const ref = setupProject();
+    const message = attachedMessage(ref.projectDir);
+    const ts = '2026-10-10T00:00:00.000Z';
+    const nextText = message.text.replace('PELICAN-42', 'HERON-73');
+    saveState(ref, {
+      ...createInitialState('feature'),
+      phase: 'planning',
+      resumeUserMessages: [
+        { ts, phase: 'planning', displayText: message.displayText, text: message.text },
+        { ts, phase: 'planning', displayText: message.displayText, text: nextText },
+      ],
+    });
+    writeSessionLog(ref.projectDir, ref.sessionId, [
+      { kind: 'message', ts, role: 'user', phase: 'planning', text: message.displayText },
+      {
+        kind: 'summary',
+        ts: '2026-10-10T00:00:01.000Z',
+        text: 'Earlier work',
+        summarizedUpTo: ts,
+        summarizedCount: 1,
+      },
+      { kind: 'message', ts, role: 'user', phase: 'planning', text: message.displayText },
+    ]);
+    expect((await buildResumeContext({ ref })).messages).toEqual([
+      { role: 'user', content: 'Earlier work' },
+      { role: 'user', content: nextText },
+    ]);
+  });
+
   it('collects messages from the real session log on disk', async () => {
     const { projectDir, sessionId } = setupProject();
     const now = new Date().toISOString();
@@ -155,7 +328,7 @@ describe('buildResumeContext', () => {
       messageQueue: [
         {
           id: 'msg-pending',
-          text: 'still queued',
+          ...plainUserMessage('still queued'),
           queuedAt,
           phase: 'planning' as const,
           deliveredViaNative: false,
@@ -193,7 +366,7 @@ describe('buildResumeContext', () => {
         messageQueue: [
           {
             id: 'msg-pending',
-            text: 'pending queued after summary',
+            ...plainUserMessage('pending queued after summary'),
             queuedAt,
             phase: 'planning' as const,
             deliveredViaNative: false,

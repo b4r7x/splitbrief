@@ -8,6 +8,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { mountWorkflowScreen } from '#testing/helpers/workflow-screen.js';
 import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { RunWorkflowOptions } from '../../../src/engine/orchestrator/run/init.js';
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { questionPromptStore } from '../../../src/stores/question-prompt/prompt.js';
@@ -284,9 +285,11 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
       await vi.waitFor(() => {
         expect(received).toHaveBeenCalledExactlyOnceWith(
           kind === 'ordinary'
-            ? 'Refactor src/auth.ts; preserve CLI exit codes.'
+            ? plainUserMessage('Refactor src/auth.ts; preserve CLI exit codes.')
             : {
-                text: '1. Which module should change?\nRefactor src/auth.ts; preserve CLI exit codes.\n\n2. Which behavior must remain?\nCLI exit codes',
+                message: plainUserMessage(
+                  '1. Which module should change?\nRefactor src/auth.ts; preserve CLI exit codes.\n\n2. Which behavior must remain?\nCLI exit codes',
+                ),
                 qa: [
                   {
                     question: 'Which module should change?',
@@ -356,7 +359,9 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     await key('\r'); // Explicitly accept the false default.
     await vi.waitFor(() =>
       expect(received).toHaveBeenCalledExactlyOnceWith({
-        text: '1. Which seat?\nBuilder\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
+        message: plainUserMessage(
+          '1. Which seat?\nBuilder\n\n2. Which files?\nsrc/auth.ts\n\n3. Proceed?\nNo',
+        ),
         qa: [
           { question: 'Which seat?', answer: 'Builder' },
           { question: 'Which files?', answer: 'src/auth.ts' },
@@ -418,7 +423,9 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
     await key('\u001b[B');
     await key('\r');
     await vi.waitFor(() =>
-      expect(received).toHaveBeenCalledExactlyOnceWith('Review the current diff instead'),
+      expect(received).toHaveBeenCalledExactlyOnceWith(
+        plainUserMessage('Review the current diff instead'),
+      ),
     );
     await vi.waitFor(() =>
       expect(stripAnsiStyles(screen.lastFrame())).toContain('Which diff should I review?'),

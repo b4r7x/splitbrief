@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -26,6 +27,11 @@ import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
 import { createValidator } from '../validation/run.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -96,6 +102,42 @@ function split(specs: TaskSpec[]): ConsultAnswer {
 }
 
 describe('applyConsultAnswer', () => {
+  it('delivers an attached file from a structured consult reply and records compact text once', async () => {
+    const projectDir = createTempDir('consult-attached-file');
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId: 'consult-attached-file' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const message = attachedMessage(projectDir);
+    const qa = [{ question: 'Which store?', answer: message.displayText }];
+    const task = makeTask({ id: 'T003' });
+    const { ctx, events } = contextFor(projectDir, ref.sessionId, task, undefined, {
+      onPlannerReply: async () => ({ message, qa }),
+    });
+    ctx.bus.subscribe(createJsonlSink(ref));
+    const result = await applyConsultAnswer(
+      ctx,
+      task,
+      {
+        answer: {
+          action: 'ask-user',
+          diagnosis: 'Need context',
+          question: 'Which store?',
+          whyOnlyUserCanAnswer: 'Only the user has the file',
+          choices: null,
+          default: null,
+        },
+      },
+      null,
+    );
+    expect(result).toMatchObject({
+      action: 'guidance',
+      instructions: expect.stringContaining('PELICAN-42'),
+    });
+    expect(events.find((event) => event.type === 'user_message')).toMatchObject({ qa });
+    await expectCompactMessage(ref, events, message);
+    await expectResumedMessage(ref, message);
+  });
+
   it('returns the guidance for the next attempt without touching the run', async () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({
@@ -156,7 +198,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const { ctx, events } = contextFor(projectDir, sessionId, task, undefined, {
-      onPlannerReply: async () => '',
+      onPlannerReply: async () => plainUserMessage(''),
     });
     ctx.bus.subscribe(createJsonlSink({ projectDir, sessionId }));
     const attempt = await getChangedFilesSnapshot(projectDir);
@@ -191,8 +233,18 @@ describe('applyConsultAnswer', () => {
       qa: [{ question: 'Which store?', answer: 'memory' }],
     });
     const log = readFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), 'utf-8');
-    expect(log.trim().split('\n')).toHaveLength(1);
-    expect(JSON.parse(log)).toMatchObject({
+    const entries = log
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({
+      kind: 'message',
+      role: 'user',
+      phase: 'escalating',
+      text: 'memory',
+    });
+    expect(entries[1]).toMatchObject({
       type: 'user_message',
       phase: 'escalating',
       data: { text: 'memory', qa: [{ question: 'Which store?', answer: 'memory' }] },
@@ -200,13 +252,13 @@ describe('applyConsultAnswer', () => {
   });
 
   it.each(['memory', 'redis'])(
-    'records only the %s answer from the production structured reply',
+    'preserves the complete %s message from the production structured reply',
     async (answer) => {
       const { projectDir, sessionId } = setupRepo(dirs);
       const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
       const { ctx, events } = contextFor(projectDir, sessionId, task, undefined, {
         onPlannerReply: async () => ({
-          text: `1. Which store?\n${answer}`,
+          message: plainUserMessage(`1. Which store?\n${answer}`),
           qa: [{ question: 'Which store?', answer }],
         }),
       });
@@ -225,9 +277,16 @@ describe('applyConsultAnswer', () => {
         },
         null,
       );
-      expect(result).toEqual({ action: 'guidance', instructions: answer, context: null });
+      expect(result).toEqual({
+        action: 'guidance',
+        instructions: `1. Which store?\n${answer}`,
+        context: null,
+      });
       expect(events.filter((event) => event.type === 'user_message')).toEqual([
-        expect.objectContaining({ text: answer, qa: [{ question: 'Which store?', answer }] }),
+        expect.objectContaining({
+          text: `1. Which store?\n${answer}`,
+          qa: [{ question: 'Which store?', answer }],
+        }),
       ]);
     },
   );
@@ -236,7 +295,7 @@ describe('applyConsultAnswer', () => {
     const { projectDir, sessionId } = setupRepo(dirs);
     const task = makeTask({ id: 'T003', suggestedFiles: ['src/greet.ts'], criteria: ['C1'] });
     const { ctx, events } = contextFor(projectDir, sessionId, task, undefined, {
-      onPlannerReply: async () => 'redis',
+      onPlannerReply: async () => plainUserMessage('redis'),
     });
     const attempt = await getChangedFilesSnapshot(projectDir);
 

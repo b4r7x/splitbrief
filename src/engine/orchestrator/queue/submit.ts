@@ -5,7 +5,8 @@ import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
 import type { Planner } from '../../planners/types.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { publishWarning } from '../events.js';
-import { appendMessage } from '../../../core/sessions/log-writer.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
+import { recordUserMessage } from '../transcript/user-message.js';
 import { dispatchNativeInjection } from './native-injection.js';
 import { warnError } from '../../../lib/warn.js';
 import { nowIso } from '../../../utils/format-time.js';
@@ -23,7 +24,7 @@ export function enqueueUserMessage({
   projectDir,
   sessionId,
   state,
-  text,
+  message: input,
   phase,
   bus,
   enforcePhasePolicy = true,
@@ -66,7 +67,7 @@ export function enqueueUserMessage({
 
   const message: QueuedMessage = {
     id: randomUUID(),
-    text,
+    ...input,
     queuedAt: nowIso(),
     phase,
     deliveredViaNative: false,
@@ -78,10 +79,7 @@ export function enqueueUserMessage({
     type: 'ENQUEUE_USER_MSG',
     message,
   });
-  appendMessage(
-    { projectDir, sessionId },
-    { role: 'user', phase, text, queuedAt: message.queuedAt, queueMessageId: message.id },
-  );
+  recordUserMessage({ projectDir, sessionId, bus, phase }, input, { queuedMessage: message });
   const preview = formatQueuedMessagePreview(message);
   bus.publish({
     type: 'message_queued',
@@ -103,9 +101,9 @@ export function createQueueHandler(
     serialize: WriteSequencer;
     signal?: AbortSignal | undefined;
   },
-): (text: string, phase: Phase) => Promise<QueueSubmissionResult> {
+): (message: UserMessageInput, phase: Phase) => Promise<QueueSubmissionResult> {
   const { projectDir, sessionId, getState, setState, bus, planner, serialize, signal } = opts;
-  return async (text: string, phase: Phase) => {
+  return async (message: UserMessageInput, phase: Phase) => {
     try {
       const submitted = await serialize(
         (): {
@@ -128,7 +126,7 @@ export function createQueueHandler(
             projectDir,
             sessionId,
             state,
-            text,
+            message,
             phase,
             bus,
           });

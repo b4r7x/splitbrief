@@ -43,6 +43,18 @@ describe('composeContinuation', () => {
 });
 
 describe('continuationBlock', () => {
+  it.each([undefined, 'half a file'])(
+    'preserves attachment whitespace with partial %s',
+    (partial) => {
+      const steer = 'Use @notes.md\n\n--- @notes.md ---\nPELICAN-42 \n\t\n';
+      expect(continuationBlock({ partial, steer }).endsWith(`The user says: ${steer}`)).toBe(true);
+    },
+  );
+
+  it('uses the default for a whitespace-only steer', () => {
+    expect(continuationBlock({ steer: ' \n\t' })).toContain('continue from where you left off');
+  });
+
   it('reports the absence of earlier output and the steer, claiming no interruption', () => {
     const block = continuationBlock({ steer: 'add a default instead' });
 

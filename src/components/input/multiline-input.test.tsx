@@ -138,16 +138,48 @@ describe('MultilineInput modifier chords', () => {
 });
 
 describe('MultilineInput file drop', () => {
-  it('accepts quoted image paths that contain spaces', async () => {
+  it.each([
+    ['"/tmp/my photo.png"', '/tmp/my photo.png'],
+    ["'/tmp/my photo.png'", '/tmp/my photo.png'],
+    ['/tmp/my\\ photo.png', '/tmp/my photo.png'],
+    ['/tmp/my\\ shot.\\p\\n\\g', '/tmp/my shot.png'],
+    ['"/tmp/my\\ shot.png"', '/tmp/my\\ shot.png'],
+    ["'/tmp/my\\ shot.png'", '/tmp/my\\ shot.png'],
+    ['/tmp/a\\\\b.png', '/tmp/a\\b.png'],
+  ])('parses the dropped image path %s', async (input, expectedPath) => {
     let dropped: string | undefined;
     const ui = renderFeature(<Harness onFileDrop={(path) => (dropped = path)} />);
     await flushEffects();
 
-    ui.stdin.write('"/tmp/my photo.png"');
+    ui.stdin.write(input);
     await flushEffects();
 
-    expect(dropped).toBe('/tmp/my photo.png');
+    expect(dropped).toBe(expectedPath);
     expect(ui.lastFrame() ?? '').toContain('value:');
+    ui.unmount();
+  });
+
+  it.each([
+    '@shot.png',
+    String.raw`\@shot.png`,
+    'read @/outside/shot.png',
+    '/tmp/my shot.png',
+    '"/tmp/one.png" "/tmp/two.png"',
+    '/tmp/one.png\t/tmp/two.png',
+  ])('keeps %s as ordinary paste text', async (input) => {
+    const onFileDrop = vi.fn();
+    const onSubmit = vi.fn();
+    const ui = renderFeature(
+      <Harness onFileDrop={onFileDrop} onSubmit={onSubmit} keyBindings={COMPOSER_KEY_BINDINGS} />,
+    );
+    await flushEffects();
+    ui.stdin.write(input);
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(onFileDrop).not.toHaveBeenCalled();
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(input);
     ui.unmount();
   });
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { detectedModelFact, seatEffortChannel, seatSupportsImages } from './capabilities.js';
+import {
+  detectedModelFact,
+  plannerSupportsImages,
+  seatEffortChannel,
+  seatSupportsImages,
+} from './capabilities.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import type { ProviderDetection } from '../discovery/detection.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 
@@ -80,5 +86,47 @@ describe('detectedModelFact', () => {
       detectedModelFact(providers, apiRunner({ provider: 'lm-studio', model: 'llama-3.3-70b' })),
     ).toBeUndefined();
     expect(detectedModelFact(providers, claudeCode)).toBeUndefined();
+  });
+});
+
+describe('plannerSupportsImages', () => {
+  it('uses the planner tool channel even before detection', () => {
+    expect(plannerSupportsImages(null, [])).toBe(false);
+    for (const [planner, supportsImages] of [
+      [claudeCode, true],
+      [codex, true],
+      [opencode, false],
+      [cursor, false],
+      [shell, false],
+      [agent, false],
+    ] as const) {
+      expect(plannerSupportsImages(makeConfig({ planner }), [])).toBe(supportsImages);
+    }
+  });
+
+  it('uses the API planner model fact from its own provider', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'lm-studio',
+        apiBase: 'http://localhost:1234/v1',
+        model: 'vision',
+      },
+    });
+    const otherProvider: ProviderDetection = {
+      provider: 'ollama',
+      available: true,
+      isLocal: true,
+      models: [{ id: 'vision', supportsImages: true }],
+    };
+    expect(plannerSupportsImages(config, [otherProvider])).toBe(false);
+    const provider: ProviderDetection = { ...otherProvider, provider: 'lm-studio' };
+    expect(plannerSupportsImages(config, [provider])).toBe(true);
+    expect(plannerSupportsImages(config, [{ ...provider, models: [] }])).toBe(false);
+    expect(
+      plannerSupportsImages(config, [
+        { ...provider, models: [{ id: 'vision', supportsImages: false }] },
+      ]),
+    ).toBe(false);
   });
 });

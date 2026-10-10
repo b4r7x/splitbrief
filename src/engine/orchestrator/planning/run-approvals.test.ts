@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createInitialState } from '../../../core/state/machine.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -69,7 +71,7 @@ describe('runPlanningPhase — the plan card', () => {
 
   it('a change request at the plan card goes back into the session with the revised plan', async () => {
     const onApprovalNeeded = sequencedApproval([
-      { approved: false, action: 'revise', comment: 'add auth section' },
+      { approved: false, action: 'revise', message: plainUserMessage('add auth section') },
       { approved: true },
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
@@ -92,7 +94,7 @@ describe('runPlanningPhase — the plan card', () => {
   it("revises the plan at the card with the run's skills context", async () => {
     const skillsContext = '## Active Project Skills\n\n### AuthSkill\nGATE-SKILL-BODY';
     const onApprovalNeeded = sequencedApproval([
-      { approved: false, action: 'revise', comment: 'add auth section' },
+      { approved: false, action: 'revise', message: plainUserMessage('add auth section') },
       { approved: true },
     ]);
     const { callbacks } = makeCallbacks({ onApprovalNeeded });

@@ -1,4 +1,5 @@
 import type { Session } from '../../core/schemas/session.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { OwnedResumeState } from '../../core/state/resume-hydration.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
@@ -38,7 +39,7 @@ type PreparationRequest = Readonly<{
   record: RunRecord;
   state: WorkflowState;
   /** What the operator typed to continue this run; it rides into the first step's own prompt. */
-  steer?: string | undefined;
+  steer?: UserMessageInput | undefined;
   deps: SessionSelectDeps;
   returnOverlay: OverlayType;
 }>;
@@ -125,7 +126,7 @@ export function continueRunInPlace(
   input: Readonly<{
     record: RunRecord;
     state: WorkflowState;
-    steer?: string | undefined;
+    steer?: UserMessageInput | undefined;
     deps: SessionSelectDeps;
   }>,
 ): Promise<void> {

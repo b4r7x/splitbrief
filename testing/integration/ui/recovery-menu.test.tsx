@@ -9,6 +9,7 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
@@ -87,7 +88,11 @@ describe('recovery menu and composer keyboard ownership', () => {
     await vi.waitFor(() => expect(stripAnsiStyles(screen.lastFrame())).toContain('Run ended.'));
     await flushEffects();
     expect(loadState(ref)?.pendingRecovery).toBeUndefined();
-    expect(composerLiveStore.get()).toEqual({ empty: true, text: '' });
+    expect(composerLiveStore.get()).toEqual({
+      empty: true,
+      text: '',
+      document: createDraftDocument(''),
+    });
     expect(runWorkflow).not.toHaveBeenCalled();
     const replay = await readRunEvents(ref);
     const actions = replay.events.filter((event) => event.type === 'recovery_action_selected');

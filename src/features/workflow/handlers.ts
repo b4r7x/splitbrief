@@ -17,15 +17,20 @@ import type { CrewSeatId } from '../../core/crew/identity.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { markWorkflowResumed } from '../../stores/workflow/actions/resume.js';
 import { stopStore } from '../../stores/workflow/stop.js';
-import type { QueueClearResult, QueueSubmissionResult } from '../../engine/orchestrator/types.js';
+import type {
+  QueueClearResult,
+  QueueHandler,
+  QueueSubmissionResult,
+} from '../../engine/orchestrator/types.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 
 type AbortHandler = () => void;
 
 interface Handlers {
   stop: () => void;
   cancel: () => void;
-  resume: (text: string) => void;
-  queue: (text: string, phase: Phase) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
+  resume: (message: UserMessageInput) => void;
+  queue: QueueHandler;
   clearQueue: () => QueueClearResult | Promise<QueueClearResult>;
 }
 
@@ -40,7 +45,7 @@ let pendingBoundaryInterrupt = false;
 let pendingBoundaryPause = false;
 /** The seat changes saved under the running brief, keyed by seat: the revision each was seen at. */
 const pendingSeatChanges = new Map<CrewSeatId, string>();
-let pendingSteer: string | null = null;
+let pendingSteer: UserMessageInput | null = null;
 let steerUnsubscribe: (() => void) | undefined;
 let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
 let unsubscribeDeparture: (() => void) | undefined;
@@ -176,19 +181,19 @@ export function requestStopNow(): boolean {
 
 // Continuing is one path, and the run owns it: the handler it installs settles a park
 // this process is holding or re-enters the run at rest, and decides which.
-export function requestResume(text: string): boolean {
+export function requestResume(message: UserMessageInput): boolean {
   const stop = stopStore.get();
   if (stop.intent !== 'none' && stop.intent !== 'pause-after-brief' && stop.phase !== 'parked') {
     feedbackStore.setMessage('Finish stopping before resuming.');
     return false;
   }
   if (!handlers.resume) return false;
-  handlers.resume(text);
+  handlers.resume(message);
   return true;
 }
 
 /** Settles a park this process is holding. False when the run is at rest. */
-export function resumeParkedRun(steer: string): boolean {
+export function resumeParkedRun(steer: UserMessageInput): boolean {
   if (stopStore.get().phase !== 'parked') return false;
   stopStore.resume(steer);
   markWorkflowResumed();
@@ -200,11 +205,10 @@ export function resumeParkedRun(steer: string): boolean {
  * resumes here; a live call is stopped and the text held until its park lands, so a steer typed
  * during the stop race is not lost. A run at rest has nothing to stop and continues with the text.
  */
-export function requestSteer(text: string): boolean {
-  const trimmed = text.trim();
-  if (trimmed === '') return false;
+export function requestSteer(message: UserMessageInput): boolean {
+  if (message.text.trim() === '') return false;
   if (stopStore.get().phase === 'parked') {
-    stopStore.resume(trimmed);
+    stopStore.resume(message);
     markWorkflowResumed();
     return true;
   }
@@ -214,9 +218,9 @@ export function requestSteer(text: string): boolean {
     return false;
   }
   if (!handlers.stop && abortHandlers.length === 0 && !handlers.cancel) {
-    return requestResume(trimmed);
+    return requestResume(message);
   }
-  pendingSteer = trimmed;
+  pendingSteer = message;
   steerUnsubscribe?.();
   steerUnsubscribe = stopStore.subscribe(() => {
     if (pendingSteer === null || stopStore.get().phase !== 'parked') return;
@@ -231,7 +235,7 @@ export function requestSteer(text: string): boolean {
   }
   if (stopStore.get().phase === 'parked') {
     clearPendingSteer();
-    stopStore.resume(trimmed);
+    stopStore.resume(message);
     markWorkflowResumed();
   }
   return true;
@@ -341,11 +345,11 @@ export function requestQuit(exit: () => void): void {
 }
 
 export async function requestEnqueue(
-  text: string,
+  message: UserMessageInput,
   phase: Phase,
 ): Promise<QueueSubmissionResult | null> {
   if (!handlers.queue) return null;
-  return handlers.queue(text, phase);
+  return handlers.queue(message, phase);
 }
 
 export function requestClearQueue(): QueueClearResult | Promise<QueueClearResult> {

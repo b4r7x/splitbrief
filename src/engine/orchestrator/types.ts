@@ -27,9 +27,10 @@ import type { SessionRef } from '../../core/types/session-ref.js';
 import type { RoutingDecision } from './context-routing/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import type { PlannerReplyAnswer } from '../../core/schemas/question.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 export interface OrchestratorCallbacks {
   onPlannerReply?:
-    | ((reply: PlannerConversation) => Promise<string | PlannerReplyAnswer | undefined>)
+    | ((reply: PlannerConversation) => Promise<UserMessageInput | PlannerReplyAnswer | undefined>)
     | undefined;
   /** `confirms`: the protected operations approving confirms in advance, as the gate names them. */
   onApprovalNeeded: (
@@ -42,7 +43,9 @@ export interface OrchestratorCallbacks {
    * `at` says what they are looking at: a call cut in flight, or a run held
    * between two briefs.
    */
-  onContinuationNeeded?: ((partialResponse: string, at: StepCut) => Promise<string>) | undefined;
+  onContinuationNeeded?:
+    | ((partialResponse: string, at: StepCut) => Promise<UserMessageInput>)
+    | undefined;
   onTieredApproval?:
     | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)
     | undefined;
@@ -70,7 +73,7 @@ export type QueueClearResult =
   | { status: 'unavailable'; message: string };
 
 export type QueueHandler = (
-  text: string,
+  message: UserMessageInput,
   phase: Phase,
 ) => QueueSubmissionResult | Promise<QueueSubmissionResult>;
 export type ClearQueueHandler = () => QueueClearResult | Promise<QueueClearResult>;

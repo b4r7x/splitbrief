@@ -1,4 +1,3 @@
-import { resolve } from 'node:path';
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
@@ -322,6 +321,9 @@ const planningProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const OUTSIDE_COMPOSER_FILE =
+  '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+
 const startAttachedFilesProjection: WorkflowFixtureProjection = {
   ...planningProjection,
   scenarioId: scenarioId('workflow-start-attached-files'),
@@ -336,14 +338,47 @@ const startAttachedFilesProjection: WorkflowFixtureProjection = {
       text: WORKFLOW_FEATURE,
       attachedInputs: [
         {
-          path: resolve(
-            VISUAL_FIXTURE_PROJECT_DIR,
-            'docs/briefs/restock-planning-and-receiving.md',
-          ),
+          path: OUTSIDE_COMPOSER_FILE,
           kind: 'text',
         },
-        { path: resolve(VISUAL_FIXTURE_PROJECT_DIR, 'design/receiving-flow.png'), kind: 'image' },
+        { path: '/Volumes/design/receiving-flow.png', kind: 'image' },
       ],
+    },
+  ],
+};
+
+const composerOutsideFileProjection: WorkflowFixtureProjection = {
+  ...planningProjection,
+  scenarioId: scenarioId('workflow-composer-outside-file'),
+  events: [
+    ...planningProjection.events,
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 80,
+      phase: 'planning',
+      text: `Use @${OUTSIDE_COMPOSER_FILE} for the receiving flow.`,
+      attachedInputs: [{ path: OUTSIDE_COMPOSER_FILE, kind: 'text' }],
+    },
+  ],
+};
+
+const questionOutsideFileProjection: WorkflowFixtureProjection = {
+  ...planningProjection,
+  scenarioId: scenarioId('workflow-question-outside-file'),
+  events: [
+    ...planningProjection.events.filter((event) => event.type !== 'user_message'),
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 70,
+      phase: 'planning',
+      text: `1. Which brief describes the receiving flow?\nPlease use @${OUTSIDE_COMPOSER_FILE}`,
+      qa: [
+        {
+          question: 'Which brief describes the receiving flow?',
+          answer: `Please use @${OUTSIDE_COMPOSER_FILE}`,
+        },
+      ],
+      attachedInputs: [{ path: OUTSIDE_COMPOSER_FILE, kind: 'text' }],
     },
   ],
 };
@@ -4631,6 +4666,8 @@ const projections = [
   idleProjection,
   planningProjection,
   startAttachedFilesProjection,
+  composerOutsideFileProjection,
+  questionOutsideFileProjection,
   planningPathNoticeProjection,
   planCompiledProjection,
   firstBriefAfterPlanProjection,

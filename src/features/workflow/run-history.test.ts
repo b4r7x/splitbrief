@@ -4,7 +4,7 @@ import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { groupEventsIntoSections } from '../../core/sections/event-sections.js';
 import { ConversationRowView } from './components/conversation-flow/row-view.js';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { arrowSep } from '../../core/separators.js';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -174,6 +174,62 @@ describe('hydrateRun', () => {
       next: { id: 'T007' },
     });
   });
+  it('replays answered questions with their attached files once, matching the live transcript', async () => {
+    const answer: EngineEventOf<'user_message'> = {
+      type: 'user_message',
+      ts: 1_100,
+      phase: 'planning',
+      text: '1. Which module?\n@/Users/me/notes/brief.md',
+      qa: [{ question: 'Which module?', answer: '@/Users/me/notes/brief.md' }],
+      attachedInputs: [{ path: '/Users/me/notes/brief.md', kind: 'text' }],
+    };
+    const log = [...RUN.slice(0, 1), answer];
+    writeLog(log);
+    appendFileSync(
+      join(sessionDir(projectDir, SESSION_ID), SESSION_LOG_FILE),
+      `${JSON.stringify({
+        kind: 'message',
+        ts: new Date(answer.ts).toISOString(),
+        role: 'user',
+        phase: answer.phase,
+        text: answer.text,
+        qa: answer.qa,
+      })}\n`,
+    );
+    for (const event of log) addEvent(event);
+    const live = eventRows({
+      event: answer,
+      globalIndex: 1,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming: { taskId: null, lines: [], active: false } },
+    }).map((row) => rowText(row).trim());
+    resetWorkflow();
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    const replayed = eventsStore.get().events.flatMap((event, globalIndex) =>
+      eventRows({
+        event,
+        globalIndex,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming: { taskId: null, lines: [], active: false } },
+      }).map((row) => rowText(row).trim()),
+    );
+
+    expect(replayed).toEqual(live);
+    expect(replayed).toEqual([
+      'Answered · 1 question',
+      '1. Which module?',
+      'You → @/Users/me/notes/brief.md',
+      'Attached files · 1',
+      'text · /Users/me/notes/brief.md',
+    ]);
+  });
+
   it('restores the first request with every attached file in the transcript', async () => {
     writeLog([
       ...RUN.slice(0, 1),
@@ -210,8 +266,8 @@ describe('hydrateRun', () => {
     expect(header).toBeGreaterThan(-1);
     expect(lines.slice(header, header + 3)).toEqual([
       'Attached files · 2',
-      '/Users/dev/briefs/feature.md · text',
-      '/Users/dev/Desktop/receiving-flow.png · image',
+      'text · /Users/dev/briefs/feature.md',
+      'image · /Users/dev/Desktop/receiving-flow.png',
     ]);
   });
 

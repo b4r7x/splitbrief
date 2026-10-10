@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createInitialState, transition } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
@@ -107,7 +109,7 @@ describe('drain', () => {
     const state = makeStateWithQueue([
       {
         id: 'msg-1',
-        text: 'retryable message',
+        ...plainUserMessage('retryable message'),
         queuedAt: new Date().toISOString(),
         phase: 'researching',
       },
@@ -124,13 +126,13 @@ describe('drain', () => {
     const drainedAt = new Date().toISOString();
     const first = {
       id: 'msg-1',
-      text: 'applied',
+      ...plainUserMessage('applied'),
       queuedAt: new Date().toISOString(),
       phase: 'researching' as const,
     };
     const second = {
       id: 'msg-2',
-      text: 'already drained',
+      ...plainUserMessage('already drained'),
       queuedAt: new Date().toISOString(),
       phase: 'researching' as const,
       drainedAt,
@@ -303,13 +305,13 @@ describe('drain', () => {
     const state = makeStateWithQueue([
       {
         id: 'msg-1',
-        text: 'first message',
+        ...plainUserMessage('first message'),
         queuedAt: new Date().toISOString(),
         phase: 'researching',
       },
       {
         id: 'msg-2',
-        text: 'second message',
+        ...plainUserMessage('second message'),
         queuedAt: new Date().toISOString(),
         phase: 'researching',
       },
@@ -333,8 +335,14 @@ describe('drain', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const now = new Date().toISOString();
     const state = makeStateWithQueue([
-      { id: 'msg-1', text: 'already drained', queuedAt: now, phase: 'researching', drainedAt: now },
-      { id: 'msg-2', text: 'pending', queuedAt: now, phase: 'researching' },
+      {
+        id: 'msg-1',
+        ...plainUserMessage('already drained'),
+        queuedAt: now,
+        phase: 'researching',
+        drainedAt: now,
+      },
+      { id: 'msg-2', ...plainUserMessage('pending'), queuedAt: now, phase: 'researching' },
     ]);
     const { bus } = makeBusRecorder();
 

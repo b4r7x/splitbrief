@@ -8,10 +8,12 @@ export function formatQueueMessagePreview(text: string): string {
 }
 
 export function formatQueuedMessagePreview(
-  message: Pick<QueuedMessage, 'origin' | 'question' | 'text'>,
+  message: Pick<QueuedMessage, 'origin' | 'question' | 'displayText'>,
 ): string {
   if (message.origin === 'clarification' && message.question) {
-    return formatQueueMessagePreview(`clarification: ${message.question} -> ${message.text}`);
+    return formatQueueMessagePreview(
+      `clarification: ${message.question} -> ${message.displayText}`,
+    );
   }
-  return formatQueueMessagePreview(message.text);
+  return formatQueueMessagePreview(message.displayText);
 }

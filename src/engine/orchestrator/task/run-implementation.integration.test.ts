@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -46,6 +48,7 @@ import { createStagedProject } from '../approval/staged-project.js';
 import { gateAttemptChanges } from './attempt-gate.js';
 import { runImplementation } from './run-implementation.js';
 import type { StreamingSink } from './streaming-feed.js';
+import { attachedMessage } from '#testing/helpers/user-message.js';
 
 const directories: string[] = [];
 
@@ -457,7 +460,14 @@ describe('runImplementation configured custom contracts', () => {
 
 describe('runImplementation workspace continuation', () => {
   async function capturedResume(
-    seed: { partial?: string; steer?: string; attempt?: number; keepWorkspace?: true } | undefined,
+    seed:
+      | {
+          partial?: string;
+          steer?: ReturnType<typeof plainUserMessage>;
+          attempt?: number;
+          keepWorkspace?: true;
+        }
+      | undefined,
     stateOverrides?: Partial<WorkflowState>,
   ): Promise<boolean | undefined> {
     const { projectDir } = setupProject('reseed');
@@ -509,7 +519,7 @@ describe('runImplementation workspace continuation', () => {
   });
 
   it('starts an attempt without resuming when a correction alone continues the brief', async () => {
-    expect(await capturedResume({ steer: 'use the smaller helper' })).toBe(false);
+    expect(await capturedResume({ steer: plainUserMessage('use the smaller helper') })).toBe(false);
   });
 
   it('keeps the worktree for a genuine mid-step park continuation', async () => {
@@ -593,7 +603,8 @@ describe('runImplementation correction at a stop', () => {
       projectDir: input.projectDir,
       sessionId: input.sessionId,
       implementer: input.implementer,
-      callbacks: makeCallbacks({ onContinuationNeeded: async () => correction }).callbacks,
+      callbacks: makeCallbacks({ onContinuationNeeded: async () => plainUserMessage(correction) })
+        .callbacks,
       sinks: {
         setAbortHandler: (handler) => {
           abort.call = handler;
@@ -751,7 +762,7 @@ describe('runImplementation continuation note', () => {
     const implementer = makeImplementer({ capabilities: { writesFiles: 'direct' } });
     const continuation = createContinuationHolder({
       step: { kind: 'brief', taskId: task.id, attempt: 0 },
-      steer: 'use the registry',
+      steer: plainUserMessage('use the registry'),
     });
     await runImplementation({
       wctx: makeWctx({
@@ -798,7 +809,7 @@ describe('runImplementation continuation note', () => {
     };
     const continuation = createContinuationHolder({
       step: { kind: 'brief', taskId: task.id, attempt: 0 },
-      steer: 'use the registry',
+      steer: plainUserMessage('use the registry'),
     });
     const wctx = makeWctx({
       projectDir,
@@ -1083,44 +1094,61 @@ describe('runImplementation fix tasks', () => {
 });
 
 describe('runImplementation corrections against the persisted head', () => {
-  it('keeps a correction already saved when the seed brings another', async () => {
-    const { projectDir } = setupProject('seed-correction-head');
-    const sessionId = 'seed-correction-head-session';
-    ensureSessionDir(projectDir, sessionId);
-    const task = makeTask({ id: 'T070', suggestedFiles: ['src/seeded.ts'], action: 'create' });
-    const stale = makeImplState([task]);
-    saveState({ projectDir, sessionId }, stale);
-    transitionAndSave({ projectDir, sessionId }, stale, {
-      type: 'RECORD_CORRECTION',
-      taskId: task.id,
-      text: 'first correction',
-    });
-    const implementer = makeImplementer();
-
-    const result = await runImplementation({
-      wctx: makeWctx({
+  it.each(['seed', 'parked'] as const)(
+    'keeps exact attachment text from a %s correction beside saved corrections',
+    async (route) => {
+      const { projectDir } = setupProject('seed-correction-head');
+      const sessionId = 'seed-correction-head-session';
+      ensureSessionDir(projectDir, sessionId);
+      const task = makeTask({ id: 'T070', suggestedFiles: ['src/seeded.ts'], action: 'create' });
+      const stale = makeImplState([task]);
+      saveState({ projectDir, sessionId }, stale);
+      transitionAndSave({ projectDir, sessionId }, stale, {
+        type: 'RECORD_CORRECTION',
+        taskId: task.id,
+        text: 'first correction',
+      });
+      const implementer = makeImplementer();
+      const message = attachedMessage(projectDir);
+      let parked = route === 'parked';
+      const wctx = makeWctx({
         projectDir,
         sessionId,
         implementer,
-        continuation: createContinuationHolder({
-          step: { kind: 'brief', taskId: task.id, attempt: stale.attempt },
-          steer: 'second correction',
+        callbacks: makeCallbacks({ onContinuationNeeded: async () => message }).callbacks,
+        ...(route === 'seed' && {
+          continuation: createContinuationHolder({
+            step: { kind: 'brief', taskId: task.id, attempt: stale.attempt },
+            steer: message,
+          }),
         }),
-      }),
-      task,
-      state: stale,
-      taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
-      setTrackedState: vi.fn(),
-      recordApprovalDenial: vi.fn(),
-    });
+      });
+      wctx.sinks = {
+        ...wctx.sinks,
+        consumeBoundaryInterrupt: () => {
+          const result = parked;
+          parked = false;
+          return result;
+        },
+      };
 
-    for (const saved of [result.state, loadState({ projectDir, sessionId })]) {
-      expect(saved?.lineages?.T070?.corrections).toEqual(['first correction', 'second correction']);
-    }
-    const steer = vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation?.steer;
-    expect(steer).toContain('first correction');
-    expect(steer).toContain('second correction');
-  });
+      const result = await runImplementation({
+        wctx,
+        task,
+        state: stale,
+        taskStartSnapshot: await getChangedFilesSnapshot(projectDir),
+        setTrackedState: vi.fn(),
+        recordApprovalDenial: vi.fn(),
+      });
+
+      for (const saved of [result.state, loadState({ projectDir, sessionId })]) {
+        expect(saved?.lineages?.T070?.corrections).toEqual(['first correction', message.text]);
+      }
+      const steer = vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation?.steer;
+      expect(steer).toContain('first correction');
+      expect(steer).toBe(`first correction\n\n${message.text}`);
+    },
+  );
 
   it('carries queued text once per call and records it once', async () => {
     const { projectDir } = setupProject('queued-correction-once');
@@ -1134,7 +1162,7 @@ describe('runImplementation corrections against the persisted head', () => {
       projectDir,
       sessionId,
       state: initial,
-      text: 'name the helper parseAmount',
+      message: plainUserMessage('name the helper parseAmount'),
       phase: 'implementing',
       bus,
     }).state;
@@ -1168,7 +1196,7 @@ describe('runImplementation corrections against the persisted head', () => {
       projectDir,
       sessionId,
       state: initial,
-      text: 'wait for me',
+      message: plainUserMessage('wait for me'),
       phase: 'implementing',
       bus,
     }).state;
@@ -1206,7 +1234,7 @@ describe('runImplementation corrections against the persisted head', () => {
       projectDir,
       sessionId,
       state: initial,
-      text: 'never mind',
+      message: plainUserMessage('never mind'),
       phase: 'implementing',
       bus,
     }).state;

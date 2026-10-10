@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import { join } from 'node:path';
@@ -366,7 +368,7 @@ describe('handleRetryAndEscalation', () => {
       sessionId,
       state: halted,
       action: 'continue',
-      comment: 'grant it',
+      comment: plainUserMessage('grant it'),
       bus,
     });
     expect(applied.ok).toBe(true);

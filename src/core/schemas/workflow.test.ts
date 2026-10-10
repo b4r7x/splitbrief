@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { REVIEW_STATUSES } from './enums.js';
-import { ChangedFilesSnapshotSchema, WorkflowStateSchema } from './workflow.js';
+import {
+  ChangedFilesSnapshotSchema,
+  QueuedMessageSchema,
+  WorkflowStateSchema,
+} from './workflow.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { PlanSchema } from './plan.js';
+import { plainUserMessage } from '../types/user-input.js';
 
 const tokenUsage = makeUsage();
 
@@ -43,6 +48,61 @@ function state(
 }
 
 describe('WorkflowStateSchema v4', () => {
+  it('persists expanded resume messages while accepting states without them', () => {
+    const resumeUserMessages = [
+      {
+        ts: '2026-10-10T00:00:00.000Z',
+        phase: 'planning',
+        displayText: 'Use @notes.md',
+        text: 'Use @notes.md\n\n--- @notes.md ---\nPELICAN-42',
+      },
+      {
+        ts: '2026-10-10T00:00:01.000Z',
+        phase: 'planning',
+        displayText: 'Answer with @notes.md',
+        answerIndex: 0,
+      },
+    ];
+    const parsed = WorkflowStateSchema.parse({ ...state(), resumeUserMessages });
+    expect(
+      WorkflowStateSchema.parse(JSON.parse(JSON.stringify(parsed))).resumeUserMessages,
+    ).toEqual(resumeUserMessages);
+    expect(WorkflowStateSchema.parse(state()).resumeUserMessages).toBeUndefined();
+  });
+
+  it('normalizes old queues and persists the complete new message fields', () => {
+    const old = {
+      id: 'old',
+      text: 'old steer',
+      queuedAt: '2026-10-10T00:00:00.000Z',
+      phase: 'planning',
+      deliveredViaNative: false,
+    };
+    expect(QueuedMessageSchema.parse(old)).toMatchObject(plainUserMessage(old.text));
+    const message = {
+      ...old,
+      text: 'Use @notes.md\n\nPELICAN-42',
+      displayText: 'Use @notes.md',
+      images: [
+        {
+          id: 'image-1',
+          kind: 'image',
+          path: '/real/image.png',
+          sizeBytes: 5,
+          mimeType: 'image/png',
+        },
+      ],
+      attachedInputs: [
+        { path: '/real/notes.md', kind: 'text' },
+        { path: '/real/image.png', kind: 'image' },
+      ],
+    };
+    const parsed = WorkflowStateSchema.parse({ ...state(), messageQueue: [message] });
+    expect(
+      WorkflowStateSchema.parse(JSON.parse(JSON.stringify(parsed))).messageQueue[0],
+    ).toMatchObject(message);
+  });
+
   it('preserves account details on seat-switch records', () => {
     const parsed = WorkflowStateSchema.parse({
       ...state(),

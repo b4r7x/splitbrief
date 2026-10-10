@@ -7,6 +7,8 @@ import { REVIEW_FILE } from '../../../core/paths.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { error } from '../../../utils/error.js';
 import { publishError } from '../events.js';
+import { recordUserMessage } from '../transcript/user-message.js';
+import { consultReplyAnswer } from '../consult/apply.js';
 import {
   REVIEW_UNAVAILABLE,
   runFinalReviewPhase,
@@ -20,7 +22,11 @@ import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
 import { seatProtocolHaltIssue } from '../recovery/seat-protocol-halt.js';
 import type { SeatProtocolError } from '../../runners/typed-output.js';
 import { applyTriage, startFixCycle } from '../triage.js';
-import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
+import {
+  raisePendingRecovery,
+  rebaseOnPersistedWorkflowState,
+  transitionAndSave,
+} from '../state-ops.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
 import type { TriageInput, TriageResult } from '../../../core/schemas/review.js';
 import type { ReviewOutcome } from '../../../core/review/verdict.js';
@@ -257,6 +263,7 @@ export async function followReviewAnswer(args: {
       });
       return { state, stopped: true, reviewAgain: false };
     }
+    const answered = consultReplyAnswer({ id: 'review-ask', type: 'input', text: question }, reply);
     state = transitionAndSave(wctx, state, {
       type: 'QUEUE_TRIAGE',
       inputs: [
@@ -265,11 +272,16 @@ export async function followReviewAnswer(args: {
           id: `A${inputs.length + 1}`,
           kind: 'answer',
           source: 'user',
-          text: typeof reply === 'string' ? reply : reply.text,
+          text: answered.message.text,
           file: null,
         },
       ],
     });
+    recordUserMessage({ ...wctx, phase: state.phase }, answered.message, {
+      qa: answered.qa,
+      answerIndex: (state.userAnswers?.length ?? 0) - 1,
+    });
+    state = rebaseOnPersistedWorkflowState(wctx, state);
     setTrackedState(state);
     return { state, stopped: false, reviewAgain: true };
   }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
 import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { runTrackedWorkflow, settleTrackedWorkflows } from '#testing/helpers/tracked-workflow.js';
 import type { ImplementerOptions } from '../../../src/engine/implementers/types.js';
@@ -160,7 +161,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
     const summary = await runTrackedWorkflow({
       prepared,
       savedState: resumeState,
-      steer,
+      steer: plainUserMessage(steer),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       _planner: planner,
@@ -242,7 +243,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
         resumeState: cut,
         active: reactivateExistingSession(ref),
       }),
-      steer,
+      steer: plainUserMessage(steer),
       callbacks: makeCallbacks().callbacks,
       sinks: TEST_WORKFLOW_SINKS,
       _planner: planner,

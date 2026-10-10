@@ -358,7 +358,7 @@ describe('installHistoryPersistence', () => {
     expect(entry).toEqual(recalled);
     expect(
       prepareDraftSubmission(entry ?? recalled, { projectDir: tmpHome, supportsImages: true }),
-    ).toEqual({ ok: false, reason: 'not-found', imageId: 'img-1' });
+    ).toEqual({ ok: false, reason: 'not-found', imageId: 'img-1', path: attachment.path });
   });
 
   it.each([

@@ -1,5 +1,6 @@
 import type { PlanAnswer, PlanProposal, PlanResult } from '../../../core/schemas/plan.js';
 import type { ClarificationQuestion, PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
 import { blocksPlan, type PlanCheckError } from '../../spec/plan-checks.js';
 import { MAX_QUESTION_ROUNDS } from '../../spec/prompts/plan-session.js';
@@ -19,7 +20,7 @@ export type PlanSessionOutcome =
 /** A session whose questions nobody answered; only a session that can leave them open ends so. */
 export type PlanSessionUnanswered = Readonly<{ kind: 'unanswered' }>;
 
-type PlanReply = string | PlannerReplyAnswer;
+type PlanReply = UserMessageInput | PlannerReplyAnswer;
 
 export type PlanSessionIo<Reply extends PlanReply | undefined> = Readonly<{
   /** Question rounds the session already answered. */
@@ -56,18 +57,18 @@ function defaultAnswer(question: ClarificationQuestion): string {
 /** An empty reply takes every default; a typed reply stands as it was written. */
 function replyFor(
   questions: readonly ClarificationQuestion[],
-  reply: string | PlannerReplyAnswer,
+  reply: UserMessageInput | PlannerReplyAnswer,
 ): PlannerReplyAnswer {
-  if (typeof reply !== 'string') return reply;
-  if (reply.trim() !== '') return { text: reply, qa: [] };
+  if ('message' in reply) return reply;
+  if (reply.text.trim() !== '') return { message: reply, qa: [] };
   const qa = questions.map((question) => ({
     question: question.text,
     answer: defaultAnswer(question),
   }));
-  return {
-    text: qa.map((pair, index) => `${index + 1}. ${pair.question}\n${pair.answer}`).join('\n\n'),
-    qa,
-  };
+  const text = qa
+    .map((pair, index) => `${index + 1}. ${pair.question}\n${pair.answer}`)
+    .join('\n\n');
+  return { message: plainUserMessage(text), qa };
 }
 
 /**

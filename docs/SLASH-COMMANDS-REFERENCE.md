@@ -282,13 +282,23 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
 
 - **Purpose**: Attach, list, or remove images (PNG, JPG, etc.) for the next planner call. Useful for "here is a screenshot of the bug" workflows.
 - **Screens**: `home`, `workflow`.
-- **Guard**: the PLAN seat must be able to see images. On a seat without vision the command is blocked with `"PLAN seat cannot see images — pick a vision model with /crew plan"` instead of dropping the attachment silently at call time. CLI seats can; an `api` seat depends on the model; `shell` and `agent` seats never can.
+- **Guard**: the PLAN seat must be able to see images. Without vision, the dispatcher refuses `/image` before its handler runs. It reports `"PLAN seat cannot see images — pick a vision model with /crew plan"`. CLI seats can; an `api` seat depends on the model; `shell` and `agent` seats never can.
+- **Composer feedback**: Drop, paste, and sending a resolved `@x.png` use the composer's vision check. With a loaded configuration, each reports `"Cannot attach: PLAN seat <seat identity> cannot see images — /crew plan"`. Without a loaded configuration, drop and paste report `"Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan."`. Without a loaded configuration, sending `@x.png` reports `"Cannot send image: the planner cannot see images. Choose a vision model with /crew plan."`.
 - **Args**: a file path, or one of `list` / `remove` (the `IMAGE_ACTIONS` tuple in `src/core/runtime/commands/types.ts`). No argument behaves like `list`; `remove` takes a 1-based index or the attachment's ID.
 - **Example**: `/image ./screenshots/bug.png`, `/image list`, `/image remove 1`, `/image remove att_a8f3c2`
 - **Behavior**:
   - `list` (or no argument) with nothing pending: `"No image attachments pending. Usage: /image <path>"`; otherwise `"Pending attachments: 1: <path>, 2: <path>"`.
-  - A path on success: `"Attached: <resolved-path>"`; on failure `"Cannot attach: <reason>"` (file missing, unsupported format, etc.).
+  - A path on success: `"Attached: <resolved-path>"`. File refusals use the messages below. Composer drop uses the same messages. Only refused composer sends append ` File: <base name>.`, with at most 24 terminal cells for the base name. Sending the directory reference `@/Users/me/notes/` reports `"Cannot send: not a regular file. Name a file, not a directory. File: notes."`.
   - `remove` without a target: `"Usage: /image remove <index|id>"`. On success `"Removed: <input>"`, on no match `"No attachment matched: <input>"`.
+
+| Reason | Feedback |
+|---|---|
+| `not-found` | `Cannot attach image: file not found. Check the path and try again.` |
+| `not-a-file` | `Cannot attach image: not a regular file. Name a file, not a directory.` |
+| `too-large` | `Cannot attach image: file is larger than 10 MiB. Choose a smaller file.` |
+| `unreadable` | `Cannot attach image: cannot read the file. Check its permissions.` |
+| `not-image` | `Cannot attach image: choose a PNG, JPEG, GIF, WebP, or BMP file.` |
+
 - **Implementation**: catalog at `src/core/runtime/commands/defs/io.ts`; attachment helpers in `src/stores/workflow/attachments.ts`, backed by `src/core/attachments/resolve.ts`.
 - **See also**: `/crew`.
 

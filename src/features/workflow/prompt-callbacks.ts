@@ -10,6 +10,7 @@ import type { OrchestratorCallbacks } from '../../engine/orchestrator/types.js';
 import type { PlannerConversation } from '../../core/schemas/workflow.js';
 import { questionPromptStore } from '../../stores/question-prompt/prompt.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
+import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
 
 function runningTaskId(): string | null {
   return selectRunningBrief(tasksStore.get(), lifecycleStore.get().phase).current?.id ?? null;
@@ -53,9 +54,9 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
     // composer keeps its own meaning until /resume or a typed steer settles this promise.
     // A boundary park holds the run between briefs; the byline names the one it stopped after.
     onContinuationNeeded: async (_partial, at) => {
-      if (controller.signal.aborted || abortedRef.current) return '';
+      if (controller.signal.aborted || abortedRef.current) return plainUserMessage('');
       markWorkflowPaused();
-      return new Promise<string>((resolve) => {
+      return new Promise<UserMessageInput>((resolve) => {
         if (at === 'boundary') {
           stopStore.park('boundary', lastCompletedBriefId(), resolve);
           return;
@@ -84,7 +85,7 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
       const answer = await answerPromise;
       if (controller.signal.aborted || abortedRef.current) return undefined;
       const batch = questionPromptStore.takeAnswerBatch();
-      if (answer.trim() === '') return '';
+      if (answer.text.trim() === '') return answer;
       return batch ?? answer;
     },
     // A finished run is the loop returning, and the screen settles itself there from the record it

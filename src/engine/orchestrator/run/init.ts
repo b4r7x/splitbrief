@@ -71,6 +71,7 @@ import {
 import { resumeStep } from '../../../core/sessions/run-status.js';
 import { sessionConversation } from '../../../core/state/planning-conversation.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 import { applyRebuiltContext, autoCompactResumeContext } from '../resume-context.js';
 import { createValidator } from '../validation/run.js';
@@ -103,7 +104,7 @@ export type RunWorkflowOptions = {
    * What the operator said when they continued this run. It seeds the first
    * step's continuation, so that step composes it into its own prompt.
    */
-  steer?: string | undefined;
+  steer?: UserMessageInput | undefined;
   /** Headless mode: install one stdout sink (NDJSON, or text under `plain`); the CLI skips the TUI. */
   headless?: boolean | undefined;
   /** `--plain`: the run's single stdout sink renders text instead of NDJSON. */
@@ -407,7 +408,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     setTrackedState(state);
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     publishPlannerStatus(bus, state, 'running');
-    appendMessage({ projectDir, sessionId }, { role: 'user', text: feature });
+    appendMessage({ projectDir, sessionId }, { role: 'user', phase: state.phase, text: feature });
     publishUserMessage({ bus: bus, phase: state.phase }, feature, {
       attachedInputs: runtime.attachedInputs,
     });
@@ -497,11 +498,11 @@ function publishResumedSteer(input: {
   projectDir: string;
   sessionId: string;
   state: WorkflowState | undefined;
-  steer: string | undefined;
+  steer: UserMessageInput | undefined;
 }): void {
   const { bus, projectDir, sessionId, state } = input;
-  const steer = input.steer?.trim();
-  if (state === undefined || steer === undefined || steer === '') return;
+  const steer = input.steer;
+  if (state === undefined || steer === undefined || steer.text.trim() === '') return;
   if (sessionConversation(state)?.answered === false) return;
   recordSteer({ bus, projectDir, sessionId }, state.phase, steer);
 }
@@ -514,7 +515,7 @@ function publishResumedSteer(input: {
 export async function resumeContinuation(input: {
   ref: SessionRef;
   state: WorkflowState | undefined;
-  steer: string | undefined;
+  steer: UserMessageInput | undefined;
 }): Promise<ContinuationHolder> {
   const { ref, state, steer } = input;
   if (state === undefined) return createContinuationHolder();

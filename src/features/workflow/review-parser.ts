@@ -17,6 +17,8 @@ import {
 } from '../../lib/terminal/editor-handover.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 import {
   REVIEW_COMMENT_DRAFT,
   REVIEW_UNKNOWN_COMMAND_MESSAGE,
@@ -227,7 +229,7 @@ export async function openReviewFileExternally(
 }
 
 export interface ReviewInputHandler {
-  handleInput: (text: string) => Promise<void>;
+  handleInput: (message: UserMessageInput) => Promise<void>;
 }
 
 /**
@@ -250,7 +252,8 @@ export function createReviewInputHandler(
   inputMode: UseInputModeResult,
   effects: ReviewInputEffects = productionReviewInputEffects,
 ): ReviewInputHandler {
-  const handleInput = async (text: string) => {
+  const handleInput = async (message: UserMessageInput) => {
+    const text = message.displayText;
     if (inputMode.mode === 'normal') {
       const lifecycle = lifecycleStore.get();
       // Dead-zone window: the interrupt landed but the continuation prompt has not
@@ -265,14 +268,15 @@ export function createReviewInputHandler(
       if (isLivePhase(phase) || isImplementerPhase(phase)) {
         const trimmed = text.trim();
         if (trimmed) {
-          const result = await effects.enqueue(trimmed, phase);
+          const document = composerLiveStore.get().document;
+          const result = await effects.enqueue(message, phase);
           if (!result) {
-            composerDraftStore.request(trimmed);
+            composerDraftStore.requestDocument(document);
             feedbackStore.setError('Cannot queue message: no active workflow.');
           } else if (result.status === 'rejected') {
             // The submission was refused: the draft the composer just cleared comes back, so a
             // rejection never loses what the operator typed.
-            composerDraftStore.request(trimmed);
+            composerDraftStore.requestDocument(document);
             feedbackStore.setError(result.message);
           } else {
             feedbackStore.setMessage(
@@ -297,13 +301,23 @@ export function createReviewInputHandler(
         // Any other text at the plan card is a correction the planning session answers.
         const correction = text.trim();
         if (correction !== '' && reviewEditPath() !== null) {
-          inputMode.resolve({ approved: false, action: 'revise', comment: correction });
+          inputMode.resolve({ approved: false, action: 'revise', message });
           return;
         }
         feedbackStore.setError(REVIEW_UNKNOWN_COMMAND_MESSAGE);
         return;
       }
       if (parsed.kind === 'brief-review-command') {
+        if (parsed.command.action === 'revise') {
+          const parsedComment = parsed.command.comment;
+          const correctionMessage: UserMessageInput = {
+            ...message,
+            displayText: parsedComment,
+            text: parsedComment + message.text.slice(message.displayText.length),
+          };
+          inputMode.resolve({ approved: false, action: 'revise', message: correctionMessage });
+          return;
+        }
         const result = reviewCommandToApprovalReviewResult(parsed.command);
         if (result) {
           inputMode.resolve(result);
@@ -328,7 +342,7 @@ export function createReviewInputHandler(
       // Contract: must call markInterruptResumed() before resolve() — a resolve
       // reaching a still-'interrupted' loop is treated as superseded and re-asked.
       if (lifecycleStore.get().status === 'interrupted') markInterruptResumed();
-      inputMode.resolve(text);
+      inputMode.resolve(message);
     }
   };
 

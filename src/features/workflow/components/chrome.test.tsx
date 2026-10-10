@@ -1,3 +1,4 @@
+import type { DraftSubmission } from '../../../core/composer/submission.js';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { Text } from 'ink';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
@@ -118,7 +119,7 @@ describe('WorkflowFooter', () => {
       inputHint: string;
       questionEpoch: number;
       reviewEpoch: number;
-      handleInput: (text: string) => void;
+      handleInput: (submission: Extract<DraftSubmission, { ok: true }>) => void;
     }> = {},
   ) {
     const { cols, rows } = terminalSizeStore.get();
@@ -272,7 +273,7 @@ describe('WorkflowFooter', () => {
       mode: 'question',
       inputHint: 'first question',
       questionEpoch: 1,
-      handleInput: (text) => submits.push(text),
+      handleInput: (submission) => submits.push(submission.message.displayText),
     });
     await flushEffects();
     ui.stdin.write('stale answer');
@@ -281,7 +282,7 @@ describe('WorkflowFooter', () => {
 
     ui.rerender(
       <WorkflowFooter
-        handleInput={(text) => submits.push(text)}
+        handleInput={(submission) => submits.push(submission.message.displayText)}
         onRuntimeCommand={() => {}}
         commands={[]}
         mode="question"

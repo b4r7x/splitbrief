@@ -25,7 +25,7 @@ describe('composer mode routing', () => {
       currentScreen: 'workflow',
       mode: 'review',
       hint: 'approve | Ctrl+E/e edit',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       onEditShortcut: edit,
     });
@@ -48,7 +48,7 @@ describe('composer mode routing', () => {
       currentScreen: 'workflow',
       mode: 'normal',
       hint: '',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       onEditShortcut: edit,
     });
@@ -90,7 +90,7 @@ describe('composer mode routing', () => {
       currentScreen: 'workflow',
       mode: 'question',
       hint: 'Question 1/1: path?',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: (command) => commandCalls.push(command),
     });
 
@@ -114,7 +114,7 @@ describe('composer mode routing', () => {
       currentScreen: 'workflow',
       mode: 'question',
       hint: 'Task interrupted. Enter instructions to continue (or press Enter to retry):',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       onEmptySubmit: () => emptySubmits.push('empty'),
     });
@@ -137,7 +137,7 @@ describe('composer mode routing', () => {
       currentScreen: 'workflow',
       mode: 'question',
       hint: 'Needs you',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
       onEmptySubmit: () => emptySubmits.push('empty'),
     });
@@ -162,7 +162,7 @@ describe('composer mode routing', () => {
       mode: 'question',
       hint: 'first question',
       questionEpoch: 1,
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
     });
     await flushEffects();
@@ -178,7 +178,7 @@ describe('composer mode routing', () => {
           mode="question"
           hint="second question"
           questionEpoch={2}
-          onSubmit={(text) => submits.push(text)}
+          onSubmit={(submission) => submits.push(submission.message.displayText)}
           onRuntimeCommand={() => {}}
         />
       </Box>,
@@ -210,7 +210,7 @@ describe('Composer question-mode transition', () => {
       commands: [],
       currentScreen: 'workflow',
       hint: '',
-      onSubmit: (text) => submits.push(text),
+      onSubmit: (submission) => submits.push(submission.message.displayText),
       onRuntimeCommand: () => {},
     };
 

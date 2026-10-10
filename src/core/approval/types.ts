@@ -1,6 +1,7 @@
 import type { ActionClass } from '../schemas/enums.js';
 import type { Phase } from '../schemas/enums.js';
 import type { TaskId } from '../schemas/task.js';
+import type { UserMessageInput } from '../types/user-input.js';
 
 export const CONFIRM_PHRASE = 'I confirm';
 
@@ -40,7 +41,7 @@ export type ApprovalReviewResult =
   | {
       approved: false;
       action: 'revise';
-      comment: string;
+      message: UserMessageInput;
       taskIds?: TaskId[] | undefined;
       /** The continuation already recorded this correction as a user message. */
       recorded?: boolean | undefined;

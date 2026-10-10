@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
+
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -394,7 +396,7 @@ describe('final review input cap', () => {
       ...ref,
       state: halted,
       action: 'accept-as-is',
-      comment: 'Reviewed the diff by hand.',
+      comment: plainUserMessage('Reviewed the diff by hand.'),
       bus: makeBusRecorder().bus,
     });
 

@@ -1,4 +1,8 @@
-import { sanitizeTerminalDisplayText } from '../../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  splitTerminalGraphemes,
+} from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
@@ -41,6 +45,57 @@ export function wrappedRowTexts(text: string, width: number): string[] {
   const sanitized = sanitizeRowDisplayText(text);
   if (sanitized.length <= wrapWidth && PRINTABLE_ASCII_ROW.test(sanitized)) return [sanitized];
   return wrapHard(sanitized, wrapWidth).split('\n');
+}
+
+export function wrappedPrefixedRowTexts(text: string, width: number, prefix: string): string[] {
+  const wrapWidth = Math.max(MIN_ROW_WIDTH, width);
+  const boundPrefix = prefix.replaceAll(' ', '\u00a0');
+  const source = sanitizeRowDisplayText(`${boundPrefix}${text}`);
+  const lines: string[] = [];
+
+  for (const sourceLine of source.split('\n')) {
+    let line = '';
+    for (let word of sourceLine.split(/( +)/u)) {
+      if (!word.includes('/')) {
+        const wrapped = wrappedRowTexts(`${line}${word}`, wrapWidth);
+        wrapped.forEach((part, index) => {
+          if (index < wrapped.length - 1) lines.push(part);
+          else line = part;
+        });
+        continue;
+      }
+
+      while (getTerminalCellWidth(`${line}${word}`) > wrapWidth) {
+        const room = wrapWidth - getTerminalCellWidth(line);
+        if (room <= 0) {
+          lines.push(line);
+          line = '';
+          continue;
+        }
+        let head = '';
+        let cells = 0;
+        for (const grapheme of splitTerminalGraphemes(word)) {
+          const graphemeCells = getTerminalCellWidth(grapheme);
+          if (head !== '' && cells + graphemeCells > room) break;
+          head += grapheme;
+          cells += graphemeCells;
+        }
+        const slash = head.lastIndexOf('/');
+        const fitting = slash < 0 ? head : head.slice(0, slash + 1);
+        if (getTerminalCellWidth(fitting) > room && line !== '') {
+          lines.push(line);
+          line = '';
+          continue;
+        }
+        lines.push(`${line}${fitting}`);
+        line = '';
+        word = word.slice(fitting.length);
+      }
+      line += word;
+    }
+    lines.push(line);
+  }
+  return lines.map((line) => line.replace(boundPrefix, prefix));
 }
 
 // The wrapper keeps the space it broke on (`trim: false`): usually it trails the line above, but

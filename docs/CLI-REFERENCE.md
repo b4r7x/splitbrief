@@ -49,9 +49,13 @@ Launch a complete plan-and-implement workflow. Without a feature argument the TU
 
 An `@file` input is the user's explicit choice. SPLITBRIEF reads the file wherever it is. Use an absolute path, a path relative to the project root, or `~/…`. SPLITBRIEF expands only a leading `~/` to the home folder. It follows symlinks. The file must exist, be a regular file, be at most 10 MiB, and be readable.
 
-Text enters planner context on every planner call and stays in the run's `state.json`. Images become planner attachments. The transcript names every attached file by its resolved path under the request. `--plain` prints one `attached files:` line. `--json` carries `attachedInputs` on the `user_message` event.
+Text must use UTF-8 and contain no control bytes except whitespace. SPLITBRIEF refuses binary content with `not-text`. Images must use PNG, JPEG, GIF, WebP, or BMP.
+
+Text enters planner context on every planner call and stays in the run's `state.json`. Images become planner attachments. The transcript lists each file as `text · <path>` or `image · <path>` under the request. Paths inside the project are relative; outside paths are resolved and absolute. `--plain` prints one `attached files:` line. `--json` carries `attachedInputs` on the `user_message` event.
 
 Any refused input stops `start` before the run begins, with exit code `2`. One error names every refused input, its reason, and the fix. An empty feature description before `@file` inputs also stops `start` with exit code `2`. SPLITBRIEF attaches nothing from that command line.
+
+CLI `@file` arguments are strict: a missing file always refuses the command. The [composer syntax](./FEATURES.md#file-context-injection) also accepts references within a message. A bare composer `@word` stays text when no file exists.
 
 **A bare path.** A path without `@` in the feature text stays text. The plan seat uses its own tools and policy to read it. An `api` plan seat shows one warning before planning for existing absolute paths. The TUI shows the warning in the transcript. `--plain` and `splitbrief spec` write it to stderr. `--json` writes it as a `warning` record on stdout.
 

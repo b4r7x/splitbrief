@@ -1,12 +1,12 @@
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { StepRef } from '../../core/schemas/run-step.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from './types.js';
 import type { EventBus } from '../events/types.js';
 import { withPerCallAbort } from './cancellable-call.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
-import { appendMessage } from '../../core/sessions/log-writer.js';
-import { publishUserMessage } from './events.js';
+import { recordUserMessage } from './transcript/user-message.js';
 import { readSessionLog } from '../../core/sessions/log-reader.js';
 import { engineEventFromLogEntry } from '../events/replay.js';
 import { processError } from '../../lib/process/errors.js';
@@ -96,7 +96,7 @@ export async function readUnresumedBriefCut(ref: SessionRef): Promise<
 
 export type ContinuationSeed = {
   partial?: string | undefined;
-  steer?: string | undefined;
+  steer?: UserMessageInput | undefined;
   keepWorkspace?: true | undefined;
 };
 
@@ -104,7 +104,7 @@ export type ContinuationHolder = {
   /** The seed for this step, when the run was continued at it. Consumed once. */
   take: (step: StepRef, briefFingerprint?: string) => ContinuationSeed | undefined;
   /** Holds a steer for the step the run is about to start. */
-  hold: (step: StepRef, steer: string | undefined) => void;
+  hold: (step: StepRef, steer: UserMessageInput | undefined) => void;
   /**
    * The step continues its cut attempt in the kept workspace. Its brief was refreshed when that
    * attempt was dispatched; the workspace now also holds the attempt's own output.
@@ -196,7 +196,7 @@ export interface WithContinuationLoopOpts<T> {
    * process left on disk and the steer that restarted the run. Consumed by the
    * first attempt only.
    */
-  seed?: { partial?: string | undefined; steer?: string | undefined } | undefined;
+  seed?: { partial?: string | undefined; steer?: UserMessageInput | undefined } | undefined;
   onStateChange?: ((s: WorkflowState) => void) | undefined;
   body: (args: ContinuationLoopBodyArgs) => Promise<T>;
 }
@@ -209,15 +209,10 @@ export interface WithContinuationLoopOpts<T> {
 export function recordSteer(
   ctx: Pick<ContinuationLoopCtx, 'projectDir' | 'sessionId' | 'persistRef' | 'bus'>,
   phase: WorkflowState['phase'],
-  text: string | undefined,
+  message: UserMessageInput | undefined,
 ): void {
-  if (text === undefined || text.trim() === '') return;
-  appendMessage(ctx.persistRef ?? { projectDir: ctx.projectDir, sessionId: ctx.sessionId }, {
-    role: 'user',
-    phase,
-    text,
-  });
-  publishUserMessage({ bus: ctx.bus, phase }, text);
+  if (message === undefined || message.text.trim() === '') return;
+  recordUserMessage({ ...(ctx.persistRef ?? ctx), bus: ctx.bus, phase }, message);
 }
 
 export async function withContinuationLoop<T>(
@@ -246,7 +241,7 @@ export async function withContinuationLoop<T>(
   const continueAfterAbort = async (
     onContinuationNeeded: NonNullable<OrchestratorCallbacks['onContinuationNeeded']>,
     source: 'user' | 'watchdog',
-  ): Promise<string> => {
+  ): Promise<UserMessageInput> => {
     const current = rebaseOnPersistedWorkflowState(persistRef, state);
     applyState(
       transitionAndSave(persistRef, current, {
@@ -268,6 +263,7 @@ export async function withContinuationLoop<T>(
     throwIfAborted(ctx.signal);
     applyState(transitionAndSave(persistRef, state, { type: 'RESUME_STEP' }));
     recordSteer(ctx, state.phase, userText);
+    applyState(rebaseOnPersistedWorkflowState(persistRef, state));
     return userText;
   };
 
@@ -275,7 +271,7 @@ export async function withContinuationLoop<T>(
     if (sinks.consumeBoundaryInterrupt?.()) {
       if (!callbacks.onContinuationNeeded) continue;
       const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
-      steer = userText.trim() === '' ? undefined : userText;
+      steer = userText.text.trim() === '' ? undefined : userText;
     }
     partialOutput = '';
 
@@ -289,7 +285,7 @@ export async function withContinuationLoop<T>(
         signal: ctx.signal,
         run: (signal) => {
           bodySignal = signal;
-          return body({ signal, partial, steer, recordOutput });
+          return body({ signal, partial, steer: steer?.text, recordOutput });
         },
       });
     } catch (err) {
@@ -303,7 +299,7 @@ export async function withContinuationLoop<T>(
           interruptedThisCall() ? 'user' : 'watchdog',
         );
         partial = partialOutput;
-        steer = userText.trim() === '' ? undefined : userText;
+        steer = userText.text.trim() === '' ? undefined : userText;
         continue;
       }
 
@@ -313,7 +309,7 @@ export async function withContinuationLoop<T>(
     if (interruptedThisCall() && callbacks.onContinuationNeeded) {
       const userText = await continueAfterAbort(callbacks.onContinuationNeeded, 'user');
       partial = partialOutput;
-      steer = userText.trim() === '' ? undefined : userText;
+      steer = userText.text.trim() === '' ? undefined : userText;
       continue;
     }
 

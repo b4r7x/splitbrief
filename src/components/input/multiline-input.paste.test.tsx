@@ -103,6 +103,31 @@ describe('bracketed paste into a mounted input', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it.each([
+    '@shot.png',
+    String.raw`\@shot.png`,
+    'read @/outside/shot.png',
+    '/tmp/my shot.png',
+    '"/tmp/one.png" "/tmp/two.png"',
+  ])('inserts %s as framed paste text and submits it unchanged', async (text) => {
+    const onSubmit = vi.fn();
+    const onPaste = vi.fn(() => false);
+    const onFileDrop = vi.fn();
+    const ui = renderThroughFilteredStdin(
+      <Input onSubmit={onSubmit} onPaste={onPaste} onFileDrop={onFileDrop} />,
+    );
+    unmount = ui.unmount;
+    await flushEffects();
+    ui.pressBytes(`\u001b[200~${text}\u001b[201~`);
+    await flushEffects();
+    expect(onFileDrop).not.toHaveBeenCalled();
+    expect(onPaste).toHaveBeenCalledExactlyOnceWith(text, 'draft'.length);
+    expect(onSubmit).not.toHaveBeenCalled();
+    ui.pressBytes('\r');
+    await flushEffects();
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(`draft${text}`);
+  });
+
   it('removes paste interception on unmount', async () => {
     const ui = renderThroughFilteredStdin(<Input onSubmit={() => {}} />);
     await flushEffects();

@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, expect, it, vi } from 'vitest';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import type { PlanAnswer, PlanResult } from '../../../core/schemas/plan.js';
@@ -48,6 +49,17 @@ function scripted(results: RequestTypedResult<PlanAnswer>[]) {
 }
 
 describe('runPlanSession', () => {
+  it('keeps expanded message text and compact QA together in the answer turn', async () => {
+    const message = {
+      ...plainUserMessage('Use @notes.md'),
+      text: 'Use @notes.md\n\n--- @notes.md ---\nPELICAN-42',
+      attachedInputs: [{ path: '/real/notes.md', kind: 'text' as const }],
+    };
+    const { ask, turns } = scripted([answer(questions(1)), answer(makePlanProposal())]);
+    await runPlanSession({ rounds: 0, ask, answer: async () => message, check: async () => [] });
+    expect(turns[1]).toEqual({ kind: 'answers', reply: { message, qa: [] } });
+  });
+
   it('takes every default on an empty reply and returns the plan the answers lead to', async () => {
     const plan = makePlanProposal();
     const { ask, turns } = scripted([answer(questions(1)), answer(plan)]);
@@ -58,7 +70,7 @@ describe('runPlanSession', () => {
       ask,
       answer: async (qs) => {
         asked.push([...qs]);
-        return '';
+        return plainUserMessage('');
       },
       check: async () => [],
     });
@@ -77,7 +89,9 @@ describe('runPlanSession', () => {
     expect(turns[1]).toEqual({
       kind: 'answers',
       reply: {
-        text: '1. Round 1: which module?\nsrc/a.ts\n\n2. Round 1: which style?\nterse',
+        message: plainUserMessage(
+          '1. Round 1: which module?\nsrc/a.ts\n\n2. Round 1: which style?\nterse',
+        ),
         qa: [
           { question: 'Round 1: which module?', answer: 'src/a.ts' },
           { question: 'Round 1: which style?', answer: 'terse' },
@@ -95,7 +109,7 @@ describe('runPlanSession', () => {
       ask,
       answer: async (_qs, round) => {
         rounds.push(round);
-        return '';
+        return plainUserMessage('');
       },
       check: async () => [],
     });
@@ -110,7 +124,7 @@ describe('runPlanSession', () => {
     const outcome = await runPlanSession({
       rounds: 2,
       ask,
-      answer: async () => '',
+      answer: async () => plainUserMessage(''),
       check: async () => [],
     });
     expect(outcome).toMatchObject({ kind: 'questions-exhausted' });
@@ -128,7 +142,7 @@ describe('runPlanSession', () => {
       pending,
       ask,
       answer: async () => ({
-        text: 'src/b.ts',
+        message: plainUserMessage('src/b.ts'),
         qa: [{ question: 'Which module?', answer: 'src/b.ts' }],
       }),
       check: async () => [],
@@ -138,7 +152,10 @@ describe('runPlanSession', () => {
     expect(turns).toEqual([
       {
         kind: 'answers',
-        reply: { text: 'src/b.ts', qa: [{ question: 'Which module?', answer: 'src/b.ts' }] },
+        reply: {
+          message: plainUserMessage('src/b.ts'),
+          qa: [{ question: 'Which module?', answer: 'src/b.ts' }],
+        },
       },
     ]);
   });
@@ -160,7 +177,12 @@ describe('runPlanSession', () => {
     const { ask, turns } = scripted([answer(invalid), answer(corrected)]);
     const check = vi.fn(async (plan: typeof invalid) => (plan === invalid ? [uncovered] : []));
 
-    const outcome = await runPlanSession({ rounds: 0, ask, answer: async () => '', check });
+    const outcome = await runPlanSession({
+      rounds: 0,
+      ask,
+      answer: async () => plainUserMessage(''),
+      check,
+    });
 
     expect(outcome).toEqual({ kind: 'plan', plan: corrected });
     expect(turns[1]).toEqual({ kind: 'repair', errors: [uncovered], plan: invalid });
@@ -171,7 +193,7 @@ describe('runPlanSession', () => {
     const outcome = await runPlanSession({
       rounds: 0,
       ask,
-      answer: async () => '',
+      answer: async () => plainUserMessage(''),
       check: async () => [uncovered],
     });
     expect(outcome).toEqual({ kind: 'checks-failed', errors: [uncovered] });
@@ -184,7 +206,7 @@ describe('runPlanSession', () => {
     const outcome = await runPlanSession({
       rounds: 0,
       ask,
-      answer: async () => '',
+      answer: async () => plainUserMessage(''),
       check: async () => [unconfiguredRender],
     });
     expect(turns[1]).toEqual({ kind: 'repair', errors: [unconfiguredRender], plan });
@@ -197,7 +219,7 @@ describe('runPlanSession', () => {
     const outcome = await runPlanSession({
       rounds: 0,
       ask,
-      answer: async () => '',
+      answer: async () => plainUserMessage(''),
       check: async () => [uncovered, unconfiguredRender],
     });
     expect(outcome).toEqual({ kind: 'checks-failed', errors: [uncovered, unconfiguredRender] });
@@ -215,7 +237,7 @@ describe('runPlanSession', () => {
     const outcome = await runPlanSession({
       rounds: 0,
       ask,
-      answer: async () => '',
+      answer: async () => plainUserMessage(''),
       check: async () => [],
     });
     expect(outcome).toEqual({ kind: 'seat-protocol', error });

@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -585,7 +587,7 @@ describe("runTasksAndReview workflow.review 'task'", { timeout: 120_000 }, () =>
       state: result.state,
       action: 'revise',
       bus: options.wctx.bus,
-      comment: 'Keep running with the reviewed correction',
+      comment: plainUserMessage('Keep running with the reviewed correction'),
     });
     expect(corrected.ok).toBe(true);
     if (!corrected.ok) throw new Error(corrected.message);

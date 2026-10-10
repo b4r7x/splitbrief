@@ -173,7 +173,7 @@ function renderComposer(commands: RuntimeCommandDef[] = COMMANDS) {
         currentScreen: 'home',
         mode: 'normal',
         hint: '',
-        onSubmit: (text: string) => submits.push(text),
+        onSubmit: (submission) => submits.push(submission.message.text),
         onRuntimeCommand: (command: string) => commandCalls.push(command),
       }),
     ),

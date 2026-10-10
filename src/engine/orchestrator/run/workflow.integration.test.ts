@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
 import {
@@ -19,6 +20,15 @@ import {
   makePlanner,
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makePlanProposal } from '#testing/helpers/factories/plan.js';
+import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
+import { PlanSchema } from '../../../core/schemas/plan.js';
+import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -53,6 +63,9 @@ import {
 } from '../../../core/sessions/active-pointer.js';
 import { generateSessionId } from '../../../core/sessions/session-id.js';
 import { buildRetryExhaustedRecoveryIssue } from '../recovery/builders/task.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { canSignalProcess } from '../../../lib/process/liveness.js';
 import { registerProcess } from '../../../lib/process/registry.js';
 import { readProcessStartTimeMs } from '../../../lib/process/start-time.js';
@@ -254,6 +267,72 @@ function unavailablePlannerConfig(): Config {
 }
 
 describe('runWorkflow — smoke', () => {
+  it.each(['resumed-steer', 'pending-question', 'parked-card'] as const)(
+    'delivers an attached file through %s and records compact text once',
+    async (route) => {
+      const projectDir = createTempDir(`workflow-attached-${route}`);
+      dirs.push(projectDir);
+      const ref = { projectDir, sessionId: `attached-${route}` };
+      ensureSessionDir(projectDir, ref.sessionId);
+      const message = attachedMessage(projectDir);
+      const proposal = makePlanProposal();
+      const state: WorkflowState = {
+        ...transition(createInitialState('attached workflow'), { type: 'START' }),
+        ...(route === 'pending-question'
+          ? {
+              pendingPlannerConversation: {
+                call: 'plan' as const,
+                text: '1. Which file?',
+                questions: [{ id: 'q', type: 'input' as const, text: 'Which file?' }],
+                answers: [],
+                answered: false,
+              },
+            }
+          : {}),
+        ...(route === 'parked-card'
+          ? {
+              phase: 'reviewing-plan' as const,
+              plan: PlanSchema.parse(proposal),
+              tasks: proposal.tasks.map((task) => taskFromSpec(task, projectDir)),
+            }
+          : {}),
+      };
+      saveState(ref, state);
+      if (route === 'parked-card')
+        writeFileSync(
+          join(sessionDir(projectDir, ref.sessionId), 'plan.json'),
+          JSON.stringify(proposal),
+        );
+      const controller = new AbortController();
+      const typed = scriptedTypedCall([proposal]);
+      const events: EngineEvent[] = [];
+      await runWorkflow({
+        ...ref,
+        feature: state.feature,
+        savedState: state,
+        steer: message,
+        config: makeConfig({
+          codebase: { enabled: false, tokenBudget: 4000 },
+          workflow: { approve: 'plan', isolation: 'none' },
+          validation: { endChecks: false, testCommand: 'noop' },
+        }),
+        callbacks: makeCallbacks({
+          onApprovalNeeded: async () => {
+            controller.abort();
+            return { approved: false };
+          },
+        }).callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        signal: controller.signal,
+        _planner: makePlanner({ typedCall: typed.typedCall }),
+        _eventSink: (event) => events.push(event),
+      });
+      expect(typed.prompts[0]).toContain('PELICAN-42');
+      await expectCompactMessage(ref, events, message);
+      await expectResumedMessage(ref, message);
+    },
+  );
+
   it('keeps the prepared runner config after mutable config changes', async () => {
     const projectDir = setupProject();
     const mutableConfig = makeConfig({
@@ -343,7 +422,7 @@ describe('runWorkflow — smoke', () => {
       pendingBoundaryInterrupt = false;
       return true;
     };
-    const onContinuationNeeded = vi.fn(async () => 'should not run');
+    const onContinuationNeeded = vi.fn(async () => plainUserMessage('should not run'));
     const { callbacks } = makeCallbacks({ onContinuationNeeded });
     const typedCall = typedCallAnswering(
       async () => {
@@ -1735,6 +1814,71 @@ describe('runWorkflow — recovery resume', () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'review_completed', verdict: 'pass' }),
     );
+  });
+
+  it('delivers an attached file on a task retry and publishes compact text once after restart', async () => {
+    const projectDir = createTempDir('workflow-attached-task-retry');
+    dirs.push(projectDir);
+    const ref = { projectDir, sessionId: 'attached-task-retry' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const message = attachedMessage(projectDir);
+    const task = makeTask({ id: 'T001', status: 'failed' });
+    const issue = buildRetryExhaustedRecoveryIssue({
+      task,
+      validationSummary: 'failed check',
+      attempts: 1,
+      maxAttempts: 2,
+      allowRetryOverride: true,
+      createdAt: new Date().toISOString(),
+    });
+    const state: WorkflowState = {
+      ...makeImplStateWithMetadata([task]),
+      phase: 'escalating',
+      pendingRecovery: issue,
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(ref));
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      action: 'retry-same-worker',
+      comment: message,
+      bus,
+    });
+    expect(result.ok).toBe(true);
+    expect(events.filter((event) => event.type === 'user_message')).toEqual([]);
+    const controller = new AbortController();
+    let turn = '';
+    const implementer = makeImplementer({
+      implement: async (call) => {
+        turn = call.continuation?.steer ?? '';
+        controller.abort();
+        return { success: false, output: '', error: 'stopped after the turn' };
+      },
+    });
+    await runWorkflow({
+      ...ref,
+      feature: state.feature,
+      savedState: result.state,
+      steer: message,
+      config: makeConfig({
+        workflow: { approve: 'none', isolation: 'none' },
+        codebase: { enabled: false, tokenBudget: 4000 },
+        validation: { endChecks: false, testCommand: 'noop' },
+      }),
+      callbacks: makeCallbacks().callbacks,
+      sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+      signal: controller.signal,
+      _planner: makePlanner(),
+      _implementer: implementer,
+      _eventSink: (event) => events.push(event),
+    });
+    expect(turn).toContain('PELICAN-42');
+    const persisted = loadState(ref);
+    expect(JSON.stringify(persisted?.lineages)).toContain('PELICAN-42');
+    await expectCompactMessage(ref, events, message);
+    await expectResumedMessage(ref, message);
   });
 
   it('preserves the active session when a saved pending recovery stops before planner availability checks', async () => {

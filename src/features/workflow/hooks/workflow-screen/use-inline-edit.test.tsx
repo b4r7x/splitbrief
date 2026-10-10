@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../../core/types/user-input.js';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, type RenderFeatureResult } from '#testing/helpers/ink.js';
@@ -16,7 +17,7 @@ const inputMode: UseInputModeResult = {
   hint: '',
   questionEpoch: 0,
   setReviewMode: async () => ({ approved: false }),
-  setQuestionMode: async () => '',
+  setQuestionMode: async () => plainUserMessage(''),
   resolve: vi.fn(),
   resetMode: () => {},
 };

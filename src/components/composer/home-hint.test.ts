@@ -1,7 +1,37 @@
-import { describe, expect, it } from 'vitest';
-import { deriveHomeHintLines, noVisionFeedbackMessage } from './home-hint.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { configStore } from '../../stores/project/config.js';
+import {
+  deriveHomeHintLines,
+  formatSubmissionFailure,
+  noVisionFeedbackMessage,
+} from './home-hint.js';
+
+afterEach(() => configStore.reset());
 
 const HINT = 'enter to send';
+
+describe('formatSubmissionFailure', () => {
+  it('names a file refusal and its remedy', () => {
+    expect(
+      formatSubmissionFailure({ ok: false, reason: 'not-found', path: '/outside/notes.md' }),
+    ).toBe('Cannot send: file not found. Check the path and try again. File: notes.md.');
+  });
+
+  it('keeps the vision remedy when no planner config exists', () => {
+    configStore.reset();
+    expect(formatSubmissionFailure({ ok: false, reason: 'no-vision' })).toBe(
+      'Cannot send image: the planner cannot see images. Choose a vision model with /crew plan.',
+    );
+  });
+
+  it('names the configured plan seat in a vision refusal', () => {
+    configStore.__testReset({ config: makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }) });
+    expect(formatSubmissionFailure({ ok: false, reason: 'no-vision' })).toMatch(
+      /^Cannot attach: PLAN seat OpenCode.* cannot see images — \/crew plan$/,
+    );
+  });
+});
 
 describe('deriveHomeHintLines', () => {
   it('renders nothing when the row is not reserved', () => {

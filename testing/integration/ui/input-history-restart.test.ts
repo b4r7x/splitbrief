@@ -79,7 +79,7 @@ describe('composer input history restart flow', () => {
         currentScreen: 'workflow',
         mode: 'normal',
         hint: '',
-        onSubmit: (text) => firstSubmissions.push(text),
+        onSubmit: (submission) => firstSubmissions.push(submission.message.displayText),
         onRuntimeCommand: () => {},
       });
       await flushEffects();
@@ -151,7 +151,7 @@ describe('composer input history screens', () => {
         currentScreen: screen,
         mode: 'normal',
         hint: '',
-        onSubmit: (text) => submissions.push(text),
+        onSubmit: (submission) => submissions.push(submission.message.displayText),
         onRuntimeCommand: () => {},
       });
 

@@ -1,4 +1,6 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach } from 'vitest';
+
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -165,7 +167,7 @@ describe('clear', () => {
 
     const clearPromise = clear();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const enqueuePromise = enqueue('after-clear', 'researching');
+    const enqueuePromise = enqueue(plainUserMessage('after-clear'), 'researching');
     releaseClear?.();
     await Promise.all([clearPromise, enqueuePromise]);
 

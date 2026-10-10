@@ -12,6 +12,19 @@ import type {
 } from '../../../core/schemas/compaction.js';
 import type { RunnerCallEvent } from '../../calls/types.js';
 import { throwIfAborted } from '../../../utils/abort.js';
+import {
+  findLatestSummary,
+  readCompactedMessages,
+  readSessionLog,
+} from '../../../core/sessions/log-reader.js';
+import type { SessionLogEntry } from '../../../core/schemas/session-log.js';
+import { loadState } from '../../../core/state/persistence.js';
+import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
+import {
+  isStillPendingQueuedTranscriptMessage,
+  reconstructPlannerConversation,
+} from './rebuild.js';
+import { pruneResumeUserMessages } from '../state-ops.js';
 
 const MIN_COMPACTION_KEEP_RECENT = 1;
 
@@ -87,6 +100,33 @@ export async function compactResumeTranscript(opts: {
   onFallback?: ((text: string) => void | Promise<void>) | undefined;
 }): Promise<ResumeCompactionResult> {
   const { projectDir, sessionId, planner, keepRecentCount, onFallback } = opts;
+  const ref = { projectDir, sessionId };
+  const dir = sessionDir(projectDir, sessionId);
+  const state = loadState(ref);
+  const log: SessionLogEntry[] = [];
+  for await (const entry of readSessionLog(ref)) log.push(entry);
+  const entries = log.filter((entry) => entry.kind === 'message');
+  const pendingQueue = state?.messageQueue.filter(isQueuedMessagePendingDelivery) ?? [];
+  const firstPendingIndex = entries.findIndex((entry) =>
+    isStillPendingQueuedTranscriptMessage(entry, pendingQueue),
+  );
+  const expanded = reconstructPlannerConversation(entries, state).expanded;
+  const summary = findLatestSummary(log);
+  const compacted = await readCompactedMessages(dir);
+  const offset = summary === null ? 0 : entries.length - compacted.length + 1;
+  const structured = opts.format === 'structured' && summary?.structured !== undefined;
+  const expandedInput = (messages: PlannerSummaryMessage[]): PlannerSummaryMessage[] => {
+    const selected = structured
+      ? expanded.slice(offset, offset + messages.length)
+      : [
+          ...compacted.slice(0, summary === null ? 0 : 1),
+          ...expanded.slice(offset, messages.length),
+        ];
+    return reconstructPlannerConversation(selected, state).messages.map(({ role, content }) => ({
+      role,
+      text: content,
+    }));
+  };
   let usage: TokenDelta | null = null;
   const adapter = bindPlannerToProjectDir(planner, {
     projectDir,
@@ -96,12 +136,26 @@ export async function compactResumeTranscript(opts: {
       if (delta) usage = accumulateTokenUsage(usage, delta);
     },
   });
+  const summarizeStructured = adapter.summarizeStructured;
   const result = await compactTranscript({
-    sessionDir: sessionDir(projectDir, sessionId),
-    planner: adapter,
-    keepRecentCount,
+    sessionDir: dir,
+    planner: {
+      summarize: (messages) => adapter.summarize(expandedInput(messages)),
+      ...(summarizeStructured !== undefined && {
+        summarizeStructured: (messages, previous) =>
+          summarizeStructured(expandedInput(messages), previous),
+      }),
+    },
+    keepRecentCount:
+      firstPendingIndex === -1
+        ? keepRecentCount
+        : Math.max(keepRecentCount, entries.length - firstPendingIndex),
     format: opts.format ?? 'freeform',
     ...(onFallback ? { onFallback } : {}),
   });
+  if (result.entriesRemoved > 0) {
+    const kept = await readCompactedMessages(dir);
+    pruneResumeUserMessages(ref, reconstructPlannerConversation(kept, state).unmatched);
+  }
   return { ...result, usage };
 }

@@ -14,6 +14,7 @@ import {
 } from '../../core/sessions/active-pointer.js';
 import { saveState } from '../../core/state/persistence.js';
 import { loadOwnerWorkflowState } from '../../core/state/resume-hydration.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type {
@@ -487,10 +488,16 @@ describe('continueRunInPlace', () => {
       },
     });
 
+    const steer: UserMessageInput = {
+      text: 'use @/outside/parser.txt\n\n--- @/outside/parser.txt ---\nparser body',
+      displayText: 'use @/outside/parser.txt',
+      images: [],
+      attachedInputs: [{ kind: 'text', path: '/outside/parser.txt' }],
+    };
     const attempt = continueRunInPlace({
       record,
       state: savedState,
-      steer: 'use the cached parser',
+      steer,
       deps,
     });
     expect(sessionSelectStore.get().preparation.kind).toBe('preparing');
@@ -501,7 +508,7 @@ describe('continueRunInPlace', () => {
     expect(route.screen).toBe('workflow');
     if (route.screen === 'workflow' && route.execution.kind === 'local') {
       expect(route.execution.prepared).toBe(prepared);
-      expect(route.execution.steer).toBe('use the cached parser');
+      expect(route.execution.steer).toBe(steer);
     }
     expect(sessionSelectStore.get().preparation.kind).toBe('idle');
   });
@@ -530,6 +537,37 @@ describe('continueRunInPlace', () => {
     });
     await Promise.all([first, duplicate]);
     expect(sessionSelectStore.get().preparation.kind).toBe('blocked');
+  });
+
+  it('keeps the complete restarted steer through a blocked preparation and retry', async () => {
+    const record = openRecord('steer-retry');
+    const state = { ...createInitialState('continue me'), phase: 'implementing' as const };
+    const prepared = preparedResumeExecution(tmp, record.ref.sessionId, state);
+    const steer: UserMessageInput = {
+      text: 'use @/outside/context.txt\n\n--- @/outside/context.txt ---\nbody',
+      displayText: 'use @/outside/context.txt',
+      images: [
+        { id: 'a', kind: 'image', path: '/outside/a.png', mimeType: 'image/png', sizeBytes: 1 },
+      ],
+      attachedInputs: [
+        { kind: 'text', path: '/outside/context.txt' },
+        { kind: 'image', path: '/outside/a.png' },
+      ],
+    };
+    routerStore.navigate({ to: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    const prepareResume = vi
+      .fn<SessionSelectDeps['prepareResume']>()
+      .mockResolvedValueOnce({ kind: 'blocked', report: prepared.report })
+      .mockResolvedValueOnce({ kind: 'prepared', execution: prepared });
+
+    await continueRunInPlace({ record, state, steer, deps: sessionSelectDeps({ prepareResume }) });
+    expect(sessionSelectStore.get().preparation.kind).toBe('blocked');
+    await retrySessionPreparation();
+    expect(routerStore.get()).toMatchObject({
+      screen: 'workflow',
+      execution: { kind: 'local', steer },
+    });
+    expect(prepareResume).toHaveBeenCalledTimes(2);
   });
 
   it('cancels the caller-owned signal and clears a late existing-session receipt', async () => {

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { DraftSubmission } from '../../../core/composer/submission.js';
 import { Box } from 'ink';
 import type { RuntimeCommandDef } from '../../../core/runtime/commands/types.js';
 import type { InputMode } from '../../../core/navigation/types.js';
@@ -83,7 +84,7 @@ export function WorkflowFooter({
   readClipboardImage,
   listProjectFiles,
 }: {
-  handleInput: (text: string) => void;
+  handleInput: (submission: Extract<DraftSubmission, { ok: true }>) => void;
   onEmptySubmit?: (() => void) | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];

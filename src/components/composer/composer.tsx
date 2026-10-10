@@ -22,23 +22,24 @@ import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { isRuntimeCommandLine } from '../../core/runtime/commands/lookup.js';
 import { useHistory } from './use-history.js';
 import { attachmentsStore } from '../../stores/workflow/attachments.js';
-import {
-  attachmentShortName,
-  formatAttachmentFailure,
-  resolveAttachment,
-} from '../../core/attachments/resolve.js';
+import { attachmentShortName, resolveAttachment } from '../../core/attachments/resolve.js';
+import { formatAttachmentFailure } from '../../core/attachments/failure.js';
 import { createDraftDocument, draftLength } from '../../core/composer/document.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
-import { prepareDraftSubmission } from '../../core/composer/submission.js';
+import { type DraftSubmission, prepareDraftSubmission } from '../../core/composer/submission.js';
 import { draftDocumentText, getInputHistoryDocuments } from '../../stores/ui/input-history.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
-import { detectedModelFact, seatSupportsImages } from '../../core/runners/capabilities.js';
+import { plannerSupportsImages } from '../../core/runners/capabilities.js';
 import { computeCompletionOverlayRows, computeCompletionCap } from './completion/layout.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
-import { deriveHomeHintLines, noVisionFeedbackMessage } from './home-hint.js';
+import {
+  deriveHomeHintLines,
+  formatSubmissionFailure,
+  noVisionFeedbackMessage,
+} from './home-hint.js';
 import { useProjectFiles } from './use-project-files.js';
 import { trimDraftDocument, usePasteDrafts } from './use-paste-drafts.js';
 import { computeComposerHintBudget, fitComposerHintKeys } from './hint-zones.js';
@@ -117,7 +118,7 @@ export interface ComposerBoxHints {
 }
 
 interface ComposerProps {
-  onSubmit?: ((text: string) => void) | undefined;
+  onSubmit?: ((submission: Extract<DraftSubmission, { ok: true }>) => void) | undefined;
   onRuntimeCommand: (command: string) => void;
   commands: RuntimeCommandDef[];
   mode: InputMode;
@@ -315,15 +316,10 @@ function ComposerInput({
   const showReferenceSuggestions = reference.showSuggestions && !showCommandSuggestions;
 
   const detectionProviders = modelCacheStore.use((cache) => cache.detection.providers);
-  const plannerSupportsImages =
-    config !== null &&
-    seatSupportsImages({
-      runner: config.planner,
-      detected: detectedModelFact(detectionProviders, config.planner),
-    });
+  const supportsImages = plannerSupportsImages(config, detectionProviders);
 
   const canAttachImage = (): boolean => {
-    if (!plannerSupportsImages) {
+    if (!supportsImages) {
       if (config === null) {
         feedbackStore.setError(
           'Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan.',
@@ -341,9 +337,11 @@ function ComposerInput({
 
   const handleFileDrop = (path: string, at = caretRef.current) => {
     if (!canAttachImage()) return null;
-    const result = resolveAttachment({ input: path, projectDir });
+    const result = resolveAttachment({ path, projectDir });
     if (!result.ok) {
-      feedbackStore.setError(formatAttachmentFailure({ action: 'attach', reason: result.reason }));
+      feedbackStore.setError(
+        formatAttachmentFailure({ action: 'attach-image', reason: result.reason }),
+      );
       return null;
     }
     onReviewInteraction?.();
@@ -473,45 +471,30 @@ function ComposerInput({
     // off; the draft itself keeps what was typed, whitespace included.
     const submission = prepareDraftSubmission(trimDraftDocument(candidate), {
       projectDir,
-      supportsImages: plannerSupportsImages,
+      supportsImages,
     });
     if (!submission.ok) {
       // The draft outlives the refusal: the operator still has every word and every image.
-      feedbackStore.setError(
-        submission.reason === 'no-vision' && config !== null
-          ? noVisionFeedbackMessage(
-              formatSeatIdentity({
-                seat: config.planner,
-                displayName: resolveSeatDisplayName(config.planner, 'planner', modelCacheStore),
-              }),
-            )
-          : submission.reason === 'no-vision'
-            ? 'Cannot send image: the planner cannot see images. Choose a vision model with /crew plan.'
-            : formatAttachmentFailure({
-                action: 'send',
-                reason: submission.reason,
-                imageId: submission.imageId,
-              }),
-      );
+      feedbackStore.setError(formatSubmissionFailure(submission));
       return false;
     }
-    const currentImageIds = new Set(submission.images.map((image) => image.id));
+    const currentImageIds = new Set(submission.message.images.map((image) => image.id));
     const historicalImageIds = new Set(
       getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen }).flatMap((entry) =>
         entry.parts.flatMap((part) => (part.kind === 'image' ? [part.attachment.id] : [])),
       ),
     );
-    if (submission.images.length > 0) {
-      attachmentsStore.replacePendingImages(submission.images);
+    if (submission.message.images.length > 0) {
+      attachmentsStore.replacePendingImages(submission.message.images);
     } else {
       const staleSubmittedIds = new Set([...submittedImageIdsRef.current, ...historicalImageIds]);
       for (const id of staleSubmittedIds) {
         if (!currentImageIds.has(id)) attachmentsStore.remove(id);
       }
     }
-    submittedImageIdsRef.current = submission.images.map((image) => image.id);
+    submittedImageIdsRef.current = submission.message.images.map((image) => image.id);
     if (record) inputHistoryStore.pushDocumentSubmission(submission.document, { currentScreen });
-    onSubmit?.(submission.text);
+    onSubmit?.(submission);
     return true;
   };
 
@@ -608,8 +591,7 @@ function ComposerInput({
     homeHint: homeStatus ?? homeHint,
     feedbackMessage,
     width: width ?? cols,
-    dropEnabled:
-      homeStatus === undefined && !disabled && plannerSupportsImages && commandsOnly !== true,
+    dropEnabled: homeStatus === undefined && !disabled && supportsImages && commandsOnly !== true,
   });
 
   useEffect(() => {
@@ -669,7 +651,7 @@ function ComposerInput({
               onChange={handleChange}
               onSubmit={handleSubmit}
               onPaste={(text, at) => {
-                if (!plannerSupportsImages || commandsOnly === true) return false;
+                if (!supportsImages || commandsOnly === true) return false;
                 enqueueImagePaste(at, text);
                 return true;
               }}

@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -419,7 +421,7 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
       implementer: makeImplementer({ implement: vi.fn().mockImplementation(implement), retry }),
       continuation: createContinuationHolder({
         step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
-        steer: correction,
+        steer: plainUserMessage(correction),
       }),
     });
     return { wctx, retry };
@@ -483,7 +485,7 @@ describe('runSingleTask — a brief keeps its corrections on every attempt', {
       projectDir,
       sessionId,
       state: initial,
-      text: 'name the helper parseAmount',
+      message: plainUserMessage('name the helper parseAmount'),
       phase: 'implementing',
       bus,
     }).state;

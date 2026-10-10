@@ -177,7 +177,7 @@ export function reviewRenders(input: {
       for (const artifact of ordered) {
         if (checkAttached.size === MAX_RENDER_IMAGES_PER_CHECK) break;
         const resolved = resolveRenderAttachment({
-          input: artifact.path,
+          path: artifact.path,
           projectDir: input.projectDir,
         });
         if (!resolved.ok) continue;

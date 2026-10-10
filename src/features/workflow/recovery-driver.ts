@@ -10,6 +10,12 @@ import type { RecoveryAction } from '../../core/schemas/enums.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
+import { prepareDraftSubmission } from '../../core/composer/submission.js';
+import { plannerSupportsImages } from '../../core/runners/capabilities.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
+import { formatSubmissionFailure } from '../../components/composer/home-hint.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import type { EventSink } from '../../engine/events/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
@@ -49,7 +55,7 @@ type PendingRecoveryResult =
       retryProfileOverrideTaskId?: TaskId | undefined;
       switchSeat?: SeatSwapChoice | undefined;
       /** The operator's typed correction, to seed the next call's prompt. */
-      steer?: string | undefined;
+      steer?: UserMessageInput | undefined;
       /** The words the run was continued with were this halt's correction, and are spent. */
       correctionTaken?: true | undefined;
     }
@@ -60,7 +66,7 @@ interface PromptPendingRecoveryArgs {
   controller: AbortController;
   republishPrompt: boolean;
   /** What the operator typed to continue the run, before the panel was on screen. */
-  correction?: string | undefined;
+  correction?: UserMessageInput | undefined;
 }
 
 interface RecoveryDriverOptions {
@@ -175,7 +181,7 @@ export function createRecoveryDriver(
     state,
     controller,
     republishPrompt,
-    correction: reentryCorrection = '',
+    correction: reentryCorrection,
   }: PromptPendingRecoveryArgs): Promise<PendingRecoveryResult> {
     const issue = state.pendingRecovery;
     if (issue === undefined) return { shouldRun: true, state };
@@ -199,11 +205,13 @@ export function createRecoveryDriver(
 
     // `revise` carries the operator's words to the planner, so the panel asks for
     // them before it applies: an empty answer resolves the halt with no note.
-    const promptRecoveryComment = async (action: RecoveryAction): Promise<string> => {
+    const promptRecoveryComment = async (
+      action: RecoveryAction,
+    ): Promise<UserMessageInput | undefined> => {
       if (action === 'accept-as-is' && issue.reason === 'review-input-too-large') {
         return inputMode.setQuestionMode('Why skip the review? (enter records none)');
       }
-      if (action !== 'revise') return '';
+      if (action !== 'revise') return undefined;
       return inputMode.setQuestionMode(
         issue.reason === 'review-failed'
           ? "What should the fix change? (enter sends the review's findings alone)"
@@ -214,8 +222,8 @@ export function createRecoveryDriver(
     const applyAction = async (
       action: RecoveryAction,
       answer = '',
-      comment = '',
-      steer = '',
+      comment?: UserMessageInput,
+      steer?: UserMessageInput,
     ): Promise<PendingRecoveryResult | null> => {
       if (action === 'switch-seat') {
         const offer = issue.switchSeat;
@@ -247,7 +255,7 @@ export function createRecoveryDriver(
         action,
         bus,
         config,
-        ...(comment.trim() === '' ? {} : { comment }),
+        ...(comment === undefined || comment.text.trim() === '' ? {} : { comment }),
       });
 
       setInlineResume(result.state);
@@ -273,17 +281,31 @@ export function createRecoveryDriver(
         return { shouldRun: false, state: result.state };
       }
 
-      // A replayed brief takes the typed words as its steer; a seat-level retry and a
-      // revise already carried them to the planner as the comment.
+      const continuationSteer =
+        result.status === 'retry-current-task'
+          ? steer
+          : result.status === 'continued' && !result.correctionRecorded
+            ? comment
+            : undefined;
       const steered =
-        result.status === 'retry-current-task' && steer.trim() !== '' ? { steer } : {};
+        continuationSteer !== undefined && continuationSteer.text.trim() !== ''
+          ? { steer: continuationSteer }
+          : {};
       const updatedPreparation =
         result.currentConfig === undefined
           ? {}
           : { prepared: { ...prepared, config: parsePreparedConfig(result.currentConfig) } };
       const retryProfileOverride = result.implementerProfile ?? issue.selectedImplementerProfile;
       if (retryProfileOverride === undefined || result.status !== 'retry-current-task') {
-        return { shouldRun: true, state: result.state, ...updatedPreparation, ...steered };
+        return {
+          shouldRun: true,
+          state: result.state,
+          ...updatedPreparation,
+          ...steered,
+          ...(result.status === 'continued' && result.correctionRecorded
+            ? { correctionTaken: true }
+            : {}),
+        };
       }
       return {
         shouldRun: true,
@@ -308,10 +330,9 @@ export function createRecoveryDriver(
     // Words typed to continue the run answer the halt when only its revise can carry them; a
     // retry halt keeps them as the steer of whichever retry the operator picks on the panel.
     const correctionAction = correctionActionFor(issue);
-    if (reentryCorrection.trim() !== '') {
+    if (reentryCorrection !== undefined && reentryCorrection.text.trim() !== '') {
       if (correctionAction === 'revise') {
         const applied = await applyAction(correctionAction, '', reentryCorrection);
-        if (applied?.shouldRun === true) return { ...applied, correctionTaken: true };
         if (applied !== null) return applied;
       } else if (correctionAction === undefined) {
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
@@ -333,9 +354,9 @@ export function createRecoveryDriver(
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
-      let action = parseRecoveryActionAnswer(answer, issue);
-      let correction = '';
-      if (action === null && answer.trim() !== '') {
+      let action = parseRecoveryActionAnswer(answer.displayText, issue);
+      let correction: UserMessageInput | undefined;
+      if (action === null && answer.text.trim() !== '') {
         if (correctionAction === undefined) {
           feedbackStore.setError(NO_CORRECTION_MESSAGE);
           continue;
@@ -348,16 +369,32 @@ export function createRecoveryDriver(
         continue;
       }
       // Words typed beside the panel are the note of the action that takes one.
-      const draft = composerLiveStore.get().text.trim();
-      if (correction === '' && action === correctionAction && draft !== '') {
-        correction = draft;
+      const draft = composerLiveStore.get();
+      if (correction === undefined && action === correctionAction && !draft.empty) {
+        const submission = prepareDraftSubmission(draft.document, {
+          projectDir,
+          supportsImages: plannerSupportsImages(config, modelCacheStore.getDetection().providers),
+        });
+        if (!submission.ok) {
+          feedbackStore.setError(formatSubmissionFailure(submission));
+          composerDraftStore.requestDocument(draft.document);
+          continue;
+        }
+        correction = submission.message;
+        attachmentsStore.replacePendingImages(correction.images);
         composerDraftStore.request('');
       }
-      const comment = correction === '' ? await promptRecoveryComment(action) : correction;
+      if (correction === undefined && action === correctionAction) correction = reentryCorrection;
+      const comment = correction ?? (await promptRecoveryComment(action));
       if (controller.signal.aborted || abortedRef.current) {
         return { shouldRun: false, state };
       }
-      const applied = await applyAction(action, answer, comment, correction);
+      const applied = await applyAction(
+        action,
+        answer.displayText,
+        comment,
+        correction ?? reentryCorrection,
+      );
       if (applied !== null) return applied;
     }
   }

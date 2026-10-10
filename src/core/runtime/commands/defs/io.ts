@@ -7,7 +7,7 @@ import {
   type RuntimeCommandContext,
 } from '../types.js';
 import { includes } from '../../../../utils/type-guards.js';
-import { formatAttachmentFailure } from '../../../attachments/resolve.js';
+import { formatAttachmentFailure } from '../../../attachments/failure.js';
 
 function parseCopyTarget(args: string | undefined): CopyTarget | null {
   const target = args?.trim().toLowerCase();
@@ -83,7 +83,7 @@ export function ioCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[] {
             );
           } else {
             ctx.setFeedbackError(
-              formatAttachmentFailure({ action: 'attach', reason: result.reason }),
+              formatAttachmentFailure({ action: 'attach-image', reason: result.reason }),
             );
           }
           return;

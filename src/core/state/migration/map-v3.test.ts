@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseLegacyWorkflowState } from './legacy-state.js';
 import { mapV3StateToV4 } from './map-v3.js';
 import type { QueuedMessage } from '../../schemas/workflow.js';
+import { plainUserMessage } from '../../types/user-input.js';
 import { makeLegacyV3State } from '#testing/helpers/factories/workflow-state.js';
 
 const SESSION_ID = '2024-01-01-test-feature';
@@ -9,7 +10,7 @@ const SESSION_ID = '2024-01-01-test-feature';
 function legacyMessage(id: string, overrides: Partial<QueuedMessage> = {}): QueuedMessage {
   return {
     id,
-    text: `${id} text`,
+    ...plainUserMessage(`${id} text`),
     queuedAt: '2026-08-13T10:00:00.000Z',
     phase: 'reviewing-briefs',
     deliveredViaNative: false,

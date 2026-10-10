@@ -5,6 +5,7 @@ import type { RunRecord } from '../../core/sessions/run-record.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { Screen } from '../../core/navigation/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
+import type { UserMessageInput } from '../../core/types/user-input.js';
 
 /**
  * Whether a process in this session is running the run on screen. `at-rest` is a run read back from
@@ -15,7 +16,7 @@ export type WorkflowExecution =
       kind: 'local';
       prepared: PreparedExecution;
       /** What the operator typed to continue this run; it seeds the first step of this re-entry. */
-      steer?: string | undefined;
+      steer?: UserMessageInput | undefined;
     }>
   | Readonly<{ kind: 'at-rest' }>;
 

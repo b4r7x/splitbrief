@@ -1,3 +1,4 @@
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 import { useEffect } from 'react';
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -58,7 +59,7 @@ describe('useInputMode', () => {
 
     const second = capture.current?.setQuestionMode('second question');
     if (!second) throw new Error('expected second question promise');
-    await expect(first).resolves.toBe('');
+    await expect(first).resolves.toEqual(plainUserMessage(''));
     await waitForMode(capture, 'question', 'second question');
 
     expect(capture.current?.mode).toBe('question');
@@ -72,8 +73,8 @@ describe('useInputMode', () => {
     await tick();
     expect(ui.lastFrame()).toContain('60x18:question:second question:question-2');
 
-    resolveAtCompact('answer');
-    await expect(second).resolves.toBe('answer');
+    resolveAtCompact(plainUserMessage('answer'));
+    await expect(second).resolves.toEqual(plainUserMessage('answer'));
     await waitForMode(capture, 'normal');
 
     expect(capture.current?.mode).toBe('normal');
@@ -100,8 +101,8 @@ describe('useInputMode', () => {
 
     expect(ui.lastFrame()).toContain('question:question prompt');
 
-    capture.current?.resolve('answer');
-    await expect(question).resolves.toBe('answer');
+    capture.current?.resolve(plainUserMessage('answer'));
+    await expect(question).resolves.toEqual(plainUserMessage('answer'));
     ui.unmount();
   });
 
@@ -117,7 +118,7 @@ describe('useInputMode', () => {
 
     const review = capture.current?.setReviewMode('review prompt');
     if (!review) throw new Error('expected review promise');
-    await expect(question).resolves.toBe('');
+    await expect(question).resolves.toEqual(plainUserMessage(''));
     await waitForMode(capture, 'review');
 
     expect(questionPromptStore.get().hint).toBeNull();
@@ -204,7 +205,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let answer: string | undefined;
+    let answer: UserMessageInput | undefined;
     const pending = inputMode.setQuestionMode('Which framework?').then((v) => {
       answer = v;
     });
@@ -214,10 +215,10 @@ describe('useInputMode — mode transitions', () => {
     expect(questionPromptStore.get().hint).toBe('Which framework?');
     expect(ui.lastFrame()).toContain('Which framework?');
 
-    requireRef(ref).resolve('react');
+    requireRef(ref).resolve(plainUserMessage('react'));
     await pending;
 
-    expect(answer).toBe('react');
+    expect(answer).toEqual(plainUserMessage('react'));
     expect(controlsStore.get().inputMode).toBe('normal');
     expect(questionPromptStore.get().hint).toBeNull();
     ui.unmount();
@@ -247,7 +248,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let answer: string | undefined;
+    let answer: UserMessageInput | undefined;
     const pending = inputMode.setQuestionMode('Which DB?').then(
       (v) => {
         answer = v;
@@ -300,7 +301,7 @@ describe('useInputMode — mode transitions', () => {
     await tick();
     const inputMode = requireRef(ref);
 
-    let answer: string | undefined;
+    let answer: UserMessageInput | undefined;
     const pending = inputMode.setQuestionMode('Which DB?').then((v) => {
       answer = v;
     });
@@ -309,7 +310,7 @@ describe('useInputMode — mode transitions', () => {
     ui.unmount();
     await pending;
 
-    expect(answer).toBe('');
+    expect(answer).toEqual(plainUserMessage(''));
     expect(questionPromptStore.get().hint).toBeNull();
   });
 });

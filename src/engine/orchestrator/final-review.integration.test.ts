@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
+
 import { runPlanningPhase } from './planning/run.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
@@ -195,7 +197,7 @@ describe('runFinalReviewPhase continuation', () => {
       continuation: createContinuationHolder({
         step: { kind: 'review', cycle: 0 },
         partial: 'I had listed two findings',
-        steer: 'ignore the formatting nits',
+        steer: plainUserMessage('ignore the formatting nits'),
       }),
       summaryBase: { ...SUMMARY_BASE, projectDir, sessionId },
       taskBreakdowns: [],
@@ -1189,7 +1191,7 @@ describe('runFinalReviewPhase', () => {
         sessionId,
         config: makeNoValidationConfig(),
         callbacks: makeCallbacks({
-          onPlannerReply: async () => 'hello',
+          onPlannerReply: async () => plainUserMessage('hello'),
           onApprovalNeeded: async () => ({ approved: true }),
         }).callbacks,
         bus: makeBusRecorder().bus,

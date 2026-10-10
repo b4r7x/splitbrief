@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { afterEach, describe, it, expect } from 'vitest';
 import { chmodSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,7 +24,7 @@ import { drainAndFormat } from '../planning/queue-drain.js';
 
 const message: QueuedMessage = {
   id: 'msg-1',
-  text: 'please continue',
+  ...plainUserMessage('please continue'),
   queuedAt: new Date().toISOString(),
   phase: 'implementing',
   deliveredViaNative: false,
@@ -49,7 +51,11 @@ describe('dispatchNativeInjection', () => {
     const bus = createEventBus();
     bus.subscribe((event) => events.push(event));
     const { projectDir, sessionId } = setupProject(dirs);
-    const correction: QueuedMessage = { ...message, text: 'use JWT instead', phase: 'researching' };
+    const correction: QueuedMessage = {
+      ...message,
+      ...plainUserMessage('use JWT instead'),
+      phase: 'researching',
+    };
     let state: WorkflowState = { ...makeResearchingState(), messageQueue: [correction] };
     const planner = withPlannerCallPublishing(
       createClaudeCodePlanner({
@@ -267,7 +273,7 @@ describe('dispatchNativeInjection', () => {
     const result = await dispatchNativeInjection({
       message: {
         ...message,
-        text: `secret sk-proj-abcdefghijklmnopqrstuvwxyz\n${'x'.repeat(100)}`,
+        ...plainUserMessage(`secret sk-proj-abcdefghijklmnopqrstuvwxyz\n${'x'.repeat(100)}`),
       },
       planner,
       projectDir,

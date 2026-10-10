@@ -13,6 +13,7 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
 
 describe('hydrateFromState', () => {
   beforeEach(() => resetWorkflow());
@@ -54,7 +55,7 @@ describe('hydrateFromState', () => {
       messageQueue: [
         {
           id: 'q1',
-          text: 'queued',
+          ...plainUserMessage('queued'),
           queuedAt: new Date().toISOString(),
           phase: 'implementing',
           deliveredViaNative: false,
@@ -302,7 +303,7 @@ describe('hydrateFromState', () => {
       messageQueue: [
         {
           id: 'pending',
-          text: 'token sk-proj-abcdefghijklmnopqrstuvwxyz',
+          ...plainUserMessage('token sk-proj-abcdefghijklmnopqrstuvwxyz'),
           queuedAt,
           phase: 'planning',
           deliveredViaNative: false,
@@ -310,7 +311,7 @@ describe('hydrateFromState', () => {
         },
         {
           id: 'native',
-          text: 'already delivered',
+          ...plainUserMessage('already delivered'),
           queuedAt,
           phase: 'planning',
           deliveredViaNative: true,
@@ -318,7 +319,7 @@ describe('hydrateFromState', () => {
         },
         {
           id: 'drained',
-          text: 'already drained',
+          ...plainUserMessage('already drained'),
           queuedAt,
           phase: 'planning',
           deliveredViaNative: false,
@@ -327,7 +328,7 @@ describe('hydrateFromState', () => {
         },
         {
           id: 'clarification',
-          text: 'Use GraphQL',
+          ...plainUserMessage('Use GraphQL'),
           queuedAt,
           phase: 'specifying',
           deliveredViaNative: false,

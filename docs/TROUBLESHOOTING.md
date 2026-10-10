@@ -272,17 +272,39 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: `splitbrief start` stops with `Cannot start:` and names an `@file` input or the feature description
 
-**Likely cause:** An `@file` input is missing, is not a regular file, exceeds 10 MiB, or SPLITBRIEF cannot read it. The feature description is empty before `@file` inputs, or it starts with `@`.
+**Likely cause:** An `@file` input is missing, is not a regular file, exceeds 10 MiB, or SPLITBRIEF cannot read it. Non-image content is binary or is not UTF-8 text. The feature description is empty before `@file` inputs, or it starts with `@`.
 
 **Fix:**
 
 1. Check each refused path against its error message. `~/` works. Relative paths resolve against the project root. SPLITBRIEF follows symlinks.
-2. Name a regular, readable file up to 10 MiB.
+2. Name a regular, readable UTF-8 text file or a supported image up to 10 MiB.
 3. Put the feature description first: `splitbrief start "<feature>" @<file>`.
 
 **Prevention:** Check each path before you start. Put the feature description before all `@file` inputs.
 
 **See also:** [CLI Reference: splitbrief start](./CLI-REFERENCE.md#splitbrief-start).
+
+---
+
+### Symptom: The composer shows `Cannot send:` after an `@file` reference
+
+A refused plain send keeps the whole draft, history, and pending images unchanged. Feedback ends with ` File: <base name>.`. The base name uses at most 24 terminal cells. Read the reason before you send again.
+
+`/steer` accepts the same `@` references. A refused `/steer` clears the draft and records the command in history; ↑ recalls it. The refusal sends no correction and leaves pending images unchanged.
+
+| Reason | Fix |
+|---|---|
+| `not-found` | Check the path and try again. |
+| `not-a-file` | Name a file, not a directory. |
+| `too-large` | Choose a file at most 10 MiB. |
+| `unreadable` | Check the file's read permissions. |
+| `not-text` | Choose a UTF-8 text file or a supported image. |
+
+Overlong paths and symlink loops use `not-found`. A bare composer `@word` stays prose for that reason. A token with `/` or matching quotes refuses the send.
+
+Image-only actions also refuse unsupported formats with `not-image`. Choose PNG, JPEG, GIF, WebP, or BMP. If the PLAN seat cannot see images, select a vision model with `/crew plan`.
+
+Files can be inside or outside the project. Relative paths use the project root. `~/` works, and SPLITBRIEF follows symlinks. See [composer syntax](./FEATURES.md#file-context-injection) for quoted paths and bare references.
 
 ---
 

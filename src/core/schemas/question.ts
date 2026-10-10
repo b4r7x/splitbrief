@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { UserMessageInput } from '../types/user-input.js';
 
 export const ClarificationQuestionSchema = z.discriminatedUnion('type', [
   z.object({
@@ -31,6 +32,6 @@ export const AnsweredQuestionSchema = z.object({
 export type AnsweredQuestion = z.infer<typeof AnsweredQuestionSchema>;
 
 export interface PlannerReplyAnswer {
-  text: string;
+  message: UserMessageInput;
   qa: AnsweredQuestion[];
 }

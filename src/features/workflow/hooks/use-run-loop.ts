@@ -73,6 +73,7 @@ import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseRunContinueResult } from './use-run-continue.js';
+import { plainUserMessage, type UserMessageInput } from '../../../core/types/user-input.js';
 
 export type RunWorkflowFn = typeof runWorkflow;
 export type PrepareExecutionFn = typeof prepareExecution;
@@ -84,7 +85,7 @@ function isWorkflowAborted(controller: AbortController, ref: { current: boolean 
 interface UseRunLoopOptions {
   prepared?: PreparedExecution | undefined;
   /** What the operator typed to continue this run; it seeds the first step of this re-entry. */
-  steer?: string | undefined;
+  steer?: UserMessageInput | undefined;
   selectedSkills?: SkillMeta[] | undefined;
   inputMode: UseInputModeResult;
   /** How this run is re-entered — the loop reads its state. */
@@ -186,14 +187,14 @@ export function useRunLoop({
       inputMode.resetMode();
       closeApprovalPrompt();
       closeReviewChecksPrompt();
-      stopStore.get().parked?.resolve?.('');
+      stopStore.get().parked?.resolve?.(plainUserMessage(''));
     });
     setCancelHandler(() => {
       controller.abort(WORKFLOW_USER_CANCELLED_ABORT_REASON);
       inputMode.resetMode();
       closeApprovalPrompt();
       closeReviewChecksPrompt();
-      stopStore.get().parked?.resolve?.('');
+      stopStore.get().parked?.resolve?.(plainUserMessage(''));
     });
 
     // A re-entry re-prepares this session, and every later iteration belongs to the preparation
@@ -271,9 +272,9 @@ export function useRunLoop({
         if (at === 'boundary' && consumeSeatChange()) {
           seatChangedAtBoundary = true;
           controller.abort();
-          return '';
+          return plainUserMessage('');
         }
-        return (await promptCallbacks.onContinuationNeeded?.(partial, at)) ?? '';
+        return (await promptCallbacks.onContinuationNeeded?.(partial, at)) ?? plainUserMessage('');
       },
     };
 

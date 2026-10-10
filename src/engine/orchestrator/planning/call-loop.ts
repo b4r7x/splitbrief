@@ -5,6 +5,7 @@ import { buildRejectionContext } from '../evidence/reporting.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import type { PlannerConversation } from '../../../core/schemas/workflow.js';
 import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 
 /** The rejections the planner has to respect, as the lead of its prompt; empty when there are none. */
 export function plannerRejectionContext(
@@ -25,7 +26,7 @@ export function plannerRejectionContext(
 export function waitForPlannerReply(
   ctx: Pick<PlannerCallbacksContext, 'callbacks' | 'sinks' | 'signal'>,
   reply: PlannerConversation,
-): Promise<string | PlannerReplyAnswer | undefined> {
+): Promise<UserMessageInput | PlannerReplyAnswer | undefined> {
   return withPerCallAbort({
     sinks: ctx.sinks,
     signal: ctx.signal,

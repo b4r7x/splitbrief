@@ -5,6 +5,14 @@ import { loadState } from '../../../core/state/persistence.js';
 import { isQueuedMessagePendingDelivery } from '../../../core/queue-state.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import { error } from '../../../utils/error.js';
+
+const transcriptError = {
+  missingAttachmentAnswer: (answerIndex: number) =>
+    error('transcript-missing-attachment-answer', 'Saved attachment answer is missing.', {
+      answerIndex,
+    }),
+} as const;
 
 export type ResumeMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -13,24 +21,20 @@ export type ResumeContext = {
   warning?: 'state-unavailable' | undefined;
 };
 
-function toResumeMessage(message: SessionLogMessageEntry): ResumeMessage {
-  const content = message.interrupted ? `${message.text}\n\n[turn interrupted]` : message.text;
+function toResumeMessage(message: SessionLogMessageEntry, text: string): ResumeMessage {
+  const content = message.interrupted ? `${text}\n\n[turn interrupted]` : text;
   return { role: message.role, content };
 }
 
-function pendingQueueEntries(ref: SessionRef): {
-  queue: WorkflowState['messageQueue'];
+function savedResumeState(ref: SessionRef): {
+  state: WorkflowState | null;
   unavailable: boolean;
 } {
   try {
     const state = loadState(ref);
-    if (state === null) return { queue: [], unavailable: false };
-    return {
-      queue: state.messageQueue.filter(isQueuedMessagePendingDelivery),
-      unavailable: false,
-    };
+    return { state, unavailable: false };
   } catch {
-    return { queue: [], unavailable: true };
+    return { state: null, unavailable: true };
   }
 }
 
@@ -40,7 +44,7 @@ function isImplementerOutput(message: SessionLogMessageEntry): boolean {
   return message.role === 'assistant' && message.phase === 'implementing';
 }
 
-function isStillPendingQueuedTranscriptMessage(
+export function isStillPendingQueuedTranscriptMessage(
   message: SessionLogMessageEntry,
   pendingQueue: WorkflowState['messageQueue'],
 ): boolean {
@@ -53,7 +57,7 @@ function isStillPendingQueuedTranscriptMessage(
     (queued) =>
       queued.queuedAt === message.queuedAt &&
       queued.phase === message.phase &&
-      queued.text === message.text,
+      (queued.displayText === message.text || queued.text === message.text),
   );
 }
 
@@ -61,35 +65,75 @@ async function readCompactedResumeEntries(ref: SessionRef): Promise<SessionLogMe
   return readCompactedMessages(sessionDir(ref.projectDir, ref.sessionId));
 }
 
-function plannerConversation(
+export function reconstructPlannerConversation(
   entries: readonly SessionLogMessageEntry[],
-  pendingQueue: WorkflowState['messageQueue'],
-): ResumeMessage[] {
-  return entries
-    .filter(
-      (message) =>
-        !isImplementerOutput(message) &&
-        !isStillPendingQueuedTranscriptMessage(message, pendingQueue),
+  state: WorkflowState | null,
+): {
+  messages: ResumeMessage[];
+  expanded: SessionLogMessageEntry[];
+  unmatched: NonNullable<WorkflowState['resumeUserMessages']>;
+} {
+  const queue = state?.messageQueue ?? [];
+  const pendingQueue = queue.filter(isQueuedMessagePendingDelivery);
+  const savedMessages = [...(state?.resumeUserMessages ?? [])];
+  const answers = [
+    ...(state?.userAnswers ?? []),
+    ...(state?.pendingPlannerConversation?.answers ?? []),
+  ];
+  const messages: ResumeMessage[] = [];
+  const expanded = [...entries];
+  for (const [entryIndex, message] of [...entries.entries()].reverse()) {
+    if (
+      isImplementerOutput(message) ||
+      isStillPendingQueuedTranscriptMessage(message, pendingQueue)
     )
-    .map(toResumeMessage);
+      continue;
+    let text = message.text;
+    if (message.role === 'user') {
+      if (message.queueMessageId !== undefined) {
+        const queued = queue.find((item) => item.id === message.queueMessageId);
+        if (queued !== undefined) text = queued.text;
+      } else {
+        const index = savedMessages.findLastIndex(
+          (saved) =>
+            saved.ts === message.ts &&
+            saved.phase === message.phase &&
+            saved.displayText === message.text,
+        );
+        const saved = savedMessages[index];
+        if (saved !== undefined) {
+          if ('text' in saved) text = saved.text;
+          else {
+            const answer = answers[saved.answerIndex];
+            if (answer === undefined)
+              throw transcriptError.missingAttachmentAnswer(saved.answerIndex);
+            text = answer.answer;
+          }
+          savedMessages.splice(index, 1);
+        }
+      }
+    }
+    expanded[entryIndex] = { ...message, text };
+    messages.push(toResumeMessage(message, text));
+  }
+  return { messages: messages.reverse(), expanded, unmatched: savedMessages };
 }
 
 /** The planner conversation `session.jsonl` holds, a cut call's partial included. */
 export async function buildResumeContext(opts: { ref: SessionRef }): Promise<ResumeContext> {
   const { ref } = opts;
-  const pending = pendingQueueEntries(ref);
-  if (pending.unavailable) return { messages: [], warning: 'state-unavailable' };
-  const pendingQueue = pending.queue;
+  const saved = savedResumeState(ref);
+  if (saved.unavailable) return { messages: [], warning: 'state-unavailable' };
+  let entries: SessionLogMessageEntry[];
   try {
-    const entries = await readCompactedResumeEntries(ref);
-    return { messages: plannerConversation(entries, pendingQueue) };
+    entries = await readCompactedResumeEntries(ref);
   } catch {
     // A compacted read that fails degrades to replaying the raw message log.
     // That replay is deliberately unguarded: if the same session directory is
     // unreadable twice the resume fails loudly, because resuming with a
     // silently empty history is worse than not resuming.
-    const entries: SessionLogMessageEntry[] = [];
+    entries = [];
     for await (const m of readMessages(ref)) entries.push(m);
-    return { messages: plannerConversation(entries, pendingQueue) };
   }
+  return { messages: reconstructPlannerConversation(entries, saved.state).messages };
 }

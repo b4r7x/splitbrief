@@ -3,6 +3,9 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
+import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { editorStore } from '../../stores/ui/editor.js';
@@ -30,7 +33,7 @@ function makeInputMode(mode: UseInputModeResult['mode'] = 'review'): UseInputMod
     hint: '',
     questionEpoch: 0,
     setReviewMode: vi.fn(async () => ({ approved: false as const })),
-    setQuestionMode: vi.fn(async () => ''),
+    setQuestionMode: vi.fn(async () => plainUserMessage('')),
     resolve: vi.fn(),
     resetMode: vi.fn(),
   };
@@ -167,7 +170,7 @@ describe('review input ownership', () => {
   it('does not parse composer text as a review shortcut', async () => {
     const inputMode = makeInputMode('normal');
 
-    await createReviewInputHandler(inputMode).handleInput('q');
+    await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
 
     expect(inputMode.resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get().message).toBe(reviewOpeningPromptMessage());
@@ -176,15 +179,15 @@ describe('review input ownership', () => {
   it('passes question/editor-owned text through without shortcut parsing', async () => {
     const inputMode = makeInputMode('question');
 
-    await createReviewInputHandler(inputMode).handleInput('q');
+    await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
 
-    expect(inputMode.resolve).toHaveBeenCalledWith('q');
+    expect(inputMode.resolve).toHaveBeenCalledWith(plainUserMessage('q'));
   });
 
   it('uses the same typed refusal path for the review end-run key', async () => {
     const inputMode = makeInputMode('review');
 
-    await createReviewInputHandler(inputMode).handleInput('q');
+    await createReviewInputHandler(inputMode).handleInput(plainUserMessage('q'));
 
     expect(inputMode.resolve).toHaveBeenCalledWith({ approved: false, action: 'end-run' });
   });
@@ -240,7 +243,7 @@ describe('review input effects', () => {
       const inputMode = makeInputMode('review');
       const effects = makeEffects();
 
-      await createReviewInputHandler(inputMode, effects).handleInput(command);
+      await createReviewInputHandler(inputMode, effects).handleInput(plainUserMessage(command));
 
       const editor = editorStore.get();
       expect(editor.status === 'open' ? editor.filePath : null).toBe(join(tempDir, 'plan.json'));
@@ -258,13 +261,13 @@ describe('review input effects', () => {
     { command: 'q', resolved: { approved: false, action: 'end-run' } },
     {
       command: 'comment more evidence',
-      resolved: { approved: false, action: 'revise', comment: 'more evidence' },
+      resolved: { approved: false, action: 'revise', message: plainUserMessage('more evidence') },
     },
   ])('resolves $command the same way with the effects supplied', async ({ command, resolved }) => {
     const inputMode = makeInputMode('review');
     const effects = makeEffects();
 
-    await createReviewInputHandler(inputMode, effects).handleInput(command);
+    await createReviewInputHandler(inputMode, effects).handleInput(plainUserMessage(command));
 
     expect(inputMode.resolve).toHaveBeenCalledWith(resolved);
     expect(effects.openExternalEditor).not.toHaveBeenCalled();
@@ -277,12 +280,14 @@ describe('review input effects', () => {
     reviewStore.setReviewFile(reviewFile);
     const inputMode = makeInputMode('review');
 
-    await createReviewInputHandler(inputMode, makeEffects()).handleInput('  Greet in Polish ');
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(
+      plainUserMessage('  Greet in Polish '),
+    );
 
     expect(inputMode.resolve).toHaveBeenCalledWith({
       approved: false,
       action: 'revise',
-      comment: 'Greet in Polish',
+      message: plainUserMessage('  Greet in Polish '),
     });
     expect(feedbackStore.get().message).toBeNull();
   });
@@ -294,7 +299,7 @@ describe('review input effects', () => {
     reviewStore.setReviewFile(reviewFile);
     const inputMode = makeInputMode('review');
 
-    await createReviewInputHandler(inputMode, makeEffects()).handleInput('c');
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(plainUserMessage('c'));
 
     expect(inputMode.resolve).not.toHaveBeenCalled();
     expect(composerDraftStore.get().request?.value).toBe('comment ');
@@ -304,9 +309,11 @@ describe('review input effects', () => {
     const inputMode = makeInputMode('question');
     const effects = makeEffects();
 
-    await createReviewInputHandler(inputMode, effects).handleInput('use the other adapter');
+    await createReviewInputHandler(inputMode, effects).handleInput(
+      plainUserMessage('use the other adapter'),
+    );
 
-    expect(inputMode.resolve).toHaveBeenCalledWith('use the other adapter');
+    expect(inputMode.resolve).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     expect(effects.enqueue).not.toHaveBeenCalled();
   });
 
@@ -341,9 +348,11 @@ describe('review input effects', () => {
       setQueueHandler(registered);
       const effects = makeEffects(async () => outcome);
 
-      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput('  steer it  ');
+      await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+        plainUserMessage('  steer it  '),
+      );
 
-      expect(effects.enqueue).toHaveBeenCalledWith('steer it', 'researching');
+      expect(effects.enqueue).toHaveBeenCalledWith(plainUserMessage('  steer it  '), 'researching');
       expect(registered).not.toHaveBeenCalled();
       expect(feedbackStore.get()).toEqual(feedback);
     },
@@ -354,10 +363,13 @@ describe('review input effects', () => {
     const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
 
     await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
-      '  smaller diffs  ',
+      plainUserMessage('  smaller diffs  '),
     );
 
-    expect(effects.enqueue).toHaveBeenCalledWith('smaller diffs', 'implementing');
+    expect(effects.enqueue).toHaveBeenCalledWith(
+      plainUserMessage('  smaller diffs  '),
+      'implementing',
+    );
     expect(feedbackStore.get()).toEqual({
       message: 'Message queued for the next planner turn.',
       isError: false,
@@ -368,9 +380,14 @@ describe('review input effects', () => {
     lifecycleStore.__testReset({ phase: 'final-review' });
     const effects = makeEffects(async () => ({ status: 'accepted' as const, messageId: 'm-1' }));
 
-    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput('check the icons');
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('check the icons'),
+    );
 
-    expect(effects.enqueue).toHaveBeenCalledWith('check the icons', 'final-review');
+    expect(effects.enqueue).toHaveBeenCalledWith(
+      plainUserMessage('check the icons'),
+      'final-review',
+    );
     expect(feedbackStore.get()).toEqual({
       message: 'Message queued for the reviewer.',
       isError: false,
@@ -385,7 +402,10 @@ describe('review input effects', () => {
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
     }));
 
-    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput('keep me');
+    composerLiveStore.setDraft(createDraftDocument('keep me'));
+    await createReviewInputHandler(makeInputMode('normal'), effects).handleInput(
+      plainUserMessage('keep me'),
+    );
 
     expect(feedbackStore.get()).toEqual({
       message: 'Queue full (50 messages). Wait for the current phase to complete.',
@@ -399,9 +419,11 @@ describe('review input effects', () => {
     const registered = vi.fn(() => ({ status: 'accepted' as const, messageId: 'from-the-run' }));
     setQueueHandler(registered);
 
-    await createReviewInputHandler(makeInputMode('normal')).handleInput('make it simpler');
+    await createReviewInputHandler(makeInputMode('normal')).handleInput(
+      plainUserMessage('make it simpler'),
+    );
 
-    expect(registered).toHaveBeenCalledWith('make it simpler', 'specifying');
+    expect(registered).toHaveBeenCalledWith(plainUserMessage('make it simpler'), 'specifying');
     expect(feedbackStore.get()).toEqual({
       message: 'Message queued for the next planner turn.',
       isError: false,
@@ -429,5 +451,82 @@ describe('review input effects', () => {
 
     expect(stdinPause).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toEqual({ message: null, isError: false });
+  });
+});
+
+describe('attachment transport', () => {
+  afterEach(() => {
+    feedbackStore.reset();
+    reviewStore.reset();
+    lifecycleStore.reset();
+    composerLiveStore.reset();
+    composerDraftStore.reset();
+  });
+
+  it.each(['comment', 'revise'])(
+    'removes the %s prefix without losing appended bodies or arrays',
+    async (command) => {
+      const inputMode = makeInputMode('review');
+      const original: UserMessageInput = {
+        text: `${command} check @/outside/context.txt\n\n--- @/outside/context.txt ---\ncomment stays in body`,
+        displayText: `${command} check @/outside/context.txt`,
+        images: [
+          {
+            id: 'att-1',
+            kind: 'image',
+            path: '/outside/a.png',
+            mimeType: 'image/png',
+            sizeBytes: 1,
+          },
+        ],
+        attachedInputs: [{ kind: 'text', path: '/outside/context.txt' }],
+      };
+      await createReviewInputHandler(inputMode).handleInput(original);
+      expect(inputMode.resolve).toHaveBeenCalledExactlyOnceWith({
+        approved: false,
+        action: 'revise',
+        message: {
+          ...original,
+          displayText: 'check @/outside/context.txt',
+          text: 'check @/outside/context.txt\n\n--- @/outside/context.txt ---\ncomment stays in body',
+        },
+      });
+    },
+  );
+
+  it('queues the full message and restores the submitted image atoms on rejection', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing' });
+    const image = {
+      id: 'att-1',
+      kind: 'image' as const,
+      path: '/outside/a.png',
+      mimeType: 'image/png' as const,
+      sizeBytes: 1,
+    };
+    const document = {
+      version: 1 as const,
+      parts: [
+        { kind: 'text' as const, text: 'check @/outside/context.txt ' },
+        { kind: 'image' as const, attachment: image },
+      ],
+    };
+    composerLiveStore.setDraft(document);
+    const original: UserMessageInput = {
+      text: 'check @/outside/context.txt [Image 1]\n\n--- @/outside/context.txt ---\ncontext',
+      displayText: 'check @/outside/context.txt [Image 1]',
+      images: [image],
+      attachedInputs: [{ kind: 'text', path: '/outside/context.txt' }],
+    };
+    const enqueue = vi.fn<ReviewInputEffects['enqueue']>(async () => ({
+      status: 'rejected',
+      reason: 'queue-full',
+      message: 'Queue full',
+    }));
+    await createReviewInputHandler(makeInputMode('normal'), {
+      enqueue,
+      openExternalEditor: async () => {},
+    }).handleInput(original);
+    expect(enqueue).toHaveBeenCalledExactlyOnceWith(original, 'implementing');
+    expect(composerDraftStore.get().request).toMatchObject({ kind: 'document', document });
   });
 });

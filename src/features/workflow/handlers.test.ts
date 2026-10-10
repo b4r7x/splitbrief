@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../core/types/user-input.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   abortTurn,
@@ -180,14 +181,14 @@ describe('requestResume', () => {
     setResumeHandler(resume);
     stopStore.park('mid-brief', 'T002', steer);
 
-    expect(requestResume('use the other adapter')).toBe(true);
-    expect(resume).toHaveBeenCalledWith('use the other adapter');
+    expect(requestResume(plainUserMessage('use the other adapter'))).toBe(true);
+    expect(resume).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     // The run decides what continuing means; nothing settles behind its back.
     expect(steer).not.toHaveBeenCalled();
   });
 
   it('reports nothing to resume when no run is on screen', () => {
-    expect(requestResume('')).toBe(false);
+    expect(requestResume(plainUserMessage(''))).toBe(false);
   });
 });
 
@@ -206,8 +207,8 @@ describe('resumeParkedRun', () => {
     const steer = vi.fn();
     stopStore.park('mid-brief', 'T002', steer);
 
-    expect(resumeParkedRun('use the other adapter')).toBe(true);
-    expect(steer).toHaveBeenCalledWith('use the other adapter');
+    expect(resumeParkedRun(plainUserMessage('use the other adapter'))).toBe(true);
+    expect(steer).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
     expect(stopStore.get().phase).toBe('idle');
   });
 
@@ -216,12 +217,12 @@ describe('resumeParkedRun', () => {
     stopStore.request('pause-after-brief');
     stopStore.park('boundary', 'T001', steer);
 
-    expect(resumeParkedRun('')).toBe(true);
-    expect(steer).toHaveBeenCalledWith('');
+    expect(resumeParkedRun(plainUserMessage(''))).toBe(true);
+    expect(steer).toHaveBeenCalledWith(plainUserMessage(''));
   });
 
   it('reports no park when the run is at rest', () => {
-    expect(resumeParkedRun('')).toBe(false);
+    expect(resumeParkedRun(plainUserMessage(''))).toBe(false);
   });
 });
 
@@ -240,25 +241,25 @@ describe('requestSteer', () => {
     const stop = vi.fn();
     setStopHandler(stop);
 
-    expect(requestSteer('smaller diffs')).toBe(true);
+    expect(requestSteer(plainUserMessage('smaller diffs'))).toBe(true);
     expect(stop).toHaveBeenCalledTimes(1);
 
     // The text survives the stop race: the park that follows resumes with it.
     const steer = vi.fn();
     stopStore.park('mid-brief', 'T002', steer);
-    expect(steer).toHaveBeenCalledWith('smaller diffs');
+    expect(steer).toHaveBeenCalledWith(plainUserMessage('smaller diffs'));
   });
 
   it('continues a run already parked with the text', () => {
     const steer = vi.fn();
     stopStore.park('mid-brief', 'T002', steer);
 
-    expect(requestSteer('use the other adapter')).toBe(true);
-    expect(steer).toHaveBeenCalledWith('use the other adapter');
+    expect(requestSteer(plainUserMessage('use the other adapter'))).toBe(true);
+    expect(steer).toHaveBeenCalledWith(plainUserMessage('use the other adapter'));
   });
 
   it('reports nothing to steer when no run is on screen', () => {
-    expect(requestSteer('nope')).toBe(false);
+    expect(requestSteer(plainUserMessage('nope'))).toBe(false);
   });
 });
 
@@ -391,7 +392,7 @@ describe('safe departure', () => {
     stopStore.request('pause-after-brief');
     const resolve = vi.fn();
     stopStore.park('boundary', 'T001', resolve);
-    const stop = vi.fn(() => stopStore.get().parked?.resolve?.(''));
+    const stop = vi.fn(() => stopStore.get().parked?.resolve?.(plainUserMessage('')));
     setStopHandler(stop);
     const exit = vi.fn();
     requestQuit(exit);

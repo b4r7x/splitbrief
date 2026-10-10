@@ -602,22 +602,105 @@ describe('event row dispatch', () => {
       expect(lines.findIndex((line) => line.includes('build it'))).toBeLessThan(header);
       expect(lines.slice(header, header + 3)).toEqual([
         'Attached files · 2',
-        '/Users/dev/notes.md · text',
-        '/Volumes/design/mock.png · image',
+        'text · /Users/dev/notes.md',
+        'image · /Volumes/design/mock.png',
       ]);
     });
 
-    it('wraps a long path without shortening it', () => {
+    it.each([80, 60])('wraps only the path after its kind at %i columns', (width) => {
       const long =
         '/Users/dev/projects/a-rather-long-folder-name/another-nested-level/brief-for-the-feature.md';
       const lines = requestLines(
         { ...request, attachedInputs: [{ path: long, kind: 'text' }] },
-        40,
+        width,
       );
+      const files = lines.slice(lines.indexOf('Attached files · 1') + 1);
 
-      expect(lines.join('')).toContain(long);
+      expect(files[0]).toMatch(/^text · \/Users\//);
+      expect(files.join('')).toBe(`text · ${long}`);
+      expect(files.slice(1).every((line) => !line.includes('·'))).toBe(true);
       expect(lines.join('\n')).not.toContain('…');
     });
+
+    it.each(['text', 'image'] as const)('aligns wrapped %s paths under the path start', (kind) => {
+      const path = '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+      const lines = eventRows({
+        event: { ...request, attachedInputs: [{ path, kind }] },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 58, viewportRows: 40, streaming },
+      }).map(rowText);
+      const header = lines.findIndex((line) => line.includes('Attached files · 1'));
+      const files = lines.slice(header + 1);
+      const first = files[0];
+      if (first === undefined) throw new Error('Missing attached file row');
+      const pathStart = first.indexOf('/Users');
+      expect(files.length).toBeGreaterThan(1);
+      expect(files.slice(1).every((line) => line.startsWith(' '.repeat(pathStart)))).toBe(true);
+      expect(
+        files.map((line, index) => (index === 0 ? line.slice(pathStart) : line.trim())).join(''),
+      ).toBe(path);
+      expect(files.every((line) => getTerminalCellWidth(line) <= 58)).toBe(true);
+    });
+
+    it.each([80, 60])('keeps the kind beside a path that almost fits at %i columns', (width) => {
+      const path = `/Users/me/${'x'.repeat(width - 18)}`;
+      const lines = requestLines({ ...request, attachedInputs: [{ path, kind: 'text' }] }, width);
+      const files = lines.slice(lines.indexOf('Attached files · 1') + 1);
+
+      expect(files[0]).toMatch(/^text · \/Users\//);
+      expect(files.join('')).toBe(`text · ${path}`);
+    });
+
+    it.each([
+      {
+        width: 60,
+        files: ['text · /Users/me/notes/product-planning/archive/', 'receiving-workflow/brief.md'],
+      },
+      {
+        width: 80,
+        files: ['text · /Users/me/notes/product-planning/archive/receiving-workflow/', 'brief.md'],
+      },
+      {
+        width: 120,
+        files: ['text · /Users/me/notes/product-planning/archive/receiving-workflow/brief.md'],
+      },
+    ])(
+      'breaks the outside-file scenario at directory boundaries at $width columns',
+      ({ width, files }) => {
+        const path = '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+        const lines = requestLines(
+          { ...request, attachedInputs: [{ path, kind: 'text' }] },
+          width - 2,
+        );
+
+        expect(lines.slice(lines.indexOf('Attached files · 1') + 1)).toEqual(files);
+      },
+    );
+
+    it.each([120, 80, 60])(
+      'shows attached files once after answered questions at %i columns',
+      (width) => {
+        const lines = requestLines(
+          {
+            ...request,
+            phase: 'planning',
+            text: '1. Which module?\n@/Users/dev/notes.md',
+            qa: [{ question: 'Which module?', answer: '@/Users/dev/notes.md' }],
+          },
+          width,
+        );
+
+        expect(lines).toEqual([
+          'Answered · 1 question',
+          '1. Which module?',
+          'You → @/Users/dev/notes.md',
+          'Attached files · 2',
+          'text · /Users/dev/notes.md',
+          'image · /Volumes/design/mock.png',
+        ]);
+      },
+    );
 
     it('strips terminal control bytes from an attached path', () => {
       const esc = String.fromCharCode(0x1b);
@@ -630,7 +713,7 @@ describe('event row dispatch', () => {
         80,
       ).join('\n');
 
-      expect(text).toContain('/tmp/brief.md · text');
+      expect(text).toContain('text · /tmp/brief.md');
       expect(text).not.toContain('pwned');
     });
 
@@ -648,8 +731,8 @@ describe('event row dispatch', () => {
           80,
         );
 
-        expect(lines).toContain('docs/brief.md · text');
-        expect(lines).toContain('/elsewhere/mock.png · image');
+        expect(lines).toContain('text · docs/brief.md');
+        expect(lines).toContain('image · /elsewhere/mock.png');
       } finally {
         configStore.__testReset();
       }
@@ -1359,6 +1442,68 @@ describe('event row dispatch', () => {
       '1. Which module?',
       'You → src/auth.ts',
     ]);
+  });
+
+  it.each([
+    {
+      width: 60,
+      answers: ['You → @/Users/me/notes/product-planning/archive/', 'receiving-workflow/brief.md'],
+    },
+    {
+      width: 80,
+      answers: ['You → @/Users/me/notes/product-planning/archive/receiving-workflow/', 'brief.md'],
+    },
+    {
+      width: 120,
+      answers: ['You → @/Users/me/notes/product-planning/archive/receiving-workflow/brief.md'],
+    },
+  ])(
+    'keeps You → with the path and breaks at directory boundaries at $width columns',
+    ({ width, answers: expected }) => {
+      const answer = '@/Users/me/notes/product-planning/archive/receiving-workflow/brief.md';
+      const rows = eventRows({
+        event: {
+          type: 'user_message',
+          ts: 0,
+          phase: 'planning',
+          text: `1. Which brief?\n${answer}`,
+          qa: [{ question: 'Which brief?', answer }],
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 20, streaming },
+      });
+      const answers = rows.slice(2).map(rowText);
+      const bodyWidth = width - rowLeadingCells('message') - 3;
+
+      expect(answers).toEqual(expected);
+      expect(answers.join('')).toBe(`You → ${answer}`);
+      expect(answers.slice(1).every((line) => !line.includes('→'))).toBe(true);
+      expect(rows.every((row) => getTerminalCellWidth(rowText(row)) <= bodyWidth)).toBe(true);
+    },
+  );
+
+  it.each([60, 80])('preserves a path after answer prose at %i columns', (width) => {
+    for (const path of [
+      '/Users/me/notes/product-planning/brief.md',
+      '/Users/me/notes/product-planning/archive/receiving-workflow/brief.md',
+    ]) {
+      const answer = `Please use @${path}`;
+      const rows = eventRows({
+        event: {
+          type: 'user_message',
+          ts: 0,
+          phase: 'planning',
+          text: `1. Which brief?\n${answer}`,
+          qa: [{ question: 'Which brief?', answer }],
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 20, streaming },
+      });
+
+      expect(rows.slice(2).map(rowText).join('')).toBe(`You → ${answer}`);
+    }
   });
 
   it('pulls a stranded wrap word down so no line ends the block as one lone word', () => {

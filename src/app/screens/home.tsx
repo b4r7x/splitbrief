@@ -13,6 +13,7 @@ import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-r
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { Composer } from '../../components/composer/composer.js';
+import type { DraftSubmission } from '../../core/composer/submission.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { HomeSeatBlock, shedToFit } from '../../features/home/components/seat-block.js';
@@ -181,15 +182,19 @@ export function HomeScreen({
     if (!(r.readiness.refreshing || r.modelsDev.refreshing || r.cliModels.refreshing)) return null;
     return r.readiness.fetchedAt === null ? 'cold' : 'warm';
   });
-  const startPreparation = useStartPreparation<string>({
-    prepare: async (feature, signal) => {
+  const startPreparation = useStartPreparation<Extract<DraftSubmission, { ok: true }>>({
+    prepare: async (submission, signal) => {
       const current = configStore.get();
       if (!current.config || !current.projectDir) {
         return { kind: 'failed', error: appPreparationError.configNotLoaded() };
       }
       return deps.prepareExecution({
         projectDir: current.projectDir,
-        feature,
+        feature: submission.message.displayText,
+        plannerContext: submission.plannerContext || undefined,
+        ...(submission.message.attachedInputs.length > 0 && {
+          attachedInputs: submission.message.attachedInputs,
+        }),
         effectiveConfig: current.config,
         policy: {
           ...interactivePreparationPolicy,
@@ -276,8 +281,8 @@ export function HomeScreen({
     focused: sessionsActive,
     onEnter: () => setSessionsFocused(true),
   });
-  const onStartWorkflow = (feature: string) => {
-    observePreparationCleanup(startPreparation.submit(feature));
+  const onStartWorkflow = (submission: Extract<DraftSubmission, { ok: true }>) => {
+    observePreparationCleanup(startPreparation.submit(submission));
   };
 
   useInput(

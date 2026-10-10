@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,7 +10,7 @@ import type { ConsultAnswer } from '../../../core/schemas/consult.js';
 import type { Plan } from '../../../core/schemas/plan.js';
 import type { Check, Task } from '../../../core/schemas/task.js';
 import type { PlannerConversation, WorkflowState } from '../../../core/schemas/workflow.js';
-import type { PlannerReplyAnswer } from '../../../core/schemas/question.js';
+import type { OrchestratorCallbacks } from '../types.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { saveState } from '../../../core/state/persistence.js';
@@ -89,9 +91,7 @@ function harness(opts: {
   plan: Plan;
   validator?: Validator;
   runCommand?: ValidationCommandRunner;
-  onPlannerReply?:
-    | ((reply: PlannerConversation) => Promise<string | PlannerReplyAnswer | undefined>)
-    | undefined;
+  onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
   changedFiles?: string[];
 }): Harness {
   const state: WorkflowState = {
@@ -468,7 +468,7 @@ describe('applyConsultAnswer ask-user', () => {
         plan,
         onPlannerReply: async (reply) => {
           replies.push(reply);
-          return 'redis';
+          return plainUserMessage('redis');
         },
       });
       const attempt = await getChangedFilesSnapshot(projectDir);
@@ -501,7 +501,7 @@ describe('applyConsultAnswer ask-user', () => {
       sessionId,
       task,
       plan,
-      onPlannerReply: async () => '',
+      onPlannerReply: async () => plainUserMessage(''),
     });
     const attempt = await getChangedFilesSnapshot(projectDir);
 

@@ -6,6 +6,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { plainUserMessage, type UserMessageInput } from '../../core/types/user-input.js';
+import { attachmentsStore } from '../../stores/workflow/attachments.js';
 import type { ApprovalReviewResult } from '../../core/approval/types.js';
 import { writeConfig } from '../../core/config/load/io.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
@@ -27,7 +29,7 @@ import {
 } from '../../stores/workflow/recovery-notice.js';
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { createRecoveryDriver } from './recovery-driver.js';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { readEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { join } from 'node:path';
 import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
@@ -35,6 +37,9 @@ import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { addTuiEvent } from './tui-sink.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
+import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';
+import { eventsStore } from '../../stores/workflow/events.js';
+import { readMessages } from '../../core/sessions/log-reader.js';
 
 let dirs: string[] = [];
 
@@ -92,9 +97,9 @@ function makeInputMode(answers: string[]): {
     hint: '',
     questionEpoch: 0,
     setReviewMode: async (): Promise<ApprovalReviewResult> => ({ approved: false }),
-    setQuestionMode: async (): Promise<string> => {
+    setQuestionMode: async (): Promise<UserMessageInput> => {
       feedbackAtPrompt.push({ ...feedbackStore.get() });
-      return queue.shift() ?? '';
+      return plainUserMessage(queue.shift() ?? '');
     },
     resolve: () => {},
     resetMode: () => {},
@@ -126,7 +131,7 @@ function runDriver(
   prepared: PreparedExecution,
   state: WorkflowState,
   inputMode: UseInputModeResult,
-  correction?: string,
+  correction?: UserMessageInput,
 ): ReturnType<ReturnType<typeof createRecoveryDriver>> {
   const promptPendingRecovery = createRecoveryDriver({
     prepared,
@@ -192,7 +197,7 @@ describe('createRecoveryDriver', () => {
       inputMode: {
         ...inputMode,
         setQuestionMode: () =>
-          new Promise<string>((_resolve, reject) => {
+          new Promise<UserMessageInput>((_resolve, reject) => {
             cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
           }),
         resetMode: () => cancelQuestion(),
@@ -763,7 +768,7 @@ describe('createRecoveryDriver', () => {
     expect(feedbackStore.get().isError).toBe(false);
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
-      expect(result.steer).toBe('the prop is optional — add a default');
+      expect(result.steer).toEqual(plainUserMessage('the prop is optional — add a default'));
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(result.state.tasks[0]?.status).toBe('pending');
     }
@@ -779,7 +784,7 @@ describe('createRecoveryDriver', () => {
     expect(feedbackStore.get().isError).toBe(false);
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
-      expect(result.steer).toBe('run the formatter before the tests');
+      expect(result.steer).toEqual(plainUserMessage('run the formatter before the tests'));
       expect(result.state.pendingRecovery).toBeUndefined();
       expect(JSON.stringify(result.state.lineages)).toContain('run the formatter before the tests');
     }
@@ -794,7 +799,7 @@ describe('createRecoveryDriver', () => {
 
     expect(result.shouldRun).toBe(true);
     if (result.shouldRun) {
-      expect(result.steer).toBe('run the formatter before the tests');
+      expect(result.steer).toEqual(plainUserMessage('run the formatter before the tests'));
       expect(JSON.stringify(result.state.lineages)).toContain('run the formatter before the tests');
     }
     expect(composerDraftStore.get().request?.value).toBe('');
@@ -808,7 +813,7 @@ describe('createRecoveryDriver', () => {
     const result = await runDriver(prepared, state, inputMode);
 
     expect(result.shouldRun).toBe(true);
-    if (result.shouldRun) expect(result.steer).toBe('the prop is optional');
+    if (result.shouldRun) expect(result.steer).toEqual(plainUserMessage('the prop is optional'));
     expect(composerDraftStore.get().request?.value).toBe('');
   });
 
@@ -935,7 +940,12 @@ describe('createRecoveryDriver', () => {
     const { prepared, state } = setupFailedReview();
     const { inputMode, feedbackAtPrompt } = makeInputMode([]);
 
-    const result = await runDriver(prepared, state, inputMode, 'log the error and rethrow');
+    const result = await runDriver(
+      prepared,
+      state,
+      inputMode,
+      plainUserMessage('log the error and rethrow'),
+    );
 
     expect(feedbackAtPrompt).toHaveLength(0);
     expect(result.shouldRun).toBe(true);
@@ -952,4 +962,165 @@ describe('createRecoveryDriver', () => {
     });
     expect(result.state.tasks[0]?.status).toBe('done');
   });
+});
+
+describe('prepared recovery corrections', () => {
+  it.each(['allowance-only', 'plan-retry', 'review-retry', 'task-retry'] as const)(
+    'reports recording ownership and preserves the attached correction on %s',
+    async (route) => {
+      const phase = route === 'review-retry' ? 'final-review' : 'planning';
+      const { prepared, state } = setupSession(
+        route === 'task-retry'
+          ? {}
+          : {
+              reason: route === 'allowance-only' ? 'planner-calls-spent' : 'planner-call-failed',
+              taskId: undefined,
+              phase,
+              seat: route === 'review-retry' ? 'review' : 'plan',
+              availableActions:
+                route === 'allowance-only'
+                  ? ['continue', 'end-run']
+                  : ['retry-same-worker', 'end-run'],
+              recommendedAction: route === 'allowance-only' ? 'continue' : 'retry-same-worker',
+            },
+      );
+      const halted: WorkflowState = route === 'task-retry' ? state : { ...state, phase, tasks: [] };
+      saveState(prepared.session.ref, halted);
+      const outside = createTempDir('recovery-correction-outside');
+      dirs.push(outside);
+      const correction = attachedMessage(outside);
+      composerLiveStore.setDraft(createDraftDocument(correction.displayText));
+      const { inputMode } = makeInputMode([route === 'allowance-only' ? 'c' : 'r']);
+
+      const result = await runDriver(prepared, halted, inputMode);
+
+      if (!result.shouldRun) throw new Error('expected recovery to continue');
+      const events = eventsStore.get().events;
+      if (route === 'allowance-only' || route === 'task-retry') {
+        expect(result.steer).toEqual(correction);
+        expect(result.correctionTaken).toBeUndefined();
+        expect(events.filter((event) => event.type === 'user_message')).toHaveLength(0);
+        const logged = [];
+        for await (const entry of readMessages(prepared.session.ref)) logged.push(entry);
+        expect(logged).toHaveLength(0);
+      } else {
+        expect(result.steer).toBeUndefined();
+        expect(result.correctionTaken).toBe(true);
+        expect(result.state.messageQueue[0]).toMatchObject(correction);
+        await expectCompactMessage(prepared.session.ref, events, correction);
+      }
+      expect(composerDraftStore.get().request?.value).toBe('');
+    },
+  );
+
+  it('forwards an unrecorded correction supplied on reentry after allowance-only Continue', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'planner-calls-spent',
+      taskId: undefined,
+      availableActions: ['continue', 'end-run'],
+      recommendedAction: 'continue',
+    });
+    const correction = attachedMessage(prepared.session.ref.projectDir);
+    const { inputMode } = makeInputMode(['c']);
+
+    const result = await runDriver(prepared, state, inputMode, correction);
+
+    if (!result.shouldRun) throw new Error('expected recovery to continue');
+    expect(result.steer).toBe(correction);
+    expect(result.correctionTaken).toBeUndefined();
+    expect(result.state.messageQueue).toEqual([]);
+  });
+
+  it('prepares the draft document on a menu retry and keeps text bodies and image atoms', async () => {
+    const { prepared, state } = setupSession();
+    const outside = createTempDir('recovery-outside');
+    dirs.push(outside);
+    const path = join(outside, 'context.txt');
+    const imagePath = join(outside, 'a.png');
+    writeFileSync(path, 'body');
+    writeFileSync(imagePath, 'png');
+    const image = {
+      id: 'att-existing',
+      kind: 'image' as const,
+      path: realpathSync(imagePath),
+      mimeType: 'image/png' as const,
+      sizeBytes: 3,
+    };
+    const document = {
+      version: 1 as const,
+      parts: [
+        { kind: 'text' as const, text: `fix @${path} ` },
+        { kind: 'image' as const, attachment: image },
+      ],
+    };
+    composerLiveStore.setDraft(document);
+    const visionPrepared: PreparedExecution = {
+      ...prepared,
+      config: { ...prepared.config, planner: { kind: 'cli' as const, tool: 'claude-code' } },
+    };
+    const { inputMode } = makeInputMode(['r']);
+    const result = await runDriver(visionPrepared, state, inputMode);
+    expect(result.shouldRun).toBe(true);
+    if (!result.shouldRun) throw new Error('expected retry');
+    expect(result.steer?.text).toContain(`--- @${path} ---\nbody`);
+    expect(result.steer?.displayText).not.toContain('body');
+    expect(result.steer?.images).toEqual([image]);
+    expect(result.steer?.attachedInputs).toContainEqual({ kind: 'text', path: realpathSync(path) });
+    expect(attachmentsStore.peek()).toEqual([image]);
+    expect(composerDraftStore.get().request?.value).toBe('');
+  });
+
+  it('keeps draft and pending images on a refused menu correction', async () => {
+    const { prepared, state } = setupSession();
+    const document = createDraftDocument('fix @/definitely-missing/context.txt');
+    composerLiveStore.setDraft(document);
+    const pendingImage = {
+      id: 'pending',
+      kind: 'image' as const,
+      path: '/outside/a.png',
+      mimeType: 'image/png' as const,
+      sizeBytes: 1,
+    };
+    attachmentsStore.replacePendingImages([pendingImage]);
+    const { inputMode, feedbackAtPrompt } = makeInputMode(['r', 'end']);
+    await runDriver(prepared, state, inputMode);
+    expect(feedbackAtPrompt[1]).toEqual({
+      message: 'Cannot send: file not found. Check the path and try again. File: context.txt.',
+      isError: true,
+    });
+    expect(composerLiveStore.get().document).toBe(document);
+    expect(composerDraftStore.get().request).toMatchObject({ kind: 'document', document });
+    expect(attachmentsStore.peek()).toEqual([pendingImage]);
+  });
+
+  it.each(['retry', 'revise'] as const)(
+    'transports the full prepared correction for %s',
+    async (action) => {
+      const { prepared, state } = setupSession(
+        action === 'revise'
+          ? {
+              reason: 'plan-checks-failed',
+              taskId: undefined,
+              phase: 'planning',
+              availableActions: ['revise', 'end-run'],
+              recommendedAction: 'revise',
+            }
+          : {},
+      );
+      const original: UserMessageInput = {
+        text: 'fix @/outside/context.txt\n\n--- @/outside/context.txt ---\nbody',
+        displayText: 'fix @/outside/context.txt',
+        images: [],
+        attachedInputs: [{ kind: 'text', path: '/outside/context.txt' }],
+      };
+      const { inputMode } = makeInputMode([]);
+      const result = await runDriver(prepared, state, {
+        ...inputMode,
+        setQuestionMode: async () => original,
+      });
+      if (!result.shouldRun) throw new Error('expected recovery');
+      if (action === 'retry') expect(result.steer).toBe(original);
+      else expect(result.state.messageQueue[0]).toMatchObject(original);
+    },
+  );
 });

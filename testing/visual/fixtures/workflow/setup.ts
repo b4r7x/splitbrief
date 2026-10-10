@@ -25,6 +25,7 @@ import { consultReplyAnswer } from '../../../../src/engine/orchestrator/consult/
 import { reviewStore } from '../../../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import { PLAN_JSON_FILE, SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
+import { plainUserMessage } from '../../../../src/core/types/user-input.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
 import { PREVIEW_UNAVAILABLE, type FixtureContext, type FixtureFactory } from '../common.js';
 import {
@@ -190,11 +191,12 @@ async function activateFixtureInputMode(
       if (answer === undefined) throw new Error('Consult fixture requires an answer');
       const question = projection.question.questions?.[0];
       if (question === undefined) throw new Error('Consult fixture requires a question');
-      const text = consultReplyAnswer(question, answer);
+      const reply = consultReplyAnswer(question, answer);
       const bus = createEventBus();
       bus.subscribe(addEvent);
-      publishUserMessage({ bus, phase: 'escalating' }, text, {
-        qa: [{ question: 'Which store?', answer: text }],
+      publishUserMessage({ bus, phase: 'escalating' }, reply.message.displayText, {
+        qa: reply.qa,
+        attachedInputs: reply.message.attachedInputs,
       });
       const consultCall = projection.events.find((event) => event.type === 'runner_call_started');
       if (consultCall === undefined) throw new Error('Consult fixture requires a planner call');
@@ -272,9 +274,9 @@ export function createWorkflowFixtureFactory(
         if (firstAnswer === undefined || longAnswer === undefined) {
           throw new Error('Question overflow fixture is missing its answers');
         }
-        questionPromptStore.answer(firstAnswer);
+        questionPromptStore.answer(plainUserMessage(firstAnswer));
         questionPromptStore.select(2);
-        questionPromptStore.answer(longAnswer);
+        questionPromptStore.answer(plainUserMessage(longAnswer));
         questionPromptStore.previous();
       },
     }),

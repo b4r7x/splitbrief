@@ -12,6 +12,7 @@ import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import { loadState } from '../../../src/core/state/persistence.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { continueCommand } from '../../../src/cli/commands/continue/command.js';
 import { parseContinueActionOption } from '../../../src/cli/options.js';
 import { createTestGitRepo } from '../../helpers/git.js';
@@ -164,8 +165,8 @@ export async function runE2eWorkflow(
     },
     callbacks: {
       onApprovalNeeded: async () => ({ approved: true }),
-      onPlannerReply: async () => '',
-      onContinuationNeeded: async () => '',
+      onPlannerReply: async () => plainUserMessage(''),
+      onContinuationNeeded: async () => plainUserMessage(''),
       onComplete: () => undefined,
     },
   });

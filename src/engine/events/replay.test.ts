@@ -10,6 +10,13 @@ import { readRunEvents } from './replay.js';
 import { parseEngineEvent } from './schema.js';
 import type { EngineEvent } from './types.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { attachedMessage, expectCompactMessage } from '#testing/helpers/user-message.js';
+import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
+import { createJsonlSink } from './sinks/jsonl.js';
+import { recordSteer } from '../orchestrator/continuation.js';
+import { ensureSessionDir } from '../../core/paths-io.js';
+import { createInitialState } from '../../core/state/machine.js';
+import { saveState } from '../../core/state/persistence.js';
 
 const TS = 1_764_000_000_000;
 const REPO_ROOT = join(import.meta.dirname, '../../..');
@@ -495,6 +502,17 @@ describe('readRunEvents', () => {
     const types = schemaEventTypes();
     expect(types.length).toBeGreaterThan(40);
     expect(types.filter((type) => SAMPLES[type] === undefined)).toEqual([]);
+  });
+
+  it('pairs an adjacent compact attached-file message and event exactly once', async () => {
+    ensureSessionDir(projectDir, sessionId);
+    saveState(ref(), createInitialState('replay'));
+    const message = attachedMessage(projectDir);
+    const { bus, events } = makeBusRecorder();
+    bus.subscribe(createJsonlSink(ref()));
+    recordSteer({ ...ref(), bus }, 'planning', message);
+    expect(message.text).toContain('PELICAN-42');
+    await expectCompactMessage(ref(), events, message);
   });
 
   it('round-trips every event variant through session.jsonl', async () => {

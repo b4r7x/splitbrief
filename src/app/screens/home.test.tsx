@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync } from 'node:fs';
+import { existsSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -30,6 +30,7 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { inputHistoryStore } from '../../stores/ui/input-history.js';
+import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
@@ -247,6 +248,89 @@ describe('HomeScreen', () => {
     cleanupTempDir(projectDir);
     projectDir = '';
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+  });
+
+  it('passes the display feature, separate file context, and attachment metadata through preparation retries', async () => {
+    const externalDir = createTempDir('home-outside-files-');
+    const textPath = join(externalDir, 'notes.md');
+    const imagePath = join(externalDir, 'shot.png');
+    writeFileSync(textPath, 'Outside body\n');
+    writeFileSync(imagePath, 'image');
+    configStore.__testReset({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      projectDir,
+    });
+    prepareExecutionMock.mockResolvedValueOnce({ kind: 'failed', error: new Error('Try again') });
+    prepareExecutionMock.mockResolvedValue({ kind: 'aborted' });
+    const ui = renderHome();
+    try {
+      await flushEffects();
+      composerDraftStore.requestDocument({
+        version: 1,
+        parts: [
+          { kind: 'text', text: `read @${textPath} ` },
+          {
+            kind: 'image',
+            attachment: {
+              id: 'home-image',
+              kind: 'image',
+              path: imagePath,
+              mimeType: 'image/png',
+              sizeBytes: 5,
+            },
+          },
+        ],
+      });
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await vi.waitFor(() => expect(ui.lastFrame()).toContain('Try again'), SESSION_FILTER_WAIT_MS);
+      const feature = `read @${textPath} [image:home-image]\n\nImages referenced above, in attachment order:\n[image:home-image] = attached image 1`;
+      const plannerContext = `--- @${textPath} ---\nOutside body\n`;
+      const attachedInputs = [
+        { path: realpathSync(textPath), kind: 'text' },
+        { path: realpathSync(imagePath), kind: 'image' },
+      ];
+      expect(prepareExecutionMock.mock.calls[0]?.[0]).toMatchObject({
+        feature,
+        plannerContext,
+        attachedInputs,
+      });
+      writeFileSync(textPath, 'Changed after submission');
+      await flushEffects();
+      ui.stdin.write('r');
+      await vi.waitFor(
+        () => expect(prepareExecutionMock).toHaveBeenCalledTimes(2),
+        SESSION_FILTER_WAIT_MS,
+      );
+      expect(prepareExecutionMock.mock.calls[1]?.[0]).toMatchObject({
+        feature,
+        plannerContext,
+        attachedInputs,
+      });
+      expect(prepareExecutionMock.mock.calls[1]?.[0].attachedInputs).toBe(
+        prepareExecutionMock.mock.calls[0]?.[0].attachedInputs,
+      );
+    } finally {
+      ui.unmount();
+      cleanupTempDir(externalDir);
+    }
+  });
+
+  it('passes undefined context and omits metadata when the submission has no files', async () => {
+    prepareExecutionMock.mockResolvedValue({ kind: 'aborted' });
+    const ui = renderHome();
+    await flushEffects();
+    ui.stdin.write('plain feature');
+    await flushEffects();
+    ui.stdin.write(ENTER);
+    await vi.waitFor(
+      () => expect(prepareExecutionMock).toHaveBeenCalledOnce(),
+      SESSION_FILTER_WAIT_MS,
+    );
+    const input = prepareExecutionMock.mock.calls[0]?.[0];
+    expect(input).toHaveProperty('plannerContext', undefined);
+    expect(input).not.toHaveProperty('attachedInputs');
+    ui.unmount();
   });
 
   it('names all three seats on the wake card in the words the workflow header uses', async () => {

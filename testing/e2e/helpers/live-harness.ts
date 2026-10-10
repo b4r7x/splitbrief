@@ -27,6 +27,7 @@ import { parseOpenCodeNativeModelCatalog } from '../../../src/engine/providers/c
 import { includes } from '../../../src/utils/type-guards.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { Config } from '../../../src/core/schemas/config.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeCallbacks } from '#testing/helpers/orchestrator-factories.js';
@@ -586,7 +587,9 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
       projectDir,
       feature: run.task,
       effectiveConfig: config,
-      ...(plannerAnswer !== undefined && { onPlannerReply: async () => plannerAnswer }),
+      ...(plannerAnswer !== undefined && {
+        onPlannerReply: async () => plainUserMessage(plannerAnswer),
+      }),
     });
     releaseMatrixAssertions(run.tier, { summary, projectDir });
     const artifacts = copyLiveArtifacts({ projectDir, sessionId, rowId: run.id });

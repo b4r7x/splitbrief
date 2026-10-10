@@ -1,3 +1,4 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -31,6 +32,12 @@ import { applyRecoveryAction } from '../recovery/actions.js';
 import { resumeContinuation } from '../run/init.js';
 import { measureApiBudget } from '../../providers/api-budget.js';
 import { runPlanningPhase } from './run.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
+import {
+  attachedMessage,
+  expectCompactMessage,
+  expectResumedMessage,
+} from '#testing/helpers/user-message.js';
 
 const statFailure = vi.hoisted(() => ({ code: undefined as string | undefined }));
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -93,6 +100,7 @@ async function plan(opts: {
   const planner = makePlanner({ typedCall: typed.typedCall, ...opts.planner });
   const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
   const { bus, events } = makeBusRecorder();
+  bus.subscribe(createJsonlSink({ projectDir, sessionId }));
   const started = transition(createInitialState('greet people'), { type: 'START' });
   const state = opts.state?.(started) ?? started;
   saveState({ projectDir, sessionId }, state);
@@ -124,16 +132,92 @@ async function plan(opts: {
 }
 
 describe('the planning thread', () => {
+  it('delivers an attached file in a planner reply and records compact text once', async () => {
+    let message = plainUserMessage('');
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      setup: (projectDir) => {
+        message = attachedMessage(projectDir);
+      },
+      callbacks: { onPlannerReply: async () => message },
+    });
+    expect(run.prompts[1]).toContain(message.text);
+    expect(run.result.state.userAnswers?.[0]?.answer).toBe(message.text);
+    expect(loadState(run)?.resumeUserMessages?.[0]).toMatchObject({ answerIndex: 0 });
+    expect(loadState(run)?.resumeUserMessages?.[0]).not.toHaveProperty('text');
+    await expectCompactMessage(run, run.events, message);
+    await expectResumedMessage(run, message);
+  });
+
+  it('delivers an attached file in a plan revision and publishes the correction once', async () => {
+    let message = plainUserMessage('');
+    let revised = false;
+    const run = await plan({
+      script: [makePlanProposal(), makePlanProposal()],
+      setup: (projectDir) => {
+        message = attachedMessage(projectDir);
+      },
+      callbacks: {
+        onApprovalNeeded: async () => {
+          if (revised) return { approved: true };
+          revised = true;
+          return { approved: false, action: 'revise', message };
+        },
+      },
+    });
+    expect(run.prompts[1]).toContain('PELICAN-42');
+    expect(run.events.find((event) => event.type === 'plan_regenerated')).toMatchObject({
+      comment: message.displayText,
+    });
+    await expectCompactMessage(run, run.events, message);
+    await expectResumedMessage(run, message);
+  });
+
   it('hands the rebuilt transcript to the first call only', async () => {
     const messages = [{ role: 'user' as const, content: 'Earlier: keep the public API' }];
     const run = await plan({
       script: [questions(1), makePlanProposal()],
-      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
       resumeHolder: { messages },
     });
 
     expect(run.contexts.map((ctx) => ctx.priorMessages)).toEqual([messages, undefined]);
     expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('rebuilds structured attached answers when the native planner session expires', async () => {
+    let message = plainUserMessage('');
+    const run = await plan({
+      script: [questions(1), sessionResumeExpiredError('native-1', 'Expired'), makePlanProposal()],
+      setup: (projectDir) => {
+        const attached = attachedMessage(projectDir);
+        message = {
+          ...attached,
+          displayText: `1. Round 1: which module?\n${attached.displayText}\n\n2. Round 1: which style?\nterse`,
+          text: `1. Round 1: which module?\n${attached.text}\n\n2. Round 1: which style?\nterse`,
+        };
+      },
+      callbacks: {
+        onPlannerReply: async () => ({
+          message,
+          qa: [
+            {
+              question: 'Round 1: which module?',
+              answer: message.displayText.split('\n')[1] ?? '',
+            },
+            { question: 'Round 1: which style?', answer: 'terse' },
+          ],
+        }),
+      },
+      planner: {
+        capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
+      },
+      state: (state) => ({ ...state, plannerSessionId: 'native-1' }),
+    });
+
+    expect(run.contexts[2]?.priorMessages).toContainEqual({ role: 'user', content: message.text });
+    await expectCompactMessage(run, run.events, message);
+    await expectResumedMessage(run, message);
   });
 
   it('asks again on a fresh session with the whole conversation when the thread expired', async () => {
@@ -143,7 +227,7 @@ describe('the planning thread', () => {
         sessionResumeExpiredError('native-1', 'No conversation found with session ID native-1'),
         makePlanProposal(),
       ],
-      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
       planner: {
         capabilities: { ...makePlanner().capabilities, supportsSessionResume: true },
       },
@@ -209,7 +293,7 @@ describe('a planner that reads no files of its own', () => {
     const run = await plan({
       script: [questions(1), uncoveredPlan, 'not json', makePlanProposal()],
       config: makeConfig({ codebase: { enabled: true, tokenBudget: 4000 } }),
-      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
       planner: { resolvePlanningContext: async () => context },
       feature: 'Modify `src/m0.ts` so it greets people by name.',
       setup: (projectDir) => {
@@ -247,7 +331,7 @@ describe('a planner that reads no files of its own', () => {
     let notes = '';
     const run = await plan({
       script: [questions(1), makePlanProposal()],
-      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
       planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
       setup: (projectDir) => {
         mkdirSync(join(projectDir, 'notes'), { recursive: true });
@@ -348,7 +432,7 @@ describe('a planner that reads no files of its own', () => {
 
 describe('the planning session on the live path', () => {
   it('asks the questions, takes every default on ⏎, and reaches the plan approval', async () => {
-    const onPlannerReply = vi.fn().mockResolvedValue('');
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(''));
     const run = await plan({
       script: [questions(1), makePlanProposal()],
       callbacks: { onPlannerReply },
@@ -389,7 +473,9 @@ describe('the planning session on the live path', () => {
   it('keeps a typed reply in the session log and hands it to the next planning call', async () => {
     const run = await plan({
       script: [questions(1), makePlanProposal()],
-      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('use-jwt-for-auth') },
+      callbacks: {
+        onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('use-jwt-for-auth')),
+      },
     });
 
     const log = readFileSync(
@@ -586,7 +672,7 @@ describe('the planning session on the live path', () => {
   it('halts on a third round of questions and keeps the answered rounds', async () => {
     const run = await plan({
       script: [questions(1), questions(2), questions(3)],
-      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
     });
 
     expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
@@ -602,7 +688,7 @@ describe('the planning session on the live path', () => {
     async (action, comment) => {
       const first = await plan({
         script: [questions(1), questions(2), questions(3)],
-        callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+        callbacks: { onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')) },
       });
       expect(first.result.state.pendingRecovery?.reason).toBe('plan-questions-exhausted');
       const saved = loadState(first);
@@ -611,7 +697,7 @@ describe('the planning session on the live path', () => {
         ...first,
         state: saved,
         action,
-        comment,
+        comment: comment === undefined ? undefined : plainUserMessage(comment),
         bus: makeBusRecorder().bus,
       });
       expect(applied).toMatchObject({ ok: true, status: 'continued' });
@@ -681,7 +767,7 @@ describe('the planning session on the live path', () => {
         config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
         callbacks: makeCallbacks({
           onPlannerReply: vi.fn().mockResolvedValue({
-            text: '1. Round 1: which module?\nsrc/b.ts',
+            message: plainUserMessage('1. Round 1: which module?\nsrc/b.ts'),
             qa: [{ question: 'Round 1: which module?', answer: 'src/b.ts' }],
           }),
         }).callbacks,
@@ -761,7 +847,7 @@ describe('the planning session on the live path', () => {
     const holder = await resumeContinuation({
       ref: { projectDir, sessionId },
       state,
-      steer: 'ANSWER-ABC postgres',
+      steer: plainUserMessage('ANSWER-ABC postgres'),
     });
     const typed = scriptedTypedCall([makePlanProposal()]);
 
@@ -822,7 +908,11 @@ describe('the plan card', () => {
   it('sends typed text back to the same session with the plan, then shows the card again', async () => {
     const onApprovalNeeded = vi
       .fn()
-      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' })
+      .mockResolvedValueOnce({
+        approved: false,
+        action: 'revise',
+        message: plainUserMessage('Greet in Polish'),
+      })
       .mockResolvedValue({ approved: true });
     const run = await plan({
       script: [makePlanProposal(), makePlanProposal({ summary: 'Greet people in Polish' })],
@@ -841,7 +931,11 @@ describe('the plan card', () => {
   it('keeps the correction on every later call of a planner without a session', async () => {
     const onApprovalNeeded = vi
       .fn()
-      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' })
+      .mockResolvedValueOnce({
+        approved: false,
+        action: 'revise',
+        message: plainUserMessage('Greet in Polish'),
+      })
       .mockResolvedValue({ approved: true });
     const run = await plan({
       script: [
@@ -849,7 +943,10 @@ describe('the plan card', () => {
         questions(1),
         makePlanProposal({ summary: 'Greet people in Polish' }),
       ],
-      callbacks: { onApprovalNeeded, onPlannerReply: vi.fn().mockResolvedValue('') },
+      callbacks: {
+        onApprovalNeeded,
+        onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')),
+      },
     });
 
     expect(run.prompts).toHaveLength(3);
@@ -863,9 +960,11 @@ describe('the plan card', () => {
     const first = await plan({
       script: [makePlanProposal(), questions(1)],
       callbacks: {
-        onApprovalNeeded: vi
-          .fn()
-          .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' }),
+        onApprovalNeeded: vi.fn().mockResolvedValueOnce({
+          approved: false,
+          action: 'revise',
+          message: plainUserMessage('Greet in Polish'),
+        }),
       },
     });
     expect(first.result).toMatchObject({ disposition: 'terminal', outcome: 'input-required' });
@@ -879,7 +978,7 @@ describe('the plan card', () => {
         sessionId: first.sessionId,
         config: makeConfig({ codebase: { enabled: false, tokenBudget: 4000 } }),
         callbacks: makeCallbacks({
-          onPlannerReply: vi.fn().mockResolvedValue(''),
+          onPlannerReply: vi.fn().mockResolvedValue(plainUserMessage('')),
           onApprovalNeeded: vi.fn().mockResolvedValue({ approved: true }),
         }).callbacks,
         bus: makeBusRecorder().bus,
@@ -899,7 +998,7 @@ describe('the plan card', () => {
   async function continuePlanning(
     first: { projectDir: string; sessionId: string },
     script: Array<PlanResult | string | Error>,
-    steer?: string,
+    steer?: ReturnType<typeof plainUserMessage>,
   ) {
     const saved = loadState(first);
     if (saved === null) throw new Error('state not saved');
@@ -932,9 +1031,11 @@ describe('the plan card', () => {
   }
 
   const reviseOnce = () =>
-    vi
-      .fn()
-      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' });
+    vi.fn().mockResolvedValueOnce({
+      approved: false,
+      action: 'revise',
+      message: plainUserMessage('Greet in Polish'),
+    });
 
   it('keeps the correction and the plan it corrects when its replan halts and the run continues', async () => {
     const first = await plan({
@@ -970,16 +1071,21 @@ describe('the plan card', () => {
       }),
     );
 
-    const next = await continuePlanning(first, [makePlanProposal()], 'ALSO SURNAMES');
+    const message = attachedMessage(first.projectDir);
+    const next = await continuePlanning(first, [makePlanProposal()], message);
 
-    expect(next.prompts[0]).toContain('ALSO SURNAMES');
+    expect(next.prompts[0]).toContain(message.text);
     expect(next.prompts[0]).toContain('Greet in Polish');
   });
 
   it('sends only the correction to a planner that keeps its session', async () => {
     const onApprovalNeeded = vi
       .fn()
-      .mockResolvedValueOnce({ approved: false, action: 'revise', comment: 'Greet in Polish' })
+      .mockResolvedValueOnce({
+        approved: false,
+        action: 'revise',
+        message: plainUserMessage('Greet in Polish'),
+      })
       .mockResolvedValue({ approved: true });
     const run = await plan({
       script: [makePlanProposal(), makePlanProposal({ summary: 'Greet people in Polish' })],
@@ -1084,7 +1190,7 @@ describe('the plan card', () => {
         enqueueUserMessage({
           ...ref,
           state: saved,
-          text: 'Also greet by surname',
+          message: plainUserMessage('Also greet by surname'),
           // Queued during the last planner call, after that call drained the queue.
           phase: 'planning',
           bus: makeBusRecorder().bus,

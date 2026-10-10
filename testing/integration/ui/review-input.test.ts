@@ -1,8 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createServer } from 'node:net';
-import type { AddressInfo, Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { PassThrough } from 'node:stream';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
@@ -14,6 +12,8 @@ import { terminalSequences } from '../../../src/lib/terminal/control.js';
 import { setActiveTerminalHandover } from '../../../src/lib/terminal/editor-handover.js';
 import { setQueueHandler, clearAllHandlers } from '../../../src/features/workflow/handlers.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
+import { composerLiveStore } from '../../../src/stores/ui/composer-live.js';
+import { createDraftDocument } from '../../../src/core/composer/document.js';
 import {
   createReviewInputHandler,
   openReviewFileExternally,
@@ -23,6 +23,7 @@ import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { REVIEW_HINT } from '../../../src/features/workflow/review-commands.js';
 import type { UseInputModeResult } from '../../../src/features/workflow/hooks/use-input-mode.js';
 import type { Phase } from '../../../src/core/schemas/enums.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
 
 let tmpDir: string;
 let written: string[];
@@ -101,9 +102,9 @@ describe('createReviewInputHandler – queueing during a brief', () => {
       setQueueHandler(enqueue);
 
       const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-      await handleInput('make the diff smaller');
+      await handleInput(plainUserMessage('make the diff smaller'));
 
-      expect(enqueue).toHaveBeenCalledWith('make the diff smaller', phase);
+      expect(enqueue).toHaveBeenCalledWith(plainUserMessage('make the diff smaller'), phase);
       expect(feedbackStore.get()).toMatchObject({ isError: false });
     },
   );
@@ -117,8 +118,9 @@ describe('createReviewInputHandler – queueing during a brief', () => {
     }));
     setQueueHandler(enqueue);
 
+    composerLiveStore.setDraft(createDraftDocument('keep every word'));
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('keep every word');
+    await handleInput(plainUserMessage('keep every word'));
 
     expect(feedbackStore.get()).toMatchObject({
       isError: true,
@@ -135,7 +137,7 @@ describe('createReviewInputHandler – pending un-parked boundary interrupt', ()
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('steer toward smaller diffs');
+    await handleInput(plainUserMessage('steer toward smaller diffs'));
 
     const { message, isError } = feedbackStore.get();
     expect(message).not.toContain('Input disabled during task implementation');
@@ -150,7 +152,7 @@ describe('createReviewInputHandler – pending un-parked boundary interrupt', ()
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('add error handling');
+    await handleInput(plainUserMessage('add error handling'));
 
     expect(enqueue).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
@@ -170,9 +172,9 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput(input);
+    await handleInput(plainUserMessage(input));
 
-    expect(enqueue).toHaveBeenCalledWith(input, phase);
+    expect(enqueue).toHaveBeenCalledWith(plainUserMessage(input), phase);
     expect(feedbackStore.get()).toMatchObject({
       isError: false,
       message: 'Message queued for the next planner turn.',
@@ -189,7 +191,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('add error handling');
+    await handleInput(plainUserMessage('add error handling'));
 
     expect(feedbackStore.get()).toMatchObject({
       isError: true,
@@ -201,7 +203,7 @@ describe('createReviewInputHandler – enqueue during live planner phase (Bug #4
     setPhase('researching');
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('no handler');
+    await handleInput(plainUserMessage('no handler'));
 
     expect(feedbackStore.get().isError).toBe(true);
     expect(feedbackStore.get().message).toContain('no active workflow');
@@ -214,7 +216,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('ignored');
+    await handleInput(plainUserMessage('ignored'));
 
     expect(enqueue).not.toHaveBeenCalled();
     expect(feedbackStore.get().isError).toBe(false);
@@ -226,7 +228,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
     setQueueHandler(enqueue);
 
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
-    await handleInput('why is nothing happening');
+    await handleInput(plainUserMessage('why is nothing happening'));
 
     expect(enqueue).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
@@ -239,7 +241,7 @@ describe('createReviewInputHandler – idle / other phases', () => {
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     const { handleInput } = createReviewInputHandler(makeInputMode('normal'));
 
-    await handleInput('why is nothing happening');
+    await handleInput(plainUserMessage('why is nothing happening'));
 
     expect(feedbackStore.get()).toMatchObject({
       isError: true,
@@ -253,7 +255,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
     const resolve = vi.fn();
     const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
-    await handleInput('q');
+    await handleInput(plainUserMessage('q'));
 
     expect(resolve).toHaveBeenCalledWith({ approved: false, action: 'end-run' });
   });
@@ -264,12 +266,12 @@ describe('createReviewInputHandler – brief review edit mode', () => {
       const resolve = vi.fn();
       const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
-      await handleInput(`${command} add more evidence`);
+      await handleInput(plainUserMessage(`${command} add more evidence`));
 
       expect(resolve).toHaveBeenCalledWith({
         approved: false,
         action: 'revise',
-        comment: 'add more evidence',
+        message: plainUserMessage('add more evidence'),
       });
     },
   );
@@ -283,7 +285,7 @@ describe('createReviewInputHandler – brief review edit mode', () => {
       const resolve = vi.fn();
       const { handleInput } = createReviewInputHandler(makeInputMode('review', resolve));
 
-      await handleInput(command);
+      await handleInput(plainUserMessage(command));
 
       const editor = editorStore.get();
       expect(editor.status === 'open' ? editor.filePath : null).toBe(join(tmpDir, 'plan.json'));
@@ -628,27 +630,31 @@ setTimeout(() => process.exit(0), 150);`,
     const laterReviewFile = join(tmpDir, 'tasks.md');
     await writeFile(laterReviewFile, '# tasks\n', 'utf-8');
     reviewStore.setReviewFile(reviewFile);
-    // The editor saves, then connects here and stays out until the test ends the connection.
-    // The connection is the signal that the editor is out, however slowly its process starts.
-    const editorHold = createServer();
-    const editorOut = new Promise<Socket>((connected) => editorHold.once('connection', connected));
-    await new Promise<void>((listening) => editorHold.listen(0, '127.0.0.1', listening));
-    const { port } = editorHold.address() as AddressInfo;
+    const editorOutFile = join(tmpDir, 'editor-out');
+    const releaseFile = join(tmpDir, 'editor-release');
     stubReviewEditor(
       await writeScriptEditor(
         'editor-hold.js',
-        `require('node:fs').appendFileSync(process.argv[2], 'edited\\n');
-require('node:net').connect(${port}, '127.0.0.1');`,
+        `const fs = require('node:fs');
+fs.appendFileSync(process.argv[2], 'edited\\n');
+fs.writeFileSync(${JSON.stringify(editorOutFile)}, 'ready');
+const waiting = setInterval(() => {
+  if (fs.existsSync(${JSON.stringify(releaseFile)})) clearInterval(waiting);
+}, 10);`,
       ),
     );
     const resolve = vi.fn();
     const pending = openReviewFileExternally(makeInputMode('review', resolve));
-    const editor = await editorOut;
-    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
-    reviewStore.setReviewFile(laterReviewFile);
-    editor.end();
-    await pending;
-    editorHold.close();
+    try {
+      await vi.waitFor(async () => {
+        expect(await readFile(editorOutFile, 'utf-8')).toBe('ready');
+      });
+      lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+      reviewStore.setReviewFile(laterReviewFile);
+    } finally {
+      await writeFile(releaseFile, 'release');
+      await pending;
+    }
 
     expect(resolve).not.toHaveBeenCalled();
     expect(feedbackStore.get()).toMatchObject({
@@ -668,8 +674,10 @@ describe('createReviewInputHandler – question mode', () => {
       }),
     );
 
-    await handleInput('steer toward smaller diffs');
+    await handleInput(plainUserMessage('steer toward smaller diffs'));
 
-    expect(resolved).toEqual([{ value: 'steer toward smaller diffs', status: 'running' }]);
+    expect(resolved).toEqual([
+      { value: plainUserMessage('steer toward smaller diffs'), status: 'running' },
+    ]);
   });
 });

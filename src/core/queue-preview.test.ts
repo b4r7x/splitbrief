@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatQueueMessagePreview } from './queue-preview.js';
+import { formatQueueMessagePreview, formatQueuedMessagePreview } from './queue-preview.js';
 
 describe('formatQueueMessagePreview', () => {
   it('returns a one-line redacted terminal-safe preview', () => {
@@ -21,4 +21,17 @@ describe('formatQueueMessagePreview', () => {
 
     expect(preview).toBe(`${'x'.repeat(79)}\u2026`);
   });
+});
+
+it('previews compact display text for user messages and clarification answers', () => {
+  expect(
+    formatQueuedMessagePreview({ displayText: 'use @context.txt', origin: 'user-input' }),
+  ).toBe('use @context.txt');
+  expect(
+    formatQueuedMessagePreview({
+      displayText: 'use @context.txt',
+      origin: 'clarification',
+      question: 'Which file?',
+    }),
+  ).toBe('clarification: Which file? -> use @context.txt');
 });

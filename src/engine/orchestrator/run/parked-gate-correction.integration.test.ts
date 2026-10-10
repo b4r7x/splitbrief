@@ -1,3 +1,5 @@
+import { plainUserMessage } from '../../../core/types/user-input.js';
+
 import { afterEach, expect, it, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -46,7 +48,10 @@ function setup(steer: string | undefined = CORRECTION) {
     tasks: proposal.tasks.map((spec) => taskFromSpec(spec, projectDir)),
   };
   if (steer?.trim()) appendMessage(ref, { role: 'user', phase, text: steer.trim() });
-  const continuation = createContinuationHolder({ step: { kind: 'gate', gate: 'plan' }, steer });
+  const continuation = createContinuationHolder({
+    step: { kind: 'gate', gate: 'plan' },
+    steer: steer === undefined ? undefined : plainUserMessage(steer),
+  });
   const typed = scriptedTypedCall([
     makePlanProposal({ summary: 'Use the cached parser' }),
     makePlanProposal({ summary: 'Use the cached parser for blank input too' }),
@@ -101,7 +106,7 @@ it.each([undefined, '', '   '])(
     const fixture = setup('');
     fixture.wctx.continuation = createContinuationHolder({
       step: { kind: 'gate', gate: 'plan' },
-      steer,
+      steer: steer === undefined ? undefined : plainUserMessage(steer),
     });
     await fixture.run();
     expect(fixture.prompts).toEqual([]);
@@ -114,7 +119,7 @@ it('consumes the correction once, then records a later live revision normally', 
   fixture.onApprovalNeeded.mockResolvedValueOnce({
     approved: false,
     action: 'revise',
-    comment: 'Also cover blank input',
+    message: plainUserMessage('Also cover blank input'),
   });
   await fixture.run();
   expect(fixture.prompts).toHaveLength(2);
@@ -127,11 +132,11 @@ it('does not consume a correction owned by another step', async () => {
   const fixture = setup('');
   fixture.wctx.continuation = createContinuationHolder({
     step: { kind: 'gate', gate: 'briefs' },
-    steer: CORRECTION,
+    steer: plainUserMessage(CORRECTION),
   });
   await fixture.run();
   expect(fixture.prompts).toEqual([]);
   expect(fixture.wctx.continuation.take({ kind: 'gate', gate: 'briefs' })).toEqual({
-    steer: CORRECTION,
+    steer: plainUserMessage(CORRECTION),
   });
 });

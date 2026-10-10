@@ -19,11 +19,12 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { DEFAULT_LOCAL_RETRIES } from '../pipeline-spec/retries.js';
 import { deriveRunStatus } from '../sessions/run-status.js';
+import { plainUserMessage } from '../types/user-input.js';
 
 function makeQueuedMessage(overrides: Partial<QueuedMessage> = {}): QueuedMessage {
   return {
     id: 'msg-test',
-    text: 'queued message',
+    ...plainUserMessage('queued message'),
     queuedAt: '2026-01-01T00:00:00.000Z',
     phase: 'researching',
     deliveredViaNative: false,
