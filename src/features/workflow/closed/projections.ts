@@ -29,6 +29,7 @@ import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
+import { taskTargetParts } from '../../../stores/workflow/tasks.js';
 
 /** A seat the run recorded, spelled by the same formatters the live crew surfaces use. */
 function seatView(input: {
@@ -213,7 +214,7 @@ export function briefRows(input: {
           ledgerTask,
           stopped: task.id === stoppedId,
           partialFiles,
-          currentStatus: task.status,
+          currentTask: task,
         }),
       );
     }
@@ -315,10 +316,20 @@ function briefRow(input: {
   ledgerTask: EvidenceTask | undefined;
   stopped: boolean;
   partialFiles: number;
-  currentStatus?: Task['status'] | undefined;
+  currentTask?: Task | undefined;
 }): BriefRow {
-  const { booked, ledgerTask } = input;
-  const method = rowMethod(input.currentStatus, booked?.method ?? ledgerTask?.method ?? null);
+  const { booked, ledgerTask, currentTask } = input;
+  const currentStatus = currentTask?.status;
+  const target =
+    currentTask === undefined
+      ? undefined
+      : taskTargetParts({
+          file: currentTask.suggestedFiles[0],
+          files: currentTask.suggestedFiles,
+          action: currentTask.action,
+        });
+  const file = target === undefined || target.path === '' ? ledgerTask?.file : target.path;
+  const method = rowMethod(currentStatus, booked?.method ?? ledgerTask?.method ?? null);
   return {
     id: input.id,
     title: sanitizeTerminalDisplayText(input.title),
@@ -326,12 +337,14 @@ function briefRow(input: {
       method,
       ledgerTask,
       stopped: input.stopped,
-      currentStatus: input.currentStatus,
+      currentStatus,
     }),
     method,
     retries: booked?.retryCount ?? ledgerTask?.retries ?? 0,
     durationMs: ledgerTask?.durationMs ?? null,
-    file: ledgerTask?.file === undefined ? null : sanitizeTerminalDisplayText(ledgerTask.file),
+    file: file === undefined ? null : sanitizeTerminalDisplayText(file),
+    ...(target !== undefined && { fileNote: sanitizeTerminalDisplayText(target.note) }),
+    ...(target !== undefined && { extraFiles: sanitizeTerminalDisplayText(target.extraFiles) }),
     partialFiles: input.stopped ? input.partialFiles : 0,
   };
 }

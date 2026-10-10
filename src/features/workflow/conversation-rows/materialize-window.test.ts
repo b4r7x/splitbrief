@@ -22,6 +22,7 @@ describe('materializeConversationRowsWindow', () => {
 
     const rows = materializeConversationRowsWindow({
       projection: {
+        activeTaskHeaderKey: null,
         blocks: [block('before', 2), block('visible', 3), block('after', 2)],
         renderableCount: 3,
         totalRows: 7,

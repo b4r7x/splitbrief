@@ -17,7 +17,7 @@ import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
 import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
-import type { ImplementerPublisher } from '../implementers/types.js';
+import type { Implementer, ImplementerPublisher } from '../implementers/types.js';
 import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
@@ -77,6 +77,16 @@ export function createBusTextHandler(
       ...(content !== undefined && { content }),
       ...(opts?.messageStart === true && { messageStart: true }),
     });
+}
+
+export function createImplementerTextHandler(ctx: BusContext, implementer: Implementer) {
+  const writesDirectly = implementer.capabilities?.writesFiles === 'direct';
+  const handler = createBusTextHandler(ctx, {
+    role: 'implementer',
+    content: writesDirectly ? 'markdown' : 'plain',
+  });
+  return (text: string, opts?: { messageStart?: boolean | undefined }) =>
+    handler(text, { messageStart: writesDirectly && opts?.messageStart === true });
 }
 
 export function publishPlannerStatus(

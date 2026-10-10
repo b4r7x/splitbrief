@@ -7,6 +7,7 @@ describe('computeConversationRowsWindowFromProjection', () => {
     const createActiveRows = vi.fn(() => []);
     const createTailRows = vi.fn(() => []);
     const projection: ConversationRowsProjection = {
+      activeTaskHeaderKey: 'brief-header',
       renderableCount: 2,
       totalRows: 50_001,
       blocks: [
@@ -35,6 +36,7 @@ describe('computeConversationRowsWindowFromProjection', () => {
     });
 
     expect(result.activeRowKey).toBe('activity-header');
+    expect(result.activeTaskHeaderKey).toBe('brief-header');
     expect(createActiveRows).not.toHaveBeenCalled();
     expect(createTailRows).toHaveBeenCalledTimes(1);
     expect(createTailRows).toHaveBeenCalledWith(49_990, 50_000);

@@ -5,6 +5,7 @@ import { isImplementerPhase } from '../../core/phases.js';
 import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
 import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
 import { SOFT_SEP } from '../../core/separators.js';
+import { countNoun } from '../../utils/pluralize.js';
 import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
@@ -30,15 +31,29 @@ export interface WorkflowTask {
 // Both `tasks_planned` and `task_started` carry `file` and `action`, but the resume path rebuilds
 // tasks from persisted state that has neither, so a row cannot assume they are there. Rendering the
 // pair through this is what stops a missing field reaching the screen as the literal `undefined`.
-export function taskTargetLabel(task: WorkflowTask): string {
-  if (task.file === undefined || task.file === '') return '';
-  const anchor = task.action === undefined ? task.file : `${task.file} (${task.action})`;
+export function taskTargetParts(
+  task: Partial<Pick<EngineEventOf<'task_started'>, 'file' | 'files' | 'action'>>,
+): {
+  path: string;
+  note: string;
+  extraFiles: string;
+} {
+  if (task.file === undefined || task.file === '') return { path: '', note: '', extraFiles: '' };
   // A slice writes more than one file, and the row has room for one. The anchor is the file the
   // brief is named after; the rest are counted, in their own ` · ` token with the unit spelled, so
   // the count cannot be read as part of the path it follows.
   const extra = (task.files?.length ?? 1) - 1;
-  if (extra === 0) return anchor;
-  return `${anchor} · +${extra} ${extra === 1 ? 'file' : 'files'}`;
+  return {
+    path: task.file,
+    note: task.action === undefined ? '' : `(${task.action})`,
+    extraFiles: extra === 0 ? '' : `+${countNoun(extra, 'file')}`,
+  };
+}
+
+export function taskTargetLabel(task: WorkflowTask): string {
+  const { path, note, extraFiles } = taskTargetParts(task);
+  const target = note === '' ? path : `${path} ${note}`;
+  return [target, extraFiles].filter((part) => part !== '').join(SOFT_SEP);
 }
 
 export function formatTaskHeading(

@@ -818,6 +818,147 @@ const READY_TO_APPLY = record({
   ledger: READY_LEDGER,
 });
 
+const CONTINUOUS_READY = record({
+  sessionId: 'visual-continuous-transcript-ready',
+  status: { kind: 'ready-to-apply', override: false },
+  state: savedState({
+    phase: 'complete',
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'done' },
+    ],
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+  }),
+});
+
+const CONTINUOUS_READY_TS = Date.parse(STARTED_AT_ISO);
+const CONTINUOUS_READY_BUILD_SEAT = {
+  kind: 'cli',
+  tool: 'claude-code',
+  model: 'opus',
+  effort: 'max',
+} as const;
+const CONTINUOUS_READY_EVENTS: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: CONTINUOUS_READY_TS,
+    phase: 'planning',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  {
+    type: 'user_message',
+    ts: CONTINUOUS_READY_TS + 10,
+    phase: 'planning',
+    text: 'Add email validation with tests.',
+  },
+  {
+    type: 'planner_text',
+    ts: CONTINUOUS_READY_TS + 20,
+    phase: 'planning',
+    content: 'markdown',
+    text: 'Validate the input before the form sends it.',
+  },
+  {
+    type: 'full_suite',
+    ts: CONTINUOUS_READY_TS + 30,
+    phase: 'planning',
+    moment: 'plan',
+    id: 'K1',
+    command: 'npm run typecheck',
+    status: 'done',
+    passed: true,
+    duration: 1_000,
+  },
+  { type: 'plan_approved', ts: CONTINUOUS_READY_TS + 50, phase: 'reviewing-plan' },
+  {
+    type: 'tasks_planned',
+    ts: CONTINUOUS_READY_TS + 60,
+    phase: 'implementing',
+    total: 2,
+    tasks: [BRIEFS.validator, BRIEFS.wire].map((brief, index) => ({
+      ...brief,
+      index,
+      action: 'create',
+    })),
+  },
+  ...[BRIEFS.validator, BRIEFS.wire].flatMap((brief, index): EngineEvent[] => [
+    {
+      type: 'task_started',
+      ts: CONTINUOUS_READY_TS + 100 + index * 200,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      file: brief.file,
+      index,
+      total: 2,
+      action: 'create',
+      tool: CONTINUOUS_READY_BUILD_SEAT.tool,
+      model: CONTINUOUS_READY_BUILD_SEAT.model,
+      axes: ['max'],
+    },
+    {
+      type: 'planner_text',
+      ts: CONTINUOUS_READY_TS + 110 + index * 200,
+      phase: 'implementing',
+      role: 'implementer',
+      text: `Checked \`${brief.file}\` against the form tests.`,
+    },
+    {
+      type: 'task_completed',
+      ts: CONTINUOUS_READY_TS + 200 + index * 200,
+      phase: 'implementing',
+      taskId: brief.id,
+      title: brief.title,
+      method: 'local',
+      retries: 0,
+      duration: 2_000,
+      tool: CONTINUOUS_READY_BUILD_SEAT.tool,
+      model: CONTINUOUS_READY_BUILD_SEAT.model,
+    },
+  ]),
+  {
+    type: 'review_checks',
+    ts: CONTINUOUS_READY_TS + 1_000,
+    phase: 'final-review',
+    scope: 'final',
+    status: 'planned',
+    commands: [
+      { id: 'V1', command: 'npm test', reason: 'The form tests cover the changed input.' },
+    ],
+    declined: [],
+    reason: null,
+  },
+  {
+    type: 'full_suite',
+    ts: CONTINUOUS_READY_TS + 2_000,
+    phase: 'final-review',
+    moment: 'plan',
+    id: 'K2',
+    command: 'npm run lint',
+    status: 'done',
+    passed: true,
+    duration: 1_000,
+  },
+  {
+    type: 'full_suite',
+    ts: CONTINUOUS_READY_TS + 3_000,
+    phase: 'final-review',
+    moment: 'pre-review',
+    id: 'V1',
+    command: 'npm test',
+    status: 'done',
+    passed: true,
+    duration: 1_000,
+  },
+  {
+    type: 'workflow_complete',
+    ts: CONTINUOUS_READY_TS + 8_000,
+    phase: 'complete',
+    review: 'passed',
+  },
+];
+
 const READY_OVERRIDE = record({
   sessionId: 'visual-ready-override',
   status: { kind: 'ready-to-apply', override: true },
@@ -1522,6 +1663,15 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-ready-to-apply',
     route: { record: READY_TO_APPLY, log: READY_LOG },
   }),
+  {
+    ...atRestProjection({
+      id: 'workflow-continuous-transcript-ready',
+      route: { record: CONTINUOUS_READY },
+    }),
+    sidebarVisible: true,
+    config: { implementer: CONTINUOUS_READY_BUILD_SEAT },
+    events: CONTINUOUS_READY_EVENTS,
+  },
   atRestProjection({
     id: 'workflow-ready-override',
     route: { record: READY_OVERRIDE, log: READY_OVERRIDE_LOG },

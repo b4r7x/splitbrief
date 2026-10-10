@@ -53,7 +53,7 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   );
 }
 
-export type RowLifecycle = 'live' | 'queued' | 'done';
+export type RowLifecycle = 'live' | 'active' | 'queued' | 'done';
 
 function alignLeadingWithinWidth(content: string, width: number): string {
   const pad = Math.max(0, width - getTerminalCellWidth(content));
@@ -78,11 +78,8 @@ function RowLeading({
   const isHeaderMarker =
     (kind === 'activity' || kind === 'task-header') && headerContinuation !== true;
   const isPulsingDot = isHeaderMarker && lifecycle === 'live';
-  // A settled brief leaves the transcript for the completed list, so a task header still on screen
-  // belongs to a brief the run is inside. It wears the in-progress mark the sidebar gives the same
-  // brief even when the pulse has moved on to the activity below it; only an activity settles.
   const status: RowMarkerStatus =
-    lifecycle === 'queued' ? 'queued' : isPulsingDot || kind === 'task-header' ? 'live' : 'done';
+    lifecycle === 'queued' ? 'queued' : isPulsingDot || lifecycle === 'active' ? 'live' : 'done';
   const leading = rowLeading(leadingKind, status);
   const leadingWidth = rowLeadingCells(leadingKind);
 

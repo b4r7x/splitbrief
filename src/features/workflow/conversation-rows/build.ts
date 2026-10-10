@@ -1,8 +1,4 @@
-import {
-  diffEventKey,
-  isSettledSection,
-  type Section,
-} from '../../../core/sections/event-sections.js';
+import { diffEventKey, type Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type {
   ConversationRowInputs,
@@ -62,9 +58,10 @@ function buildConversationRowsProjectionWithContext(
   ctx: RowBuildContext,
 ): ConversationRowsProjection {
   const blocks: ConversationRowBlock[] = [];
+  const activeTask = inputs.sections.find((section) => section.type === 'active-task');
+  let activeTaskHeaderKey: string | null = null;
   let renderableCount = 0;
   let hasRenderableBlock = false;
-  let lastAppendedWasSettled = false;
   let lastAppendedType: EngineEvent['type'] | undefined;
   // The feature/prompt, captured from the first user_message so the planner's opening H1 echo of it
   // can be stripped (the prompt already renders as the first transcript row).
@@ -72,55 +69,53 @@ function buildConversationRowsProjectionWithContext(
 
   const appendBlock = (
     block: ConversationRowBlock,
-    globalIndex: number,
-    isSettled = false,
     eventType?: EngineEvent['type'],
+    sectionBoundary = false,
   ): void => {
     if (block.rowCount === 0) return;
-    if (
-      hasRenderableBlock &&
-      !(lastAppendedWasSettled && isSettled) &&
-      !joinsCheckList(lastAppendedType, eventType)
-    ) {
+    if (hasRenderableBlock && (sectionBoundary || !joinsCheckList(lastAppendedType, eventType))) {
       blocks.push({
-        key: `spacer-${globalIndex}`,
+        key: `spacer-${block.key}`,
         rowCount: SECTION_SPACER_ROWS,
         renderableUnits: 0,
         createRows: (windowStart, windowEnd) =>
           Array.from({ length: Math.max(0, windowEnd - windowStart) }, (_, offset) =>
-            blankRow(`spacer-${globalIndex}-${windowStart + offset}`),
+            blankRow(`spacer-${block.key}-${windowStart + offset}`),
           ),
       });
     }
     blocks.push(block);
     hasRenderableBlock = true;
-    lastAppendedWasSettled = isSettled;
     lastAppendedType = eventType;
     renderableCount += block.renderableUnits;
   };
 
-  const flushActivityBatch = (batch: RunnerActivityBatch): void => {
+  const flushActivityBatch = (batch: RunnerActivityBatch, settled: boolean): void => {
     const batchKey = activityBatchKey(batch.firstIndex, batch.callId);
     const events = [...batch.events];
     const expanded = inputs.expandedActivityBatches.has(batchKey);
-    const key = { batchKey, count: events.length, width: ctx.width, expanded };
+    const key = { batchKey, count: events.length, width: ctx.width, expanded, settled };
     let block = getCachedActivityBatchBlock(batch.lastEvent, key);
     if (block === undefined) {
       const model = buildActivityBatchViewModel({ events, batchKey, expanded });
-      block = runnerActivityBatchRowBlock({ model, width: ctx.width });
+      block = runnerActivityBatchRowBlock({
+        model: settled ? { ...model, tone: 'textDim' } : model,
+        width: ctx.width,
+      });
+      if (settled && block !== null) block = withoutActiveRow(block);
       rememberActivityBatchBlock(batch.lastEvent, key, block);
     }
-    if (block !== null) appendBlock(block, batch.firstIndex);
+    if (block !== null) appendBlock(block);
   };
 
   for (const step of walkTranscript(inputs.sections)) {
     if (step.kind === 'settled') {
       const block = settledRowBlock({ section: step.section, width: ctx.width });
-      appendBlock(block, step.section.startIndex, true);
+      appendBlock(block, undefined, true);
       continue;
     }
     if (step.kind === 'activity-batch') {
-      flushActivityBatch(step.batch);
+      flushActivityBatch(step.batch, step.settledSection !== undefined);
       continue;
     }
     if (step.kind === 'recovery') {
@@ -129,7 +124,7 @@ function buildConversationRowsProjectionWithContext(
         step.recovery,
         ctx.width,
       );
-      if (block !== null) appendBlock(block, step.recovery.firstIndex);
+      if (block !== null) appendBlock(block);
       continue;
     }
     const { event, globalIndex } = step;
@@ -145,18 +140,39 @@ function buildConversationRowsProjectionWithContext(
       expanded,
       keyPrefix: String(globalIndex),
       dedupTitle,
+      settled: step.settledSection !== undefined,
     };
     let block = getCachedEventRowBlock(event, blockKey);
     if (block === undefined) {
-      block = eventRowBlock({ event, globalIndex, ctx, expanded, dedupTitle });
+      block = eventRowBlock({
+        event,
+        globalIndex,
+        ctx,
+        expanded,
+        dedupTitle,
+        settledSection: step.settledSection,
+      });
+      if (step.settledSection !== undefined && block !== null) block = withoutActiveRow(block);
       rememberEventRowBlock(event, blockKey, block);
     }
     if (block === null) continue;
-    appendBlock(block, globalIndex, false, event.type);
+    if (event.type === 'task_started' && activeTask?.items.includes(event)) {
+      activeTaskHeaderKey = block.activeRowKey ?? null;
+    }
+    appendBlock(block, event.type);
   }
 
   const totalRows = blocks.reduce((count, block) => count + block.rowCount, 0);
-  return { blocks, renderableCount, totalRows };
+  return { blocks, renderableCount, totalRows, activeTaskHeaderKey };
+}
+
+function withoutActiveRow(block: ConversationRowBlock): ConversationRowBlock {
+  return {
+    key: block.key,
+    rowCount: block.rowCount,
+    renderableUnits: block.renderableUnits,
+    createRows: block.createRows,
+  };
 }
 
 function markdownProjectionCacheKeys(
@@ -165,15 +181,20 @@ function markdownProjectionCacheKeys(
 ): string[] {
   const keys: string[] = [];
   for (const section of sections) {
-    if (isSettledSection(section)) continue;
     for (const [index, event] of section.items.entries()) {
       if (event.type !== 'planner_text' || !isPlannerTextRenderedAsMarkdown(event)) continue;
+      const keyPrefix = `event-${section.startIndex + index}-${event.type}`;
       keys.push(
         markdownConversationRowsCacheKey({
-          keyPrefix: `event-${section.startIndex + index}-${event.type}`,
+          keyPrefix,
           width,
         }),
       );
+      if (event.role === 'implementer') {
+        keys.push(
+          markdownConversationRowsCacheKey({ keyPrefix: `${keyPrefix}-narration-0`, width }),
+        );
+      }
     }
   }
   return keys;

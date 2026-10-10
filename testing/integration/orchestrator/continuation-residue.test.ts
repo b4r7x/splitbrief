@@ -81,7 +81,6 @@ describe('a stopped production implementer call', () => {
           sessionId: fixture.sessionId,
           languageContext: buildLanguageContext('typescript'),
           phase: 'implementing',
-          onOutput: () => {},
         });
         await retry({
           task: fixture.task,

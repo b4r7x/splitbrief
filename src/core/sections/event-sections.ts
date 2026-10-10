@@ -136,7 +136,7 @@ export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
 ): string | null {
   for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
     const section = sections[sectionIndex];
-    if (!section || isSettledSection(section)) continue;
+    if (!section) continue;
     for (let index = section.items.length - 1; index >= 0; index--) {
       const event = section.items[index];
       if (!event) continue;
@@ -319,6 +319,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
             method: 'skipped',
             retries: 0,
             duration: 0,
+            ...(range.startEvent.file !== undefined && { file: range.startEvent.file }),
             reason: endEvent.reason,
           },
         });

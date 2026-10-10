@@ -11,6 +11,15 @@ import type { ScrollableDocumentRow } from '../../../components/scrollable-docum
 import { glyph } from '../../../lib/glyphs.js';
 import { deriveSummaryView } from './view-model.js';
 import { closedBlockRows } from './block.js';
+import { makeView } from '#testing/helpers/factories/summary-view.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
+import { groupEventsIntoSections } from '../../../core/sections/event-sections.js';
+import { taskTargetLabel } from '../../../stores/workflow/tasks.js';
+import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
+import { ConversationRowView } from '../components/conversation-flow/row-view.js';
+import { closedTranscriptBlock } from './block.js';
 
 function closedRows(width: number): ScrollableDocumentRow[] {
   resetAllStores();
@@ -79,6 +88,163 @@ function firstLineStartingWith(frame: string, needle: string): string {
 }
 
 describe('closedBlockRows', () => {
+  it.each(['done', 'failed', 'skipped'] as const)(
+    'spells the same target label on the transcript and closed ledger for a %s brief',
+    (status) => {
+      resetAllStores();
+      const task = makeTask({
+        title: 'Update report',
+        status,
+        action: 'modify',
+        suggestedFiles: ['src/report.js', 'src/report.test.js'],
+      });
+      const started = makeTaskStart({
+        taskId: task.id,
+        title: task.title,
+        file: task.suggestedFiles[0],
+        files: task.suggestedFiles,
+        action: task.action,
+        ts: 0,
+      });
+      const completed = makeTaskComplete({
+        taskId: task.id,
+        title: task.title,
+        method: status === 'done' ? makeTaskComplete().method : status,
+        duration: 120_000,
+        ts: 120_000,
+      });
+      const view = deriveSummaryView({
+        record: makeRunRecord({
+          status: { kind: 'closed', as: 'complete' },
+          hydration: {
+            kind: 'loaded',
+            state: makeWorkflowState({ phase: 'complete', tasks: [task] }),
+          },
+          summary: makeSummary({ totalTasks: 1, completedByLocal: status === 'done' ? 1 : 0 }),
+          ledger: {
+            version: 1,
+            sessionId: 'block-session',
+            feature: 'Update report',
+            generatedAt: '2026-10-10T00:00:00.000Z',
+            tasks: [
+              {
+                id: task.id,
+                title: task.title,
+                file: started.file,
+                status,
+                method: completed.method,
+                retries: 0,
+                durationMs: completed.duration,
+                changedFiles: task.suggestedFiles,
+                validation: [],
+                escalated: false,
+              },
+            ],
+            validationSummary: { passed: 0, failed: 0, skipped: 0, escalated: 0 },
+          },
+        }),
+      });
+      const label = taskTargetLabel({ ...task, file: started.file, files: task.suggestedFiles });
+      for (const width of [80, 120]) {
+        const result = computeConversationRowScroll({
+          sections: groupEventsIntoSections([started, completed]),
+          expandedDiffs: new Set(),
+          expandedActivityBatches: new Set(),
+          cols: width,
+          viewportHeight: 40,
+          rawScrollOffset: 0,
+          renderableCountAtScroll: 0,
+          heightAtScroll: 0,
+          streaming: { taskId: null, lines: [], active: false },
+          tail: [closedTranscriptBlock({ view, width, theme: defaultTheme, crewNamed: true })],
+        });
+        const ui = renderFeature(
+          <Box flexDirection="column">
+            {result.rows.map((row) => (
+              <ConversationRowView key={row.key} row={row} />
+            ))}
+          </Box>,
+          { cols: width, rows: 40 },
+        );
+        const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+        const briefLines = lines.filter((line) => line.includes(`${task.id} ${task.title}`));
+        expect(briefLines).toHaveLength(2);
+        for (const line of briefLines) expect(line).toContain(label);
+        expect(briefLines[0]).toBe(briefLines[1]);
+        ui.unmount();
+      }
+    },
+  );
+
+  it('keeps an earlier brief target from its ledger when the current plan reuses its id', () => {
+    resetAllStores();
+    const view = deriveSummaryView({
+      record: makeRunRecord({
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({ tasks: [makeTask({ title: 'New report' })] }),
+        },
+        summary: makeSummary(),
+        ledger: {
+          version: 1,
+          sessionId: 'block-session',
+          feature: 'Update report',
+          generatedAt: '2026-10-10T00:00:00.000Z',
+          tasks: [
+            {
+              id: taskId('T001'),
+              title: 'Old report',
+              file: 'src/old-report.js',
+              status: 'done',
+              retries: 0,
+              changedFiles: [],
+              validation: [],
+              escalated: false,
+            },
+          ],
+          validationSummary: { passed: 0, failed: 0, skipped: 0, escalated: 0 },
+        },
+      }),
+    });
+    expect(view?.briefs.earlierRows[0]?.file).toBe('src/old-report.js');
+    const rows = closedBlockRows({ view, width: 120, theme: defaultTheme, crewNamed: true });
+    const ui = renderRows(rows, 120);
+    const line = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .find((row) => row.includes('Old report'));
+    expect(line).toContain('src/old-report.js');
+    expect(line).not.toContain('(create)');
+    ui.unmount();
+  });
+
+  it.each(['failed', 'skipped'] as const)('keeps the file on the closed %s brief row', (method) => {
+    const view = makeView({
+      briefs: {
+        ...makeView().briefs,
+        rows: [
+          {
+            id: taskId('T001'),
+            title: 'Receive stock',
+            state: method,
+            method,
+            retries: 0,
+            durationMs: null,
+            file: 'src/orders.js',
+            partialFiles: 0,
+          },
+        ],
+        earlierRows: [],
+      },
+    });
+    const rows = closedBlockRows({ view, width: 80, theme: defaultTheme, crewNamed: true });
+    const brief = rows.find((row) => row.key.startsWith('brief:'));
+    if (brief === undefined) throw new Error('Missing closed brief row');
+    const line = renderRow(brief, 80);
+    expect(line).toContain('T001 Receive stock');
+    expect(line).toContain(method);
+    expect(line).toContain('src/orders.js');
+  });
+
   it("opens every ledger row on the transcript's own two columns", () => {
     const width = 60;
     const rows = closedRows(width);

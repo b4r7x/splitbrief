@@ -95,7 +95,7 @@ describe('walkTranscript', () => {
   });
 
   it.each(['passed', 'failed'] as const)(
-    'yields one settled terminal %s Review after the brief',
+    'yields one settled terminal %s Review heading followed by its body',
     (review) => {
       const events: EngineEvent[] = [
         makeTaskStart(),
@@ -104,8 +104,14 @@ describe('walkTranscript', () => {
         { type: 'workflow_complete', ts: 8_000, phase: 'complete', review },
       ];
       const steps = [...walkTranscript(groupEventsIntoSections(events))];
-      expect(steps.map((step) => step.kind)).toEqual(['settled', 'settled']);
-      const final = steps[1];
+      expect(steps.map((step) => step.kind)).toEqual([
+        'settled',
+        'event',
+        'settled',
+        'event',
+        'event',
+      ]);
+      const final = steps[2];
       if (final?.kind !== 'settled') throw new Error('Expected settled review');
       expect(final.section).toMatchObject({
         type: 'settled-stage',
@@ -162,7 +168,7 @@ describe('walkTranscript', () => {
     const sections = groupEventsIntoSections(events);
     const steps = [...walkTranscript(sections)];
 
-    expect(steps.map((step) => step.kind)).toEqual(['settled', 'settled', 'event', 'event']);
+    expect(steps.filter((step) => step.kind === 'settled')).toHaveLength(2);
 
     const first = steps[0];
     expect(first?.kind).toBe('settled');
@@ -176,7 +182,7 @@ describe('walkTranscript', () => {
       }
     }
 
-    const second = steps[1];
+    const second = steps[4];
     expect(second?.kind).toBe('settled');
     if (second?.kind === 'settled') {
       expect(second.section.type).toBe('completed-task');
@@ -186,16 +192,84 @@ describe('walkTranscript', () => {
       }
     }
 
-    const third = steps[2];
+    const third = steps[7];
     expect(third?.kind).toBe('event');
     if (third?.kind === 'event') {
       expect(third.event).toBe(t002Start);
     }
 
-    const fourth = steps[3];
+    const fourth = steps[8];
     expect(fourth?.kind).toBe('event');
     if (fourth?.kind === 'event') {
       expect(fourth.event).toBe(t002Generate);
     }
+  });
+
+  it('retains T001 narration, report, checks and recovery before T002 starts', () => {
+    const events: EngineEvent[] = [
+      makeTaskStart(),
+      makeImplementerGenerate({ status: 'running', file: 'src/test.ts' }),
+      {
+        type: 'planner_text',
+        ts: 1,
+        phase: 'implementing',
+        role: 'implementer',
+        text: 'Kept narration.',
+      },
+      {
+        type: 'full_suite',
+        ts: 2,
+        phase: 'implementing',
+        status: 'done',
+        stage: 'test',
+        command: 'npm test',
+        moment: 'brief',
+        passed: true,
+      },
+      prompted,
+      selected,
+      switched,
+      resolved,
+      {
+        type: 'planner_text',
+        ts: 5,
+        phase: 'implementing',
+        role: 'implementer',
+        text: 'Report completed.',
+      },
+      makeTaskComplete(),
+      makeTaskStart({ taskId: taskId('T002'), index: 1 }),
+    ];
+    const steps = [...walkTranscript(groupEventsIntoSections(events))];
+    const heading = steps[0];
+    if (heading?.kind !== 'settled') throw new Error('Expected T001 heading');
+    expect(steps.filter((step) => step.kind === 'settled')).toHaveLength(1);
+    expect(steps.map((step) => step.kind)).toEqual([
+      'settled',
+      'event',
+      'event',
+      'recovery',
+      'event',
+      'event',
+      'event',
+      'event',
+    ]);
+    expect(steps.filter((step) => step.kind === 'event').map((step) => step.globalIndex)).toEqual([
+      2, 3, 6, 8, 9, 10,
+    ]);
+    expect(
+      steps
+        .slice(1, -1)
+        .every((step) => step.kind !== 'settled' && step.settledSection === heading.section),
+    ).toBe(true);
+    expect(steps.at(-1)).toEqual({ kind: 'event', event: events[10], globalIndex: 10 });
+    expect(
+      steps.some(
+        (step) => step.kind === 'event' && step.event.type === 'implementer_generate_running',
+      ),
+    ).toBe(false);
+    expect(steps.find((step) => step.kind === 'recovery')).toMatchObject({
+      recovery: { firstIndex: 4, prompted, selected, resolved },
+    });
   });
 });

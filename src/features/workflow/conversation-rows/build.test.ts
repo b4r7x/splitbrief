@@ -13,7 +13,12 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
-import { makeTaskComplete, makeTaskStart, makeTaskTokens } from '#testing/helpers/events/task.js';
+import {
+  makeTaskComplete,
+  makeTaskSkipped,
+  makeTaskStart,
+  makeTaskTokens,
+} from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
@@ -109,23 +114,300 @@ describe('buildConversationRows', () => {
     try {
       for (const event of events) addEvent(event);
       expect(transcript().filter((line) => line.includes('Review'))).toEqual([
-        ' ✓ Review T001 passed  49.0s',
+        ' ● Review T001 passed  49.0s',
       ]);
       addEvent(
         makeTaskStart({ ts: 53_000, taskId: taskId('T002'), title: 'Second brief', index: 1 }),
       );
       const lines = transcript();
       const first = lines.findIndex((line) => line.includes('T001 First brief'));
-      const review = lines.findIndex((line) => line.includes('✓ Review T001 passed'));
+      const review = lines.findIndex((line) => line.includes('● Review T001 passed'));
       const second = lines.findIndex((line) => line.includes('T002 Second brief'));
       expect(first).toBeGreaterThanOrEqual(0);
-      expect(review).toBe(first + 1);
+      expect(review).toBeGreaterThan(first);
       expect(second).toBeGreaterThan(review);
       expect(lines.filter((line) => line.includes('Review T001'))).toHaveLength(1);
     } finally {
       resetWorkflow();
     }
   });
+
+  it('exposes the active task header key from its first row while activity stays live', () => {
+    const started = makeTaskStart({
+      title: 'Long task title that wraps across several header rows',
+    });
+    const sections = groupEventsIntoSections([
+      makeTaskStart(),
+      makeTaskComplete(),
+      { ...started, taskId: taskId('T002'), index: 1 },
+      activity({ role: 'implementer', phase: 'implementing', taskId: taskId('T002') }),
+    ]);
+    const projection = buildConversationRowsProjection({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 40,
+      viewportHeight: 10,
+      streaming,
+    });
+    const rows = materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+    const header = rows.find((row) => row.kind === 'task-header' && !row.headerContinuation);
+    expect(header).toBeDefined();
+    expect(projection.activeTaskHeaderKey).toBe(header?.key);
+    expect(projection.blocks.at(-1)?.activeRowKey).not.toBe(header?.key);
+
+    const settled = buildConversationRowsProjection({
+      sections: groupEventsIntoSections([
+        ...sections.flatMap((section) => section.items),
+        makeTaskComplete({ taskId: taskId('T002') }),
+      ]),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 40,
+      viewportHeight: 10,
+      streaming,
+    });
+    expect(settled.activeTaskHeaderKey).toBeNull();
+  });
+
+  it('retains the target label once above the crew after a started brief is skipped', () => {
+    const started = makeTaskStart({
+      title: 'Receive stock',
+      file: 'src/orders.js',
+      files: ['src/orders.js', 'test/orders.test.js'],
+      tool: 'claude-code',
+      model: 'opus',
+      axes: ['max'],
+    });
+    const sections = groupEventsIntoSections([started, makeTaskSkipped({ title: started.title })]);
+    expect(sections[0]).toMatchObject({ summary: { file: started.file } });
+    const { rows } = buildConversationRows({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    });
+    const ui = renderFeature(
+      createElement(
+        Fragment,
+        null,
+        ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+      ),
+      { cols: 120, rows: 40 },
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    expect(lines[0]).toContain('src/orders.js (modify) · +1 file');
+    expect(lines.filter((line) => line.includes('src/orders.js'))).toHaveLength(1);
+    expect(lines[1]).toBe('   Claude Code CLI · Opus 5.5 · max');
+    expect(rows.filter((row) => row.kind === 'task-header')).toHaveLength(0);
+    ui.unmount();
+  });
+
+  it('keeps the renderable count unchanged when a brief settles without a generate hint', () => {
+    const started = makeTaskStart({ tool: 'claude-code', model: 'opus', axes: ['max'] });
+    const narration: EngineEvent = {
+      type: 'planner_text',
+      ts: 1,
+      phase: 'implementing',
+      text: 'Kept body.',
+    };
+    const input = {
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    };
+    const live = buildConversationRowsProjection({
+      ...input,
+      sections: groupEventsIntoSections([started, narration]),
+    });
+    const settled = buildConversationRowsProjection({
+      ...input,
+      sections: groupEventsIntoSections([started, narration, makeTaskComplete()]),
+    });
+    expect(settled.renderableCount).toBe(live.renderableCount);
+  });
+
+  it.each(['', 'src/current.ts'])(
+    'uses the recorded file when the settled target is empty (%s)',
+    (file) => {
+      const started = makeTaskStart({ title: 'Update report', file });
+      const { rows } = buildConversationRows({
+        sections: [
+          {
+            type: 'completed-task',
+            startIndex: 0,
+            summary: {
+              id: started.taskId,
+              title: started.title,
+              file: 'src/recorded.ts',
+              method: 'local',
+              retries: 0,
+              duration: 1000,
+            },
+            items: [started],
+          },
+        ],
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 120,
+        viewportHeight: 40,
+        streaming,
+      });
+      const ui = renderFeature(
+        createElement(
+          Fragment,
+          null,
+          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+        ),
+      );
+      const heading = stripAnsiStyles(ui.lastFrame()).split('\n')[0];
+      expect(heading).toContain(file === '' ? 'src/recorded.ts' : 'src/current.ts (modify)');
+      ui.unmount();
+    },
+  );
+
+  it.each(['done', 'failed', 'skipped'] as const)(
+    'places the file on the %s heading and crew directly below it before the body',
+    (status) => {
+      const method = status === 'done' ? makeTaskComplete().method : status;
+      const started = makeTaskStart({
+        title: 'Receive stock',
+        file: 'src/orders.js',
+        tool: 'claude-code',
+        model: 'opus',
+        axes: ['high', 'thinking'],
+      });
+      const { rows } = buildConversationRows({
+        sections: [
+          {
+            type: 'completed-task',
+            startIndex: 0,
+            summary: {
+              id: started.taskId,
+              title: started.title,
+              file: started.file,
+              method,
+              retries: 0,
+              duration: 120_000,
+            },
+            items: [
+              started,
+              {
+                type: 'planner_text',
+                ts: 1,
+                phase: 'implementing',
+                role: 'implementer',
+                text: 'Receiving body.',
+              },
+            ],
+          },
+        ],
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 120,
+        viewportHeight: 40,
+        streaming,
+      });
+      const liveRows = buildConversationRows({
+        sections: [{ type: 'events', startIndex: 0, items: [started] }],
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 60,
+        viewportHeight: 40,
+        streaming,
+      }).rows;
+      const crew = 'Claude Code CLI · Opus 5.5 · high · thinking';
+      expect(liveRows.map(rowText).join('\n')).toContain(crew);
+      expect(rows[0]?.node).toBeDefined();
+      expect(rows.map(rowText)[1]).toBe(crew);
+      expect(rows[2]?.kind).toBe('spacer');
+      const ui = renderFeature(
+        createElement(
+          Fragment,
+          null,
+          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+        ),
+      );
+      const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+      expect(lines[0]).toContain('src/orders.js (modify)');
+      expect(lines.filter((line) => line.includes('src/orders.js'))).toHaveLength(1);
+      expect(lines[1]).toBe(`   ${crew}`);
+      expect(lines[3]).toContain('Receiving body.');
+      ui.unmount();
+    },
+  );
+
+  it.each(['planner', 'implementer', 'review'] as const)(
+    'dims a settled %s activity header and keeps its live tone',
+    (role) => {
+      const event = activity({ role, kind: 'read', label: 'reading src/orders.js' });
+      const sections: Section<EngineEvent>[] =
+        role === 'implementer'
+          ? [
+              {
+                type: 'completed-task',
+                startIndex: 0,
+                items: [event],
+                summary: {
+                  id: taskId('T001'),
+                  title: 'Receive stock',
+                  method: 'local',
+                  retries: 0,
+                  duration: 100,
+                },
+              },
+            ]
+          : [
+              {
+                type: 'settled-stage',
+                startIndex: 0,
+                items: [event],
+                summary:
+                  role === 'planner'
+                    ? { stage: 'plan', feature: 'Receive stock', duration: 100 }
+                    : {
+                        stage: 'review',
+                        scope: 'final',
+                        ordinal: 1,
+                        outcome: 'passed',
+                        failedCommands: [],
+                        failedChecks: 0,
+                        fixes: [],
+                        duration: 100,
+                      },
+              },
+            ];
+      const input = {
+        expandedDiffs: new Set<string>(),
+        expandedActivityBatches: new Set<string>(),
+        cols: 120,
+        viewportHeight: 40,
+        streaming,
+      };
+      const live = buildConversationRows({
+        ...input,
+        sections: [{ type: 'events', startIndex: 0, items: [event] }],
+      });
+      const settled = buildConversationRows({ ...input, sections });
+      expect(live.rows.find((row) => row.kind === 'activity')?.segments[0]?.tone).not.toBe(
+        'textDim',
+      );
+      expect(settled.rows.find((row) => row.kind === 'activity')?.segments[0]?.tone).toBe(
+        'textDim',
+      );
+      expect(settled.rows.find((row) => row.kind === 'activity')?.segments[0]?.text).toBe(
+        live.rows.find((row) => row.kind === 'activity')?.segments[0]?.text,
+      );
+    },
+  );
 
   it.each(['passed', 'failed'] as const)(
     'materializes one terminal %s Review row with its own duration',
@@ -144,7 +426,7 @@ describe('buildConversationRows', () => {
         viewportHeight: 18,
         streaming,
       });
-      expect(rows).toHaveLength(2);
+      expect(rows.filter((row) => row.node !== undefined)).toHaveLength(2);
       const ui = renderFeature(
         createElement(
           Fragment,
@@ -155,10 +437,173 @@ describe('buildConversationRows', () => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain(`Review 1 ${review}`);
       expect(frame).toContain('5.0s');
-      expect(frame).not.toContain('Checking the diff.');
+      expect(frame).toContain('Checking the diff.');
       ui.unmount();
     },
   );
+  it('settles without losing readable body rows', () => {
+    const suite = (
+      id: string,
+      phase: EngineEventOf<'full_suite'>['phase'],
+      moment: EngineEventOf<'full_suite'>['moment'],
+    ): EngineEventOf<'full_suite'> => ({
+      type: 'full_suite',
+      ts: 2,
+      phase,
+      status: 'done',
+      stage: 'test',
+      id,
+      command: `check-${id}`,
+      moment,
+      passed: true,
+      duration: 100,
+    });
+    const events: EngineEvent[] = [
+      { type: 'workflow_started', ts: 0, phase: 'planning', feature: 'Keep the log' },
+      { type: 'user_message', ts: 1, phase: 'planning', text: 'Keep the log' },
+      suite('P0', 'planning', 'plan'),
+      makeTaskStart({ title: 'First brief', file: 'src/first.ts', tool: 'codex' }),
+      makeImplementerGenerate({ status: 'running', file: 'src/first.ts' }),
+      {
+        type: 'planner_text',
+        ts: 3,
+        phase: 'implementing',
+        role: 'implementer',
+        text: 'First narration.',
+      },
+      ...['a', 'b', 'c', 'd'].map((name, index) =>
+        activity({
+          phase: 'implementing',
+          role: 'implementer',
+          sequence: index + 1,
+          activityId: name,
+          kind: 'read',
+          label: `reading ${name}.ts`,
+        }),
+      ),
+      {
+        type: 'validate',
+        ts: 4,
+        phase: 'validating-task',
+        taskId: taskId('T001'),
+        status: 'done',
+        stages: { typecheck: true, lint: true, test: true },
+        passed: true,
+      },
+      {
+        type: 'planner_text',
+        ts: 5,
+        phase: 'implementing',
+        role: 'implementer',
+        content: 'markdown',
+        text: 'Handed back.\n{"status":"done","filesChanged":["src/first.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+      },
+      makeTaskComplete(),
+      {
+        type: 'task_skipped',
+        ts: 6,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        title: 'Pre-hook skip',
+        reason: 'Denied by hook',
+      },
+      makeTaskStart({ taskId: taskId('T003'), title: 'Failed brief', file: 'src/failed.ts' }),
+      { type: 'error', ts: 7, phase: 'implementing', message: 'Failure evidence retained' },
+      { type: 'task_full_fail', ts: 8, phase: 'implementing', taskId: taskId('T003') },
+      suite('V1', 'final-review', 'pre-review'),
+      suite('P1', 'final-review', 'plan'),
+      { type: 'workflow_complete', ts: 9, phase: 'complete', review: 'failed' },
+      { type: 'user_message', ts: 10, phase: 'final-review', text: 'Please check again' },
+      suite('V2', 'final-review', 'pre-review'),
+      suite('P2', 'final-review', 'plan'),
+      { type: 'workflow_complete', ts: 11, phase: 'complete', review: 'passed' },
+      {
+        type: 'recovery_resolved',
+        ts: 12,
+        phase: 'complete',
+        issueId: 'tail',
+        reason: 'checkout-changed',
+        action: 'retry-same-worker',
+        outcome: 'continued',
+      },
+    ];
+    const inputs = {
+      sections: groupEventsIntoSections(events),
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 120,
+      viewportHeight: 20,
+      streaming: { active: true, taskId: taskId('T001'), lines: ['stale preview'] },
+    };
+    const projection = buildConversationRowsProjection(inputs);
+    const rows = materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+    const ui = renderFeature(
+      createElement(
+        Fragment,
+        null,
+        ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+      ),
+    );
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const lineOf = (text: string) => {
+      const index = lines.findIndex((line) => line.includes(text));
+      expect(index, text).toBeGreaterThan(-1);
+      return index;
+    };
+    const ordered = [
+      'Plan Keep the log',
+      'Plan check P0',
+      'T001 First brief',
+      'src/first.ts',
+      'First narration.',
+      'activity',
+      'Validate',
+      'Handed back.',
+      'Report',
+      'T002 Pre-hook skip',
+      'T003 Failed brief',
+      'Failure evidence retained',
+      'Review 1 failed',
+      'Reviewer check V1',
+      'Plan check P1',
+      'Review 2 passed',
+      'Please check again',
+      'Reviewer check V2',
+      'Plan check P2',
+      'Recovery',
+    ];
+    const indices = ordered.map(lineOf);
+    expect(indices).toEqual([...indices].sort((a, b) => a - b));
+    expect(lines.join('\n')).not.toContain('working on');
+    expect(lines.join('\n')).not.toContain('stale preview');
+    expect(lines.join('\n')).not.toContain('Task failed');
+    expect(rows.filter((row) => row.node !== undefined)).toHaveLength(6);
+    expect(rows.filter((row) => row.kind === 'task-header')).toHaveLength(0);
+    expect(projection.blocks.every((block) => block.activeRowKey === undefined)).toBe(true);
+    for (const [index, row] of rows.entries()) {
+      if (row.node !== undefined && index > 0) {
+        expect(rows[index - 1]?.kind).toBe('spacer');
+        expect(rows[index - 2]?.kind).not.toBe('spacer');
+      }
+    }
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length);
+    expect(new Set(projection.blocks.map((block) => block.key)).size).toBe(
+      projection.blocks.length,
+    );
+    expect(projection.totalRows).toBe(rows.length);
+    expect(
+      materializeConversationRowsWindow({
+        projection,
+        windowStart: projection.totalRows - 2,
+        windowEnd: projection.totalRows,
+      }),
+    ).toEqual(rows.slice(-2));
+    ui.unmount();
+  });
   it('strips the planner H1 that echoes the user prompt so the title renders once', () => {
     const sections: Section<EngineEvent>[] = [
       {
@@ -927,9 +1372,8 @@ describe('buildConversationRows', () => {
       viewportHeight: 30,
       streaming,
     });
-    expect(rows).toHaveLength(10);
+    expect(rows.filter((row) => row.node !== undefined)).toHaveLength(10);
     expect(renderableCount).toBe(10);
-    expect(rows.every((row) => row.node !== undefined)).toBe(true);
     const ui = renderFeature(
       createElement(
         Fragment,
@@ -937,7 +1381,9 @@ describe('buildConversationRows', () => {
         ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
       ),
     );
-    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '')
+      .split('\n')
+      .filter((line) => /T\d{3} Brief/.test(line));
     for (let index = 0; index < 10; index++) {
       const id = `T${String(index + 1).padStart(3, '0')}`;
       expect(lines[index]).toContain(`${id} Brief ${id}`);
@@ -946,9 +1392,7 @@ describe('buildConversationRows', () => {
   });
 });
 
-// S11 run 3: the `Base re-run · …` row, the run-level warning and `T004 also changed …` sat
-// above the live brief for the rest of the run. Once the next brief starts they collapse with a brief.
-describe('rows no brief owns collapse with the completed briefs', () => {
+describe('rows no brief owns stay with the completed briefs', () => {
   const runLevelWarning: EngineEventOf<'warning'> = {
     type: 'warning',
     ts: 2,
@@ -974,7 +1418,7 @@ describe('rows no brief owns collapse with the completed briefs', () => {
     files: ['skills/splitbrief-run/references/tool-recipes.md'],
   };
 
-  it('shows none of them once the next brief runs', () => {
+  it('keeps them readable once the next brief runs', () => {
     const events: EngineEvent[] = [
       {
         type: 'tasks_planned',
@@ -1003,8 +1447,9 @@ describe('rows no brief owns collapse with the completed briefs', () => {
 
     expect(text).toContain('Second brief');
     expect(text).not.toContain('timed out');
-    expect(text).not.toContain('tool-recipes.md');
-    expect(text).not.toContain('npm run typecheck');
+    expect(text).toContain('tool-recipes.md');
+    expect(text).toContain('npm run typecheck');
+    expect(text).toContain(runLevelWarning.message);
   });
 });
 
@@ -1409,7 +1854,7 @@ describe('buildConversationRowsProjection check lists', () => {
     expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
   });
 
-  it('keeps spacers around settled summaries and none between consecutive summaries', () => {
+  it('keeps one spacer at each settled section boundary and none inside check lists', () => {
     const projection = buildConversationRowsProjection({
       sections: [
         { type: 'events', startIndex: 0, items: [shortHeader, firstCheck] },
@@ -1446,6 +1891,7 @@ describe('buildConversationRowsProjection check lists', () => {
       'message',
       'spacer',
       'summary',
+      'spacer',
       'summary',
       'spacer',
       'message',
@@ -1456,6 +1902,55 @@ describe('buildConversationRowsProjection check lists', () => {
 });
 
 describe('buildConversationRowsProjection event block cache', () => {
+  it('caches settled bodies and replaces live task and activity markers on settlement', () => {
+    resetEventBlockCache();
+    const start = makeTaskStart({ title: 'Cached brief' });
+    const narration: EngineEvent = {
+      type: 'planner_text',
+      ts: 1,
+      phase: 'implementing',
+      content: 'markdown',
+      text: 'Retained **narration**.',
+    };
+    const activityEvent = activity({ phase: 'implementing', role: 'implementer' });
+    const inputs = {
+      expandedDiffs: new Set<string>(),
+      expandedActivityBatches: new Set<string>(),
+      cols: 80,
+      viewportHeight: 20,
+      streaming,
+    };
+    const live = buildConversationRowsProjection({
+      ...inputs,
+      sections: groupEventsIntoSections([start, narration, activityEvent]),
+    });
+    expect(live.blocks.some((block) => block.activeRowKey !== undefined)).toBe(true);
+    const done = [start, narration, activityEvent, makeTaskComplete()];
+    const settled = buildConversationRowsProjection({
+      ...inputs,
+      sections: groupEventsIntoSections(done),
+    });
+    const appended = buildConversationRowsProjection({
+      ...inputs,
+      sections: groupEventsIntoSections([...done, makeTaskStart({ taskId: taskId('T002') })]),
+    });
+    const body = settled.blocks.filter(
+      (block) => !block.key.startsWith('spacer-') && !block.key.startsWith('settled-'),
+    );
+    expect(body).toHaveLength(2);
+    expect(body.every((block) => block.activeRowKey === undefined)).toBe(true);
+    for (const block of body)
+      expect(appended.blocks.find((candidate) => candidate.key === block.key)).toBe(block);
+    expect(
+      materializeConversationRowsWindow({
+        projection: settled,
+        windowStart: 0,
+        windowEnd: settled.totalRows,
+      })
+        .map(rowText)
+        .join('\n'),
+    ).not.toContain('Cached brief');
+  });
   it('reuses prior event blocks by identity on append', () => {
     resetEventBlockCache();
 
@@ -1569,6 +2064,21 @@ describe('one recovery reads as one block', () => {
     });
     return { lines: rows.map((row) => rowText(row).trim()).filter((line) => line !== ''), rows };
   }
+
+  it('keeps one Recovery row across an abandoned section and the next brief', () => {
+    const start = makeTaskStart({ taskId: taskId('T002') });
+    const next = makeTaskStart({ taskId: taskId('T003'), title: 'Next brief' });
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections([start, halt, prompted, selected, reset, resolved, next]),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    });
+    const recoveryRows = rows.map(rowText).filter((line) => line.startsWith('Recovery'));
+    expect(recoveryRows).toEqual([`Recovery  Try again${arrowSep()}T002 back to pending, retried`]);
+  });
 
   it('gives the halt its error and folds selection, reset and outcome into one Recovery row', () => {
     const { lines } = transcript([halt, prompted, selected, reset, resolved]);

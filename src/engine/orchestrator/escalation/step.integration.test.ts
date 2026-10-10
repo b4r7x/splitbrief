@@ -383,7 +383,6 @@ describe('runRetryStep', () => {
         sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
-        onOutput: () => {},
         implementer,
         config,
       }),
@@ -478,7 +477,6 @@ describe('runRetryStep', () => {
         sessionId,
         languageContext: buildLanguageContext('typescript'),
         phase: state.phase,
-        onOutput: () => {},
         implementer: intermediateImplementer,
         config: intermediateConfig,
       }),
@@ -849,7 +847,6 @@ describe('runRetryStep', () => {
           sessionId,
           languageContext: buildLanguageContext('typescript'),
           phase: state.phase,
-          onOutput: () => {},
         }),
       });
 

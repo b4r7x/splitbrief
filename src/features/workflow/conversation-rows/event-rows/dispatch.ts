@@ -25,7 +25,11 @@ import {
 import { artifactWrittenRowBlock } from './artifact-card.js';
 import { answeredQuestionsRowBlock } from './answered-questions.js';
 import { attachedInputsRowBlock } from './attached-inputs.js';
-import { taskStartedMetadata, taskStartedRowBlock } from '../task-started-row-block.js';
+import {
+  taskStartedMetadata,
+  taskStartedCrewRowBlock,
+  taskStartedRowBlock,
+} from '../task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
   escalateRowBlock,
@@ -42,7 +46,7 @@ import { formatResetAt, stripRecoveryResetClause } from '../../../../core/recove
 import { stopPoint } from '../../stop/copy.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
-import type { RecoveryFold } from '../transcript-walk.js';
+import type { RecoveryFold, SettledTranscriptSection } from '../transcript-walk.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
 export const COLLAPSED_DRIFT_FINDING_LIMIT = 3;
@@ -53,6 +57,7 @@ export function eventRowBlock(options: {
   ctx: RowBuildContext;
   expanded: boolean;
   dedupTitle?: string | undefined;
+  settledSection?: SettledTranscriptSection | undefined;
 }): ConversationRowBlock | null {
   const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
@@ -144,6 +149,13 @@ export function eventRowBlock(options: {
       ]);
     }
     case 'task_started':
+      if (options.settledSection !== undefined) {
+        return taskStartedCrewRowBlock({
+          keyPrefix,
+          event,
+          width: ctx.width,
+        });
+      }
       return taskStartedRowBlock({
         keyPrefix,
         taskId: event.taskId,

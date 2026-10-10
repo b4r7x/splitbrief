@@ -51,6 +51,7 @@ describe('WorkflowScreen key ownership', () => {
 
   afterEach(async () => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
     resetAllStores();
     routerStore.init({ screen: 'home' });
     cleanupTempDir(projectDir);
@@ -100,6 +101,8 @@ describe('WorkflowScreen key ownership', () => {
     const ui = mountWorkflow();
     await tick(20);
 
+    const openedAt = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(openedAt);
     const decision = openApprovalPrompt(confirmRequest());
     await tick(20);
 
@@ -115,7 +118,7 @@ describe('WorkflowScreen key ownership', () => {
     await tick(20);
     expect(settled).toBe(false);
 
-    await tick(PAST_GRACE);
+    clock.mockReturnValue(openedAt + PAST_GRACE);
     await flushEffects();
     ui.stdin.write('x');
     await expect(decision).resolves.toEqual({ decision: 'deny', reason: 'user_denied' });

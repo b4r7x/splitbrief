@@ -91,9 +91,6 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     steady.unmount();
   });
 
-  // A settled brief leaves the transcript for the completed list, so a task header on screen is one
-  // the run is still inside — it takes the sidebar's in-progress ◉ whether or not the pulse has
-  // moved on to the activity below it, and never the done mark that made it read as passed.
   it('keeps the in-progress ◉ on a task-header row the pulse has moved past', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
@@ -104,12 +101,17 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     expect(activeFrame).toContain('T001 No-op task');
     active.unmount();
 
-    const steady = renderFeature(<ConversationRowView row={row} lifecycle="done" />);
+    const steady = renderFeature(<ConversationRowView row={row} lifecycle="active" />);
     const steadyFrame = steady.lastFrame() ?? '';
     expect(steadyFrame).toContain(LIVE_MARK);
     expect(steadyFrame).not.toContain(DONE_MARK);
     expect(steadyFrame).toContain('T001 No-op task');
     steady.unmount();
+
+    const abandoned = renderFeature(<ConversationRowView row={row} lifecycle="done" />);
+    expect(abandoned.lastFrame()).toContain(DONE_MARK);
+    expect(abandoned.lastFrame()).not.toContain(LIVE_MARK);
+    abandoned.unmount();
   });
 
   it('paints the task-header marker in the sidebar in-progress colour, not the success colour', () => {
@@ -123,7 +125,7 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
 
     const ui = renderFeature(
       <ThemeProvider theme={theme}>
-        <ConversationRowView row={row} lifecycle="done" />
+        <ConversationRowView row={row} lifecycle="active" />
       </ThemeProvider>,
     );
     const frame = ui.lastFrame() ?? '';
@@ -195,7 +197,7 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
   it('paints the ▌ focus bar into the lead cell and keeps the header ◉ on the line beside it', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
-    const ui = renderFeature(<ConversationRowView row={row} focused={true} />);
+    const ui = renderFeature(<ConversationRowView row={row} lifecycle="active" focused={true} />);
     const text = stripAnsiStyles(ui.lastFrame() ?? '');
     ui.unmount();
 
@@ -343,7 +345,9 @@ describe('ConversationRowView color-off degradation', () => {
   it('carries focus emphasis with the ▌ glyph, never weight alone', () => {
     const row = makeTaskHeaderRow('task-header:T001');
 
-    const focused = renderFeature(<ConversationRowView row={row} focused={true} />);
+    const focused = renderFeature(
+      <ConversationRowView row={row} lifecycle="active" focused={true} />,
+    );
     const focusedText = stripAnsiStyles(focused.lastFrame() ?? '');
     focused.unmount();
 

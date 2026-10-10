@@ -8,6 +8,157 @@ import { rowText } from '../row-format/rows.js';
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
 describe('planner text rows', () => {
+  it.each([undefined, 'plain'] as const)(
+    'keeps extracted-code output as dim plain text (%s)',
+    (content) => {
+      for (const text of [
+        '# Load config\ndef __init__(self, *args):\n    self.args = args',
+        '# Load config\nitems:\n- x\n1. value',
+        '<!-- keep this comment -->\n<div>content</div>',
+        '{"version":"file-bundle-v1","files":[{"path":"a.py","content":"`code` and *args"}]}',
+      ]) {
+        const rows = eventRows({
+          event: {
+            type: 'planner_text',
+            ts: 0,
+            phase: 'implementing',
+            role: 'implementer',
+            ...(content === undefined ? {} : { content }),
+            text,
+          },
+          globalIndex: 0,
+          expanded: false,
+          ctx: { width: 160, viewportRows: 20, streaming },
+        });
+
+        expect(rows.map(rowText).join('\n')).toBe(text);
+        for (const row of rows) {
+          expect(row.codeBg).not.toBe(true);
+          expect(row.segments).toEqual([{ text: rowText(row), tone: 'textDim', bold: false }]);
+        }
+      }
+    },
+  );
+
+  it('renders marked implementer narration as dim markdown', () => {
+    const rows = eventRows({
+      event: {
+        type: 'planner_text',
+        ts: 0,
+        phase: 'implementing',
+        role: 'implementer',
+        content: 'markdown',
+        text: 'Implemented `lowStockItems` in [src/report.js](file:///tmp/trees/x/run/src/report.js).',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+    const segments = rows.flatMap((row) => row.segments);
+
+    expect(text).toBe('Implemented lowStockItems in src/report.js.');
+    expect(text).not.toContain('`');
+    expect(text).not.toContain('](file:');
+    expect(segments).toContainEqual({ text: 'lowStockItems', tone: 'markdownCode' });
+    expect(segments).toContainEqual({
+      text: 'src/report.js',
+      tone: 'markdownLink',
+      href: 'file:///tmp/trees/x/run/src/report.js',
+    });
+    expect(segments.filter((segment) => !segment.tone?.startsWith('markdown'))).toEqual([
+      { text: 'Implemented ', tone: 'textDim' },
+      { text: ' in ', tone: 'textDim' },
+      { text: '.', tone: 'textDim' },
+    ]);
+  });
+
+  it('replays unmarked hand-backs with plain dim narration and one report row', () => {
+    const narration = 'Updated `a.ts` and [b.ts](file:///tmp/b.ts).';
+    for (const [report, summary] of [
+      [
+        '{"status":"done","filesChanged":["a.ts","b.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+        'Report  done · 2 files · 0 decisions',
+      ],
+      [
+        '{"status":"blocked","question":"Where is the schema?","filesNeeded":["schema.ts"]}',
+        'Report  blocked · 1 file needed',
+      ],
+    ] as const) {
+      for (const text of [
+        report,
+        `${narration}\n\n${report}`,
+        `${narration}\n\n\`\`\`json\n${report}\n\`\`\``,
+      ]) {
+        const rows = eventRows({
+          event: { type: 'planner_text', ts: 0, phase: 'implementing', role: 'implementer', text },
+          globalIndex: 0,
+          expanded: false,
+          ctx: { width: 160, viewportRows: 20, streaming },
+        });
+        expect(rows.map(rowText)).toEqual(text === report ? [summary] : [narration, summary]);
+        for (const row of rows) {
+          expect(row.codeBg).not.toBe(true);
+          expect(row.segments).toEqual([{ text: rowText(row), tone: 'textDim', bold: false }]);
+        }
+      }
+    }
+  });
+
+  it('styles marked hand-back narration and retains one report row', () => {
+    const report = JSON.stringify({
+      status: 'done',
+      filesChanged: ['src/report.js'],
+      touchedNotSuggested: [],
+      notes: null,
+      decisions: [{ what: 'kept the link target', why: 'opens the changed file' }],
+    });
+    for (const handBack of [report, ['```json', report, '```'].join('\n')]) {
+      const rows = eventRows({
+        event: {
+          type: 'planner_text',
+          ts: 0,
+          phase: 'implementing',
+          role: 'implementer',
+          content: 'markdown',
+          text: [
+            'Implemented `lowStockItems` in [src/report.js](file:///tmp/trees/x/run/src/report.js).',
+            '',
+            handBack,
+          ].join('\n'),
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      });
+      const lines = rows.map(rowText);
+      const text = lines.join('\n');
+      const segments = rows.flatMap((row) => row.segments);
+
+      expect(lines).toEqual([
+        'Implemented lowStockItems in src/report.js.',
+        'Report  done · 1 file · 1 decision',
+      ]);
+      expect(lines.filter((line) => line.startsWith('Report  '))).toHaveLength(1);
+      expect(text).not.toContain('`');
+      expect(text).not.toContain('](file:');
+      expect(text).not.toContain('"status"');
+      expect(text).not.toContain('filesChanged');
+      expect(segments).toContainEqual({ text: 'lowStockItems', tone: 'markdownCode' });
+      expect(segments).toContainEqual({
+        text: 'src/report.js',
+        tone: 'markdownLink',
+        href: 'file:///tmp/trees/x/run/src/report.js',
+      });
+      expect(rows[0]?.segments[0]).toEqual({ text: 'Implemented ', tone: 'textDim' });
+      expect(rows.at(-1)?.segments).toContainEqual({
+        text: 'Report  done · 1 file · 1 decision',
+        tone: 'textDim',
+        bold: false,
+      });
+    }
+  });
+
   it('renders markdown planner documents without raw heading or fence markers', () => {
     const event: EngineEvent = {
       type: 'planner_text',
@@ -122,6 +273,7 @@ describe('planner text rows', () => {
       ts: 0,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       text: [
         'Implemented the row.',
         '',
@@ -161,6 +313,7 @@ describe('planner text rows', () => {
       ts: 0,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       text: [
         'Implemented the row.',
         '',
@@ -180,12 +333,13 @@ describe('planner text rows', () => {
     expect(lines).toEqual(['Implemented the row.', 'Report  done · 1 file · 0 decisions']);
   });
 
-  it('keeps the closing fence of a code block the narration showed before a bare report', () => {
+  it('renders a code block in narration before a bare report', () => {
     const event: EngineEvent = {
       type: 'planner_text',
       ts: 0,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       text: [
         'The row reads:',
         '```ts',
@@ -195,18 +349,19 @@ describe('planner text rows', () => {
       ].join('\n'),
     };
 
-    const lines = eventRows({
+    const rows = eventRows({
       event,
       globalIndex: 0,
       expanded: false,
       ctx: { width: 80, viewportRows: 20, streaming },
-    }).map(rowText);
+    });
+    const text = rows.map(rowText).join('\n');
 
-    expect(lines).toEqual([
-      'The row reads:',
-      '```ts',
-      'row.render();',
-      '```',
+    expect(text).toContain('The row reads:');
+    expect(text).toContain('row.render();');
+    expect(text).not.toContain('```');
+    expect(rows.some((row) => row.codeBg === true)).toBe(true);
+    expect(rows.map(rowText).filter((line) => line.startsWith('Report  '))).toEqual([
       'Report  done · 1 file · 0 decisions',
     ]);
   });
@@ -217,6 +372,7 @@ describe('planner text rows', () => {
       ts: 0,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       text: 'I need the schema file.\n\n{"status":"blocked","question":"Where is the schema?","filesNeeded":["src/schema.ts"]}',
     };
 
@@ -236,6 +392,7 @@ describe('planner text rows', () => {
       ts: 0,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       text: 'Still reading the call sites; nothing to report yet.',
     };
 

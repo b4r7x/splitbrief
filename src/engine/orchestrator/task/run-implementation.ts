@@ -10,7 +10,7 @@ import { briefCorrections } from '../../../core/state/machine.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
-import { createBusTextHandler } from '../events.js';
+import { createImplementerTextHandler } from '../events.js';
 import { createStreamingFeed, noopStreamingSink } from './streaming-feed.js';
 import type { StreamingSink } from './streaming-feed.js';
 import { withContinuationLoop } from '../continuation.js';
@@ -83,9 +83,9 @@ export async function runImplementation(opts: {
   const { projectDir, sessionId, config, callbacks, context } = wctx;
   let state = opts.state;
 
-  const textHandler = createBusTextHandler(
+  const textHandler = createImplementerTextHandler(
     { bus: wctx.bus, phase: state.phase },
-    { role: 'implementer' },
+    wctx.implementer,
   );
   const writesDirectly = wctx.implementer.capabilities?.writesFiles === 'direct';
 
@@ -183,7 +183,7 @@ export async function runImplementation(opts: {
           plan: state.plan,
           onOutput: (text, opts) => {
             recordOutput(text);
-            textHandler(text, { messageStart: writesDirectly && opts?.messageStart === true });
+            textHandler(text, opts);
             streamingFeed.onText(text);
           },
           sessionId,

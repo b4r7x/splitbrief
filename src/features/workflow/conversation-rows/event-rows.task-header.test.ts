@@ -8,6 +8,7 @@ import { eventRows } from '#testing/helpers/event-rows.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { rowText } from './row-format/rows.js';
 import type { ConversationRow } from './types.js';
+import type { SettledTranscriptSection } from './transcript-walk.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -59,6 +60,26 @@ function makeMarkdownPlannerText(
 }
 
 describe('eventRows task header and planner phase header', () => {
+  it('renders settled task_started crew metadata without repeating the target or title', () => {
+    const event = makeTaskStarted();
+    const settledSection: SettledTranscriptSection = {
+      type: 'completed-task',
+      startIndex: 0,
+      items: [event],
+      summary: { id: event.taskId, title: event.title, method: 'local', retries: 0, duration: 100 },
+    };
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      settledSection,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain('OpenAI Codex CLI');
+    expect(text).not.toContain(event.title);
+    expect(text).not.toContain(event.file);
+  });
   it('preserves task header metadata across canonical-label wrapping', () => {
     const event = makeTaskStarted();
     const rows = eventRows({

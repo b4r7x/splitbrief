@@ -5,6 +5,7 @@ import {
   selectTaskListView,
   taskRowLabel,
   taskTargetLabel,
+  taskTargetParts,
   tasksStore,
 } from './tasks.js';
 import { addEvent } from './actions/event.js';
@@ -454,6 +455,38 @@ describe('tasks_planned', () => {
         action: 'modify',
       }),
     ).toBe('src/a.ts (modify) · +1 file');
+  });
+
+  it('returns the target path and annotations as separate parts', () => {
+    expect(
+      taskTargetParts({
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/b.ts', 'src/c.ts'],
+        action: 'modify',
+      }),
+    ).toEqual({ path: 'src/a.ts', note: '(modify)', extraFiles: '+2 files' });
+    expect(taskTargetParts({ file: 'src/a.ts', files: ['src/a.ts', 'src/b.ts'] })).toEqual({
+      path: 'src/a.ts',
+      note: '',
+      extraFiles: '+1 file',
+    });
+    expect(taskTargetParts({})).toEqual({
+      path: '',
+      note: '',
+      extraFiles: '',
+    });
+  });
+
+  it('keeps the extra file count separate when the target has no action', () => {
+    expect(
+      taskTargetLabel({
+        id: 'T001',
+        title: 'Slice',
+        status: 'pending',
+        file: 'src/a.ts',
+        files: ['src/a.ts', 'src/b.ts'],
+      }),
+    ).toBe('src/a.ts · +1 file');
   });
 
   it('agrees with the total task_started carries, so the header cannot flicker', () => {

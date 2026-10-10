@@ -30,8 +30,10 @@ export function markdownPlannerTextRowBlock(input: {
   width: number;
   phase?: Phase;
   dedupTitle?: string | undefined;
+  proseTone?: Extract<ConversationRowTone, 'text' | 'textDim'>;
 }): ConversationRowBlock | null {
   const text = stripEchoedTitleHeading(input.text, input.dedupTitle);
+  const proseTone = input.proseTone ?? 'text';
   const projection = markdownConversationRowsProjection({
     keyPrefix: input.keyPrefix,
     text,
@@ -43,7 +45,22 @@ export function markdownPlannerTextRowBlock(input: {
     key: input.keyPrefix,
     rowCount: projection.rowCount,
     renderableUnits: 1,
-    createRows: projection.createRows,
+    createRows:
+      proseTone === 'text'
+        ? projection.createRows
+        : (windowStart, windowEnd) =>
+            projection.createRows(windowStart, windowEnd).map((rowValue) =>
+              rowValue.codeBg === true
+                ? rowValue
+                : {
+                    ...rowValue,
+                    segments: rowValue.segments.map((segment) =>
+                      segment.tone === 'text' && !segment.bold && !segment.italic
+                        ? { ...segment, tone: proseTone }
+                        : segment,
+                    ),
+                  },
+            ),
   };
 
   const header = plannerPhaseHeader(input.phase);

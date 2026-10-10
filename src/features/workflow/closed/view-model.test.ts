@@ -657,6 +657,29 @@ describe('seats', () => {
 });
 
 describe('brief rows', () => {
+  it.each(['', 'src/current.ts'])(
+    'keeps the recorded file when the plan target is empty (%s)',
+    (file) => {
+      const task = makeTask({ title: 'Update report', status: 'done', suggestedFiles: [file] });
+      const view = derive(makeSummary({ totalTasks: 1, completedByLocal: 1 }), {
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({ phase: 'complete', tasks: [task] }),
+        },
+        ledger: makeLedger([
+          ledgerTask({
+            id: task.id,
+            title: task.title,
+            file: 'src/recorded.ts',
+            briefHash: hashTaskBrief([task]),
+          }),
+        ]),
+      });
+      expect(view.briefs.rows[0]?.file).toBe(file === '' ? 'src/recorded.ts' : file);
+      expect(view.briefs.earlierRows).toEqual([]);
+    },
+  );
+
   it('lists all current briefs when a run ends at its plan gate before the first evidence write', () => {
     const tasks = [
       makeTask({ id: 'T001', title: 'First brief' }),

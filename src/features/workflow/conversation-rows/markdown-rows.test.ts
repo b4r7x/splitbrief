@@ -16,6 +16,7 @@ import {
   resetMarkdownConversationRowsCache,
 } from './markdown-rows.js';
 import { markdownConversationRows } from '#testing/helpers/event-rows.js';
+import { markdownPlannerTextRowBlock } from './planner-markdown-row-block.js';
 import { rowText } from './row-format/rows.js';
 
 // The transcript path resolves its own glyphs inside the chunker, so both sides of every
@@ -1128,6 +1129,61 @@ describe('highlighted code in transcript rows', () => {
 });
 
 describe('projection reuse across re-renders', () => {
+  it('recolors implementer prose without changing the shared markdown projection', () => {
+    resetMarkdownConversationRowsCache();
+    const input = {
+      keyPrefix: 'equal-narration',
+      text: [
+        'Implemented `lowStockItems` in [src/report.js](file:///tmp/trees/x/run/src/report.js).',
+        '',
+        '#### Details',
+        '**Retained styles**',
+        '',
+        '```text',
+        'plain code body',
+        '```',
+      ].join('\n'),
+      width: 80,
+    };
+    const planner = markdownPlannerTextRowBlock(input);
+    const plannerRows = planner?.createRows(0, planner.rowCount) ?? [];
+    const implementer = markdownPlannerTextRowBlock({ ...input, proseTone: 'textDim' });
+    const implementerRows = implementer?.createRows(0, implementer.rowCount) ?? [];
+    const plannerProjection = markdownConversationRowsProjection(input);
+    expect(plannerRows[0]?.segments[0]).toEqual({ text: 'Implemented ', tone: 'text' });
+    expect(implementerRows[0]?.segments[0]).toEqual({ text: 'Implemented ', tone: 'textDim' });
+    expect(implementerRows[0]?.segments).toContainEqual({
+      text: 'lowStockItems',
+      tone: 'markdownCode',
+    });
+    expect(implementerRows[0]?.segments).toContainEqual({
+      text: 'src/report.js',
+      tone: 'markdownLink',
+      href: 'file:///tmp/trees/x/run/src/report.js',
+    });
+    expect(implementerRows.flatMap((row) => row.segments)).toContainEqual({
+      text: 'Details',
+      tone: 'text',
+      bold: true,
+    });
+    expect(implementerRows.flatMap((row) => row.segments)).toContainEqual({
+      text: 'Retained styles',
+      tone: 'text',
+      bold: true,
+    });
+    expect(
+      implementerRows.find((row) => rowText(row).includes('plain code body'))?.segments,
+    ).toContainEqual({
+      text: 'plain code body',
+      tone: 'text',
+    });
+    expect(planner?.createRows(0, planner.rowCount)).toEqual(plannerRows);
+    expect(markdownConversationRowsProjection(input)).toBe(plannerProjection);
+    expect(markdownPlannerTextRowBlock(input)?.createRows(0, plannerRows.length)).toEqual(
+      plannerRows,
+    );
+  });
+
   it('reuses the projection when the same raw text is re-projected', () => {
     resetMarkdownConversationRowsCache();
     const input = { keyPrefix: 'reuse', text: '# Title\n\nbody line', width: 80 };

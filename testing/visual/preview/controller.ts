@@ -422,6 +422,7 @@ export function createPreviewController(options: PreviewControllerOptions): Prev
     },
     pressToPreview: async (input) => {
       if (disposed) return;
+      await flushEffects();
       options.forward(Buffer.from(input));
       // A preview owns no painted-frame probe, so settlement is the React turns the key
       // schedules: the same three `setImmediate` turns `flushEffects` gives a test key.

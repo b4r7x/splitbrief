@@ -28,11 +28,24 @@ export type SettledTranscriptSection = Extract<
   { type: 'completed-task' | 'settled-stage' }
 >;
 
+export function settledTaskStartedEvent(
+  section: SettledTranscriptSection,
+): EngineEventOf<'task_started'> | undefined {
+  return section.items.find(
+    (event): event is EngineEventOf<'task_started'> =>
+      event.type === 'task_started' &&
+      section.type === 'completed-task' &&
+      event.taskId === section.summary.id,
+  );
+}
+
 export type TranscriptWalkStep =
   | { kind: 'settled'; section: SettledTranscriptSection }
-  | { kind: 'activity-batch'; batch: RunnerActivityBatch }
-  | { kind: 'recovery'; recovery: RecoveryFold }
-  | { kind: 'event'; event: EngineEvent; globalIndex: number };
+  | ((
+      | { kind: 'activity-batch'; batch: RunnerActivityBatch }
+      | { kind: 'recovery'; recovery: RecoveryFold }
+      | { kind: 'event'; event: EngineEvent; globalIndex: number }
+    ) & { settledSection?: SettledTranscriptSection });
 
 // The single traversal both the projection and the clickable-action builders consume, so the
 // consecutive-`runner_call_activity` batching stays byte-identical between rendered rows and their
@@ -51,10 +64,12 @@ export function* walkTranscript(
   let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
   let lastRowEvent: EngineEvent | null = null;
   let openHeader: EngineEventOf<'task_started'> | null = null;
+  let settledContext: { settledSection?: SettledTranscriptSection } = {};
 
   function* flush(): Generator<TranscriptWalkStep> {
-    if (activityBatch !== null) yield { kind: 'activity-batch', batch: activityBatch };
-    if (recovery !== null) yield { kind: 'recovery', recovery };
+    if (activityBatch !== null)
+      yield { kind: 'activity-batch', batch: activityBatch, ...settledContext };
+    if (recovery !== null) yield { kind: 'recovery', recovery, ...settledContext };
     if (recoverySwitch !== null) yield recoverySwitch;
     activityBatch = null;
     recovery = null;
@@ -62,17 +77,27 @@ export function* walkTranscript(
   }
 
   for (const section of sections) {
+    if (isSettledSection(section)) yield* flush();
+    settledContext = isSettledSection(section) ? { settledSection: section } : {};
+    const started = isSettledSection(section) ? settledTaskStartedEvent(section) : undefined;
     if (isSettledSection(section)) {
-      yield* flush();
       lastRowEvent = null;
-      openHeader = null;
+      openHeader = started ?? null;
       yield { kind: 'settled', section };
-      continue;
     }
     for (const [index, event] of section.items.entries()) {
       const globalIndex = section.startIndex + index;
+      if (
+        isSettledSection(section) &&
+        (event === started ||
+          event.type === 'implementer_generate_running' ||
+          (section.type === 'completed-task' &&
+            (event.type === 'task_skipped' || event.type === 'task_full_fail') &&
+            event.taskId === section.summary.id))
+      )
+        continue;
       if (isTranscriptRowlessEvent(event)) {
-        yield { kind: 'event', event, globalIndex };
+        yield { kind: 'event', event, globalIndex, ...settledContext };
         continue;
       }
       if (event.type === 'runner_call_activity') {
@@ -98,7 +123,7 @@ export function* walkTranscript(
         recovery.resolved === undefined &&
         recoverySwitch === null
       ) {
-        recoverySwitch = { kind: 'event', event, globalIndex };
+        recoverySwitch = { kind: 'event', event, globalIndex, ...settledContext };
         continue;
       }
       if (recovery !== null && joinsRecovery(recovery, event)) continue;
@@ -119,10 +144,14 @@ export function* walkTranscript(
         openHeader = event;
       }
       lastRowEvent = event;
-      yield { kind: 'event', event, globalIndex };
+      yield { kind: 'event', event, globalIndex, ...settledContext };
+    }
+    if (isSettledSection(section)) {
+      yield* flush();
+      lastRowEvent = null;
+      openHeader = null;
     }
   }
-
   yield* flush();
 }
 

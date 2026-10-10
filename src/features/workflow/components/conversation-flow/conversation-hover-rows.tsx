@@ -5,9 +5,11 @@ import { ConversationRowView } from './row-view.js';
 export function ConversationTranscriptRows({
   rows,
   visibleActiveRowKey,
+  activeTaskHeaderKey,
 }: {
   rows: ConversationRow[];
   visibleActiveRowKey: string | null;
+  activeTaskHeaderKey: string | null;
 }) {
   const hoverConversationIndex = hoverStore.use((index) => index);
   const focusedTranscriptIndex = hoverConversationIndex;
@@ -15,12 +17,14 @@ export function ConversationTranscriptRows({
   return (
     <>
       {rows.map((rowValue, index) => {
-        const isActive = rowValue.key === visibleActiveRowKey;
+        const isActive =
+          rowValue.key === visibleActiveRowKey &&
+          (rowValue.kind !== 'task-header' || rowValue.key === activeTaskHeaderKey);
         return (
           <ConversationRowView
             key={rowValue.key}
             row={rowValue}
-            lifecycle={isActive ? 'live' : 'done'}
+            lifecycle={isActive ? 'live' : rowValue.kind === 'task-header' ? 'active' : 'done'}
             focused={focusedTranscriptIndex === index}
           />
         );

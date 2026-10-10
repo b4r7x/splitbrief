@@ -1,10 +1,8 @@
 import type { MarkdownLayoutRow } from '../../../../utils/markdown/types.js';
 import type { ConversationRow } from '../types.js';
 
-export interface MarkdownConversationRowsInput {
-  keyPrefix: string;
+export interface MarkdownConversationRowsInput extends MarkdownConversationRowsIdentityInput {
   text: string;
-  width: number;
 }
 
 export interface MarkdownConversationRowsIdentityInput {

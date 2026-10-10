@@ -7,7 +7,6 @@ import {
 import { ABORTED_OUTCOME_TEXT } from '../../implementers/pipeline/call-result.js';
 import { buildProjectLanguageContext } from '../../spec/prompts/language-context.js';
 import {
-  createBusTextHandler,
   publishConsultBoundSpent,
   publishError,
   publishNoProgressCut,
@@ -222,10 +221,6 @@ export async function runLocalRetries(
           state.discoveredValidation?.language,
         ),
         phase: state.phase,
-        onOutput: createBusTextHandler(
-          { bus: ctx.bus, phase: state.phase },
-          { role: 'implementer' },
-        ),
       }),
     });
 

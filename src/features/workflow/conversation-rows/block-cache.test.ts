@@ -72,14 +72,28 @@ function eventKey(overrides?: Partial<EventBlockCacheKey>): EventBlockCacheKey {
     expanded: false,
     keyPrefix: '0',
     dedupTitle: undefined,
+    settled: false,
     ...overrides,
   };
 }
 
 function batchKey(
-  overrides?: Partial<{ batchKey: string; count: number; width: number; expanded: boolean }>,
-): { batchKey: string; count: number; width: number; expanded: boolean } {
-  return { batchKey: 'activity-0-call-1', count: 3, width: 80, expanded: false, ...overrides };
+  overrides?: Partial<{
+    batchKey: string;
+    count: number;
+    width: number;
+    expanded: boolean;
+    settled: boolean;
+  }>,
+): { batchKey: string; count: number; width: number; expanded: boolean; settled: boolean } {
+  return {
+    batchKey: 'activity-0-call-1',
+    count: 3,
+    width: 80,
+    expanded: false,
+    settled: false,
+    ...overrides,
+  };
 }
 
 describe('event row block cache', () => {
@@ -109,6 +123,7 @@ describe('event row block cache', () => {
     ['expanded', eventKey({ expanded: true })],
     ['keyPrefix', eventKey({ keyPrefix: '7' })],
     ['dedupTitle', eventKey({ dedupTitle: 'add markdown links' })],
+    ['settled', eventKey({ settled: true })],
   ] as const)('misses when %s changes for the same event object', (_field, changedKey) => {
     const event = plannerText(1);
     rememberEventRowBlock(event, eventKey(), rowBlock('event-1'));
@@ -116,11 +131,12 @@ describe('event row block cache', () => {
     expect(getCachedEventRowBlock(event, changedKey)).toBeUndefined();
   });
 
-  it('never caches task_started blocks', () => {
+  it.each([false, true])('never caches task_started blocks with settled=%s', (settled) => {
     const event = taskStarted();
-    rememberEventRowBlock(event, eventKey(), rowBlock('task-header'));
+    const block = rowBlock('task-metadata');
+    rememberEventRowBlock(event, eventKey({ settled }), block);
 
-    expect(getCachedEventRowBlock(event, eventKey())).toBeUndefined();
+    expect(getCachedEventRowBlock(event, eventKey({ settled }))).toBeUndefined();
   });
 
   it('never caches implementer_generate_running blocks', () => {
@@ -168,6 +184,7 @@ describe('activity batch block cache', () => {
     ['count', batchKey({ count: 4 })],
     ['width', batchKey({ width: 60 })],
     ['expanded', batchKey({ expanded: true })],
+    ['settled', batchKey({ settled: true })],
   ] as const)('misses when batch %s changes for the same last event', (_field, changedKey) => {
     const lastEvent = activityEvent(3);
     rememberActivityBatchBlock(lastEvent, batchKey(), rowBlock('batch'));

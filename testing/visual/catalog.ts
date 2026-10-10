@@ -458,6 +458,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-extracted-code',
+      title: 'Workflow · extracted-code output stays plain',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'implementation-extracted-code',
+        title: 'Plain file bundle output',
+        kind: 'implementation',
+        marker: 'file-bundle-v1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Extracted-code transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-narration',
       title: 'Workflow · a Claude Code build call narrating between tool calls',
       surface: screenSurface('workflow'),
@@ -465,12 +480,29 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'implementation-narration',
         title: 'Build narration around a tool call',
         kind: 'implementation',
-        marker: 'registry.ts',
+        marker: 'BUILD activity',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
         { id: 'activity', title: 'Implementation activity block' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-continuous-transcript',
+      title: 'Workflow · completed briefs retain their body before the running brief',
+      surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+      checkpoint: {
+        id: 'continuous-transcript',
+        title: 'Plan and two completed briefs before T003',
+        kind: 'implementation',
+        marker: 'T003 Test the receiving flow',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Continuous transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
     defineScenario({
@@ -673,6 +705,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-continuous-transcript-ready',
+      title: 'Workflow · ready run retains plan and reviewer check rows',
+      surface: screenSurface('workflow'),
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+      checkpoint: {
+        id: 'continuous-transcript-ready',
+        title: 'Plan, two completed briefs and Review 1 passed at rest',
+        kind: 'success',
+        marker: 'Apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Continuous ready transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-settled-failed',
       viewports: WIDE_VIEWPORTS,
       title: 'Workflow · terminal Review failed',
@@ -804,15 +853,13 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'sidebar', title: 'Workflow sidebar' },
       ],
     }),
-    // S11 run 3: the run-level warning, `T901 also changed …` and the `Batch suite · …` rows sat
-    // above the live brief for the rest of the run. Once T902 runs they belong to the closed T901.
     defineScenario({
       id: 'workflow-completed-orphan-rows',
-      title: 'Workflow · run-level and boundary rows collapse with the completed briefs',
+      title: 'Workflow · completed briefs retain run-level and boundary rows',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'completed-orphan-rows',
-        title: 'Completed briefs with no run-level row left above the live brief',
+        title: 'Earlier brief content stays above the live brief',
         kind: 'implementation',
         marker: '1/3 briefs passed',
       },

@@ -110,7 +110,7 @@ describe('findLatestExpandableActivityBatchKey', () => {
     expect(findLatestExpandableActivityBatchKey(sections)).toBeNull();
   });
 
-  it('skips a settled stage batch and returns the latest live batch', () => {
+  it('selects the chronologically latest expandable batch even in a settled stage', () => {
     const batch = (callId: string) =>
       ['a', 'b', 'c', 'd'].map((name, index) =>
         activity({
@@ -131,7 +131,7 @@ describe('findLatestExpandableActivityBatchKey', () => {
       },
     ];
 
-    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(4, 'call-2'));
+    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(8, 'call-3'));
   });
 
   it('ignores duplicate raw events that normalize to the same visible activity row', () => {

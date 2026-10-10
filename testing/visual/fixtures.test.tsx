@@ -25,6 +25,7 @@ import {
   visualConfig,
 } from './fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
+import { enterCaptureEnvironment } from './gallery/environment.js';
 
 interface FixtureCase {
   readonly scenarioId: string;
@@ -71,6 +72,7 @@ function fixtureContext(id: string): FixtureContext {
 }
 
 async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
+  const environment = enterCaptureEnvironment({ viewport: VIEWPORT });
   const context = fixtureContext(fixtureCase.scenarioId);
   const lifecycle = fixtureCase.factory();
   let ui: RenderFeatureResult | null = null;
@@ -84,6 +86,7 @@ async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
   } finally {
     ui?.unmount();
     await lifecycle.teardown();
+    environment.restore();
   }
 }
 

@@ -4,7 +4,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
-import { makeCopyingIsolation, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCopyingIsolation,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeOpenAiSseResponse } from '#testing/helpers/faux/openai-sse.js';
 import { withLocalCatalog } from '#testing/helpers/faux/local-catalog.js';
@@ -59,10 +63,12 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
     ),
   );
   const task = makeTask({ id: 'T001', suggestedFiles: [file], action: 'modify' });
+  const { bus, events } = makeBusRecorder();
   const wctx = makeWctx({
     projectDir,
     sessionId,
     config,
+    bus,
     implementer: api,
     isolation: makeCopyingIsolation({ projectDir, sessionId }),
   });
@@ -102,6 +108,7 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
     sessionId,
     isolation: makeCopyingIsolation({ projectDir, sessionId }),
     config,
+    bus,
     implementer: api,
     workspaceDir: opened.projectDir,
     continuation: createContinuationHolder({
@@ -124,5 +131,17 @@ it('applies real API bundles to one workspace on the first attempt, retry and co
   expect(readFileSync(join(opened.projectDir, file), 'utf8')).toBe('export const value = 3;\n');
   expect(readFileSync(join(projectDir, file), 'utf8')).toBe(original);
   expect(calls).toBe(3);
+  expect(events.filter((event) => event.type === 'planner_text')).toEqual(
+    [1, 2, 3].map((value) =>
+      expect.objectContaining({
+        role: 'implementer',
+        content: 'plain',
+        text: JSON.stringify({
+          version: 1,
+          files: [{ path: file, action: 'modify', content: `export const value = ${value};\n` }],
+        }),
+      }),
+    ),
+  );
   await continued.isolation.dispose();
 });

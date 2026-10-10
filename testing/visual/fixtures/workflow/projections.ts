@@ -109,7 +109,7 @@ export const WORKFLOW_FIXTURE_VERSION = 1;
 
 export const WORKFLOW_FIXTURE_BOUNDS = Object.freeze({
   version: WORKFLOW_FIXTURE_VERSION,
-  maxEventsPerFixture: 24,
+  maxEventsPerFixture: 32,
   maxStringLength: 160,
   maxQuestionOptionLength: 640,
 });
@@ -833,7 +833,7 @@ const FIXTURE_PLANNED_BRIEFS = [
 function fixtureBriefPassed(
   brief: Pick<TasksPlannedEvent['tasks'][number], 'id' | 'title' | 'index'>,
   ts: number,
-): EngineEvent {
+): EngineEventOf<'task_completed'> {
   return {
     type: 'task_completed',
     ts,
@@ -878,7 +878,6 @@ function orphanBriefStarted(
   };
 }
 
-// Run-level rows and unsuggested files collapse with the completed brief when the next brief starts.
 const completedOrphanRowsProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-completed-orphan-rows'),
   feature: WORKFLOW_FEATURE,
@@ -2528,7 +2527,7 @@ const resolvedRetryRecoveryProjection: WorkflowFixtureProjection = {
 };
 
 // The retried brief passed and the next one runs: the halt belongs to the brief it stopped, so it
-// leaves the scroll with that brief's completed row.
+// stays in that brief's retained body beneath its completed heading.
 const implementationAfterRetryProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-implementation-after-retry'),
   feature: WORKFLOW_FEATURE,
@@ -3152,6 +3151,39 @@ const CLAUDE_BUILD_CALL = {
   attempt: 0,
 } as const;
 
+const implementationExtractedCodeProjection: WorkflowFixtureProjection = {
+  ...implementationProjection,
+  scenarioId: scenarioId('workflow-implementation-extracted-code'),
+  sidebarVisible: false,
+  events: [
+    ...implementationProjection.events.slice(0, 3),
+    ...JSON.stringify(
+      {
+        version: 'file-bundle-v1',
+        files: [
+          {
+            path: WORKFLOW_FIXTURE_REVIEW_FILE,
+            content: '# Load config\n__init__(*args)\n<!-- keep -->\n`code`\n- x\n1. value',
+          },
+        ],
+      },
+      null,
+      2,
+    )
+      .split('\n')
+      .map(
+        (line, index): EngineEvent => ({
+          type: 'planner_text',
+          ts: FIXED_TS + 200 + index,
+          phase: 'implementing',
+          role: 'implementer',
+          content: 'plain',
+          text: `${line}\n`,
+        }),
+      ),
+  ],
+};
+
 /** Build narration as a real Claude Code call streamed it: each message on its own rows, once. */
 const implementationNarrationProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_IMPLEMENTATION_NARRATION_ID,
@@ -3190,6 +3222,7 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 200,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       text: "Using the brief's steps directly. I start with orientation: the fixture size, the two comment sites, and the git state.",
     },
     {
@@ -3209,7 +3242,8 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 400,
       phase: 'implementing',
       role: 'implementer',
-      text: 'I check the gallery diff before I edit it.',
+      content: 'markdown',
+      text: 'I check the `fixture` in [src/registry.ts](file:///tmp/src/registry.ts) before I edit it.',
     },
   ],
 };
@@ -3226,13 +3260,31 @@ const implementationAdjacentNarrationProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 200,
       phase: 'implementing',
       role: 'implementer',
-      text: 'I checked the fixture size.',
+      content: 'markdown',
+      text: 'I checked the `fixture` in [src/fixture.ts](file:///Users/x',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 220,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: '/.local/state/splitbrief/trees/42',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 240,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: '/run/src/fixture.ts).',
     },
     {
       type: 'planner_text',
       ts: FIXED_TS + 400,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       messageStart: true,
       text: 'The gallery has an uncommitted change.',
     },
@@ -3241,6 +3293,7 @@ const implementationAdjacentNarrationProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 500,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
       messageStart: true,
       text: 'I run the two brief checks now.',
     },
@@ -3258,13 +3311,227 @@ const implementationFencedHandBackProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 400,
       phase: 'implementing',
       role: 'implementer',
+      content: 'markdown',
+      text: 'Both sites read the `fixture` in [src/row.ts](file:///tmp/src/row.ts).',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 410,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
       text: [
-        'Both comment sites read the new field.',
-        '',
+        '\n',
         '```json',
         '{"status":"done","filesChanged":["src/row.ts"],"touchedNotSuggested":[],"notes":null}',
         '```',
       ].join('\n'),
+    },
+  ],
+};
+
+const CONTINUOUS_BRIEFS = [
+  { id: taskId('T001'), title: 'Report replenishment needs', index: 0, file: 'src/report.js' },
+  { id: taskId('T002'), title: 'Receive stock deliveries', index: 1, file: 'src/orders.js' },
+  {
+    id: taskId('T003'),
+    title: 'Test the receiving flow',
+    index: 2,
+    file: 'test/receiving.test.js',
+  },
+] as const;
+
+const continuousTranscriptProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-continuous-transcript'),
+  feature: 'Restock planning and receiving',
+  inputMode: 'normal',
+  sidebarVisible: true,
+  config: { implementer: CLAUDE_PLAN_SEAT },
+  events: [
+    {
+      type: 'workflow_started',
+      ts: FIXED_TS,
+      phase: 'planning',
+      feature: 'Restock planning and receiving',
+    },
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 10,
+      phase: 'planning',
+      text: 'Add restock planning and receiving.',
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 20,
+      phase: 'planning',
+      content: 'markdown',
+      text: 'Keep stock changes atomic and test missing catalog entries.',
+    },
+    { type: 'plan_approved', ts: FIXED_TS + 50, phase: 'reviewing-plan' },
+    {
+      type: 'tasks_planned',
+      ts: FIXED_TS + 60,
+      phase: 'implementing',
+      total: 3,
+      tasks: CONTINUOUS_BRIEFS.map((brief) => ({ ...brief, action: 'modify' })),
+    },
+    {
+      ...orphanBriefStarted(CONTINUOUS_BRIEFS[0], FIXED_TS + 100),
+      tool: 'claude-code',
+      model: CLAUDE_PLAN_SEAT.model,
+      axes: ['max'],
+    },
+    {
+      type: 'implementer_generate_running',
+      ts: FIXED_TS + 110,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      file: 'src/report.js',
+    },
+    ...['README.md', 'src/items.js', 'src/report.js', 'test/report.test.js', 'src/stock.js'].map(
+      (target, index): EngineEvent => ({
+        type: 'runner_call_activity',
+        ts: FIXED_TS + 120 + index,
+        ...CLAUDE_BUILD_CALL,
+        taskId: taskId('T001'),
+        callId: 'visual-continuous-build-1',
+        sequence: index + 1,
+        activityId: `visual-continuous-build-1:${index + 1}`,
+        stage: 'completed',
+        kind: 'read',
+        label: `reading ${target}`,
+        target,
+        redacted: false,
+      }),
+    ),
+    ...[
+      'Implemented `lowStockItems` and `restockPlan` in',
+      ' [src/report.js](file:///Users/x',
+      '/.local/state/splitbrief/trees/42',
+      '/run/src/report.js)',
+      ' and added tests.\n',
+      '\n{"status":"done","filesChanged":["src/report.js"],"touchedNotSuggested":[],"notes":null,"decisions":[]}\n',
+    ].map(
+      (text, index): EngineEvent => ({
+        type: 'planner_text',
+        ts: FIXED_TS + 200 + index,
+        phase: 'implementing',
+        role: 'implementer',
+        content: 'markdown',
+        text,
+      }),
+    ),
+    {
+      type: 'validate',
+      ts: FIXED_TS + 300,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      status: 'done',
+      passed: true,
+      stages: { typecheck: true, lint: true, test: true },
+      duration: 1_800,
+    },
+    {
+      type: 'checks_run',
+      ts: FIXED_TS + 310,
+      phase: 'validating-task',
+      taskId: taskId('T001'),
+      results: [{ id: 'C1', passed: true }],
+    },
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 315,
+      phase: 'implementing',
+      moment: 'brief',
+      id: 'V1',
+      command: 'npm test',
+      status: 'done',
+      passed: true,
+      duration: 1_000,
+    },
+    {
+      type: 'warning',
+      ts: FIXED_TS + 320,
+      phase: 'implementing',
+      message: 'Keep the stock warning in the completed brief.',
+    },
+    {
+      type: 'implementer_generate_done',
+      ts: FIXED_TS + 330,
+      phase: 'implementing',
+      taskId: taskId('T001'),
+      file: 'src/report.js',
+      duration: 3_000,
+      diff: '@@ -1 +1 @@\n-export const report = [];\n+export const lowStockItems = [];',
+      linesAdded: 1,
+      linesRemoved: 1,
+    },
+    {
+      ...fixtureBriefPassed(CONTINUOUS_BRIEFS[0], FIXED_TS + 400),
+      tool: 'claude-code',
+      model: CLAUDE_PLAN_SEAT.model,
+    },
+    {
+      ...orphanBriefStarted(CONTINUOUS_BRIEFS[1], FIXED_TS + 500),
+      tool: 'claude-code',
+      model: CLAUDE_PLAN_SEAT.model,
+      axes: ['max'],
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 520,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'Added atomic delivery receipts.',
+    },
+    {
+      ...fixtureBriefPassed(CONTINUOUS_BRIEFS[1], FIXED_TS + 600),
+      tool: 'claude-code',
+      model: CLAUDE_PLAN_SEAT.model,
+    },
+    {
+      ...orphanBriefStarted(CONTINUOUS_BRIEFS[2], FIXED_TS + 700),
+      tool: 'claude-code',
+      model: CLAUDE_PLAN_SEAT.model,
+      axes: ['max'],
+    },
+    {
+      type: 'implementer_generate_running',
+      ts: FIXED_TS + 710,
+      phase: 'implementing',
+      taskId: taskId('T003'),
+      file: 'test/receiving.test.js',
+    },
+    {
+      type: 'runner_call_started',
+      ts: FIXED_TS + 715,
+      ...CLAUDE_BUILD_CALL,
+      taskId: taskId('T003'),
+      callId: 'visual-continuous-build-3',
+      sequence: 0,
+    },
+    {
+      type: 'runner_call_activity',
+      ts: FIXED_TS + 720,
+      ...CLAUDE_BUILD_CALL,
+      taskId: taskId('T003'),
+      callId: 'visual-continuous-build-3',
+      sequence: 1,
+      activityId: 'visual-continuous-build-3:1',
+      stage: 'started',
+      kind: 'command',
+      label: 'running npm test',
+      target: 'npm test',
+      redacted: false,
+    },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 730,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: 'Checking `receiveDelivery` before the receiving flow tests.',
     },
   ],
 };
@@ -4503,9 +4770,11 @@ const projections = [
   reviewFixNarrowRailProjection,
   taskStatusesProjection,
   implementationEscalatedProjection,
+  implementationExtractedCodeProjection,
   implementationNarrationProjection,
   implementationAdjacentNarrationProjection,
   implementationFencedHandBackProjection,
+  continuousTranscriptProjection,
   validationProjection,
   reviewProjection,
   approvalConfirmProjection,
