@@ -47,7 +47,7 @@ describe('agent implementer', () => {
   it('agent kind reports changed files without an exact-effect gate', async () => {
     const config = makeConfig({
       command: 'bash',
-      args: ['-c', `echo "hello" > ${join(testDir, 'undeclared.txt')}`],
+      args: ['-c', `cat >/dev/null; echo "hello" > ${join(testDir, 'undeclared.txt')}`],
     });
 
     const implementer = createAgentImplementer(config);
@@ -65,8 +65,8 @@ describe('agent implementer', () => {
 
   it('fails when agent writes no files', async () => {
     const config = makeConfig({
-      command: 'echo',
-      args: ['no files written'],
+      command: '/bin/sh',
+      args: ['-c', 'cat >/dev/null; echo no files written'],
     });
 
     const implementer = createAgentImplementer(config);
@@ -219,7 +219,7 @@ describe('agent implementer', () => {
       command: 'node',
       args: [
         '-e',
-        'const fs=require("node:fs");fs.writeFileSync(process.argv[1],process.env.SPLITBRIEF_SANDBOX_MARKER??"");fs.writeFileSync(process.argv[2],"done")',
+        'require("node:fs").readFileSync(0);const fs=require("node:fs");fs.writeFileSync(process.argv[1],process.env.SPLITBRIEF_SANDBOX_MARKER??"");fs.writeFileSync(process.argv[2],"done")',
         envOutFile,
         writtenFile,
       ],
@@ -243,7 +243,7 @@ describe('agent implementer', () => {
     const outFile = join(testDir, 'capture-out.txt');
     const config = makeConfig({
       command: 'bash',
-      args: ['-c', `echo "agent progress output" && echo "done" > ${outFile}`],
+      args: ['-c', `cat >/dev/null; echo "agent progress output" && echo "done" > ${outFile}`],
     });
 
     const chunks: string[] = [];

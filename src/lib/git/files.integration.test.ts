@@ -102,6 +102,13 @@ describe('checkIgnoredPaths', () => {
     expect(result).toEqual([]);
   });
 
+  it('returns empty array outside a git repository with input larger than the pipe buffer', async () => {
+    const dir = tracked(createTempDir('splitbrief-nogit-check-ignore'));
+    const paths = Array.from({ length: 20_000 }, (_, i) => `some/dir/file-${i}.txt`);
+
+    await expect(checkIgnoredPaths(dir, paths)).resolves.toEqual([]);
+  });
+
   it('identifies gitignored paths via stdin', async () => {
     const dir = tracked(setupGitRepo());
     writeFileSync(join(dir, '.gitignore'), '*.log\ndist/\n');
