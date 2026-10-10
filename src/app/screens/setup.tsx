@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box, useApp, useInput } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { ListViewport } from '../../components/pickers/list-viewport.js';
@@ -32,6 +32,8 @@ import { preparationStore } from '../../stores/navigation/preparation.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
+import { configPath, ensureConfigGitignore } from '../../core/config/load/document.js';
+import { configError } from '../../core/config/errors.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
@@ -394,6 +396,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   );
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
   const [step, setStep] = useState<Step>('discovery');
+  const ignoreInitialized = useRef(false);
 
   const preparation = useStartPreparation<SetupPreparationInput>({
     prepare: async (input, signal) => {
@@ -479,6 +482,19 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     if (!projectDir) return;
     const result = await configStore.save(finalConfig);
     if (reportConfigSaveFailure(result)) return;
+    if (!ignoreInitialized.current) {
+      try {
+        ensureConfigGitignore(projectDir);
+        ignoreInitialized.current = true;
+      } catch (err) {
+        reportConfigSaveFailure({
+          kind: 'failure',
+          ok: false,
+          error: configError.saveFailed(configPath(projectDir), err),
+        });
+        return;
+      }
+    }
 
     if (onComplete === 'workflow' && pendingFeature) {
       observePreparationCleanup(

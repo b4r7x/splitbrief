@@ -27,6 +27,7 @@ import { topoSort } from '../state/topo-sort.js';
 import { lineageIdOf } from '../state/task-insert.js';
 import { isRecord } from '../../utils/type-guards.js';
 import { ClarificationQuestionSchema } from './question.js';
+import { SeatAccountCauseSchema } from '../recovery/account-cause.js';
 
 export const PlannerConversationSchema = z.object({
   call: z.enum(['research', 'spec', 'plan', 'tasks']),
@@ -235,6 +236,8 @@ export const SeatSwitchRecordSchema = z.object({
   from: z.string(),
   to: z.string(),
   cause: RecoveryReasonSchema,
+  accountCause: SeatAccountCauseSchema.optional(),
+  headline: z.string().optional(),
   auto: z.boolean(),
   configRevision: z.string(),
   ts: z.string(),

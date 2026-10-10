@@ -11,6 +11,7 @@ import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
+import { EngineEventSchema } from '../../src/engine/events/schema.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS, WIDE_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
@@ -86,6 +87,187 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it('records the balance refusal, automatic switch, and restarted task with the fallback seat', async () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-seat-switched-balance'));
+    if (projection === undefined) throw new Error('Missing balance-switch scenario');
+    for (const event of projection.events)
+      expect(EngineEventSchema.safeParse(event).success).toBe(true);
+    const switchIndex = projection.events.findIndex((event) => event.type === 'seat_switched');
+    expect(projection.events[switchIndex]).toMatchObject({
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      cause: 'runner-usage-limit',
+      accountCause: 'balance',
+      headline: 'Balance spent on OpenCode CLI',
+      auto: true,
+    });
+    expect(projection.config?.implementer).toMatchObject({
+      tool: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      variant: 'high',
+    });
+    expect(
+      projection.events
+        .filter((event) => event.type === 'task_started')
+        .map((event) => event.lineageAttempt),
+    ).toEqual([1, 1]);
+    expect(projection.events.slice(switchIndex + 1)).toContainEqual(
+      expect.objectContaining({
+        type: 'task_started',
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        axes: ['high'],
+        backendKind: 'cli',
+        implementerProfile: 'default',
+      }),
+    );
+    expect(projection.events).toContainEqual(
+      expect.objectContaining({
+        type: 'warning',
+        message:
+          'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat',
+      }),
+    );
+    const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
+    expect(frame).toContain(
+      'BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high · Balance spent on OpenCode CLI',
+    );
+    expect(frame).not.toContain('usage limit');
+    expect(frame).not.toContain('worker ');
+    expect(frame).not.toContain('Workspace kept');
+  });
+
+  it('records the failed call, recovery prompt, and restarted fallback call in order', async () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-seat-switched-balance'));
+    if (projection === undefined) throw new Error('Missing balance-switch scenario');
+    const events = projection.events;
+    expect(events.map((event) => event.type)).toEqual([
+      'workflow_started',
+      'task_started',
+      'runner_call_started',
+      'runner_call_error',
+      'runner_call_activity',
+      'error',
+      'recovery_prompted',
+      'recovery_action_selected',
+      'seat_switched',
+      'recovery_resolved',
+      'warning',
+      'task_started',
+      'runner_call_started',
+      'runner_call_tool_use',
+      'runner_call_activity',
+    ]);
+    const calls = events.filter((event) => event.type.startsWith('runner_call_'));
+    expect(calls.slice(0, 3)).toEqual(
+      Array.from({ length: 3 }, () =>
+        expect.objectContaining({
+          callId: 'visual-opencode-balance-failed',
+          role: 'implementer',
+          backendKind: 'cli',
+          runnerName: 'opencode',
+          model: 'deepseek/deepseek-flash',
+          axes: [],
+          attempt: 0,
+          taskId: 'T901',
+          usageBoundary: 'aggregate',
+        }),
+      ),
+    );
+    expect(calls.slice(3)).toEqual(
+      Array.from({ length: 3 }, () =>
+        expect.objectContaining({
+          callId: 'visual-opencode-balance-restarted',
+          role: 'implementer',
+          backendKind: 'cli',
+          runnerName: 'opencode',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          axes: ['high'],
+          attempt: 0,
+          taskId: 'T901',
+          usageBoundary: 'aggregate',
+        }),
+      ),
+    );
+    expect(calls.at(-2)).toMatchObject({
+      type: 'runner_call_tool_use',
+      stage: 'delta',
+      name: 'read',
+      inputDelta: JSON.stringify({ path: 'src/endpoint.ts' }),
+    });
+    expect(calls.at(-1)).toMatchObject({
+      type: 'runner_call_activity',
+      kind: 'read',
+      label: 'reading src/endpoint.ts',
+      target: 'src/endpoint.ts',
+    });
+    const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
+    expect(frame).toContain('OpenCode CLI · DeepSeek V4.1 Flash · high · working on T901');
+    expect(frame).toContain('BUILD activity 1 update [OpenCode CLI · DeepSeek V4.1 Flash · high]');
+    expect(frame).toContain('Read src/endpoint.ts');
+    expect(frame).not.toContain('Between calls');
+    expect(frame).not.toContain('attempt 2 of 8');
+  });
+
+  it('shows the fallback effort on the BUILD sidebar after a balance switch', async () => {
+    const scenario = findVisualScenario('workflow-seat-switched-balance');
+    const checkpoint = scenario?.checkpoints[0];
+    const wide = scenario?.viewports.find((size) => size.cols === 160);
+    if (!scenario || !checkpoint || !wide) throw new Error('Missing wide balance-switch scenario');
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: wide });
+    try {
+      const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+        preserveLineBreaks: true,
+      });
+      const sidebar = frame
+        .split('\n')
+        .map((row) => row.trimStart())
+        .filter((row) => row.startsWith('│'))
+        .map((row) => row.slice(0, row.indexOf('│', 1) + 1))
+        .join(' ');
+      expect(sidebar).toContain('BUILD   OpenCode CLI');
+      expect(sidebar).toContain('DeepSeek V4.1 Flash · high');
+      expect(frame).toContain('Balance spent on OpenCode CLI');
+      expect(frame).not.toContain('worker ');
+      expect(frame).not.toMatch(/DeepSeek[^\n]*· auto/);
+    } finally {
+      await ui.unmount();
+    }
+  });
+
+  it.each(WIDE_VIEWPORTS)(
+    'keeps the balance switch reachable at $cols x $rows',
+    async (renderViewport) => {
+      const scenario = findVisualScenario('workflow-seat-switched-balance');
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error('Missing balance-switch scenario');
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint());
+        expect(frame).not.toContain('worker ');
+        expect(frame).not.toContain('Workspace kept');
+        ui.stdin.write('\u001b[H');
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const reached: string[] = [];
+        for (let row = 0; row < 12; row++) {
+          reached.push(stripTerminalControls(ui.lastFrame() ?? '').replace(/\s+/g, ' '));
+          ui.stdin.write('\u001b[1;2B');
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        expect(
+          reached.some((frame) =>
+            frame.includes(
+              'BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high · Balance spent on OpenCode CLI',
+            ),
+          ),
+        ).toBe(true);
+      } finally {
+        await ui.unmount();
+      }
+    },
+  );
+
   it.each(['default', 'typed'] as const)(
     'renders the %s consult answer beneath its question in the brief section',
     async (kind) => {

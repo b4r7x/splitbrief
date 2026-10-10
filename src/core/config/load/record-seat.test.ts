@@ -6,7 +6,7 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../paths.js';
 import { readConfigDocument } from './document.js';
-import { writeConfig } from './io.js';
+import { loadConfig, writeConfig } from './io.js';
 import { recordSeatOfRecord } from './record-seat.js';
 
 let tmp = '';
@@ -30,6 +30,38 @@ describe('recordSeatOfRecord', () => {
   afterEach(() => {
     if (tmp !== '') cleanupTempDir(tmp);
     tmp = '';
+  });
+
+  it('persists the switched seat without changing checkout ignore rules', async () => {
+    const projectDir = newProject();
+    writeConfig(projectDir, makeConfig());
+    const ignorePath = join(projectDir, '.gitignore');
+    const before = 'node_modules/\n.splitbrief/*\n!.splitbrief/config.yaml\n';
+    writeFileSync(ignorePath, before);
+    const switched = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        variant: 'high',
+      },
+    }).implementer;
+
+    const result = await recordSeatOfRecord(
+      projectDir,
+      { seat: 'build' },
+      switched,
+      revisionOf(projectDir),
+    );
+
+    expect(result).toBe('saved');
+    expect(readFileSync(ignorePath, 'utf8')).toBe(before);
+    expect(loadConfig(projectDir).config.implementer).toMatchObject({
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      variant: 'high',
+    });
   });
 
   it('writes only the named seat, keeping the other seats and the file comment', async () => {

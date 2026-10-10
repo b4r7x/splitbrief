@@ -237,7 +237,6 @@ it('detects a later dirty binary rewrite when an actual isolation acquisition re
     sessionId,
     strategy: 'worktree',
     onFallback: () => {},
-    onRetained: () => {},
   });
   const workspace = await isolation.acquire({ role: 'implementer', config });
   writeFileSync(join(workspace.projectDir, 'asset.bin'), Buffer.from([0xfe, 0]));

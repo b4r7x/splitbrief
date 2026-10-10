@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import {
@@ -631,6 +632,47 @@ function taskStartedEvent(
 }
 
 describe('formatTaskStartedParts', () => {
+  afterEach(() => modelCacheStore.reset());
+
+  it.each(['default', 'local-fixture'])(
+    'shows the recorded seat without a worker-profile suffix',
+    (implementerProfile) => {
+      modelCacheStore.hydrateDetection({
+        providers: [],
+        cliTools: [],
+        fetchedAt: 0,
+        validatedAt: 0,
+        generation: 1,
+        requestId: 1,
+        contexts: {
+          readiness: 'task-row-readiness',
+          modelsDev: 'task-row-models-dev',
+          cliModels: 'task-row-cli-models',
+        },
+        cliCatalogs: [
+          {
+            tool: 'opencode',
+            models: [{ id: 'opencode-go/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash' }],
+            probedAt: 0,
+          },
+        ],
+      });
+      const parts = formatTaskStartedParts(
+        taskStartedEvent({
+          file: 'src/text.js',
+          action: 'modify',
+          tool: 'opencode',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          axes: ['high'],
+          backendKind: 'cli',
+          implementerProfile,
+        }),
+      );
+
+      expect(parts).toEqual(['src/text.js (modify)', 'OpenCode CLI · DeepSeek V4.1 Flash · high']);
+    },
+  );
+
   it.each([
     ['shell', 'Custom Shell'],
     ['agent', 'Agent'],
@@ -674,7 +716,7 @@ describe('formatTaskStartedParts', () => {
 
   // Run 3's T001 row read `profile default · fit fits · why Selected profile default (fits,
   // estimated 5075/1000000 tokens)`: the routing sentence repeated the two facts before it.
-  it('names the worker once and says nothing more about a brief that fits', () => {
+  it('says nothing more about a brief that fits', () => {
     const parts = formatTaskStartedParts(
       taskStartedEvent({
         file: 'testing/fixtures/opencode/api-model-full.json',
@@ -690,7 +732,6 @@ describe('formatTaskStartedParts', () => {
     expect(parts).toEqual([
       'testing/fixtures/opencode/api-model-full.json (modify)',
       'Claude Code CLI · Opus 5.5',
-      'worker default',
     ]);
     for (const part of parts) {
       expect(part).not.toContain('fit fits');
@@ -712,7 +753,6 @@ describe('formatTaskStartedParts', () => {
     expect(parts).toEqual([
       'src/validate.ts (create)',
       'Claude Code CLI · Opus 5.5',
-      'worker default',
       '~24,310 of 32K context tokens (tight)',
     ]);
   });

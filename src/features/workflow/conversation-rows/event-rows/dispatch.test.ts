@@ -192,7 +192,36 @@ describe('event row dispatch', () => {
     expect(rows.map(rowText).join('\n')).toContain('attempt 7 of 12');
   });
 
-  it('renders an automatic seat switch with the crew label, identity and cause', () => {
+  it.each([
+    ['balance', 'Balance spent on OpenCode CLI'],
+    ['billing', 'Billing refused by OpenCode CLI'],
+    ['quota', 'Quota spent on OpenCode CLI'],
+  ] as const)('uses the recorded balance headline in the switch row', (accountCause, headline) => {
+    const rows = eventRows({
+      event: {
+        type: 'seat_switched',
+        ts: 0,
+        phase: 'implementing',
+        seat: 'build',
+        from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+        cause: 'runner-usage-limit',
+        accountCause,
+        headline,
+        auto: true,
+        configRevision: 'revision',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 200, viewportRows: 20, streaming },
+    });
+    const text = rows.map(rowText).join('\n');
+
+    expect(text).toContain(headline);
+    expect(text).not.toContain('usage limit');
+  });
+
+  it('renders a legacy seat switch without inventing a balance cause', () => {
     const to = { tool: 'claude-code', model: 'claude-sonnet-4' } as const;
     const rows = eventRows({
       event: {
@@ -215,6 +244,7 @@ describe('event row dispatch', () => {
       `${CREW_SEAT_LABELS.build} ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · usage limit`,
     ]);
     expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+    expect(rows.map(rowText).join('\n')).not.toContain('Balance spent');
   });
 
   it('names a signed-out seat switch in the words the halt uses', () => {
@@ -675,7 +705,7 @@ describe('event row dispatch', () => {
     const normalized = text.replace(/\s+/g, ' ');
     // MAIN112 F4 wraps task-header metadata label-atomically: a label that moves to a
     // continuation drops the ` · ` it broke on. Assert the facts, not the old wrap point.
-    expect(normalized).toContain('worker cheap-cloud');
+    expect(normalized).not.toContain('worker cheap-cloud');
     expect(normalized).toContain('~95,000 of 100K context tokens (tight)');
     expect(lines.every((line) => !line.trimEnd().endsWith('·'))).toBe(true);
     expect(normalized).not.toContain('current code reduced');
@@ -710,10 +740,8 @@ describe('event row dispatch', () => {
 
     const normalized = text.replace(/\s+/g, ' ');
 
-    // Same label-atomic wrap as the tight-fit case above: the worker can open a continuation
-    // without the separator that introduced it.
     expect(normalized).toContain('src/app.ts (modify)');
-    expect(normalized).toContain('worker cheap-cloud');
+    expect(normalized).not.toContain('worker cheap-cloud');
     expect(lines.every((line) => !line.trimEnd().endsWith('·'))).toBe(true);
     expect(normalized).not.toContain('fit');
     expect(normalized).not.toContain('selected cheapest capable profile');

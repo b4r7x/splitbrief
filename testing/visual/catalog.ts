@@ -1202,6 +1202,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-ready-to-apply',
       title: 'Workflow · a reviewed workspace waiting to apply',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'ready-to-apply',
         title: 'Ready to apply',
@@ -1611,6 +1612,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         kind: 'implementation',
         // The cause words wrap at 60 columns; the switch arrow and the new seat stay on one line.
         marker: 'BUILD → OpenCode CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-seat-switched-balance',
+      title: 'Workflow · spent balance switches BUILD to the same-name fallback',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'seat-switched-balance',
+        title: 'Automatic balance switch and restarted brief',
+        kind: 'implementation',
+        marker: 'OpenCode CLI · DeepSeek V4.1 Flash · high',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

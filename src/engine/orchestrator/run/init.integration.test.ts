@@ -64,7 +64,6 @@ function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolati
     sessionId,
     strategy: 'staged-copy',
     onFallback: () => {},
-    onRetained: () => {},
   });
 }
 
@@ -824,7 +823,6 @@ describe('initializeWorkflow — a task interrupted mid-gate', () => {
           sessionId,
           strategy,
           onFallback: () => {},
-          onRetained: () => {},
         });
         try {
           const workspace = await isolation.open({ config });

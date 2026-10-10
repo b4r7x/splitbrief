@@ -9,7 +9,7 @@ import {
   isRetiredRecoveryReason,
 } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
-import { formatSeatCandidateIdentity, type CrewSeatId } from '../../../core/crew/identity.js';
+import { formatSeatChangeIdentities, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat } from './switch-seat.js';
 import { readConfigDocument } from '../../../core/config/load/document.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
@@ -41,6 +41,9 @@ import { appendMessage } from '../../../core/sessions/log-writer.js';
 import { restoreExhaustedTaskFiles } from '../task/rollback.js';
 import { runCodeDir } from '../run/task-execution.js';
 import { isConsultBoundReason } from './builders/consult.js';
+import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
+import { SeatAccountCauseSchema } from '../../../core/recovery/account-cause.js';
+import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -768,6 +771,14 @@ export function commitSeatSwitch(
   choice: Readonly<{ auto: boolean; configRevision: string }>,
 ): ApplySwitchSeatResult {
   const { issue, seat, candidate, from, switchedConfig } = plan;
+  const parsedCause = SeatAccountCauseSchema.safeParse(
+    issue.reason === 'runner-unauthenticated' ? 'auth' : recoveryFactString(issue.facts, 'cause'),
+  );
+  const switchCause = {
+    cause: issue.reason,
+    ...(parsedCause.success && { accountCause: parsedCause.data }),
+    headline: formatRecoveryHeadline(issue),
+  };
   const briefHalt = issue.taskId !== undefined;
   let state = markRecoveryApplying(opts, issue);
   state =
@@ -790,9 +801,8 @@ export function commitSeatSwitch(
     {
       type: 'RECORD_SEAT_SWITCH',
       seat,
-      from: formatSeatCandidateIdentity(from),
-      to: formatSeatCandidateIdentity(candidate),
-      cause: issue.reason,
+      ...formatSeatChangeIdentities(from, candidate),
+      ...switchCause,
       auto: choice.auto,
       configRevision: choice.configRevision,
     },
@@ -804,7 +814,7 @@ export function commitSeatSwitch(
       seat,
       from,
       to: candidate,
-      cause: issue.reason,
+      ...switchCause,
       auto: choice.auto,
       configRevision: choice.configRevision,
     },

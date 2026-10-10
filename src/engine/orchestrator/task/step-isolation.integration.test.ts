@@ -19,6 +19,7 @@ import {
 import { consultCallAnswering, guidanceConsult } from '#testing/helpers/typed-planner.js';
 import { isolationWorktreeRoot, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { createRunIsolation } from '../isolation/create.js';
+import { readWorkspaceRecord } from '../isolation/retention.js';
 import { createImplementerBase } from '../../implementers/pipeline/run.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
@@ -96,7 +97,6 @@ describe('runSingleTask — worktree isolation', () => {
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
@@ -169,13 +169,11 @@ describe('runSingleTask — worktree isolation', () => {
       controller.abort();
       throw new DOMException('This operation was aborted', 'AbortError');
     });
-    const retained: string[] = [];
     const isolation = createRunIsolation({
       projectDir,
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: (dir) => retained.push(dir),
     });
     const wctx = await openRunWorkspace(
       makeWorkflowContext({
@@ -205,7 +203,7 @@ describe('runSingleTask — worktree isolation', () => {
     expect(readFileSync(join(wctx.workspaceDir, 'src/partial.ts'), 'utf-8')).toBe(
       'export const partial = 1;\n',
     );
-    expect(retained).toEqual([wctx.workspaceDir]);
+    expect((await readWorkspaceRecord({ projectDir, sessionId }))?.retained).toBe(true);
     expect(checkoutFiles(projectDir)).toEqual(before);
   });
 });

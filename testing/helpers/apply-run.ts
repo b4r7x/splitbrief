@@ -46,7 +46,6 @@ export async function startApplyRun(
     sessionId,
     strategy,
     onFallback: () => {},
-    onRetained: () => {},
   });
   const opened = await isolation.open({ config: createDefaultConfig() });
   await reconcileWorkspaceToBase({

@@ -11,10 +11,11 @@ import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { applyRecoveryAction } from './actions.js';
+import { applyRecoveryAction, commitSeatSwitch, planSwitchSeatRecoveryAction } from './actions.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { buildConsultBoundRecoveryIssue } from './builders/consult.js';
-import { buildReviewFailedRecoveryIssue } from './builders/task.js';
+import { buildReviewFailedRecoveryIssue, buildSeatDownIssue } from './builders/task.js';
+import { EngineEventSchema } from '../../events/schema.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
 
@@ -478,6 +479,73 @@ function usageLimitIssue(task: Task): RecoveryIssue {
 }
 
 describe('applyRecoveryAction: switch-seat', () => {
+  it.each([undefined, 'high'] as const)(
+    'records the balance cause when committing an automatic seat switch',
+    (variant) => {
+      const ref = setupSession('switch-seat-balance');
+      const task = makeTask({ id: 'T400', status: 'in_progress' });
+      const candidate = {
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        variant: 'high',
+      } as const;
+      const runner = {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'deepseek/deepseek-flash',
+        variant,
+        fallback: candidate,
+      } as const;
+      const issue = buildSeatDownIssue({
+        seat: 'build',
+        phase: 'implementing',
+        task,
+        runner,
+        classification: { class: 'account', cause: 'balance' },
+        words: 'Insufficient Balance',
+        fallback: candidate,
+        createdAt,
+        seatSwap: {
+          seat: 'build',
+          currentTool: 'opencode',
+          currentModel: runner.model,
+          detectedTools: [{ ...candidate, ready: true }],
+          configRevision: 'revision',
+        },
+      });
+      const state = { ...makeImplState([task]), pendingRecovery: issue };
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+      const opts = { ...ref, state, bus, config: makeConfig({ implementer: runner }), candidate };
+      const planned = planSwitchSeatRecoveryAction(opts);
+      expect(planned.ok).toBe(true);
+      if (!planned.ok) throw new Error(planned.message);
+      const result = commitSeatSwitch({ ...opts, action: 'switch-seat' }, planned.plan, {
+        auto: true,
+        configRevision: 'revision',
+      });
+
+      expect(result.state.seatSwitches?.[0]).toMatchObject({
+        from: `OpenCode CLI · deepseek/deepseek-flash${variant === undefined ? '' : ' · high'}`,
+        to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+        cause: 'runner-usage-limit',
+        accountCause: 'balance',
+        headline: 'Balance spent on OpenCode CLI',
+        auto: true,
+      });
+      expect(loadState(ref)?.seatSwitches?.[0]).toEqual(result.state.seatSwitches?.[0]);
+      expect(
+        EngineEventSchema.parse(events.find((event) => event.type === 'seat_switched')),
+      ).toMatchObject({
+        type: 'seat_switched',
+        cause: 'runner-usage-limit',
+        accountCause: 'balance',
+        headline: 'Balance spent on OpenCode CLI',
+        auto: true,
+      });
+    },
+  );
+
   it('restarts the brief attempt on the chosen tool and returns the switched config', async () => {
     const { projectDir, sessionId } = setupSession('switch-seat-apply');
     const task = makeTask({ id: 'T400', status: 'in_progress' });

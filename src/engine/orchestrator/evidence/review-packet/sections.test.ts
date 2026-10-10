@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { ensureSessionDir } from '../../../../core/paths-io.js';
+import { writeSeatIdentities } from '../../../../core/state/seats.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { createInitialState } from '../../../../core/state/machine.js';
@@ -221,7 +224,7 @@ describe('buildRun seat identity kinds', () => {
 
     expect(run.reviewer).toEqual({ tool: 'claude-code', model: 'sonnet', kind: 'cli' });
     expect(renderReviewPacketMarkdown(makeReviewPacket({ run }))).toContain(
-      '- Reviewer: claude-code (sonnet)',
+      '- Reviewer: Claude Code CLI · Sonnet 5',
     );
   });
 
@@ -246,7 +249,7 @@ describe('buildRun seat identity kinds', () => {
         kind: plannerKind ?? null,
       });
       const markdown = renderReviewPacketMarkdown(makeReviewPacket({ run }));
-      expect(markdown).toContain('- Reviewer: claude-code');
+      expect(markdown).toContain('- Reviewer: Claude Code CLI');
       expect(markdown).not.toContain('old-endpoint');
     },
   );
@@ -321,5 +324,75 @@ describe('buildRun seat identity kinds', () => {
     );
 
     expect(run.implementer).toEqual({ tool: 'new-shell', model: null, kind: 'shell' });
+  });
+});
+
+describe('buildRun recorded axes', () => {
+  let projectDir: string;
+  afterEach(() => cleanupTempDir(projectDir));
+
+  function recordedRun(summary: Parameters<typeof buildRun>[0]['summary']) {
+    projectDir = createTempDir('packet-seat-axes');
+    const ref = { projectDir, sessionId: 's' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    writeSeatIdentities(ref, {
+      plan: 'plan',
+      build: 'build',
+      review: 'review',
+      ids: {
+        plan: { tool: 'codex', model: 'gpt-5', kind: 'cli', axes: ['xhigh'] },
+        build: {
+          tool: 'opencode',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          kind: 'cli',
+          axes: ['high'],
+        },
+        review: { tool: 'codex', model: 'gpt-5', kind: 'cli', axes: ['high'] },
+      },
+    });
+    return buildRun(
+      { ...ref, summary, state: createInitialState('feat'), finalReviewStatus: 'written' },
+      [],
+    );
+  }
+
+  it('keeps matching recorded axes on all packet seats', () => {
+    const run = recordedRun(
+      makeSummary({
+        plannerTool: 'codex',
+        plannerModel: 'gpt-5',
+        plannerKind: 'cli',
+        implementerTool: 'opencode',
+        implementerModel: 'opencode-go/deepseek-v4.1-flash',
+        implementerKind: 'cli',
+        reviewerTool: 'codex',
+        reviewerModel: 'gpt-5',
+        reviewerKind: 'cli',
+      }),
+    );
+
+    expect(run.implementer.axes).toEqual(['high']);
+    expect(run.planner.axes).toEqual(['xhigh']);
+    expect(run.reviewer?.axes).toEqual(['high']);
+  });
+
+  it('leaves axes unknown for a different summary seat or kind', () => {
+    const run = recordedRun(
+      makeSummary({
+        plannerTool: 'codex',
+        plannerModel: 'gpt-5',
+        plannerKind: 'api',
+        implementerTool: 'opencode',
+        implementerModel: 'deepseek/deepseek-flash',
+        implementerKind: 'cli',
+        reviewerTool: 'other-reviewer',
+        reviewerModel: 'gpt-5',
+        reviewerKind: 'cli',
+      }),
+    );
+
+    expect(run.implementer.axes).toBeUndefined();
+    expect(run.planner.axes).toBeUndefined();
+    expect(run.reviewer?.axes).toBeUndefined();
   });
 });

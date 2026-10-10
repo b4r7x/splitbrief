@@ -188,7 +188,6 @@ async function runInWorkspace(opts: {
     sessionId,
     strategy: 'worktree',
     onFallback: () => {},
-    onRetained: () => {},
   });
   disposers.push(() => isolation.dispose());
   const workspaceDir = (await isolation.open({ config: opts.config })).projectDir;
@@ -368,7 +367,6 @@ describe('gateAttemptChanges', () => {
       sessionId,
       strategy: 'staged-copy',
       onFallback: () => {},
-      onRetained: () => {},
     });
     disposers.push(() => isolation.dispose());
     const workspace = await isolation.acquire({ role: 'implementer', config });
@@ -407,7 +405,6 @@ describe('gateAttemptChanges', () => {
       sessionId,
       strategy: 'staged-copy',
       onFallback: () => {},
-      onRetained: () => {},
     });
     disposers.push(() => isolation.dispose());
     const failed = await isolation.acquire({ role: 'implementer', config });
@@ -464,7 +461,6 @@ describe('gateAttemptChanges', () => {
       sessionId,
       strategy: 'worktree',
       onFallback: () => {},
-      onRetained: () => {},
     });
     disposers.push(() => isolation.dispose());
     const workspace = await isolation.acquire({ role: 'implementer', config });

@@ -44,7 +44,6 @@ function isolation(ref: { projectDir: string; sessionId: string }) {
     ...ref,
     strategy: 'staged-copy',
     onFallback: () => {},
-    onRetained: () => {},
   });
 }
 async function parked() {
@@ -225,7 +224,6 @@ it('preserves bytes and reports unavailable continuation when metadata exceeds t
     ...f,
     strategy: 'staged-copy',
     onFallback: () => {},
-    onRetained: () => {},
     warningPublisher: (message) => warnings.push(message),
   });
   const workspace = await run.acquire({

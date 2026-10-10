@@ -16,6 +16,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { createRunIsolation } from './create.js';
+import { readWorkspaceRecord } from './retention.js';
 import { isolationWorktreeRoot, sessionDir } from '../../../core/paths.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from './acquisition.js';
@@ -37,7 +38,6 @@ describe('staged attempt conformance', () => {
       sessionId: 'retained-mode',
       strategy: 'staged-copy',
       onFallback: vi.fn(),
-      onRetained: vi.fn(),
     });
     const config = makeConfig();
     const attempt = await isolation.acquire({ role: 'implementer', config });
@@ -49,7 +49,6 @@ describe('staged attempt conformance', () => {
       sessionId: 'retained-mode',
       strategy: 'staged-copy',
       onFallback: vi.fn(),
-      onRetained: vi.fn(),
     });
     const opened = await continued.open({ config });
     expect(opened.keptFiles).toEqual(['mode.bin']);
@@ -78,7 +77,6 @@ describe('staged attempt conformance', () => {
         sessionId: 'fallback-reuse',
         strategy: 'worktree',
         onFallback,
-        onRetained: vi.fn(),
       });
       const config = makeConfig();
       const first = await isolation.acquire({ role: 'implementer', config });
@@ -124,7 +122,6 @@ describe('staged attempt conformance', () => {
       sessionId,
       strategy: 'staged-copy',
       onFallback: vi.fn(),
-      onRetained: vi.fn(),
     });
     const opened = await isolation.open({ config: makeConfig() });
     await reconcileWorkspaceToBase({
@@ -150,7 +147,6 @@ describe('staged attempt conformance', () => {
       sessionId: 'staged-cleanup',
       strategy: 'staged-copy',
       onFallback: vi.fn(),
-      onRetained: vi.fn(),
     });
     const config = makeConfig();
     const first = await isolation.acquire({ role: 'implementer', config });
@@ -184,36 +180,36 @@ describe('staged attempt conformance', () => {
   });
 
   it.each([false, true])(
-    'reports a kept workspace only when a cut attempt was retained: %s',
+    'saves a kept workspace only when a cut attempt was retained: %s',
     async (retained) => {
       const projectDir = createTempDir('staged-retention-notice');
       dirs.push(projectDir);
       writeFileSync(join(projectDir, 'source.txt'), 'original\n');
-      const onRetained = vi.fn();
       const config = makeConfig();
       const isolation = createRunIsolation({
         projectDir,
         sessionId: 'staged-retention',
         strategy: 'staged-copy',
         onFallback: vi.fn(),
-        onRetained,
       });
       const workspace = await isolation.acquire({ role: 'implementer', config });
       if (retained) await workspace.retain?.();
       await isolation.dispose();
       expect(existsSync(workspace.projectDir)).toBe(true);
-      expect(onRetained.mock.calls).toEqual(retained ? [[workspace.projectDir]] : []);
-      const continuedNotice = vi.fn();
+      expect(
+        (await readWorkspaceRecord({ projectDir, sessionId: 'staged-retention' }))?.retained,
+      ).toBe(retained);
       const continued = createRunIsolation({
         projectDir,
         sessionId: 'staged-retention',
         strategy: 'staged-copy',
         onFallback: vi.fn(),
-        onRetained: continuedNotice,
       });
       await continued.open({ config });
       await continued.dispose();
-      expect(continuedNotice.mock.calls).toEqual(retained ? [[workspace.projectDir]] : []);
+      expect(
+        (await readWorkspaceRecord({ projectDir, sessionId: 'staged-retention' }))?.retained,
+      ).toBe(retained);
       expect(dirname(workspace.projectDir)).toMatch(/stage-/);
       expect(existsSync(sessionDir(projectDir, 'staged-retention'))).toBe(true);
     },

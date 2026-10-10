@@ -13,6 +13,7 @@ import { readSession } from '../core/sessions/io.js';
 import { runWorkflow } from '../engine/orchestrator/run/workflow.js';
 import { applyOfferedSeatSwap } from '../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
+import { publishRetainedWorkspaceNotice } from '../engine/orchestrator/isolation/retention.js';
 import { discoverSkills } from '../engine/skill-discovery.js';
 import type { SkillMeta } from '../core/skills/types.js';
 import {
@@ -30,6 +31,7 @@ import { cliError } from './errors.js';
 import { applyCommand, discardCommand, readyToApplyMessage } from './sessions/resolve.js';
 import { installTerminalOutputErrorGuard } from '../lib/terminal/control.js';
 import { writeHeadlessJsonRecord } from '../engine/events/public-json.js';
+import { boundEngineEventForConsumer } from '../engine/events/bound.js';
 
 function buildNoopSinks() {
   return {
@@ -295,6 +297,24 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   const sessionId = options.prepared.session.ref.sessionId;
   installTerminalOutputErrorGuard();
   const writeRecord = recordWriterFor(plain === true);
+  const publishHandoffNotice = async (state: WorkflowState | null): Promise<void> => {
+    if (state === null) return;
+    await publishRetainedWorkspaceNotice({
+      projectDir,
+      sessionId,
+      state,
+      bus: createRecoveryBus({
+        projectDir,
+        sessionId,
+        sink: (event) => {
+          const bounded = boundEngineEventForConsumer(event, 'stdout-text');
+          if (plain === true && (bounded.type === 'warning' || bounded.type === 'error'))
+            process.stderr.write(`${bounded.message}\n`);
+          else writeRecord({ type: 'event', data: event });
+        },
+      }),
+    });
+  };
 
   // The handlers are installed before the pending-halt preflight: the preflight
   // reads state and may stop, and an operator's interrupt must still land while
@@ -349,6 +369,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         // answered and the run stops.
         const after = loadOwnedState({ projectDir, sessionId });
         if (after !== null && after.pendingRecovery?.switchSeat?.auto !== undefined) {
+          await publishHandoffNotice(after);
           emitRecoveryAndFailIfPending({ state: after, sessionId, writeRecord });
         }
       }
@@ -360,6 +381,11 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
       if (prepared.purpose === 'resume') {
         const preflight = loadOwnedState({ projectDir, sessionId });
         if (preflight !== null) {
+          if (
+            preflight.pendingRecovery !== undefined &&
+            !isAnsweredApplyRecovery(preflight.pendingRecovery)
+          )
+            await publishHandoffNotice(preflight);
           emitRecoveryAndFailIfPending({ state: preflight, sessionId, writeRecord });
         }
       }
@@ -382,7 +408,10 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
         },
       });
 
-      if (abortController.signal.aborted) return;
+      if (abortController.signal.aborted) {
+        await publishHandoffNotice(loadOwnedState({ projectDir, sessionId }));
+        return;
+      }
 
       // Another seat went down with its own intent: take it and re-enter. The loop
       // ends when no automatic intent is pending.
@@ -398,6 +427,7 @@ export async function runHeadless(options: RunHeadlessOptions): Promise<void> {
   if (abortController.signal.aborted) return;
 
   const finalState = loadOwnedState({ projectDir, sessionId });
+  await publishHandoffNotice(finalState);
   emitRecoveryAndFailIfPending({ state: finalState, sessionId, writeRecord });
   if (emitReadyToApply(finalState, sessionId, writeRecord)) return;
   const status =

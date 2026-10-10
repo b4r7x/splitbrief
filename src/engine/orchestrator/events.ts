@@ -7,9 +7,8 @@ import type {
   TaskContextFit,
   RunnerKind,
   Phase,
-  RecoveryReason,
 } from '../../core/schemas/enums.js';
-import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
+import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason, ConsultSeat } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
@@ -343,14 +342,10 @@ export function publishSeatWaitStarted(ctx: BusContext, seat: CrewSeatId, resetA
 
 export function publishSeatSwitched(
   ctx: BusContext,
-  opts: {
-    seat: CrewSeatId;
-    from: SeatSwapCandidate;
-    to: SeatSwapCandidate;
-    cause: RecoveryReason;
-    auto: boolean;
-    configRevision: string;
-  },
+  opts: Pick<
+    EngineEventOf<'seat_switched'>,
+    'seat' | 'from' | 'to' | 'cause' | 'auto' | 'configRevision' | 'accountCause' | 'headline'
+  >,
 ): void {
   ctx.bus.publish({ type: 'seat_switched', ts: Date.now(), phase: ctx.phase, ...opts });
 }

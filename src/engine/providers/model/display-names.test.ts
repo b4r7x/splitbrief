@@ -183,6 +183,67 @@ describe('resolveCrewDisplayNames', () => {
 });
 
 describe('labelSeatChange', () => {
+  it('keeps catalog model words for an axis-only Cursor seat change', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => [
+        { id: 'claude-opus-5-high', displayName: 'Claude Opus 5 High' },
+        { id: 'claude-opus-5-xhigh', displayName: 'Claude Opus 5 Xhigh' },
+      ],
+    };
+    const before = seatIdentitiesFromConfig(
+      makeConfig({
+        implementer: { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-high' },
+      }),
+    );
+    const after = seatIdentitiesFromConfig(
+      makeConfig({
+        implementer: { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-xhigh' },
+      }),
+    );
+    const change = seatIdentityChanges(before, after).find(({ seat }) => seat === 'build');
+    if (change === undefined) throw new Error('the build effort changed');
+
+    expect(formatSeatChangeNotice(labelSeatChange(change, cache))).toBe(
+      'BUILD seat changed Cursor Agent CLI · Claude Opus 5 · high → ' +
+        'Cursor Agent CLI · Claude Opus 5 · xhigh; the rest of the run uses the new seat',
+    );
+  });
+
+  it('distinguishes both sides of a same-name provider switch', () => {
+    const cache: ModelCacheAccessor = {
+      getModelsDevCatalog: () => null,
+      getProviderModels: () => [
+        { id: 'deepseek/deepseek-flash', displayName: 'DeepSeek V4.1 Flash' },
+        { id: 'opencode-go/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash' },
+      ],
+    };
+    const before = seatIdentitiesFromConfig(
+      makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      }),
+    );
+    const after = seatIdentitiesFromConfig(
+      makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'opencode-go/deepseek-v4.1-flash',
+          variant: 'high',
+        },
+      }),
+    );
+    const change = seatIdentityChanges(before, after).find(({ seat }) => seat === 'build');
+    if (change === undefined) throw new Error('the build seat moved');
+    const notice = formatSeatChangeNotice(labelSeatChange(change, cache));
+
+    expect(notice).toBe(
+      'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → ' +
+        'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; ' +
+        'the rest of the run uses the new seat',
+    );
+  });
+
   it('spells both sides of a moved seat in the catalog words, axes kept', () => {
     const before = seatIdentitiesFromConfig(
       makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' } }),

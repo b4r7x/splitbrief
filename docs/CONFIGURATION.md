@@ -16,7 +16,7 @@ This document is a field-by-field reference. For the planning session and plan a
 - **Schema version:** `version: 3`, required and exact. Any other value (or a missing one) fails the load with `config-unsupported-version`; run `splitbrief init --reconfigure` to write a current config.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`. Where one map spells a key both ways, the later line wins. A save from the TUI edits the key in the spelling your file already uses, removes an earlier twin spelling of it, and writes a key the file does not carry yet in `snake_case` (`src/core/config/load/document.ts`).
 - **Permissions:** Configuration files with group- or other-writable bits (mode & 0o022) trigger a security warning. On POSIX, the loader emits this via `warnStderr` when `checkConfigPermissions` fails (`src/lib/fs.ts`). `init` writes the file at `0600` via `writeSecureFile`.
-- **`.gitignore`:** config creation (`init` and any write that materializes `.splitbrief/config.yaml`) appends `.splitbrief/` and `.trees/` to your project `.gitignore` when those lines are absent, so secrets, per-machine state, and operator worktrees stay out of source control.
+- **`.gitignore`:** CLI init/setup and the first successful interactive Setup save initialize ignore rules for `.splitbrief/` and `.trees/`. Worktree initialization adds these rules inside the worktree. Existing directory-content rules and config exceptions stay intact. Ordinary config saves, including Settings and seat switches, leave `.gitignore` unchanged.
 
 Top-level shape:
 
@@ -83,26 +83,49 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 
 ### `fallback`
 
-A seat names the runner it moves to when it goes down. Write it on the seat block (`planner`, `reviewer` or `implementer`):
+A seat names the CLI runner it uses after an automatic switch.
+Declare `fallback` under `planner`, `implementer`, or `reviewer` in `.splitbrief/config.yaml`.
+The TUI has no control for `fallback`.
+
+Merge this fragment into your existing `version: 3` config:
 
 ```yaml
-planner:
+version: 3
+implementer:
   kind: cli
-  tool: claude-code
-  model: opus
+  tool: codex
+  model: gpt-5.6-sol
   fallback:
-    tool: codex
-    model: gpt-5-codex
+    tool: opencode
+    model: openai/gpt-5.6-luna
+    variant: high
 ```
 
 | Field | Type | Description |
 |---|---|---|
 | `tool` | CLI tool id | Required. The tool the seat moves to. |
-| `model` | string | Optional. The model the tool runs. |
+| `model` | non-empty string | Optional. The model the tool runs. |
 | `effort` | `EffortLevel` | Optional. For a tool whose effort channel is `effort-flag`. |
-| `variant` | string | Optional. For a tool whose effort channel is `variant` (opencode, kilo-code). |
+| `variant` | non-empty string | Optional. For a tool whose effort channel is `variant` (`opencode`, `kilo-code`). |
 
-A fallback is always a `cli` runner. The load validates it as a runner of the seat it sits on (`validateFallback`, `src/core/schemas/runner-fields.ts`). A `fallback.effort` on a variant-channel tool fails the load; write `variant` instead. No seat has a default fallback. Declaring one is the only authorization for an automatic switch. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down).
+Use `effort` instead of `variant` for an `effort-flag` tool, such as `codex`; for example, `effort: high`.
+
+A fallback always uses a `cli` runner and accepts only the fields above.
+Every runner `kind` accepts `fallback` on its seat block.
+The loader validates the fallback against that seat's CLI schema (`validateFallback`, `src/core/schemas/runner-fields.ts`).
+The loader rejects `fallback.effort` for a `variant` tool.
+No seat has a default fallback.
+The review seat uses `reviewer.fallback` when a `reviewer` block exists; otherwise, it uses `planner.fallback`.
+
+Declaring a fallback authorizes one automatic switch per run and seat.
+SPLITBRIEF switches only for an account refusal or a rate limit with a reset beyond the run's wait limit.
+The fallback must pass admission checks, and the halt must carry the config revision.
+SPLITBRIEF records each switch in `seatSwitches`.
+See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for the switch conditions and recovery actions.
+
+Use `--on-seat-down halt` to disable automatic switching for headless `start`, `resume`, or `continue`.
+`--on-seat-down switch` and an unset policy apply the declared fallback when the switch conditions hold.
+`--on-seat-down switch` exits `2` if the config declares no fallback.
 
 ### Pricing metadata
 

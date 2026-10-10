@@ -32,7 +32,6 @@ function makeCopyingIsolation(projectDir: string, sessionId: string): RunIsolati
     sessionId,
     strategy: 'staged-copy',
     onFallback: () => {},
-    onRetained: () => {},
   });
 }
 

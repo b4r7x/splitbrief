@@ -6,9 +6,9 @@ import {
 } from '../../utils/display-text.js';
 import { getRunnerDisplayName, type RunnerConfig } from '../config/accessors/runner-config.js';
 import { cliVocabularyTool, formatModelName, peelDisplayLabel } from '../model-display.js';
-import { getProviderDisplayName, getRunnerIdentityDisplayName } from '../providers/catalog.js';
+import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
-import type { RunnerKind } from '../schemas/enums.js';
+import type { EffortLevel, RunnerKind } from '../schemas/enums.js';
 import { SOFT_SEP } from '../separators.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
 import { peelAxisTokensFromModelId, seatAxisWords } from '../runners/effort-channel.js';
@@ -103,21 +103,43 @@ function toolWord(seat: SeatIds, kind: RunnerKind | undefined): string {
   return getRunnerIdentityDisplayName(kind, seat.tool);
 }
 
+function modelIdOf(seat: SeatIds, kind: RunnerKind | undefined): string | undefined {
+  const tool = cliVocabularyTool(seat.tool, kind);
+  const model = normalizeConfiguredModel(seat.model, tool);
+  return model !== undefined &&
+    tool !== undefined &&
+    CLI_TOOL_CATALOG[tool].effortChannel === 'model-id'
+    ? peelAxisTokensFromModelId(model)
+    : model;
+}
+
 function modelWord(
   seat: SeatIds,
   displayName: string | undefined,
   kind: RunnerKind | undefined,
 ): string {
   const tool = cliVocabularyTool(seat.tool, kind);
-  const model = normalizeConfiguredModel(seat.model, tool);
+  const model = modelIdOf(seat, kind);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
   if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
-    return formatModelName(peelAxisTokensFromModelId(model), tool);
+    return formatModelName(model, tool);
   }
   if (displayName) return displayName;
   return formatModelName(model, tool);
+}
+
+function formatIdentity(
+  ids: SeatIds,
+  model: string | undefined,
+  kind: RunnerKind | undefined,
+): string {
+  return sanitizeTerminalDisplayText(
+    [toolWord(ids, kind), ...(model === undefined ? [] : [model]), ...(ids.axes ?? [])].join(
+      CREW_IDENTITY_SEPARATOR,
+    ),
+  );
 }
 
 export function formatSeatIdentity(input: {
@@ -128,13 +150,40 @@ export function formatSeatIdentity(input: {
   const { seat, displayName, kind } = input;
   const ids = idsOf(seat);
   const resolvedKind = kind ?? runnerKindOf(seat);
-  return sanitizeTerminalDisplayText(
-    [
-      toolWord(ids, resolvedKind),
-      modelWord(ids, displayName, resolvedKind),
-      ...(ids.axes ?? []),
-    ].join(CREW_IDENTITY_SEPARATOR),
-  );
+  return formatIdentity(ids, modelWord(ids, displayName, resolvedKind), resolvedKind);
+}
+
+export function formatSeatChangeIdentities(
+  from: Parameters<typeof formatSeatIdentity>[0] | SeatCandidateAxes,
+  to: Parameters<typeof formatSeatIdentity>[0] | SeatCandidateAxes,
+): Readonly<{ from: string; to: string }> {
+  const fromInput: Parameters<typeof formatSeatIdentity>[0] =
+    'seat' in from ? from : { seat: candidateIdsOf(from) };
+  const toInput: Parameters<typeof formatSeatIdentity>[0] =
+    'seat' in to ? to : { seat: candidateIdsOf(to) };
+  const fromIds = idsOf(fromInput.seat);
+  const toIds = idsOf(toInput.seat);
+  const fromKind = fromInput.kind ?? runnerKindOf(fromInput.seat);
+  const toKind = toInput.kind ?? runnerKindOf(toInput.seat);
+  const fromWord =
+    !('seat' in from) && from.model === undefined
+      ? undefined
+      : modelWord(fromIds, fromInput.displayName, fromKind);
+  const toWord =
+    !('seat' in to) && to.model === undefined
+      ? undefined
+      : modelWord(toIds, toInput.displayName, toKind);
+  const useModelIds =
+    modelIdOf(fromIds, fromKind) !== modelIdOf(toIds, toKind) &&
+    sanitizeTerminalDisplayText(fromWord ?? '') === sanitizeTerminalDisplayText(toWord ?? '');
+  return {
+    from: formatIdentity(
+      fromIds,
+      useModelIds ? (fromIds.model ?? AUTO_MODEL_WORD) : fromWord,
+      fromKind,
+    ),
+    to: formatIdentity(toIds, useModelIds ? (toIds.model ?? AUTO_MODEL_WORD) : toWord, toKind),
+  };
 }
 
 /** The collapsed form: the brand is implied by the seat, so it is the one word dropped. */
@@ -157,7 +206,7 @@ export function formatShortSeatIdentity(input: {
 type SeatCandidateAxes = Readonly<{
   tool: string;
   model?: string | undefined;
-  effort?: string | undefined;
+  effort?: EffortLevel | undefined;
   variant?: string | undefined;
 }>;
 
@@ -171,23 +220,42 @@ export function sameSeatCandidate(left: SeatCandidateAxes, right: SeatCandidateA
   );
 }
 
+export function candidateIdsOf(candidate: SeatCandidateAxes): SeatIds {
+  const tool = cliVocabularyTool(candidate.tool, undefined);
+  return {
+    tool: candidate.tool,
+    model: candidate.model,
+    axes:
+      tool === undefined || candidate.model === undefined
+        ? []
+        : seatAxisWords({
+            kind: 'cli',
+            tool,
+            model: candidate.model,
+            effort: candidate.effort,
+            variant: candidate.variant,
+          }),
+    kind: tool === undefined ? undefined : 'cli',
+  };
+}
+
 /**
  * A tool this seat could move to, named before it is configured: the same
  * `<tool> · <model>` shape a configured seat shows, composed from ids and the
  * model's catalog label because a swap candidate is two strings, not a runner
  * block. A candidate that names no model is the tool's own default and says
- * only the tool; the effort or variant it carries is its one axis word.
+ * only the tool. Model words and axes follow the configured seat's rules.
  */
 export function formatSeatCandidateIdentity(
   candidate: SeatCandidateAxes,
   displayName?: string | undefined,
 ): string {
-  const words = [getProviderDisplayName(candidate.tool)];
-  if (candidate.model !== undefined)
-    words.push(displayName ?? formatModelName(candidate.model, candidate.tool));
-  const axis = candidate.effort ?? candidate.variant;
-  if (axis !== undefined) words.push(axis);
-  return sanitizeTerminalDisplayText(words.join(CREW_IDENTITY_SEPARATOR));
+  const ids = candidateIdsOf(candidate);
+  return formatIdentity(
+    ids,
+    candidate.model === undefined ? undefined : modelWord(ids, displayName, ids.kind),
+    ids.kind,
+  );
 }
 
 type CollapsedSeat = Readonly<{

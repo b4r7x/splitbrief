@@ -32,6 +32,8 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-cold-detecting', ['80x40']],
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-seat-switched-balance', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '200x50']],
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
@@ -88,6 +90,14 @@ describe('visual catalog', () => {
     const scenario = findVisualScenario('workflow-recovery-balance-spent');
 
     expect(scenario?.checkpoints[0]?.marker).toBe('Seat down · Balance spent on OpenCode CLI');
+  });
+
+  it('covers an automatic balance switch and its sidebar at a wide viewport', () => {
+    const scenario = findVisualScenario('workflow-seat-switched-balance');
+
+    expect(scenario?.checkpoints[0]?.marker).toBe('OpenCode CLI · DeepSeek V4.1 Flash · high');
+    expect(scenario?.viewports.map(formatViewport)).toEqual(['120x40', '80x24', '60x18', '160x45']);
+    expect(scenario?.elements.map((element) => element.id)).toContain('sidebar');
   });
 
   it('keeps the interrupted fix row stopped while the continued brief runs', async () => {

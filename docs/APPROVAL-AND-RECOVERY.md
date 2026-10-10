@@ -190,6 +190,8 @@ A *Seat down* halt means that a seat cannot run. The sign-out and usage-limit ha
 
 The panel title reads `Seat down · <cause>`. The details carry the tool's own words, with its request id when the tool printed one. They end with one row: `fallback: <identity>`, or `no fallback declared`.
 
+To switch automatically next time, declare the seat's `fallback` in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback).
+
 The halt offers these actions:
 
 - `switch-seat`, when the declared fallback or another ready detected tool is offered;
@@ -215,7 +217,7 @@ The TUI applies the intent at once. It asks no question and opens no picker (`cr
 
 1. **Prepare.** The seat's runner is rebuilt on the switched config through the normal admission checks. Nothing is written yet.
 2. **Write.** `recordSeatOfRecord` (`src/core/config/load/record-seat.ts`) patches that one seat in `.splitbrief/config.yaml`. It writes only when the file's `rawSha256` still equals the revision the halt read.
-3. **Resolve.** The state applies `RESTART_ATTEMPT_ON_SEAT`, appends a record to `seatSwitches` (`seat`, `from`, `to`, `cause`, `auto`, `configRevision`, `ts`) and publishes `seat_switched`.
+3. **Resolve.** The state applies `RESTART_ATTEMPT_ON_SEAT`, appends a record to `seatSwitches` (`seat`, `from`, `to`, `cause`, `auto`, `configRevision`, `ts`, optional `accountCause` and `headline`) and publishes `seat_switched` with the same cause details. The broad `cause` stays `runner-usage-limit` for balance, billing and quota refusals; `accountCause` keeps the classification and `headline` keeps the halt's shared wording. Older records retain their broad cause without an inferred account classification.
 
 An abort, a refused admission or a conflict keeps the halt pending. A conflict reads `config changed meanwhile · the halt stays`. A project with no `config.yaml` has no revision to check. Its switch commits with no file write, and the switched config travels in memory.
 

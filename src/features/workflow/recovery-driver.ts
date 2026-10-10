@@ -13,6 +13,7 @@ import type { WorkflowState } from '../../core/schemas/workflow.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import type { EventSink } from '../../engine/events/types.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
+import { publishRetainedWorkspaceNotice } from '../../engine/orchestrator/isolation/retention.js';
 import { publishRecoveryPrompted } from '../../engine/orchestrator/events.js';
 import { applyRecoveryAction } from '../../engine/orchestrator/recovery/actions.js';
 import type { SeatSwapChoice } from '../../engine/orchestrator/run/seat-swap.js';
@@ -66,6 +67,7 @@ interface RecoveryDriverOptions {
   prepared: PreparedExecution;
   inputMode: UseInputModeResult;
   abortedRef: { current: boolean };
+  retentionNoticeHandled: { current: boolean };
   /** Where the panel's own events land on screen; the engine adds the session log. */
   sink: EventSink;
   setInlineResume: (state: WorkflowState) => void;
@@ -164,7 +166,7 @@ async function pickSwappedSeat(
 export function createRecoveryDriver(
   opts: RecoveryDriverOptions,
 ): (args: PromptPendingRecoveryArgs) => Promise<PendingRecoveryResult> {
-  const { prepared, inputMode, abortedRef, sink, setInlineResume } = opts;
+  const { prepared, inputMode, abortedRef, retentionNoticeHandled, sink, setInlineResume } = opts;
   const { ref } = prepared.session;
   const { projectDir, sessionId } = ref;
   const config = prepared.config;
@@ -315,6 +317,12 @@ export function createRecoveryDriver(
         feedbackStore.setError(NO_CORRECTION_MESSAGE);
       }
     }
+
+    if (!retentionNoticeHandled.current) {
+      await publishRetainedWorkspaceNotice({ ...ref, state, bus });
+      retentionNoticeHandled.current = true;
+    }
+    if (controller.signal.aborted || abortedRef.current) return { shouldRun: false, state };
 
     if (republishPrompt) publishRecoveryPrompted({ bus, phase: state.phase }, sessionId, issue);
 

@@ -14,7 +14,9 @@ import {
   readSavedRecoveryAction,
   readSavedRecoveryActions,
   readSavedRecoverySelections,
+  SeatSwapCandidateSchema,
 } from './recovery/schemas.js';
+import { SeatSwitchRecordSchema } from './workflow.js';
 import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
 import {
   CostAmountBasisSchema,
@@ -52,6 +54,7 @@ const ReviewPacketRunnerSchema = z.object({
   model: z.string().nullable(),
   /** The backend the seat ran on; a packet written before kinds were kept has none. */
   kind: RunnerKindSchema.nullable().optional(),
+  axes: z.array(z.string()).optional(),
 });
 
 const ReviewPacketRunSchema = z.object({
@@ -75,6 +78,7 @@ const ReviewPacketRunSchema = z.object({
 
 const ReviewPacketReadinessSchema = z.object({
   path: z.string(),
+  generatedAt: z.string().optional(),
   present: z.boolean(),
   status: ReadinessStatusSchema.nullable(),
   nextAction: ReadinessNextActionKindSchema.nullable(),
@@ -236,9 +240,15 @@ const ReviewPacketDriftSchema = z.object({
   }),
 });
 
+export const ReviewPacketSeatSwitchSchema = SeatSwitchRecordSchema.omit({ ts: true }).extend({
+  from: z.union([SeatSwapCandidateSchema, z.string()]),
+  to: z.union([SeatSwapCandidateSchema, z.string()]),
+});
+
 const ReviewPacketEventSchema = z.preprocess(
   readSavedRecoveryActions,
   z.object({
+    ...ReviewPacketSeatSwitchSchema.partial().shape,
     ts: z.string(),
     type: z.string(),
     phase: PhaseSchema.optional(),

@@ -266,6 +266,7 @@ const checkpointPredicates = [
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll()],
   [checkpointId('seat-switched'), includesAll()],
+  [checkpointId('seat-switched-balance'), includesAll()],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [checkpointId('consult-bound'), includesAll(WORKFLOW_FIXTURE_TEXT.consultBound)],

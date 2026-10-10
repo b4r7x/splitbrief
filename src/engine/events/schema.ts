@@ -27,6 +27,7 @@ import { TaskTokenUsageSchema, TokenUsageSchema } from '../../core/schemas/token
 import { RewindEventVariantSchemas } from '../../core/state/rewind-event.js';
 import { RunnerCallTextChannelSchema } from '../../core/runner-call-contract.js';
 import { WORKFLOW_CANCEL_REASONS } from './workflow-cancel.js';
+import { SeatAccountCauseSchema } from '../../core/recovery/account-cause.js';
 import { TASK_REVIEW_COMMANDS } from './workflow-events.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
@@ -577,6 +578,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     from: SeatSwapCandidateSchema,
     to: SeatSwapCandidateSchema,
     cause: RecoveryReasonSchema,
+    accountCause: SeatAccountCauseSchema.optional(),
+    headline: z.string().optional(),
     auto: z.boolean(),
     configRevision: z.string(),
   }),

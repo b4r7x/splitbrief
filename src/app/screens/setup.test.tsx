@@ -1,4 +1,11 @@
-import { existsSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -671,6 +678,7 @@ describe('SetupScreen', () => {
       await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Failed to save config'));
       expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
       expect(routerStore.get().screen).toBe('setup');
+      expect(existsSync(join(projectDir, '.gitignore'))).toBe(false);
       ui.unmount();
     });
   });
@@ -783,6 +791,60 @@ describe('SetupScreen', () => {
 
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       expect(existsSync(configPath(projectDir))).toBe(true);
+      expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n.trees/\n');
+      ui.unmount();
+    });
+  });
+
+  it('initializes ignore rules only on the first successful Setup save', async () => {
+    await withTempDir('setup-ignore-once', async (projectDir) => {
+      configStore.load(projectDir);
+      const request = beginDiscovery();
+      freshDiscovery(request, 1);
+      routerStore.init({ screen: 'setup', onComplete: 'workflow', feature: 'Keep first setup' });
+      const ui = renderFeature(
+        <SetupScreen prepare={async () => ({ kind: 'blocked', report: prioritizedReport() })} />,
+      );
+      await flushEffects();
+      await continueSetup(ui);
+
+      const ignorePath = join(projectDir, '.gitignore');
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool preparation · Blocked'));
+      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n.trees/\n');
+      const before = 'node_modules/\n';
+      writeFileSync(ignorePath, before);
+      ui.stdin.write(ESC);
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+      await continueSetup(ui);
+
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool preparation · Blocked'));
+      expect(readFileSync(ignorePath, 'utf8')).toBe(before);
+      ui.unmount();
+    });
+  });
+
+  it('reports ignore initialization failure and keeps Setup available for retry', async () => {
+    await withTempDir('setup-ignore-failure', async (projectDir) => {
+      configStore.load(projectDir);
+      const request = beginDiscovery();
+      freshDiscovery(request, 1);
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+      const sentinel = join(projectDir, 'external-ignore');
+      writeFileSync(sentinel, 'external sentinel\n');
+      const ignorePath = join(projectDir, '.gitignore');
+      symlinkSync(sentinel, ignorePath);
+      const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+      await flushEffects();
+      await continueSetup(ui);
+
+      await vi.waitFor(() => expect(feedbackStore.get()).toMatchObject({ isError: true }));
+      expect(routerStore.get().screen).toBe('setup');
+      expect(readFileSync(sentinel, 'utf8')).toBe('external sentinel\n');
+      unlinkSync(ignorePath);
+      ui.stdin.write(ENTER);
+
+      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n.trees/\n');
       ui.unmount();
     });
   });

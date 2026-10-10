@@ -1,6 +1,8 @@
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../crew/identity.js';
+import { z } from 'zod';
 
-export type SeatAccountCause = 'balance' | 'billing' | 'quota' | 'auth';
+export const SeatAccountCauseSchema = z.enum(['balance', 'billing', 'quota', 'auth']);
+export type SeatAccountCause = z.infer<typeof SeatAccountCauseSchema>;
 
 const ACCOUNT_CAUSE_WORDS: Readonly<Record<Exclude<SeatAccountCause, 'auth'>, string>> = {
   balance: 'Balance spent on',

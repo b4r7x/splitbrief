@@ -3,6 +3,15 @@ import type {
   ReviewPacketCheckpoint,
 } from '../../../../core/schemas/review-packet.js';
 import { narrowRecord } from '../../../../utils/type-guards.js';
+import {
+  CREW_SEAT_LABELS,
+  candidateIdsOf,
+  formatSeatCandidateIdentity,
+  formatSeatIdentity,
+} from '../../../../core/crew/identity.js';
+import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
+import { labelSeatChange } from '../../../providers/model/display-names.js';
+import { NULL_CACHE } from '../../../providers/model/resolution.js';
 
 function sortJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortJson);
@@ -145,6 +154,18 @@ function formatCheckpointKind(checkpoint: ReviewPacketCheckpoint): string {
     : checkpoint.kind;
 }
 
+function packetSeatIdentity(seat: ReviewPacket['run']['reviewer']): string {
+  if (seat?.tool === undefined || seat.tool === null) return 'n/a';
+  return formatSeatIdentity({
+    seat: {
+      tool: seat.tool,
+      model: seat.model ?? undefined,
+      kind: seat.kind ?? undefined,
+      axes: seat.axes ?? [],
+    },
+  });
+}
+
 export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
   const restoreSafety = packet.checkpoints.safety;
   const checkpointLines =
@@ -160,13 +181,39 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
       : packet.drift.findings.map(
           (finding) => `- [${finding.severity}] ${finding.code}: ${finding.message}`,
         );
-  const recoveryLines =
-    packet.recoveryDecisions.outcomes.length === 0
-      ? ['- No recovery decisions recorded.']
-      : packet.recoveryDecisions.outcomes.map(
-          (outcome) =>
-            `- ${outcome.status}${outcome.action ? ` via ${outcome.action}` : ''}${outcome.issueId ? ` (${outcome.issueId})` : ''}${outcome.message ? `: ${outcome.message}` : ''}`,
-        );
+  const switchLines = packet.recoveryDecisions.events.flatMap((event) => {
+    if (
+      event.type !== 'seat_switched' ||
+      event.seat === undefined ||
+      event.from === undefined ||
+      event.to === undefined ||
+      event.cause === undefined ||
+      event.auto === undefined
+    )
+      return [];
+    const change = labelSeatChange(
+      {
+        seat: event.seat,
+        before:
+          typeof event.from === 'string' ? event.from : formatSeatCandidateIdentity(event.from),
+        after: typeof event.to === 'string' ? event.to : formatSeatCandidateIdentity(event.to),
+        ...(typeof event.from !== 'string' && { beforeIds: candidateIdsOf(event.from) }),
+        ...(typeof event.to !== 'string' && { afterIds: candidateIdsOf(event.to) }),
+      },
+      NULL_CACHE,
+    );
+    return [
+      `- ${CREW_SEAT_LABELS[event.seat]} switched ${event.auto ? 'automatically' : 'manually'}: ${change.before} → ${change.after}; ${formatSeatSwitchCause({ cause: event.cause, headline: event.headline })}`,
+    ];
+  });
+  const recoveryLines = [
+    ...packet.recoveryDecisions.outcomes.map(
+      (outcome) =>
+        `- ${outcome.status}${outcome.action ? ` via ${outcome.action}` : ''}${outcome.issueId ? ` (${outcome.issueId})` : ''}${outcome.message ? `: ${outcome.message}` : ''}`,
+    ),
+    ...switchLines,
+  ];
+  if (recoveryLines.length === 0) recoveryLines.push('- No recovery decisions recorded.');
   const taskValidationLines = packet.validation.tasks.map((task) => {
     const passed = task.validation.filter((entry) => entry.passed).length;
     const exempt = task.validation.filter((entry) => entry.baselineExempt === true);
@@ -182,13 +229,17 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     '## Run Header',
     `- Session: ${packet.sessionId}`,
     `- Feature: ${packet.run.feature}`,
-    `- Planner: ${packet.run.planner.tool ?? 'n/a'}${packet.run.planner.model ? ` (${packet.run.planner.model})` : ''}`,
-    `- Implementer: ${packet.run.implementer.tool ?? 'n/a'}${packet.run.implementer.model ? ` (${packet.run.implementer.model})` : ''}`,
-    `- Reviewer: ${packet.run.reviewer?.tool ?? 'n/a'}${packet.run.reviewer?.model ? ` (${packet.run.reviewer.model})` : ''}`,
+    `- Planner: ${packetSeatIdentity(packet.run.planner)}`,
+    `- Implementer: ${packetSeatIdentity(packet.run.implementer)}`,
+    `- Reviewer: ${packetSeatIdentity(packet.run.reviewer)}`,
     `- Tasks: ${packet.run.totalTasks} total, ${packet.run.completedLocally} local, ${packet.run.escalated} escalated, ${packet.run.skipped} skipped, ${packet.run.failed} failed`,
     `- Generated: ${packet.generatedAt}`,
     '',
-    '## Readiness',
+    '## Admission readiness',
+    '- Scope: Recorded at admission; later seat switches are listed under Recovery Decisions.',
+    ...(packet.readiness.generatedAt === undefined
+      ? []
+      : [`- Captured: ${packet.readiness.generatedAt}`]),
     `- Artifact: ${packet.readiness.present ? packet.readiness.path : 'missing'}`,
     `- Status: ${packet.readiness.status ?? 'unavailable'}`,
     `- Next action: ${packet.readiness.nextAction ?? 'unavailable'}`,

@@ -10,6 +10,8 @@ import {
   type WorkspaceOwner,
 } from '../../../core/schemas/retained-workspace.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import {
   assertSessionConfinement,
   assertSessionDirConfined,
@@ -19,8 +21,11 @@ import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { canonicalJSON } from '../../../utils/canonical-json.js';
 import { error, matches } from '../../../utils/error.js';
+import { toErrorMessage } from '../../../utils/format-errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { workflowCancelledReasonFromSignal } from '../../events/workflow-cancel.js';
+import type { EventBus } from '../../events/types.js';
+import { publishError, publishWarning } from '../events.js';
 import type { IsolatedWorkspace } from './types.js';
 
 const MAX_RECORD_BYTES = 8 * 1024 * 1024;
@@ -203,4 +208,23 @@ export function retainedStagedDirectory(ref: SessionRef, record: RetainedWorkspa
 
 export function retainedWorkspaceNotice(dir: string): string {
   return `Workspace kept at ${dir} for Continue, with its private CLI state and caches.`;
+}
+
+export async function publishRetainedWorkspaceNotice(
+  input: SessionRef & { state: WorkflowState; bus: EventBus },
+): Promise<boolean> {
+  const { state, bus } = input;
+  if (deriveRunStatus({ state, liveness: 'not-alive' }).kind !== 'open') return false;
+  const workspace = state.workspace;
+  if (workspace === undefined || workspace.kind === 'checkout') return false;
+  try {
+    const record = await readWorkspaceRecord(input);
+    if (record?.retained !== true || !(await retainedDirectoryMatches(record, workspace.path)))
+      return false;
+  } catch (err) {
+    publishError({ bus, phase: state.phase, message: toErrorMessage(err) });
+    return false;
+  }
+  publishWarning({ bus, phase: state.phase, message: retainedWorkspaceNotice(workspace.path) });
+  return true;
 }

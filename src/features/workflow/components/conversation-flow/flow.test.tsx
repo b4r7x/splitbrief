@@ -111,7 +111,8 @@ function makeLiveTaskBriefPlannerText(): Extract<EngineEvent, { type: 'planner_t
 function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
   return makeTaskStart({
     ts: 0,
-    title: 'No-op workflow demonstration with enough metadata to wrap',
+    title:
+      'No-op workflow demonstration with enough metadata to wrap across multiple terminal rows',
     total: 1,
     file: 'README.md',
     tool: 'claude-code',

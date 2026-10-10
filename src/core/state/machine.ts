@@ -926,6 +926,8 @@ export function transition(
             from: action.from,
             to: action.to,
             cause: action.cause,
+            ...(action.accountCause !== undefined && { accountCause: action.accountCause }),
+            ...(action.headline !== undefined && { headline: action.headline }),
             auto: action.auto,
             configRevision: action.configRevision,
             ts: now.toISOString(),

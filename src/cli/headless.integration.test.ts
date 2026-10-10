@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { chmodSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -17,7 +19,7 @@ import { loadState, saveState } from '../core/state/persistence.js';
 import { readConfigDocument } from '../core/config/load/document.js';
 import { loadConfig, writeConfig } from '../core/config/load/io.js';
 import { HeadlessJsonRecordSchema } from '../engine/events/public-json.js';
-import { writeActive } from '../core/sessions/active-pointer.js';
+import { reactivateExistingSession, writeActive } from '../core/sessions/active-pointer.js';
 import {
   buildContextOverflowRecoveryIssue,
   buildSeatDownIssue,
@@ -31,6 +33,12 @@ import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { Implementer } from '../engine/implementers/types.js';
 import type { Planner } from '../engine/planners/types.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { readWorkspaceRecord } from '../engine/orchestrator/isolation/retention.js';
+import { createRunIsolation } from '../engine/orchestrator/isolation/create.js';
+import { createSnapshot } from '../engine/snapshots/create.js';
+import { sessionDir } from '../core/paths.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 
 // The two terminal guards read state and session after the run; skipping the run
 // itself is what makes them reachable without driving a whole workflow.
@@ -767,6 +775,174 @@ describe('runHeadless — the seat-down policy and the record', () => {
       .map((line) => HeadlessJsonRecordSchema.parse(JSON.parse(line)));
   }
 
+  async function retainedSession(name: string, state: WorkflowState) {
+    const projectDir = createHeadlessGitProject(name);
+    dirs.push(projectDir);
+    const sessionId = `sess-${name}`;
+    const ref = { projectDir, sessionId };
+    ensureSessionDir(projectDir, sessionId);
+    writeMinimalHeadlessConfigYaml(projectDir);
+    const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
+    const isolation = createRunIsolation({ ...ref, strategy: 'staged-copy', onFallback: () => {} });
+    const workspace = await isolation.acquire({ role: 'implementer', config: makeConfig() });
+    await workspace.retain?.();
+    await isolation.dispose();
+    const retained = {
+      ...state,
+      workspace: {
+        kind: 'staged-copy' as const,
+        path: workspace.projectDir,
+        base: { snapshotId: base.manifest.id, head: workspace.snapshot.head },
+      },
+    };
+    saveState(ref, retained);
+    return { ref, state: retained };
+  }
+
+  it.each([
+    ['malformed', 'halt'],
+    ['unreadable', 'halt'],
+    ['malformed', 'failure'],
+    ['unreadable', 'failure'],
+  ] as const)(
+    'reports the retained %s record diagnostic and preserves the %s report',
+    async (record, outcome) => {
+      const { ref, state } = await retainedSession(
+        `headless-${record}-${outcome}`,
+        makeImplState([], {
+          ...(outcome === 'halt' && { pendingRecovery: makeRecoveryIssue() }),
+          ...(outcome === 'failure' && {
+            lastFailure: {
+              message: 'call failed',
+              step: { kind: 'review', cycle: 0 },
+              at: '2026-10-10T00:00:00.000Z',
+            },
+          }),
+        }),
+      );
+      const path = join(sessionDir(ref.projectDir, ref.sessionId), 'retained-workspace.json');
+      if (record === 'malformed') writeFileSync(path, '{invalid');
+      else chmodSync(path, 0o000);
+      await expect(readWorkspaceRecord(ref)).rejects.toThrow(
+        record === 'malformed' ? 'The stopped workspace could not be verified.' : 'EACCES',
+      );
+      await expect(
+        runHeadless({
+          prepared: preparedHeadlessExecution({
+            ...ref,
+            feature: state.feature,
+            resumeState: state,
+          }),
+        }),
+      ).rejects.toMatchObject({ exitCode: 1 });
+      expect(records()).toContainEqual(
+        expect.objectContaining({
+          type: 'event',
+          data: expect.objectContaining({
+            type: 'error',
+            message:
+              record === 'malformed'
+                ? 'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.'
+                : expect.stringContaining('EACCES'),
+          }),
+        }),
+      );
+      expect(
+        records().filter(
+          (record) =>
+            record.type === 'event' &&
+            record.data.type === 'warning' &&
+            record.data.message.startsWith('Workspace kept at '),
+        ),
+      ).toEqual([]);
+      expect(records()).toContainEqual(
+        expect.objectContaining({ type: outcome === 'halt' ? 'recovery_required' : 'error' }),
+      );
+    },
+  );
+
+  it.each(['retry-same-worker', 'restore-backup'] as const)(
+    'does not publish retention before an answered Apply %s continues',
+    async (selectedAction) => {
+      skipTheRun.enabled = false;
+      const { ref, state } = await retainedSession(
+        `headless-answered-${selectedAction}`,
+        makeImplState([], {
+          phase: 'complete',
+          reviewStatus: 'passed',
+          pendingRecovery: makeRecoveryIssue({
+            reason: 'apply-partial',
+            phase: 'complete',
+            status: 'applying',
+            selectedAction,
+            availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
+            recommendedAction: 'retry-same-worker',
+          }),
+        }),
+      );
+      const outcome = await runHeadless({
+        prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+        _planner: makePlanner(),
+      }).then(
+        () => ({ ok: true }),
+        (error: unknown) => ({ ok: false, error }),
+      );
+      expect(outcome.ok).toBe(selectedAction === 'retry-same-worker');
+      const emitted = records();
+      const resumedAt = emitted.findIndex(
+        (record) => record.type === 'event' && record.data.type === 'workflow_resumed',
+      );
+      expect(resumedAt).toBeGreaterThan(-1);
+      const noticesAtEntry = emitted
+        .slice(0, resumedAt)
+        .flatMap((record) =>
+          record.type === 'event' &&
+          record.data.type === 'warning' &&
+          record.data.message.startsWith('Workspace kept at ')
+            ? [record.data.message]
+            : [],
+        );
+      expect(noticesAtEntry).toEqual([]);
+      const messages = records().flatMap((record) =>
+        record.type === 'event' &&
+        record.data.type === 'warning' &&
+        record.data.message.startsWith('Workspace kept at ')
+          ? [record.data.message]
+          : [],
+      );
+      expect(messages).toEqual(
+        selectedAction === 'restore-backup'
+          ? [
+              `Workspace kept at ${state.workspace.path} for Continue, with its private CLI state and caches.`,
+            ]
+          : [],
+      );
+    },
+  );
+
+  it('reports an unverifiable retained workspace in plain mode before the halt', async () => {
+    const { ref, state } = await retainedSession(
+      'headless-plain-invalid-retention',
+      makeImplState([], {
+        pendingRecovery: makeRecoveryIssue(),
+      }),
+    );
+    writeFileSync(
+      join(sessionDir(ref.projectDir, ref.sessionId), 'retained-workspace.json'),
+      '{invalid',
+    );
+    await expect(
+      runHeadless({
+        prepared: preparedHeadlessExecution({ ...ref, feature: state.feature, resumeState: state }),
+        plain: true,
+      }),
+    ).rejects.toMatchObject({ exitCode: 1 });
+    expect(stderrSpy.mock.calls.map((call: unknown[]) => String(call[0]).trim())).toContain(
+      'The stopped workspace could not be verified. Its files were left in place; automatic continuation is blocked.',
+    );
+    expect(records()).toEqual([]);
+  });
+
   function seedAutoSwitchSession(name: string) {
     const projectDir = createHeadlessGitProject(name);
     dirs.push(projectDir);
@@ -840,6 +1016,111 @@ describe('runHeadless — the seat-down policy and the record', () => {
       process.stdout,
     );
   });
+
+  it.each(['switch', 'halt', 'refused', 'plain-halt'] as const)(
+    'automatically switches a retained attempt without publishing a Continue notice',
+    async (decision) => {
+      skipTheRun.enabled = false;
+      const projectDir = createHeadlessGitProject(`headless-retained-${decision}`);
+      dirs.push(projectDir);
+      const sessionId = `sess-retained-${decision}`;
+      const ref = { projectDir, sessionId };
+      ensureSessionDir(projectDir, sessionId);
+      writeConfig(
+        projectDir,
+        makeConfig({
+          implementer: {
+            kind: 'cli',
+            tool: 'opencode',
+            model: 'deepseek/deepseek-flash',
+            fallback: {
+              tool: 'opencode',
+              model: 'opencode-go/deepseek-v4.1-flash',
+              variant: 'high',
+            },
+          },
+          workflow: { isolation: 'staged-copy', approve: 'none' },
+          validation: { endChecks: false, testCommand: 'true' },
+        }),
+      );
+      const state = makeImplState([
+        makeTask({
+          id: 'T001',
+          action: 'create',
+          suggestedFiles: ['fallback.txt'],
+          scope: { inBounds: ['fallback.txt'] },
+        }),
+      ]);
+      saveState(ref, state);
+      const prepared = preparedHeadlessExecution({
+        ...ref,
+        feature: state.feature,
+        resumeState: state,
+      });
+      await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode']));
+      let workspaceDir = '';
+      const implementer = makeImplementer({
+        implement: vi.fn<Implementer['implement']>(async (input) => {
+          workspaceDir = input.projectDir;
+          if (input.config.implementer.model === 'deepseek/deepseek-flash') {
+            return {
+              success: false,
+              output: '',
+              error: 'provider.quota: Insufficient Balance',
+              outcome: 'usage-limit',
+            };
+          }
+          writeFileSync(join(input.projectDir, 'fallback.txt'), 'fallback work\n');
+          return { success: true, output: 'done' };
+        }),
+      });
+      const running = runHeadless({
+        prepared,
+        _planner: makePlanner(),
+        _implementer: implementer,
+        ...((decision === 'halt' || decision === 'plain-halt') && { onSeatDown: 'halt' }),
+        ...(decision === 'plain-halt' && { plain: true }),
+        _prepare: async (input) =>
+          decision === 'refused'
+            ? { kind: 'blocked', report: { ...prepared.report, status: 'blocked' } }
+            : {
+                kind: 'prepared',
+                execution: makePreparedExecution({
+                  ...ref,
+                  feature: state.feature,
+                  config: input.effectiveConfig,
+                  resumeState: input.resumeState,
+                  active: reactivateExistingSession(ref),
+                }),
+              },
+      });
+      if (decision === 'switch') await running;
+      else await expect(running).rejects.toMatchObject({ exitCode: 1 });
+      expect(workspaceDir).not.toBe('');
+      expect(await readWorkspaceRecord(ref)).not.toBeNull();
+      const switchEvents = records().flatMap((record) =>
+        record.type === 'event' && record.data.type === 'seat_switched' ? [record.data] : [],
+      );
+      const messages: string[] =
+        decision === 'plain-halt'
+          ? stderrSpy.mock.calls.map((call: unknown[]) => String(call[0]).trim())
+          : records().flatMap((record) =>
+              record.type === 'event' && record.data.type === 'warning'
+                ? [record.data.message]
+                : [],
+            );
+      if (decision === 'switch') {
+        expect(switchEvents).toHaveLength(1);
+        expect(switchEvents[0]).toMatchObject({ seat: 'build', auto: true });
+        expect(messages.filter((message) => message.startsWith('Workspace kept at '))).toEqual([]);
+      } else {
+        expect(switchEvents).toHaveLength(0);
+        expect(messages.filter((message) => message.startsWith('Workspace kept at '))).toEqual([
+          `Workspace kept at ${workspaceDir} for Continue, with its private CLI state and caches.`,
+        ]);
+      }
+    },
+  );
 
   it('applies the declared fallback automatically and records the switch', async () => {
     const { projectDir, sessionId, state } = seedAutoSwitchSession('headless-auto-switch');

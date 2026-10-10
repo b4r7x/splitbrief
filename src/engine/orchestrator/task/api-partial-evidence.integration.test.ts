@@ -407,7 +407,6 @@ describe('a partial apply in the checkout mode', () => {
       sessionId,
       strategy: 'none',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const opened = await isolation.open({ config: makeConfig() });
     const wctx = makeWorkflowContext({
@@ -473,7 +472,6 @@ describe('a partial apply in the checkout mode', () => {
       sessionId,
       strategy: 'none',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const opened = await isolation.open({ config: makeConfig() });
     const implementer = makeImplementer({

@@ -40,6 +40,7 @@ import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-
 import { formatResetAt, stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { stopPoint } from '../../stop/copy.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
+import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { RecoveryFold } from '../transcript-walk.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
@@ -164,7 +165,7 @@ export function eventRowBlock(options: {
     case 'seat_switched':
       return wrappedTextBlock({
         keyPrefix,
-        text: `${CREW_SEAT_LABELS[event.seat]}${arrowSep()}${formatSeatCandidateIdentity(event.to)}${SOFT_SEP}${seatSwitchCauseWords(event.cause)}`,
+        text: `${CREW_SEAT_LABELS[event.seat]}${arrowSep()}${formatSeatCandidateIdentity(event.to)}${SOFT_SEP}${formatSeatSwitchCause(event)}`,
         width: ctx.width,
         tone: 'textDim',
       });
@@ -379,17 +380,6 @@ export function implementerFailureCard(
 
 function queueMessageValue(base: string, preview: string | undefined): string {
   return preview ? `${base}: ${preview}` : base;
-}
-
-function seatSwitchCauseWords(cause: EngineEventOf<'seat_switched'>['cause']): string {
-  switch (cause) {
-    case 'runner-usage-limit':
-      return 'usage limit';
-    case 'runner-unauthenticated':
-      return 'signed out';
-    default:
-      return cause.replaceAll('-', ' ');
-  }
 }
 
 function queuedMessageHeader(origin: EngineEventOf<'message_queued'>['origin']): {

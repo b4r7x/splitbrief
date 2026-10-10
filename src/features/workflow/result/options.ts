@@ -81,7 +81,7 @@ export function resultMenuTitle(input: ResultMenuInput): string {
       ...changed,
     ].join(SOFT_SEP);
   }
-  return ['Ready to apply', ...changed, 'your checkout is untouched'].join(SOFT_SEP);
+  return ['Ready to apply', ...changed, 'run changes await Apply'].join(SOFT_SEP);
 }
 
 export function resultRowCommand(id: ResultRowId): string | null {

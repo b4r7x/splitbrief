@@ -132,6 +132,7 @@ function runDriver(
     prepared,
     inputMode,
     abortedRef: { current: false },
+    retentionNoticeHandled: { current: false },
     sink: addTuiEvent,
     setInlineResume: () => {},
   });
@@ -197,16 +198,19 @@ describe('createRecoveryDriver', () => {
         resetMode: () => cancelQuestion(),
       },
       abortedRef: { current: false },
+      retentionNoticeHandled: { current: false },
       sink: addTuiEvent,
       setInlineResume: () => {},
     });
     const pending = promptPendingRecovery({ state, controller, republishPrompt: false });
     const settled = expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
-    expect(recoveryNoticeStore.get()).toEqual({
-      seat: 'build',
-      resetAt: Date.parse('2026-10-10T17:00:00.000Z'),
-      issue: state.pendingRecovery,
-    });
+    await vi.waitFor(() =>
+      expect(recoveryNoticeStore.get()).toEqual({
+        seat: 'build',
+        resetAt: Date.parse('2026-10-10T17:00:00.000Z'),
+        issue: state.pendingRecovery,
+      }),
+    );
 
     controller.abort();
 

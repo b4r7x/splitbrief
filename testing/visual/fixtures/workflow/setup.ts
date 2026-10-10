@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { cliDetectionFor } from '../../../helpers/factories/detection.js';
 import type { WorkflowScreenDeps } from '../../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { RunWorkflowFn } from '../../../../src/features/workflow/hooks/use-run-loop.js';
 import type { ReviewInputEffects } from '../../../../src/features/workflow/review-parser.js';
@@ -29,6 +30,7 @@ import {
   createWorkflowBaseFixture,
   teardownVisualFixture,
   VISUAL_FIXTURE_PROJECT_DIR,
+  publishVisualDiscovery,
 } from '../screen-fixtures.js';
 import {
   WORKFLOW_FIXTURE_TASK_ID,
@@ -47,6 +49,14 @@ function teardownWorkflowFixture(): void {
 }
 
 function applyProjection(projection: WorkflowFixtureProjection): void {
+  if (projection.cliModels !== undefined) {
+    publishVisualDiscovery({
+      cliTools: projection.cliModels.map(({ connection }) =>
+        cliDetectionFor('ready', connection.tool),
+      ),
+      cliModels: projection.cliModels,
+    });
+  }
   for (const event of projection.events) addEvent(event);
 
   if (projection.streaming !== undefined) {

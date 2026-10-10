@@ -135,7 +135,6 @@ describe('target acquisition baseline', () => {
       sessionId: 'sess-baseline',
       strategy: 'staged-copy',
       onFallback: () => {},
-      onRetained: () => {},
     });
     const config = makeNoValidationConfig();
     const first = await isolation.acquire({ role: 'implementer', config });

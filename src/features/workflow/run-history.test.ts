@@ -10,6 +10,7 @@ import { taskId } from '../../core/schemas/task.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
+import { createEventBus } from '../../engine/events/bus.js';
 import { toEngineEventEntry } from '../../core/sessions/log-writer.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
@@ -339,6 +340,10 @@ describe('hydrateRun replaying a seat swap', () => {
         hydration: { kind: 'loaded', state: savedState() },
       }),
     );
+    return transcript();
+  }
+
+  function transcript(): string {
     const { rows } = buildConversationRows({
       sections: [{ type: 'events', startIndex: 0, items: [...eventsStore.get().events] }],
       expandedDiffs: new Set(),
@@ -349,6 +354,72 @@ describe('hydrateRun replaying a seat swap', () => {
     });
     return rows.map(rowText).join('\n');
   }
+
+  it.each([true, false])(
+    'renders the same recovery and switch live and replayed with auto=%s',
+    async (auto) => {
+      const base = {
+        ts: 1_000,
+        phase: 'implementing',
+        issueId: 'balance-1',
+        reason: 'runner-usage-limit',
+      } as const;
+      const headline = 'Balance spent on OpenCode CLI';
+      const log: EngineEvent[] = [
+        { type: 'error', ts: 500, phase: 'implementing', message: headline },
+        {
+          ...base,
+          type: 'recovery_prompted',
+          headline,
+          files: [],
+          affectedTaskIds: [],
+          availableActions: ['switch-seat'],
+          recommendedAction: 'switch-seat',
+          resumeCommand: 'splitbrief continue',
+        },
+        { ...base, type: 'recovery_action_selected', action: 'switch-seat', seat: 'build' },
+        {
+          type: 'seat_switched',
+          ts: 2_000,
+          phase: 'implementing',
+          seat: 'build',
+          from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+          to: { tool: 'opencode' },
+          cause: base.reason,
+          headline,
+          auto,
+          configRevision: 'test-revision',
+        },
+        {
+          ...base,
+          type: 'recovery_resolved',
+          action: 'switch-seat',
+          seat: 'build',
+          outcome: 'retry-current-task',
+        },
+      ];
+      writeLog(log);
+      const replayed = await replayedTranscript();
+
+      resetWorkflow();
+      const bus = createEventBus();
+      bus.subscribe(addEvent);
+      for (const event of log) bus.publish(event);
+
+      expect(transcript()).toBe(replayed);
+      expect(
+        replayed
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== ''),
+      ).toEqual([
+        'Error',
+        headline,
+        `Recovery  Change BUILD tool${arrowSep()}retried`,
+        `BUILD${arrowSep()}OpenCode CLI · ${headline}`,
+      ]);
+    },
+  );
 
   it('names no seat for a swap a log recorded before the seat was on the event', async () => {
     // Written by a build whose recovery events carried no seat.

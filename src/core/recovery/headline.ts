@@ -6,6 +6,7 @@ import { haltOf, recoveryHaltLabel } from './halt.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { formatAccountCause } from './account-cause.js';
+import type { SeatSwitchRecord } from '../schemas/workflow.js';
 
 function toolName(issue: RecoveryIssue): string {
   return recoveryFactString(issue.facts, 'tool') ?? 'the tool';
@@ -157,4 +158,18 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
 /** The halt and its cause on one line: "Needs you · …" or "Seat down · …". */
 export function formatRecoveryTitle(cause: string, issue: Pick<RecoveryIssue, 'reason'>): string {
   return `${recoveryHaltLabel(haltOf(issue.reason))} · ${cause}`;
+}
+
+export function formatSeatSwitchCause(
+  record: Pick<SeatSwitchRecord, 'cause' | 'headline'>,
+): string {
+  if (record.headline !== undefined) return record.headline;
+  switch (record.cause) {
+    case 'runner-usage-limit':
+      return 'usage limit';
+    case 'runner-unauthenticated':
+      return 'signed out';
+    default:
+      return record.cause.replaceAll('-', ' ');
+  }
 }
