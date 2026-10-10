@@ -4,6 +4,8 @@ import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
 import { createPlannerBase } from './base.js';
+import { createPlannerCallContext } from './call-context.js';
+import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { createCommandAvailability } from '../availability.js';
 import { writeProjectFile } from '../../core/paths-io.js';
 import { runClaudePlannerStream, runClaudeOneShot } from '../runners/claude/invoke.js';
@@ -65,8 +67,14 @@ export function createClaudeCodePlanner(opts: {
     tool: CLAUDE_TOOL,
     authChannel: opts.authChannel,
   }).id;
-  const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, authChannel };
+  const runnerConfig = { kind: 'cli' as const, tool: CLAUDE_TOOL, authChannel, model, effort };
   const resolvedModel = resolveCliModel(model, CLAUDE_TOOL);
+  const identityConfig = {
+    backendKind: 'cli' as const,
+    runnerName: 'claude',
+    model: resolvedModel,
+    axes: seatAxisWords(runnerConfig),
+  };
   const session = createSessionResumeState();
   session.capture(initialSessionId ?? null);
 
@@ -195,8 +203,6 @@ export function createClaudeCodePlanner(opts: {
   }
 
   return createPlannerBase({
-    backendKind: 'cli',
-
     async invokePlan({ prompt, projectDir, callbacks, callContext, images, signal, schema }) {
       return invokeOnSession(prompt, projectDir, callbacks, callContext, images, signal, schema);
     },
@@ -228,8 +234,7 @@ export function createClaudeCodePlanner(opts: {
     },
 
     ...createCommandAvailability('claude'),
-    runnerName: 'claude',
-    ...(resolvedModel !== undefined && { model: resolvedModel }),
+    ...identityConfig,
     typedOutput: typedOutputCapability(CLAUDE_TOOL, trustedCli?.installedVersion),
 
     async injectUserTurn(injection): Promise<PlannerUserTurnResult> {
@@ -261,7 +266,7 @@ export function createClaudeCodePlanner(opts: {
             }
           },
           onCallEvent: callbackBuffer.callbacks.onCallEvent,
-          ...(injection.callContext !== undefined && { callContext: injection.callContext }),
+          callContext: injection.callContext ?? createPlannerCallContext(identityConfig, 'planner'),
           ...claudeRunnerPrep({ env, signal: effectiveSignal }),
         });
         const returnedSessionId = mismatchedId ?? result.sessionId ?? result.nativeSessionId;

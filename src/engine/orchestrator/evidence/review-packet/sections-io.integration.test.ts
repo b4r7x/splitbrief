@@ -326,6 +326,7 @@ fail
     expect(section.verdict).toBeNull();
     expect(section.findingCounts).toEqual({ critical: 0, warning: 0, note: 0 });
     expect(section.excerpt).toContain('Unauthenticated requests return 500');
+    expect(section.statusText).toBe('Reviewer final review written to review.md.');
     expect(missing).not.toContain(REVIEW_FILE);
   });
 
@@ -411,6 +412,20 @@ pass
     expect(section.excerpt).toBeNull();
     expect(missing).toContain(REVIEW_FILE);
   });
+
+  it('names the reviewer when the final review failed', async () => {
+    const { projectDir } = makeProject();
+    const section = await buildFinalReview({
+      projectDir,
+      sessionId: 'review-failed-session',
+      requestedStatus: 'failed',
+      ledger: null,
+      missing: [],
+    });
+
+    expect(section.status).toBe('failed');
+    expect(section.statusText).toBe('Reviewer final review failed; review.md may be absent.');
+  });
 });
 
 function packetWithFinalReview(finalReview: ReviewPacket['finalReview']): ReviewPacket {
@@ -424,7 +439,7 @@ describe('renderReviewPacketMarkdown final review block', () => {
         path: 'review.md',
         status: 'written',
         evidenceStatus: null,
-        statusText: 'Planner final review written to review.md.',
+        statusText: 'Reviewer final review written to review.md.',
         excerpt: null,
         verdict: 'fail',
         criteriaPassed: 2,

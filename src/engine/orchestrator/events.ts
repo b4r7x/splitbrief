@@ -5,6 +5,7 @@ import type {
   TaskCompletionMethod,
   CurrentCodeContextMode,
   TaskContextFit,
+  RunnerKind,
   Phase,
   RecoveryReason,
 } from '../../core/schemas/enums.js';
@@ -142,6 +143,8 @@ export function publishTaskStart(
     action: 'create' | 'modify';
     tool?: string;
     model?: string;
+    axes?: readonly string[];
+    backendKind?: RunnerKind;
     implementerProfile?: string;
     contextFit?: TaskContextFit;
     estimatedTokens?: number;

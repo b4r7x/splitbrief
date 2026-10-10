@@ -93,6 +93,7 @@ function openAiCallContext(model: string, endpoint: StreamCompletionOptions['end
     backendKind: 'api',
     runnerName: endpoint?.provider ?? 'openai',
     model,
+    axes: [],
   } satisfies RunnerCallContext;
 }
 

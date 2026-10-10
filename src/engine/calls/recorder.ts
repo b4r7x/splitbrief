@@ -653,6 +653,10 @@ export function createRunnerCallRecorder(opts: {
 // The identity is fixed before `call_started`: every event and result of the
 // call carries this one frozen copy, whatever the producer does with its own.
 function snapshotRunnerCallContext(context: RunnerCallContext): RunnerCallContext {
+  context = {
+    ...context,
+    ...(context.axes !== undefined && { axes: Object.freeze([...context.axes]) }),
+  };
   if (context.invocationIdentity === undefined) return context;
   const parsed = InvocationIdentitySchema.safeParse(context.invocationIdentity);
   if (!parsed.success) {

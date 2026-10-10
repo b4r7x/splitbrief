@@ -564,7 +564,7 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      `${CREW_SEAT_LABELS.build} activity  1 update  [OpenAI Codex CLI]`,
+      `${CREW_SEAT_LABELS.build} activity  1 update  [OpenAI Codex CLI · auto]`,
       activityLine('RUN', 'npm run typecheck'),
     ]);
     expect(rows[0]?.kind).toBe('activity');
@@ -604,7 +604,7 @@ describe('event row dispatch', () => {
 
     expect(text).toBe(
       [
-        `${CREW_SEAT_LABELS.plan} activity  1 update  [OpenAI Codex CLI]`,
+        `${CREW_SEAT_LABELS.plan} activity  1 update  [OpenAI Codex CLI · auto]`,
         activityLine('READ', 'CLAUDE.md :1-260'),
       ].join('\n'),
     );

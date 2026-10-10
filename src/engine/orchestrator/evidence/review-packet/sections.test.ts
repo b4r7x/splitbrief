@@ -169,6 +169,95 @@ describe('buildRun seat identity kinds', () => {
     );
   }
 
+  it('fills the reviewer from the recorded summary seat without mixing state fields', () => {
+    const run = makeRun(
+      makeSummary({
+        reviewerTool: 'codex',
+        reviewerModel: 'gpt-6.1-sol',
+        reviewerKind: 'cli',
+      }),
+      {
+        ...createInitialState('feat'),
+        reviewerTool: 'old-endpoint',
+        reviewerModel: 'old-model',
+        reviewerKind: 'api',
+      },
+    );
+
+    expect(run.reviewer).toEqual({ tool: 'codex', model: 'gpt-6.1-sol', kind: 'cli' });
+  });
+
+  it('takes the recorded reviewer from state when the summary names none', () => {
+    const run = makeRun(makeSummary(), {
+      ...createInitialState('feat'),
+      reviewerTool: 'codex',
+      reviewerModel: 'gpt-6.1-sol',
+      reviewerKind: 'cli',
+    });
+
+    expect(run.reviewer).toEqual({ tool: 'codex', model: 'gpt-6.1-sol', kind: 'cli' });
+  });
+
+  it('keeps the reviewer model and kind unknown when the summary names only its tool', () => {
+    const run = makeRun(makeSummary({ reviewerTool: 'codex' }), {
+      ...createInitialState('feat'),
+      reviewerTool: 'old-endpoint',
+      reviewerModel: 'old-model',
+      reviewerKind: 'api',
+    });
+
+    expect(run.reviewer).toEqual({ tool: 'codex', model: null, kind: null });
+  });
+
+  it('names the planner that holds REVIEW when no separate reviewer is recorded', () => {
+    const run = makeRun(
+      makeSummary({
+        plannerTool: 'claude-code',
+        plannerModel: 'sonnet',
+        plannerKind: 'cli',
+      }),
+      createInitialState('feat'),
+    );
+
+    expect(run.reviewer).toEqual({ tool: 'claude-code', model: 'sonnet', kind: 'cli' });
+    expect(renderReviewPacketMarkdown(makeReviewPacket({ run }))).toContain(
+      '- Reviewer: claude-code (sonnet)',
+    );
+  });
+
+  it.each(['complete', 'tool-only'])(
+    'uses the planner after switching a configured reviewer to inheritance before resume, with %s planner details',
+    (details) => {
+      const plannerModel = details === 'complete' ? 'sonnet' : undefined;
+      const plannerKind = details === 'complete' ? 'cli' : undefined;
+      const run = makeRun(makeSummary({ plannerTool: 'claude-code', plannerModel, plannerKind }), {
+        ...createInitialState('feat'),
+        plannerTool: 'old-planner',
+        plannerModel: 'old-planner-model',
+        plannerKind: 'shell',
+        reviewerTool: 'old-endpoint',
+        reviewerModel: 'old-reviewer-model',
+        reviewerKind: 'api',
+      });
+
+      expect(run.reviewer).toEqual({
+        tool: 'claude-code',
+        model: plannerModel ?? null,
+        kind: plannerKind ?? null,
+      });
+      const markdown = renderReviewPacketMarkdown(makeReviewPacket({ run }));
+      expect(markdown).toContain('- Reviewer: claude-code');
+      expect(markdown).not.toContain('old-endpoint');
+    },
+  );
+
+  it('keeps REVIEW unknown when neither seat is recorded', () => {
+    const run = makeRun(makeSummary(), createInitialState('feat'));
+
+    expect(run.reviewer).toEqual({ tool: null, model: null, kind: null });
+    expect(renderReviewPacketMarkdown(makeReviewPacket({ run }))).toContain('- Reviewer: n/a\n');
+  });
+
   it('carries each seat kind from the summary record that named its tool', () => {
     const run = makeRun(
       makeSummary({

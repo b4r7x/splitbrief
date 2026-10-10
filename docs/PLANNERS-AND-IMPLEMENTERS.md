@@ -134,7 +134,7 @@ An `api` planner reads no files of its own, so it declares `resolvePlanningConte
 
 **Native session continuity.** A backend that resumes its own thread keeps it across the calls of a run. Claude Code captures the id **as it streams** (`onSessionId`, inside `runClaudePlannerStream`), not after the call returns, so a call cut halfway still leaves a thread the next call resumes. The CLI planner keeps the same in-memory `SessionResumeState` and passes only an id the tool itself reported — codex resumes its own thread id, never the SPLITBRIEF session id, which is not a tool thread at all.
 
-Planner backend invoke functions return `RunnerCallResult`. Use `toInvokeResult()` only at outer legacy postprocess/extraction boundaries that explicitly need `{ text, usage }`; do not collapse typed call results before they reach the planner base. New adapters must emit typed call results directly and set `backendKind` (`api`, `cli`, `shell`, or `agent`).
+Planner backend invoke functions return `RunnerCallResult`. Use `toInvokeResult()` only at outer legacy postprocess/extraction boundaries that explicitly need `{ text, usage }`; do not collapse typed call results before they reach the planner base. New adapters must emit typed call results directly and set `backendKind` (`api`, `cli`, `shell`, or `agent`). Call contexts record `axes: seatAxisWords(runner)` from the runner that executes the call, alongside its runner name and model. Planner, reviewer, escalation, summary, compaction and implementer calls keep this snapshot through projection and collection. Older calls without `axes` still parse.
 
 ---
 

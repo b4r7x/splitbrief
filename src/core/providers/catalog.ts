@@ -138,14 +138,14 @@ function isRunnerKind(value: string): value is RunnerKind {
  * The display word for one runner identity, decided by its backend kind. A
  * catalogued API provider keeps its display name and a custom API provider —
  * even one named after a CLI tool — stays literal; a CLI call named by its
- * command resolves through the tool it starts. Shell and agent identities are
- * their own literal names. An identity recorded without a kind keeps the
- * merged-catalog resolution for records written before kinds.
+ * command resolves through the tool it starts. Canonical shell and agent ids
+ * use their catalog labels; other command names stay literal. An identity
+ * recorded without a kind keeps the merged-catalog resolution for older records.
  */
 export function getRunnerIdentityDisplayName(kind: RunnerKind | undefined, id: string): string {
   if (kind === 'api') return isApiProviderId(id) ? getProviderDisplayName(id) : id;
   if (kind === 'cli') return getProviderDisplayName(cliToolIdForCommand(id) ?? id);
-  if (kind === 'shell' || kind === 'agent') return id;
+  if (kind === 'shell' || kind === 'agent') return id === kind ? getProviderDisplayName(id) : id;
   return getProviderDisplayName(id);
 }
 

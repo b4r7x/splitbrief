@@ -44,7 +44,7 @@ const RULES = `- Research the repository read-only. Do not edit, create or delet
 - \`dependsOn\`: ids of earlier tasks in the same or an earlier batch. No cycles.
 - \`batch\`: 1, 2, …. SPLITBRIEF runs every required check before every review, and the reviewer chooses the commands that verify the change. SPLITBRIEF builds the tasks in the order you list them, so list them in batch order and list each task after the tasks it depends on.
 - A write to a protected path (${PROTECTED_PATHS_TEXT}) waits for the user to confirm it. List every such write the task needs in \`protectedOperations\` as \`{ "path": …, "operation": "write" }\`; the plan approval lists them. Use null when there is none.
-- \`validation\`: the language, the test command and the test file pattern you found in the repository; a \`test\` check runs that command on its file. Use null for what you did not find.
+- \`validation\`: the language and test command you found. A \`test\` check runs that command on its file. \`testPattern\` is a file name pattern with one \`*\`, such as \`*.test.js\` or \`test_*.py\`: no \`/\`, no \`\\\` and no \`..\`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Use null for what you did not find.
 - ${GATES_ARE_SPLITBRIEFS}`;
 
 export function buildPlanSessionPrompt(input: PlanSessionPromptInput): string {

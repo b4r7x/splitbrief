@@ -29,6 +29,7 @@ import {
 } from '../orchestrator/planning/mutation-guard.js';
 import { composeAbortSignal } from '../../utils/abort.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { resolveCliExecutableAliases } from '../runners/resolve-cli-executable.js';
 import { assertCliStartGate } from '../runners/start-gate.js';
 import { processError } from '../../lib/process/errors.js';
@@ -302,6 +303,7 @@ export function createCliPlanner(
         ...(schema !== undefined && { schema }),
       }),
     runnerName: plannerCfg.tool,
+    axes: seatAxisWords(plannerCfg),
     ...(resolvedModel !== undefined && { model: resolvedModel }),
     escalateFullMode: 'files',
     typedOutput: typedOutputCapability(plannerCfg.tool, trustedCli?.installedVersion),

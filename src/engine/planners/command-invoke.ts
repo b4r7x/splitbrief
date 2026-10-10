@@ -24,6 +24,7 @@ import {
   PlannerArtifactSemanticIdSchema,
 } from '../../core/schemas/planner-artifact.js';
 import { error } from '../../utils/error.js';
+import { seatAxisWords } from '../../core/runners/effort-channel.js';
 
 export function resolveCapabilities(
   override: { [K in keyof PlannerCapabilities]?: boolean | undefined } | undefined,
@@ -93,8 +94,10 @@ export function createCommandBasedPlanner(
   return createPlannerBase({
     invokePlan: invoke,
     invokeEscalate: invoke,
-    backendKind: 'cli',
+    backendKind: config.kind,
     runnerName: config.command,
+    model: config.model,
+    axes: seatAxisWords(config),
     capabilities: resolveCapabilities(overrides?.capabilities),
     ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),
     ...createCommandExistsAvailability(config.command),
@@ -256,6 +259,7 @@ export function createConfiguredCustomPlanner(
     invokeEscalate: invoke,
     backendKind: direct ? 'agent' : 'shell',
     runnerName: runner.command.label,
+    axes: [],
     capabilities: resolveCapabilities(undefined),
     ...(direct && { escalateFullMode: 'files' as const }),
     ...DEFAULT_AVAILABILITY,

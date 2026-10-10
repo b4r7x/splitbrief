@@ -1,35 +1,10 @@
 import { redactSecrets } from '../utils/redact.js';
-import { getProviderDisplayName, getRunnerIdentityDisplayName } from './providers/catalog.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from './providers/automatic-model.js';
 import { findKnownModel } from './providers/known-models.js';
 import { prettyModelName } from './providers/pretty-model-name.js';
 import { isProviderId, type RunnerKind } from './schemas/enums.js';
 import { EFFORT_AXIS_TOKENS } from './runners/effort-channel.js';
 import { isCliToolId, type CliToolId } from './runners/cli-tool-catalog.js';
-
-/**
- * `<tool> · <model>` for one call, with the tool word decided by the call's
- * backend kind when the caller knows it: a custom API provider stays literal
- * even when it reuses a CLI tool id. Without a kind the merged catalog answers,
- * exactly as records written before kinds read.
- */
-export function formatToolModel(input: {
-  tool?: string | undefined;
-  model?: string | undefined;
-  kind?: RunnerKind | undefined;
-  displayName?: string | undefined;
-}): string {
-  const { tool, model, kind, displayName } = input;
-  if (!tool && !model) return '';
-  const display = !tool
-    ? ''
-    : kind === undefined
-      ? getProviderDisplayName(tool)
-      : getRunnerIdentityDisplayName(kind, tool);
-  const name = displayName ?? (model ? formatModelName(model, cliVocabularyTool(tool, kind)) : '');
-  if (name) return display ? `${display} · ${name}` : name;
-  return display || '';
-}
 
 /**
  * The CLI tool whose model-id vocabulary a call reads: only a CLI call, or one recorded before

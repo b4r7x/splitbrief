@@ -287,27 +287,35 @@ function packetSeat(
   };
 }
 
+function reviewSeat(record: Summary | WorkflowState) {
+  return record.reviewerTool !== undefined
+    ? { tool: record.reviewerTool, model: record.reviewerModel, kind: record.reviewerKind }
+    : { tool: record.plannerTool, model: record.plannerModel, kind: record.plannerKind };
+}
+
 export function buildRun(
   opts: BuildReviewPacketOptions,
   events: PacketEvent[],
 ): ReviewPacket['run'] {
+  const planner = packetSeat(
+    {
+      tool: opts.summary.plannerTool,
+      model: opts.summary.plannerModel,
+      kind: opts.summary.plannerKind,
+    },
+    {
+      tool: opts.state.plannerTool,
+      model: opts.state.plannerModel,
+      kind: opts.state.plannerKind,
+    },
+  );
+  const reviewer = packetSeat(reviewSeat(opts.summary), reviewSeat(opts.state));
   return {
     sessionId: opts.sessionId,
     feature: opts.summary.feature,
     mode: null,
     phase: opts.state.phase,
-    planner: packetSeat(
-      {
-        tool: opts.summary.plannerTool,
-        model: opts.summary.plannerModel,
-        kind: opts.summary.plannerKind,
-      },
-      {
-        tool: opts.state.plannerTool,
-        model: opts.state.plannerModel,
-        kind: opts.state.plannerKind,
-      },
-    ),
+    planner,
     implementer: packetSeat(
       {
         tool: opts.summary.implementerTool,
@@ -320,6 +328,7 @@ export function buildRun(
         kind: opts.state.implementerKind,
       },
     ),
+    reviewer,
     startedAt: opts.state.startedAt ?? null,
     completedAt: latestWorkflowComplete(events),
     totalTimeMs: opts.summary.totalTime,

@@ -1,4 +1,5 @@
 import type { TaskId } from '../../../core/schemas/task.js';
+import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import {
   runnerOutcome,
@@ -48,6 +49,7 @@ export function createImplementerCallContext(opts: {
     backendKind,
     runnerName: implementerRunnerName(implementer),
     model: implementer.model,
+    axes: seatAxisWords(implementer),
     attempt: opts.attempt,
     taskId: opts.taskId,
     // An API call's boundary is recorded by the completion that owns its one

@@ -1,4 +1,3 @@
-import { formatToolModel } from '../../../core/model-display.js';
 import { baseSplit } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -9,14 +8,13 @@ import type {
   ValidationStages,
   ValidationStageSkips,
 } from '../../../engine/events/types.js';
-import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
-import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { formatDuration } from '../../../utils/format-time.js';
 import { formatContextLength } from '../../../core/formatting.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import { formatUsageTokens } from '../usage-details-model.js';
 import { suiteStageText } from '../display/phase-verb.js';
+import { formatRecordedSeatIdentity } from '../display/recorded-seat-identity.js';
 import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 const NOT_RUN = 'not\u00a0run';
@@ -28,21 +26,14 @@ export function formatTaskStartedParts(
   event: Extract<EngineEvent, { type: 'task_started' }>,
 ): string[] {
   const parts = [`${event.file} (${event.action})`];
-  const displayName =
-    event.tool === undefined || event.model === undefined
-      ? undefined
-      : resolveModelDisplayName({
-          providerId: event.tool,
-          model: event.model,
-          role: 'implementer',
-          cache: modelCacheStore,
-        });
-  const toolLabel = formatToolModel({
-    tool: event.tool,
+  const identity = formatRecordedSeatIdentity({
+    runnerName: event.tool,
     model: event.model,
-    displayName,
+    axes: event.axes,
+    backendKind: event.backendKind,
+    role: 'implementer',
   });
-  if (toolLabel) parts.push(toolLabel);
+  if (identity !== null) parts.push(identity);
   // The recovery panel names this value `Worker`. The routing sentence (`Selected profile default
   // (fits, estimated …)`) restates the worker and the fit, so it stays in the run log.
   if (event.implementerProfile) parts.push(`worker ${event.implementerProfile}`);

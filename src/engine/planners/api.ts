@@ -1,4 +1,5 @@
 import type { Config } from '../../core/schemas/config.js';
+import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import type { Planner, PriorMessage } from './types.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
 import { ONE_SHOT_API_CAPS } from './types.js';
@@ -246,6 +247,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
     backendKind: 'api',
     runnerName: provider,
     model,
+    axes: seatAxisWords(plannerCfg),
     consumesPriorMessages: true,
     typedOutput: 'native',
     // An API seat reads no files of its own, so its planning session is given an explicit

@@ -38,7 +38,7 @@ The planning session's answer is typed. Its schemas live in `src/core/schemas/pl
 | `decisions` | string[] | Choices the planner made; `state.plan` stores the ledger as `{ text, taskId }` entries, and a plain string reads as `taskId: null` |
 | `criteria` | `{ id, text, checkIds }[]` | Acceptance criteria, each served by named checks |
 | `checks` | `{ id, kind: 'test' \| 'cmd' \| 'render', value, required }[]` | The checks the criteria and tasks name |
-| `validation` | `{ language, test, testPattern }` or null | Becomes `state.discoveredValidation` (`testCommand`, `testPattern`, `language`); it feeds only the planner's `test` checks |
+| `validation` | `{ language, test, testPattern }` or null | Becomes `state.discoveredValidation` (`testCommand`, `testPattern`, `language`); it feeds only the planner's `test` checks. `testPattern` is a file name pattern with one `*`, such as `*.test.js` or `test_*.py`. It has no directory part (`/` or `\`) and no `..`. SPLITBRIEF searches beside the changed file and in the stack's test folders. SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern. It uses the configured pattern, if present. Otherwise, it uses the stack's patterns. |
 | `tasks` | `TaskSpec[]` | The tasks |
 
 `state.plan` (`PlanSchema`) keeps the plan without its tasks; the tasks live in `state.tasks`.

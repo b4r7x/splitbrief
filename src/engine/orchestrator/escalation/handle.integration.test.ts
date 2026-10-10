@@ -44,7 +44,7 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import {
-  buildProgressLines,
+  buildProgressRows,
   deriveBuildProgress,
 } from '../../../features/workflow/display/build-progress.js';
 
@@ -236,7 +236,7 @@ describe('handleRetryAndEscalation', () => {
           operations: operationsStore.get(),
           now: Date.now(),
         });
-        counts.push(buildProgressLines(progress, 118)[0] ?? '');
+        counts.push(buildProgressRows(progress, 118)[0]?.text ?? '');
         return Promise.resolve(
           makeRunnerCallResult({
             status: 'completed',

@@ -54,6 +54,11 @@ Use this shape with real ids, commands and paths:
 
 Keep nullable keys present. Use null when no validation block, steps or protected operations are needed.
 Keep each validation key present when its block exists. Its commands and language may be null.
+Use a file name pattern with one `*` for `validation.testPattern`, such as `*.test.js` or `test_*.py`.
+Use no directory part (`/` or `\`) and no `..`. Use null when no pattern was found.
+SPLITBRIEF searches beside the changed file and in the stack's test folders.
+SPLITBRIEF emits `discovered_validation_refused` when it refuses a discovered pattern.
+It uses the configured pattern, if present. Otherwise, it uses the stack's patterns.
 Task ids match `T` plus three digits. Each task has nonblank intent and at least one accepted criterion.
 Checks have id, kind, value and required. Register only `test` and `cmd` in these skills.
 `render` exists in the engine schema but is unavailable here. A required render criterion blocks pass as unverified.

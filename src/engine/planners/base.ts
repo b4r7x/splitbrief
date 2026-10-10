@@ -82,6 +82,7 @@ export interface PlannerBaseConfig {
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
+  axes?: readonly string[] | undefined;
   isAvailable: () => Promise<boolean>;
   unavailabilityReason?: () => string | undefined;
   getVersion?: () => Promise<string | null>;

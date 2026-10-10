@@ -392,6 +392,14 @@ describe('eventsStore — append via addEvent', () => {
     ]);
   });
 
+  it('keeps recorded axes through live and replay activity projection and sanitizes each word', () => {
+    const event = makeRunnerActivity({ axes: ['high', '\u001b[31mthinking\u001b[0m'] });
+    const expected = expect.objectContaining({ axes: ['high', 'thinking'], redacted: true });
+    addEvent(event);
+    expect(eventsStore.get().events).toEqual([expected]);
+    expect(mergeEventLog([event])).toEqual([expected]);
+  });
+
   it('keeps raw warning model ids through the activity projection and sanitizes them', () => {
     const warningRow = {
       kind: 'warning',

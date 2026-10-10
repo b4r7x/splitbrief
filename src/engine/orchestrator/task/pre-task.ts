@@ -13,6 +13,7 @@ import { buildSnapshotFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { nowIso } from '../../../utils/format-time.js';
 import { publishTaskStart, publishTaskSkipped, publishWarning, publishError } from '../events.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
@@ -47,6 +48,10 @@ export async function runPreTaskHooksAndPublish(opts: {
       file: task.suggestedFiles[0],
       files: [...task.suggestedFiles],
       action: task.action,
+      tool: getRunnerDisplayName(config.implementer),
+      model: config.implementer.model,
+      axes: seatAxisWords(config.implementer),
+      backendKind: config.implementer.kind,
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),
     };
@@ -98,6 +103,8 @@ export async function runPreTaskHooksAndPublish(opts: {
       files: [...task.suggestedFiles],
       action: task.action,
       tool: getRunnerDisplayName(config.implementer),
+      axes: seatAxisWords(config.implementer),
+      backendKind: config.implementer.kind,
       ...(config.implementer.model !== undefined && { model: config.implementer.model }),
       ...(wctx.implementerProfile !== undefined && { implementerProfile: wctx.implementerProfile }),
       ...buildRoutingEventFields(wctx.routingDecision),

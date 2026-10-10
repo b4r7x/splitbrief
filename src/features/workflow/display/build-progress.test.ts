@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildProgressLines,
+  buildProgressRows,
   deriveBuildProgress,
   UI_IDLE_WARN_MS,
   type DeriveBuildProgressInput,
@@ -22,6 +22,20 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 
 const NOW = 1_000_000;
 
+it.each([
+  ['shell', 'Custom Shell'],
+  ['agent', 'Agent'],
+] as const)('names a recorded %s build seat in the configured seat words', (backendKind, label) => {
+  const progress = deriveBuildProgress(
+    input({
+      operations: operationsState({
+        active: runningOperation({ backendKind, runnerName: backendKind, model: 'gpt-5' }),
+      }),
+    }),
+  );
+  expect(progress.activity).toBe(`${label} · GPT-5 · working`);
+});
+
 it('names a scheduled review during the build as reviewing', () => {
   const progress = deriveBuildProgress(
     input({
@@ -30,7 +44,7 @@ it('names a scheduled review during the build as reviewing', () => {
       }),
     }),
   );
-  expect(progress.activity).toBe('OpenAI Codex CLI · reviewing');
+  expect(progress.activity).toBe('OpenAI Codex CLI · auto · reviewing');
 });
 
 it.each(['implementing', 'validating-task'] as const)(
@@ -45,7 +59,9 @@ it.each(['implementing', 'validating-task'] as const)(
         }),
       }),
     );
-    expect(progress.activity).toBe('REVIEW · OpenAI Codex CLI · answering the consult on T013');
+    expect(progress.activity).toBe(
+      'REVIEW · OpenAI Codex CLI · auto · answering the consult on T013',
+    );
   },
 );
 
@@ -165,7 +181,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('OpenAI Codex CLI · working');
+    expect(progress.activity).toBe('OpenAI Codex CLI · auto · working');
     expect(progress.freshness).toBe('No output for 1:00');
     expect(progress.silent).toBe(true);
   });
@@ -313,7 +329,11 @@ describe('deriveBuildProgress', () => {
 
     expect(progress.attempt).toBeNull();
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      expect(buildProgressLines(progress, width).join('\n')).not.toContain('attempt');
+      expect(
+        buildProgressRows(progress, width)
+          .map((row) => row.text)
+          .join('\n'),
+      ).not.toContain('attempt');
     }
   });
 
@@ -333,7 +353,11 @@ describe('deriveBuildProgress', () => {
 
     expect(progress).not.toHaveProperty('eta');
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      expect(buildProgressLines(progress, width).join('\n')).not.toContain('ETA');
+      expect(
+        buildProgressRows(progress, width)
+          .map((row) => row.text)
+          .join('\n'),
+      ).not.toContain('ETA');
     }
   });
 
@@ -347,7 +371,7 @@ describe('deriveBuildProgress', () => {
     );
 
     expect(progress.attempt).toEqual({ current: 2, max: BOUNDS.attemptsPerLineage });
-    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain(
+    expect(buildProgressRows(progress, getChromeContentWidth(120))[0]?.text).toContain(
       `attempt 2 of ${BOUNDS.attemptsPerLineage}`,
     );
   });
@@ -360,7 +384,9 @@ describe('deriveBuildProgress', () => {
 
     const resumed = deriveBuildProgress(input({ tasks: tasksStore.get() }));
     expect(resumed.attempt).toEqual({ current: 6, max: 12 });
-    expect(buildProgressLines(resumed, getChromeContentWidth(120))[0]).toContain('attempt 6 of 12');
+    expect(buildProgressRows(resumed, getChromeContentWidth(120))[0]?.text).toContain(
+      'attempt 6 of 12',
+    );
 
     addEvent(
       makeRetry({ taskId: taskId('T001'), attempt: 1, lineageAttempt: 7, attemptAllowance: 12 }),
@@ -377,7 +403,7 @@ describe('deriveBuildProgress', () => {
     });
     const consulted = deriveBuildProgress(input({ tasks: tasksStore.get() }));
     expect(consulted.attempt).toEqual({ current: 8, max: 12 });
-    expect(buildProgressLines(consulted, getChromeContentWidth(120))[0]).toContain(
+    expect(buildProgressRows(consulted, getChromeContentWidth(120))[0]?.text).toContain(
       'attempt 8 of 12',
     );
     addEvent({
@@ -395,7 +421,65 @@ describe('deriveBuildProgress', () => {
       input({ operations: operationsState({ active: runningOperation() }) }),
     );
 
-    expect(progress.activity).toBe('OpenAI Codex CLI · working');
+    expect(progress.activity).toBe('OpenAI Codex CLI · auto · working');
+  });
+
+  it('names the build seat as the sidebar spells it: tool, model and axis words', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({
+            runnerName: 'codex',
+            model: 'gpt-5',
+            axes: ['high'],
+            taskId: taskId('T001'),
+          }),
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('OpenAI Codex CLI · GPT-5 · high · working on T001');
+  });
+
+  it('sheds whole identity segments, never the work, where the activity row is narrow', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({
+            runnerName: 'codex',
+            model: 'gpt-5',
+            axes: ['high'],
+            taskId: taskId('T001'),
+          }),
+        }),
+      }),
+    );
+
+    expect(buildProgressRows(progress, 45)[1]?.text).toBe(
+      'OpenAI Codex CLI · GPT-5 · working on T001',
+    );
+    expect(buildProgressRows(progress, 40)[1]?.text).toBe('OpenAI Codex CLI · working on T001');
+  });
+
+  it('keeps the consult seat, work and freshness when a two-row identity sheds segments', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({
+            role: 'planner',
+            backendKind: 'api',
+            runnerName: 'custom',
+            model: 'long-model-name-'.repeat(10),
+            axes: ['high'],
+            taskId: 'T013',
+          }),
+        }),
+        lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 5_000 }),
+      }),
+    );
+    const row = buildProgressRows(progress, getChromeContentWidth(120))[1]?.text ?? '';
+    expect(row).toBe('PLAN · custom · answering the consult on T013 · last event 5s ago');
+    expect(progress.activity).toContain(' · high · answering the consult on T013');
   });
 
   it('names the brief from the call, and uses working when the call has no brief', () => {
@@ -413,7 +497,7 @@ describe('deriveBuildProgress', () => {
           }),
         }),
       );
-      expect(progress.activity).toBe(`Google Antigravity CLI · ${words}`);
+      expect(progress.activity).toBe(`Google Antigravity CLI · auto · ${words}`);
     }
   });
 
@@ -427,7 +511,9 @@ describe('deriveBuildProgress', () => {
           }),
         }),
       );
-      expect(progress.activity).toBe('PLAN · Claude Code CLI · answering the consult on T003');
+      expect(progress.activity).toBe(
+        'PLAN · Claude Code CLI · auto · answering the consult on T003',
+      );
     }
   });
 
@@ -440,7 +526,9 @@ describe('deriveBuildProgress', () => {
         }),
       }),
     );
-    expect(progress.activity).toBe('REVIEW · OpenAI Codex CLI · answering the consult on T013');
+    expect(progress.activity).toBe(
+      'REVIEW · OpenAI Codex CLI · auto · answering the consult on T013',
+    );
   });
 
   it('names the tool by its display name, whichever name its runner gave the call', () => {
@@ -455,7 +543,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('PLAN · Claude Code CLI · answering the consult');
+    expect(progress.activity).toBe('PLAN · Claude Code CLI · auto · answering the consult');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -471,7 +559,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('claude · working');
+    expect(progress.activity).toBe('claude · auto · working');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -485,7 +573,7 @@ describe('deriveBuildProgress', () => {
         }),
       );
 
-      expect(progress.activity).toBe(`${runnerName} · working`);
+      expect(progress.activity).toBe(`${runnerName} · auto · working`);
     }
   });
 
@@ -501,7 +589,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Ollama · working');
+    expect(progress.activity).toBe('Ollama · auto · working');
     expect(progress.freshness).toBe('No output for 1:00');
   });
 
@@ -514,7 +602,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Claude Code CLI · working');
+    expect(progress.activity).toBe('Claude Code CLI · auto · working');
   });
 
   it('names the build state between calls', () => {
@@ -542,7 +630,9 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('');
     expect(progress.freshness).not.toContain('no update yet');
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      const block = buildProgressLines(progress, width).join('\n');
+      const block = buildProgressRows(progress, width)
+        .map((row) => row.text)
+        .join('\n');
       expect(block).not.toContain('no update yet');
       expect(block).not.toContain('final-review');
     }
@@ -582,7 +672,7 @@ describe('deriveBuildProgress', () => {
       input({ operations: operationsState({ active: runningOperation({ role }) }) }),
     );
 
-    expect(progress.activity).toBe(`OpenAI Codex CLI · ${role}`);
+    expect(progress.activity).toBe(`OpenAI Codex CLI · auto · ${role}`);
   });
 
   it.each([
@@ -626,7 +716,7 @@ describe('deriveBuildProgress', () => {
       }),
     );
 
-    expect(buildProgressLines(progress, getChromeContentWidth(120))[1]).toBe(
+    expect(buildProgressRows(progress, getChromeContentWidth(120))[1]?.text).toBe(
       'npm test · running 1:30',
     );
     expect(progress.silent).toBe(false);
@@ -692,7 +782,11 @@ describe('deriveBuildProgress', () => {
     expect(progress.freshness).toBe('running 10:02');
     expect(progress.silent).toBe(false);
     for (const width of [160, getChromeContentWidth(120), 80, 60]) {
-      expect(buildProgressLines(progress, width).join('\n')).not.toContain('last event');
+      expect(
+        buildProgressRows(progress, width)
+          .map((row) => row.text)
+          .join('\n'),
+      ).not.toContain('last event');
     }
   });
 
@@ -743,16 +837,16 @@ describe('deriveBuildProgress', () => {
     );
 
     for (const width of [getChromeContentWidth(120), 140]) {
-      const line = buildProgressLines(progress, width)[1] ?? '';
+      const line = buildProgressRows(progress, width)[1]?.text ?? '';
       expect(line.endsWith(' · running 0:40')).toBe(true);
       expect(line.startsWith('Review · Base re-run V2 · npm test -- ')).toBe(true);
       expect(line).toContain('…');
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(width);
     }
     for (const width of [60, 80]) {
-      const lines = buildProgressLines(progress, width);
-      expect(lines).toHaveLength(buildProgressRowCount(width));
-      expect(lines[2]).toBe('running 0:40');
+      const rows = buildProgressRows(progress, width);
+      expect(rows).toHaveLength(buildProgressRowCount(width));
+      expect(rows[2]?.text).toBe('running 0:40');
     }
   });
 
@@ -782,39 +876,131 @@ describe('buildProgressRowCount', () => {
   });
 });
 
-describe('buildProgressLines', () => {
-  it('cuts a silence that names a long tool from its end, keeping the seat and the clock', () => {
+describe('buildProgressRows', () => {
+  it('keeps row keys stable when the recorded identity and terminal width change', () => {
+    for (const runnerName of ['codex', 'opencode']) {
+      const progress = deriveBuildProgress(
+        input({ operations: operationsState({ active: runningOperation({ runnerName }) }) }),
+      );
+      for (const width of [getChromeContentWidth(120), 80, 60]) {
+        expect(buildProgressRows(progress, width).map((row) => row.key)).toEqual(
+          buildProgressRowCount(width) === 2
+            ? ['counts', 'activity']
+            : ['counts', 'activity', 'freshness'],
+        );
+      }
+    }
+  });
+
+  it.each<{ operation: Partial<RunningOperation>; identity: string }>([
+    { operation: {}, identity: 'OpenAI Codex CLI · auto' },
+    { operation: { model: 'gpt-5', axes: ['high'] }, identity: 'OpenAI Codex CLI · GPT-5 · high' },
+  ])(
+    'cuts a silence that names a long tool from its end, keeping the seat and the clock ($identity)',
+    ({ operation, identity }) => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({
+              ...operation,
+              openTools: [
+                {
+                  activityId: 'call-1:tool:bash-1',
+                  kind: 'command',
+                  label: 'bash',
+                  target: `npm test -- ${'src/features/workflow/'.repeat(8)}`,
+                  since: NOW - 400_000,
+                },
+              ],
+            }),
+          }),
+          lifecycle: lifecycleState({
+            stall: { since: NOW - 10_000, silentMs: 300_000, runnerName: 'codex' },
+          }),
+        }),
+      );
+
+      const [, row] = buildProgressRows(progress, 120);
+      expect(
+        row?.text.startsWith(`${identity} · working · No output for 5:10 · running npm test`),
+      ).toBe(true);
+      expect(row?.text.endsWith('…')).toBe(true);
+      expect(getTerminalCellWidth(row?.text ?? '')).toBeLessThanOrEqual(120);
+    },
+  );
+
+  it.each([
+    { role: 'implementer', prefix: '', doing: 'working on T013' },
+    { role: 'planner', prefix: 'PLAN · ', doing: 'answering the consult on T013' },
+    { role: 'review', prefix: 'REVIEW · ', doing: 'answering the consult on T013' },
+  ] as const)(
+    'keeps the $role seat, work and silence clock after shedding a long model',
+    ({ role, prefix, doing }) => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({
+              role,
+              taskId: 'T013',
+              model: 'long-model-name-'.repeat(10),
+              axes: ['high'],
+              openTools: [
+                {
+                  activityId: 'call-1:tool:bash-1',
+                  kind: 'command',
+                  label: 'bash',
+                  target: `npm test -- ${'src/features/workflow/'.repeat(8)}`,
+                  since: NOW - 400_000,
+                },
+              ],
+            }),
+          }),
+          lifecycle: lifecycleState({
+            stall: { since: NOW - 10_000, silentMs: 300_000, runnerName: 'codex' },
+          }),
+        }),
+      );
+
+      for (const cols of [120, 80, 60]) {
+        const width = getChromeContentWidth(cols);
+        const rows = buildProgressRows(progress, width);
+        const activity = `${prefix}OpenAI Codex CLI · ${doing}`;
+        if (cols === 120) {
+          expect(rows[1]?.text).toBe(`${activity} · No output for 5:10`);
+        } else {
+          expect(rows[1]?.text).toBe(activity);
+          expect(rows[2]?.text.startsWith('No output for 5:10 · running npm test')).toBe(true);
+          expect(rows[2]?.text.endsWith('…')).toBe(true);
+        }
+        for (const row of rows) expect(getTerminalCellWidth(row.text)).toBeLessThanOrEqual(width);
+      }
+    },
+  );
+
+  it('drops a silence description when only its clock fits after the full identity', () => {
     const progress = deriveBuildProgress(
       input({
         operations: operationsState({
-          active: runningOperation({
-            openTools: [
-              {
-                activityId: 'call-1:tool:bash-1',
-                kind: 'command',
-                label: 'bash',
-                target: `npm test -- ${'src/features/workflow/'.repeat(8)}`,
-                since: NOW - 400_000,
-              },
-            ],
-          }),
+          active: runningOperation({ model: 'long-model-name-'.repeat(4), axes: ['high'] }),
         }),
         lifecycle: lifecycleState({
           stall: { since: NOW - 10_000, silentMs: 300_000, runnerName: 'codex' },
         }),
       }),
     );
-
-    const [, row] = buildProgressLines(progress, 120);
-    expect(
-      row?.startsWith('OpenAI Codex CLI · working · No output for 5:10 · running npm test'),
-    ).toBe(true);
-    expect(getTerminalCellWidth(row ?? '')).toBeLessThanOrEqual(120);
+    const width = getTerminalCellWidth(`${progress.activity} · No output for 5:10`);
+    for (const extra of [0, 1, 2, 3]) {
+      const row = buildProgressRows(
+        { ...progress, freshness: `${progress.freshness} · running npm test` },
+        width + extra,
+      )[1];
+      expect(row?.text).toBe(`${progress.activity} · No output for 5:10`);
+    }
   });
 
   it('2 lines at 120 columns', () => {
     expect(
-      buildProgressLines(deriveBuildProgress(input()), getChromeContentWidth(120)),
+      buildProgressRows(deriveBuildProgress(input()), getChromeContentWidth(120)),
     ).toHaveLength(2);
   });
 
@@ -825,9 +1011,9 @@ describe('buildProgressLines', () => {
       }),
     });
     for (const width of [80, 60]) {
-      expect(buildProgressLines(deriveBuildProgress(input()), width)).toHaveLength(3);
-      expect(buildProgressLines(deriveBuildProgress(retry), width)).toHaveLength(3);
-      expect(buildProgressLines(deriveBuildProgress(retry), width)[0]).toBe(
+      expect(buildProgressRows(deriveBuildProgress(input()), width)).toHaveLength(3);
+      expect(buildProgressRows(deriveBuildProgress(retry), width)).toHaveLength(3);
+      expect(buildProgressRows(deriveBuildProgress(retry), width)[0]?.text).toBe(
         `0/1 briefs passed · attempt 2 of ${BOUNDS.attemptsPerLineage}`,
       );
     }
@@ -842,8 +1028,10 @@ describe('buildProgressLines', () => {
     );
 
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      const block = buildProgressLines(progress, width).join('\n');
-      expect(block).toContain('OpenAI Codex CLI · working');
+      const block = buildProgressRows(progress, width)
+        .map((row) => row.text)
+        .join('\n');
+      expect(block).toContain('OpenAI Codex CLI · auto · working');
       expect(block).toContain('last event 5s ago');
       expect(block).toContain('1/2 briefs passed');
       expect(block).not.toMatch(/token/i);
@@ -862,11 +1050,13 @@ describe('buildProgressLines', () => {
       }),
     );
 
-    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain(
+    expect(buildProgressRows(progress, getChromeContentWidth(120))[0]?.text).toContain(
       '1/3 briefs passed',
     );
-    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain('1 escalated');
-    expect(buildProgressLines(progress, getChromeContentWidth(120))[0]).toContain('1 failed');
+    expect(buildProgressRows(progress, getChromeContentWidth(120))[0]?.text).toContain(
+      '1 escalated',
+    );
+    expect(buildProgressRows(progress, getChromeContentWidth(120))[0]?.text).toContain('1 failed');
   });
 });
 
@@ -889,11 +1079,32 @@ describe('the build block during the final review', () => {
     });
   }
 
+  it('names the review seat as the sidebar spells it: tool, model and axis words', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          active: runningOperation({
+            role: 'review',
+            phase: 'final-review',
+            runnerName: 'codex',
+            model: 'gpt-5',
+            axes: ['high'],
+          }),
+        }),
+      }),
+    );
+
+    expect(progress.activity).toBe('Review… OpenAI Codex CLI · GPT-5 · high');
+  });
+
   it('states no attempt', () => {
     const progress = deriveBuildProgress(review());
     expect(progress.attempt).toBeNull();
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      const block = buildProgressLines(progress, width).join('\n');
+      const block = buildProgressRows(progress, width)
+        .map((row) => row.text)
+        .join('\n');
       expect(block).toContain('2/2 briefs passed');
       expect(block).not.toContain('attempt');
     }
@@ -902,7 +1113,7 @@ describe('the build block during the final review', () => {
   it('paints exactly the rows the chrome budgets for it', () => {
     const progress = deriveBuildProgress(review());
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      expect(buildProgressLines(progress, width)).toHaveLength(buildProgressRowCount(width));
+      expect(buildProgressRows(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
   });
 
@@ -915,7 +1126,7 @@ describe('the build block during the final review', () => {
       }),
     );
     for (const width of [getChromeContentWidth(120), 80, 60]) {
-      expect(buildProgressLines(progress, width)).toHaveLength(buildProgressRowCount(width));
+      expect(buildProgressRows(progress, width)).toHaveLength(buildProgressRowCount(width));
     }
     expect(progress.attempt).not.toBeNull();
   });

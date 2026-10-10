@@ -80,6 +80,7 @@ import type { EventBus } from '../../../../src/engine/events/types.js';
 import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
 import {
   BASE_IMPLEMENTER,
+  BASE_PLANNER,
   VISUAL_FIXTURE_PROJECT_DIR,
   visualConfig,
   VISUAL_WORKFLOW_SESSION_ID,
@@ -87,6 +88,7 @@ import {
 } from '../screen-fixtures.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { RUNNER_IDLE_WARN_MS } from '../../../../src/core/schemas/runner-fields.js';
+import { seatAxisWords } from '../../../../src/core/runners/effort-channel.js';
 import { atRestProjections } from './at-rest-projections.js';
 
 type VisualConfigOverrides = Parameters<typeof visualConfig>[0];
@@ -406,6 +408,7 @@ const wideCommandActivity = projectRunnerCallActivity(
     backendKind: 'api',
     runnerName: FIXED_RUNNER_NAME,
     model: FIXED_RUNNER_MODEL,
+    axes: seatAxisWords(BASE_IMPLEMENTER),
     attempt: 1,
     type: 'call_tool_use_delta',
     channel: 'tool',
@@ -508,6 +511,7 @@ const implementationProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 0,
     },
@@ -521,6 +525,7 @@ const implementationProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 1,
       activityId: 'visual-call-001:warn:1',
@@ -540,6 +545,7 @@ const implementationProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 2,
       activityId: 'visual-call-001:read:1',
@@ -560,6 +566,7 @@ const implementationProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 3,
       activityId: 'visual-call-001:read:2',
@@ -579,6 +586,7 @@ const implementationProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 4,
       ...wideCommandActivity,
@@ -603,6 +611,8 @@ const buildConsultProjection: WorkflowFixtureProjection = {
       role: 'planner',
       backendKind: 'cli',
       runnerName: 'claude',
+      model: BASE_PLANNER.model,
+      axes: seatAxisWords(BASE_PLANNER),
       sequence: 0,
     },
   ],
@@ -977,6 +987,8 @@ const buildReviewConsultProjection: WorkflowFixtureProjection = {
         role: 'review',
         backendKind: 'cli',
         runnerName: 'claude',
+        model: BASE_PLANNER.model,
+        axes: seatAxisWords(BASE_PLANNER),
         sequence: 0,
       },
     ];
@@ -997,6 +1009,8 @@ const REVIEW_CHECK_DECLINED = {
   target: 'npm run test:e2e',
   reason: 'It needs a browser, and the change touches no screen.',
 } as const;
+
+const CODEX_REVIEW_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } as const;
 
 /** The reviewer chose two commands and declined one test before the final review. */
 function reviewChecksPlanned(ts: number): EngineEvent {
@@ -1055,7 +1069,7 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: false,
-  config: { reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+  config: { reviewer: CODEX_REVIEW_SEAT },
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
     { type: 'user_message', ts: FIXED_TS + 10, phase: 'planning', text: WORKFLOW_FEATURE },
@@ -1101,7 +1115,8 @@ const reviewFixCyclesProjection: WorkflowFixtureProjection = {
       role: 'review',
       backendKind: 'cli',
       runnerName: 'codex',
-      model: 'gpt-6-astra',
+      model: CODEX_REVIEW_SEAT.model,
+      axes: seatAxisWords(CODEX_REVIEW_SEAT),
       sequence: 1,
       activityId: 'visual-review-call-001:read',
       stage: 'completed',
@@ -1236,7 +1251,7 @@ const finalReviewProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
-  config: { reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+  config: { reviewer: CODEX_REVIEW_SEAT },
   get events(): EngineEvent[] {
     return [
       ...everyBriefPassed(),
@@ -1266,7 +1281,8 @@ const finalReviewProjection: WorkflowFixtureProjection = {
         role: 'review',
         backendKind: 'cli',
         runnerName: 'codex',
-        model: 'gpt-6-astra',
+        model: CODEX_REVIEW_SEAT.model,
+        axes: seatAxisWords(CODEX_REVIEW_SEAT),
         attempt: 1,
         sequence: 0,
       },
@@ -1746,7 +1762,8 @@ const consultQuestionProjection: WorkflowFixtureProjection = {
       role: 'planner',
       backendKind: 'cli',
       runnerName: 'claude-code',
-      model: 'claude-sonnet-4',
+      model: BASE_PLANNER.model,
+      axes: seatAxisWords(BASE_PLANNER),
       attempt: 1,
       sequence: 0,
     },
@@ -1759,7 +1776,8 @@ const consultQuestionProjection: WorkflowFixtureProjection = {
       role: 'planner',
       backendKind: 'cli',
       runnerName: 'claude-code',
-      model: 'claude-sonnet-4',
+      model: BASE_PLANNER.model,
+      axes: seatAxisWords(BASE_PLANNER),
       attempt: 1,
       sequence: 1,
       durationMs: 3_000,
@@ -1824,6 +1842,7 @@ const failureProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 0,
     },
@@ -1837,6 +1856,7 @@ const failureProjection: WorkflowFixtureProjection = {
       backendKind: 'api',
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 1,
       sequence: 1,
       status: 'failed',
@@ -2715,7 +2735,8 @@ function claudePlanActivity(
     role: 'planner',
     backendKind: 'cli',
     runnerName: 'claude',
-    model: 'opus',
+    model: CLAUDE_PLAN_SEAT.model,
+    axes: seatAxisWords(CLAUDE_PLAN_SEAT),
     sequence,
     activityId: `visual-claude-call:${sequence}`,
     redacted: false,
@@ -2779,7 +2800,8 @@ const CLAUDE_BUILD_CALL = {
   role: 'implementer',
   backendKind: 'cli',
   runnerName: 'claude-code',
-  model: 'opus',
+  model: CLAUDE_PLAN_SEAT.model,
+  axes: seatAxisWords(CLAUDE_PLAN_SEAT),
   attempt: 0,
 } as const;
 
@@ -2789,7 +2811,7 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
-  config: { implementer: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' } },
+  config: { implementer: CLAUDE_PLAN_SEAT },
   events: [
     { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
     FIXTURE_TASKS_PLANNED,
@@ -2805,7 +2827,8 @@ const implementationNarrationProjection: WorkflowFixtureProjection = {
       files: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
       action: 'modify',
       tool: 'claude-code',
-      model: 'opus',
+      model: CLAUDE_PLAN_SEAT.model,
+      axes: seatAxisWords(CLAUDE_PLAN_SEAT),
     },
     {
       type: 'implementer_generate_running',
@@ -3056,7 +3079,8 @@ function claudePlanFrameEvents(): EngineEvent[] {
       role: 'planner',
       backendKind: 'cli',
       runnerName: 'claude',
-      model: 'claude-sonnet-4',
+      model: BASE_PLANNER.model,
+      axes: seatAxisWords(BASE_PLANNER),
       attempt: 1,
     },
     onOutput: (text) => {
@@ -3119,6 +3143,7 @@ function codexPlanCall(callId: string, attempt: number) {
     backendKind: 'cli',
     runnerName: CODEX_PLAN_SEAT.tool,
     model: CODEX_PLAN_SEAT.model,
+    axes: seatAxisWords(CODEX_PLAN_SEAT),
     attempt,
   } as const;
 }
@@ -3233,6 +3258,7 @@ const SILENT_CALL = {
   backendKind: 'cli',
   runnerName: OPENCODE_BUILD_SEAT.tool,
   model: OPENCODE_BUILD_SEAT.model,
+  axes: seatAxisWords(OPENCODE_BUILD_SEAT),
   attempt: 1,
 } as const;
 const SILENT_CALL_WARNED_TS = FIXED_TS - 10_000;
@@ -3318,7 +3344,12 @@ const implementationSilentBareProjection: WorkflowFixtureProjection = {
       return { ...event, tool: CODEX_BUILD_SEAT.tool, model: CODEX_BUILD_SEAT.model };
     }
     if (event.type === 'runner_call_started' || event.type === 'runner_call_stalled') {
-      return { ...event, runnerName: CODEX_BUILD_SEAT.tool, model: CODEX_BUILD_SEAT.model };
+      return {
+        ...event,
+        runnerName: CODEX_BUILD_SEAT.tool,
+        model: CODEX_BUILD_SEAT.model,
+        axes: seatAxisWords(CODEX_BUILD_SEAT),
+      };
     }
     return event;
   }),
@@ -3336,6 +3367,7 @@ const LAST_BRIEF_CALL = {
   backendKind: 'api',
   runnerName: FIXED_RUNNER_NAME,
   model: FIXED_RUNNER_MODEL,
+  axes: seatAxisWords(BASE_IMPLEMENTER),
   attempt: 1,
 } as const;
 
@@ -3607,7 +3639,7 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'normal',
   sidebarVisible: true,
-  config: { reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } },
+  config: { reviewer: CODEX_REVIEW_SEAT },
   get events(): EngineEvent[] {
     return [
       { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
@@ -3649,7 +3681,8 @@ const reviewRedGateProjection: WorkflowFixtureProjection = {
           role: 'review',
           backendKind: 'cli',
           runnerName: 'codex',
-          model: 'gpt-6-astra',
+          model: CODEX_REVIEW_SEAT.model,
+          axes: seatAxisWords(CODEX_REVIEW_SEAT),
           attempt: 1,
           sequence: index + 1,
           activityId: `visual-review-call-001:read:${index}`,
@@ -3829,6 +3862,7 @@ const fixCheckStoppedContinuedProjection: WorkflowFixtureProjection = {
       sequence: 0,
       runnerName: FIXED_RUNNER_NAME,
       model: FIXED_RUNNER_MODEL,
+      axes: seatAxisWords(BASE_IMPLEMENTER),
       attempt: 2,
     },
   ],
@@ -3989,6 +4023,7 @@ const projections = [
             backendKind: 'cli',
             runnerName: 'antigravity',
             model: AGY_BUILD_SEAT.model,
+            axes: seatAxisWords(AGY_BUILD_SEAT),
           };
         default:
           return event;

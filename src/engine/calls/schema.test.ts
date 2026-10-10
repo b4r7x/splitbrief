@@ -28,6 +28,17 @@ const terminalFields = {
 } as const;
 
 describe('RunnerCallEventSchema', () => {
+  it('accepts older calls without axes and bounds every recorded axis word', () => {
+    const started = { type: 'call_started', ts: 1, ...context };
+    expect(RunnerCallEventSchema.parse(started).axes).toBeUndefined();
+    expect(
+      RunnerCallEventSchema.parse({ ...started, axes: ['high', 'thinking', 'fast'] }).axes,
+    ).toEqual(['high', 'thinking', 'fast']);
+    for (const axes of [[''], ['x'.repeat(257)], [1]]) {
+      expect(RunnerCallEventSchema.safeParse({ ...started, axes }).success).toBe(false);
+    }
+  });
+
   it('validates call text deltas from the canonical text channel tuple', () => {
     expect(
       RUNNER_CALL_TEXT_CHANNELS.map(

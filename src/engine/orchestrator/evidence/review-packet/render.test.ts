@@ -1,11 +1,41 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
+import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderChecksLogForPrompt, renderReviewPacketMarkdown } from './render.js';
 
 const EVIDENCE_PATH = '/project/.splitbrief/sessions/sess/evidence.json';
 const SESSION_LOG_PATH = '/project/.splitbrief/sessions/sess/session.jsonl';
 const EVIDENCE_PATHS = { validation: EVIDENCE_PATH, sessionLog: SESSION_LOG_PATH };
+
+describe('renderReviewPacketMarkdown review seat', () => {
+  it('heads the verdict with the review seat and names the runner that held it', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown({
+      ...packet,
+      run: {
+        ...packet.run,
+        planner: { tool: 'claude-code', model: 'sonnet' },
+        reviewer: { tool: 'codex', model: 'gpt-6.1-sol' },
+      },
+    });
+
+    expect(rendered).toContain('## Reviewer Final Review');
+    expect(rendered).toContain('- Reviewer: codex (gpt-6.1-sol)');
+    expect(rendered.toLowerCase()).not.toContain('planner final review');
+  });
+
+  it('reads packets written before the reviewer was recorded and shows its absence', () => {
+    const packet = makeReviewPacket();
+    const saved = ReviewPacketSchema.parse({
+      ...packet,
+      run: { ...packet.run, reviewer: undefined },
+    });
+
+    expect(saved.run.reviewer).toBeUndefined();
+    expect(renderReviewPacketMarkdown(saved)).toContain('- Reviewer: n/a\n');
+  });
+});
 
 describe('renderReviewPacketMarkdown checks log', () => {
   it('lists each check entry with its task, command and exit code', () => {

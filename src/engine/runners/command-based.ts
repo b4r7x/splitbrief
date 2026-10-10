@@ -112,6 +112,7 @@ function createCommandCallContext(opts: {
       role: 'planner',
       backendKind: 'shell',
       runnerName: opts.command,
+      axes: [],
     }
   );
 }

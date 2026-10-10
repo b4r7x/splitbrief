@@ -229,6 +229,33 @@ describe('usage details money', () => {
 });
 
 describe('usage details billing', () => {
+  it('keeps distinct recorded identities keyed separately when their display labels match', () => {
+    const keys = ['agent:agent', 'api:Agent', 'Agent'];
+    const input = {
+      tokenUsage: null,
+      costBreakdown: breakdown({
+        providerRunMetadata: Object.fromEntries(
+          keys.map((key) => [
+            key,
+            {
+              service: key,
+              offering: 'payg' as const,
+              normalizedEndpoint: key,
+              billing: 'unknown' as const,
+              asOf: '',
+            },
+          ]),
+        ),
+      }),
+    };
+    const billing = rows(input).filter(
+      (row) => row.kind === 'entry' && row.key.startsWith('billing:'),
+    );
+
+    expect(billing.map((row) => row.label)).toEqual(['Agent', 'Agent', 'Agent']);
+    expect(billing.map((row) => row.key)).toEqual(keys.map((key) => `billing:${key}`));
+  });
+
   it('bills an enforced api-key invocation as metered, not as the tool default', () => {
     const enforced = {
       tokenUsage: usage({ plannerInput: 10 }),
@@ -252,7 +279,13 @@ describe('usage details billing', () => {
     };
 
     expect(deriveUsageDetails(enforced).billing).toEqual([
-      { tool: 'claude-code', posture: 'api-metered', basis: 'enforced-channel', proven: true },
+      {
+        key: 'claude-code',
+        tool: 'claude-code',
+        posture: 'api-metered',
+        basis: 'enforced-channel',
+        proven: true,
+      },
     ]);
     expect(facts(enforced, 'billing:claude-code')).toEqual(['metered', 'enforced channel']);
     for (const text of texts(enforced)) expect(text).not.toContain('subscription');
@@ -276,6 +309,32 @@ describe('usage details billing', () => {
     };
 
     expect(facts(unproven, 'billing:codex')).toEqual(['subscription', 'no evidence, tool default']);
+  });
+
+  it.each([
+    ['shell:shell', 'Custom Shell'],
+    ['agent:agent', 'Agent'],
+    ['shell:claude', 'claude'],
+    ['shell:opencode', 'opencode'],
+    ['agent:claude', 'claude'],
+    ['agent:opencode', 'opencode'],
+  ])('names billing identity %s without changing real command names', (key, label) => {
+    const input = {
+      tokenUsage: usage({ plannerInput: 10 }),
+      costBreakdown: breakdown({
+        providerRunMetadata: {
+          [key]: {
+            service: key,
+            offering: 'payg',
+            normalizedEndpoint: key,
+            billing: 'unknown',
+            asOf: '',
+          },
+        },
+      }),
+    };
+    expect(deriveUsageDetails(input).billing.map((row) => row.tool)).toEqual([label]);
+    expect(rows(input).find((row) => row.key === `billing:${key}`)?.label).toBe(label);
   });
 
   it('names a kind-qualified identity in its own words, keeping the API twin literal', () => {
@@ -307,8 +366,8 @@ describe('usage details billing', () => {
       'opencode',
       'OpenCode CLI',
     ]);
-    expect(facts(input, 'billing:opencode')).toEqual(['metered', 'no evidence, tool default']);
-    expect(facts(input, 'billing:OpenCode CLI')).toEqual(['provider', 'no evidence, tool default']);
+    expect(facts(input, 'billing:api:opencode')).toEqual(['metered', 'no evidence, tool default']);
+    expect(facts(input, 'billing:cli:opencode')).toEqual(['provider', 'no evidence, tool default']);
   });
 });
 

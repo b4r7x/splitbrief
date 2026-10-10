@@ -69,6 +69,7 @@ describe('createRunnerAttemptCallbackBuffer', () => {
       attempt: 1,
       runnerName: 'claude-code',
       model: 'sonnet',
+      axes: ['high'],
       transport: { kind: 'stdout-final' },
       sessionScope: { kind: 'workflow', workflowSessionId: 'session-1' },
       taskId: 'T001',

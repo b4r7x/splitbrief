@@ -155,6 +155,7 @@ function operationFromRunnerStart(event: EngineEventOf<'runner_call_started'>): 
     ...(event.backendKind !== undefined && { backendKind: event.backendKind }),
     ...(runnerName !== undefined && { runnerName }),
     ...(model !== undefined && { model }),
+    ...(event.axes !== undefined && { axes: event.axes }),
     ...(event.attempt !== undefined && { attempt: event.attempt }),
   };
 }

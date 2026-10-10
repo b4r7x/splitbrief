@@ -7,6 +7,8 @@ import {
   makeTaskWorkflowContext as makeWorkflowContext,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { EngineEventSchema } from '../../events/schema.js';
 import { createContinuationHolder } from '../continuation.js';
 import { runPreTaskHooksAndPublish } from './pre-task.js';
 
@@ -28,6 +30,31 @@ afterEach(() => {
 });
 
 describe('runPreTaskHooksAndPublish', () => {
+  it('records the identity of the implementer that starts the task and replays it', async () => {
+    const task = makeTask({ id: 'T001' });
+    const { bus, events } = makeBusRecorder();
+    await runPreTaskHooksAndPublish({
+      wctx: makeWorkflowContext({
+        bus,
+        config: makeConfig({
+          implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'high' },
+        }),
+      }),
+      task,
+      state: implementingState([task]),
+      index: 0,
+      totalTasks: 1,
+      setTrackedState: vi.fn(),
+    });
+    const event = events.find((event) => event.type === 'task_started');
+    expect(EngineEventSchema.parse(event)).toMatchObject({
+      tool: 'codex',
+      model: 'gpt-5',
+      axes: ['high'],
+      backendKind: 'cli',
+    });
+  });
+
   it('raises a snapshot-failed recovery when the task baseline cannot be captured', async () => {
     const task = makeTask({ id: 'T001' });
     const state = implementingState([task]);

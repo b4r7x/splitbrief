@@ -672,6 +672,8 @@ const wait = setInterval(() => {
     const planner = await createTrustedClaudeCodePlanner({
       authChannel: undefined,
       initialSessionId: 'sess-old',
+      model: 'sonnet',
+      effort: 'high',
     });
     const controller = new AbortController();
     const events: RunnerCallEvent[] = [];
@@ -707,6 +709,14 @@ const wait = setInterval(() => {
     }
     expect(output).toEqual(['Which module?']);
     expect(events.filter((event) => event.type === 'call_started')).toHaveLength(1);
+    expect(
+      events.every(
+        (event) =>
+          event.runnerName === 'claude' &&
+          event.model === 'sonnet' &&
+          event.axes?.join() === 'high',
+      ),
+    ).toBe(true);
   });
 
   it.each(['expired', 'mismatch'])(
