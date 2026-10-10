@@ -23,7 +23,7 @@ import { handleFailedImplementation } from './implementation-failure.js';
 import { runnerCallOutcome } from '../../implementers/pipeline/call-result.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
-import { writeConfigYaml } from '#testing/helpers/config-io.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 
 afterEach(cleanupTaskProjects);
@@ -306,7 +306,16 @@ describe('handleFailedImplementation — an account the provider refuses is a se
 describe('handleFailedImplementation — the automatic seat switch intent', () => {
   async function haltWith(state: WorkflowState) {
     const { projectDir, sessionId } = setupProject();
-    writeConfigYaml(projectDir, {});
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'deepseek/deepseek-flash',
+        fallback: { tool: 'claude-code' },
+      },
+      validation: { endChecks: false, testCommand: 'noop' },
+    });
+    writeConfig(projectDir, config);
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
     const task = makeTask({ id: 'T001' });
     const implementer = makeImplementer({ retry: vi.fn() });
@@ -317,15 +326,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
       implementer,
       planner: makePlanner({ typedCall: consultCallAnswering(() => guidanceConsult()) }),
       bus,
-      config: makeConfig({
-        implementer: {
-          kind: 'cli',
-          tool: 'opencode',
-          model: 'deepseek/deepseek-flash',
-          fallback: { tool: 'claude-code' },
-        },
-        validation: { endChecks: false, testCommand: 'noop' },
-      }),
+      config,
     });
 
     return handleFailedImplementation({

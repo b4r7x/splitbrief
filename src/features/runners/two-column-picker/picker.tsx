@@ -77,6 +77,8 @@ const CARD_WRAP_MIN_WIDTH = 40;
 const COLUMN_GAP = 3;
 const OUTER_CHROME_ROWS = 6;
 const INNER_CHROME_ROWS = 4;
+/** The least room between the title and a step label that shares its row. */
+const HEAD_GAP = 2;
 const VISIBLE_ROWS_CAP = 18;
 
 type PickerHintKind = 'terminal' | 'expanded' | 'default';
@@ -248,12 +250,25 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
   const t = useTheme();
   const [{ cols, rows }] = useStores(terminalSizeStore);
 
+  const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
+  // The columns reserve every wrapped label row so the header stays inside the viewport.
+  const headStacked =
+    stepLabel !== undefined &&
+    stepLabel !== '' &&
+    getTerminalCellWidth(title) + HEAD_GAP + getTerminalCellWidth(stepLabel) > totalBoxWidth;
+  const stepLabelLines = headStacked
+    ? wrapOnWords(stepLabel, totalBoxWidth, Number.POSITIVE_INFINITY).lines
+    : stepLabel
+      ? [stepLabel]
+      : [];
   const maxVisible = Math.min(
-    availableRows({ rows, chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS }),
+    availableRows({
+      rows,
+      chromeRows: OUTER_CHROME_ROWS + INNER_CHROME_ROWS + (headStacked ? stepLabelLines.length : 0),
+    }),
     VISIBLE_ROWS_CAP,
   );
   const columnHeight = maxVisible + INNER_CHROME_ROWS;
-  const totalBoxWidth = overlayWidth({ cols, density: 'wide' });
   // The odd cell goes to the Models column, which carries the longer strings.
   const leftBoxWidth = Math.floor((totalBoxWidth - COLUMN_GAP) / 2);
   const rightBoxWidth = totalBoxWidth - COLUMN_GAP - leftBoxWidth;
@@ -320,11 +335,20 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
       alignItems="center"
       justifyContent="center"
     >
-      <Box width={totalBoxWidth} marginBottom={1} justifyContent="space-between">
+      <Box
+        width={totalBoxWidth}
+        marginBottom={1}
+        flexDirection={headStacked ? 'column' : 'row'}
+        justifyContent="space-between"
+      >
         <Box>
           <Text color={t.accent}>{title}</Text>
         </Box>
-        {stepLabel ? <Text color={t.textDim}>{stepLabel}</Text> : null}
+        {stepLabelLines.map((line, rowIndex) => (
+          <Text key={rowIndex} color={t.textDim}>
+            {line}
+          </Text>
+        ))}
       </Box>
       <Box gap={COLUMN_GAP} width={totalBoxWidth} flexDirection="row" alignItems="flex-start">
         <Box width={leftBoxWidth} flexShrink={0}>

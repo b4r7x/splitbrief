@@ -179,6 +179,7 @@ describe('PickerView terminal panes', () => {
     const inherit = inheritPlannerOption({ planner, isCurrent: true });
     const ui = mount(
       <PickerView
+        slot="seat"
         role="reviewer"
         catalog={makeCatalog({ items: [inherit, planner], currentItem: inherit })}
         actions={makeActions()}
@@ -219,7 +220,7 @@ describe('PickerView terminal panes', () => {
     });
     // Only `openai` has a credential, so exactly one of the two routes is usable.
     catalog.providerAuth = { kind: 'read', facts: [{ provider: 'openai', source: 'oauth' }] };
-    const ui = mount(<PickerView role="planner" catalog={catalog} actions={actions} />);
+    const ui = mount(<PickerView slot="seat" role="planner" catalog={catalog} actions={actions} />);
     await flushEffects();
     ui.stdin.write(RIGHT);
     await flushEffects();
@@ -245,6 +246,7 @@ describe('PickerView terminal panes', () => {
     };
     const ui = mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [kilo],
@@ -289,6 +291,7 @@ describe('PickerView terminal panes', () => {
     ];
     const ui = mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [kilo],
@@ -338,6 +341,7 @@ describe('PickerView terminal panes', () => {
     ];
     const ui = mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [kilo],
@@ -371,6 +375,7 @@ describe('PickerView terminal panes', () => {
     ];
     const ui = mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [cursor],
@@ -458,6 +463,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     const rightRows = axisRows(input.fast ?? 'off', input.withSibling ?? false);
     return mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [cursor],
@@ -476,6 +482,7 @@ describe('PickerView option-axis confirm and cycle', () => {
     const cursor = { ...cliTool('cursor', 'Cursor Agent CLI'), providerDependent: false };
     return mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [cursor],
@@ -823,6 +830,7 @@ describe('PickerView hybrid route and axis expansion', () => {
     const opencode = cliTool('opencode', 'OpenCode CLI');
     return mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [opencode],
@@ -989,6 +997,7 @@ describe('PickerView authentication method rows', () => {
     const opencode = cliTool('opencode', 'OpenCode CLI');
     return mount(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={makeCatalog({
           items: [opencode],

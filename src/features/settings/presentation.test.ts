@@ -65,7 +65,7 @@ describe('displayValue', () => {
 });
 
 describe('matchesFilter', () => {
-  const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS });
+  const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS, cliTools: [] });
   const matching = (query: string): readonly string[] =>
     items.filter((item) => matchesFilter(item, query)).map((item) => item.key);
 

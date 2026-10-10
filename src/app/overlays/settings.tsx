@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../components/theme.js';
 import { Box } from 'ink';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
+import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import {
   availableRows,
@@ -24,8 +25,9 @@ import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { hintFor, useSettingsEditor } from '../../features/settings/hooks/editor.js';
 import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
+import { FallbackRowView } from '../../features/crew/fallback-row-view.js';
 import { planSeatBlock } from '../../features/crew/format.js';
-import { crewActivate, crewVerdict } from '../../features/crew/rows.js';
+import { crewActivate, crewVerdict, fallbackActivate } from '../../features/crew/rows.js';
 import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
@@ -54,6 +56,7 @@ export function SettingsOverlay() {
   const config = configStore.useConfig();
   const displayNames = useCrewDisplayNames(config);
   const detectedContextLength = configStore.use((state) => state.detectedContextLength);
+  const cliTools = detectionStore.use((state) => state.cliTools);
   const [{ focus }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
 
   const { initialKey, initialFilter } = parseSettingsFocus(focus);
@@ -64,7 +67,7 @@ export function SettingsOverlay() {
     chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0),
   });
 
-  const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, displayNames });
+  const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools, displayNames });
   const crewRows = items.filter((item) => item.kind === 'crew').map((item) => item.row);
   const verdict = crewVerdict(crewRows);
   const layout = planSeatBlock({
@@ -116,6 +119,9 @@ export function SettingsOverlay() {
     onActivateCrew: (item) => {
       crewActivate({ target: item, config });
     },
+    onActivateFallback: (item) => {
+      fallbackActivate({ row: item.row, config });
+    },
     pageSize: getPageSize,
     canActOnIndex,
   });
@@ -138,7 +144,9 @@ export function SettingsOverlay() {
           label:
             selectedItem.kind === 'crew'
               ? CREW_SEAT_LABELS[selectedItem.row.id]
-              : (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label),
+              : selectedItem.kind === 'fallback'
+                ? `${CREW_SEAT_LABELS[selectedItem.row.id]} fallback`
+                : (selectedItem.def.readLabel?.(config) ?? selectedItem.def.label),
           lines: settingsHelpLines(selectedItem),
         };
   const help = showDescription && detail !== undefined ? detail : null;
@@ -175,6 +183,9 @@ export function SettingsOverlay() {
                 width={contentWidth}
               />
             );
+          }
+          if (item.kind === 'fallback') {
+            return <FallbackRowView row={item.row} isCursor={isCursor} width={contentWidth} />;
           }
 
           const def = item.def;

@@ -316,6 +316,23 @@ describe('confirmRow', () => {
 
 describe('seatEffortDraft', () => {
   const opus: ModelOption = { id: 'opus', effortChoices: ['low', 'high'] };
+
+  it('opens the fallback slot on its own level rather than the seat level', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'opus',
+          effort: 'max',
+          fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'low' },
+        },
+      }),
+    });
+
+    expect(seatEffortDraft(opus, undefined, 'planner', 'fallback')).toBe('low');
+  });
   const routed: ModelOption = {
     id: 'openai/gpt-5.6',
     variants: [
@@ -336,7 +353,7 @@ describe('seatEffortDraft', () => {
       }),
     });
 
-    expect(seatEffortDraft(opus, undefined, 'planner')).toBe('high');
+    expect(seatEffortDraft(opus, undefined, 'planner', 'seat')).toBe('high');
   });
 
   it('opens the ladder on the preset a variant-channel seat already runs', () => {
@@ -347,7 +364,7 @@ describe('seatEffortDraft', () => {
       }),
     });
 
-    expect(seatEffortDraft(opus, undefined, 'planner')).toBe('high');
+    expect(seatEffortDraft(opus, undefined, 'planner', 'seat')).toBe('high');
   });
 
   it('opens the ladder on a variant that the route ladder spells', () => {
@@ -358,7 +375,7 @@ describe('seatEffortDraft', () => {
       }),
     });
 
-    expect(seatEffortDraft(routed, undefined, 'planner')).toBe('max');
+    expect(seatEffortDraft(routed, undefined, 'planner', 'seat')).toBe('max');
   });
 
   it('seeds null when the route ladder does not spell the persisted variant', () => {
@@ -369,7 +386,7 @@ describe('seatEffortDraft', () => {
       }),
     });
 
-    expect(seatEffortDraft(routed, undefined, 'planner')).toBe(null);
+    expect(seatEffortDraft(routed, undefined, 'planner', 'seat')).toBe(null);
   });
 
   it('seeds null when the seat channel is none', () => {
@@ -380,7 +397,7 @@ describe('seatEffortDraft', () => {
       }),
     });
 
-    expect(seatEffortDraft(opus, undefined, 'planner')).toBe(null);
+    expect(seatEffortDraft(opus, undefined, 'planner', 'seat')).toBe(null);
   });
 });
 

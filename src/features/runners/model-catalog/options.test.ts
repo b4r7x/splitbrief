@@ -12,7 +12,8 @@ import {
   PLANNER_CLI_TOOL_IDS,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { SEAT_PICKER_ROLES } from '../../../core/runners/seat-roles.js';
-import { isCurrentConfig } from './catalog.js';
+import { isCurrentRunner } from './catalog.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
 import { assemblePickerDescriptors, buildPickerOptions, type PickerOption } from './options.js';
 import { deriveModelCatalogCapability } from './posture.js';
 import type { ConfiguredProviderRuntime } from '../../../engine/detection/provider-outcomes.js';
@@ -398,8 +399,10 @@ describe('current config visibility', () => {
     expect(ollama.status.state).toBe('unavailable');
     expect(ollama.status.remediation).toBe('Ollama is not running');
 
-    expect(isCurrentConfig(ollama, config, 'implementer')).toBe(true);
-    expect(isCurrentConfig(lmStudio, config, 'implementer')).toBe(false);
+    expect(isCurrentRunner(ollama, readActiveRunner({ config, role: 'implementer' }))).toBe(true);
+    expect(isCurrentRunner(lmStudio, readActiveRunner({ config, role: 'implementer' }))).toBe(
+      false,
+    );
   });
 
   it('keeps an incompatible current CLI visible with remediation', () => {
@@ -442,7 +445,7 @@ describe('current config visibility', () => {
 
     expect(cliRow.kind).toBe('cli');
     expect(cliRow.isCurrent).toBeUndefined();
-    expect(isCurrentConfig(cliRow, config, 'implementer')).toBe(false);
+    expect(isCurrentRunner(cliRow, readActiveRunner({ config, role: 'implementer' }))).toBe(false);
   });
 
   it('keeps a CLI row current for the CLI seat of the same name', () => {
@@ -457,7 +460,7 @@ describe('current config visibility', () => {
     if (cliRow === undefined) throw new Error('no implementer picker row for opencode');
 
     expect(cliRow.isCurrent).toBe(true);
-    expect(isCurrentConfig(cliRow, config, 'implementer')).toBe(true);
+    expect(isCurrentRunner(cliRow, readActiveRunner({ config, role: 'implementer' }))).toBe(true);
   });
 });
 
@@ -487,14 +490,20 @@ describe('reviewer seat', () => {
       reviewer: { kind: 'cli', tool: 'codex' },
     });
 
-    expect(isCurrentConfig(reviewerRow('codex'), config, 'reviewer')).toBe(true);
-    expect(isCurrentConfig(reviewerRow('claude-code'), config, 'reviewer')).toBe(false);
+    expect(
+      isCurrentRunner(reviewerRow('codex'), readActiveRunner({ config, role: 'reviewer' })),
+    ).toBe(true);
+    expect(
+      isCurrentRunner(reviewerRow('claude-code'), readActiveRunner({ config, role: 'reviewer' })),
+    ).toBe(false);
   });
 
   it('marks the planner row current when no reviewer is configured', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    expect(isCurrentConfig(reviewerRow('claude-code'), config, 'reviewer')).toBe(true);
+    expect(
+      isCurrentRunner(reviewerRow('claude-code'), readActiveRunner({ config, role: 'reviewer' })),
+    ).toBe(true);
   });
 });
 

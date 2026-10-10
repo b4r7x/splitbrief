@@ -9,7 +9,7 @@ import { TIMEOUTS } from '../pipeline-spec/timeouts.js';
 const isApiImplementer = (config: Config): boolean =>
   resolveImplementerProfiles(config).defaultProfile.config.kind === 'api';
 
-export const SETTINGS_SECTIONS = ['Crew', 'Tuning', 'Workflow', 'Validation'] as const;
+export const SETTINGS_SECTIONS = ['Crew', 'Fallback', 'Tuning', 'Workflow', 'Validation'] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 

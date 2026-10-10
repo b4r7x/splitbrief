@@ -29,7 +29,7 @@ export interface PlannerCallFailureRecoveryOptions extends RecoveryBuilderBase {
    */
   diagnosis: Pick<PlannerCallDiagnosis, 'failure' | 'message'> & Partial<PlannerCallDiagnosis>;
   phase: Phase;
-  /** The runner the halted call ran on; the seat-down halt names it and its declared fallback. */
+  /** The runner the halted call ran on; the seat-down halt names it. */
   runner: DeepReadonly<RunnerConfig>;
   /** The planner-tier seat the call ran on. The final review's call halts on the review seat. */
   seat?: 'plan' | 'review' | undefined;
@@ -69,7 +69,6 @@ export function buildPlannerCallFailedRecoveryIssue(
       ...(diagnosis.seatDown.requestId !== undefined && {
         requestId: diagnosis.seatDown.requestId,
       }),
-      fallback: opts.runner.fallback,
       task: opts.task,
       phase: opts.phase,
       seatSwitches: opts.seatSwitches,

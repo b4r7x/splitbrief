@@ -200,7 +200,7 @@ export function eventRowBlock(options: {
     case 'seat_switched':
       return wrappedTextBlock({
         keyPrefix,
-        text: `${CREW_SEAT_LABELS[event.seat]}${arrowSep()}${formatSeatCandidateIdentity(event.to)}${SOFT_SEP}${formatSeatSwitchCause(event)}`,
+        text: `${CREW_SEAT_LABELS[event.seat]}${arrowSep()}${formatSeatCandidateIdentity(event.to)}${SOFT_SEP}${event.auto ? `automatic fallback${SOFT_SEP}` : ''}${formatSeatSwitchCause(event)}`,
         width: ctx.width,
         tone: 'textDim',
       });

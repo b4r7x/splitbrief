@@ -78,6 +78,19 @@ afterEach(() => {
 
 describe('visual catalog', () => {
   it.each([
+    ['workflow-recovery-no-fallback', 'Change BUILD tool'],
+    ['workflow-recovery-fallback-used', 'Change BUILD tool'],
+    ['workflow-recovery-fallback-not-installed', 'Change BUILD tool'],
+    ['workflow-seat-switched', 'BUILD → OpenCode CLI'],
+    ['workflow-seat-switched-manual', 'BUILD → OpenCode CLI'],
+  ])('registers %s at every required viewport', (id, marker) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario, id).toBeDefined();
+    expect(scenario?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(scenario?.checkpoints[0]?.marker).toBe(marker);
+  });
+
+  it.each([
     ['workflow-review-task-cadence', 'Review T001 passed'],
     ['workflow-review-task-cadence-settled', 'Review 1 passed'],
     ['workflow-review-task-out-of-scope', 'Review T001 passed'],

@@ -2144,7 +2144,7 @@ describe('one recovery reads as one block', () => {
       'Error',
       headline,
       `Recovery  Change BUILD tool${arrowSep()}retried`,
-      `BUILD${arrowSep()}OpenCode CLI${SOFT_SEP}${headline}`,
+      `BUILD${arrowSep()}OpenCode CLI${SOFT_SEP}${auto ? `automatic fallback${SOFT_SEP}` : ''}${headline}`,
     ]);
   });
 

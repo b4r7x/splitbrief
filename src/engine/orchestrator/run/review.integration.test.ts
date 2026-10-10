@@ -13,6 +13,8 @@ import { setupGitSessionProject } from '#testing/helpers/git-session.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeNoValidationConfig } from '#testing/helpers/factories/config.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
 import { taskId } from '../../../core/schemas/task.js';
 import {
@@ -28,12 +30,15 @@ import {
   typedCallPlanAndReview,
 } from '#testing/helpers/typed-planner.js';
 import { saveState } from '../../../core/state/persistence.js';
+import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
 import type { FinalReviewResult } from '../final-review.js';
 import type { Planner } from '../../planners/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { diagnosePlannerCallFailure } from '../recovery/planner-call-failure.js';
+import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
 import {
   followReviewAnswer,
   haltVerdictlessReview,
@@ -364,6 +369,95 @@ function firstFailsThenPassesReviewer(): Planner {
 }
 
 describe('runScheduledReview saved recovery', () => {
+  it('offers an inherited REVIEW swap and records its own seat without changing PLAN', async () => {
+    const ref = setupProject();
+    const config = makeNoValidationConfig({
+      planner: { kind: 'cli', tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+    });
+    const fallback = { tool: 'claude-code', model: 'sonnet' };
+    writeConfig(ref.projectDir, {
+      ...config,
+      planner: { ...config.planner, fallback },
+    });
+    const plannerOfRecord = loadConfig(ref.projectDir).config.planner;
+    await rememberDetectedTools(
+      ref.projectDir,
+      cliDetectionsFor('ready', ['codex', 'claude-code']),
+    );
+    const state: WorkflowState = { ...capState(), phase: 'final-review' };
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const review: FinalReviewResult = {
+      state,
+      verdict: null,
+      fixWork: null,
+      reviewText: '',
+      reviewStatus: 'failed',
+      failure: {
+        kind: 'seat-blocked',
+        diagnosis: diagnosePlannerCallFailure({
+          err: new Error('Please sign in again'),
+          label: 'Review failed',
+          runner: config.planner,
+          seat: 'review',
+        }),
+      },
+    };
+    const halted = await haltVerdictlessReview({
+      wctx: makeWctx({ ...ref, config, bus }),
+      state,
+      review,
+      setTrackedState: vi.fn(),
+    });
+    expect(halted?.pendingRecovery?.switchSeat).toMatchObject({
+      seat: 'review',
+      auto: { candidate: fallback },
+    });
+    expect(halted?.pendingRecovery?.details).toContain(
+      'REVIEW uses PLAN. Switching here gives REVIEW its own seat.',
+    );
+    if (halted === undefined) throw new Error('expected a REVIEW halt');
+    const moved = await switchSeatAndPrepareResume({
+      ...ref,
+      state: halted,
+      config,
+      candidate: fallback,
+      bus,
+      policy: {
+        purpose: 'resume',
+        interaction: 'headless',
+        allowRepoRunners: false,
+        allowHooks: false,
+        unverifiedAuth: 'denied',
+      },
+      signal: new AbortController().signal,
+      prepare: async (input) => ({
+        kind: 'prepared',
+        execution: makePreparedExecution({
+          ...ref,
+          feature: state.feature,
+          config: input.effectiveConfig ?? config,
+          resumeState: halted,
+        }),
+      }),
+    });
+    expect(moved.kind).toBe('switched');
+    if (moved.kind !== 'switched') throw new Error('expected a REVIEW switch');
+    expect(moved.config.planner).toEqual(config.planner);
+    const expectedReviewer = {
+      kind: 'cli',
+      ...fallback,
+      fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+    };
+    expect(moved.config.reviewer).toEqual(expectedReviewer);
+    const recorded = loadConfig(ref.projectDir).config;
+    expect(recorded.planner).toEqual(plannerOfRecord);
+    expect(recorded.reviewer).toEqual(expectedReviewer);
+    expect(moved.state.seatSwitches).toEqual([
+      expect.objectContaining({ seat: 'review', auto: true }),
+    ]);
+  });
+
   it('waits for the saved review question before another review call', async () => {
     const ref = setupProject();
     const state: WorkflowState = {

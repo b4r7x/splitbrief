@@ -69,6 +69,91 @@ describe('TwoColumnPicker', () => {
   });
 
   it.each([
+    { cols: 80, rows: 24, label: 'short', labelRows: 0 },
+    {
+      cols: 80,
+      rows: 24,
+      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat',
+      labelRows: 1,
+    },
+    {
+      cols: 60,
+      rows: 18,
+      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
+      labelRows: 2,
+    },
+    {
+      cols: 80,
+      rows: 24,
+      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
+      labelRows: 1,
+    },
+    {
+      cols: 120,
+      rows: 40,
+      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat',
+      labelRows: 0,
+    },
+    {
+      cols: 120,
+      rows: 40,
+      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
+      labelRows: 1,
+    },
+  ])(
+    'keeps the title, complete step label and footer visible at $cols × $rows ($label)',
+    async ({ cols, rows, label, labelRows }) => {
+      terminalSizeStore.__testReset({ cols, rows, isSmall: cols < 120 });
+      const title = 'REVIEW fallback · tool, model, effort';
+      const ui = renderFeature(
+        <TwoColumnPicker<Tool, Model>
+          title={title}
+          stepLabel={label}
+          leftProps={{
+            items: TOOLS,
+            getKey: (tool) => tool.id,
+            renderRow: (tool) => <Text>{tool.displayName}</Text>,
+          }}
+          rightProps={{
+            items: MODELS_BY_TOOL.alpha ?? [],
+            getKey: (model) => model.id,
+            renderRow: (model) => <Text>{model.displayName}</Text>,
+          }}
+          onConfirm={() => {}}
+          onCancel={() => {}}
+          onRefresh={() => {}}
+        />,
+        { cols, rows },
+      );
+      try {
+        await flushEffects();
+        for (const frame of ui.frames) {
+          const lines = frame.split('\n');
+          const titleLine = lines.findIndex((line) => line.includes(title));
+
+          expect(titleLine).toBeGreaterThan(-1);
+          expect(lines[titleLine]?.includes(label)).toBe(labelRows === 0);
+          if (labelRows > 0) {
+            expect(
+              lines
+                .slice(titleLine + 1, titleLine + 1 + labelRows)
+                .map((line) => line.trim())
+                .join(' '),
+            ).toBe(label);
+          }
+          const hint = lines.find((line) => line.includes('⏎ confirm'));
+          expect(hint).toContain('←→ column');
+          expect(hint).toContain('↑↓ select');
+          expect(hint).toContain('esc cancel');
+          expect(lines.length).toBeLessThanOrEqual(rows);
+        }
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
+
+  it.each([
     { cols: 60, rows: 18 },
     { cols: 80, rows: 24 },
   ])(

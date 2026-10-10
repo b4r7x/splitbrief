@@ -1392,7 +1392,7 @@ describe('useRunLoop', () => {
     overlayStore.open('implementer-picker', toolRowFocus('claude-code'));
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
 
-    const ui = render(<ToolModelPicker role="implementer" />);
+    const ui = render(<ToolModelPicker slot="seat" role="implementer" />);
     await tick(60);
 
     // The picker's reset runs on unmount, not on the first render, so the draft is still there.

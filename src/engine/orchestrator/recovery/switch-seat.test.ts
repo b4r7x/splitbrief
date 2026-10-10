@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { ConfigSchema } from '../../../core/schemas/config.js';
+import { seatRunnerValue } from './actions.js';
 import { routeTaskToImplementerProfile } from '../context-routing/route.js';
 import { selectedProfileFromDecision } from '../task/routing.js';
 import { configWithSwitchedSeat } from './switch-seat.js';
@@ -33,6 +35,146 @@ function smallDefaultBigProfileConfig() {
 }
 
 describe('configWithSwitchedSeat', () => {
+  it('uses the same default BUILD profile for its identity and its switched block', () => {
+    const config = smallDefaultBigProfileConfig();
+    const profiles = config.implementerProfiles;
+    if (profiles === undefined) throw new Error('expected a profile table');
+    const withBigDefault = { ...config, implementerProfiles: { ...profiles, default: 'big' } };
+    expect(seatRunnerValue(withBigDefault, 'build', undefined)).toEqual(profiles.profiles.big);
+    const switched = configWithSwitchedSeat(
+      withBigDefault,
+      'build',
+      { tool: 'opencode' },
+      undefined,
+      true,
+    );
+    expect(switched?.implementer.fallback).toEqual({ tool: 'codex' });
+    expect(switched?.implementerProfiles?.profiles.big).toMatchObject({
+      label: 'Big',
+      fallback: { tool: 'codex' },
+    });
+  });
+
+  it('refuses a missing BUILD profile identity instead of naming the implementer mirror', () => {
+    const config = smallDefaultBigProfileConfig();
+    expect(() => seatRunnerValue(config, 'build', 'missing')).toThrow('missing');
+    expect(configWithSwitchedSeat(config, 'build', { tool: 'opencode' }, 'missing')).toBeNull();
+  });
+
+  describe.each(['plan', 'build', 'review'] as const)('automatic %s switch', (seat) => {
+    it.each([
+      {
+        name: 'drops an effort field OpenCode does not spend',
+        runner: { kind: 'cli', tool: 'opencode', model: 'provider/model', effort: 'high' },
+        fallback: { tool: 'opencode', model: 'provider/model' },
+      },
+      {
+        name: 'keeps the OpenCode variant',
+        runner: { kind: 'cli', tool: 'opencode', model: 'provider/model', variant: 'high' },
+        fallback: { tool: 'opencode', model: 'provider/model', variant: 'high' },
+      },
+      {
+        name: 'keeps only the OpenCode variant when both level fields are stored',
+        runner: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'provider/model',
+          effort: 'low',
+          variant: 'high',
+        },
+        fallback: { tool: 'opencode', model: 'provider/model', variant: 'high' },
+      },
+      {
+        name: 'keeps Claude max effort',
+        runner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+        fallback: { tool: 'claude-code', model: 'opus', effort: 'max' },
+      },
+      {
+        name: 'keeps model-id axes in the model alone',
+        runner: { kind: 'cli', tool: 'cursor', model: 'sonnet-high', effort: 'high' },
+        fallback: { tool: 'cursor', model: 'sonnet-high' },
+      },
+    ] as const)('$name', ({ runner, fallback }) => {
+      const existing = { ...runner, fallback: { tool: 'codex' } };
+      const config = makeConfig({ planner: existing, implementer: existing, reviewer: existing });
+      const switched = configWithSwitchedSeat(config, seat, { tool: 'codex' }, undefined, true);
+      expect(switched).not.toBeNull();
+      if (switched === null) throw new Error('expected an automatic switch');
+      expect(seatRunnerValue(switched, seat, undefined)).toEqual({
+        kind: 'cli',
+        tool: 'codex',
+        fallback,
+      });
+      expect(ConfigSchema.safeParse(switched).success).toBe(true);
+    });
+
+    it('returns null when the complete switched runner fails validation', () => {
+      const runner = { kind: 'cli', tool: 'codex', model: '' } as const;
+      const config = { ...makeConfig(), planner: runner, implementer: runner, reviewer: runner };
+      expect(
+        configWithSwitchedSeat(config, seat, { tool: 'opencode' }, undefined, true),
+      ).toBeNull();
+    });
+  });
+
+  it('swaps the old CLI seat into the fallback slot on an automatic switch', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5-codex',
+        effort: 'high',
+        fallback: { tool: 'opencode', model: 'provider/model' },
+      },
+    });
+    const switched = configWithSwitchedSeat(
+      config,
+      'build',
+      { tool: 'opencode', model: 'provider/model' },
+      undefined,
+      true,
+    );
+    expect(switched?.implementer.fallback).toEqual({
+      tool: 'codex',
+      model: 'gpt-5-codex',
+      effort: 'high',
+    });
+  });
+
+  it('leaves no fallback when an automatic switch leaves an API seat', () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'api',
+        provider: 'ollama',
+        model: 'small',
+        fallback: { tool: 'opencode' },
+      },
+    });
+    const switched = configWithSwitchedSeat(config, 'build', { tool: 'opencode' }, undefined, true);
+    expect(switched?.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+  });
+
+  it('keeps an explicit reviewer with no fallback without one on a manual switch', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+      reviewer: { kind: 'cli', tool: 'codex' },
+    });
+    const switched = configWithSwitchedSeat(config, 'review', { tool: 'opencode' });
+    expect(switched?.reviewer).toEqual({ kind: 'cli', tool: 'opencode' });
+    expect(switched?.planner).toEqual(config.planner);
+  });
+
+  it('swaps only the failing profile and preserves its metadata on an automatic switch', () => {
+    const config = smallDefaultBigProfileConfig();
+    const switched = configWithSwitchedSeat(config, 'build', { tool: 'opencode' }, 'big', true);
+    expect(switched?.implementerProfiles?.profiles.big).toEqual({
+      kind: 'cli',
+      tool: 'opencode',
+      label: 'Big',
+      fallback: { tool: 'codex' },
+    });
+    expect(switched?.implementer).toEqual(config.implementer);
+  });
   it('repoints one seat and leaves the others alone', () => {
     const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
 
@@ -194,5 +336,6 @@ describe('configWithSwitchedSeat', () => {
     const switched = configWithSwitchedSeat(config, 'review', { tool: 'opencode' });
 
     expect(switched?.reviewer?.fallback).toEqual({ tool: 'codex' });
+    expect(switched?.planner).toEqual(config.planner);
   });
 });

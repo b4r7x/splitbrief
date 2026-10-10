@@ -175,7 +175,7 @@ describe('LocalConnectionForm', () => {
   function openPicker() {
     overlayStore.open('planner-picker', 'tool:ollama');
     pickerViewStore.open({ kind: 'local-connection', provider: 'ollama' });
-    return renderFeature(<ToolModelPicker role="planner" />, { cols: 100, rows: 30 });
+    return renderFeature(<ToolModelPicker slot="seat" role="planner" />, { cols: 100, rows: 30 });
   }
 
   /** The form alone, on the seat's configured connection, with a probe the test owns. */

@@ -46,6 +46,7 @@ import { PickerView } from '../../../src/features/runners/picker-view.js';
 import type { PickerActions } from '../../../src/features/runners/use-picker-actions.js';
 import type { PickerCatalog } from '../../../src/features/runners/use-picker-catalog.js';
 import { ToolModelPicker } from '../../../src/app/overlays/runners.js';
+import { SettingsOverlay } from '../../../src/app/overlays/settings.js';
 
 const ENTER = '\r';
 const BACKSPACE = '\u007f';
@@ -159,7 +160,7 @@ function mount(element: ReactElement, viewport?: Viewport) {
 
 async function renderPicker(role: 'planner' | 'implementer', viewport: Viewport = VIEWPORT) {
   overlayStore.open(role === 'planner' ? 'planner-picker' : 'implementer-picker');
-  const ui = mount(<ToolModelPicker role={role} />, viewport);
+  const ui = mount(<ToolModelPicker slot="seat" role={role} />, viewport);
   await flushEffects();
   return ui;
 }
@@ -183,6 +184,37 @@ describe('runner picker semantics integration', () => {
     while (mounted.length > 0) mounted.pop()?.();
     vi.restoreAllMocks();
   });
+
+  it.each([undefined, 'seat:plan'])(
+    'returns Escape from the fallback picker to the BUILD fallback row from focus %s',
+    async (focus) => {
+      seedReadyDetection();
+      overlayStore.open('settings', focus);
+      const settings = mount(<SettingsOverlay />, VIEWPORT);
+      await flushEffects();
+      for (let index = 0; index < 4; index += 1) {
+        settings.stdin.write(ARROW_DOWN);
+        await flushEffects();
+      }
+      expect(frameText(settings)).toContain('BUILD fallback');
+      settings.stdin.write(ENTER);
+      await flushEffects();
+      expect(overlayStore.get().active).toBe('implementer-fallback-picker');
+      settings.unmount();
+
+      const picker = mount(<ToolModelPicker slot="fallback" role="implementer" />, VIEWPORT);
+      await flushEffects();
+      picker.stdin.write('\u001b');
+      await flushEffects();
+      expect(overlayStore.get()).toMatchObject({ active: 'settings', focus: 'fallback:build' });
+      picker.unmount();
+
+      const returned = mount(<SettingsOverlay />, VIEWPORT);
+      await flushEffects();
+      expect(frameText(returned)).toContain('BUILD fallback');
+      expect(frameText(returned)).toContain('⏎ change fallback');
+    },
+  );
 
   describe('role membership and catalog parity', () => {
     it('projects planner and implementer catalogs independently with matching row counts', async () => {
@@ -254,6 +286,7 @@ describe('runner picker semantics integration', () => {
         const label = formatPickerStatusLabel(codex.status);
         const ui = mount(
           <PickerView
+            slot="seat"
             role="implementer"
             catalog={catalogForItem('implementer', options, codex, [], true)}
             actions={makeActions()}
@@ -452,6 +485,7 @@ describe('runner picker semantics integration', () => {
       for (const { item, headline, detail, allowsCustom } of policies) {
         const ui = mount(
           <PickerView
+            slot="seat"
             role="implementer"
             catalog={catalogForItem('implementer', [item], item, [], true)}
             actions={makeActions()}
@@ -501,6 +535,7 @@ describe('runner picker semantics integration', () => {
 
       const ui = mount(
         <PickerView
+          slot="seat"
           role="implementer"
           catalog={catalogForItem('implementer', [item], item, rightModels, true)}
           actions={makeActions()}
@@ -516,6 +551,7 @@ describe('runner picker semantics integration', () => {
       // With the tool column focused the Auto row still names itself.
       const guidanceUi = mount(
         <PickerView
+          slot="seat"
           role="implementer"
           catalog={catalogForItem('implementer', [item], item, rightModels, false)}
           actions={makeActions()}
@@ -548,6 +584,7 @@ describe('runner picker semantics integration', () => {
       });
       const emptyUi = mount(
         <PickerView
+          slot="seat"
           role="planner"
           catalog={catalogForItem('planner', [customEndpoint], customEndpoint, [], true)}
           actions={makeActions()}
@@ -570,6 +607,7 @@ describe('runner picker semantics integration', () => {
       ];
       const discoveredUi = mount(
         <PickerView
+          slot="seat"
           role="planner"
           catalog={catalogForItem('planner', [customEndpoint], customEndpoint, discovered, false)}
           actions={makeActions()}

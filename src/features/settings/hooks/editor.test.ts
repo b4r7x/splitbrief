@@ -10,7 +10,12 @@ import { feedbackStore } from '../../../stores/ui/feedback.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../../core/settings/catalog.js';
 import { buildSettingsItems, type SettingsItem } from '../items.js';
-import { hintFor, useSettingsEditor, type CrewSettingsItem } from './editor.js';
+import {
+  hintFor,
+  useSettingsEditor,
+  type CrewSettingsItem,
+  type FallbackSettingsItem,
+} from './editor.js';
 
 const CLI_PLANNER = {
   kind: 'cli',
@@ -18,7 +23,7 @@ const CLI_PLANNER = {
 } as const;
 
 function crewItems(config: Config): SettingsItem[] {
-  return buildSettingsItems({ config, defs: [] });
+  return buildSettingsItems({ config, defs: [], cliTools: [] });
 }
 
 function Harness(props: {
@@ -26,6 +31,7 @@ function Harness(props: {
   items: SettingsItem[];
   initialKey: string | undefined;
   activated: CrewSettingsItem[];
+  activatedFallbacks?: FallbackSettingsItem[];
 }) {
   const state = useSettingsEditor({
     config: props.config,
@@ -36,10 +42,17 @@ function Harness(props: {
     onActivateCrew: (item) => {
       props.activated.push(item);
     },
+    onActivateFallback: (item) => {
+      props.activatedFallbacks?.push(item);
+    },
     pageSize: 20,
     canActOnIndex: () => true,
   });
-  return createElement(Text, null, `cursor=${state.filtered[state.effectiveIndex]?.key ?? ''}`);
+  return createElement(
+    Text,
+    null,
+    `cursor=${state.filtered[state.effectiveIndex]?.key ?? ''} editing=${state.editingId ?? 'none'}`,
+  );
 }
 
 let projectDir = '';
@@ -73,6 +86,37 @@ describe('useSettingsEditor', () => {
     await tick(20);
 
     expect(activated).toEqual([items.find((item) => item.key === 'seat:build')]);
+    ui.unmount();
+  });
+
+  it('hands a fallback row only to its activation handler on Enter without editing inline', async () => {
+    const config = makeConfig({ planner: CLI_PLANNER });
+    seed(config);
+    const items = crewItems(config);
+    const activated: CrewSettingsItem[] = [];
+    const activatedFallbacks: FallbackSettingsItem[] = [];
+    const before = JSON.stringify(configStore.get().config);
+
+    const ui = renderFeature(
+      createElement(Harness, {
+        config,
+        items,
+        initialKey: 'fallback:build',
+        activated,
+        activatedFallbacks,
+      }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await tick(20);
+    expect(activatedFallbacks).toEqual([]);
+    ui.stdin.write('\r');
+    await tick(20);
+
+    expect(activatedFallbacks).toEqual([items.find((item) => item.key === 'fallback:build')]);
+    expect(activated).toEqual([]);
+    expect(ui.lastFrame()).toContain('editing=none');
+    expect(JSON.stringify(configStore.get().config)).toBe(before);
     ui.unmount();
   });
 
@@ -184,7 +228,7 @@ describe('useSettingsEditor', () => {
   it('cycles the isolation row worktree → staged copy → your checkout and saves the YAML value', async () => {
     const config = makeConfig();
     seed(config);
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
 
     const ui = renderFeature(
       createElement(Harness, { config, items, initialKey: 'workflow.isolation', activated: [] }),
@@ -278,5 +322,10 @@ describe('hintFor', () => {
     const config = makeConfig({ planner: CLI_PLANNER });
     const seat = crewItems(config).find((item) => item.key === 'seat:plan');
     expect(seat && hintFor(seat)).toBe('⏎ change seat');
+  });
+
+  it("returns '⏎ change fallback' on a fallback row", () => {
+    const fallback = crewItems(makeConfig()).find((item) => item.key === 'fallback:build');
+    expect(fallback && hintFor(fallback)).toBe('⏎ change fallback');
   });
 });

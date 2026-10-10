@@ -126,6 +126,27 @@ function textAt(rows: ConversationRow[], index: number): string {
 }
 
 describe('event row dispatch', () => {
+  it.each([true, false])('marks automatic fallback only for a recorded auto=%s switch', (auto) => {
+    const rows = eventRows({
+      event: {
+        type: 'seat_switched',
+        ts: 0,
+        phase: 'implementing',
+        seat: 'build',
+        from: { tool: 'codex' },
+        to: { tool: 'claude-code' },
+        cause: 'runner-usage-limit',
+        auto,
+        configRevision: 'revision',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 200, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText).join('\n')).toBe(
+      `BUILD ${glyph('connectorHandoff')} Claude Code CLI · ${auto ? 'automatic fallback · ' : ''}usage limit`,
+    );
+  });
   it('names the files a brief changed beyond its suggested files on one dim row', () => {
     const rows = eventRows({
       event: {
@@ -517,7 +538,7 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      `${CREW_SEAT_LABELS.build} ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · usage limit`,
+      `${CREW_SEAT_LABELS.build} ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
     ]);
     expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
     expect(rows.map(rowText).join('\n')).not.toContain('Balance spent');

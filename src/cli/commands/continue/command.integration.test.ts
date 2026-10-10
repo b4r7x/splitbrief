@@ -384,12 +384,13 @@ describe('continueCommand', () => {
     expect(headlessRuns).toHaveLength(1);
   });
 
-  it('moves the planner block when a final review that follows PLAN halts on its limit', async () => {
+  it('gives an inherited final review its own reviewer block after a seat switch', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-review-limit';
     const sessDir = makeSessionDir(projectDir, sessionId);
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
-    writeConfig(projectDir, makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex' } });
+    writeConfig(projectDir, config);
     saveState(
       { projectDir, sessionId },
       {
@@ -407,7 +408,7 @@ describe('continueCommand', () => {
           affectedTaskIds: [],
           availableActions: ['retry-same-worker', 'switch-seat', 'end-run'],
           recommendedAction: 'switch-seat',
-          switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+          switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
         }),
       },
     );
@@ -426,8 +427,8 @@ describe('continueCommand', () => {
     const recorded = YAML.parse(
       readFileSync(join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE), 'utf8'),
     );
-    expect(recorded.planner).toMatchObject({ kind: 'cli', tool: 'claude-code' });
-    expect(recorded.reviewer).toBeUndefined();
+    expect(recorded.planner).toEqual(config.planner);
+    expect(recorded.reviewer).toMatchObject({ kind: 'cli', tool: 'claude-code' });
     // The halt named no brief, so the run re-enters the review it never finished.
     expect(headlessRuns).toHaveLength(1);
     expect(headlessRuns[0]?.state?.phase).toBe('final-review');

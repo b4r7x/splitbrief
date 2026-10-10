@@ -234,7 +234,7 @@ describe('buildSeatDownIssue', () => {
     );
     expect(issue.resetAt).toBe(codexReset.toISOString());
     expect(issue.details[0]).toBe(`OpenAI Codex CLI reported: ${codexLimit}`);
-    expect(issue.details[1]).toBe('no fallback declared');
+    expect(issue.details[1]).toBe('no fallback set');
     expect(issue.facts?.cause).toBe('rate-limit');
     expect(issue.facts?.resetsAt).toMatch(/^2026-08-08T/);
     expect(issue.availableActions).toEqual([
@@ -253,7 +253,12 @@ describe('buildSeatDownIssue', () => {
       runner: codexRunner,
       classification: { class: 'account', cause: 'balance' },
       words: 'provider.quota: Insufficient Balance',
-      fallback: { tool: 'claude-code', model: 'sonnet' },
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [],
+        fallback: { tool: 'claude-code', model: 'sonnet' },
+      },
       task: makeTask({ id: 'T003' }),
       phase: 'implementing',
       createdAt,
@@ -268,11 +273,11 @@ describe('buildSeatDownIssue', () => {
       runner: codexRunner,
       classification: { class: 'account', cause: 'balance' },
       words: 'provider.quota: Insufficient Balance',
-      fallback: { tool: 'claude-code' },
       seatSwap: {
         seat: 'build',
         currentTool: 'codex',
         detectedTools: [],
+        fallback: { tool: 'claude-code' },
         fallbackBlockedReason: 'unauthenticated',
       },
       task: makeTask({ id: 'T003' }),
@@ -281,6 +286,100 @@ describe('buildSeatDownIssue', () => {
     });
 
     expect(issue.details[1]).toBe('fallback: Claude Code CLI · not offered: unauthenticated');
+  });
+
+  it('takes the automatic intent and headless identity from the context fallback', () => {
+    const fallback = { tool: 'claude-code', model: 'sonnet' };
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'Insufficient Balance',
+      phase: 'implementing',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        fallback,
+        configRevision: 'revision',
+        detectedTools: [{ ...fallback, ready: true }],
+      },
+    });
+    expect(issue.switchSeat?.auto).toEqual({ candidate: fallback, configRevision: 'revision' });
+    expect(issue.facts?.fallback).toBe('Claude Code CLI · Sonnet 5');
+  });
+
+  it('names the automatic switch already used in this run and offers no automatic intent', () => {
+    const fallback = { tool: 'claude-code' };
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'Insufficient Balance',
+      phase: 'implementing',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        fallback,
+        configRevision: 'revision',
+        detectedTools: [{ ...fallback, ready: true }],
+      },
+      seatSwitches: [
+        {
+          seat: 'build',
+          from: 'Claude Code CLI',
+          to: 'Codex CLI',
+          cause: 'runner-usage-limit',
+          auto: true,
+          configRevision: 'revision',
+          ts: createdAt,
+        },
+      ],
+    });
+    expect(issue.details[1]).toBe(
+      'fallback: Claude Code CLI · automatic switch already used in this run',
+    );
+    expect(issue.switchSeat?.auto).toBeUndefined();
+  });
+
+  it('names a fallback the seat runs now, including an automatic model', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'Insufficient Balance',
+      phase: 'implementing',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        fallback: { tool: 'codex', model: 'auto' },
+        detectedTools: [{ tool: 'codex', model: 'auto', ready: true }],
+      },
+    });
+    expect(issue.details[1]).toBe('fallback: OpenAI Codex CLI · auto · the seat runs it now');
+    expect(issue.switchSeat).toBeUndefined();
+  });
+
+  it('names an unreadable config of record without a fallback identity', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner: codexRunner,
+      classification: { class: 'account', cause: 'balance' },
+      words: 'Insufficient Balance',
+      phase: 'implementing',
+      createdAt,
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [],
+        fallbackReadFailed: true,
+      },
+    });
+    expect(issue.details[1]).toBe('fallback: not read · config.yaml does not load');
+    expect(issue.facts?.fallback).toBeUndefined();
+    expect(issue.switchSeat?.auto).toBeUndefined();
   });
 
   it("files a seat down halt's actions, dropping only the switch with no offer", () => {

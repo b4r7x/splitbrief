@@ -101,7 +101,7 @@ Here is what happens, step by step:
 
 1. `splitbrief init` opens the Crew screen — PLAN, BUILD and REVIEW on one surface, plus ready-made crews when the tools they need are installed and authenticated. Apply a crew, or press Enter on a seat to set it yourself, then Continue. It writes `.splitbrief/config.yaml`.
 
-   To switch automatically next time, declare the seat's `fallback` in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback).
+   Setup shows no fallback. Set one in Settings › Fallback, directly below Crew, or write it in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback). The section has a PLAN, BUILD and REVIEW row. With none set, a Seat down halt pauses and asks.
 
 2. `splitbrief start` opens a fullscreen TUI. The planner thinks for a few seconds, looks at your repo, and writes a Task Brief to `.splitbrief/sessions/<date>-fix-the-typo/tasks.md`.
 3. The brief is **scored for quality** automatically. Weak briefs (missing scope, missing validation, vague tests) are blocked before any code is written.

@@ -13,6 +13,8 @@ export const SEAT_PICKER_ROLES = ['planner', 'implementer', 'reviewer'] as const
 /** The config seats the tool/model picker can edit. */
 export type SeatPickerRole = (typeof SEAT_PICKER_ROLES)[number];
 
+export type PickerSlot = 'seat' | 'fallback';
+
 /** The crew seat a picker role edits; the inverse of `CREW_SEAT_ROLES` in `src/core/crew/seats.ts`. */
 export const PICKER_ROLE_SEAT_IDS: Readonly<Record<SeatPickerRole, CrewSeatId>> = {
   planner: 'plan',

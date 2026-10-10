@@ -50,11 +50,9 @@ export function attemptDetails(
   return [`Max attempts: ${maxAttempts}`];
 }
 
-/** A review with no seat of its own runs on the PLAN tool, so a new PLAN tool moves it too. */
+/** An inherited review follows PLAN until its switch gives REVIEW a separate seat. */
 export function reviewSeatDetails(followsPlan: boolean): string[] {
-  return followsPlan
-    ? ['The review runs on the PLAN tool. A new PLAN tool also runs the review.']
-    : [];
+  return followsPlan ? ['REVIEW uses PLAN. Switching here gives REVIEW its own seat.'] : [];
 }
 
 /** A consult halt names the brief whose consult its seat could not answer. */

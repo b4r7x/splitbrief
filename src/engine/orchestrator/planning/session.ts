@@ -564,6 +564,7 @@ async function settle(
         projectDir,
         seat: 'plan',
         runner: config.planner,
+        config,
       });
       return halt(
         buildSeatProtocolErrorRecoveryIssue({

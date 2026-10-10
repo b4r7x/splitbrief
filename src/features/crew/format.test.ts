@@ -112,9 +112,35 @@ describe('planSeatBlock', () => {
 
     expect(layout).toMatchObject({ verdict: true, rows: 4 });
   });
+
+  it('counts one row per seat and the verdict when the seat sets a fallback', () => {
+    const rows = crewOf({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+    const layout = planSeatBlock({
+      rows,
+      verdict: 'cross-lab',
+      innerWidth: 78,
+      rowBudget: 4,
+    });
+
+    expect(layout).toMatchObject({ verdict: true, rows: 4 });
+    expect(planSeatBlock({ rows, verdict: undefined, innerWidth: 78, rowBudget: 3 }).rows).toBe(3);
+  });
 });
 
 describe('formatCrewRow', () => {
+  it('returns no fallback field for a seat that sets one', () => {
+    const rows = crewOf({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+    const row = rows.find((candidate) => candidate.id === 'plan');
+    if (row === undefined) throw new Error('no plan seat');
+    const layout = planSeatBlock({ rows, verdict: undefined, innerWidth: 78, rowBudget: 3 });
+
+    expect(formatCrewRow({ row, layout })).not.toHaveProperty('fallback');
+  });
+
   it.each(WIDTHS)(
     'strips terminal control sequences from a seat identity at %i columns',
     (innerWidth) => {

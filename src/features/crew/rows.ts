@@ -3,12 +3,19 @@ import {
   readActiveRunner,
   updateActiveRunner,
 } from '../../core/config/accessors/active-runner.js';
+import type { RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
+import { fallbackRowKey, seatFallback, type FallbackRow } from '../../core/crew/fallback.js';
 import { crossLabVerdict, resolveLab, type CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import type { CrewRow } from '../../core/crew/rows.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
-import { seatAxisFocus, seatPickerOverlayFor } from '../../core/navigation/types.js';
+import {
+  fallbackPickerOverlayFor,
+  seatAxisFocus,
+  seatPickerOverlayFor,
+  toolRowFocus,
+} from '../../core/navigation/types.js';
 import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/automatic-model.js';
 import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import type { Config } from '../../core/schemas/config.js';
@@ -37,24 +44,34 @@ export function crewVerdict(rows: readonly CrewRow[]): CrewLabVerdict | undefine
   return crossLabVerdict({ build: resolveLab(build), review: resolveLab(review) });
 }
 
+function keepSeatFallback(
+  preset: Config['implementer'],
+  existing: RunnerConfig,
+): Config['implementer'];
+function keepSeatFallback(preset: Config['planner'], existing: RunnerConfig): Config['planner'];
+function keepSeatFallback(preset: RunnerConfig, existing: RunnerConfig): RunnerConfig {
+  const { fallback: _fallback, ...runner } = preset;
+  return existing.fallback === undefined ? runner : { ...runner, fallback: existing.fallback };
+}
+
 function withPresetSeats(config: Config, preset: CrewPreset): Config {
   const seats = preset.seats;
   const withPlanner = updateActiveRunner({
     config,
     role: 'planner',
-    updater: () => seats.planner,
+    updater: (existing) => keepSeatFallback(seats.planner, existing),
   });
   const withImplementer = updateActiveRunner({
     config: withPlanner,
     role: 'implementer',
-    updater: () => seats.implementer,
+    updater: (existing) => keepSeatFallback(seats.implementer, existing),
   });
   const reviewer = seats.reviewer;
   if (reviewer === undefined) return clearReviewerSeat(withImplementer);
   return updateActiveRunner({
     config: withImplementer,
     role: 'reviewer',
-    updater: () => reviewer,
+    updater: (existing) => keepSeatFallback(reviewer, existing),
   });
 }
 
@@ -77,6 +94,22 @@ function openCrewRow(row: CrewRow, config: Config): CrewActivation {
   }
   overlayStore.open(seatPickerOverlayFor(CREW_SEAT_ROLES[seatId]), seatAxisFocus(seatId));
   return { kind: 'opened' };
+}
+
+export function fallbackActivate(input: Readonly<{ row: FallbackRow; config: Config }>): void {
+  overlayStore.setFocus(fallbackRowKey(input.row));
+  const role = CREW_SEAT_ROLES[input.row.id];
+  const fallback = seatFallback(input.config, role);
+  const model = normalizeConfiguredModel(fallback?.model, fallback?.tool);
+  if (fallback !== undefined && model !== undefined && model !== AUTOMATIC_MODEL) {
+    pickerViewStore.expand(model, undefined, fallback.effort ?? fallback.variant ?? null);
+    overlayStore.open(fallbackPickerOverlayFor(role), seatAxisFocus(input.row.id));
+    return;
+  }
+  overlayStore.open(
+    fallbackPickerOverlayFor(role),
+    fallback === undefined ? undefined : toolRowFocus(fallback.tool),
+  );
 }
 
 export function crewActivate(

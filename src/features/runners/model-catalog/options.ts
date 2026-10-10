@@ -87,9 +87,33 @@ export interface InheritPlannerOption extends PickerOptionBase {
   kind: 'inherit-planner';
 }
 
-export type PickerOption = RunnerPickerOption | CustomCommandLauncherOption | InheritPlannerOption;
+export interface NoFallbackOption extends PickerOptionBase {
+  kind: 'no-fallback';
+}
+
+export type PickerOption =
+  | RunnerPickerOption
+  | CustomCommandLauncherOption
+  | InheritPlannerOption
+  | NoFallbackOption;
 
 export const INHERIT_PLANNER_OPTION_ID = 'inherit-planner';
+
+export function noFallbackOption(input: Readonly<{ isCurrent: boolean }>): NoFallbackOption {
+  return {
+    id: 'no-fallback',
+    displayName: 'None',
+    kind: 'no-fallback',
+    roles: ['planner', 'implementer'],
+    modelPolicy: 'none',
+    modelCapability: deriveModelCatalogCapability('none'),
+    billing: 'unknown',
+    permissions: trustPermissions('shell', 'planner'),
+    status: { state: 'ready', remediation: null },
+    available: true,
+    isCurrent: input.isCurrent,
+  };
+}
 
 /**
  * The inherit row borrows the planner's posture because that is what the seat
@@ -228,9 +252,9 @@ export function sortPickerOptions(
   b: PickerOption,
   { filterActive }: { filterActive: boolean },
 ): number {
-  // The launcher is filter-exempt, so it leads when idle and trails while filtering so matches sit under the cursor.
-  const aLauncher = a.kind === 'custom-command';
-  const bLauncher = b.kind === 'custom-command';
+  // Filter-exempt rows lead when idle and trail while filtering so matches sit under the cursor.
+  const aLauncher = a.kind === 'custom-command' || a.kind === 'no-fallback';
+  const bLauncher = b.kind === 'custom-command' || b.kind === 'no-fallback';
   if (aLauncher !== bLauncher) return aLauncher === filterActive ? 1 : -1;
   if (a.isCurrent && !b.isCurrent) return -1;
   if (!a.isCurrent && b.isCurrent) return 1;

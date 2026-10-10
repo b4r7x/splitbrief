@@ -132,6 +132,21 @@ describe('crew row view', () => {
     }
   });
 
+  it('paints one line per crew seat even when the seat sets a fallback', async () => {
+    const lines = await linesFor({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+      }),
+      width: 78,
+    });
+
+    expect(lines).toHaveLength(3);
+    expect(lines.join('\n')).not.toContain('fallback');
+    expect(
+      lines.filter((line) => new RegExp(`^\\W*${CREW_SEAT_LABELS.plan}\\b`).test(line)),
+    ).toHaveLength(1);
+  });
+
   it('renders no tree or connector glyphs when there is no cursor row', async () => {
     const lines = await linesFor({ config: makeConfig(), width: 78 });
     const frame = lines.join('\n');

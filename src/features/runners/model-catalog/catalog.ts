@@ -1,7 +1,11 @@
-import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
+import type { ActiveRunnerRole, PickerSlot } from '../../../core/runners/seat-roles.js';
 import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import { fallbackRunner, seatFallback } from '../../../core/crew/fallback.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from '../../../core/providers/automatic-model.js';
-import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import {
+  getRunnerDisplayName,
+  type RunnerConfig,
+} from '../../../core/config/accessors/runner-config.js';
 import type { CliProviderAuth } from '../../../core/discovery/detection.js';
 import type { Config } from '../../../core/schemas/config.js';
 import {
@@ -352,17 +356,24 @@ export function buildRightModels(params: {
   return [...automatic, ...listed];
 }
 
-export function isCurrentConfig(
-  item: PickerOption,
+export function readPickerRunner(
   config: Config,
   role: ActiveRunnerRole,
-): boolean {
-  const runnerConfig = readActiveRunner({ config, role });
+  slot: PickerSlot,
+): RunnerConfig | undefined {
+  if (slot === 'seat') return readActiveRunner({ config, role });
+  const fallback = seatFallback(config, role);
+  return fallback === undefined ? undefined : fallbackRunner(fallback);
+}
+
+export function isCurrentRunner(item: PickerOption, runner: RunnerConfig | undefined): boolean {
+  if (item.kind === 'no-fallback') return runner === undefined;
+  if (runner === undefined) return false;
   if (item.kind === 'custom-command') {
-    return runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent';
+    return runner.kind === 'shell' || runner.kind === 'agent';
   }
   if (item.kind === 'inherit-planner') return false;
   // The kind is part of the identity: a CLI row must never stand in for an API
   // seat that merely reuses its id, or Enter would silently change the kind.
-  return item.kind === runnerConfig.kind && item.id === getRunnerDisplayName(runnerConfig);
+  return item.kind === runner.kind && item.id === getRunnerDisplayName(runner);
 }

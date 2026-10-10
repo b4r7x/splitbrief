@@ -7,7 +7,11 @@ import {
 import { getRunnerDisplayName, type RunnerConfig } from '../config/accessors/runner-config.js';
 import { cliVocabularyTool, formatModelName, peelDisplayLabel } from '../model-display.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
-import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../providers/automatic-model.js';
+import {
+  AUTOMATIC_MODEL,
+  normalizeConfiguredModel,
+  resolveCliModel,
+} from '../providers/automatic-model.js';
 import type { EffortLevel, RunnerKind } from '../schemas/enums.js';
 import { SOFT_SEP } from '../separators.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
@@ -53,6 +57,15 @@ export type SeatIds = Readonly<{
   /** The backend the seat ran on; a record written before kinds were kept has none. */
   kind?: RunnerKind | undefined;
 }>;
+
+export function isSeatIdentity(
+  seat: Readonly<{ tool: string; model?: string | undefined }>,
+  candidate: Readonly<{ tool: string; model?: string | undefined }>,
+): boolean {
+  if (candidate.tool !== seat.tool) return false;
+  const model = resolveCliModel(candidate.model, candidate.tool);
+  return model === undefined || model === resolveCliModel(seat.model, seat.tool);
+}
 
 export function seatIdsOf(runner: RunnerConfig): SeatIds & Readonly<{ axes: readonly string[] }> {
   return {

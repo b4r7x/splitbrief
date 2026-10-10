@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { useState } from 'react';
-import { Text } from 'ink';
+import { Box, Text } from 'ink';
 import { useInput } from 'ink';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { configStore } from '../../stores/project/config.js';
@@ -32,6 +32,9 @@ import {
 } from '../../engine/providers/cli-model-catalog.js';
 import { formatModelCatalogGuidance, formatToolsByline } from './picker-format.js';
 import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { glyph } from '../../lib/glyphs.js';
+import { renderModelRow } from './tool-row.js';
 
 /** The models behind the rows the picker actually renders. */
 function rowModels(rows: readonly RightRow[]) {
@@ -61,6 +64,100 @@ function seedDetections() {
     { id: 'lm-studio-only-model', contextLength: 200000 },
   ]);
 }
+
+describe('usePickerCatalog fallback slot', () => {
+  let catalog: ReturnType<typeof usePickerCatalog> | undefined;
+
+  function FallbackProbe({ role }: { role: ActiveRunnerRole }) {
+    catalog = usePickerCatalog(role, 'fallback', 0);
+    return <Text>fallback</Text>;
+  }
+
+  beforeEach(() => {
+    catalog = undefined;
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }),
+    });
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    pickerViewStore.reset();
+    seedDetections();
+  });
+
+  it('lists current None first and only implementer-capable CLI tools after it', () => {
+    const ui = renderFeature(<FallbackProbe role="implementer" />);
+
+    expect(catalog?.items[0]).toMatchObject({
+      kind: 'no-fallback',
+      id: 'no-fallback',
+      isCurrent: true,
+    });
+    expect(catalog?.items.length).toBeGreaterThan(1);
+    for (const item of catalog?.items.slice(1) ?? []) {
+      expect(item.kind).toBe('cli');
+      expect(isCliToolId(item.id)).toBe(true);
+      if (isCliToolId(item.id)) {
+        expect(CLI_TOOL_CATALOG[item.id].roles).toContain('implementer');
+      }
+    }
+    ui.unmount();
+  });
+
+  it('reads the fallback tool and model and offers no auth-method row', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'opus',
+          customModels: ['seat-only-model'],
+          fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+        },
+      }),
+    });
+    pickerViewStore.expand('gpt-5-codex');
+    const ui = renderFeature(<FallbackProbe role="planner" />);
+
+    expect(catalog?.items.find((item) => item.id === 'codex')?.isCurrent).toBe(true);
+    expect(catalog?.items.find((item) => item.id === 'claude-code')?.isCurrent).toBe(false);
+    expect(catalog?.persistedModel).toBe('gpt-5-codex');
+    expect(catalog?.customModels).toEqual([]);
+    expect(catalog?.rightRows.some((row) => row.kind === 'auth')).toBe(false);
+    expect(rowModels(catalog?.rightRows ?? []).map((model) => model.id)).toContain('gpt-5-codex');
+    ui.unmount();
+  });
+
+  it('offers no inherit-planner row for an inherited REVIEW fallback', () => {
+    const ui = renderFeature(<FallbackProbe role="reviewer" />);
+
+    expect(catalog?.items.some((item) => item.kind === 'inherit-planner')).toBe(false);
+    ui.unmount();
+  });
+
+  it('retains the fallback model absent from the catalog without borrowing seat custom models', () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'claude-code',
+          customModels: ['seat-only-model'],
+          fallback: { tool: 'codex', model: 'private-codex-model' },
+        },
+      }),
+    });
+    const ui = renderFeature(<FallbackProbe role="planner" />);
+
+    const models = rowModels(catalog?.rightRows ?? []).map((model) => model.id);
+    expect(models).toContain('private-codex-model');
+    expect(models).not.toContain('seat-only-model');
+    expect(catalog?.currentModel).toBe('private-codex-model');
+    ui.unmount();
+  });
+});
 
 const CODEX_MODELS_DEV = {
   openai: {
@@ -104,12 +201,12 @@ function publishConfirmedCodexList() {
 let capturedRightRows: RightRow[] = [];
 
 function RowsProbe() {
-  capturedRightRows = usePickerCatalog('planner', 0, 'codex').rightRows;
+  capturedRightRows = usePickerCatalog('planner', 'seat', 0, 'codex').rightRows;
   return <Text>rows</Text>;
 }
 
 function OllamaRowsProbe() {
-  capturedRightRows = usePickerCatalog('implementer', 0, 'ollama').rightRows;
+  capturedRightRows = usePickerCatalog('implementer', 'seat', 0, 'ollama').rightRows;
   return <Text>rows</Text>;
 }
 
@@ -120,7 +217,7 @@ function CatalogProbe({
   role: ActiveRunnerRole;
   selectedItemId?: string | undefined;
 }) {
-  const catalog = usePickerCatalog(role, 0, selectedItemId ?? null);
+  const catalog = usePickerCatalog(role, 'seat', 0, selectedItemId ?? null);
 
   return (
     <Text>
@@ -130,7 +227,7 @@ function CatalogProbe({
 }
 
 function ModelListProbe({ toolId }: { toolId: string }) {
-  const catalog = usePickerCatalog('implementer', 0, toolId);
+  const catalog = usePickerCatalog('implementer', 'seat', 0, toolId);
 
   return (
     <Text>
@@ -143,7 +240,7 @@ function ModelListProbe({ toolId }: { toolId: string }) {
 }
 
 function CurrentSelectionProbe({ role }: { role: ActiveRunnerRole }) {
-  const catalog = usePickerCatalog(role, 0, null);
+  const catalog = usePickerCatalog(role, 'seat', 0, null);
   const current = catalog.items.find((item) => item.isCurrent);
 
   return (
@@ -155,7 +252,7 @@ function CurrentSelectionProbe({ role }: { role: ActiveRunnerRole }) {
 
 function ControlledCatalogPicker({ role }: { role: 'planner' | 'implementer' }) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const catalog = usePickerCatalog(role, 0, selectedItemId);
+  const catalog = usePickerCatalog(role, 'seat', 0, selectedItemId);
 
   return (
     <TwoColumnPicker<PickerOption, ModelOption>
@@ -181,7 +278,7 @@ function ControlledCatalogPicker({ role }: { role: 'planner' | 'implementer' }) 
 
 function KeyboardCatalogProbe({ role }: { role: 'planner' | 'implementer' }) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const catalog = usePickerCatalog(role, 0, selectedItemId);
+  const catalog = usePickerCatalog(role, 'seat', 0, selectedItemId);
   const toolIds = catalog.items
     .filter((item) => item.available || item.kind === 'custom-command')
     .map((item) => item.id);
@@ -230,6 +327,93 @@ describe('usePickerCatalog', () => {
 
       expect(ui.lastFrame()).toContain('planner:codex:auto');
       ui.unmount();
+    },
+  );
+
+  it.each([
+    { tool: 'claude-code', expectedModel: 'auto', otherTool: 'codex' },
+    { tool: 'codex', expectedModel: 'default', otherTool: 'claude-code' },
+  ] as const)(
+    'resolves the $tool seat default to $expectedModel and keeps its selection on re-entry',
+    async ({ tool, expectedModel, otherTool }) => {
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({ planner: { kind: 'cli', tool, model: 'default' } }),
+      });
+      seedDetections();
+      let catalog: ReturnType<typeof usePickerCatalog> | undefined;
+      function SeatProbe({ toolId }: { toolId?: string }) {
+        const currentCatalog = usePickerCatalog('planner', 'seat', 0, toolId);
+        catalog = currentCatalog;
+        return (
+          <Box flexDirection="column">
+            {currentCatalog.rightRows
+              .filter((row) => row.kind === 'model')
+              .map((row) => (
+                <Box key={row.model.id}>
+                  {renderModelRow({
+                    row,
+                    isCursor: false,
+                    maxWidth: 80,
+                    currentModel: currentCatalog.currentModel,
+                    auth: {
+                      providerAuth: currentCatalog.providerAuth,
+                      hasOracle: currentCatalog.hasOracle,
+                    },
+                  })}
+                </Box>
+              ))}
+          </Box>
+        );
+      }
+
+      const ui = renderFeature(<SeatProbe />);
+      try {
+        await flushEffects();
+        expect(catalog?.currentItem?.id).toBe(tool);
+        expect(catalog?.persistedModel).toBe(expectedModel);
+        expect(catalog?.currentModel).toBe(expectedModel);
+        const models = rowModels(catalog?.rightRows ?? []);
+        expect(models.filter((model) => model.id === 'auto')).toHaveLength(1);
+        expect(
+          ui
+            .lastFrame()
+            .split('\n')
+            .filter((line) => /\bauto\b/.test(line)),
+        ).toHaveLength(1);
+        expect(models.some((model) => model.id === 'default')).toBe(tool === 'codex');
+        const initialRow = catalog?.rightRows[catalog.initialRightIndex];
+        expect(initialRow).toMatchObject({ kind: 'model', model: { id: expectedModel } });
+        expect(
+          ui
+            .lastFrame()
+            .split('\n')
+            .filter((line) => line.includes(glyph('check'))),
+        ).toEqual([expect.stringContaining(tool === 'claude-code' ? 'auto' : 'Default')]);
+
+        ui.rerender(<SeatProbe toolId={otherTool} />);
+        await flushEffects();
+        expect(catalog?.currentItem?.id).toBe(otherTool);
+        expect(catalog?.persistedModel).toBe(expectedModel);
+        expect(catalog?.currentModel).toBeUndefined();
+        expect(ui.lastFrame()).not.toContain(glyph('check'));
+        const seatItem = catalog?.items.find((item) => item.id === tool);
+        const reentryIndex = catalog?.resolveRightIndex(seatItem);
+        expect(reentryIndex).toBeGreaterThanOrEqual(0);
+        if (tool === 'claude-code') expect(reentryIndex).toBe(0);
+
+        ui.rerender(<SeatProbe toolId={tool} />);
+        await flushEffects();
+        expect(catalog?.initialRightIndex).toBe(reentryIndex);
+        expect(catalog?.rightRows[catalog.initialRightIndex]).toMatchObject({
+          kind: 'model',
+          model: { id: expectedModel },
+        });
+        expect(catalog?.currentModel).toBe(expectedModel);
+        expect(ui.lastFrame()).toContain(glyph('check'));
+      } finally {
+        ui.unmount();
+      }
     },
   );
 
@@ -322,7 +506,7 @@ describe('usePickerCatalog', () => {
     seedDetections();
 
     function PersistedProbe({ toolId }: { toolId: string }) {
-      const catalog = usePickerCatalog('planner', 0, toolId);
+      const catalog = usePickerCatalog('planner', 'seat', 0, toolId);
       return (
         <Text>
           {catalog.persistedModel ?? 'none'}|{catalog.modelCounts.confirmed}|
@@ -385,7 +569,7 @@ describe('usePickerCatalog', () => {
       | undefined;
 
     function Probe() {
-      const catalog = usePickerCatalog('implementer', 0, 'ollama');
+      const catalog = usePickerCatalog('implementer', 'seat', 0, 'ollama');
       projection = {
         model: rowModels(catalog.rightRows).find(
           (model) => model.id === 'implementer-last-confirmed-model',
@@ -509,7 +693,7 @@ describe('usePickerCatalog', () => {
     seedDetections();
     const frames: string[] = [];
     function Probe({ toolId }: { toolId: string }) {
-      const catalog = usePickerCatalog('implementer', 0, toolId);
+      const catalog = usePickerCatalog('implementer', 'seat', 0, toolId);
       frames.push(
         rowModels(catalog.rightRows)
           .map((model) => model.id)
@@ -532,7 +716,7 @@ describe('usePickerCatalog', () => {
     seedDetections();
     const frames: string[] = [];
     function Probe({ toolId }: { toolId: string }) {
-      const catalog = usePickerCatalog('implementer', 0, toolId);
+      const catalog = usePickerCatalog('implementer', 'seat', 0, toolId);
       frames.push(
         `${catalog.currentItem?.id}:${
           rowModels(catalog.rightRows)
@@ -619,7 +803,7 @@ describe('usePickerCatalog', () => {
     pickerViewStore.expand('zeta-high', 'zeta-high');
 
     function AxisProbe() {
-      const catalog = usePickerCatalog('implementer', 0, 'ollama');
+      const catalog = usePickerCatalog('implementer', 'seat', 0, 'ollama');
       return (
         <Text>
           {catalog.rightRows
@@ -663,7 +847,7 @@ describe('usePickerCatalog', () => {
     pickerViewStore.expand('zeta');
 
     function LadderProbe() {
-      const catalog = usePickerCatalog('implementer', 0, 'ollama');
+      const catalog = usePickerCatalog('implementer', 'seat', 0, 'ollama');
       return (
         <Text>
           {catalog.rightRows
@@ -709,7 +893,7 @@ describe('usePickerCatalog', () => {
 
     let variantRow: Extract<RightRow, { kind: 'axis' }> | undefined;
     function VariantProbe() {
-      const catalog = usePickerCatalog('planner', 0, 'opencode');
+      const catalog = usePickerCatalog('planner', 'seat', 0, 'opencode');
       variantRow = catalog.rightRows.find(
         (row): row is Extract<RightRow, { kind: 'axis' }> =>
           row.kind === 'axis' && row.axis === 'effort',
@@ -761,7 +945,7 @@ describe('usePickerCatalog', () => {
 
     let catalogSnapshot: ReturnType<typeof usePickerCatalog> | undefined;
     function CodexCatalogProbe() {
-      catalogSnapshot = usePickerCatalog('planner', 0, 'codex');
+      catalogSnapshot = usePickerCatalog('planner', 'seat', 0, 'codex');
       return (
         <Text>
           {rowModels(catalogSnapshot.rightRows)
@@ -913,7 +1097,7 @@ describe('usePickerCatalog right-column entry point', () => {
   } | null = null;
 
   function EntryProbe() {
-    const catalog = usePickerCatalog('planner', 0, null);
+    const catalog = usePickerCatalog('planner', 'seat', 0, null);
     const row = catalog.rightRows[catalog.initialRightIndex];
     seen = {
       lane: catalog.catalogLane,
@@ -1037,7 +1221,7 @@ describe('usePickerCatalog seat-axis landing', () => {
   } | null = null;
 
   function AxisProbe() {
-    const catalog = usePickerCatalog('planner', 0, null);
+    const catalog = usePickerCatalog('planner', 'seat', 0, null);
     const row = catalog.rightRows[catalog.initialRightIndex];
     landing = {
       rightIndex: catalog.initialRightIndex,
@@ -1184,7 +1368,7 @@ describe('usePickerCatalog count', () => {
     );
     let catalog: ReturnType<typeof usePickerCatalog> | undefined;
     function CountProbe() {
-      catalog = usePickerCatalog('planner', 0, 'opencode');
+      catalog = usePickerCatalog('planner', 'seat', 0, 'opencode');
       return <Text>count</Text>;
     }
 
@@ -1208,7 +1392,7 @@ describe('usePickerCatalog count', () => {
     );
     let catalog: ReturnType<typeof usePickerCatalog> | undefined;
     function CountProbe() {
-      catalog = usePickerCatalog('planner', 0, 'cursor');
+      catalog = usePickerCatalog('planner', 'seat', 0, 'cursor');
       return <Text>count</Text>;
     }
 

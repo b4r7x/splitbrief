@@ -93,6 +93,8 @@ async function seatDownHalt(
     projectDir: ctx.projectDir,
     seat: 'build',
     runner: failure.runner,
+    config: ctx.config,
+    implementerProfile: failingProfile,
   });
   const classification: SeatFailureClassification =
     failure.outcome === 'unauthenticated'
@@ -109,7 +111,6 @@ async function seatDownHalt(
     runner: failure.runner,
     classification,
     words: stepOutcome.lastError,
-    fallback: failure.runner.fallback,
     attempts: stepOutcome.attempts,
     maxAttempts: DEFAULT_LOCAL_RETRIES,
     ...(failingProfile !== undefined && { selectedImplementerProfile: failingProfile }),
@@ -156,6 +157,8 @@ async function runnerDefectHalt(
     projectDir: ctx.projectDir,
     seat: 'build',
     runner: failure.runner,
+    config: ctx.config,
+    implementerProfile: failingProfile,
   });
   const issue = build({
     task,

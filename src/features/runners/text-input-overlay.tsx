@@ -4,8 +4,9 @@ import type { ReactElement, ReactNode } from 'react';
 import { Box } from 'ink';
 import { MultilineInput } from '../../components/input/multiline-input.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import { SOFT_SEP } from '../../core/separators.js';
-import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
+import { PICKER_ROLE_SEAT_IDS, type SeatPickerRole } from '../../core/runners/seat-roles.js';
 import { borderStyleFor, glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
@@ -78,7 +79,9 @@ export function TextInputOverlay({
   return (
     <OverlayPanel
       density="roomy"
-      title={sanitizeTerminalDisplayText(`${title}${SOFT_SEP}${role}`)}
+      title={sanitizeTerminalDisplayText(
+        `${title}${SOFT_SEP}${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}`,
+      )}
       hint={hint ?? `⏎ save${SOFT_SEP}esc back`}
     >
       {stepIndicator ? (

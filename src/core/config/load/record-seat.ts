@@ -13,8 +13,6 @@ export type SeatOfRecord = Readonly<{ seat: CrewSeatId; profile?: string | undef
 /** The runner block a seat switch writes; a build profile carries its own metadata. */
 export type SeatRunnerValue = RunnerConfig | ImplementerProfileConfig;
 
-type BlockAddress = Readonly<{ path: readonly string[]; camel: readonly string[] }>;
-
 function valueAt(document: Record<string, unknown>, camel: readonly string[]): unknown {
   let node: unknown = document;
   for (const key of camel) {
@@ -25,41 +23,17 @@ function valueAt(document: Record<string, unknown>, camel: readonly string[]): u
   return node;
 }
 
-function blockAddress(document: Record<string, unknown>, seat: SeatOfRecord): BlockAddress {
-  if (seat.seat === 'plan') return { path: ['planner'], camel: ['planner'] };
-  if (seat.seat === 'review') {
-    return valueAt(document, ['reviewer']) === undefined
-      ? { path: ['planner'], camel: ['planner'] }
-      : { path: ['reviewer'], camel: ['reviewer'] };
-  }
+function blockAddress(document: Record<string, unknown>, seat: SeatOfRecord): readonly string[] {
+  if (seat.seat === 'plan') return ['planner'];
+  if (seat.seat === 'review') return ['reviewer'];
   const profile = seat.profile;
   if (
     profile !== undefined &&
     valueAt(document, ['implementerProfiles', 'profiles', profile]) !== undefined
   ) {
-    return {
-      path: ['implementer_profiles', 'profiles', profile],
-      camel: ['implementerProfiles', 'profiles', profile],
-    };
+    return ['implementer_profiles', 'profiles', profile];
   }
-  return { path: ['implementer'], camel: ['implementer'] };
-}
-
-function valueKeepingFallback(
-  runner: SeatRunnerValue,
-  existing: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  const value = toYaml(runner);
-  const fallback = existing?.['fallback'];
-  if (fallback !== undefined && value['fallback'] === undefined) value['fallback'] = fallback;
-  return value;
-}
-
-function existingBlock(
-  document: Record<string, unknown>,
-  camel: readonly string[],
-): Record<string, unknown> | undefined {
-  return narrowRecord(valueAt(document, camel)) ?? undefined;
+  return ['implementer'];
 }
 
 /**
@@ -67,7 +41,7 @@ function existingBlock(
  * block only — `planner`, `implementer`, the failing implementer profile or
  * `reviewer` — so every other seat and the file's own comments stay byte for byte.
  * A revision the file no longer carries is a conflict and writes nothing; the
- * block keeps its declared fallback. The caller resolves the recovery only on
+ * block carries exactly the runner's fallback. The caller resolves the recovery only on
  * `saved`.
  */
 export async function recordSeatOfRecord(
@@ -83,8 +57,8 @@ export async function recordSeatOfRecord(
   const document = fromYaml(YAML.parse(snapshot.rawYaml));
   const address = blockAddress(document, seat);
   const edit: ConfigDocumentEdit = {
-    path: address.path,
-    value: valueKeepingFallback(runner, existingBlock(document, address.camel)),
+    path: address,
+    value: toYaml(runner),
   };
   const result = await transactConfigDocument(projectDir, snapshot.revision, [edit]);
   return result.kind === 'saved' ? 'saved' : 'conflict';

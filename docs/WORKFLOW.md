@@ -486,8 +486,8 @@ A failed stale call, a malformed answer or an unanswered guard question leaves t
 The halt names the interrupted task. Retry consults that task's same seat again before dispatch.
 Only successful guidance saves fresh hashes and marks the revision in one transition.
 A successful rewrite records fresh hashes on its new revision. That revision can take its own stale consult if inputs move again.
-Switch moves the review seat for a configured reviewer.
-When the planner holds the review seat, Switch moves the planner's runner.
+Switch moves REVIEW.
+When REVIEW follows PLAN, Switch writes a `reviewer` block and leaves `planner` unchanged.
 
 During a consult, the composer byline uses the active call's seat and clock.
 A reviewer consult uses the same formatter as a final review.

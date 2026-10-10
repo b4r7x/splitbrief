@@ -11,8 +11,6 @@ import { loadSeatSwapContext } from './seat-swap-context.js';
 /**
  * The halt a seat's broken typed answer raises, on the seat that answered: the
  * reviewer's halt offers the review seat's swap, the planner's the plan seat's.
- * A reviewer with no `reviewer:` block runs on the plan seat's tool, so its swap
- * moves the plan seat.
  */
 export async function seatProtocolHaltIssue(
   input: Readonly<{
@@ -27,8 +25,9 @@ export async function seatProtocolHaltIssue(
   const reviewed = input.error.data.seat === 'reviewer';
   const seatSwap = await loadSeatSwapContext({
     projectDir: input.projectDir,
-    seat: reviewed && reviewer.source !== 'planner' ? 'review' : 'plan',
+    seat: reviewed ? 'review' : 'plan',
     runner: reviewed ? reviewer.runner : input.config.planner,
+    config: input.config,
   });
   return buildSeatProtocolErrorRecoveryIssue({
     error: input.error,

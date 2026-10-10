@@ -29,8 +29,7 @@ describe('ContractChoiceOverlay', () => {
     await tick(20);
 
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Custom command');
-    expect(frame).toContain('implementer');
+    expect(frame).toContain('Custom command · BUILD');
     expect(frame).toContain('Output command');
     expect(frame).toContain("read from the command's stdout");
     expect(frame).toContain('no direct writes');
@@ -201,7 +200,7 @@ describe('ContractChoiceOverlay', () => {
     );
     await flushEffects();
 
-    expect(ui.lastFrame() ?? '').toContain('reviewer');
+    expect(ui.lastFrame() ?? '').toContain('Custom command · REVIEW');
     ui.stdin.write('\r');
     await vi.waitFor(() => expect(chosen).toEqual(['shell']));
     ui.unmount();

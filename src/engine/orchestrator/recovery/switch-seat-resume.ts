@@ -6,17 +6,16 @@ import type { EventBus } from '../../events/types.js';
 import { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
 import type { PreparationOutcome } from '../../runners/prepared-execution.js';
 import type { PreparationPolicy } from '../../runners/prepare-execution/types.js';
-import { readConfigDocument } from '../../../core/config/load/document.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { recordSeatOfRecord } from '../../../core/config/load/record-seat.js';
 import {
   commitSeatSwitch,
   planSwitchSeatRecoveryAction,
-  seatCandidateOfRunner,
   seatRunnerValue,
   type SeatSwitchPlan,
 } from './actions.js';
 import type { RecoveryActionBlockedCode } from './actions.js';
+import { seatCandidateOfRunner } from './switch-seat.js';
 
 /** Why a switch the caller asked for did not commit; the halt stays pending with its intent. */
 export type SwitchSeatResumeOutcome = 'aborted' | 'unadmitted' | 'conflict';
@@ -146,12 +145,8 @@ export async function switchSeatAndPrepareResume(
     });
 
   const intent = issue.switchSeat?.auto;
-  const autoRevision =
-    intent !== undefined && sameSeatCandidate(intent.candidate, candidate)
-      ? intent.configRevision
-      : undefined;
-  const isAuto = autoRevision !== undefined;
-  const currentRevision = readConfigDocument(input.projectDir).revision?.rawSha256;
+  const autoRevision = plan.auto ? intent?.configRevision : undefined;
+  const currentRevision = plan.configRevision;
 
   // A write that landed before the state did leaves the config ahead of the
   // intent while the halt is still pending. The seat of record decides: the
@@ -159,7 +154,7 @@ export async function switchSeatAndPrepareResume(
   // set wins, and the intent yields to it. A config that moved on other seats
   // only still names the halted seat here, so the one-seat write below proceeds.
   const configOfRecord =
-    isAuto && currentRevision !== autoRevision ? loadConfig(input.projectDir).config : undefined;
+    plan.auto && currentRevision !== autoRevision ? loadConfig(input.projectDir).config : undefined;
   const record =
     configOfRecord === undefined
       ? undefined
@@ -167,10 +162,10 @@ export async function switchSeatAndPrepareResume(
   if (
     configOfRecord !== undefined &&
     record !== undefined &&
-    !sameSeatCandidate(record, plan.from)
+    (sameSeatCandidate(record, candidate) || !sameSeatCandidate(record, plan.from))
   ) {
     const ontoRecord = !sameSeatCandidate(record, candidate);
-    const config = ontoRecord ? configOfRecord : plan.switchedConfig;
+    const config = configOfRecord;
     const preparation = await runPrepare(config);
     if (preparation.kind !== 'prepared') {
       return unswitched(
@@ -183,7 +178,7 @@ export async function switchSeatAndPrepareResume(
     if (input.signal.aborted) return unswitched(input, plan, preparation, 'aborted');
     const state = commit(
       input,
-      ontoRecord ? { ...plan, candidate: record } : plan,
+      { ...plan, candidate: record, switchedConfig: config },
       currentRevision ?? '',
       !ontoRecord,
     );
@@ -215,6 +210,6 @@ export async function switchSeatAndPrepareResume(
     if (written !== 'saved') return unswitched(input, plan, preparation, 'conflict');
   }
 
-  const state = commit(input, plan, expectedRevision ?? '', isAuto);
+  const state = commit(input, plan, expectedRevision ?? '', plan.auto);
   return { kind: 'switched', state, seat, candidate, config: plan.switchedConfig, preparation };
 }

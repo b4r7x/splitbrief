@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolveImplementerProfiles } from './implementer-profiles.js';
+import {
+  readImplementerProfileConfig,
+  resolveImplementerProfiles,
+} from './implementer-profiles.js';
 import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 
@@ -9,6 +12,36 @@ function configWithProfiles(profiles: NonNullable<Config['implementerProfiles']>
     implementerProfiles: profiles,
   };
 }
+
+describe('readImplementerProfileConfig', () => {
+  it('uses the single implementer when the halt names a former profile', () => {
+    const config = createDefaultConfig();
+    expect(readImplementerProfileConfig(config, 'former-profile')).toBe(config.implementer);
+  });
+
+  it('reads the default or named block with its metadata and fallback', () => {
+    const config = configWithProfiles({
+      default: 'big',
+      profiles: {
+        small: { kind: 'cli', tool: 'claude-code', label: 'Small' },
+        big: { kind: 'cli', tool: 'codex', label: 'Big', fallback: { tool: 'opencode' } },
+      },
+    });
+    expect(readImplementerProfileConfig(config, undefined)).toEqual({
+      kind: 'cli',
+      tool: 'codex',
+      label: 'Big',
+      fallback: { tool: 'opencode' },
+    });
+    expect(readImplementerProfileConfig(config, 'small')).toEqual({
+      kind: 'cli',
+      tool: 'claude-code',
+      label: 'Small',
+    });
+    expect(readImplementerProfileConfig(config, 'missing')).toBeUndefined();
+    expect(readImplementerProfileConfig(config, 'toString')).toBeUndefined();
+  });
+});
 
 describe('resolveImplementerProfiles', () => {
   it('returns a stable default profile for single implementer configs', () => {

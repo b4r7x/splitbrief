@@ -48,13 +48,22 @@ const SCREEN_CASES: readonly FixtureCase[] = [
 // stop sheet is named for the run it stops rather than for the overlay it rides in.
 const OVERLAY_SCENARIO_IDS: Partial<Record<(typeof ACTIVE_OVERLAYS)[number], string>> = {
   'reviewer-picker': 'overlay-reviewer-picker-inherited',
+  'planner-fallback-picker': 'overlay-fallback-picker-current',
+  'implementer-fallback-picker': 'overlay-fallback-picker',
+  'reviewer-fallback-picker': 'overlay-fallback-picker-inherited-review',
   'stop-sheet': 'workflow-stop-sheet',
 };
 
-const OVERLAY_CASES: readonly FixtureCase[] = ACTIVE_OVERLAYS.map((overlay) => {
-  const id = OVERLAY_SCENARIO_IDS[overlay] ?? `overlay-${overlay}`;
-  return { scenarioId: id, factory: requireOverlayFixture(id) };
-});
+const OVERLAY_CASES: readonly FixtureCase[] = [
+  ...ACTIVE_OVERLAYS.map((overlay) => {
+    const id = OVERLAY_SCENARIO_IDS[overlay] ?? `overlay-${overlay}`;
+    return { scenarioId: id, factory: requireOverlayFixture(id) };
+  }),
+  {
+    scenarioId: 'overlay-fallback-picker-custom-model',
+    factory: requireOverlayFixture('overlay-fallback-picker-custom-model'),
+  },
+];
 
 const FIXTURE_CASES = [...SCREEN_CASES, ...OVERLAY_CASES];
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
@@ -105,6 +114,15 @@ describe('visual screen and overlay fixtures', () => {
 
   afterEach(() => {
     teardownVisualFixture();
+  });
+
+  it('shows unavailable and current-seat notes in the configured fallback scenario', async () => {
+    const frame = await renderFixture({
+      scenarioId: 'overlay-settings-fallback-set',
+      factory: requireOverlayFixture('overlay-settings-fallback-set'),
+    });
+    expect(frame).toContain('not installed');
+    expect(frame).toContain('same as the seat');
   });
 
   it('renders every screen and overlay fixture through the production App at 80x24', async () => {

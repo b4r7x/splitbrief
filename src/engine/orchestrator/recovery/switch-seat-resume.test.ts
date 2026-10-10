@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { unlinkSync } from 'node:fs';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
@@ -7,6 +8,7 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
+import { configPath, readConfigDocument } from '../../../core/config/load/document.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { SwitchSeatOffer } from '../../../core/schemas/recovery/schemas.js';
@@ -14,6 +16,7 @@ import type { PreparationPolicy } from '../../runners/prepare-execution/types.js
 import type { PreparationOutcome, PreparedExecution } from '../../runners/prepared-execution.js';
 import type { prepareExecution } from '../../runners/prepare-execution/prepare-execution.js';
 import { switchSeatAndPrepareResume } from './switch-seat-resume.js';
+import { seatRunnerValue } from './actions.js';
 
 let dirs: string[] = [];
 
@@ -67,9 +70,7 @@ function setup(
         : ['retry-same-worker', 'skip-current-task', 'end-run'],
       recommendedAction: offered ? 'switch-seat' : 'retry-same-worker',
       ...(switchSeat !== undefined && { switchSeat }),
-      ...(options?.selectedImplementerProfile !== undefined && {
-        selectedImplementerProfile: options.selectedImplementerProfile,
-      }),
+      selectedImplementerProfile: options?.selectedImplementerProfile,
     }),
   });
   saveState({ projectDir, sessionId }, state);
@@ -96,6 +97,242 @@ function prepareReturning(outcome: PreparationOutcome) {
 }
 
 describe('switchSeatAndPrepareResume', () => {
+  it.each(['plan', 'build', 'review'] as const)(
+    'keeps a fallback saved after preparation during a manual %s switch',
+    async (seat) => {
+      const runner = { kind: 'cli', tool: 'codex' } as const;
+      const config = makeConfig({ planner: runner, implementer: runner });
+      const candidate = { tool: 'claude-code', model: 'sonnet' };
+      const { projectDir, sessionId, state } = setup(`manual-fallback-${seat}`, true, {
+        config,
+        switchSeat: { seat, candidates: [candidate] },
+      });
+      const fallback = { tool: 'opencode', model: 'provider/model', variant: 'high' };
+      writeConfig(
+        projectDir,
+        makeConfig({
+          planner: { ...runner, fallback },
+          implementer: { ...runner, fallback },
+        }),
+      );
+      const revision = readConfigDocument(projectDir).revision?.rawSha256;
+      const { bus } = makeBusRecorder();
+      const result = await switchSeatAndPrepareResume({
+        projectDir,
+        sessionId,
+        state,
+        config,
+        candidate,
+        bus,
+        policy: RESUME_POLICY,
+        signal: new AbortController().signal,
+        prepare: async (input) => {
+          expect(
+            seatRunnerValue(input.effectiveConfig ?? config, seat, undefined).fallback,
+          ).toEqual(fallback);
+          return preparedFor(input.effectiveConfig ?? config);
+        },
+      });
+      expect(result.kind).toBe('switched');
+      if (result.kind !== 'switched') throw new Error('expected a manual switch');
+      expect(seatRunnerValue(result.config, seat, undefined).fallback).toEqual(fallback);
+      expect(seatRunnerValue(loadConfig(projectDir).config, seat, undefined).fallback).toEqual(
+        fallback,
+      );
+      expect(result.state.seatSwitches?.[0]).toMatchObject({
+        auto: false,
+        configRevision: revision,
+      });
+      expect(revision).toBeDefined();
+      if (seat === 'review') {
+        expect(result.config.planner).toEqual(config.planner);
+        expect(loadConfig(projectDir).config.planner.fallback).toEqual(fallback);
+        expect(result.config.reviewer).toBeDefined();
+      }
+    },
+  );
+
+  it.each(['small', 'big'])('keeps the fallback of record of BUILD profile %s', async (profile) => {
+    const config = profileTableConfig();
+    const { projectDir, sessionId, state } = setup(`manual-profile-fallback-${profile}`, true, {
+      config,
+      selectedImplementerProfile: profile,
+    });
+    const fallback = { tool: 'opencode', model: 'profile/model', variant: 'high' };
+    const profiles = config.implementerProfiles;
+    const existing = profiles?.profiles[profile];
+    if (profiles === undefined || existing === undefined) throw new Error('expected profiles');
+    writeConfig(projectDir, {
+      ...config,
+      implementerProfiles: {
+        ...profiles,
+        profiles: { ...profiles.profiles, [profile]: { ...existing, fallback } },
+      },
+    });
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate: { tool: 'claude-code' },
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
+    });
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') throw new Error('expected a manual switch');
+    expect(result.config.implementerProfiles?.profiles[profile]?.fallback).toEqual(fallback);
+    expect(loadConfig(projectDir).config.implementerProfiles?.profiles[profile]?.fallback).toEqual(
+      fallback,
+    );
+  });
+
+  it('keeps an explicit REVIEW with no fallback after a PLAN fallback is saved', async () => {
+    const runner = { kind: 'cli', tool: 'codex' } as const;
+    const config = makeConfig({ planner: runner, reviewer: runner });
+    const { projectDir, sessionId, state } = setup('manual-explicit-review-fallback', true, {
+      config,
+      switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
+    });
+    writeConfig(projectDir, { ...config, planner: { ...runner, fallback: { tool: 'opencode' } } });
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate: { tool: 'claude-code' },
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
+    });
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') throw new Error('expected a manual switch');
+    expect(result.config.reviewer?.fallback).toBeUndefined();
+    expect(loadConfig(projectDir).config.reviewer?.fallback).toBeUndefined();
+  });
+
+  it('honours a fallback cleared after preparation on a manual switch', async () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        fallback: { tool: 'opencode' },
+      },
+    });
+    const { projectDir, sessionId, state } = setup('manual-cleared-fallback', true, { config });
+    writeConfig(projectDir, makeConfig({ implementer: { kind: 'cli', tool: 'codex' } }));
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate: { tool: 'claude-code' },
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
+    });
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') throw new Error('expected a manual switch');
+    expect(result.config.implementer.fallback).toBeUndefined();
+    expect(loadConfig(projectDir).config.implementer.fallback).toBeUndefined();
+  });
+
+  it('uses the prepared fallback when there is no config of record', async () => {
+    const fallback = { tool: 'opencode' };
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex', fallback } });
+    const { projectDir, sessionId, state } = setup('manual-no-record-fallback', true, { config });
+    unlinkSync(configPath(projectDir));
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate: { tool: 'claude-code' },
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
+    });
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') throw new Error('expected a manual switch');
+    expect(result.config.implementer.fallback).toEqual(fallback);
+    expect(readConfigDocument(projectDir).revision).toBeNull();
+  });
+
+  it('keeps a fallback save during preparation by refusing the stale switch write', async () => {
+    const { projectDir, sessionId, state, config } = setup('manual-fallback-conflict', true);
+    const fallback = { tool: 'opencode', model: 'new/model' };
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate: { tool: 'claude-code' },
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => {
+        writeConfig(projectDir, { ...config, implementer: { ...config.implementer, fallback } });
+        return preparedFor(input.effectiveConfig ?? config);
+      },
+    });
+    expect(result).toMatchObject({ kind: 'unswitched', outcome: 'conflict' });
+    expect(loadConfig(projectDir).config.implementer.fallback).toEqual(fallback);
+    expect(result.state.pendingRecovery).toBeDefined();
+  });
+
+  it('persists an automatic swap with the old seat as fallback before resolving the halt', async () => {
+    const candidate = { tool: 'opencode', model: 'provider/model', variant: 'high' };
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5-codex',
+        effort: 'high',
+        fallback: candidate,
+      },
+    });
+    const setupResult = setup('seat-swap-places', true, {
+      config,
+      switchSeat: { seat: 'build', candidates: [candidate] },
+    });
+    const { projectDir, sessionId, state } = setupResult;
+    const configRevision = readConfigDocument(projectDir).revision?.rawSha256;
+    if (configRevision === undefined || state.pendingRecovery?.switchSeat === undefined)
+      throw new Error('expected a saved halt');
+    state.pendingRecovery.switchSeat.auto = { candidate, configRevision };
+    saveState({ projectDir, sessionId }, state);
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate,
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
+    });
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') throw new Error('expected a switch');
+    const expected = {
+      kind: 'cli',
+      ...candidate,
+      fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+    };
+    expect(result.config.implementer).toEqual(expected);
+    expect(loadConfig(projectDir).config.implementer).toEqual(expected);
+    expect(result.state.seatSwitches?.[0]?.auto).toBe(true);
+  });
   it('prepares on the switched config, writes that one seat, then resolves the halt', async () => {
     const { projectDir, sessionId, state, config } = setup('seat-swap-resume', true);
     const { bus } = makeBusRecorder();
@@ -313,6 +550,43 @@ describe('switchSeatAndPrepareResume', () => {
     if (result.kind !== 'switched') return;
     expect(result.state.seatSwitches?.[0]?.auto).toBe(true);
     expect(result.state.pendingRecovery).toBeUndefined();
+  });
+
+  it('keeps the recorded swap when a crashed resume was prepared on the already-switched seat', async () => {
+    const candidate = { tool: 'claude-code', model: 'sonnet' } as const;
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        ...candidate,
+        fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+      },
+    });
+    const { projectDir, sessionId, state } = setup('seat-swap-replay-record', true, {
+      config,
+      switchSeat: {
+        seat: 'build',
+        candidates: [candidate],
+        auto: { candidate, configRevision: 'stale-revision' },
+      },
+    });
+    const before = loadConfig(projectDir).rawYaml;
+    const { bus } = makeBusRecorder();
+    const result = await switchSeatAndPrepareResume({
+      projectDir,
+      sessionId,
+      state,
+      config,
+      candidate,
+      bus,
+      policy: RESUME_POLICY,
+      signal: new AbortController().signal,
+      prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
+    });
+    expect(result.kind).toBe('switched');
+    if (result.kind !== 'switched') throw new Error('expected a switch');
+    expect(result.config.implementer).toEqual(config.implementer);
+    expect(loadConfig(projectDir).rawYaml).toBe(before);
+    expect(result.state.seatSwitches?.[0]?.auto).toBe(true);
   });
 
   it('writes the halted seat when only another seat moved since the halt', async () => {

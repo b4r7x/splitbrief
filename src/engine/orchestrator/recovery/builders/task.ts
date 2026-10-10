@@ -9,6 +9,7 @@ import type {
 } from '../../../../core/schemas/recovery/schemas.js';
 import {
   formatSeatCandidateIdentity,
+  isSeatIdentity,
   sameSeatCandidate,
   type CrewSeatId,
 } from '../../../../core/crew/identity.js';
@@ -137,7 +138,9 @@ export type SeatSwapContext = Readonly<{
   currentTool: string;
   currentModel?: string | undefined;
   detectedTools: readonly DetectedSeatTool[];
+  fallback?: SeatSwapCandidate | undefined;
   fallbackBlockedReason?: string | undefined;
+  fallbackReadFailed?: true | undefined;
   /**
    * The config document's hash as the halt read it. The automatic-switch intent
    * records it so the engine can refuse to move a seat whose config changed
@@ -145,17 +148,6 @@ export type SeatSwapContext = Readonly<{
    */
   configRevision?: string | undefined;
 }>;
-
-/**
- * Whether a detected row is the seat's current identity. The tool alone does not
- * decide: a fallback on the same tool and another model is a move, so only a
- * matching tool whose row names no model — the tool's own default — or the same
- * model is the identity the offer excludes.
- */
-function isCurrentSeatIdentity(context: SeatSwapContext, detected: DetectedSeatTool): boolean {
-  if (detected.tool !== context.currentTool) return false;
-  return detected.model === undefined || detected.model === context.currentModel;
-}
 
 /**
  * The ready tools this seat could move to, current identity excluded, each
@@ -175,7 +167,8 @@ export function switchSeatOffer(context: SeatSwapContext | undefined): SwitchSea
   for (const detected of context.detectedTools) {
     if (!detected.ready) continue;
     if (!includes(hostable, detected.tool)) continue;
-    if (isCurrentSeatIdentity(context, detected)) continue;
+    if (isSeatIdentity({ tool: context.currentTool, model: context.currentModel }, detected))
+      continue;
     const identity = `${detected.tool}\u0000${detected.model ?? ''}`;
     if (seen.has(identity)) continue;
     seen.add(identity);
@@ -204,7 +197,6 @@ export interface SeatDownRecoveryOptions extends RecoveryBuilderBase {
   words: string;
   requestId?: string | undefined;
   resetAt?: Date | undefined;
-  fallback?: SeatSwapCandidate | undefined;
   task?: Task | undefined;
   phase: Phase;
   attempts?: number | undefined;
@@ -221,15 +213,25 @@ export interface SeatDownRecoveryOptions extends RecoveryBuilderBase {
 }
 
 /** The fallback row: the declared fallback's identity, or that the seat declares none. */
-function fallbackDetail(
-  fallback: SeatSwapCandidate | undefined,
-  blockedReason: string | undefined,
-): string {
-  if (fallback === undefined) return 'no fallback declared';
+function fallbackDetail(opts: SeatDownRecoveryOptions): string {
+  if (opts.seatSwap?.fallbackReadFailed) return 'fallback: not read · config.yaml does not load';
+  const fallback = opts.seatSwap?.fallback;
+  if (fallback === undefined) return 'no fallback set';
   const identity = formatSeatCandidateIdentity(fallback);
-  return blockedReason === undefined
-    ? `fallback: ${identity}`
-    : `fallback: ${identity} · not offered: ${blockedReason}`;
+  const blockedReason = opts.seatSwap?.fallbackBlockedReason;
+  if (blockedReason !== undefined) return `fallback: ${identity} · not offered: ${blockedReason}`;
+  if ((opts.seatSwitches ?? []).some((record) => record.seat === opts.seat && record.auto)) {
+    return `fallback: ${identity} · automatic switch already used in this run`;
+  }
+  if (
+    isSeatIdentity(
+      { tool: opts.runner.kind === 'cli' ? opts.runner.tool : '', model: opts.runner.model },
+      fallback,
+    )
+  ) {
+    return `fallback: ${identity} · the seat runs it now`;
+  }
+  return `fallback: ${identity}`;
 }
 
 /** The tool's own words, attributed, with the request id when the caller parsed one out. */
@@ -250,7 +252,7 @@ function autoSwitchIntent(
   opts: SeatDownRecoveryOptions,
   offer: SwitchSeatOffer,
 ): NonNullable<SwitchSeatOffer['auto']> | undefined {
-  const fallback = opts.fallback;
+  const fallback = opts.seatSwap?.fallback;
   const configRevision = opts.seatSwap?.configRevision;
   if (fallback === undefined || configRevision === undefined) return undefined;
   if ((opts.seatSwitches ?? []).some((record) => record.seat === offer.seat && record.auto)) {
@@ -325,7 +327,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     message,
     details: [
       reportedDetail(displayName, opts),
-      fallbackDetail(opts.fallback, opts.seatSwap?.fallbackBlockedReason),
+      fallbackDetail(opts),
       ...attemptDetails(opts.attempts, opts.maxAttempts),
       ...(opts.details ?? []),
     ],
@@ -340,7 +342,9 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
       providerMessage: opts.words,
       requestId: opts.requestId,
       fallback:
-        opts.fallback === undefined ? undefined : formatSeatCandidateIdentity(opts.fallback),
+        opts.seatSwap?.fallback === undefined
+          ? undefined
+          : formatSeatCandidateIdentity(opts.seatSwap.fallback),
       ...(resetAt !== undefined && { resetsAt: resetAt.toISOString() }),
     }),
     availableActions: actions,

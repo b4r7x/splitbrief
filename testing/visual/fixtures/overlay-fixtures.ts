@@ -26,6 +26,7 @@ import {
   parseKiloNativeModelCatalog,
   parseOpenCodeNativeModelCatalog,
 } from '../../../src/engine/providers/cli-model-catalog.js';
+import { resolveSeatDisplayName } from '../../../src/engine/providers/model/display-names.js';
 import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js';
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.js';
@@ -34,8 +35,11 @@ import { type Task, taskId } from '../../../src/core/schemas/task.js';
 import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import type { RunStatus } from '../../../src/core/sessions/run-status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
+import { SOFT_SEP } from '../../../src/core/separators.js';
+import { formatSeatIdentity, type CrewSeatId } from '../../../src/core/crew/identity.js';
+import { deriveFallbackRows } from '../../../src/core/crew/fallback.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
-import { crewActivate } from '../../../src/features/crew/rows.js';
+import { crewActivate, fallbackActivate } from '../../../src/features/crew/rows.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
 import type { PreparedExecution } from '../../../src/engine/runners/prepared-execution.js';
 import { configStore } from '../../../src/stores/project/config.js';
@@ -368,6 +372,16 @@ function seedEditorUncoveredCriterion(): void {
 
 function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
   return () => seedVisualConfig(overrides);
+}
+
+function activateFallbackSeat(id: CrewSeatId): void {
+  const config = configStore.get().config;
+  if (config === null) throw new Error('Visual overlay fixture requires project config');
+  const row = deriveFallbackRows({ config, cliTools: detectionStore.get().cliTools }).find(
+    (row) => row.id === id,
+  );
+  if (row === undefined) throw new Error(`Visual overlay fixture requires a ${id} seat`);
+  fallbackActivate({ row, config });
 }
 
 /** OpenCode detected ready, with every route its own listing serves and nothing else. */
@@ -708,6 +722,14 @@ const SEAT_FALLBACK = {
   model: 'opencode-go/deepseek-v4.1-flash',
   variant: 'max',
 } as const;
+const CODEX_FALLBACK = { tool: 'codex', model: 'gpt-6-astra', effort: 'high' } as const;
+const PLANNER_WITH_FALLBACK = {
+  kind: 'cli',
+  tool: 'claude-code',
+  model: 'opus',
+  fallback: CODEX_FALLBACK,
+} as const;
+const BUILD_CODEX_SEAT = { kind: 'cli', tool: 'codex', model: CODEX_FALLBACK.model } as const;
 const PLANNER_HIGH_EFFORT = {
   kind: 'cli',
   tool: 'claude-code',
@@ -754,6 +776,36 @@ const createSettingsCrewFullFixture: FixtureFactory = () =>
     }),
     focus: 'seat:build',
   });
+const createSettingsFallbackNoneFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'settings', focus: 'fallback:build' });
+const createSettingsFallbackSetFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: () => {
+      seedOpencodeReady();
+      seedCodexNativeListing();
+      seedConfig({
+        planner: PLANNER_WITH_FALLBACK,
+        implementer: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: SEAT_FALLBACK.model,
+          fallback: { tool: 'kilo-code', model: KILO_ROUTED_MODEL, variant: 'high' },
+        },
+        reviewer: {
+          ...REVIEWER_SEAT,
+          fallback: {
+            tool: REVIEWER_SEAT.tool,
+            model: REVIEWER_SEAT.model,
+            effort: 'high',
+          },
+        },
+      })();
+    },
+    focus: 'fallback:plan',
+  });
+const createSettingsFallbackFilteredFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'settings', focus: 'filter:fallback' });
 const createSettingsInheritedEffortFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -1254,6 +1306,73 @@ const createReviewerPickerFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker' });
 const createReviewerPickerToolFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'reviewer-picker', focus: 'tool:codex' });
+const createFallbackPickerFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-fallback-picker',
+    seed: seedConfig({ implementer: BUILD_CODEX_SEAT }),
+  });
+const createFallbackPickerCurrentFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-fallback-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      seedConfig({ planner: PLANNER_WITH_FALLBACK })();
+      activateFallbackSeat('plan');
+    },
+    focus: seatAxisFocus('plan'),
+  });
+const createFallbackPickerVariantFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'implementer-fallback-picker',
+    seed: () => {
+      seedOpencodeReady();
+      seedConfig({
+        implementer: {
+          ...BUILD_CODEX_SEAT,
+          fallback: { tool: 'opencode', model: OPENCODE_ROUTED_MODEL, variant: 'high' },
+        },
+      })();
+      activateFallbackSeat('build');
+    },
+    focus: seatAxisFocus('build'),
+  });
+const createFallbackPickerInheritedReviewFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'reviewer-fallback-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      seedConfig({ planner: PLANNER_WITH_FALLBACK })();
+      activateFallbackSeat('review');
+    },
+    focus: seatAxisFocus('review'),
+  });
+const createFallbackPickerCustomModelFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'reviewer-fallback-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      seedConfig({ planner: PLANNER_WITH_FALLBACK })();
+      pickerViewStore.open({ kind: 'custom-model' });
+    },
+    focus: 'tool:codex',
+  });
+const createFallbackPickerSameSeatFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'implementer-fallback-picker',
+    seed: () => {
+      seedCodexNativeListing();
+      seedConfig({ implementer: BUILD_CODEX_SEAT })();
+    },
+    focus: 'tool:codex',
+  }),
+  afterMount: () => {
+    const identity = formatSeatIdentity({
+      seat: BUILD_CODEX_SEAT,
+      displayName: resolveSeatDisplayName(BUILD_CODEX_SEAT, 'implementer', modelCacheStore),
+    });
+    feedbackStore.setError(`BUILD runs ${identity} now${SOFT_SEP}choose another tool or model`);
+  },
+});
 const STOP_SHEET_TS = 1_783_958_400_000;
 const STOP_SHEET_RUNNING = taskId('T002');
 const STOP_SHEET_NEXT = taskId('T003');
@@ -1788,6 +1907,9 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-skills-list'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
+  [scenarioId('overlay-settings-fallback-none'), createSettingsFallbackNoneFixture],
+  [scenarioId('overlay-settings-fallback-set'), createSettingsFallbackSetFixture],
+  [scenarioId('overlay-settings-fallback-filtered'), createSettingsFallbackFilteredFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
   [scenarioId('overlay-settings-crew-kilo-copilot'), createSettingsCrewKiloCopilotFixture],
   [scenarioId('overlay-settings-claude-alias'), createSettingsClaudeAliasFixture],
@@ -1920,6 +2042,15 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-picker-browse-escape'), createPickerBrowseEscapeFixture],
   [scenarioId('overlay-reviewer-picker-inherited'), createReviewerPickerFixture],
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
+  [scenarioId('overlay-fallback-picker'), createFallbackPickerFixture],
+  [scenarioId('overlay-fallback-picker-current'), createFallbackPickerCurrentFixture],
+  [scenarioId('overlay-fallback-picker-variant'), createFallbackPickerVariantFixture],
+  [
+    scenarioId('overlay-fallback-picker-inherited-review'),
+    createFallbackPickerInheritedReviewFixture,
+  ],
+  [scenarioId('overlay-fallback-picker-custom-model'), createFallbackPickerCustomModelFixture],
+  [scenarioId('overlay-fallback-picker-same-seat'), createFallbackPickerSameSeatFixture],
   [scenarioId('workflow-stop-sheet'), createStopSheetFixture],
   [scenarioId('workflow-stop-menu-parked'), createParkedStopMenuFixture],
   [

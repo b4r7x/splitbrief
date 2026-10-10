@@ -7,7 +7,7 @@ import { useStores } from '../../stores/use-stores.js';
 import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
 import { CREW_SEAT_IDS, CREW_SEAT_LABELS, formatSeatIdentity } from '../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
-import { getRunnerCommand } from '../../core/config/accessors/runner-config.js';
+import { getRunnerCommand, type RunnerConfig } from '../../core/config/accessors/runner-config.js';
 import {
   AUTOMATIC_MODEL,
   isAutomaticModel,
@@ -17,6 +17,7 @@ import { CLI_TOOL_IDS, hasNativeCliCatalog } from '../../core/runners/cli-tool-c
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
+  type PickerSlot,
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
@@ -27,14 +28,16 @@ import type { ModelCatalogDiagnostic } from './picker-format.js';
 import {
   buildRightModels,
   countModelOptions,
-  isCurrentConfig,
+  isCurrentRunner,
   modelRowMatchesId,
+  readPickerRunner,
   type PickerModelCounts,
 } from './model-catalog/catalog.js';
 import {
   assemblePickerDescriptors,
   buildPickerOptions,
   inheritPlannerOption,
+  noFallbackOption,
   type PickerOption,
 } from './model-catalog/options.js';
 import {
@@ -145,11 +148,21 @@ function rowIndexForEffortAxis(rows: readonly RightRow[]): number {
 
 function buildLeftItems(input: {
   role: SeatPickerRole;
+  slot: PickerSlot;
   rawItems: PickerOption[];
   config: Config;
+  runner: RunnerConfig | undefined;
 }): PickerOption[] {
-  const { role, rawItems, config } = input;
+  const { role, slot, rawItems, config, runner } = input;
   const lane = seatPickerLane(role);
+  if (slot === 'fallback') {
+    return [
+      noFallbackOption({ isCurrent: runner === undefined }),
+      ...rawItems
+        .filter((item) => item.kind === 'cli')
+        .map((item) => ({ ...item, isCurrent: isCurrentRunner(item, runner) })),
+    ];
+  }
   // An inherited review seat has no tool of its own: flagging the planner's row
   // as current would make Enter on the pre-selected row fork the seat silently.
   // The inherit row stands in for it, and stays offered once the seat is forked
@@ -157,16 +170,17 @@ function buildLeftItems(input: {
   const inherited = inheritsPlannerSeat(config, lane);
   const configuredItems: PickerOption[] = rawItems.map((item) => ({
     ...item,
-    isCurrent: !inherited && isCurrentConfig(item, config, lane),
+    isCurrent: !inherited && isCurrentRunner(item, runner),
   }));
   if (role !== 'reviewer') return configuredItems;
-  const plannerItem = rawItems.find((item) => isCurrentConfig(item, config, 'planner'));
+  const plannerItem = rawItems.find((item) => isCurrentRunner(item, config.planner));
   if (plannerItem === undefined) return configuredItems;
   return [inheritPlannerOption({ planner: plannerItem, isCurrent: inherited }), ...configuredItems];
 }
 
 export function usePickerCatalog(
   role: SeatPickerRole,
+  slot: PickerSlot,
   preservedLeftIndex: number,
   selectedItemId?: string | null,
 ): PickerCatalog {
@@ -189,7 +203,7 @@ export function usePickerCatalog(
     setUncontrolledItemId(null);
   }
 
-  const runnerConfig = readActiveRunner({ config, role: lane });
+  const runnerConfig = readPickerRunner(config, lane, slot);
 
   const rawItems = buildPickerOptions(
     role,
@@ -199,8 +213,10 @@ export function usePickerCatalog(
   );
   const items = buildLeftItems({
     role,
+    slot,
     rawItems,
     config,
+    runner: runnerConfig,
   });
 
   const configItemIndex = items.findIndex((item) => item.isCurrent);
@@ -218,7 +234,7 @@ export function usePickerCatalog(
     includes(CREW_SEAT_IDS, seatAxisSeat) &&
     CREW_SEAT_ROLES[seatAxisSeat] === lane;
 
-  const customModels = runnerConfig.customModels ?? [];
+  const customModels = slot === 'fallback' ? [] : (runnerConfig?.customModels ?? []);
 
   const defaultItemId = items[initialLeftIdx]?.id ?? items[0]?.id;
   const ownedItemId =
@@ -229,7 +245,10 @@ export function usePickerCatalog(
 
   // Both spellings of automatic selection — `auto` and model absence — collapse
   // onto the single synthesized Auto row, so there is one highlighted identity.
-  const configuredModel = normalizeConfiguredModel(runnerConfig.model);
+  const configuredModel = normalizeConfiguredModel(
+    runnerConfig?.model,
+    runnerConfig?.kind === 'cli' ? runnerConfig.tool : undefined,
+  );
   const persistedModel =
     configuredModel ??
     (configuredItem?.modelCapability.allowsAutomatic ? AUTOMATIC_MODEL : undefined);
@@ -274,7 +293,10 @@ export function usePickerCatalog(
         browseCatalog,
         optionDraftId,
         effortDraft,
-        authMethod: authMethodOffer({ item, runner: runnerConfig }),
+        authMethod:
+          slot === 'seat' && runnerConfig !== undefined
+            ? authMethodOffer({ item, runner: runnerConfig })
+            : undefined,
         authDraft,
       }),
     };
@@ -309,9 +331,11 @@ export function usePickerCatalog(
   // drafted model is where its right column lands; the current tool still lands on
   // the model the seat runs.
   const entryModel = isCurrentTool ? currentModel : (expandedModelId ?? undefined);
-  const currentCommand = getRunnerCommand(runnerConfig);
+  const currentCommand = runnerConfig === undefined ? undefined : getRunnerCommand(runnerConfig);
   const currentCommandKind =
-    runnerConfig.kind === 'shell' || runnerConfig.kind === 'agent' ? runnerConfig.kind : undefined;
+    runnerConfig?.kind === 'shell' || runnerConfig?.kind === 'agent'
+      ? runnerConfig.kind
+      : undefined;
 
   return {
     items,

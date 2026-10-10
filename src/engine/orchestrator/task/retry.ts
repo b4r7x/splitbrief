@@ -68,10 +68,7 @@ export function retryFailureLabel(err: unknown, taskId: TaskId): string {
   return seat === undefined ? `Retrying ${taskId} failed` : consultFailureLabel(seat, taskId);
 }
 
-/**
- * The seat a thrown consult halts on, and the runner a swap moves: a reviewer that
- * follows the planner runs on the plan seat's tool, so its swap moves the plan seat.
- */
+/** A consult halt moves the seat whose call failed, including an inherited reviewer. */
 function consultHaltSeat(
   wctx: WorkflowContext,
   seat: ConsultSeat,
@@ -90,7 +87,7 @@ function consultHaltSeat(
   return {
     seat: 'review',
     runner,
-    swap: { seat: followsPlan ? 'plan' : 'review', runner },
+    swap: { seat: 'review', runner },
     details: reviewSeatDetails(followsPlan),
   };
 }
@@ -192,6 +189,7 @@ export async function handleTaskPlannerCallFailure(
         })
       : await plannerCallHaltIssue({
           projectDir: wctx.projectDir,
+          config: wctx.config,
           diagnosis,
           task,
           phase: recoveryBaseState.phase,

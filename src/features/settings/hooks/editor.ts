@@ -13,6 +13,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import { isTextEntryInput } from '../../../lib/terminal/text-entry.js';
 
 export type CrewSettingsItem = Extract<SettingsItem, { kind: 'crew' }>;
+export type FallbackSettingsItem = Extract<SettingsItem, { kind: 'fallback' }>;
 
 interface UseSettingsEditorParams {
   config: Config;
@@ -21,6 +22,7 @@ interface UseSettingsEditorParams {
   initialFilter: string | undefined;
   onClose: () => void;
   onActivateCrew: (item: CrewSettingsItem) => void;
+  onActivateFallback: (item: FallbackSettingsItem) => void;
   pageSize: PageSize<SettingsItem>;
   canActOnIndex: (filtered: SettingsItem[], index: number) => boolean;
 }
@@ -39,6 +41,7 @@ interface SettingsEditorState {
 /** Each row advertises the one key it answers to, in the word for what that key does to it. */
 export function hintFor(item: SettingsItem): string {
   if (item.kind === 'crew') return '⏎ change seat';
+  if (item.kind === 'fallback') return '⏎ change fallback';
   const kind = item.def.kind;
   if (kind === 'enum') return 'space cycle';
   if (kind === 'boolean') return 'space toggle';
@@ -52,7 +55,7 @@ function getCurrentConfig(): Config {
 }
 
 function cyclesInPlace(item: SettingsItem): boolean {
-  if (item.kind === 'crew') return false;
+  if (item.kind !== 'setting') return false;
   return item.def.kind === 'boolean' || item.def.kind === 'enum';
 }
 
@@ -80,6 +83,7 @@ export function useSettingsEditor({
   initialFilter,
   onClose,
   onActivateCrew,
+  onActivateFallback,
   pageSize,
   canActOnIndex,
 }: UseSettingsEditorParams): SettingsEditorState {
@@ -118,6 +122,10 @@ export function useSettingsEditor({
   const runSelect = (item: SettingsItem) => {
     if (item.kind === 'crew') {
       onActivateCrew(item);
+      return;
+    }
+    if (item.kind === 'fallback') {
+      onActivateFallback(item);
       return;
     }
     const def = item.def;

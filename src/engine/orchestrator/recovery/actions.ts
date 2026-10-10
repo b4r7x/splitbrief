@@ -9,9 +9,13 @@ import {
   isRetiredRecoveryReason,
 } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
-import { formatSeatChangeIdentities, type CrewSeatId } from '../../../core/crew/identity.js';
-import { configWithSwitchedSeat } from './switch-seat.js';
-import { readConfigDocument } from '../../../core/config/load/document.js';
+import {
+  formatSeatChangeIdentities,
+  sameSeatCandidate,
+  type CrewSeatId,
+} from '../../../core/crew/identity.js';
+import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
+import { readSeatFallbackOfRecord } from './seat-swap-context.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
 import type { Task } from '../../../core/schemas/task.js';
 import { isTaskCompleted } from '../../../core/schemas/task.js';
@@ -23,7 +27,8 @@ import type { EventBus } from '../../events/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { loadConfig } from '../../../core/config/load/io.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
-import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
+import { readImplementerProfileConfig } from '../../../core/config/accessors/implementer-profiles.js';
+import { configError } from '../../../core/config/errors.js';
 import { getOrCreateLedger } from '../../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { recordSkippedTaskEvidence } from '../evidence/task.js';
@@ -53,6 +58,7 @@ export type RecoveryActionBlockedCode =
   | 'skip-evidence-failed'
   | 'profile-not-found'
   | 'seat-swap-unavailable'
+  | 'fallback-read-failed'
   | 'candidate-not-offered';
 
 export type RecoveryActionAppliedStatus =
@@ -692,6 +698,8 @@ export type SeatSwitchPlan = Readonly<{
   /** The identity the seat is leaving, so the record names both ends of the move. */
   from: SeatSwapCandidate;
   switchedConfig: Config;
+  auto: boolean;
+  configRevision: string | undefined;
 }>;
 
 export type SeatSwitchPlanResult =
@@ -764,8 +772,7 @@ export function planSwitchSeatRecoveryAction(
   const failingProfile = offer.seat === 'build' ? issue.selectedImplementerProfile : undefined;
   if (
     failingProfile !== undefined &&
-    opts.config.implementerProfiles !== undefined &&
-    !hasImplementerProfile(opts.config, failingProfile)
+    readImplementerProfileConfig(opts.config, failingProfile) === undefined
   ) {
     return blockRecoveryAction({
       ...opts,
@@ -778,7 +785,31 @@ export function planSwitchSeatRecoveryAction(
     });
   }
 
-  const switchedConfig = configWithSwitchedSeat(opts.config, offer.seat, chosen, failingProfile);
+  const auto = offer.auto !== undefined && sameSeatCandidate(offer.auto.candidate, chosen);
+  const record = readSeatFallbackOfRecord({
+    projectDir: opts.projectDir,
+    config: opts.config,
+    seat: offer.seat,
+    implementerProfile: failingProfile,
+  });
+  if (record.kind === 'read-failed') {
+    return blockRecoveryAction({
+      ...opts,
+      action,
+      issue,
+      code: 'fallback-read-failed',
+      message: `Cannot switch the ${offer.seat.toUpperCase()} seat: config.yaml does not load. Fix the configuration and try again.`,
+      publishSelected: true,
+    });
+  }
+  const switchedConfig = configWithSwitchedSeat(
+    opts.config,
+    offer.seat,
+    chosen,
+    failingProfile,
+    auto,
+    record,
+  );
   if (switchedConfig === null) {
     return blockRecoveryAction({
       ...opts,
@@ -798,6 +829,8 @@ export function planSwitchSeatRecoveryAction(
       candidate: chosen,
       from: seatCandidateOfRunner(seatRunnerValue(opts.config, offer.seat, failingProfile)),
       switchedConfig,
+      auto,
+      configRevision: record.configRevision,
     },
   };
 }
@@ -898,9 +931,21 @@ export function commitSeatSwitch(
 export function applySwitchSeatRecoveryAction(
   opts: Omit<ApplyRecoveryActionOptions, 'action'>,
 ): ApplySwitchSeatResult {
-  const planned = planSwitchSeatRecoveryAction(opts);
+  const issue = opts.state.pendingRecovery;
+  const offer = issue?.switchSeat;
+  const state =
+    issue !== undefined && offer?.auto !== undefined
+      ? {
+          ...opts.state,
+          pendingRecovery: {
+            ...issue,
+            switchSeat: { seat: offer.seat, candidates: offer.candidates },
+          },
+        }
+      : opts.state;
+  const planned = planSwitchSeatRecoveryAction({ ...opts, state });
   if (!planned.ok) return planned;
-  const configRevision = readConfigDocument(opts.projectDir).revision?.rawSha256 ?? '';
+  const configRevision = planned.plan.configRevision ?? '';
   const choice = { auto: false, configRevision };
   return commitSeatSwitch({ ...opts, action: 'switch-seat' }, planned.plan, choice);
 }
@@ -1052,12 +1097,6 @@ function applyRetryCurrentTaskRecoveryAction(
   };
 }
 
-function hasImplementerProfile(config: Config, profile: string): boolean {
-  return resolveImplementerProfiles(config).profiles.some(
-    (candidate) => candidate.name === profile,
-  );
-}
-
 /** The runner block a seat reads from a config: the failing build profile, the review seat, or the seat's own block. */
 export function seatRunnerValue(
   config: Config,
@@ -1069,40 +1108,18 @@ export function seatRunnerValue(
       return config.planner;
     case 'review':
       return config.reviewer ?? config.planner;
-    case 'build':
-      return (
-        (profile !== undefined ? config.implementerProfiles?.profiles[profile] : undefined) ??
-        config.implementer
-      );
+    case 'build': {
+      const runner = readImplementerProfileConfig(config, profile);
+      if (runner === undefined) {
+        throw configError.invalidOverride(
+          'implementerProfile',
+          profile,
+          'Profile not found in config.',
+        );
+      }
+      return runner;
+    }
   }
-}
-
-function runnerTool(runner: SeatRunnerValue): string {
-  switch (runner.kind) {
-    case 'cli':
-      return runner.tool;
-    case 'api':
-      return runner.provider;
-    case 'shell':
-      return 'shell';
-    case 'agent':
-      return 'agent';
-    default:
-      return assertNever(runner);
-  }
-}
-
-/** A configured seat as a swap identity, so a switch can name the tool it leaves. */
-export function seatCandidateOfRunner(runner: SeatRunnerValue): SeatSwapCandidate {
-  const model = 'model' in runner && typeof runner.model === 'string' ? runner.model : undefined;
-  const effort = 'effort' in runner ? runner.effort : undefined;
-  const variant = 'variant' in runner ? runner.variant : undefined;
-  return {
-    tool: runnerTool(runner),
-    ...(model !== undefined && { model }),
-    ...(effort !== undefined && { effort }),
-    ...(variant !== undefined && { variant }),
-  };
 }
 
 function markRecoveryApplying(
