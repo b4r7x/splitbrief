@@ -38,6 +38,7 @@ beforeEach(() => {
 
 afterEach(() => {
   chalk.level = originalColorLevel;
+  vi.unstubAllEnvs();
   resetAllStores();
 });
 
@@ -82,7 +83,7 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('splits the breakdown line into local vs escalated', async () => {
+  it('splits the breakdown line into done versus escalated', async () => {
     tasksStore.__testReset({
       tasks: [task('1', 'done'), task('2', 'done'), task('3', 'escalated')],
     });
@@ -281,7 +282,7 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('keeps footer cost and status visible when the task list is long', async () => {
+  it('keeps the crew footer visible when the task list is long', async () => {
     const tasks = Array.from({ length: 40 }, (_value, index) =>
       task(String(index + 1), index % 2 === 0 ? 'done' : 'pending'),
     );
@@ -296,7 +297,63 @@ describe('Sidebar — passed count', () => {
     const frame = ui.lastFrame() ?? '';
 
     expect(frame).toContain('20/40');
-    expect(frame).toContain('local');
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('BUILD');
+    expect(frame).toContain('REVIEW');
+
+    ui.unmount();
+  });
+});
+
+describe('Sidebar — titled border', () => {
+  beforeEach(forceUnicodeGlyphs);
+
+  it.each([
+    { tier: 'unicode', corner: '┌', rule: '─', end: '┐', side: '│', bottom: '└' },
+    { tier: 'ascii', corner: '+', rule: '-', end: '+', side: '|', bottom: '+' },
+  ])('puts the count into the $tier top border without changing the height', async (border) => {
+    chalk.level = 3;
+    if (border.tier === 'ascii') vi.stubEnv('TERM', 'dumb');
+    tasksStore.__testReset({
+      tasks: [task('1', 'pending'), task('2', 'pending'), task('3', 'pending')],
+      totalTasks: 3,
+    });
+
+    const ui = renderFeature(<Sidebar width={40} height={14} />);
+    await tick();
+    const frame = ui.lastFrame() ?? '';
+    const lines = stripAnsiStyles(frame).split('\n');
+
+    expect(lines[0]).toBe(`${border.corner} Tasks 0/3 ${border.rule.repeat(27)}${border.end}`);
+    expect(frame.split('\n')[0]).toContain(
+      paint(defaultTheme.textDim, ' Tasks 0/3 ').replace('\u001b[39m', ''),
+    );
+    expect(getTerminalCellWidth(lines[0] ?? '')).toBe(40);
+    expect(lines[1]).toBe(`${border.side}${' '.repeat(38)}${border.side}`);
+    expect(lines[2]).toContain('task 1');
+    expect(lines).toHaveLength(14);
+    expect(lines[13]?.startsWith(border.bottom)).toBe(true);
+    expect(lines.filter((line) => line.includes('Tasks'))).toHaveLength(1);
+
+    ui.unmount();
+  });
+
+  it.each([
+    { tier: 'unicode', corner: '┌', end: '┐' },
+    { tier: 'ascii', corner: '+', end: '+' },
+  ])('truncates a count inside both $tier corners without wrapping', async (border) => {
+    if (border.tier === 'ascii') vi.stubEnv('TERM', 'dumb');
+    tasksStore.__testReset({ totalTasks: Number.MAX_SAFE_INTEGER });
+
+    const ui = renderFeature(<Sidebar width={24} height={14} />);
+    await tick();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+
+    expect(lines[0]?.startsWith(`${border.corner} Tasks 0/`)).toBe(true);
+    expect(lines[0]?.endsWith(`… ${border.end}`)).toBe(true);
+    expect(getTerminalCellWidth(lines[0] ?? '')).toBe(24);
+    expect(lines).toHaveLength(14);
+    expect(lines.filter((line) => line.includes('Tasks'))).toHaveLength(1);
 
     ui.unmount();
   });
@@ -366,7 +423,8 @@ describe('Sidebar — title budget', () => {
       await tick();
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       const ruleLine =
-        frame.split('\n').find((line) => /^[ \t]*\|?[ \t]*[-─]+[ \t]*\|?[ \t]*$/u.test(line)) ?? '';
+        frame.split('\n').find((line) => /^[ \t]*[|│]?[ \t]*[-─]+[ \t]*[|│]?[ \t]*$/u.test(line)) ??
+        '';
 
       expect(ruleLine, `footer rule at width ${width}`).not.toBe('');
       expect(
@@ -461,6 +519,7 @@ function sidebarTitleCells(row: string): number {
 
 describe('Sidebar — persistent task list', () => {
   it('keeps completed tasks listed with a done marker once later tasks start', async () => {
+    forceUnicodeGlyphs();
     tasksStore.__testReset({
       tasks: [task('1', 'done', 'First task'), task('2', 'in_progress', 'Second task')],
       totalTasks: 2,
@@ -472,7 +531,7 @@ describe('Sidebar — persistent task list', () => {
     const doneRow = frame.split('\n').find((line) => line.includes('First task')) ?? '';
     const activeRow = frame.split('\n').find((line) => line.includes('Second task')) ?? '';
 
-    expect(doneRow).toContain(glyph('check'));
+    expect(doneRow).toContain('●');
     expect(activeRow).toContain(glyph('statusInProgress'));
     expect(activeRow).toContain(glyph('liveBar'));
 
@@ -645,14 +704,46 @@ describe('Sidebar — persistent task list', () => {
     const lines = frame.split('\n');
 
     expect(frame).toContain('Tasks 30/60');
-    expect(frame).toContain('local');
-    expect(lines.length).toBeLessThanOrEqual(15);
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('BUILD');
+    expect(frame).toContain('REVIEW');
+    expect(lines).toHaveLength(14);
+
+    ui.unmount();
+  });
+
+  it('uses all seven task rows above a three-row crew footer at height fourteen', async () => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        planner: { kind: 'shell', command: 'plan' },
+        implementer: { kind: 'shell', command: 'build', model: 'build-model' },
+      }),
+    });
+    tasksStore.__testReset({
+      tasks: Array.from({ length: 7 }, (_, index) => task(String(index + 1), 'pending')),
+      totalTasks: 7,
+    });
+
+    const ui = renderFeature(<Sidebar width={40} height={14} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const lines = frame.split('\n');
+
+    expect(lines.filter((line) => /task \d/u.test(line))).toHaveLength(7);
+    expect(frame).not.toMatch(/\b(above|below)\b/u);
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('BUILD');
+    expect(frame).toContain('REVIEW');
+    expect(lines).toHaveLength(14);
 
     ui.unmount();
   });
 });
 
 describe('Sidebar — unbudgeted height', () => {
+  beforeEach(forceUnicodeGlyphs);
+
   it('lists every task when the caller passes no height', async () => {
     tasksStore.__testReset({
       tasks: [
@@ -666,7 +757,11 @@ describe('Sidebar — unbudgeted height', () => {
     const ui = renderFeature(<Sidebar width={40} />);
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    const lines = frame.split('\n');
 
+    expect(lines[0]).toBe(`┌ Tasks 2/6 ${'─'.repeat(27)}┐`);
+    expect(lines[1]).toBe(`│${' '.repeat(38)}│`);
+    expect(lines[2]).toContain('first title');
     expect(frame).toContain('first title');
     expect(frame).toContain('second title');
     expect(frame).toContain('third title');
@@ -762,11 +857,13 @@ describe('Sidebar — a crew wider than the seat column', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame.split('\n').length).toBeLessThanOrEqual(20);
+    expect(frame.split('\n')).toHaveLength(20);
     expect(frame).toContain('GPT-6-Astra · xhigh');
     expect(frame).toContain('Gemini 3.8 Flash (High)');
     expect(frame).toContain('GPT-6.1-Sol · high');
-    expect(frame).toContain('local');
+    expect(frame).toContain('PLAN');
+    expect(frame).toContain('BUILD');
+    expect(frame).toContain('REVIEW');
 
     ui.unmount();
   });
@@ -777,7 +874,6 @@ describe('Sidebar — usage lives in /usage', () => {
   // would be painted if the footer still asked for one.
   function seedPricedRun(): void {
     tokensStore.__testReset({
-      localCount: 2,
       tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
     });
     configStore.__testReset({
@@ -804,7 +900,7 @@ describe('Sidebar — usage lives in /usage', () => {
     });
   }
 
-  it('keeps the local share and paints no money for a run whose usage is priced', async () => {
+  it('paints no local row or money for a run whose usage is priced', async () => {
     tasksStore.__testReset({ tasks: [task('1', 'done'), task('2', 'done')] });
     seedPricedRun();
 
@@ -812,7 +908,7 @@ describe('Sidebar — usage lives in /usage', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('local 100%');
+    expect(frame).not.toMatch(/\blocal\b/u);
     expect(frame).not.toContain('$');
     expect(frame).not.toContain('3.00');
     ui.unmount();
@@ -829,6 +925,7 @@ describe('Sidebar — usage lives in /usage', () => {
     expect(frame).not.toContain('1,000,000');
     expect(frame).not.toContain('2000k');
     expect(frame).not.toMatch(/\btokens?\b/i);
+    expect(frame).not.toMatch(/\blocal\b/u);
     ui.unmount();
   });
 });

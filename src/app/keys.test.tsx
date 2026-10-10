@@ -216,24 +216,65 @@ describe('useAppKeys: Ctrl+C', () => {
     ui.unmount();
   });
 
-  it.each(['home', 'idle', 'parked'] as const)(
-    'requires two Ctrl+C presses within two seconds when %s',
+  it.each([
+    'home',
+    'idle',
+    'parked',
+    'parked with the session options',
+    'parked without the session options',
+  ] as const)('requires two Ctrl+C presses within two seconds when %s', async (state) => {
+    if (state === 'home') routerStore.navigate({ to: 'home' });
+    if (state === 'idle' || state.startsWith('parked '))
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord(),
+        execution: { kind: 'at-rest' },
+      });
+    if (state === 'parked') stopStore.park('mid-brief', null, null);
+    if (state.startsWith('parked ')) {
+      stopStore.request('stop-now');
+      stopStore.park('mid-brief', null, null);
+    }
+    if (state === 'parked with the session options') overlayStore.open('stop-sheet');
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+    await writeCtrlC(ui);
+    await tick();
+    expect(exit).not.toHaveBeenCalled();
+    expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+    vi.advanceTimersByTime(1900);
+    await writeCtrlC(ui);
+    await tick();
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(stopStore.get().intent).not.toBe('end-run');
+    ui.unmount();
+  });
+
+  it.each(['parked with the session options', 'parked without the session options'] as const)(
+    're-arms quit after a Ctrl+C press outside the two-second window when %s',
     async (state) => {
-      if (state === 'home') routerStore.navigate({ to: 'home' });
-      if (state === 'idle')
-        routerStore.navigate({
-          to: 'workflow',
-          run: makeRunRecord(),
-          execution: { kind: 'at-rest' },
-        });
-      if (state === 'parked') stopStore.park('mid-brief', null, null);
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord(),
+        execution: { kind: 'at-rest' },
+      });
+      stopStore.request('stop-now');
+      stopStore.park('mid-brief', null, null);
+      if (state === 'parked with the session options') overlayStore.open('stop-sheet');
       const exit = vi.fn();
       const ui = renderFeature(<Harness exit={exit} />);
       await tick();
       await writeCtrlC(ui);
       await tick();
       expect(exit).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(2001);
+      await writeCtrlC(ui);
+      await tick();
+      expect(exit).not.toHaveBeenCalled();
       expect(feedbackStore.get().message).toBe('Press ctrl+c again to quit');
+
       vi.advanceTimersByTime(1900);
       await writeCtrlC(ui);
       await tick();

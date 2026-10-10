@@ -50,43 +50,62 @@ export async function runPtySmoke(
   dependencies: PtySmokeDependencies = DEFAULT_DEPENDENCIES,
 ): Promise<PtySmokeResult> {
   assertOptions(options);
+  const environmentRoot = createTempDir('splitbrief-pty-environment');
+  try {
+    return await runWithPtyChild(
+      {
+        requirement: options.requirement,
+        argv: childArgv(),
+        spawnOptions: {
+          name: 'xterm-256color',
+          cols: PTY_VIEWPORT.cols,
+          rows: PTY_VIEWPORT.rows,
+          cwd: projectRoot(),
+          env: safeChildEnvironment(environmentRoot),
+        },
+      },
+      async (child): Promise<PtySmokeResult> => {
+        const result = await monitorPtyContract({ child, timeoutMs: options.timeoutMs });
+        return { status: 'passed', ...result };
+      },
+      dependencies,
+    );
+  } finally {
+    cleanupTempDir(environmentRoot);
+  }
+}
+
+export async function runWithPtyChild<T>(
+  options: Readonly<{
+    requirement: PtyRequirement;
+    argv: readonly string[];
+    spawnOptions: PtySpawnOptions;
+  }>,
+  observe: (child: PtyProcess) => Promise<T>,
+  dependencies: PtySmokeDependencies = DEFAULT_DEPENDENCIES,
+): Promise<T | Extract<PtySmokeResult, { readonly status: 'skipped' }>> {
   const capability = await dependencies.loadCapability();
   if (capability.kind === 'setup-failed') {
     return setupFailure(options.requirement, capability.category, capability.reason);
   }
-
-  const environmentRoot = createTempDir('splitbrief-pty-environment');
   let child: PtyProcess;
   try {
-    const processOptions: PtySpawnOptions = {
-      name: 'xterm-256color',
-      cols: PTY_VIEWPORT.cols,
-      rows: PTY_VIEWPORT.rows,
-      cwd: projectRoot(),
-      env: safeChildEnvironment(environmentRoot),
-    };
-    try {
-      child = capability.spawn(process.execPath, childArgv(), processOptions);
-    } catch (error) {
-      if (isPostSpawnApiIncompatibleError(error)) {
-        const processBoundary = postSpawnProcessBoundary(error);
-        const fatal = new Error('node-pty returned an incompatible process API after spawning');
-        fatal.name = 'pty-contract-api-incompatible';
-        if (processBoundary) await reapPostSpawnBoundary(processBoundary, fatal);
-        throw fatal;
-      }
-      return setupFailure(
-        options.requirement,
-        'spawn-failed',
-        'node-pty could not create a pseudoterminal',
-      );
+    child = capability.spawn(process.execPath, options.argv, options.spawnOptions);
+  } catch (error) {
+    if (isPostSpawnApiIncompatibleError(error)) {
+      const processBoundary = postSpawnProcessBoundary(error);
+      const fatal = new Error('node-pty returned an incompatible process API after spawning');
+      fatal.name = 'pty-contract-api-incompatible';
+      if (processBoundary) await reapPostSpawnBoundary(processBoundary, fatal);
+      throw fatal;
     }
-
-    const result = await monitorPtyContract({ child, timeoutMs: options.timeoutMs });
-    return { status: 'passed', ...result };
-  } finally {
-    cleanupTempDir(environmentRoot);
+    return setupFailure(
+      options.requirement,
+      'spawn-failed',
+      'node-pty could not create a pseudoterminal',
+    );
   }
+  return observe(child);
 }
 
 async function reapPostSpawnBoundary(

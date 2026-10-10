@@ -170,7 +170,7 @@ describe('SessionRow', () => {
   });
 
   it.each([
-    ['complete', undefined, '✓', 'complete'],
+    ['complete', undefined, '●', 'complete'],
     ['ended', undefined, '×', 'ended'],
     ['open', 'waiting-for-you', '◌', 'waiting for you'],
     ['open', 'stopped', '◌', 'stopped'],
@@ -189,6 +189,16 @@ describe('SessionRow', () => {
     const line = lineContaining(frame, 'row-under-test');
     expect(line.startsWith(`${icon} row-under-test`)).toBe(true);
     expect(line).toContain(word);
+  });
+
+  it.each([undefined, 'applied'] as const)('marks a closed %s run done in both tiers', (apply) => {
+    const session = makeSession({ status: 'complete', apply, feature: 'done-run' });
+    const unicodeFrame = frameOf(<SessionRow session={session} />);
+    expect(lineContaining(unicodeFrame, 'done-run').startsWith('● done-run')).toBe(true);
+    withAsciiTier(() => {
+      const asciiFrame = frameOf(<SessionRow session={session} />);
+      expect(lineContaining(asciiFrame, 'done-run').startsWith('* done-run')).toBe(true);
+    });
   });
 
   it('reads an open row with no stop reason as a run still going', () => {

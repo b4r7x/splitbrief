@@ -8,6 +8,7 @@ import type {
 import { phaseStage } from '../../../core/rail-stages.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { runnerActivityRoleLabel } from './runner-activity-display.js';
+import { isStatusFallback } from '../../../stores/workflow/operations/planner-status.js';
 
 export const REVIEW_WAITING_VERDICT = 'Review · waiting for the verdict';
 
@@ -48,7 +49,7 @@ export function activeVerb(
     case 'escalating':
       return 'Escalating…';
     case 'final-review':
-      return reviewerLabel === null ? REVIEW_WAITING_VERDICT : `Review… ${reviewerLabel}`;
+      return reviewerLabel === null ? REVIEW_WAITING_VERDICT : `Review${SOFT_SEP}${reviewerLabel}`;
     case 'idle':
     case 'complete':
       return '';
@@ -64,6 +65,11 @@ export function reviewActivityText(
   if (operation?.status !== 'running') return REVIEW_WAITING_VERDICT;
   switch (operation.role) {
     case 'review':
+      if (isStatusFallback(operation)) {
+        return reviewerLabel === null
+          ? REVIEW_WAITING_VERDICT
+          : `Review${SOFT_SEP}${reviewerLabel}${SOFT_SEP}waiting for the verdict`;
+      }
       return reviewerLabel === null
         ? 'Review · reviewing'
         : activeVerb('final-review', reviewerLabel, null);
@@ -71,8 +77,6 @@ export function reviewActivityText(
     case 'compaction':
     case 'escalation':
       return `Review${SOFT_SEP}${runnerActivityRoleLabel(operation.role)}`;
-    // Only the review seat's own call runs in the final review (`isReviewSeatCall`); a planner
-    // operation there is the stage's planner_status marker, not a call.
     case 'planner':
     case 'implementer':
       return REVIEW_WAITING_VERDICT;
@@ -81,12 +85,22 @@ export function reviewActivityText(
   }
 }
 
-export function suiteStatusText(
-  phase: Phase,
-  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command' | 'scenario'>,
-): string {
+export function suiteStatusText({
+  phase,
+  suite,
+  operation = null,
+}: {
+  phase: Phase;
+  suite: Pick<RunningSuiteStage, 'id' | 'moment' | 'command' | 'scenario'>;
+  operation?: ActiveOperation | null;
+}): string {
   const text = suiteStageText(suite);
-  return phaseStage(phase) === 'review' ? `Review${SOFT_SEP}${text}` : text;
+  const reviewing =
+    phaseStage(phase) === 'review' ||
+    (operation?.status === 'running' &&
+      operation.role === 'review' &&
+      operation.taskId === undefined);
+  return reviewing ? `Review${SOFT_SEP}${text}` : text;
 }
 
 /**

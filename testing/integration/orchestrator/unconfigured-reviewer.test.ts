@@ -181,15 +181,29 @@ describe('run with no reviewer configured', () => {
       'full_suite',
       'full_suite',
       'checks_run',
-      'planner_status',
+      'review_started',
       'all_tasks_done',
       // End-of-run checks are off: one row says so, and no reviewer check runs.
       'review_checks',
       'drift_report',
       'cost_update',
-      'planner_status',
+      'review_completed',
       'workflow_complete',
     ]);
+    const reviews = events.filter(
+      (event) => event.type === 'review_started' || event.type === 'review_completed',
+    );
+    expect(reviews).toHaveLength(2);
+    for (const review of reviews) {
+      expect(review).toMatchObject({
+        scope: 'final',
+        tool: PLANNER_PROVIDER,
+        model: PLANNER_MODEL,
+      });
+      expect(review).not.toHaveProperty('afterTaskId');
+    }
+    expect(reviews[1]).toMatchObject({ verdict: 'pass', findings: { blocking: 0, minor: 0 } });
+    expect(events.filter((event) => event.type === 'planner_status')).toHaveLength(2);
     const checks = events.filter((event) => event.type === 'full_suite');
     expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
     expect(

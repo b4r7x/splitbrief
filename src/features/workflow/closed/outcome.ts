@@ -22,9 +22,9 @@ export function outcomeMarker(view: SummaryView): Readonly<{ glyph: GlyphName; t
   switch (view.outcome.kind) {
     case 'applied':
       if (view.applyUndo !== null) return { glyph: 'statusCancelled', tone: 'warning' };
-      return { glyph: 'check', tone: 'success' };
+      return { glyph: 'stageDone', tone: 'success' };
     case 'complete':
-      return { glyph: 'check', tone: 'success' };
+      return { glyph: 'stageDone', tone: 'success' };
     case 'needs-attention':
       return { glyph: 'statusWarning', tone: 'warning' };
     default:

@@ -12,11 +12,7 @@ export type RowMarkerStatus = 'live' | 'done' | 'queued';
 export function rowLeading(kind: ConversationRowKind, status: RowMarkerStatus = 'live'): string {
   if (kind === 'prompt') return `${ROW_LEADING}${glyph('promptMarker')} `;
   if (kind === 'task-header' || kind === 'activity') {
-    if (status === 'done') {
-      return kind === 'activity'
-        ? `${ROW_LEADING}${glyph('stageDone')} `
-        : `${ROW_LEADING}${glyph('statusDone')} `;
-    }
+    if (status === 'done') return `${ROW_LEADING}${glyph('stageDone')} `;
     if (status === 'queued') return `${ROW_LEADING}${glyph('statusPending')} `;
     return `${ROW_LEADING}${glyph('statusInProgress')} `;
   }

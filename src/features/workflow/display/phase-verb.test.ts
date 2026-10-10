@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { activeVerb, suiteStageText, REVIEW_WAITING_VERDICT } from './phase-verb.js';
+import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
+import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import {
+  activeVerb,
+  suiteStageText,
+  suiteStatusText,
+  REVIEW_WAITING_VERDICT,
+} from './phase-verb.js';
 
 describe('activeVerb', () => {
   it('says one verb for the planning session and names an old chain briefs call', () => {
@@ -38,12 +46,44 @@ describe('activeVerb', () => {
         continue;
       expect(activeVerb(phase, null, 'tasks')).toBe(activeVerb(phase, null, null));
     }
-    expect(activeVerb('final-review', 'Sonnet 4.5', null)).toBe('Review… Sonnet 4.5');
+    expect(activeVerb('final-review', 'Sonnet 4.5', null)).toBe('Review · Sonnet 4.5');
     expect(activeVerb('final-review', null, null)).toBe('Review · waiting for the verdict');
   });
 });
 
 describe('suiteStageText', () => {
+  it('keeps task reviewer checks and their base re-runs in Review', () => {
+    resetWorkflow();
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+    });
+    const review = operationsStore.get().active;
+    expect(
+      suiteStatusText({
+        phase: 'implementing',
+        suite: { id: 'V1', moment: 'pre-review', command: 'npm test' },
+        operation: review,
+      }),
+    ).toBe('Review · Reviewer check V1 · npm test');
+    expect(
+      suiteStatusText({
+        phase: 'implementing',
+        suite: { id: 'V1', moment: 'base', command: 'npm test' },
+        operation: review,
+      }),
+    ).toBe('Review · Base re-run V1 · npm test');
+    expect(
+      suiteStatusText({
+        phase: 'implementing',
+        suite: { id: 'V1', moment: 'brief', command: 'npm test' },
+      }),
+    ).toBe('Fix check V1 · npm test');
+    resetWorkflow();
+  });
   it('names the moment of the full suite and the command it runs', () => {
     expect(suiteStageText({ moment: 'base', command: 'npm test -- src/legacy.test.ts' })).toBe(
       'Base re-run · npm test -- src/legacy.test.ts',

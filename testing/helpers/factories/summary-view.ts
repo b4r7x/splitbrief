@@ -26,7 +26,6 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
     briefs: {
       total: 3,
       passed: 3,
-      local: 3,
       escalated: 0,
       failed: 0,
       skipped: 0,
@@ -70,7 +69,6 @@ export function endedInBuild(overrides: Partial<SummaryView> = {}): SummaryView 
     briefs: {
       total: 5,
       passed: 2,
-      local: 2,
       escalated: 1,
       failed: 0,
       skipped: 0,
@@ -96,7 +94,6 @@ export function endedInPlanning(overrides: Partial<SummaryView> = {}): SummaryVi
     briefs: {
       total: 0,
       passed: 0,
-      local: 0,
       escalated: 0,
       failed: 0,
       skipped: 0,

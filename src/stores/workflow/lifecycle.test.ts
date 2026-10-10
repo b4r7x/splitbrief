@@ -492,6 +492,45 @@ describe('runner call stall', () => {
     expect(lifecycleStore.get().lastRunnerEventTs).toBe(50_000);
   });
 
+  it('uses review start and completion for freshness without changing planner or run clocks', () => {
+    addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
+    addEvent({
+      type: 'review_started',
+      ts: 2_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+    });
+    expect(lifecycleStore.get()).toMatchObject({
+      status: 'running',
+      phase: 'implementing',
+      lastRunnerEventTs: 2_000,
+      plannerCall: null,
+      plannerCallStartedTs: null,
+      startedAt: 1_000,
+      endedAt: null,
+      durationMs: null,
+    });
+    addEvent({
+      type: 'review_completed',
+      ts: 3_000,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+      verdict: 'pass',
+      duration: 1_000,
+    });
+    expect(lifecycleStore.get()).toMatchObject({
+      status: 'running',
+      phase: 'implementing',
+      lastRunnerEventTs: 3_000,
+      startedAt: 1_000,
+      endedAt: null,
+      durationMs: null,
+    });
+    expect(runElapsedMs(lifecycleStore.get(), 4_000)).toBe(3_000);
+  });
+
   it('tracks the last runner event and the attempt start for the build-progress block', () => {
     addEvent({ type: 'workflow_started', ts: 1_000, phase: 'implementing', feature: 'test' });
     addEvent(

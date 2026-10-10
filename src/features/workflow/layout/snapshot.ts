@@ -35,6 +35,7 @@ import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
 import { queuedBriefs } from '../conversation-rows/queued-briefs.js';
+import { resultMenuStore } from '../../../stores/workflow/result-menu.js';
 
 export interface ConversationScrollSnapshot {
   conversationWidth: number;
@@ -62,6 +63,8 @@ interface ConversationLayoutSnapshot {
 function readWorkflowPromptRows(): number {
   if (overlayStore.get().active === 'stop-sheet')
     return stopMenuLayout(readStopMenuRows(), terminalSizeStore.get().cols).height;
+  const resultMenuRows = resultMenuStore.get();
+  if (resultMenuRows !== null) return resultMenuRows;
   const checks = reviewChecksPromptStore.get();
   if (checks.status === 'pending') {
     return reviewChecksCardLayout(checks.request, terminalSizeStore.get().cols).height;

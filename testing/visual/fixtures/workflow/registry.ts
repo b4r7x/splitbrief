@@ -184,7 +184,17 @@ const checkpointPredicates = [
       'Render workflow-review 0:12',
     ),
   ],
-  [checkpointId('review-settled-passed'), includesAll('✓ Review 1 passed', '7.0s')],
+  [
+    checkpointId('review-task-cadence'),
+    includesAll('Review T001 passed', 'Review · Reviewer check V1', 'npm test'),
+  ],
+  [
+    checkpointId('review-task-cadence-settled'),
+    (context) =>
+      includesAll('Review 1 passed')(context) &&
+      (context.viewport.cols < 80 || includesAll('Review T002 failed', 'fixes T003')(context)),
+  ],
+  [checkpointId('review-settled-passed'), includesAll('● Review 1 passed', '7.0s')],
   [checkpointId('review-settled-failed'), includesAll('✗ Review 1 failed', '7.0s')],
   [checkpointId('review-corrected'), includesAll('T902', 'Review 1 failed', 'Review 2 passed')],
   [checkpointId('review-summary'), includesAll('Review · Summary')],
@@ -314,7 +324,7 @@ const checkpointPredicates = [
       'OpenAI Codex CLI',
       'GPT-6-Astra',
       'npm test · not\u00a0run',
-      'Review…',
+      'Review · OpenAI Codex CLI',
     ),
   ],
   [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],

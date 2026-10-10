@@ -5,7 +5,10 @@ import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
-import { makeRunnerCallStarted } from '#testing/helpers/events/runner-call.js';
+import {
+  makeRunnerCallStarted,
+  makeRunnerCallCompleted,
+} from '#testing/helpers/events/runner-call.js';
 import { operationsStore } from '../../../stores/workflow/operations/state.js';
 import { taskId } from '../../../core/schemas/task.js';
 
@@ -43,7 +46,7 @@ it.each([
       phase: 'final-review',
       activeOperation: operationsStore.get().active,
     })?.verb,
-  ).toBe(`Review… ${label} · GPT-5`);
+  ).toBe(`Review · ${label} · GPT-5`);
   resetWorkflow();
 });
 
@@ -66,7 +69,7 @@ it('names the active reviewer from its recorded identity after the configured se
       activeOperation: operationsStore.get().active,
       reviewerLabel: 'Claude Code CLI · Sonnet 5 · low',
     })?.verb,
-  ).toBe('Review… OpenAI Codex CLI · GPT-5 · high');
+  ).toBe('Review · OpenAI Codex CLI · GPT-5 · high');
   resetWorkflow();
 });
 
@@ -90,6 +93,124 @@ it('leads the review byline with the render scenario and its own clock', () => {
 });
 
 describe('deriveLiveStatus', () => {
+  it.each([
+    ['task', 'implementing'],
+    ['final', 'final-review'],
+  ] as const)(
+    'keeps the recorded %s reviewer through the marker, calls, gaps and checks',
+    (scope, phase) => {
+      resetWorkflow();
+      addEvent({ type: 'workflow_started', ts: 500, phase, feature: 'test' });
+      addEvent({
+        type: 'review_started',
+        ts: 1_000,
+        phase,
+        scope,
+        tool: 'codex',
+        model: 'gpt-5',
+        axes: ['high'],
+        ...(scope === 'task' && { afterTaskId: 'T001' }),
+      });
+      const liveNow = () =>
+        deriveLiveStatus({
+          ...base,
+          phase,
+          reviewerLabel: 'Claude Code CLI · Sonnet 5 · low',
+          activeOperation: operationsStore.get().active,
+          suiteStage: operationsStore.get().suiteStage ?? null,
+        });
+      const reviewer = 'Review · OpenAI Codex CLI · GPT-5 · high';
+      expect(liveNow()).toMatchObject({
+        verb: `${reviewer} · waiting for the verdict`,
+        stageStart: 1_000,
+        tone: 'validator',
+      });
+      addEvent(
+        makeRunnerCallStarted({
+          ts: 1_100,
+          phase,
+          role: 'review',
+          callId: 'review-plan',
+          runnerName: 'codex',
+          model: 'gpt-5',
+          axes: ['high'],
+        }),
+      );
+      expect(liveNow()).toMatchObject({ verb: reviewer, stageStart: 1_100 });
+      addEvent(
+        makeRunnerCallCompleted({
+          ts: 1_200,
+          phase,
+          role: 'review',
+          callId: 'review-plan',
+          startedAt: 1_100,
+          endedAt: 1_200,
+          durationMs: 100,
+        }),
+      );
+      expect(liveNow()?.verb).toBe(`${reviewer} · waiting for the verdict`);
+      addEvent({
+        type: 'full_suite',
+        ts: 1_300,
+        phase,
+        id: 'V1',
+        moment: 'pre-review',
+        command: 'npm test',
+        status: 'running',
+      });
+      expect(liveNow()).toMatchObject({
+        verb: 'Review · Reviewer check V1 · npm test',
+        stageStart: 1_300,
+      });
+      addEvent({
+        type: 'full_suite',
+        ts: 1_400,
+        phase,
+        id: 'V1',
+        moment: 'pre-review',
+        command: 'npm test',
+        status: 'done',
+        passed: true,
+      });
+      expect(liveNow()?.verb).toBe(`${reviewer} · waiting for the verdict`);
+      addEvent(
+        makeRunnerCallStarted({
+          ts: 1_500,
+          phase,
+          role: 'review',
+          callId: 'review-verdict',
+          runnerName: 'codex',
+          model: 'gpt-5',
+          axes: ['high'],
+        }),
+      );
+      expect(liveNow()?.verb).toBe(reviewer);
+      addEvent(
+        makeRunnerCallCompleted({
+          ts: 1_600,
+          phase,
+          role: 'review',
+          callId: 'review-verdict',
+          startedAt: 1_500,
+          endedAt: 1_600,
+          durationMs: 100,
+        }),
+      );
+      addEvent({
+        type: 'review_completed',
+        ts: 1_700,
+        phase,
+        scope,
+        tool: 'codex',
+        verdict: 'pass',
+        duration: 700,
+      });
+      expect(liveNow()?.verb).toBe(
+        scope === 'task' ? 'Implementing…' : 'Review · waiting for the verdict',
+      );
+      resetWorkflow();
+    },
+  );
   it.each(['implementing', 'escalating'] as const)(
     'names the active reviewer consult during %s on the call clock',
     (phase) => {
@@ -106,7 +227,7 @@ describe('deriveLiveStatus', () => {
           activeOperation,
         }),
       ).toEqual({
-        verb: 'Review… GPT-6 Astra',
+        verb: 'Review · GPT-6 Astra',
         stageStart: 60_000,
         waitedMs: 0,
         tone: 'validator',
@@ -384,10 +505,10 @@ describe('deriveLiveStatus', () => {
   });
 
   it.each(['planner', 'implementer'] as const)(
-    'reads the %s role in the final review as no call: the planner_status marker is not a seat call',
+    'reads the %s role in the final review as no reviewer call',
     (role) => {
       const activeOperation = {
-        callId: 'planner-status:final-review',
+        callId: 'stage-marker',
         role,
         phase: 'final-review' as const,
         label: `${role} final-review`,

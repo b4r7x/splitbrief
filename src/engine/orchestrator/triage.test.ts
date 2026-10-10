@@ -8,6 +8,7 @@ import { makeCommandRunner, makeConfig } from '#testing/helpers/validation-fixtu
 import { readSpecFile } from '../../core/paths-io.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { ReviewVerdict, TriageResult } from '../../core/schemas/review.js';
+import type { ReviewScope } from '../../core/review/verdict.js';
 import { taskId } from '../../core/schemas/task.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
@@ -42,6 +43,13 @@ const FAIL_VERDICT: ReviewVerdict = {
   tasks: [{ id: taskId('T001'), plan: 'met', note: '' }],
   criteria: [{ id: 'C1', status: 'pass', evidence: '' }],
   findings: [FAILING_FINDING],
+};
+
+const FINAL_SCOPE: ReviewScope = { kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] };
+const TASK_SCOPE: ReviewScope = {
+  kind: 'task',
+  taskIds: ['T001', 'T002', 'T003', 'T004'],
+  criterionIds: ['C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9'],
 };
 
 function reviewRecord(): ReviewRecord {
@@ -111,6 +119,121 @@ function fixResult(): TriageResult {
 }
 
 describe('triageContractErrors', () => {
+  it('refuses fix work for a finding outside the task review scope', () => {
+    const outside = { ...FAILING_FINDING, taskId: null, criterionId: null };
+    const scoped = { ...FAILING_FINDING, id: 'F2', taskId: 'T004', criterionId: 'C6' };
+    const scopedPlan = {
+      ...plan,
+      criteria: [
+        { id: 'C6', text: 'Time-zone tests cover offsets', checkIds: ['K1'] },
+        { id: 'C10', text: 'The pending feature works', checkIds: ['K1'] },
+      ],
+    };
+    const result: TriageResult = {
+      ...fixResult(),
+      fixTasks: [{ ...fixTaskSpec(), id: taskId('T900'), criteria: [] }],
+    };
+    expect(
+      triageContractErrors(result, scopedPlan, [outside], [], [], undefined, TASK_SCOPE),
+    ).toEqual([
+      'Finding F1 is outside the task review scope and cannot be assigned to a fix task.',
+    ]);
+    const ask = {
+      ...result,
+      ask: { question: 'Which wording?', whyOnlyUserCanAnswer: 'It changes the product' },
+    };
+    expect(triageContractErrors(ask, scopedPlan, [outside], [], [], undefined, TASK_SCOPE)).toEqual(
+      ['Finding F1 is outside the task review scope and cannot be assigned to a fix task.'],
+    );
+    const scopedFix = {
+      ...result,
+      fixTasks: [{ ...fixTaskSpec(), id: taskId('T900'), findingIds: ['F2'], criteria: ['C6'] }],
+    };
+    expect(
+      triageContractErrors(scopedFix, scopedPlan, [outside, scoped], [], [], undefined, TASK_SCOPE),
+    ).toEqual([]);
+    expect(
+      triageContractErrors(
+        { fixTasks: [], rejected: [], verify: [], ask: null },
+        scopedPlan,
+        [outside],
+        [],
+        [],
+        undefined,
+        TASK_SCOPE,
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a fix task criterion outside the task review scope', () => {
+    const scoped = { ...FAILING_FINDING, id: 'F2', taskId: 'T004', criterionId: 'C6' };
+    const scopedPlan = {
+      ...plan,
+      criteria: [
+        { id: 'C6', text: 'Time-zone tests cover offsets', checkIds: ['K1'] },
+        { id: 'C10', text: 'The pending feature works', checkIds: ['K1'] },
+      ],
+    };
+    const result = {
+      ...fixResult(),
+      fixTasks: [{ ...fixTaskSpec(), id: taskId('T900'), findingIds: ['F2'], criteria: ['C10'] }],
+    };
+    expect(
+      triageContractErrors(result, scopedPlan, [scoped], [], [], undefined, TASK_SCOPE),
+    ).toEqual(['Fix task T900 names criterion C10 outside the task review scope.']);
+    expect(
+      triageContractErrors(result, scopedPlan, [scoped], [], [], undefined, FINAL_SCOPE),
+    ).toEqual([]);
+  });
+
+  it('keeps pending inputs and empty-criteria fixes admissible', () => {
+    const empty: TriageResult = { fixTasks: [], rejected: [], verify: [], ask: null };
+    for (const source of ['user', 'apply', 'check'] as const) {
+      const input = {
+        id: 'P1',
+        kind: 'defect' as const,
+        source,
+        text: 'Fix the error',
+        file: null,
+      };
+      expect(triageContractErrors(empty, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual([
+        'Pending input P1 is not fixed, rejected or verified.',
+      ]);
+      const fixed = {
+        ...empty,
+        fixTasks: [{ ...fixTaskSpec(), criteria: [], findingIds: ['P1'] }],
+      };
+      const rejected = { ...empty, rejected: [{ findingId: 'P1', reason: 'Already correct' }] };
+      const verified = { ...empty, verify: [{ findingId: 'P1', checkIds: ['K1'] }] };
+      for (const answer of [fixed, rejected, verified]) {
+        expect(triageContractErrors(answer, plan, [], [input], [], undefined, TASK_SCOPE)).toEqual(
+          [],
+        );
+      }
+      expect(
+        triageContractErrors(
+          { ...fixed, rejected: rejected.rejected },
+          plan,
+          [],
+          [input],
+          [],
+          undefined,
+          TASK_SCOPE,
+        ),
+      ).toEqual(['Pending input P1 is answered more than once.']);
+    }
+    const result = {
+      ...fixResult(),
+      fixTasks: [{ ...fixTaskSpec(), criteria: [] }],
+    };
+    expect(triageContractErrors(result, plan, findings, [], [], undefined, TASK_SCOPE)).toEqual([]);
+    const unnamed = [{ ...FAILING_FINDING, taskId: null, criterionId: null }];
+    expect(triageContractErrors(result, plan, unnamed, [], [], undefined, FINAL_SCOPE)).toEqual([]);
+    expect(triageContractErrors(empty, plan, unnamed, [], [], undefined, FINAL_SCOPE)).toEqual([
+      'Blocking finding F1 is not fixed, rejected or verified.',
+    ]);
+  });
+
   it('accepts provisional ids reused across cycles and dependencies on completed tasks', () => {
     const previous = [
       makeTask({ id: 'T001', status: 'done', batch: 1 }),
@@ -120,7 +243,9 @@ describe('triageContractErrors', () => {
       ...fixResult(),
       fixTasks: [{ ...fixTaskSpec(), dependsOn: [taskId('T001')] }],
     };
-    expect(triageContractErrors(result, plan, findings, [], previous)).toEqual([]);
+    expect(
+      triageContractErrors(result, plan, findings, [], previous, undefined, FINAL_SCOPE),
+    ).toEqual([]);
   });
 
   const findings = [FAILING_FINDING];
@@ -130,9 +255,9 @@ describe('triageContractErrors', () => {
     { ...FAILING_FINDING, kind: 'unverified' as const },
     { ...FAILING_FINDING, severity: 'minor' as const },
   ])('refuses implementation work for verification-only or minor findings', (finding) => {
-    expect(triageContractErrors(fixResult(), plan, [finding], [])).toContain(
-      'Finding F1 cannot be assigned to a fix task.',
-    );
+    expect(
+      triageContractErrors(fixResult(), plan, [finding], [], [], undefined, FINAL_SCOPE),
+    ).toContain('Finding F1 cannot be assigned to a fix task.');
   });
 
   it('rejects duplicate proposed ids and unknown dependencies before insertion', () => {
@@ -141,15 +266,21 @@ describe('triageContractErrors', () => {
       fixTasks: [fixTaskSpec(), { ...fixTaskSpec(), findingIds: ['U1'] }],
     };
     expect(
-      triageContractErrors(duplicate, plan, findings, [
-        { id: 'U1', kind: 'defect', source: 'user', text: 'other', file: null },
-      ]),
+      triageContractErrors(
+        duplicate,
+        plan,
+        findings,
+        [{ id: 'U1', kind: 'defect', source: 'user', text: 'other', file: null }],
+        [],
+        undefined,
+        FINAL_SCOPE,
+      ),
     ).toContain('Task id T002 is used twice.');
     const unknown = {
       ...fixResult(),
       fixTasks: [{ ...fixTaskSpec(), dependsOn: [taskId('T999')] }],
     };
-    expect(triageContractErrors(unknown, plan, findings, [])).toContain(
+    expect(triageContractErrors(unknown, plan, findings, [], [], undefined, FINAL_SCOPE)).toContain(
       'Task T002 depends on unknown task T999.',
     );
   });
@@ -162,7 +293,7 @@ describe('triageContractErrors', () => {
       ask: null,
     };
 
-    expect(triageContractErrors(result, plan, findings, [])).toEqual([
+    expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Fix task T002 names unknown criterion C9.',
     ]);
   });
@@ -175,7 +306,7 @@ describe('triageContractErrors', () => {
       ask: null,
     };
 
-    expect(triageContractErrors(result, plan, findings, [])).toEqual([
+    expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Verify for F1 names unknown check K404.',
     ]);
   });
@@ -190,6 +321,7 @@ describe('triageContractErrors', () => {
         [],
         triageState().tasks,
         reviewChecks,
+        FINAL_SCOPE,
       ),
     ).toEqual(['Finding F1 names unknown check V3.']);
   });
@@ -199,11 +331,11 @@ describe('triageContractErrors', () => {
     const on = enabledReviewChecks(makeConfig({}), REVIEW_CHECKS);
     const off = enabledReviewChecks(makeConfig({ endChecks: false }), REVIEW_CHECKS);
 
-    expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, on)).toEqual([]);
+    expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, on, FINAL_SCOPE)).toEqual([]);
     for (const reviewChecks of [undefined, off]) {
-      expect(triageContractErrors(VERIFY_V1, plan, findings, [], tasks, reviewChecks)).toEqual([
-        'Verify for F1 names unknown check V1.',
-      ]);
+      expect(
+        triageContractErrors(VERIFY_V1, plan, findings, [], tasks, reviewChecks, FINAL_SCOPE),
+      ).toEqual(['Verify for F1 names unknown check V1.']);
     }
   });
 
@@ -215,7 +347,7 @@ describe('triageContractErrors', () => {
       ask: null,
     };
 
-    expect(triageContractErrors(result, plan, findings, [])).toEqual([
+    expect(triageContractErrors(result, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Blocking finding F1 is answered more than once.',
       'Rejected F1 is not a pending input.',
     ]);
@@ -229,7 +361,7 @@ describe('triageContractErrors', () => {
       ask: { question: 'Which wording?', whyOnlyUserCanAnswer: 'It changes the product' },
     };
 
-    expect(triageContractErrors(ask, plan, findings, [])).toEqual([
+    expect(triageContractErrors(ask, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Fix task T002 names unknown criterion C9.',
     ]);
   });

@@ -103,6 +103,7 @@ export function passingVerdict(scope: ReviewScope): ReviewAnswer {
  */
 export function passingReviewVerdict(prompt: string): ReviewAnswer {
   return passingVerdict({
+    kind: prompt.includes('# Task Implementation Review') ? 'task' : 'final',
     taskIds: promptIds(prompt, 'Task ids:'),
     criterionIds: promptIds(prompt, 'Criterion ids:'),
   });

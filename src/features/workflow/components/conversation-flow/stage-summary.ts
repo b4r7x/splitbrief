@@ -13,29 +13,47 @@ export function stageSummaryRow(summary: StageSummary): {
     return {
       id: 'Plan',
       title: summary.feature,
-      state: { kind: 'stage', failed: false, detail: [duration] },
+      state: { kind: 'stage', outcome: 'passed', detail: [duration] },
     };
   }
 
-  if (summary.outcome === 'passed') {
+  const anchor = summary.scope === 'task' ? summary.afterTaskId : summary.ordinal;
+  const id = anchor === undefined ? 'Review' : `Review ${anchor}`;
+  if (summary.outcome === 'passed' || summary.outcome === 'passed-with-notes') {
     return {
-      id: `Review ${summary.ordinal}`,
+      id,
       title: 'passed',
-      state: { kind: 'stage', failed: false, detail: [duration] },
+      state: {
+        kind: 'stage',
+        outcome: 'passed',
+        detail:
+          summary.outcome === 'passed-with-notes' && summary.findings
+            ? [countNoun(summary.findings.minor, 'note'), duration]
+            : [duration],
+      },
+    };
+  }
+
+  if (summary.outcome === 'no-verdict' || summary.outcome === 'stopped') {
+    return {
+      id,
+      title: summary.outcome === 'no-verdict' ? 'no verdict' : 'stopped',
+      state: { kind: 'stage', outcome: summary.outcome, detail: [duration] },
     };
   }
 
   const failures = [...summary.failedCommands];
   if (summary.failedChecks > 0) failures.push(countNoun(summary.failedChecks, 'check'));
-  const detail = failures.length > 0 ? [failures.join(', ')] : [];
+  const detail = summary.findings ? [`${summary.findings.blocking} blocking`] : [];
+  if (failures.length > 0) detail.push(failures.join(', '));
   if (summary.fixes.length > 0) detail.push(`fixes ${summary.fixes.join(' ')}`);
   detail.push(duration);
   return {
-    id: `Review ${summary.ordinal}`,
+    id,
     title: '',
     state: {
       kind: 'stage',
-      failed: true,
+      outcome: 'failed',
       detail,
     },
   };

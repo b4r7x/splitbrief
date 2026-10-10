@@ -1,3 +1,9 @@
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
+import { createElement, Fragment } from 'react';
+import { renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { groupEventsIntoSections } from '../../core/sections/event-sections.js';
+import { ConversationRowView } from './components/conversation-flow/row-view.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { arrowSep } from '../../core/separators.js';
 import { join } from 'node:path';
@@ -6,6 +12,11 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import {
+  makeRunnerCallStarted,
+  makeRunnerCallCompleted,
+} from '#testing/helpers/events/runner-call.js';
+import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../core/schemas/task.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../core/paths.js';
 import type { WorkflowState } from '../../core/schemas/workflow.js';
@@ -81,6 +92,7 @@ function writeLog(events: readonly EngineEvent[]): void {
 }
 
 beforeEach(() => {
+  forceUnicodeGlyphs();
   projectDir = createTempDir('run-history');
   resetWorkflow();
 });
@@ -92,6 +104,53 @@ afterEach(() => {
 });
 
 describe('hydrateRun', () => {
+  it('settles a truncated review on resume before T002 starts and finishes its call', async () => {
+    writeLog([
+      ...RUN,
+      {
+        type: 'review_started',
+        ts: 4_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        tool: 'codex',
+      },
+    ]);
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    expect(operationsStore.get().active).toMatchObject({ role: 'review', status: 'running' });
+    addEvent({ type: 'workflow_resumed', ts: 5_000, phase: 'implementing' });
+    addEvent(makeTaskStart({ ts: 6_000, taskId: taskId('T002'), index: 1 }));
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().reviewStage).toBeNull();
+    addEvent(makeRunnerCallStarted({ ts: 7_000, callId: 't002', taskId: taskId('T002') }));
+    addEvent(
+      makeRunnerCallCompleted({
+        ts: 8_000,
+        callId: 't002',
+        taskId: taskId('T002'),
+        startedAt: 7_000,
+        endedAt: 8_000,
+        durationMs: 1_000,
+      }),
+    );
+    expect(operationsStore.get().active).toBeNull();
+    expect(operationsStore.get().reviewStage).toBeNull();
+    expect([...operationsStore.get().byCallId.values()].some((op) => op.status === 'running')).toBe(
+      false,
+    );
+    expect(operationsStore.get().last).toMatchObject({
+      callId: 't002',
+      taskId: 'T002',
+      role: 'implementer',
+      status: 'completed',
+    });
+  });
+
   it('restores the first request with every attached file in the transcript', async () => {
     writeLog([
       ...RUN.slice(0, 1),
@@ -186,6 +245,170 @@ describe('hydrateRun', () => {
     expect(operationsStore.get().suiteStage).toBeNull();
     addEvent({ ...fix, ts: 3_002_000 });
     expect(operationsStore.get().suiteStage?.stageStartedTs).toBe(3_002_000);
+  });
+
+  it('hydrates the task and final review rows in live order with frozen durations', async () => {
+    const seat = { tool: 'codex', model: 'gpt-6.1-sol', axes: ['high'] };
+    const log: EngineEvent[] = [
+      ...RUN,
+      {
+        type: 'review_started',
+        ts: 4_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        ...seat,
+      },
+      {
+        type: 'review_completed',
+        ts: 53_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 49_000,
+        ...seat,
+      },
+      {
+        type: 'task_started',
+        ts: 54_000,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        title: 'Wire it in',
+        file: 'src/wire.ts',
+        action: 'modify',
+        index: 1,
+        total: 2,
+      },
+      {
+        type: 'task_completed',
+        ts: 55_000,
+        phase: 'implementing',
+        taskId: taskId('T002'),
+        title: 'Wire it in',
+        method: 'local',
+        retries: 0,
+        duration: 1_000,
+      },
+      {
+        type: 'review_started',
+        ts: 56_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T002',
+        ...seat,
+      },
+      {
+        type: 'review_completed',
+        ts: 105_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T002',
+        verdict: 'fail',
+        findings: { blocking: 1, minor: 0 },
+        duration: 49_000,
+        ...seat,
+      },
+      {
+        type: 'review_fix_started',
+        ts: 106_000,
+        phase: 'implementing',
+        cycle: 1,
+        taskIds: [taskId('T003')],
+      },
+      {
+        type: 'task_started',
+        ts: 107_000,
+        phase: 'implementing',
+        taskId: taskId('T003'),
+        title: 'Fix validator',
+        file: 'src/validate.ts',
+        action: 'modify',
+        index: 2,
+        total: 3,
+      },
+      {
+        type: 'task_completed',
+        ts: 108_000,
+        phase: 'implementing',
+        taskId: taskId('T003'),
+        title: 'Fix validator',
+        method: 'local',
+        retries: 0,
+        duration: 1_000,
+      },
+      { type: 'review_started', ts: 109_000, phase: 'final-review', scope: 'final', ...seat },
+      {
+        type: 'review_completed',
+        ts: 171_000,
+        phase: 'final-review',
+        scope: 'final',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 62_000,
+        ...seat,
+      },
+      { type: 'workflow_complete', ts: 172_000, phase: 'complete', review: 'passed' },
+    ];
+    const transcript = () => {
+      const sections = groupEventsIntoSections([...eventsStore.get().events]);
+      const { rows } = buildConversationRows({
+        sections,
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 120,
+        viewportHeight: 40,
+        streaming: { taskId: null, lines: [], active: false },
+      });
+      const ui = renderFeature(
+        createElement(
+          Fragment,
+          null,
+          ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+        ),
+        { cols: 120, rows: 40 },
+      );
+      const lines = stripAnsiStyles(ui.lastFrame())
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /^[✓✗×] (?:T\d|Review )/u.test(line));
+      ui.unmount();
+      return {
+        lines,
+        summaries: sections.flatMap((section) =>
+          section.type === 'settled-stage' && section.summary.stage === 'review'
+            ? [section.summary]
+            : [],
+        ),
+      };
+    };
+    writeLog(log);
+    for (const event of log) addEvent(event);
+    const live = transcript();
+    expect(live.lines.filter((line) => line.includes('Review'))).toEqual([
+      '✓ Review T001 passed  49.0s',
+      '✗ Review T002 failed  1 blocking · fixes T003 · 49.0s',
+      '✓ Review 1 passed  1m 2s',
+    ]);
+    resetWorkflow();
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: {
+          kind: 'loaded',
+          state: {
+            ...savedState(),
+            phase: 'complete',
+            tasks: [
+              ...savedState().tasks.map((task) => ({ ...task, status: 'done' as const })),
+              makeTask({ id: 'T003', title: 'Fix validator', status: 'done' }),
+            ],
+          },
+        },
+      }),
+    );
+    expect(transcript()).toEqual(live);
   });
 
   it('puts the stores where a live run of the same log would have left them', async () => {

@@ -335,6 +335,25 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     stages: { typecheck: true, lint: true, test: true },
   },
 
+  review_started: {
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T001',
+    tool: 'codex',
+    model: 'gpt-6.1-sol',
+    axes: ['high'],
+  },
+  review_completed: {
+    phase: 'implementing',
+    scope: 'task',
+    afterTaskId: 'T001',
+    tool: 'codex',
+    model: 'gpt-6.1-sol',
+    axes: ['high'],
+    verdict: 'pass',
+    findings: { blocking: 0, minor: 1 },
+    duration: 49_000,
+  },
   review_checks: {
     phase: 'final-review',
     scope: 'final',
@@ -409,6 +428,14 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
 };
 
 const EXTRA_SHAPES: Record<string, unknown>[] = [
+  {
+    type: 'review_completed',
+    phase: 'final-review',
+    scope: 'final',
+    tool: 'codex',
+    verdict: 'stopped',
+    duration: 1_000,
+  },
   {
     type: 'runner_call_tool_use',
     phase: 'implementing',

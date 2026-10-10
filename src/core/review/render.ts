@@ -30,10 +30,12 @@ export function renderReviewMarkdown(verdict: ReviewVerdict, outcome: ReviewOutc
     for (const finding of outcome.blocking) lines.push(`- ${finding.text}`);
   }
   lines.push('', '**Note**', '');
-  if (outcome.minor.length === 0) {
+  if (outcome.minor.length === 0 && outcome.outOfScope.length === 0) {
     lines.push('None.');
   } else {
     for (const finding of outcome.minor) lines.push(`- ${finding.text}`);
+    for (const finding of outcome.outOfScope)
+      lines.push(`- Outside the task review scope: ${finding.text}`);
   }
   lines.push('');
   return lines.join('\n');

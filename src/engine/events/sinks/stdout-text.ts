@@ -194,13 +194,19 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'task_skipped':
         write(`task ${bounded.taskId}: failed (skipped)`);
         return;
-      case 'workflow_complete': {
-        const verdict = bounded.review ?? 'passed';
+      case 'review_completed': {
+        const scope =
+          bounded.scope === 'task'
+            ? `task${bounded.afterTaskId === undefined ? '' : ` ${bounded.afterTaskId}`}`
+            : 'final';
         write(
-          bounded.blocking === undefined
-            ? `review: ${verdict}`
-            : `review: ${verdict} (${bounded.blocking} blocking)`,
+          bounded.findings === undefined
+            ? `review: ${scope} ${bounded.verdict}`
+            : `review: ${scope} ${bounded.verdict} (${bounded.findings.blocking} blocking)`,
         );
+        return;
+      }
+      case 'workflow_complete': {
         // The run's count from its state: a continue completes only the briefs it had left.
         write(`done: ${bounded.completedTasks ?? 0} tasks`);
         return;

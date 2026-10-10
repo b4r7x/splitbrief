@@ -1245,7 +1245,6 @@ describe('Composer in-box hints', () => {
     // A run whose tokens carry a price, so an amount would be painted if the box still asked for
     // one. The composer reads no usage at all: /usage is the only surface that names it.
     tokensStore.__testReset({
-      localCount: 2,
       tokenUsage: makeUsage({ implementerInput: 1_000_000, implementerOutput: 1_000_000 }),
     });
     configStore.__testReset({

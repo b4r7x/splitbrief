@@ -18,7 +18,6 @@ export function makeReviewPacket(overrides?: Partial<ReviewPacket>): ReviewPacke
       completedAt: null,
       totalTimeMs: null,
       totalTasks: 1,
-      completedLocally: 1,
       escalated: 0,
       skipped: 0,
       failed: 0,

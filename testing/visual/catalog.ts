@@ -524,6 +524,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-fix-cycles',
+      viewports: WIDE_VIEWPORTS,
       title: 'Workflow · settled review cycles and their fix briefs',
       surface: screenSurface('workflow'),
       checkpoint: {
@@ -582,8 +583,32 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    ...(['', '-settled'] as const).map((suffix) =>
+      defineScenario({
+        id: `workflow-review-task-cadence${suffix}`,
+        title: `Workflow · task reviews${suffix === '' ? ' running' : ' at rest'}`,
+        surface: screenSurface('workflow'),
+        checkpoint: {
+          id: `review-task-cadence${suffix}`,
+          title:
+            suffix === ''
+              ? 'Task review running after the second brief'
+              : 'Task and final reviews replayed at rest',
+          kind: 'implementation',
+          marker: suffix === '' ? 'Review T001 passed' : 'Review 1 passed',
+        },
+        viewports: WIDE_VIEWPORTS,
+        elements: [
+          { id: 'header', title: 'Workflow header' },
+          { id: 'transcript', title: 'Task review transcript' },
+          { id: 'composer', title: 'Workflow composer' },
+          { id: 'sidebar', title: 'Workflow sidebar', required: false },
+        ],
+      }),
+    ),
     defineScenario({
       id: 'workflow-review-settled-passed',
+      viewports: WIDE_VIEWPORTS,
       title: 'Workflow · terminal Review passed',
       surface: screenSurface('workflow'),
       checkpoint: {
@@ -600,6 +625,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-settled-failed',
+      viewports: WIDE_VIEWPORTS,
       title: 'Workflow · terminal Review failed',
       surface: screenSurface('workflow'),
       checkpoint: {
@@ -616,6 +642,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     }),
     defineScenario({
       id: 'workflow-review-corrected',
+      viewports: WIDE_VIEWPORTS,
       title: 'Workflow · skipped brief and a corrected review',
       surface: screenSurface('workflow'),
       checkpoint: {

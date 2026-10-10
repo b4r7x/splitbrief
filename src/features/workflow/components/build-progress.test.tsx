@@ -57,7 +57,6 @@ beforeEach(() => {
 /** A brief on its second attempt, with a six-figure count the block would once have rounded. */
 function seedRunningAttemptTokens(): void {
   tokensStore.__testReset({
-    localCount: 1,
     perTask: {
       T002: {
         totalTokens: 148_000,

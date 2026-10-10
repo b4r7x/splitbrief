@@ -97,6 +97,7 @@ export function createDetectionCoordinator(
   const activeBySource = new Map<DetectionSourceId, PendingRequest>();
   let nextGeneration = 0;
   let nextRequestId = 0;
+  let stopped = false;
 
   function supersede(request: PendingRequest): void {
     request.superseded = true;
@@ -228,6 +229,11 @@ export function createDetectionCoordinator(
     input: CliModelsSourceRequest,
   ): Promise<DetectionSourceOutcome<CliModelSnapshot>>;
   function refresh(input: DetectionSourceRequest): Promise<DetectionSourceOutcome<object>> {
+    if (stopped) {
+      return Promise.resolve(
+        noRun({ source: input.source, contextKey: input.contextKey, reason: 'cancelled' }),
+      );
+    }
     const scopeKey = detectionSourceContextKey({
       source: input.source,
       contextKey: input.contextKey,
@@ -364,6 +370,11 @@ export function createDetectionCoordinator(
     }
   }
 
+  function shutdown(): void {
+    stopped = true;
+    for (const source of activeBySource.keys()) cancel({ source });
+  }
+
   function hydrate(input: ReadinessSourceHydration): void;
   function hydrate(input: ModelsDevSourceHydration): void;
   function hydrate(input: CliModelsSourceHydration): void;
@@ -390,5 +401,5 @@ export function createDetectionCoordinator(
     snapshots.set(detectionSourceContextKey(input), snapshot);
   }
 
-  return { refresh, snapshot, cancel, invalidate, hydrate };
+  return { refresh, snapshot, cancel, shutdown, invalidate, hydrate };
 }

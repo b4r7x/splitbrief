@@ -181,7 +181,9 @@ Run the review again only when neither file holds a fix part.
 
 fixTasks are complete TaskSpecs with new ids and findingIds. rejected entries use findingId and reason.
 verify entries use findingId and registered checkIds. ask is null or a user-only question with question and whyOnlyUserCanAnswer.
-The reviewer addresses blocking findings by kind:
+At task cadence, pending criteria stay pending.
+SPLITBRIEF records a finding outside the task review scope as a note and refuses fix work for it.
+The reviewer addresses blocking findings inside the scope by kind:
 
 | Kind | Reviewer action |
 |---|---|

@@ -163,7 +163,7 @@ function railCompleteText(summary: RailDoneSummary): string {
   if (summary.total > 0) parts.push(`${summary.passed}/${summary.total} briefs passed`);
   if (summary.driftPassed === undefined) parts.push('drift not run');
   else parts.push(summary.driftPassed ? 'no drift' : 'drift found');
-  return `${glyph('statusDone')} ${parts.join(SOFT_SEP)}`;
+  return `${glyph('stageDone')} ${parts.join(SOFT_SEP)}`;
 }
 
 function RailComplete({ summary }: { summary: RailDoneSummary }) {

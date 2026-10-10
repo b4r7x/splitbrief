@@ -1,6 +1,8 @@
 import { awaitActiveWorkflowShutdown } from '../../engine/orchestrator/session-lifecycle/shutdown.js';
+import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
+import { preparationStore } from '../../stores/navigation/preparation.js';
 import { teardownStores } from '../init-stores.js';
 
 const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
@@ -42,6 +44,11 @@ async function runCleanupStep(step: CleanupStep): Promise<void> {
 // the remaining owners: the terminal is restored first, then the failure is surfaced.
 async function cleanupTuiProcess(restore: CleanupStep): Promise<void> {
   await runCleanupStep(teardownStores);
+  await runCleanupStep(() => {
+    const current = preparationStore.get();
+    if (current.kind !== 'idle') preparationStore.cancel(current.attempt);
+  });
+  await runCleanupStep(() => getDefaultDetectionService().shutdown());
   const reaping = await settleCleanupStep(killAllProcesses);
   await runCleanupStep(awaitActiveWorkflowShutdown);
   await runCleanupStep(restore);

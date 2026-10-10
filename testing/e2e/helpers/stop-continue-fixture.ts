@@ -90,6 +90,7 @@ const PLAN_ANSWER = {
 /** The review's typed answer: the plan's every task met and every criterion passed. */
 const REVIEW_REPLY = JSON.stringify(
   passingVerdict({
+    kind: 'final',
     taskIds: PLAN_ANSWER.result.tasks.map((task) => task.id),
     criterionIds: PLAN_ANSWER.result.criteria.map((criterion) => criterion.id),
   }),

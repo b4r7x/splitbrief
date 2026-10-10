@@ -72,13 +72,20 @@ function activityLine(
     operation === null
       ? null
       : formatRecordedSeatIdentity({ ...operation, role: runnerActivityModelRole(operation.role) });
-  if (input.lifecycle.phase === 'final-review') {
+  const reviewing =
+    input.lifecycle.phase === 'final-review' ||
+    (operation?.role === 'review' && operation.taskId === undefined);
+  if (reviewing) {
     const activity = reviewActivityText(operation, identity);
     return {
       activity,
       activityIdentity:
         operation?.status === 'running' && operation.role === 'review' && identity !== null
-          ? { prefix: activity.slice(0, activity.length - identity.length), identity, suffix: '' }
+          ? {
+              prefix: `Review${SOFT_SEP}`,
+              identity,
+              suffix: activity.slice(`Review${SOFT_SEP}`.length + identity.length),
+            }
           : null,
     };
   }
@@ -101,15 +108,8 @@ function activityLine(
       doing = `working${task}`;
       break;
     case 'review':
-      // Only a fix task's consult publishes a review-role call under its task, in any build
-      // phase: a blocked or stale consult runs while implementing. The scheduled task review and
-      // the review-checks call name no task.
-      if (operation.taskId !== undefined) {
-        seat = CREW_SEAT_LABELS.review;
-        doing = `answering the consult${task}`;
-      } else {
-        doing = 'reviewing';
-      }
+      seat = CREW_SEAT_LABELS.review;
+      doing = `answering the consult${task}`;
       break;
     case 'planner':
     case 'escalation':
@@ -145,7 +145,10 @@ function runningCommand(
 ): { label: string; startedTs: number } | null {
   const suite = operations.suiteStage ?? null;
   if (suite !== null)
-    return { label: suiteStatusText(phase, suite), startedTs: suite.stageStartedTs };
+    return {
+      label: suiteStatusText({ phase, suite, operation: operations.active }),
+      startedTs: suite.stageStartedTs,
+    };
   const stage = operations.validationStage ?? null;
   if (stage === null) return null;
   return { label: stage.command ?? stage.stage, startedTs: stage.stageStartedTs };

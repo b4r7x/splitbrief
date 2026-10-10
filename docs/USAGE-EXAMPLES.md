@@ -67,7 +67,7 @@ splitbrief start "rename function calcualteTax to calculateTax in src/billing/ta
 ```
 phase: planning        → plan.json, plan.md, tasks.md
 phase: implementing
-  T001 ✓  src/billing/tax.ts
+  T001 ●  src/billing/tax.ts
 phase: final-review    → review.md
 workflow_complete
 ```
@@ -131,7 +131,7 @@ phase: reviewing-plan  ← the plan card
   approve · comment <text> · end-run · edit
 > approve
 phase: implementing
-  T001 ✓  T002 ✓  T003 ✓
+  T001 ●  T002 ●  T003 ●
 phase: final-review    → review.md
 workflow_complete
 ```
@@ -166,7 +166,7 @@ phase: reviewing-plan  ← the plan card
   - T002: write package.json
 > y
 phase: implementing
-  T001 ✓ T002 ✓ T003 ✓ T004 ✓
+  T001 ● T002 ● T003 ● T004 ●
 phase: final-review
 ```
 
@@ -484,9 +484,9 @@ esac
 **You'll see:**
 
 ```
-T001 ✓
+T001 ●
 T002 skipped: skipped per local override
-T003 ✓
+T003 ●
 ```
 
 Denied tasks land in the evidence ledger as `skipped: <reason>`. There is no `/skip-task` slash command today — denying via hook is the supported path.

@@ -19,6 +19,11 @@ import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
 import { makeRetry, makeTaskStart } from '#testing/helpers/events/task.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { operationsStore } from '../../../stores/workflow/operations/state.js';
+import {
+  makeRunnerCallStarted,
+  makeRunnerCallCompleted,
+} from '#testing/helpers/events/runner-call.js';
 
 const NOW = 1_000_000;
 
@@ -36,7 +41,7 @@ it.each([
   expect(progress.activity).toBe(`${label} · GPT-5 · working`);
 });
 
-it('names a scheduled review during the build as reviewing', () => {
+it('names a scheduled review during the build exactly as the final review', () => {
   const progress = deriveBuildProgress(
     input({
       operations: operationsState({
@@ -44,8 +49,97 @@ it('names a scheduled review during the build as reviewing', () => {
       }),
     }),
   );
-  expect(progress.activity).toBe('OpenAI Codex CLI · auto · reviewing');
+  expect(progress.activity).toBe('Review · OpenAI Codex CLI · auto');
 });
+
+it.each([
+  ['task', 'implementing'],
+  ['final', 'final-review'],
+] as const)(
+  'keeps the %s review fallback identity between calls and during reviewer checks',
+  (scope, phase) => {
+    resetWorkflow();
+    addEvent({ type: 'workflow_started', ts: NOW - 2_000, phase, feature: 'test' });
+    addEvent({
+      type: 'review_started',
+      ts: NOW - 1_000,
+      phase,
+      scope,
+      ...(scope === 'task' && { afterTaskId: 'T001' }),
+      tool: 'codex',
+      model: 'gpt-5',
+      axes: ['high'],
+    });
+    const progressNow = () =>
+      deriveBuildProgress(
+        input({ lifecycle: lifecycleStore.get(), operations: operationsStore.get() }),
+      );
+    const reviewer = 'Review · OpenAI Codex CLI · GPT-5 · high';
+    expect(progressNow().activity).toBe(`${reviewer} · waiting for the verdict`);
+    expect(progressNow().freshness).toBe('last event 1s ago');
+    addEvent(
+      makeRunnerCallStarted({
+        ts: NOW - 900,
+        phase,
+        role: 'review',
+        callId: 'review-plan',
+        runnerName: 'codex',
+        model: 'gpt-5',
+        axes: ['high'],
+      }),
+    );
+    expect(progressNow().activity).toBe(reviewer);
+    addEvent(
+      makeRunnerCallCompleted({
+        ts: NOW - 800,
+        phase,
+        role: 'review',
+        callId: 'review-plan',
+        startedAt: NOW - 900,
+        endedAt: NOW - 800,
+        durationMs: 100,
+      }),
+    );
+    expect(progressNow().activity).toBe(`${reviewer} · waiting for the verdict`);
+    addEvent({
+      type: 'full_suite',
+      ts: NOW - 700,
+      phase,
+      id: 'V1',
+      moment: 'pre-review',
+      command: 'npm test',
+      status: 'running',
+    });
+    expect(progressNow().activity).toBe('Review · Reviewer check V1 · npm test');
+    expect(progressNow().activityIdentity).toBeNull();
+    expect(progressNow().freshness).toBe('running 0:00');
+    addEvent({
+      type: 'full_suite',
+      ts: NOW - 600,
+      phase,
+      id: 'V1',
+      moment: 'pre-review',
+      command: 'npm test',
+      status: 'done',
+      passed: true,
+    });
+    expect(progressNow().activity).toBe(`${reviewer} · waiting for the verdict`);
+    addEvent({
+      type: 'review_completed',
+      ts: NOW - 500,
+      phase,
+      scope,
+      tool: 'codex',
+      verdict: 'pass',
+      duration: 500,
+    });
+    expect(progressNow().activity).toBe(
+      scope === 'task' ? 'Between calls' : 'Review · waiting for the verdict',
+    );
+    expect(progressNow().freshness).toBe('last event 0s ago');
+    resetWorkflow();
+  },
+);
 
 it.each(['implementing', 'validating-task'] as const)(
   'names the review seat on a fix-task consult that runs while %s',
@@ -1095,7 +1189,7 @@ describe('the build block during the final review', () => {
       }),
     );
 
-    expect(progress.activity).toBe('Review… OpenAI Codex CLI · GPT-5 · high');
+    expect(progress.activity).toBe('Review · OpenAI Codex CLI · GPT-5 · high');
   });
 
   it('states no attempt', () => {

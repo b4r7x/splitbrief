@@ -630,6 +630,27 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     error: z.string().optional(),
     duration: z.number().optional(),
   }),
+  phaseEvent('review_started').extend({
+    scope: z.enum(['final', 'task']),
+    /** The brief that scheduled a task review; an anchor, not `taskId` or the reviewed scope. */
+    afterTaskId: z.string().optional(),
+    tool: z.string(),
+    model: z.string().optional(),
+    axes: z.array(z.string()).optional(),
+  }),
+  phaseEvent('review_completed').extend({
+    scope: z.enum(['final', 'task']),
+    afterTaskId: z.string().optional(),
+    tool: z.string(),
+    model: z.string().optional(),
+    axes: z.array(z.string()).optional(),
+    /** The reviewer's outcome; failed/empty calls are `no-verdict`, stops are `stopped`. Both omit findings. */
+    verdict: z.enum(['pass', 'pass-with-notes', 'fail', 'no-verdict', 'stopped']),
+    findings: z
+      .object({ blocking: z.number().int().nonnegative(), minor: z.number().int().nonnegative() })
+      .optional(),
+    duration: z.number(),
+  }),
   /**
    * The commands the reviewer chose before a review, the tests it declined, or the checks being off.
    * `skipped`: none of the chosen commands ran, and `reason` says why.

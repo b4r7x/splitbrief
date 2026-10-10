@@ -14,7 +14,7 @@ import {
   VISUAL_FIXTURE_VERSION,
 } from './catalog.js';
 import { formatViewport } from './contracts/geometry.js';
-import { checkpointId } from './contracts/identifiers.js';
+import { checkpointId, scenarioId } from './contracts/identifiers.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from './fixtures/screen-fixtures.js';
 import {
@@ -33,6 +33,12 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
   ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-seat-switched-balance', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-fix-cycles', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-corrected', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-settled-passed', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-settled-failed', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-task-cadence', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-task-cadence-settled', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '200x50']],
   ['home-recent-sessions', ['120x40', '80x24']],
@@ -55,6 +61,17 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it.each([
+    ['workflow-review-task-cadence', 'Review T001 passed'],
+    ['workflow-review-task-cadence-settled', 'Review 1 passed'],
+  ])('registers %s with its review checkpoint and sidebar viewport', (id, marker) => {
+    const scenario = findVisualScenario(id);
+    expect(scenario?.checkpoints[0]?.marker).toBe(marker);
+    expect(scenario?.viewports.map(formatViewport)).toEqual(['120x40', '80x24', '60x18', '160x45']);
+    expect(scenario?.elements.map((element) => element.id)).toContain('sidebar');
+    expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
+  });
+
   it('keeps the recovery stop-sheet predicate separate from generic ready checkpoints', () => {
     const scenario = findVisualScenario('workflow-stop-sheet-recovery');
 
@@ -135,9 +152,9 @@ describe('visual catalog', () => {
         expect(frame).toContain('running 0:12');
         expect(frame).toContain('Review · Render workflow-review 0:12');
         const plain = stripTerminalControls(frame, { preserveLineBreaks: true });
-        for (const id of ['T901', 'T902', 'T903']) expect(plain).toContain(`✓ ${id}`);
-        expect(plain).toMatch(/✓ T902[^\n]*registry\.ts/);
-        expect(plain).toMatch(/✓ T903[^\n]*review-fixture\.md/);
+        for (const id of ['T901', 'T902', 'T903']) expect(plain).toContain(`● ${id}`);
+        expect(plain).toMatch(/● T902[^\n]*registry\.ts/);
+        expect(plain).toMatch(/● T903[^\n]*review-fixture\.md/);
         expect(frame).toContain('Render workflow-plan-compiled · rendered · 14.2s');
         expect(frame).toContain('Render workflow-implementation · failed · 11.0s');
         expect(frame).toContain('Render workflow-review · running');

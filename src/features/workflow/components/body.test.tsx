@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
@@ -28,6 +29,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   eventsStore.__testReset();
   reviewStore.clearReview();
   configStore.__testReset();
@@ -247,6 +249,41 @@ describe('WorkflowBody brief review rendering', () => {
     // on, plus the mark slot every unmarked message row leaves blank ahead of its text.
     expect(row.startsWith('no events yet')).toBe(false);
     expect(row.indexOf('no events yet')).toBe(WORKFLOW_GUTTER_X + MARK_SLOT_CELLS);
+
+    ui.unmount();
+  });
+
+  it.each([
+    { tier: 'unicode', corner: '┌', end: '┐' },
+    { tier: 'ascii', corner: '+', end: '+' },
+  ])('starts the $tier sidebar title and transcript text on the same first row', async (border) => {
+    forceUnicodeGlyphs();
+    if (border.tier === 'ascii') vi.stubEnv('TERM', 'dumb');
+    eventsStore.__testReset({ events: [makePlannerText({ text: 'First transcript text' })] });
+
+    const ui = renderFeature(
+      <WorkflowBody
+        showSidebar={true}
+        sidebarWidth={40}
+        inputMode={normalInputMode()}
+        reviewFilePath={null}
+        contentHeight={20}
+        contentWidth={116}
+      />,
+      { cols: 160, rows: 45 },
+    );
+    await flushEffects();
+    const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
+    const titleRow = lines.findIndex((line) => line.includes('Tasks'));
+    const transcriptRow = lines.findIndex((line) => line.includes('First transcript text'));
+
+    expect(titleRow).toBe(0);
+    expect(transcriptRow).toBe(titleRow);
+    expect(lines[titleRow]?.slice(WORKFLOW_GUTTER_X, WORKFLOW_GUTTER_X + 8)).toBe(
+      `${border.corner} Tasks `,
+    );
+    expect(lines[titleRow]?.[WORKFLOW_GUTTER_X + 39]).toBe(border.end);
+    expect(lines).toHaveLength(20);
 
     ui.unmount();
   });

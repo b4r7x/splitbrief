@@ -39,6 +39,14 @@ type FullSuiteEvent = {
 };
 type ChecksRunEvent = { type: 'checks_run'; results: { passed: boolean }[] };
 type ReviewFixStartedEvent = { type: 'review_fix_started'; taskIds: string[] };
+type ReviewCompletedEvent = {
+  type: 'review_completed';
+  scope: 'final' | 'task';
+  afterTaskId?: string | undefined;
+  verdict: 'pass' | 'pass-with-notes' | 'fail' | 'no-verdict' | 'stopped';
+  findings?: { blocking: number; minor: number } | undefined;
+  duration: number;
+};
 type WorkflowCompleteEvent = {
   type: 'workflow_complete';
   review?: 'passed' | 'failed' | undefined;
@@ -109,6 +117,12 @@ function isWorkflowCompleteEvent<TEvent extends SectionableEvent>(
   return event.type === 'workflow_complete';
 }
 
+function isReviewCompletedEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & ReviewCompletedEvent {
+  return event.type === 'review_completed';
+}
+
 // The diff's stable identity is its global render index, not its timestamp: publishers stamp events
 // with `Date.now()`, so two diffs produced in the same millisecond would collide on a type+ts key and
 // expand/collapse together. The global index is unique per rendered event and survives appends.
@@ -137,8 +151,11 @@ export type StageSummary =
   | { stage: 'plan'; feature: string; duration: number }
   | {
       stage: 'review';
+      scope: 'final' | 'task';
+      afterTaskId?: string | undefined;
       ordinal: number;
-      outcome: 'passed' | 'failed';
+      outcome: 'passed' | 'passed-with-notes' | 'failed' | 'no-verdict' | 'stopped';
+      findings?: { blocking: number; minor: number } | undefined;
       failedCommands: string[];
       failedChecks: number;
       fixes: string[];
@@ -230,16 +247,27 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
   let reviewStages = 0;
 
   function appendCompletedReviews(endIndex: number): void {
+    let reviewStarted = false;
     for (let index = cursor; index < endIndex; index++) {
       const event = events[index];
-      if (event === undefined || !(isWorkflowCompleteEvent(event) && event.review !== undefined))
+      if (event === undefined) continue;
+      if (event.type === 'review_started') reviewStarted = true;
+      if (isReviewCompletedEvent(event)) reviewStarted = true;
+      else if (reviewStarted || !(isWorkflowCompleteEvent(event) && event.review !== undefined))
         continue;
-      const items = events.slice(cursor, index + 1);
+      let reviewEnd = index;
+      for (let next = index + 1; next < endIndex; next++) {
+        const following = events[next];
+        if (following?.type === 'review_started' || following?.type === 'task_started') break;
+        if (following?.type === 'review_fix_started') reviewEnd = next;
+      }
+      const items = events.slice(cursor, reviewEnd + 1);
       const summary = settledStageSummary(items, reviewStages + 1);
       if (summary?.stage !== 'review') continue;
       sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
-      reviewStages++;
-      cursor = index + 1;
+      if (summary.scope === 'final') reviewStages++;
+      cursor = reviewEnd + 1;
+      index = reviewEnd;
     }
   }
 
@@ -252,7 +280,7 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
         sections.push({ type: 'events', items, startIndex: cursor });
       } else {
         sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
-        if (summary.stage === 'review') reviewStages++;
+        if (summary.stage === 'review' && summary.scope === 'final') reviewStages++;
       }
     }
 
@@ -332,6 +360,8 @@ function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean
   return (
     event?.phase !== undefined &&
     phaseStage(event.phase) === 'build' &&
+    event.type !== 'review_started' &&
+    event.type !== 'review_completed' &&
     !(hasReviewStage && event.type === 'review_fix_started')
   );
 }
@@ -341,9 +371,14 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   ordinal: number,
 ): StageSummary | null {
   const stages = items.map((event) => (event.phase === undefined ? null : phaseStage(event.phase)));
-  const verdict = items.findLast(isWorkflowCompleteEvent)?.review;
+  const completed = items.findLast(isReviewCompletedEvent);
+  const reviewStarted = items.some((event) => event.type === 'review_started');
+  const verdict =
+    reviewStarted || completed !== undefined
+      ? undefined
+      : items.findLast(isWorkflowCompleteEvent)?.review;
   const stage =
-    verdict !== undefined || stages.includes('review')
+    completed !== undefined || reviewStarted || verdict !== undefined || stages.includes('review')
       ? 'review'
       : stages.includes('plan')
         ? 'plan'
@@ -384,16 +419,29 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     }
     if (isReviewFixStartedEvent(event)) fixes = event.taskIds;
   }
-  const outcome = verdict ?? (fixes.length > 0 ? 'failed' : null);
+  const outcome = completed
+    ? completed.verdict === 'pass'
+      ? 'passed'
+      : completed.verdict === 'pass-with-notes'
+        ? 'passed-with-notes'
+        : completed.verdict === 'fail'
+          ? 'failed'
+          : completed.verdict
+    : reviewStarted
+      ? null
+      : (verdict ?? (fixes.length > 0 ? 'failed' : null));
   if (outcome === null) return null;
   return {
     stage,
+    scope: completed?.scope ?? 'final',
+    ...(completed?.afterTaskId !== undefined && { afterTaskId: completed.afterTaskId }),
+    ...(completed?.findings !== undefined && { findings: completed.findings }),
     ordinal,
     outcome,
     failedCommands: [...failedCommands],
     failedChecks,
     fixes,
-    duration,
+    duration: completed ? completed.duration : duration,
   };
 }
 
@@ -410,7 +458,11 @@ function joinBuildRowsToBriefs<TEvent extends SectionableEvent>(
     let gapStart = previous ? previous.endIdx + 1 : 0;
     const hasReviewStage = events
       .slice(gapStart, range.startIdx)
-      .some((event) => event.phase !== undefined && phaseStage(event.phase) === 'review');
+      .some(
+        (event) =>
+          event.type === 'review_started' ||
+          (event.phase !== undefined && phaseStage(event.phase) === 'review'),
+      );
     const consultIdx = events.findIndex(
       (event, idx) =>
         idx >= gapStart &&

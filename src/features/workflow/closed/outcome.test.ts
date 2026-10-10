@@ -9,6 +9,7 @@ import { glyph } from '../../../lib/glyphs.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { getRailStages } from '../../../core/rail-stages.js';
 import { outcomeLeading, outcomeLine, outcomeMarker, OUTCOME_LEADING_CELLS } from './outcome.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 
 describe('outcomeLine', () => {
   it('states an applied run and the files it wrote', () => {
@@ -63,7 +64,6 @@ describe('outcomeLine', () => {
       briefs: {
         total: 3,
         passed: 3,
-        local: 3,
         escalated: 0,
         failed: 1,
         skipped: 0,
@@ -125,7 +125,6 @@ describe('outcomeLine', () => {
       briefs: {
         total: 0,
         passed: 0,
-        local: 0,
         escalated: 0,
         failed: 0,
         skipped: 0,
@@ -154,7 +153,6 @@ describe('outcomeLine', () => {
       briefs: {
         total: 3,
         passed: 0,
-        local: 0,
         escalated: 0,
         failed: 0,
         skipped: 0,
@@ -177,7 +175,6 @@ describe('outcomeLine', () => {
       briefs: {
         total: 5,
         passed: 2,
-        local: 2,
         escalated: 1,
         failed: 0,
         skipped: 0,
@@ -204,7 +201,6 @@ describe('outcomeLine', () => {
       briefs: {
         total: 0,
         passed: 0,
-        local: 0,
         escalated: 0,
         failed: 0,
         skipped: 0,
@@ -221,7 +217,11 @@ describe('outcomeLine', () => {
   // mark and its trailing space. Nothing else in the suite pins it, so stated here as a literal
   // rather than derived from the same call the width budget is measured against.
   it('leads the outcome with one empty cell and the mark, three cells all told', () => {
-    expect(outcomeLeading(glyph('statusCancelled'))).toBe(` ${glyph('statusCancelled')} `);
+    for (const tier of ['unicode', 'ascii'] as const) {
+      const leading = outcomeLeading(glyph('stageDone', tier));
+      expect(leading).toBe(` ${glyph('stageDone', tier)} `);
+      expect(getTerminalCellWidth(leading)).toBe(3);
+    }
     expect(OUTCOME_LEADING_CELLS).toBe(3);
   });
 
@@ -248,10 +248,10 @@ describe('outcomeLine', () => {
 
 describe('outcomeMarker', () => {
   it.each([
-    ['complete', 'check', 'success'],
+    ['complete', 'stageDone', 'success'],
     ['needs-attention', 'statusWarning', 'warning'],
     ['ended', 'statusCancelled', 'warning'],
-    ['applied', 'check', 'success'],
+    ['applied', 'stageDone', 'success'],
     ['discarded', 'statusCancelled', 'warning'],
   ] as const)('marks a %s run with %s', (kind, name, tone) => {
     expect(outcomeMarker(makeView({ outcome: { kind } }))).toEqual({ glyph: name, tone });

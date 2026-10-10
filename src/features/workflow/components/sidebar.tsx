@@ -11,7 +11,6 @@ import {
 import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { lifecycleStore, runElapsedMs } from '../../../stores/workflow/lifecycle.js';
 import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
-import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -33,7 +32,6 @@ import {
 } from '../layout/rect.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
-import { formatLocalSharePct, localShare } from '../display/local-share.js';
 import { Divider } from '../../../components/divider.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -56,7 +54,7 @@ interface RowSpec {
 }
 
 const TASK_STATUS_GLYPH_NAME: Record<WorkflowTask['status'], GlyphName> = {
-  done: 'check',
+  done: 'stageDone',
   failed: 'statusFailed',
   escalated: 'statusEscalated',
   in_progress: 'statusInProgress',
@@ -182,13 +180,6 @@ function SidebarWaiting() {
   );
 }
 
-function rateColor(rate: number, routed: number, t: Theme): string | undefined {
-  if (routed === 0) return t.textDim;
-  if (rate >= 50) return t.success;
-  if (rate >= 25) return t.warning;
-  return t.error;
-}
-
 function TaskRow({
   task,
   width,
@@ -262,14 +253,6 @@ export function Sidebar({ width, height }: SidebarProps) {
   const config = configStore.use((s) => s.config);
   const displayNames = useCrewDisplayNames(config);
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
-  // The footer reports how much of the build the local seat carried, which is a routing fact. The
-  // run's tokens and money are not read here at all: /usage is where they are named.
-  const localCount = tokensStore.use((s) => s.localCount);
-  const escalatedRoutes = tokensStore.use((s) => s.escalatedCount);
-  const { rate: localRate, routedTasks } = localShare({
-    localCount,
-    escalatedCount: escalatedRoutes,
-  });
   const tasks = view.items;
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
@@ -285,9 +268,8 @@ export function Sidebar({ width, height }: SidebarProps) {
           ),
   }));
 
-  // The local-share row is unconditional; the done/escalated split is not.
   const footerRows =
-    seatRows.reduce((total, { rows }) => total + rows.length, 0) + 1 + (escalatedCount > 0 ? 1 : 0);
+    seatRows.reduce((total, { rows }) => total + rows.length, 0) + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -318,6 +300,11 @@ export function Sidebar({ width, height }: SidebarProps) {
   // body viewport; the parent will render it again as soon as a two-row panel can fit.
   if (tooShortForBorder) return null;
 
+  const title = truncateTerminalDisplayText(
+    view.total === 0 ? 'Tasks' : `Tasks ${view.passed}/${view.total}`,
+    innerWidth,
+  );
+
   return (
     <Box
       flexDirection="column"
@@ -327,13 +314,11 @@ export function Sidebar({ width, height }: SidebarProps) {
       borderColor={t.border}
       borderDimColor
     >
-      {/* The header shares the footer's left edge so the panel reads on one column, not four. */}
-      <Box paddingX={1} flexShrink={0}>
-        <Text color={t.textDim}>
-          {view.total === 0 ? 'Tasks' : `Tasks ${view.passed}/${view.total}`}
+      <Box position="absolute" marginTop={-1} width={getTerminalCellWidth(title) + 2}>
+        <Text color={t.textDim} wrap="truncate">
+          {` ${title} `}
         </Text>
       </Box>
-
       <Box
         flexDirection="column"
         paddingRight={1}
@@ -373,12 +358,6 @@ export function Sidebar({ width, height }: SidebarProps) {
               ))}
             </Box>
           ))}
-          <Text color={t.textDim}>
-            local{' '}
-            <Text color={rateColor(localRate, routedTasks, t)}>
-              {formatLocalSharePct(localRate)}
-            </Text>
-          </Text>
         </Box>
       </Box>
     </Box>

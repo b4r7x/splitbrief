@@ -55,8 +55,8 @@ export function getSidebarStatusColumnCells({ hasStatusTail }: SidebarStatusColu
   return hasStatusTail ? SIDEBAR_TASK_TAIL_CELLS : 0;
 }
 
-// 2 border rows + the count header + the blank row under it + the footer divider.
-const SIDEBAR_LIST_CHROME_ROWS = 5;
+// The top border with the count, the blank row under it, the footer divider, and the bottom border.
+const SIDEBAR_LIST_CHROME_ROWS = 4;
 
 export function getSidebarTaskListRows(input: { height: number; footerRows: number }): number {
   return Math.max(0, input.height - SIDEBAR_LIST_CHROME_ROWS - Math.max(0, input.footerRows));

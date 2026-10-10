@@ -253,8 +253,10 @@ describe('getReviewContentLayout', () => {
 
 describe('sidebar task list geometry', () => {
   it('leaves the list every row the sidebar chrome and footer do not claim', () => {
-    expect(getSidebarTaskListRows({ height: 24, footerRows: 3 })).toBe(16);
-    expect(getSidebarTaskListRows({ height: 24, footerRows: 4 })).toBe(15);
+    expect(getSidebarTaskListRows({ height: 14, footerRows: 3 })).toBe(7);
+    expect(getSidebarTaskListRows({ height: 14, footerRows: 6 })).toBe(4);
+    expect(getSidebarTaskListRows({ height: 24, footerRows: 3 })).toBe(17);
+    expect(getSidebarTaskListRows({ height: 24, footerRows: 4 })).toBe(16);
     expect(getSidebarTaskListRows({ height: 5, footerRows: 3 })).toBe(0);
     expect(getSidebarTaskListRows({ height: 0, footerRows: 0 })).toBe(0);
   });

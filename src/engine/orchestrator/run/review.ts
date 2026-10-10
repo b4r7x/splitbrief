@@ -387,6 +387,7 @@ export async function runScheduledReview(args: {
         skillsContext: wctx.context.skillsContext,
       }),
       scope: 'task',
+      ...(anchor !== undefined && { afterTaskId: anchor }),
       reviewChecks: !reviewAgain,
       setTrackedState,
     });

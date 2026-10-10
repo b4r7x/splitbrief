@@ -107,6 +107,10 @@ function refused(overrides: Partial<ApiReviewContextInput> = {}) {
 }
 
 describe('the packet an API review seat is handed', () => {
+  it('forwards the task review kind to the prompt', () => {
+    expect(complete({ reviewKind: 'task' }).text).toContain('This is a task review.');
+  });
+
   it('lists pending inputs only when the prompt has inputs to include', () => {
     expect(complete().manifest.map((entry) => entry.path)).not.toContain('pending inputs');
     const packet = complete({

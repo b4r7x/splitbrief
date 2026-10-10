@@ -9,7 +9,7 @@ import { ConversationRowView } from '../components/conversation-flow/row-view.js
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 const LIVE_MARK = glyph('statusInProgress');
-const DONE_MARK = glyph('statusDone');
+const DONE_MARK = glyph('stageDone');
 
 describe('taskStartedRowBlock markers', () => {
   it('a wrapped task_started block renders the status marker on its first line only', () => {

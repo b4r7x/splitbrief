@@ -99,7 +99,6 @@ describe('bylineText', () => {
       briefs: {
         total: 3,
         passed: 2,
-        local: 2,
         escalated: 0,
         failed: 1,
         skipped: 0,
@@ -115,7 +114,6 @@ describe('bylineText', () => {
       briefs: {
         total: 3,
         passed: 1,
-        local: 1,
         escalated: 0,
         failed: 2,
         skipped: 0,

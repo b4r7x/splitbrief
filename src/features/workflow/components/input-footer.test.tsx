@@ -545,8 +545,6 @@ describe('InputFooter', () => {
       tasks: [{ id: 'T001', title: 'T1', status: 'done' as const }],
     });
     tokensStore.__testReset({
-      localCount: 1,
-      escalatedCount: 0,
       tokenUsage: makeUsage({
         plannerInput: 1000,
         plannerOutput: 500,

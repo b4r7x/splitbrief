@@ -90,6 +90,7 @@ function printReview(outcome: ReviewOutcome, relativePath: string, theme: Theme)
   for (const [severity, findings] of [
     ['critical', outcome.blocking],
     ['warning', outcome.minor],
+    ['note', outcome.outOfScope],
   ] as const) {
     for (const finding of findings)
       console.log(`  ${severity}: ${stripTerminalControls(finding.text)}`);
@@ -208,7 +209,7 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
 
       // The same typed contract the run's final review uses; a one-shot review
       // has no plan, so the required-results ids are empty.
-      const scope: ReviewScope = { taskIds: [], criterionIds: [] };
+      const scope: ReviewScope = { kind: 'final', taskIds: [], criterionIds: [] };
       const verdictSchema = ReviewVerdictSchema.superRefine((candidate, ctx) => {
         for (const message of verdictCoverageErrors(candidate, scope)) {
           ctx.addIssue({ code: 'custom', message });

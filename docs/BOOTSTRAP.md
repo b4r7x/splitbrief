@@ -64,7 +64,9 @@ The draft remains editable during preparation; start and continue wait for curre
 
 `prepareExecution()` rechecks execution admission and session ownership for each attempt. A zero-blocker discovery report cannot authorize takeover of a live or unknown session owner. `createInFlightProbeSharing()` in `src/engine/detection/runner-evidence.ts` shares only compatible observations while they are pending, keyed by current config, executable and authentication context. It retains no completed readiness result; unspecified CLI auth context is not shared. Remembered discovery is presentation data, never authority to execute.
 
-`awaitDiscovery` covers the discovery promise returned at mount; model-catalog and live detection work also have separately tracked background promises. `awaitBackgroundDiscovery()` settles those for callers such as cleanup. Initial render does not wait for them.
+`awaitDiscovery` covers the discovery promise returned at mount. Model-catalog and live detection work also have separately tracked background promises. `awaitBackgroundDiscovery()` settles these promises for tests that remove temporary cache directories. Initial render does not wait for them.
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md#data-flow-one-task) for the cleanup order, process exit, and caller-requested unmount.
 
 ## Rules for adding bootstrap steps
 
@@ -132,7 +134,9 @@ Canonical example: `detectCapabilities()` reads `configStore.get().config`, prob
 
 ### 6. Track asynchronous discovery without blocking mount
 
-`loadDiscovery()` first detects provider capabilities and reads remembered presentation data. It starts the model-catalog seed and live detection refresh through `trackDiscovery()`, with failure reporting on each promise, then discovers skills. `awaitBackgroundDiscovery()` waits for tracked work when cleanup needs it. A new independent discovery step belongs in this existing lifecycle; a step with a real data dependency waits for that dependency. Neither remembered results nor completion of this background work replace explicit execution preparation.
+`loadDiscovery()` first detects provider capabilities and reads remembered presentation data. It starts the model-catalog seed and live detection refresh through `trackDiscovery()`. Each promise reports failures. It then discovers skills. `awaitBackgroundDiscovery()` waits for tracked work in tests.
+
+A bootstrap step that reaches detection after shutdown cannot start a refresh lane or queue a cache save. A new independent discovery step belongs in this lifecycle. A step with a data dependency waits for that dependency. Remembered results and background completion do not replace explicit execution preparation.
 
 ---
 

@@ -91,7 +91,6 @@ export interface SummaryView {
   briefs: Readonly<{
     total: number;
     passed: number;
-    local: number;
     escalated: number;
     failed: number;
     skipped: number;
@@ -161,7 +160,6 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     briefs: {
       total: summary.totalTasks,
       passed: summary.completedByLocal,
-      local: summary.completedByLocal,
       escalated: summary.escalatedToPlanner,
       failed: summary.failed,
       skipped: summary.skipped,

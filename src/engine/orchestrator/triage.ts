@@ -11,7 +11,12 @@ import {
   type TriageRecord,
   type WorkflowState,
 } from '../../core/schemas/workflow.js';
-import { verificationKey, type Finding } from '../../core/review/verdict.js';
+import {
+  findingInReviewScope,
+  verificationKey,
+  type Finding,
+  type ReviewScope,
+} from '../../core/review/verdict.js';
 import { insertTasks } from '../../core/state/task-insert.js';
 import type { EventBus } from '../events/types.js';
 import { checkTaskIdentities } from '../spec/plan-checks.js';
@@ -64,8 +69,9 @@ export function triageContractErrors(
   plan: Plan | undefined,
   findings: readonly Finding[],
   inputs: readonly TriageInput[],
-  tasks: readonly Task[] = [],
-  reviewChecks?: readonly Check[] | undefined,
+  tasks: readonly Task[],
+  reviewChecks: readonly Check[] | undefined,
+  scope: ReviewScope,
 ): string[] {
   const errors: string[] = [];
   const blocking = findings.filter(
@@ -79,7 +85,7 @@ export function triageContractErrors(
     for (const task of result.fixTasks) for (const id of task.findingIds) count(id);
     for (const rejected of result.rejected) count(rejected.findingId);
     for (const verified of result.verify) count(verified.findingId);
-    for (const finding of blocking) {
+    for (const finding of blocking.filter((finding) => findingInReviewScope(finding, scope))) {
       const times = answered.get(finding.id) ?? 0;
       if (times === 0) {
         errors.push(`Blocking finding ${finding.id} is not fixed, rejected or verified.`);
@@ -120,11 +126,14 @@ export function triageContractErrors(
   for (const task of result.fixTasks) {
     for (const id of task.findingIds) {
       const finding = findings.find((finding) => finding.id === id);
-      if (
-        finding !== undefined &&
-        (finding.kind === 'unverified' || finding.severity === 'minor')
-      ) {
-        errors.push(`Finding ${id} cannot be assigned to a fix task.`);
+      if (finding !== undefined) {
+        if (!findingInReviewScope(finding, scope)) {
+          errors.push(
+            `Finding ${id} is outside the task review scope and cannot be assigned to a fix task.`,
+          );
+        } else if (finding.kind === 'unverified' || finding.severity === 'minor') {
+          errors.push(`Finding ${id} cannot be assigned to a fix task.`);
+        }
       }
       for (const checkId of finding?.checkIds ?? []) {
         if (!checks.has(checkId)) {
@@ -136,6 +145,11 @@ export function triageContractErrors(
   const criteria = new Set((plan?.criteria ?? []).map((criterion) => criterion.id));
   for (const task of result.fixTasks) {
     for (const criterionId of task.criteria) {
+      if (scope.kind === 'task' && !scope.criterionIds.includes(criterionId)) {
+        errors.push(
+          `Fix task ${task.id} names criterion ${criterionId} outside the task review scope.`,
+        );
+      }
       if (!criteria.has(criterionId)) {
         errors.push(`Fix task ${task.id} names unknown criterion ${criterionId}.`);
       }

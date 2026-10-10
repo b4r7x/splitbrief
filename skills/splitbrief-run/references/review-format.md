@@ -92,6 +92,9 @@ Save the whole answer in review.json. Render review.md from that answer.
 Unverified findings name non-empty valid checkIds or a criterionId with registered checks.
 The session never guesses a check from a finding's text. The reviewer cannot supply arbitrary commands.
 
+At task cadence, pending criteria stay pending.
+SPLITBRIEF records a finding outside the task review scope as a note and refuses fix work for it.
+
 <!-- generated: verdict-rules -->
 - Derive pass: every task met, every criterion pass, no blocking finding.
 - Reject missing, duplicated or unknown task and criterion ids. Unverified criteria block pass.

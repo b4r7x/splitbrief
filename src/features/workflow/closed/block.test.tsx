@@ -21,6 +21,18 @@ function closedRows(width: number): ScrollableDocumentRow[] {
         feature: 'Add email validation with tests',
         totalTasks: 1,
         completedByLocal: 1,
+        reviewPacket: {
+          jsonPath: 'review-packet.json',
+          markdownPath: 'review-packet.md',
+          generatedAt: '2026-09-14T00:00:00.000Z',
+          finalReviewStatus: 'written',
+          finalReviewVerdict: 'pass',
+          finalReviewFindingCounts: { critical: 0, warning: 0, note: 0 },
+          driftPassed: true,
+          evidenceValidatedTasks: 1,
+          evidenceTotalTasks: 1,
+          missingArtifactCount: 0,
+        },
         changedFiles: ['src/validate.ts'],
         taskBreakdown: [
           {
@@ -80,6 +92,8 @@ describe('closedBlockRows', () => {
     expect(closedRule.trimEnd().length).toBe(width - 1);
 
     expect(frame).toContain('   Add email validation with tests');
+    expect(frame).toContain(` ${glyph('stageDone')} Complete · 1/1 briefs passed`);
+    expect(frame).toContain(` ${glyph('stageDone')} T001 Add the validator`);
 
     const runRule = firstLineStartingWith(frame, '   Run ');
     expect(runRule).toContain(glyph('divider'));

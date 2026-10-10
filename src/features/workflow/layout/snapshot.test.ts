@@ -41,6 +41,11 @@ import { ConversationFlow } from '../components/conversation-flow/flow.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { row } from '../conversation-rows/row-format/rows.js';
 import { handleWorkflowMouseWheel } from '../hooks/use-mouse-scroll.js';
+import { findVisualScenario } from '#testing/visual/catalog.js';
+import { scenarioId } from '#testing/visual/contracts/identifiers.js';
+import { viewport } from '#testing/visual/contracts/geometry.js';
+import { mountGalleryScenario } from '#testing/visual/gallery/mount.js';
+import { resultMenuHeight } from '../result/options.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -82,6 +87,46 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
 }
 
 describe('readConversationScrollSnapshot', () => {
+  it('scrolls seven ready-to-apply transcript rows in the painted 60x18 viewport', async () => {
+    const scenario = findVisualScenario(scenarioId('workflow-review-task-cadence-settled'));
+    if (scenario === undefined) throw new Error('Missing settled cadence scenario');
+    const checkpoint = scenario.checkpoints[0];
+    if (checkpoint === undefined) throw new Error('Missing settled cadence checkpoint');
+    const ui = await mountGalleryScenario({
+      scenario,
+      checkpoint,
+      viewport: viewport({ cols: 60, rows: 18 }),
+    });
+    try {
+      const bottomFrame = await ui.waitForCheckpoint();
+      const snapshot = readConversationScrollSnapshot();
+      const paintedHeight = getWorkflowViewportHeight({
+        rows: 18,
+        inputRows: inputHeightStore.get().rows,
+        promptRows: resultMenuHeight(
+          { override: false, findings: [], confirming: false, files: null },
+          60,
+        ),
+      });
+      expect(snapshot.totalHeight).toBe(7);
+      expect(snapshot.viewportHeight).toBe(paintedHeight);
+      expect(snapshot.transcriptViewportHeight).toBe(paintedHeight);
+      expect(snapshot.maxOffset).toBeGreaterThan(0);
+      expect(stripAnsiStyles(bottomFrame)).toContain('Review 1 passed');
+      conversationScrollStore.scrollUp({ ...snapshot, step: snapshot.maxOffset });
+      const topFrame = await ui.waitForCheckpoint({
+        predicate: ({ output }) => stripAnsiStyles(output).includes('T001 Add validator module'),
+      });
+      expect(readConversationScrollSnapshot().scrollOffset).toBe(snapshot.maxOffset);
+      expect(stripAnsiStyles(topFrame)).toContain('T001 Add validator module');
+      expect(stripAnsiStyles(topFrame)).not.toContain('Review 1 passed');
+      conversationScrollStore.scrollToBottom(snapshot.renderableCount);
+      expect(stripAnsiStyles(await ui.waitForCheckpoint())).toContain('Review 1 passed');
+    } finally {
+      await ui.unmount();
+    }
+  });
+
   it.each([
     { label: 'recovery reset the running brief to pending', closed: false },
     { label: 'closed run below the sidebar breakpoint', closed: true },

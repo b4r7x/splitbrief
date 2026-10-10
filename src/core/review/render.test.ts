@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import type { ReviewVerdict } from '../schemas/review.js';
 import { taskId } from '../schemas/task.js';
 import { renderReviewMarkdown } from './render.js';
-import { deriveReviewOutcome } from './verdict.js';
+import { deriveReviewOutcome, reviewFindingCounts, type ReviewScope } from './verdict.js';
 
 type Finding = ReviewVerdict['findings'][number];
 
-const scope = { taskIds: ['T001'], criterionIds: ['C1'] };
+const scope: ReviewScope = { kind: 'final', taskIds: ['T001'], criterionIds: ['C1'] };
 
 function verdictWord(markdown: string): string {
   return markdown.match(/### Verdict\n\n(\S+)/)?.[1] ?? '';
@@ -38,6 +38,29 @@ function makeVerdict(overrides: Partial<ReviewVerdict> = {}): ReviewVerdict {
 }
 
 describe('renderReviewMarkdown', () => {
+  it('renders findings outside the task review scope as notes and counts them', () => {
+    const verdict = makeVerdict({
+      findings: [
+        makeFinding({ id: 'F1', severity: 'blocking', text: 'C10/C11 not implemented' }),
+        makeFinding({ id: 'F2', taskId: 'T001', text: 'The greeting test misses a case' }),
+      ],
+    });
+    const outcome = deriveReviewOutcome(verdict, { ...scope, kind: 'task' }, new Map());
+    const markdown = renderReviewMarkdown(verdict, outcome);
+    expect(markdown).toContain(
+      '**Note**\n\n- The greeting test misses a case\n- Outside the task review scope: C10/C11 not implemented',
+    );
+    expect(reviewFindingCounts(outcome)).toEqual({ critical: 0, warning: 1, note: 1 });
+    const onlyOutside = { ...verdict, findings: verdict.findings.slice(0, 1) };
+    const onlyNotes = renderReviewMarkdown(
+      onlyOutside,
+      deriveReviewOutcome(onlyOutside, { ...scope, kind: 'task' }, new Map()),
+    );
+    expect(onlyNotes).toContain(
+      '**Note**\n\n- Outside the task review scope: C10/C11 not implemented',
+    );
+  });
+
   it('renders a successfully verified criterion with its effective status', () => {
     const verdict = makeVerdict({ criteria: [{ id: 'C1', status: 'unverified', evidence: 'K1' }] });
     const outcome = deriveReviewOutcome(verdict, scope, new Map([['criterion:C1', 'pass']]));
@@ -71,7 +94,7 @@ describe('renderReviewMarkdown', () => {
     });
     const outcome = deriveReviewOutcome(
       verdict,
-      { taskIds: ['T001'], criterionIds: ['C1', 'C2'] },
+      { kind: 'final', taskIds: ['T001'], criterionIds: ['C1', 'C2'] },
       new Map(),
     );
     const markdown = renderReviewMarkdown(verdict, outcome);

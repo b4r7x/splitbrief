@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PassThrough } from 'node:stream';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../types.js';
+import { EngineEventSchema } from '../schema.js';
 import { createStdoutTextSink } from './stdout-text.js';
 
 function collect(events: EngineEvent[]): string[] {
@@ -16,6 +17,19 @@ function collect(events: EngineEvent[]): string[] {
 const ts = 1;
 
 describe('createStdoutTextSink', () => {
+  it('omits the absent task anchor from a schema-valid review completion', () => {
+    const event = EngineEventSchema.parse({
+      type: 'review_completed',
+      ts,
+      phase: 'implementing',
+      scope: 'task',
+      tool: 'codex',
+      verdict: 'no-verdict',
+      duration: 49_000,
+    });
+    expect(collect([event])).toEqual(['phase: implementing', 'review: task no-verdict']);
+  });
+
   it('prints a path with line breaks on the one attached-files line', () => {
     const lines = collect([
       {
@@ -131,6 +145,16 @@ describe('createStdoutTextSink', () => {
           reviewerOutput: 0,
         },
       },
+      {
+        type: 'review_completed',
+        ts,
+        phase: 'final-review',
+        scope: 'final',
+        tool: 'codex',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 12,
+      },
       { type: 'workflow_complete', ts, phase: 'complete', completedTasks: 1 },
     ]);
 
@@ -138,8 +162,9 @@ describe('createStdoutTextSink', () => {
       'phase: researching',
       'phase: implementing',
       'task T001: done (1 of 2 checks passed)',
+      'phase: final-review',
+      'review: final pass (0 blocking)',
       'phase: complete',
-      'review: passed',
       'done: 1 tasks',
     ]);
   });
@@ -182,15 +207,19 @@ describe('createStdoutTextSink', () => {
     expect(lines).toContain('stalled: review (claude-code) · no output for 1:15:00');
   });
 
-  it('review: failed carries the blocking count the event already knows', () => {
+  it('prints a task review verdict and its blocking count once', () => {
     const lines = collect([
       { type: 'task_full_fail', ts, phase: 'implementing', taskId: taskId('T002') },
       {
-        type: 'planner_status',
+        type: 'review_completed',
         ts,
-        phase: 'final-review',
-        status: 'done',
-        summary: 'Final review failed',
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T002',
+        tool: 'codex',
+        verdict: 'fail',
+        findings: { blocking: 2, minor: 1 },
+        duration: 12,
       },
       { type: 'workflow_complete', ts, phase: 'complete', review: 'failed', blocking: 2 },
     ]);
@@ -198,11 +227,39 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: implementing',
       'task T002: failed (no checks)',
-      'phase: final-review',
+      'review: task T002 fail (2 blocking)',
       'phase: complete',
-      'review: failed (2 blocking)',
       'done: 0 tasks',
     ]);
+  });
+
+  it.each(['pass-with-notes', 'no-verdict', 'stopped'] as const)(
+    'prints one review line for %s',
+    (verdict) => {
+      const lines = collect([
+        {
+          type: 'review_completed',
+          ts,
+          phase: 'final-review',
+          scope: 'final',
+          tool: 'codex',
+          verdict,
+          duration: 12,
+          ...(verdict === 'pass-with-notes' && { findings: { blocking: 0, minor: 2 } }),
+        },
+        { type: 'workflow_complete', ts, phase: 'complete', review: 'passed' },
+      ]);
+      expect(lines.filter((line) => line.startsWith('review:'))).toEqual([
+        `review: final ${verdict}${verdict === 'pass-with-notes' ? ' (0 blocking)' : ''}`,
+      ]);
+      expect(lines.at(-1)).toBe('done: 0 tasks');
+    },
+  );
+
+  it('prints only the run completion when no review completion event arrives', () => {
+    expect(
+      collect([{ type: 'workflow_complete', ts, phase: 'complete', review: 'failed' }]),
+    ).toEqual(['phase: complete', 'done: 0 tasks']);
   });
 
   // A continue completes only the briefs left; the completion event carries the run's count.

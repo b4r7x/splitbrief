@@ -36,6 +36,12 @@ describe('glyph tier', () => {
     }
   });
 
+  it('has one done mark for both tiers', () => {
+    expect(GLYPH_NAMES.filter((name) => name.endsWith('Done'))).toEqual(['stageDone']);
+    expect(glyph('stageDone', 'unicode')).toBe('●');
+    expect(glyph('stageDone', 'ascii')).toBe('*');
+  });
+
   it('offers the disclosure marks and the cost bar in both tiers', () => {
     expect(glyph('disclosureClosed', 'unicode')).not.toBe(glyph('disclosureClosed', 'ascii'));
     expect(glyph('disclosureOpen', 'unicode')).not.toBe(glyph('disclosureOpen', 'ascii'));

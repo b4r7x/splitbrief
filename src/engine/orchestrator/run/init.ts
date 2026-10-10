@@ -719,5 +719,7 @@ async function restartInterruptedTask(args: {
 }
 
 function shouldPublishResumePlannerStatus(state: WorkflowState): boolean {
-  return isLivePhase(state.phase) && !isImplementerPhase(state.phase);
+  return (
+    isLivePhase(state.phase) && !isImplementerPhase(state.phase) && state.phase !== 'final-review'
+  );
 }

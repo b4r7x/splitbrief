@@ -9,6 +9,7 @@ import type { Section } from './event-sections.js';
 import type { Phase } from '../schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
 import { taskId } from '../schemas/task.js';
+import { makeRunnerCallCompleted } from '#testing/helpers/events/runner-call.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart, makeTaskComplete, makeTaskSkipped } from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
@@ -26,6 +27,311 @@ function requireSection<T extends Section['type']>(
 }
 
 describe('groupEventsIntoSections', () => {
+  it.each(['review_fix_started', 'workflow_complete'] as const)(
+    'preserves a legacy failed review recorded by %s before a new review passes',
+    (terminal) => {
+      const legacy: EngineEvent[] = [
+        { type: 'all_tasks_done', ts: 3_000, phase: 'final-review' },
+        {
+          type: 'full_suite',
+          ts: 4_000,
+          phase: 'final-review',
+          status: 'done',
+          command: 'npm test',
+          moment: 'pre-review',
+          passed: false,
+          duration: 1_000,
+        },
+        ...(terminal === 'workflow_complete'
+          ? [{ type: 'workflow_complete', ts: 5_000, phase: 'complete', review: 'failed' } as const]
+          : []),
+        {
+          type: 'review_fix_started',
+          ts: 6_000,
+          phase: 'implementing',
+          cycle: 1,
+          taskIds: [taskId('T003')],
+        },
+      ];
+      const events: EngineEvent[] = [
+        makeTaskStart({ ts: 1_000 }),
+        makeTaskComplete({ ts: 2_000 }),
+        ...legacy,
+        makeTaskStart({ ts: 7_000, taskId: taskId('T003'), index: 2 }),
+        makeTaskComplete({ ts: 8_000, taskId: taskId('T003') }),
+        { type: 'review_started', ts: 9_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+        {
+          type: 'review_completed',
+          ts: 71_000,
+          phase: 'final-review',
+          scope: 'final',
+          tool: 'codex',
+          verdict: 'pass',
+          findings: { blocking: 0, minor: 0 },
+          duration: 62_000,
+        },
+        { type: 'workflow_complete', ts: 72_000, phase: 'complete', review: 'passed' },
+      ];
+      const sections = groupEventsIntoSections(events);
+      const reviews = sections.filter((section) => section.type === 'settled-stage');
+      expect(reviews.map((section) => section.summary)).toEqual([
+        {
+          stage: 'review',
+          scope: 'final',
+          ordinal: 1,
+          outcome: 'failed',
+          failedCommands: ['npm test'],
+          failedChecks: 0,
+          fixes: ['T003'],
+          duration: 3_000,
+        },
+        {
+          stage: 'review',
+          scope: 'final',
+          ordinal: 2,
+          outcome: 'passed',
+          findings: { blocking: 0, minor: 0 },
+          failedCommands: [],
+          failedChecks: 0,
+          fixes: [],
+          duration: 62_000,
+        },
+      ]);
+      expect(reviews[0]?.items).toEqual(legacy);
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'settled-stage',
+        'completed-task',
+        'settled-stage',
+        'events',
+      ]);
+    },
+  );
+
+  it.each(['no-verdict', 'stopped'] as const)(
+    'settles an explicit %s without findings or a derived pass',
+    (verdict) => {
+      const events: EngineEvent[] = [
+        makeTaskStart({ ts: 1_000 }),
+        makeTaskComplete({ ts: 2_000 }),
+        {
+          type: 'review_started',
+          ts: 3_000,
+          phase: 'implementing',
+          scope: 'task',
+          afterTaskId: 'T001',
+          tool: 'codex',
+        },
+        {
+          type: 'review_completed',
+          ts: 52_000,
+          phase: 'implementing',
+          scope: 'task',
+          afterTaskId: 'T001',
+          tool: 'codex',
+          verdict,
+          duration: 49_000,
+        },
+        { type: 'workflow_complete', ts: 53_000, phase: 'complete', review: 'passed' },
+      ];
+      const reviews = groupEventsIntoSections(events).filter(
+        (section) => section.type === 'settled-stage',
+      );
+      expect(reviews).toHaveLength(1);
+      expect(reviews[0]?.summary).toMatchObject({
+        scope: 'task',
+        afterTaskId: 'T001',
+        outcome: verdict,
+        duration: 49_000,
+      });
+      expect(reviews[0]?.summary).not.toHaveProperty('findings');
+    },
+  );
+
+  it('derives no verdict from workflow completion once a review lifecycle event exists', () => {
+    const events: EngineEvent[] = [
+      makeTaskStart(),
+      makeTaskComplete(),
+      { type: 'review_started', ts: 3_000, phase: 'final-review', scope: 'final', tool: 'codex' },
+      { type: 'workflow_complete', ts: 4_000, phase: 'complete', review: 'passed' },
+    ];
+    expect(groupEventsIntoSections(events).map((section) => section.type)).toEqual([
+      'completed-task',
+      'events',
+    ]);
+  });
+
+  it('settles task reviews between briefs and counts only final reviews', () => {
+    const seat = { tool: 'codex', model: 'gpt-6.1-sol', axes: ['high'] };
+    const events: EngineEvent[] = [
+      makeTaskStart({ ts: 1_000 }),
+      makeTaskComplete({ ts: 2_000 }),
+      { type: 'warning', ts: 2_100, phase: 'implementing', message: 'Trailing build row.' },
+      {
+        type: 'review_started',
+        ts: 3_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        ...seat,
+      },
+      {
+        type: 'runner_call_started',
+        ts: 3_100,
+        phase: 'implementing',
+        callId: 'review-T001',
+        role: 'review',
+        backendKind: 'cli',
+        attempt: 1,
+        sequence: 0,
+      },
+      makeRunnerCallCompleted({
+        ts: 3_200,
+        callId: 'review-T001',
+        role: 'review',
+        startedAt: 3_100,
+        endedAt: 3_200,
+        durationMs: 100,
+      }),
+      {
+        type: 'review_checks',
+        ts: 3_300,
+        phase: 'implementing',
+        scope: 'task',
+        status: 'planned',
+        commands: [{ id: 'V1', command: 'npm test', reason: 'Verify validation.' }],
+      },
+      {
+        type: 'full_suite',
+        ts: 3_400,
+        phase: 'implementing',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'pre-review',
+        status: 'done',
+        passed: true,
+        duration: 100,
+      },
+      {
+        type: 'review_completed',
+        ts: 52_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 49_000,
+        ...seat,
+      },
+      makeTaskStart({ ts: 53_000, taskId: taskId('T002'), index: 1 }),
+      makeTaskComplete({ ts: 54_000, taskId: taskId('T002') }),
+      {
+        type: 'review_started',
+        ts: 55_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T002',
+        ...seat,
+      },
+      {
+        type: 'review_completed',
+        ts: 104_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T002',
+        verdict: 'fail',
+        findings: { blocking: 1, minor: 0 },
+        duration: 49_000,
+        ...seat,
+      },
+      {
+        type: 'review_fix_started',
+        ts: 105_000,
+        phase: 'implementing',
+        cycle: 1,
+        taskIds: [taskId('T003')],
+      },
+      makeTaskStart({ ts: 106_000, taskId: taskId('T003'), index: 2 }),
+      makeTaskComplete({ ts: 107_000, taskId: taskId('T003') }),
+      { type: 'review_started', ts: 108_000, phase: 'final-review', scope: 'final', ...seat },
+      {
+        type: 'review_completed',
+        ts: 170_000,
+        phase: 'final-review',
+        scope: 'final',
+        verdict: 'pass',
+        findings: { blocking: 0, minor: 0 },
+        duration: 62_000,
+        ...seat,
+      },
+      { type: 'workflow_complete', ts: 171_000, phase: 'complete', review: 'passed' },
+    ];
+    const sections = groupEventsIntoSections(events);
+    const settled = sections.filter(isSettledSection);
+    expect(settled.map((section) => section.type)).toEqual([
+      'completed-task',
+      'settled-stage',
+      'completed-task',
+      'settled-stage',
+      'completed-task',
+      'settled-stage',
+    ]);
+    expect(settled[0]?.items).toEqual(events.slice(0, 3));
+    expect(settled[1]).toMatchObject({
+      summary: {
+        stage: 'review',
+        scope: 'task',
+        afterTaskId: 'T001',
+        outcome: 'passed',
+        findings: { blocking: 0, minor: 0 },
+        duration: 49_000,
+      },
+    });
+    expect(settled[3]).toMatchObject({
+      summary: {
+        stage: 'review',
+        scope: 'task',
+        afterTaskId: 'T002',
+        outcome: 'failed',
+        findings: { blocking: 1, minor: 0 },
+        fixes: ['T003'],
+        duration: 49_000,
+      },
+    });
+    expect(settled[3]?.items).toContainEqual(events[13]);
+    expect(settled[5]).toMatchObject({
+      summary: { stage: 'review', scope: 'final', ordinal: 1, outcome: 'passed', duration: 62_000 },
+    });
+  });
+
+  it('keeps a running task review outside its completed brief in the live tail', () => {
+    const tail: EngineEvent[] = [
+      {
+        type: 'review_started',
+        ts: 3_000,
+        phase: 'implementing',
+        scope: 'task',
+        afterTaskId: 'T001',
+        tool: 'codex',
+      },
+      {
+        type: 'review_checks',
+        ts: 3_100,
+        phase: 'implementing',
+        scope: 'task',
+        status: 'planned',
+        commands: [{ id: 'V1', command: 'npm test', reason: 'Verify validation.' }],
+      },
+    ];
+    const sections = groupEventsIntoSections([
+      makeTaskStart({ ts: 1_000 }),
+      makeTaskComplete({ ts: 2_000 }),
+      ...tail,
+    ]);
+    expect(sections.map((section) => section.type)).toEqual(['completed-task', 'events']);
+    expect(sections[1]?.items).toEqual(tail);
+  });
+
   it('accepts engine events with an explicitly undefined or nullable task id', () => {
     const events = [
       {
@@ -700,6 +1006,7 @@ describe('groupEventsIntoSections', () => {
       expect(first.items).toEqual(review1);
       expect(first.summary).toEqual({
         stage: 'review',
+        scope: 'final',
         outcome: 'failed',
         ordinal: 1,
         failedCommands: ['npm test'],
@@ -711,6 +1018,7 @@ describe('groupEventsIntoSections', () => {
       expect(second.items).toEqual(review2);
       expect(second.summary).toEqual({
         stage: 'review',
+        scope: 'final',
         outcome: 'failed',
         ordinal: 2,
         failedCommands: ['npm run typecheck', 'npm test'],
@@ -734,6 +1042,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toEqual({
         stage: 'review',
+        scope: 'final',
         outcome: 'passed',
         ordinal: 1,
         failedCommands: [],
@@ -766,6 +1075,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toEqual({
         stage: 'review',
+        scope: 'final',
         outcome: 'failed',
         ordinal: 1,
         failedCommands: ['npm test'],
@@ -794,6 +1104,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
         stage: 'review',
+        scope: 'final',
         failedCommands: ['npm test'],
       });
     });
@@ -830,6 +1141,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
         stage: 'review',
+        scope: 'final',
         failedCommands: ['npm test'],
         fixes: ['T002'],
       });
@@ -878,6 +1190,7 @@ describe('groupEventsIntoSections', () => {
 
       expect(requireSection(sections, 1, 'settled-stage').summary).toMatchObject({
         stage: 'review',
+        scope: 'final',
         failedCommands: ['make test', 'cargo test'],
       });
     });
@@ -928,6 +1241,7 @@ describe('findLatestRenderableDiffKey', () => {
         items: [makeImplementerGenerate({ status: 'done', diff: '+ settled' })],
         summary: {
           stage: 'review',
+          scope: 'final',
           outcome: 'failed',
           ordinal: 1,
           failedCommands: [],

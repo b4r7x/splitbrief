@@ -161,6 +161,143 @@ describe('createDetectionService', () => {
   let service: ReturnType<typeof createDetectionService>;
   let tempDir: string;
 
+  it.each(['automatic', 'manual'] as const)(
+    'shuts down an in-flight %s refresh and refuses later probes',
+    async (mode) => {
+      const signals: AbortSignal[] = [];
+      const waitForAbort = (signal: AbortSignal): Promise<void> => {
+        signals.push(signal);
+        return new Promise((resolve) => {
+          signal.addEventListener('abort', () => resolve(), { once: true });
+        });
+      };
+      const deps = makeDeps({
+        detectAll: async ({ signal }) => {
+          await waitForAbort(signal);
+          return { providers: [], cliTools: [] };
+        },
+        fetchModelsDevCatalog: async ({ signal }) => {
+          await waitForAbort(signal);
+          return modelsDevOutcome({});
+        },
+        discoverAllCliTools: async ({ signal }) => {
+          await waitForAbort(signal);
+          return [];
+        },
+      });
+      const refresh =
+        mode === 'automatic' ? service.loadDetection({ deps }) : service.refreshDetection({ deps });
+      expect(signals).toHaveLength(3);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+
+      await service.shutdown();
+
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      const result = outcomes(await refresh);
+      expect(Object.values(result).map((outcome) => outcome.kind)).toEqual([
+        'not-run',
+        'not-run',
+        'not-run',
+      ]);
+      expect(result.readiness).toMatchObject({ reason: 'cancelled' });
+      expect(result.modelsDev).toMatchObject({ reason: 'cancelled' });
+      expect(result.cliModels).toMatchObject({ reason: 'cancelled' });
+
+      await service.loadDetection({ deps });
+      await service.refreshDetection({ deps: { ...deps, sourceContexts: sourceContexts() } });
+      await service.shutdown();
+      expect(signals).toHaveLength(3);
+    },
+  );
+
+  it('refuses probes when shutdown interrupts the initial cache read', async () => {
+    const observations: string[] = [];
+    const deps = makeDeps({
+      detectAll: async () => {
+        observations.push('readiness');
+        return { providers: [], cliTools: [] };
+      },
+      fetchModelsDevCatalog: async () => {
+        observations.push('models-dev');
+        return modelsDevOutcome({});
+      },
+      discoverAllCliTools: async () => {
+        observations.push('cli-models');
+        return [];
+      },
+    });
+    const refresh = service.loadDetection({ deps, projectDir: tempDir });
+
+    await service.shutdown();
+    const result = outcomes(await refresh);
+
+    expect(observations).toEqual([]);
+    expect(result.readiness).toMatchObject({ kind: 'not-run', reason: 'cancelled' });
+    expect(result.modelsDev).toMatchObject({ kind: 'not-run', reason: 'cancelled' });
+    expect(result.cliModels).toMatchObject({ kind: 'not-run', reason: 'cancelled' });
+  });
+
+  it('shuts down without waiting for an observation that has not settled', async () => {
+    const remote = Promise.withResolvers<ModelsDevCatalog>();
+    const signals: AbortSignal[] = [];
+    const refresh = service.loadDetection({
+      deps: makeDeps({
+        fetchModelsDevCatalog: ({ signal }) => {
+          signals.push(signal);
+          return remote.promise;
+        },
+      }),
+    });
+    try {
+      await service.shutdown();
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+    } finally {
+      remote.resolve({});
+      await refresh;
+    }
+  });
+
+  it('refuses a late cache save after readiness succeeds and shutdown settles', async () => {
+    const ready = Promise.withResolvers<void>();
+    const remote = Promise.withResolvers<ModelsDevCatalog>();
+    const refresh = service.loadDetection({
+      projectDir: tempDir,
+      deps: makeDeps({ fetchModelsDevCatalog: () => remote.promise }),
+      onLane: (lane) => {
+        if (lane.lane === 'readiness') {
+          expect(lane.outcome.kind).toBe('fresh');
+          ready.resolve();
+        }
+      },
+    });
+    try {
+      await ready.promise;
+      const acceptedSaves = service.getPendingSave();
+      expect(service.shutdown()).toBe(acceptedSaves);
+      await acceptedSaves;
+      remote.resolve({});
+      await refresh;
+      await service.getPendingSave();
+      expect(service.getPendingSave()).toBe(acceptedSaves);
+      await expect(
+        readFile(join(tempDir, SPLITBRIEF_DIR, 'detection-cache.json')),
+      ).rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      remote.resolve({});
+      await refresh;
+    }
+  });
+
+  it('settles the cache saves accepted before shutdown', async () => {
+    await service.loadDetection({ deps: makeDeps(), projectDir: tempDir });
+    const acceptedSaves = service.getPendingSave();
+    expect(service.shutdown()).toBe(acceptedSaves);
+    await acceptedSaves;
+    expect(await loadRememberedSnapshot(tempDir)).toMatchObject({
+      cliTools: [{ installedVersion: 'gen-1' }],
+    });
+  });
+
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-detection-service-test-'));
     service = createDetectionService();

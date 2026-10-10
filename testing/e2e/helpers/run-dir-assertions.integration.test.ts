@@ -51,7 +51,12 @@ function plainStdout(): string {
     'reviewer check V2: failed (npm test)',
     'base re-run V2: not run (this run recorded no run base)',
     'reviewer check V3: not run (V2 failed)',
-    'review: passed',
+    'review: task T001 pass (0 blocking)',
+    'review: task T002 fail (1 blocking)',
+    'review: final no-verdict',
+    'review: final stopped',
+    'review: final pass-with-notes (0 blocking)',
+    'review: final pass (0 blocking)',
     'done: 2 tasks',
     '',
   ].join('\n');

@@ -89,7 +89,11 @@ export function deriveLiveStatus(input: {
   // it is the run's work at that moment, so it leads on its own clock rather than the rail stage's.
   if (input.suiteStage !== null) {
     return {
-      verb: suiteStatusText(input.phase, input.suiteStage),
+      verb: suiteStatusText({
+        phase: input.phase,
+        suite: input.suiteStage,
+        operation: input.activeOperation ?? null,
+      }),
       stageStart: input.suiteStage.stageStartedTs,
       waitedMs: 0,
       tone: 'validator',

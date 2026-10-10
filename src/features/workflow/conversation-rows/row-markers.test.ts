@@ -39,12 +39,11 @@ describe('rowLeading', () => {
       expect(rowLeading(kind)).toBe(` ${glyph('statusInProgress')} `);
       expect(rowLeading(kind, 'live')).toBe(` ${glyph('statusInProgress')} `);
       expect(rowLeading(kind, 'queued')).toBe(` ${glyph('statusPending')} `);
+      expect(rowLeading(kind, 'done')).toBe(` ${glyph('stageDone')} `);
       for (const status of ['live', 'done', 'queued'] as const) {
         expect(getTerminalCellWidth(rowLeading(kind, status))).toBe(3);
       }
     }
-    expect(rowLeading('activity', 'done')).toBe(` ${glyph('stageDone')} `);
-    expect(rowLeading('task-header', 'done')).toBe(` ${glyph('statusDone')} `);
   });
 
   it('encodes every header status with a distinct glyph so state survives a color-off terminal', () => {

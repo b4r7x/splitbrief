@@ -166,6 +166,7 @@ function recordingService(input: {
   const received: DetectionDeps[] = [];
   return {
     service: {
+      shutdown: async () => {},
       loadDetection: async ({ deps, onLane }) => {
         received.push(deps);
         const result = input.load === undefined ? freshResult() : await input.load(deps);

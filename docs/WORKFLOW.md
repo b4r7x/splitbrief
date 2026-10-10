@@ -114,7 +114,11 @@ Before final review, `runPreReviewChecks` runs every plan and task check separat
 
 **Review fix cycles.** The review seat answers with a typed `ReviewAnswer` (one stateless, read-only call through `requestTyped`). SPLITBRIEF derives `pass`, `pass-with-notes` or `fail` from its verdict (`deriveReviewOutcome`, `src/core/review/verdict.ts`). A criterion or finding the verdict leaves `unverified` runs its registered checks through `runChecks`; a `render` check stays unverified, and an unverified criterion blocks pass. The verdict lives in `state.review` and `review.json`; `review.md` is its rendering, and `parseFinalReview` stays only as the reader for old sessions that have no `review.json`.
 
-The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every check result, every reviewer check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built. Without an ask, every blocking finding that is not unverified and every pending input has exactly one fix, rejection or verification. Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The reviewer checks and the reviewer run again after the fixes. A reviewer command a fix check ran leaves the pending list only after it passes or fails and the review records a verdict. The plan call must choose the pending commands first, with the same text. The plan holds at most 6 commands. The review section names each remaining command as not run; it stays pending.
+The reviewer returns one typed `ReviewAnswer`. It contains the verdict and the fix work. The call reads the diff, the briefs, every check result, every reviewer check result, and every pending input. Its `fixTasks` are complete TaskSpecs with `findingIds`. They may edit any ordinary project file a finding needs. SPLITBRIEF appends them through `INSERT_TASKS` with new `T###` ids and `batch` = the highest plan batch + the fix cycle. Each task carries its findings under `task.fix`. Its `verify` entries run registered checks. Its `rejected` entries answer pending inputs only. Its `ask` asks the user about a change to what is built.
+
+Without an ask, each blocking finding inside the review scope needs exactly one fix, rejection or verification, unless it is unverified.
+Each pending input also needs exactly one answer.
+Unverified and minor findings never create fix tasks. `START_FIX_CYCLE` spends one cycle and starts the fix tasks. The reviewer checks and the reviewer run again after the fixes. A reviewer command a fix check ran leaves the pending list only after it passes or fails and the review records a verdict. The plan call must choose the pending commands first, with the same text. The plan holds at most 6 commands. The review section names each remaining command as not run; it stays pending.
 
 A red at the final review never reopens a finished brief. The reviewer writes the fix work. Each fix finding carries its check ids, commands by id, own failure keys and original red keys by id, file and output. Its brief gate runs those checks again.
 
@@ -138,9 +142,34 @@ The fix brief names each command by check id and shows each distinct failing out
 
 A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
 
-`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so the run permits 2 automatic fix cycles; each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes. That key selects the cadence (`end` is the default): `end` reviews once after the final brief; `task` also reviews after every brief that passed its validation, scoped to the completed tasks and the criteria whose serving tasks are all done, while the final review still covers everything. A spent cap raises `review-failed`. With a red check or Apply input, it keeps the phase open and offers no Accept as is. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the reviewer checks.
+`REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so the run permits 2 automatic fix cycles; each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes.
+
+`workflow.review` selects the review cadence. The default, `end`, reviews after the final brief.
+`task` also reviews after every brief that passed its validation.
+A task review judges completed tasks and due criteria. A criterion is due when all tasks that serve it are done.
+
+The prompt states the reviewed tasks, due criteria, and pending tasks. Pending tasks provide context and do not represent missing implementation.
+
+`findingInReviewScope` (`src/core/review/verdict.ts`) checks each finding.
+A blocking finding must name a reviewed task or a due criterion. If it names both, both must be in scope.
+Check ids alone do not place a finding in scope.
+SPLITBRIEF records a finding outside the scope as a note, `Outside the task review scope: …`.
+The finding does not block the review and never becomes a fix task.
+
+`triageContractErrors` (`src/engine/orchestrator/triage.ts`) refuses a fix task for a finding outside the scope.
+It also refuses a fix task criterion outside the scope.
+These rules also apply when `ask` is set or the fix task has no criteria.
+Pending user, Apply, and check inputs keep their existing rules.
+
+The final review judges every task and every acceptance criterion. It still accepts a finding with no task or criterion id.
+
+A spent cap raises `review-failed`. With a red check or Apply input, it keeps the phase open and offers no Accept as is. Other failed reviews record `REVIEW_DONE` with a failed status. The run stays open with three actions: fix again with a note, which records the operator's correction as a triage input and grants one more cycle (`BOUNDS.extraFixCyclesPerRun`); [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is), at final review when no red check or Apply input blocks it; and end the run. A `complete`/failed state takes that correction through `REVIEW_CORRECTION`, which moves it back to `final-review` with the input queued, so the reviewer answers the pending inputs in a new call without running the reviewer checks.
 
 An Apply whose merge writes text conflict markers for a file both sides changed does not halt: it queues one triage input per conflicted file (`source: 'apply'`), re-enters `final-review` through `APPLY_REVIEW_START`, and the review turns them into fix tasks before Apply runs again. Any other conflict still raises the [`apply-conflict` halt](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
+
+`runFinalReviewPhase` announces both review scopes with `review_started`, then publishes one `review_completed` per start. Each event names the review seat's tool, optional model, and nonempty effort axes. Task scope carries `afterTaskId`, the brief that scheduled it; final scope omits this anchor. The completion records the verdict, blocking and minor counts when a verdict exists, and the duration. A failed call records `no-verdict`; a stop records `stopped`; neither carries findings. A `preReview` halt publishes neither event.
+
+Review events never fire hooks. `workflow_complete` remains the run completion event and fires `on_complete`. The review publishes no `planner_status`, including when the planner holds the review seat. See [the review event fields](./ENGINE.md#key-event-shapes).
 
 **Retired chain actions.** `phaseActions` no longer lists the actions of the retired planning chain — `RESEARCH_DONE`, `SPEC_DONE`, `APPROVE_SPEC`, `SPEC_CLARIFY_START`, `SPEC_CLARIFY_DONE`, `CONSTITUTION_CHECK_PASS`, `BRIEFS_COMPILED`, `BRIEF_ADMISSION_OPENED` and `ANALYZE_START`. Their reducer cases are deleted: `state.json` loads through its schema and `session.jsonl` replays into the stores, and neither path calls `transition`. What an older state needs is its saved phase and `rewindPending`.
 
