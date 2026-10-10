@@ -4,12 +4,18 @@ import http from 'node:http';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { projectRunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
 import type { CliReadinessFacts } from '../../core/schemas/readiness.js';
+import type { DetectedModel } from '../../core/discovery/detection.js';
+import type { ProbeOutcome } from '../../core/discovery/runner-evidence.js';
 import type { ModelsDevCatalog } from '../../core/schemas/models-dev.js';
 import { deepFreeze } from '../../utils/deep-freeze.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
 import { detectionContextKey } from './types.js';
+import { scopedCliCatalogConnection } from './cli-catalog-outcomes.js';
+import { createProductionDetectionDeps } from './deps.js';
 import { loadRememberedSnapshot, saveDetectionCache } from './cache.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -709,6 +715,227 @@ describe('createDetectionService', () => {
     ]);
   });
 
+  it('keeps memory and disk catalogs equal across config changes on the same executable', async () => {
+    const clock = createClock();
+    const executable = {
+      path: '/trusted/opencode',
+      fingerprint: { dev: 1, ino: 2, size: 3, mtimeMs: 4 },
+      executableIdentity: {
+        canonicalPath: '/trusted/opencode',
+        realPath: '/trusted/opencode',
+        platformFileId: '1:2',
+        fingerprint: `1:2:3:4:sha256:${'c'.repeat(64)}`,
+        resolvedAt: 1,
+      },
+    };
+    const initialConfig = makeConfig({
+      planner: { kind: 'cli', tool: 'opencode', model: 'model-a' },
+      reviewer: { kind: 'cli', tool: 'opencode', model: 'model-b' },
+    });
+    const changedConfig = makeConfig({
+      planner: { kind: 'cli', tool: 'opencode', model: 'model-b' },
+      reviewer: { kind: 'cli', tool: 'opencode', model: 'model-a' },
+      implementer: { model: 'qwen2.5-coder:14b' },
+    });
+    const initialContexts = createProductionDetectionDeps({
+      config: initialConfig,
+      projectDir: tempDir,
+    }).sourceContexts;
+    const changedContexts = createProductionDetectionDeps({
+      config: changedConfig,
+      projectDir: tempDir,
+    }).sourceContexts;
+    expect(changedContexts.cliModels).not.toBe(initialContexts.cliModels);
+
+    const steps = [
+      {
+        config: initialConfig,
+        contexts: initialContexts,
+        role: 'planner',
+        ids: ['model-a', 'model-b'],
+      },
+      { config: changedConfig, contexts: changedContexts, role: 'reviewer', ids: ['model-a'] },
+      { config: changedConfig, contexts: changedContexts, role: 'planner', ids: ['model-a'] },
+    ] as const;
+    for (const [index, step] of steps.entries()) {
+      const context = projectRunnerDiscoveryContext({ config: step.config, role: step.role });
+      const connection = scopedCliCatalogConnection({
+        tool: 'opencode',
+        authChannel: context.authChannel,
+        executable,
+      });
+      const deps = makeDeps({
+        now: clock.now,
+        sourceContexts: step.contexts,
+        discoverAllCliTools: async () => [
+          { connection, outcome: { kind: 'success', value: step.ids.map((id) => ({ id })) } },
+        ],
+      });
+      const request = modelCacheStore.beginRefresh({ contexts: step.contexts });
+      const result = await service.refreshDetection({ deps, projectDir: tempDir });
+      expect(modelCacheStore.publish({ result, request })).toBe(true);
+      await service.getPendingSave();
+
+      const runtime = modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' });
+      const disk = (await loadRememberedSnapshot(tempDir))?.cliCatalogs?.find(
+        (catalog) => catalog.tool === 'opencode',
+      );
+      const expectedModels = (index === 2 ? ['model-a'] : ['model-a', 'model-b']).map((id) => ({
+        id,
+      }));
+      expect(runtime).toMatchObject({
+        state: index === 1 ? 'stale' : 'fresh',
+        models: expectedModels,
+      });
+      expect(runtime?.missingOnce ?? []).toEqual(index === 1 ? ['model-b'] : []);
+      expect(runtime?.models).toEqual(disk?.models);
+      expect(runtime?.missingOnce ?? []).toEqual(disk?.missingOnce ?? []);
+      expect(runtime?.fetchedAt).toBe(disk?.probedAt);
+      expect(Object.keys(modelCacheStore.get().cliCatalogs)).toHaveLength(1);
+      clock.advance(1_000);
+    }
+  });
+
+  it('merges disk catalogs across restarts and preserves missing marks through failed reads', async () => {
+    const clock = createClock();
+    let read: ProbeOutcome<readonly DetectedModel[]> = {
+      kind: 'success',
+      value: [{ id: 'model-a' }, { id: 'model-b' }],
+    };
+    const deps = makeDeps({
+      now: clock.now,
+      sourceContexts: sourceContexts(),
+      discoverAllCliTools: async () => [
+        { connection: { tool: 'codex', contextKey: 'codex-context' }, outcome: read },
+        {
+          connection: { tool: 'opencode', contextKey: 'opencode-context' },
+          outcome: { kind: 'success', value: [{ id: 'untouched' }] },
+        },
+      ],
+    });
+    await service.loadDetection({ deps, projectDir: tempDir });
+    await service.getPendingSave();
+    const initialTime = clock.now();
+    const steps = [
+      {
+        outcome: {
+          kind: 'success',
+          value: [{ id: 'model-c' }, { id: 'model-a', displayName: 'Updated A' }],
+        },
+        models: [{ id: 'model-c' }, { id: 'model-a', displayName: 'Updated A' }, { id: 'model-b' }],
+        missingOnce: ['model-b'],
+        complete: false,
+      },
+      {
+        outcome: {
+          kind: 'success',
+          value: [{ id: 'model-b' }, { id: 'model-a' }, { id: 'model-c' }],
+        },
+        models: [{ id: 'model-b' }, { id: 'model-a' }, { id: 'model-c' }],
+        missingOnce: [],
+        complete: true,
+      },
+      {
+        outcome: { kind: 'success', value: [{ id: 'model-c' }, { id: 'model-a' }] },
+        models: [{ id: 'model-c' }, { id: 'model-a' }, { id: 'model-b' }],
+        missingOnce: ['model-b'],
+        complete: false,
+      },
+      {
+        outcome: { kind: 'timeout' },
+        models: [{ id: 'model-c' }, { id: 'model-a' }, { id: 'model-b' }],
+        missingOnce: ['model-b'],
+        complete: false,
+      },
+      {
+        outcome: { kind: 'success', value: [{ id: 'model-a' }, { id: 'model-c' }] },
+        models: [{ id: 'model-a' }, { id: 'model-c' }],
+        missingOnce: [],
+        complete: true,
+      },
+      {
+        outcome: { kind: 'success', value: [] },
+        models: [{ id: 'model-a' }, { id: 'model-c' }],
+        missingOnce: ['model-a', 'model-c'],
+        complete: false,
+      },
+      { outcome: { kind: 'success', value: [] }, models: [], missingOnce: [], complete: false },
+    ] satisfies readonly {
+      outcome: ProbeOutcome<readonly DetectedModel[]>;
+      models: readonly DetectedModel[];
+      missingOnce: readonly string[];
+      complete: boolean;
+    }[];
+    let probedAt = initialTime;
+    for (const step of steps) {
+      clock.advance(1_000);
+      read = step.outcome;
+      const restarted = createDetectionService();
+      await restarted.loadDetection({ deps, projectDir: tempDir });
+      await restarted.getPendingSave();
+      await restarted.shutdown();
+      if (step.complete) probedAt = clock.now();
+      const snapshot = await loadRememberedSnapshot(tempDir);
+      const catalog = snapshot?.cliCatalogs?.find((entry) => entry.tool === 'codex');
+      expect(catalog?.models).toEqual(step.models);
+      expect(catalog?.missingOnce ?? []).toEqual(step.missingOnce);
+      expect(catalog?.probedAt).toBe(probedAt);
+      expect(snapshot?.cliCatalogs?.find((entry) => entry.tool === 'opencode')?.models).toEqual([
+        { id: 'untouched' },
+      ]);
+    }
+  });
+
+  it('does not count a reused CLI snapshot as a second disk read', async () => {
+    const clock = createClock();
+    let models: readonly DetectedModel[] = [{ id: 'model-a' }, { id: 'model-b' }];
+    const deps = makeDeps({
+      now: clock.now,
+      sourceContexts: sourceContexts(),
+      discoverAllCliTools: async () => {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        clock.advance(1_000);
+        return [
+          {
+            connection: { tool: 'codex', contextKey: 'codex-context' },
+            outcome: { kind: 'success', value: models },
+          },
+        ];
+      },
+    });
+    await service.loadDetection({ deps, projectDir: tempDir });
+    await service.getPendingSave();
+    models = [{ id: 'model-a' }];
+    await service.refreshDetection({ deps, projectDir: tempDir });
+    await service.getPendingSave();
+    const previous = await loadRememberedSnapshot(tempDir);
+    expect(previous?.cliCatalogs?.[0]?.missingOnce).toEqual(['model-b']);
+    clock.advance(5 * 60 * 1_000 - 500);
+    const replayed = await service.loadDetection({ deps, projectDir: tempDir });
+    await service.getPendingSave();
+    expect(outcomes(replayed).readiness).toMatchObject({ kind: 'fresh', origin: 'request' });
+    expect(outcomes(replayed).cliModels).toMatchObject({ kind: 'fresh', origin: 'snapshot' });
+    expect((await loadRememberedSnapshot(tempDir))?.cliCatalogs).toEqual(previous?.cliCatalogs);
+  });
+
+  it('remembers a cold empty success without a confirmed probe time', async () => {
+    await service.loadDetection({
+      deps: makeDeps({
+        discoverAllCliTools: async () => [
+          {
+            connection: { tool: 'codex', contextKey: 'codex-context' },
+            outcome: { kind: 'success', value: [] },
+          },
+        ],
+      }),
+      projectDir: tempDir,
+    });
+    await service.getPendingSave();
+    expect((await loadRememberedSnapshot(tempDir))?.cliCatalogs).toEqual([
+      { tool: 'codex', models: [], probedAt: 0 },
+    ]);
+  });
+
   it('persists the provider auth facts a CLI probe read', async () => {
     const providerAuth = {
       kind: 'read',
@@ -757,7 +984,8 @@ describe('createDetectionService', () => {
     expect(cache.cliCatalogs).toEqual([
       {
         tool: 'codex',
-        models: [{ id: 'probe-model-2' }],
+        models: [{ id: 'probe-model-2' }, { id: 'probe-model-1' }],
+        missingOnce: ['probe-model-1'],
         probedAt: expect.any(Number),
       },
     ]);
@@ -800,7 +1028,12 @@ describe('createDetectionService', () => {
     expect(snapshot?.fetchedAt).toBe(probedAt + 60_000);
     expect(snapshot?.cliCatalogs).toEqual(
       expect.arrayContaining([
-        { tool: 'codex', models: [{ id: 'codex-timeout' }], probedAt: probedAt + 60_000 },
+        {
+          tool: 'codex',
+          models: [{ id: 'codex-timeout' }, { id: 'codex-success' }],
+          missingOnce: ['codex-success'],
+          probedAt,
+        },
         { tool: 'command-code', models: remembered, probedAt },
       ]),
     );

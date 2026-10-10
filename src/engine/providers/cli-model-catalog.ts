@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import { normalizeDisplayLabel, stripTerminalControls } from '../../utils/display-text.js';
 
@@ -166,7 +167,8 @@ function catalogFromEntries(
     tool: NativeCliCatalogTool;
     entries: readonly Omit<NativeCliModelCatalogEntry, 'nativeOrder'>[];
   }>,
-): NativeCliModelCatalog {
+): NativeCliModelCatalog | null {
+  if (input.entries.length > MAX_CLI_CATALOG_READ_MODELS) return null;
   return {
     tool: input.tool,
     models: input.entries.map((entry, nativeOrder) => ({ ...entry, nativeOrder })),
@@ -300,7 +302,7 @@ function parseProviderQualifiedLines(
     entries.push({ selectionId, ...fields });
     index = close + 1;
   }
-  return catalogFromEntries({ tool: input.tool, entries });
+  return entries.length === 0 ? null : catalogFromEntries({ tool: input.tool, entries });
 }
 
 function parseDashSeparatedLines(
@@ -383,7 +385,7 @@ export function parseOpenCodeNativeModelCatalog(stdout: string): NativeCliModelC
       ...(model.family === EMBEDDING_FAMILY ? { capabilities: EMBEDDING_CAPABILITIES } : {}),
     };
   });
-  return entries.length === 0 ? null : catalogFromEntries({ tool: 'opencode', entries });
+  return catalogFromEntries({ tool: 'opencode', entries });
 }
 
 // opencode 1.x listed models itself; `api` arrived with the 2.x server. A 1.x

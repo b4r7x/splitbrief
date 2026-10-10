@@ -8,6 +8,7 @@
 
 ### Changed
 
+- **CLI catalogs keep models through one missing read.** Memory and disk caches add models at once and require two agreeing reads to remove them. An incomplete or empty read stays stale. Failed reads preserve the missing marks.
 - **Seat fallbacks have a Settings home.** Settings › Fallback sits directly below Crew with PLAN, BUILD and REVIEW rows. Enter opens the same tool/model picker in its fallback slot; None clears it. Setup and Crew rows show no fallback. REVIEW inherits PLAN's fallback until it has its own block. The picker shows a notice before a save or a clear gives REVIEW its own seat. Presets keep fallbacks; a preset with no reviewer restores inheritance. Every halt reads the fallback of record, so a fallback saved during a run applies at its next halt. An automatic switch makes the old CLI seat the fallback, or leaves none for an old non-CLI seat. A manual switch keeps the fallback. An inherited REVIEW switch writes `reviewer` and leaves PLAN unchanged. The transcript marks an automatic switch with `automatic fallback`.
 - **Live messages reach the seat of the active stage.** Enter queues text for PLAN, BUILD, or REVIEW at its earliest supported break. BUILD corrects the running brief before checks; a message during checks triggers a correction and another check run. REVIEW reads the queue at each verdict call and repeats a successful call for unread messages. See [Message queue](./docs/ENGINE.md#message-queue) for delivery and retry rules.
 

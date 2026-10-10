@@ -77,7 +77,7 @@ export async function discoverAllCliTools(
       return {
         connection: scopedCliCatalogConnection({
           tool: context.id,
-          runnerContextKey: evidence.context.key,
+          authChannel: context.authChannel,
           ...(executable === undefined ? {} : { executable }),
         }),
         outcome: evidence.catalog,

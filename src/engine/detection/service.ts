@@ -21,6 +21,7 @@ import {
   cloneProviderDetection,
 } from '../../core/discovery/clone-detection.js';
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
+import { mergeCatalogRead } from '../../core/discovery/catalog-read-merge.js';
 import {
   cloneConfiguredProviderOutcome,
   type ConfiguredProviderConnection,
@@ -288,7 +289,7 @@ export function createDetectionService() {
   function probedCliCatalogs(
     outcome: DetectionSourceOutcome<CliModelSnapshot>,
   ): RememberedCliCatalog[] {
-    if (outcome.kind !== 'fresh') return [];
+    if (outcome.kind !== 'fresh' || outcome.origin !== 'request') return [];
     const probedAt = outcome.snapshot.fetchedAt;
     return outcome.snapshot.value.flatMap((attempt) =>
       attempt.outcome.kind === 'success'
@@ -303,17 +304,26 @@ export function createDetectionService() {
     );
   }
 
-  /**
-   * Only a successful listing replaces a tool's remembered catalog. A timeout or
-   * any other failure keeps the last one with its own `probedAt`, which is how a
-   * reader knows the rows are stale rather than confirmed.
-   */
   function rememberedCliCatalogs(
     probed: readonly RememberedCliCatalog[],
     previous: readonly RememberedCliCatalog[],
   ): RememberedCliCatalog[] {
     const probedTools = new Set(probed.map((catalog) => catalog.tool));
-    return [...probed, ...previous.filter((catalog) => !probedTools.has(catalog.tool))];
+    const merged = probed.map((catalog): RememberedCliCatalog => {
+      const remembered = previous.find((entry) => entry.tool === catalog.tool);
+      const read = mergeCatalogRead({
+        cachedModels: remembered?.models,
+        missingOnce: remembered?.missingOnce,
+        readModels: catalog.models,
+      });
+      return {
+        tool: catalog.tool,
+        models: read.models,
+        ...(read.missingOnce.length === 0 ? {} : { missingOnce: read.missingOnce }),
+        probedAt: read.complete ? catalog.probedAt : (remembered?.probedAt ?? 0),
+      };
+    });
+    return [...merged, ...previous.filter((catalog) => !probedTools.has(catalog.tool))];
   }
 
   function queueSave(

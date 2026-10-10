@@ -1,7 +1,7 @@
 import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import { CliExecutableReceiptSchema, type DetectedModel } from '../../core/discovery/detection.js';
 import type { ProbeOutcome, ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import type { CliAuthChannelId, CliToolId } from '../../core/runners/cli-tool-catalog.js';
 
 /**
  * A catalog belongs to one CLI executable, not to a seat.
@@ -24,6 +24,7 @@ export type ScopedCliCatalogRuntime = Readonly<{
   connection: ScopedCliCatalogConnection;
   state: ScopedCliCatalogRuntimeState;
   models: readonly DetectedModel[] | null;
+  missingOnce?: readonly string[] | undefined;
   fetchedAt: number | null;
   validatedAt: number;
 }> &
@@ -64,7 +65,7 @@ function opaqueExecutableToken(executable: unknown): string | null {
 export function scopedCliCatalogConnection(
   input: Readonly<{
     tool: CliToolId;
-    runnerContextKey: string;
+    authChannel: CliAuthChannelId | undefined;
     /** Parsed as a rich receipt at this privacy boundary; legacy identities never qualify. */
     executable?: unknown;
   }>,
@@ -73,18 +74,13 @@ export function scopedCliCatalogConnection(
     input.executable === undefined ? undefined : opaqueExecutableToken(input.executable);
   return {
     tool: input.tool,
-    contextKey: `${input.runnerContextKey}|${executableToken ?? 'cli-executable-unresolved'}`,
+    contextKey: [
+      'cli-catalog-v1',
+      input.tool,
+      input.authChannel ?? 'not-selected',
+      executableToken ?? 'cli-executable-unresolved',
+    ].join('|'),
   };
-}
-
-export function scopedCliCatalogToolKey(
-  connection: Pick<ScopedCliCatalogConnection, 'tool'>,
-): string {
-  return connection.tool;
-}
-
-export function scopedCliCatalogConnectionKey(connection: ScopedCliCatalogConnection): string {
-  return `${scopedCliCatalogToolKey(connection)}\u0000${connection.contextKey}`;
 }
 
 function cloneConnection(connection: ScopedCliCatalogConnection): ScopedCliCatalogConnection {
@@ -106,122 +102,4 @@ export function cloneScopedCliCatalogAttempt(
     connection: cloneConnection(attempt.connection),
     outcome: cloneOutcome(attempt.outcome),
   };
-}
-
-export function cloneScopedCliCatalogRuntime(
-  runtime: ScopedCliCatalogRuntime,
-): ScopedCliCatalogRuntime {
-  return {
-    ...runtime,
-    connection: cloneConnection(runtime.connection),
-    models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
-  };
-}
-
-function freshRuntime(
-  connection: ScopedCliCatalogConnection,
-  outcome: Extract<ProbeOutcome<readonly DetectedModel[]>, { kind: 'success' }>,
-  observedAt: number,
-): ScopedCliCatalogRuntime {
-  return {
-    connection: cloneConnection(connection),
-    state: 'fresh',
-    models: outcome.value.map(cloneDetectedModel),
-    fetchedAt: observedAt,
-    validatedAt: observedAt,
-  };
-}
-
-function failedRuntime(
-  connection: ScopedCliCatalogConnection,
-  outcome: Exclude<ProbeOutcome<readonly DetectedModel[]>, { kind: 'success' }>,
-  previous: ScopedCliCatalogRuntime | undefined,
-  observedAt: number,
-): ScopedCliCatalogRuntime {
-  const failure =
-    outcome.kind === 'command-failed'
-      ? { failure: outcome.kind, failureCause: outcome.cause }
-      : { failure: outcome.kind };
-  if (previous !== undefined && previous.state !== 'failed') {
-    return {
-      connection: cloneConnection(connection),
-      state: 'stale',
-      models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
-      fetchedAt: previous.fetchedAt,
-      validatedAt: observedAt,
-      ...failure,
-    };
-  }
-  return {
-    connection: cloneConnection(connection),
-    state: 'failed',
-    models: null,
-    fetchedAt: null,
-    validatedAt: observedAt,
-    ...failure,
-  };
-}
-
-/**
- * Reconciles each full tool/context connection independently. A failure
- * can retain only that exact connection's earlier models; a valid empty
- * success is therefore authoritative for exactly one connection.
- */
-export function reconcileScopedCliCatalogAttempts(
-  input: Readonly<{
-    previous: readonly ScopedCliCatalogRuntime[];
-    attempts: readonly ScopedCliCatalogAttempt[];
-    observedAt: number;
-  }>,
-): ScopedCliCatalogRuntime[] {
-  const observedToolKeys = new Set(
-    input.attempts.map((attempt) => scopedCliCatalogToolKey(attempt.connection)),
-  );
-  const observedConnectionKeys = new Set(
-    input.attempts.map((attempt) => scopedCliCatalogConnectionKey(attempt.connection)),
-  );
-  const previousByConnection = new Map(
-    input.previous.map((runtime) => [scopedCliCatalogConnectionKey(runtime.connection), runtime]),
-  );
-  const next = new Map(
-    input.previous
-      .filter((runtime) => {
-        const toolKey = scopedCliCatalogToolKey(runtime.connection);
-        return (
-          !observedToolKeys.has(toolKey) ||
-          observedConnectionKeys.has(scopedCliCatalogConnectionKey(runtime.connection))
-        );
-      })
-      .map((runtime) => [
-        scopedCliCatalogConnectionKey(runtime.connection),
-        cloneScopedCliCatalogRuntime(runtime),
-      ]),
-  );
-
-  for (const attempt of input.attempts) {
-    const key = scopedCliCatalogConnectionKey(attempt.connection);
-    next.set(
-      key,
-      attempt.outcome.kind === 'success'
-        ? freshRuntime(attempt.connection, attempt.outcome, input.observedAt)
-        : failedRuntime(
-            attempt.connection,
-            attempt.outcome,
-            previousByConnection.get(key),
-            input.observedAt,
-          ),
-    );
-  }
-  return [...next.values()].map(cloneScopedCliCatalogRuntime);
-}
-
-/** Returns null for both no entry and an ambiguous lookup across two executables. */
-export function findCliCatalogRuntime(
-  runtimes: readonly ScopedCliCatalogRuntime[],
-  tool: CliToolId,
-): ScopedCliCatalogRuntime | null {
-  const matches = runtimes.filter((runtime) => runtime.connection.tool === tool);
-  return matches.length === 1 && matches[0] !== undefined
-    ? cloneScopedCliCatalogRuntime(matches[0])
-    : null;
 }

@@ -170,6 +170,8 @@ Pricing is resolved from cached `models.dev` metadata first when available, then
 
 Subprocess of a known coding-agent CLI. The wrapper handles auth, model selection, and output parsing.
 
+CLI model pickers can show stale cached rows after a shorter successful read. The [CLI catalog cache rules](./SUBSYSTEMS.md#5-detection) define retention, removal, freshness, and failed reads.
+
 | Field | Type | Required | Description |
 |---|---|:---:|---|
 | `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `copilot` \| `kilo-code` \| `cursor` \| `command-code` \| `antigravity` |

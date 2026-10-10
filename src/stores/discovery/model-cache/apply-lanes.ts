@@ -190,11 +190,17 @@ function cliModelsApplied(
 ): ModelCacheState {
   const cliModels = sourceRefresh(current.refresh.cliModels, outcome);
   const refresh = laneRefreshState(current.refresh, { cliModels });
-  const cliCatalogOutcomes = reconciledCliCatalogs({
-    previous: cliCatalogValues(current.cliCatalogs),
-    outcome,
-    observedAt: cliModels.validatedAt ?? Date.now(),
-  });
+  const sameRead =
+    outcome.kind === 'fresh' &&
+    current.refresh.cliModels.requestId === outcome.snapshot.requestId &&
+    current.refresh.cliModels.generation === outcome.snapshot.generation;
+  const cliCatalogOutcomes = sameRead
+    ? cliCatalogValues(current.cliCatalogs)
+    : reconciledCliCatalogs({
+        previous: cliCatalogValues(current.cliCatalogs),
+        outcome,
+        observedAt: cliModels.validatedAt ?? Date.now(),
+      });
   return {
     ...current,
     detection: { ...current.detection, cliCatalogOutcomes },

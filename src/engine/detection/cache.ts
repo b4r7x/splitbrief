@@ -7,6 +7,7 @@ import {
 } from '../../lib/confined-fs.js';
 import { writeConfinedSecureFileAsync } from '../../lib/fs.js';
 import { warnError } from '../../lib/warn.js';
+import { MAX_CLI_CATALOG_READ_MODELS } from '../../core/discovery/catalog-read-merge.js';
 import {
   CliExecutableFingerprintSchema,
   CliAuthStateSchema,
@@ -131,7 +132,15 @@ const CachedModelsSchema = z.array(CachedModelSchema).max(MAX_CACHED_MODELS_PER_
 const CachedCliCatalogSchema = z
   .object({
     tool: CliToolIdSchema,
-    models: CachedModelsSchema,
+    models: z
+      .array(CachedModelSchema)
+      .max(MAX_CLI_CATALOG_READ_MODELS * 2)
+      .readonly(),
+    missingOnce: z
+      .array(CachedModelIdSchema)
+      .max(MAX_CLI_CATALOG_READ_MODELS)
+      .readonly()
+      .optional(),
     probedAt: z.number().int().nonnegative(),
   })
   .strict();
@@ -185,6 +194,7 @@ type CachedModel = z.infer<typeof CachedModelSchema>;
 export interface RememberedCliCatalog {
   readonly tool: CliToolId;
   readonly models: readonly DetectedModel[];
+  readonly missingOnce?: readonly string[] | undefined;
   readonly probedAt: number;
 }
 
@@ -251,10 +261,10 @@ function restoreCliTool(cached: CachedCliToolDetection): CliToolDetection | null
 }
 
 /** Projects models to the cached subset, dropping any row that fails sanitization. */
-function cachedModels(models: readonly DetectedModel[]): CachedModel[] {
+function cachedModels(models: readonly DetectedModel[], limit = models.length): CachedModel[] {
   const sanitized: CachedModel[] = [];
   for (const model of models) {
-    if (sanitized.length >= MAX_CACHED_MODELS_PER_ENTRY) break;
+    if (sanitized.length >= limit) break;
     const result = CachedModelSchema.safeParse({
       id: model.id,
       ...(model.displayName === undefined || hasSensitiveCacheValue(model.displayName)
@@ -300,14 +310,21 @@ function cachedProvider(
     isLocal: provider.isLocal,
     ...(provider.hasKey === undefined ? {} : { hasKey: provider.hasKey }),
     ...(provider.failure === undefined ? {} : { failure: provider.failure }),
-    ...(provider.models === undefined ? {} : { models: cachedModels(provider.models) }),
+    ...(provider.models === undefined
+      ? {}
+      : { models: cachedModels(provider.models, MAX_CACHED_MODELS_PER_ENTRY) }),
   };
 }
 
 function cachedCliCatalog(catalog: RememberedCliCatalog): z.input<typeof CachedCliCatalogSchema> {
+  const models = cachedModels(catalog.models);
+  const modelIds = new Set(models.map((model) => model.id));
   return {
     tool: catalog.tool,
-    models: cachedModels(catalog.models),
+    models,
+    ...(catalog.missingOnce === undefined
+      ? {}
+      : { missingOnce: catalog.missingOnce.filter((id) => modelIds.has(id)) }),
     probedAt: catalog.probedAt,
   };
 }

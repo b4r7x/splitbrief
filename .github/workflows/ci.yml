@@ -59,6 +59,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:integration -- --shard=${{ matrix.shard }}/4
+        env:
+          SPLITBRIEF_REQUIRE_PTY: '1'
 
   e2e-replay:
     runs-on: ubuntu-latest
@@ -70,6 +72,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:e2e
+        env:
+          SPLITBRIEF_REQUIRE_PTY: '1'
 
   smoke:
     runs-on: ubuntu-latest

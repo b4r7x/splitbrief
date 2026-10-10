@@ -693,7 +693,7 @@ src/
 │   ├── use-stores.ts              Cross-store React aggregator
 │   ├── approval-prompt/           actions, store
 │   ├── review-checks-prompt/      reviewer checks card (approve_checks: ask)
-│   ├── discovery/model-cache/     Cached models-dev catalog (entry state.ts)
+│   ├── discovery/model-cache/     CLI catalogs and models.dev cache (entry state.ts)
 │   ├── navigation/router.ts       Active screen + overlay
 │   ├── project/                   config, detection, sessions, skills
 │   ├── ui/                        controls, feedback, input-height,

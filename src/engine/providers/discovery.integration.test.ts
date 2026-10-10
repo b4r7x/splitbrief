@@ -168,6 +168,44 @@ afterEach(() => {
 });
 
 describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
+  it('shares one catalog connection across seats, model selections, and config generations', async () => {
+    const logPath = join(shimDir, 'codex.args');
+    installCatalogShim('codex', {
+      logPath,
+      catalog: JSON.stringify({ models: [{ id: 'model-a' }, { id: 'model-b' }] }),
+    });
+    const planner: RunnerDiscoveryContext = {
+      ...context('codex', 'planner', 'api-key'),
+      seatRole: 'planner',
+      model: 'model-a',
+    };
+    const reviewer: RunnerDiscoveryContext = {
+      ...planner,
+      seatRole: 'reviewer',
+      model: 'model-b',
+      configGeneration: 'changed-config',
+    };
+    const implementer: RunnerDiscoveryContext = {
+      ...reviewer,
+      role: 'implementer',
+      seatRole: 'implementer',
+    };
+    const attempts = await discoverAllCliTools({
+      contexts: [planner, reviewer, implementer],
+      projectDir,
+      resolveExecutable: exactResolver,
+    });
+
+    expect(attempts).toHaveLength(3);
+    expect(new Set(attempts.map((attempt) => attempt.connection.contextKey)).size).toBe(1);
+    for (const attempt of attempts) {
+      expect(attempt.outcome).toMatchObject({
+        kind: 'success',
+        value: [{ id: 'model-a' }, { id: 'model-b' }],
+      });
+    }
+  });
+
   it('uses the canonical exact-executable path and preserves native parser metadata', async () => {
     const codexLog = join(shimDir, 'codex.args');
     const opencodeLog = join(shimDir, 'opencode.args');

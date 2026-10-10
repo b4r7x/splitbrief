@@ -603,7 +603,7 @@ describe('ToolModelPicker discovery state', () => {
     ui.unmount();
   });
 
-  it('replaces the stale rows of a hydrated foreign-context snapshot when the live lanes land', async () => {
+  it('merges live models and removes foreign-context rows only after two missing reads', async () => {
     forceUnicodeGlyphs();
     const configB = makeConfig({
       planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-codex' },
@@ -726,11 +726,34 @@ describe('ToolModelPicker discovery state', () => {
       expect(frameAfter).toContain(`${listRowLead('active')}OpenCode CLI`);
     });
 
-    // Back on the browsed tool, the landed lane has replaced its stale models.
+    // The first live read merges new models and retains remembered rows as stale.
     await flushEffects();
     ui.stdin.write(ARROW_UP);
     await vi.waitFor(() => {
       const frameAfter = frameText(ui);
+      expect(frameAfter).toContain(`${listRowLead('active')}OpenAI Codex CLI`);
+      expect(frameAfter).toContain('GPT-6 Codex');
+      expect(frameAfter).toMatch(/GPT-5 Codex[^\n]*Stale/);
+    });
+
+    const secondRequest = detectionStore.beginRefresh({ contexts: currentContexts });
+    expect(
+      detectionStore.publish({
+        request: secondRequest,
+        result: {
+          providers: [],
+          cliTools: tools,
+          catalog: null,
+          cliModels: freshAttempts,
+          generation: 2,
+        },
+      }),
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      const frameAfter = frameText(ui);
+      expect(frameAfter).not.toContain('Waking your crew…');
+      expect(frameAfter).not.toContain('refreshing…');
       expect(frameAfter).toContain(`${listRowLead('active')}OpenAI Codex CLI`);
       expect(frameAfter).toContain('GPT-6 Codex');
       expect(frameAfter).not.toContain('GPT-5 Codex');

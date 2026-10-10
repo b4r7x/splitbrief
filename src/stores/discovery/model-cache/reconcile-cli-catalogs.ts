@@ -1,4 +1,5 @@
 import { cloneDetectedModel } from '../../../core/discovery/clone-model.js';
+import { mergeCatalogRead } from '../../../core/discovery/catalog-read-merge.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import type {
   CliModelSnapshot,
@@ -26,6 +27,7 @@ export function cloneScopedCliCatalogRuntime(
     ...runtime,
     connection: { ...runtime.connection },
     models: runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+    ...(runtime.missingOnce === undefined ? {} : { missingOnce: [...runtime.missingOnce] }),
   };
 }
 
@@ -38,11 +40,17 @@ function runtimeFromCliCatalogAttempt(
 ): ScopedCliCatalogRuntime {
   const { attempt, previous, observedAt } = input;
   if (attempt.outcome.kind === 'success') {
+    const merged = mergeCatalogRead({
+      cachedModels: previous?.models,
+      missingOnce: previous?.missingOnce,
+      readModels: attempt.outcome.value,
+    });
     return {
       connection: { ...attempt.connection },
-      state: 'fresh',
-      models: attempt.outcome.value.map(cloneDetectedModel),
-      fetchedAt: observedAt,
+      state: merged.complete ? 'fresh' : 'stale',
+      models: merged.models,
+      ...(merged.missingOnce.length === 0 ? {} : { missingOnce: merged.missingOnce }),
+      fetchedAt: merged.complete ? observedAt : (previous?.fetchedAt ?? null),
       validatedAt: observedAt,
     };
   }
@@ -55,6 +63,7 @@ function runtimeFromCliCatalogAttempt(
       connection: { ...attempt.connection },
       state: 'stale',
       models: previous.models === null ? null : previous.models.map(cloneDetectedModel),
+      ...(previous.missingOnce === undefined ? {} : { missingOnce: [...previous.missingOnce] }),
       fetchedAt: previous.fetchedAt,
       validatedAt: observedAt,
       ...failure,
@@ -151,6 +160,7 @@ export function staleCliCatalogRuntimes(input: {
       connection: { ...runtime.connection },
       state: failed ? 'failed' : 'stale',
       models: failed || runtime.models === null ? null : runtime.models.map(cloneDetectedModel),
+      ...(runtime.missingOnce === undefined ? {} : { missingOnce: [...runtime.missingOnce] }),
       fetchedAt: failed ? null : runtime.fetchedAt,
       validatedAt: input.observedAt,
       ...(input.failure === undefined ? {} : { failure: input.failure }),

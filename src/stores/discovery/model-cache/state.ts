@@ -223,6 +223,7 @@ export const modelCacheStore = {
               },
               state: 'stale',
               models: entry.models.map(cloneDetectedModel),
+              ...(entry.missingOnce === undefined ? {} : { missingOnce: [...entry.missingOnce] }),
               fetchedAt: entry.probedAt,
               validatedAt: input.validatedAt,
             }),

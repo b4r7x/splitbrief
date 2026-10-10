@@ -339,7 +339,7 @@ describe('modelCacheStore', () => {
     modelCacheStore.reset();
   });
 
-  it('hydrates remembered CLI catalogs as stale rows until a fresh publish replaces them', () => {
+  it('merges the first live read into remembered CLI catalogs before confirming removal', () => {
     const hydrated = modelCacheStore.hydrateDetection({
       providers: [],
       cliTools: [],
@@ -371,9 +371,83 @@ describe('modelCacheStore', () => {
       ),
     ).toBe(true);
 
-    const fresh = modelCacheStore.getCliCatalogRuntime({ tool: 'codex' });
-    expect(fresh).toMatchObject({ state: 'fresh', models: [{ id: 'gpt-6-codex' }] });
-    expect(fresh?.models).toHaveLength(1);
+    const stale = modelCacheStore.getCliCatalogRuntime({ tool: 'codex' });
+    expect(stale).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'gpt-6-codex' }, { id: 'gpt-5.2-codex' }],
+      missingOnce: ['gpt-5.2-codex'],
+      fetchedAt: 40,
+    });
+    publishCliCatalogs(
+      [cliCatalogAttempt({ tool: 'codex', contextKey: 'live-context', models: ['gpt-6-codex'] })],
+      3,
+    );
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'fresh',
+      models: [{ id: 'gpt-6-codex' }],
+      fetchedAt: 300,
+    });
+  });
+
+  it('hydrates missing marks and ignores a repeated publication of the same read', () => {
+    const missingOnce = ['model-b'];
+    modelCacheStore.hydrateDetection({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 50,
+      validatedAt: 60,
+      generation: 1,
+      requestId: 1,
+      contexts: scopedContexts,
+      cliCatalogs: [
+        {
+          tool: 'codex',
+          models: [{ id: 'model-a' }, { id: 'model-b' }],
+          missingOnce,
+          probedAt: 40,
+        },
+      ],
+    });
+    missingOnce.push('model-a');
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })?.missingOnce).toEqual([
+      'model-b',
+    ]);
+    publishCliCatalogs(
+      [cliCatalogAttempt({ tool: 'codex', contextKey: 'live-context', models: ['model-a'] })],
+      2,
+    );
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'fresh',
+      models: [{ id: 'model-a' }],
+      fetchedAt: 200,
+    });
+    const attempts = [
+      cliCatalogAttempt({ tool: 'codex', contextKey: 'live-context', models: ['model-c'] }),
+    ];
+    const result = cliCatalogResult(attempts, 3);
+    const request = modelCacheStore.beginRefresh({ contexts: scopedContexts });
+    const cliModels = result.outcomes?.cliModels;
+    if (cliModels === undefined) throw new Error('Expected CLI model outcome.');
+    modelCacheStore.publishLane({ lane: { lane: 'cliModels', outcome: cliModels }, request });
+    modelCacheStore.publish({ result, request });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'model-c' }, { id: 'model-a' }],
+      missingOnce: ['model-a'],
+      fetchedAt: 200,
+    });
+    if (cliModels.kind !== 'fresh') throw new Error('Expected fresh CLI model outcome.');
+    const cachedRequest = modelCacheStore.beginRefresh({ contexts: scopedContexts });
+    modelCacheStore.publishLane({
+      lane: { lane: 'cliModels', outcome: { ...cliModels, origin: 'snapshot' } },
+      request: cachedRequest,
+    });
+    expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
+      state: 'stale',
+      models: [{ id: 'model-c' }, { id: 'model-a' }],
+      missingOnce: ['model-a'],
+      fetchedAt: 200,
+    });
   });
 
   it('keeps a remembered CLI catalog, stale from its probe time, when the first live probe times out', () => {
@@ -885,7 +959,7 @@ describe('modelCacheStore', () => {
     });
   });
 
-  it('keeps CLI catalog failures and authoritative empty results isolated by exact tool/context', () => {
+  it('keeps CLI catalog failures and empty reads isolated by exact tool/context', () => {
     expect(
       publishCliCatalogs(
         [
@@ -929,11 +1003,12 @@ describe('modelCacheStore', () => {
       validatedAt: 200,
     });
     expect(modelCacheStore.getCliCatalogRuntime({ tool: 'opencode' })).toMatchObject({
-      state: 'fresh',
-      models: [],
-      fetchedAt: 200,
+      state: 'stale',
+      models: [{ id: 'opencode-last-good' }],
+      missingOnce: ['opencode-last-good'],
+      fetchedAt: 100,
     });
-    expect(modelCacheStore.getProviderModels('opencode')).toEqual([]);
+    expect(modelCacheStore.getProviderModels('opencode')).toEqual([{ id: 'opencode-last-good' }]);
   });
 
   it('does not collapse two executable contexts of one tool into a last-context catalog', () => {
@@ -1568,8 +1643,10 @@ describe('modelCacheStore', () => {
     expect(modelCacheStore.getDetection().providers).toEqual([freshProvider]);
     expect(modelCacheStore.getDetection().cliTools).toEqual([freshCliTool]);
     expect(modelCacheStore.getCliCatalogRuntime({ tool: 'codex' })).toMatchObject({
-      state: 'fresh',
-      models: [{ id: 'fresh-codex-model' }],
+      state: 'stale',
+      models: [{ id: 'fresh-codex-model' }, { id: 'remembered-codex-model' }],
+      missingOnce: ['remembered-codex-model'],
+      fetchedAt: 90,
     });
 
     unsubscribe();
