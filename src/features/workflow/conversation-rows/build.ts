@@ -22,6 +22,7 @@ import {
   type EventBlockCacheKey,
 } from './block-cache.js';
 import { eventRowBlock, recoveryRowBlock } from './event-rows/dispatch.js';
+import { joinsCheckList } from './check-list-spacing.js';
 import { isPlannerTextRenderedAsMarkdown } from './event-rows/planner-text.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import {
@@ -64,6 +65,7 @@ function buildConversationRowsProjectionWithContext(
   let renderableCount = 0;
   let hasRenderableBlock = false;
   let lastAppendedWasSettled = false;
+  let lastAppendedType: EngineEvent['type'] | undefined;
   // The feature/prompt, captured from the first user_message so the planner's opening H1 echo of it
   // can be stripped (the prompt already renders as the first transcript row).
   let dedupTitle: string | undefined;
@@ -72,9 +74,14 @@ function buildConversationRowsProjectionWithContext(
     block: ConversationRowBlock,
     globalIndex: number,
     isSettled = false,
+    eventType?: EngineEvent['type'],
   ): void => {
     if (block.rowCount === 0) return;
-    if (hasRenderableBlock && !(lastAppendedWasSettled && isSettled)) {
+    if (
+      hasRenderableBlock &&
+      !(lastAppendedWasSettled && isSettled) &&
+      !joinsCheckList(lastAppendedType, eventType)
+    ) {
       blocks.push({
         key: `spacer-${globalIndex}`,
         rowCount: SECTION_SPACER_ROWS,
@@ -88,6 +95,7 @@ function buildConversationRowsProjectionWithContext(
     blocks.push(block);
     hasRenderableBlock = true;
     lastAppendedWasSettled = isSettled;
+    lastAppendedType = eventType;
     renderableCount += block.renderableUnits;
   };
 
@@ -144,7 +152,7 @@ function buildConversationRowsProjectionWithContext(
       rememberEventRowBlock(event, blockKey, block);
     }
     if (block === null) continue;
-    appendBlock(block, globalIndex);
+    appendBlock(block, globalIndex, false, event.type);
   }
 
   const totalRows = blocks.reduce((count, block) => count + block.rowCount, 0);

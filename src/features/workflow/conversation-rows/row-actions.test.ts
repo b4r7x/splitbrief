@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Section } from '../../../core/sections/event-sections.js';
+import { diffEventKey, type Section } from '../../../core/sections/event-sections.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
@@ -8,6 +8,7 @@ import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRowActions } from './row-actions.js';
+import { rowText } from './row-format/rows.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
@@ -29,6 +30,152 @@ function activity(
 }
 
 describe('buildConversationRowActions', () => {
+  it.each([false, true])(
+    'maps expandable drift rows through the existing expansion set, expanded=%s',
+    (expanded) => {
+      const event: EngineEventOf<'drift_report'> = {
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: false,
+        errorCount: 3,
+        warningCount: 2,
+        findings: [
+          { severity: 'warning', code: 'missing_expected_file', message: 'First warning.' },
+          { severity: 'error', code: 'failed_task_with_diff', message: 'First error.' },
+          { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
+          { severity: 'error', code: 'orphan_diff', message: 'Second error.' },
+          { severity: 'warning', code: 'missing_evidence', message: 'Second warning.' },
+          { severity: 'error', code: 'failed_task_with_diff', message: 'Third error.' },
+        ],
+      };
+      const globalIndex = 8;
+      const key = diffEventKey(event, globalIndex);
+      const sections: Section<EngineEvent>[] = [
+        { type: 'events', startIndex: globalIndex, items: [event] },
+      ];
+      const inputs = {
+        sections,
+        expandedDiffs: new Set(expanded ? [key] : []),
+        expandedActivityBatches: new Set<string>(),
+        cols: 88,
+        viewportHeight: 20,
+        streaming,
+      };
+      const { rows } = buildConversationRows(inputs);
+      const actions = buildConversationRowActions(inputs);
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · failed · 3 errors · 2 warnings',
+        '  error · First error.',
+        '  error · Second error.',
+        '  error · Third error.',
+        ...(expanded
+          ? ['  warning · First warning.', '  warning · Second warning.']
+          : ['  +2 more findings · click']),
+      ]);
+      expect(actions.size).toBe(rows.length);
+      for (const row of rows) {
+        expect(actions.get(row.key)).toEqual({ type: 'toggle-diff', key });
+      }
+    },
+  );
+
+  it.each([0, 1, 3])(
+    'does not map drift with %i errors or warnings, regardless of information findings',
+    (count) => {
+      const event: EngineEventOf<'drift_report'> = {
+        type: 'drift_report',
+        ts: 0,
+        phase: 'final-review',
+        passed: true,
+        errorCount: 0,
+        warningCount: count,
+        findings: [
+          ...Array.from({ length: count }, (_, index) => ({
+            severity: 'warning' as const,
+            code: 'missing_expected_file' as const,
+            message: `Warning ${index + 1}.`,
+          })),
+          { severity: 'info', code: 'out_of_scope_file', message: 'First information finding.' },
+          { severity: 'info', code: 'out_of_scope_file', message: 'Second information finding.' },
+          { severity: 'info', code: 'out_of_scope_file', message: 'Third information finding.' },
+          { severity: 'info', code: 'out_of_scope_file', message: 'Fourth information finding.' },
+        ],
+      };
+      const sections: Section<EngineEvent>[] = [{ type: 'events', startIndex: 8, items: [event] }];
+
+      expect(
+        buildConversationRowActions({
+          sections,
+          expandedDiffs: new Set<string>(),
+          expandedActivityBatches: new Set<string>(),
+          cols: 88,
+          viewportHeight: 20,
+          streaming,
+        }).size,
+      ).toBe(0);
+    },
+  );
+
+  it('does not map drift when recorded counts exceed the findings', () => {
+    const event: EngineEventOf<'drift_report'> = {
+      type: 'drift_report',
+      ts: 0,
+      phase: 'final-review',
+      passed: false,
+      errorCount: 4,
+      warningCount: 0,
+      findings: [
+        { severity: 'error', code: 'failed_task_with_diff', message: 'First error.' },
+        { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
+        { severity: 'error', code: 'orphan_diff', message: 'Second error.' },
+      ],
+    };
+    const sections: Section<EngineEvent>[] = [{ type: 'events', startIndex: 8, items: [event] }];
+
+    expect(
+      buildConversationRowActions({
+        sections,
+        expandedDiffs: new Set<string>(),
+        expandedActivityBatches: new Set<string>(),
+        cols: 88,
+        viewportHeight: 20,
+        streaming,
+      }).size,
+    ).toBe(0);
+  });
+
+  it('does not map a legacy drift event without findings', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'events',
+        startIndex: 0,
+        items: [
+          {
+            type: 'drift_report',
+            ts: 0,
+            phase: 'final-review',
+            passed: false,
+            errorCount: 4,
+            warningCount: 0,
+          },
+        ],
+      },
+    ];
+
+    expect(
+      buildConversationRowActions({
+        sections,
+        expandedDiffs: new Set<string>(),
+        expandedActivityBatches: new Set<string>(),
+        cols: 88,
+        viewportHeight: 20,
+        streaming,
+      }).size,
+    ).toBe(0);
+  });
+
   it('maps the rendered +N more row to a toggle-activity-batch action', () => {
     const sections: Section<EngineEvent>[] = [
       {

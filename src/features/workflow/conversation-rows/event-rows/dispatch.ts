@@ -1,4 +1,5 @@
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
+import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -44,6 +45,7 @@ import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { RecoveryFold } from '../transcript-walk.js';
 
 const DISCOVERED_VALIDATION_REFUSED = 'discovered_validation_refused';
+export const COLLAPSED_DRIFT_FINDING_LIMIT = 3;
 
 export function eventRowBlock(options: {
   event: EngineEvent;
@@ -107,19 +109,40 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'textDim',
       });
-    case 'drift_report':
-      return borderedCardRowsBlock({
-        keyPrefix,
-        label: 'Drift',
-        value:
-          [
-            ...(event.errorCount > 0 ? [countNoun(event.errorCount, 'error')] : []),
-            ...(event.warningCount > 0 ? [countNoun(event.warningCount, 'warning')] : []),
-          ].join(SOFT_SEP) || 'clean',
-        width: ctx.width,
-        labelTone: event.passed ? 'success' : 'textDim',
-        valueTone: 'textDim',
-      });
+    case 'drift_report': {
+      const findings = orderedDriftFindings(event);
+      const visible = expanded ? findings : findings.slice(0, COLLAPSED_DRIFT_FINDING_LIMIT);
+      const remaining = findings.length - visible.length;
+      return compositeBlock(keyPrefix, [
+        wrappedTextBlock({
+          keyPrefix,
+          text: driftHeadline(event),
+          width: ctx.width,
+          tone: driftTone(event),
+          continuationIndent: 2,
+        }),
+        ...visible.map((finding, index) =>
+          wrappedTextBlock({
+            keyPrefix: `${keyPrefix}-finding-${index}`,
+            text: `${finding.severity}${SOFT_SEP}${finding.message}`,
+            width: ctx.width,
+            tone: 'textDim',
+            indent: 2,
+            continuationIndent: 2,
+          }),
+        ),
+        remaining > 0
+          ? wrappedTextBlock({
+              keyPrefix: `${keyPrefix}-more`,
+              text: `+${countNoun(remaining, 'more finding')}${SOFT_SEP}click`,
+              width: ctx.width,
+              tone: 'textDim',
+              indent: 2,
+              continuationIndent: 2,
+            })
+          : null,
+      ]);
+    }
     case 'task_started':
       return taskStartedRowBlock({
         keyPrefix,
@@ -350,6 +373,28 @@ export function eventRowBlock(options: {
     default:
       return assertNever(event);
   }
+}
+
+function driftHeadline(event: EngineEventOf<'drift_report'>): string {
+  const parts = ['Drift'];
+  if (!event.passed) parts.push('failed');
+  if (event.errorCount > 0) parts.push(countNoun(event.errorCount, 'error'));
+  if (event.warningCount > 0) parts.push(countNoun(event.warningCount, 'warning'));
+  if (parts.length === 1) parts.push('clean');
+  return parts.join(SOFT_SEP);
+}
+
+function driftTone(event: EngineEventOf<'drift_report'>): ConversationRowTone {
+  if (!event.passed) return 'error';
+  return event.warningCount > 0 ? 'warning' : 'textDim';
+}
+
+export function orderedDriftFindings(event: EngineEventOf<'drift_report'>): DriftFinding[] {
+  const findings = event.findings ?? [];
+  return [
+    ...findings.filter((finding) => finding.severity === 'error'),
+    ...findings.filter((finding) => finding.severity === 'warning'),
+  ];
 }
 
 function implementerFailureCause(

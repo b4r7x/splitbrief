@@ -33,6 +33,7 @@ describe('publishDriftReport', () => {
       passed: false,
       errorCount: 1,
       warningCount: 0,
+      findings: report.findings,
     });
   });
 });

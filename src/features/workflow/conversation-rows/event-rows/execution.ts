@@ -166,6 +166,7 @@ export function fullSuiteRowBlock(
     text: fullSuiteRow(event),
     width,
     tone: fullSuiteTone(event),
+    continuationIndent: 2,
   });
 }
 
@@ -180,6 +181,7 @@ export function reviewChecksRowBlock(
       text: reviewChecksRow(event),
       width,
       tone: reviewChecksTone(event),
+      continuationIndent: 2,
     }),
     ...reviewChecksDeclinedRows(event).map((text, index) =>
       wrappedTextBlock({
@@ -188,6 +190,7 @@ export function reviewChecksRowBlock(
         width,
         tone: 'textDim',
         indent: 2,
+        continuationIndent: 2,
       }),
     ),
   ]);

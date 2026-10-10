@@ -658,5 +658,5 @@ The orchestrator publishes a `drift_report` event:
 
 ```ts
 { type: 'drift_report'; ts: number; phase: Phase; passed: boolean;
-  errorCount: number; warningCount: number }
+  errorCount: number; warningCount: number; findings?: DriftReport['findings'] }
 ```

@@ -4,6 +4,7 @@ import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifa
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
 import type { RecoveryIssue } from '../../../../src/core/schemas/recovery/schemas.js';
+import type { DriftFinding } from '../../../../src/core/schemas/drift.js';
 import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
@@ -860,7 +861,7 @@ function everyBriefPassed(briefs = FIXTURE_TASKS_PLANNED.tasks): EngineEvent[] {
 function orphanBriefStarted(
   brief: Pick<TasksPlannedEvent['tasks'][number], 'id' | 'title' | 'index'> & { file?: string },
   ts: number,
-): EngineEvent {
+): EngineEventOf<'task_started'> {
   return {
     type: 'task_started',
     ts,
@@ -1027,6 +1028,115 @@ const REVIEW_CHECK_DECLINED = {
   target: 'npm run test:e2e',
   reason: 'It needs a browser, and the change touches no screen.',
 } as const;
+
+const DRIFT_REVIEW_CHECKS = [
+  {
+    id: 'V1',
+    command: 'node --test test/loan.test.js',
+    reason: 'The loan tests cover the changed service.',
+  },
+  {
+    id: 'V2',
+    command: 'node --test test/renewals.test.js',
+    reason: 'The renewal tests cover the changed service.',
+  },
+  {
+    id: 'V3',
+    command: 'node --test test/member.test.js',
+    reason: 'The member tests cover the changed model.',
+  },
+  {
+    id: 'V4',
+    command: 'node --test test/services.test.js',
+    reason: 'The service tests cover the integration.',
+  },
+];
+
+const DRIFT_REVIEW_TASKS_PLANNED: TasksPlannedEvent = {
+  ...FIXTURE_TASKS_PLANNED,
+  total: 5,
+  tasks: [
+    {
+      id: taskId('T001'),
+      title: 'Update the loan service',
+      index: 0,
+      file: 'src/loan.js',
+      action: 'modify',
+    },
+    {
+      id: taskId('T002'),
+      title: 'Update the renewal service',
+      index: 1,
+      file: 'src/renew.js',
+      action: 'modify',
+    },
+    {
+      id: taskId('T003'),
+      title: 'Verify the loan service',
+      index: 2,
+      file: 'test/loan.test.js',
+      action: 'modify',
+    },
+    {
+      id: taskId('T004'),
+      title: 'Verify the renewal service',
+      index: 3,
+      file: 'test/renewals.test.js',
+      action: 'modify',
+    },
+    {
+      id: taskId('T005'),
+      title: 'Verify the member model',
+      index: 4,
+      file: 'test/member.test.js',
+      action: 'modify',
+    },
+  ],
+};
+
+const DRIFT_REVIEW_FINDINGS: DriftFinding[] = [
+  {
+    severity: 'warning',
+    code: 'missing_expected_file',
+    taskId: taskId('T004'),
+    file: 'test/renewals.test.js',
+    message: 'Task T004 reached done but test/renewals.test.js was not changed.',
+  },
+  {
+    severity: 'error',
+    code: 'failed_task_with_diff',
+    taskId: taskId('T002'),
+    file: 'src/renew.js',
+    message: 'Failed task T002 left changes in src/renew.js.',
+  },
+  {
+    severity: 'info',
+    code: 'out_of_scope_file',
+    file: 'README.md',
+    message: 'README.md touched, not suggested by any task.',
+  },
+  {
+    severity: 'warning',
+    code: 'missing_expected_file',
+    taskId: taskId('T003'),
+    file: 'test/loan.test.js',
+    message: 'Task T003 reached done but test/loan.test.js was not changed.',
+  },
+  {
+    severity: 'error',
+    code: 'failed_task_with_diff',
+    taskId: taskId('T001'),
+    file: 'src/loan.js',
+    message: 'Failed task T001 left changes in src/loan.js.',
+  },
+  {
+    severity: 'warning',
+    code: 'missing_expected_file',
+    taskId: taskId('T005'),
+    file: 'test/member.test.js',
+    message: 'Task T005 reached done but test/member.test.js was not changed.',
+  },
+];
 
 const CODEX_REVIEW_SEAT = { kind: 'cli', tool: 'codex', model: 'gpt-6-astra' } as const;
 
@@ -1343,12 +1453,6 @@ const finalReviewProjection: WorkflowFixtureProjection = {
         axes: seatAxisWords(CODEX_REVIEW_SEAT),
         attempt: 1,
         sequence: 0,
-      },
-      {
-        type: 'planner_text',
-        ts: FIXED_TS + 540,
-        phase: 'final-review',
-        text: 'Reading the run diff against the spec before the verdict.',
       },
     ];
   },
@@ -4263,6 +4367,67 @@ const projections = [
   finalReviewProjection,
   reviewCorrectedProjection,
   reviewTaskCadenceProjection,
+  ...['clean', 'found'].map(
+    (drift): WorkflowFixtureProjection => ({
+      scenarioId: scenarioId(`workflow-review-drift-${drift}`),
+      feature: WORKFLOW_FEATURE,
+      inputMode: 'normal',
+      sidebarVisible: false,
+      events: [
+        ...(drift === 'clean'
+          ? everyBriefPassed()
+          : ([
+              {
+                type: 'workflow_started',
+                ts: FIXED_TS,
+                phase: 'implementing',
+                feature: WORKFLOW_FEATURE,
+              },
+              DRIFT_REVIEW_TASKS_PLANNED,
+              ...DRIFT_REVIEW_TASKS_PLANNED.tasks.flatMap((brief, index): EngineEvent[] => [
+                {
+                  ...orphanBriefStarted(brief, FIXED_TS + 100 * (index + 1)),
+                  total: DRIFT_REVIEW_TASKS_PLANNED.total,
+                },
+                index < 2
+                  ? {
+                      type: 'task_full_fail',
+                      ts: FIXED_TS + 100 * (index + 1) + 10,
+                      phase: 'implementing',
+                      taskId: brief.id,
+                    }
+                  : fixtureBriefPassed(brief, FIXED_TS + 100 * (index + 1) + 10),
+              ]),
+            ] satisfies EngineEvent[])),
+        {
+          type: 'review_checks',
+          ts: FIXED_TS + 1_000,
+          phase: 'final-review',
+          scope: 'final',
+          status: 'planned',
+          commands: DRIFT_REVIEW_CHECKS,
+          declined: [{ ...REVIEW_CHECK_DECLINED }],
+          reason: null,
+        },
+        ...DRIFT_REVIEW_CHECKS.map((check, index) =>
+          reviewCheck(FIXED_TS + 1_100 + 100 * index, check, {
+            status: 'done',
+            passed: drift === 'clean' || check.id !== 'V2',
+            duration: index % 2 === 0 ? 100 : 200,
+          }),
+        ),
+        {
+          type: 'drift_report',
+          ts: FIXED_TS + 1_500,
+          phase: 'final-review',
+          passed: drift === 'clean',
+          errorCount: drift === 'clean' ? 0 : 2,
+          warningCount: drift === 'clean' ? 0 : 3,
+          findings: drift === 'clean' ? [] : DRIFT_REVIEW_FINDINGS,
+        },
+      ],
+    }),
+  ),
   ...(['passed', 'failed'] as const).map(
     (review): WorkflowFixtureProjection => ({
       scenarioId: scenarioId(`workflow-review-settled-${review}`),
@@ -4299,18 +4464,7 @@ const projections = [
       ...finalReviewProjection,
       scenarioId: scenarioId(`workflow-review-${role}`),
       events: finalReviewProjection.events.map(
-        (event): EngineEvent =>
-          event.type === 'runner_call_started'
-            ? { ...event, role }
-            : event.type === 'planner_text'
-              ? {
-                  ...event,
-                  text:
-                    role === 'summary'
-                      ? 'Preparing the run summary.'
-                      : 'Compacting the run context.',
-                }
-              : event,
+        (event): EngineEvent => (event.type === 'runner_call_started' ? { ...event, role } : event),
       ),
     }),
   ),

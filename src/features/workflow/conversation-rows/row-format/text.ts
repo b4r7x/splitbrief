@@ -50,12 +50,17 @@ export function wrappedRowTexts(text: string, width: number): string[] {
 //
 // A row joins its parts with SOFT_SEP, and a break after its dot leaves the dot trailing the line
 // above. A no-break space binds the dot to the part it introduces while the row wraps, so the row
-// breaks before the dot; each wrapped line then gets its plain space back.
+// breaks before the dot; soft continuations drop the dot before restoring plain separator spaces.
 export function wrappedProseTexts(text: string, width: number): string[] {
-  return wrappedRowTexts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map((line, index) =>
-    (index > 0 && line.startsWith(' ') ? line.slice(1) : line).replaceAll(
-      BOUND_SEP_DOT,
-      `${SOFT_SEP.trim()} `,
+  return text.split('\n').flatMap((sourceLine) =>
+    wrappedRowTexts(sourceLine.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map(
+      (line, index) => {
+        let continuation = index > 0 && line.startsWith(' ') ? line.slice(1) : line;
+        if (index > 0 && continuation.startsWith(BOUND_SEP_DOT)) {
+          continuation = continuation.slice(BOUND_SEP_DOT.length);
+        }
+        return continuation.replaceAll(BOUND_SEP_DOT, `${SOFT_SEP.trim()} `);
+      },
     ),
   );
 }

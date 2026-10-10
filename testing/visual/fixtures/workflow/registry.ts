@@ -174,7 +174,7 @@ const checkpointPredicates = [
   ],
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
-  [checkpointId('final-review'), includesAll('3/3 briefs passed')],
+  [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review…', 'Codex CLI')],
   [
     checkpointId('review-render-running'),
     includesAll(
@@ -196,10 +196,21 @@ const checkpointPredicates = [
   ],
   [checkpointId('review-settled-passed'), includesAll('● Review 1 passed', '7.0s')],
   [checkpointId('review-settled-failed'), includesAll('✗ Review 1 failed', '7.0s')],
-  [checkpointId('review-corrected'), includesAll('T902', 'Review 1 failed', 'Review 2 passed')],
+  [checkpointId('review-drift-clean'), includesAll('Drift · clean')],
+  [
+    checkpointId('review-drift-found'),
+    includesAll('Drift · failed · 2 errors · 3 warnings', '3/5 briefs passed'),
+  ],
+  [
+    checkpointId('review-corrected'),
+    includesAll('T902', 'Review 1 failed', '7.0s', 'Review 2 passed', '5.0s'),
+  ],
   [checkpointId('review-summary'), includesAll('Review · Summary')],
   [checkpointId('review-compaction'), includesAll('Review · Compaction')],
-  [checkpointId('review-checks-off'), includesAll('End-of-run checks', 'off')],
+  [
+    checkpointId('review-checks-off'),
+    includesAll('End-of-run checks', 'off', 'Review…', 'Codex CLI'),
+  ],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],

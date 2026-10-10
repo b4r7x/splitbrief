@@ -4,6 +4,7 @@ import type {
   ConversationRowKind,
   ConversationRowTone,
 } from './types.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
 import { row, type RowInput } from './row-format/rows.js';
 import { sanitizeRowDisplayText, wrappedProseTexts } from './row-format/text.js';
@@ -60,15 +61,20 @@ export function wrappedTextBlock(input: {
   kind?: ConversationRowKind;
   /** Columns every wrapped line starts after, so a row reads as part of the row above it. */
   indent?: number;
+  continuationIndent?: number;
 }): ConversationRowBlock | null {
   const keyPrefix = input.keyPrefix;
   const indent = input.indent ?? 0;
+  const continuationIndent = input.continuationIndent ?? 0;
   const wrapWidth = Math.max(1, wrapWidthFor(input.kind ?? 'message', input.width) - indent);
   const tone = input.tone;
   const bold = input.bold;
   const kind = input.kind;
-  const lines = eventWrappedLines(sanitizeRowDisplayText(input.text), wrapWidth).map(
-    (line) => `${' '.repeat(indent)}${line}`,
+  const lines = eventWrappedLines(
+    sanitizeRowDisplayText(input.text),
+    wrapWidth,
+    indent,
+    continuationIndent,
   );
   const rowCount = lines.length;
   if (rowCount === 0) return null;
@@ -220,8 +226,31 @@ function isActiveKind(kind: ConversationRowKind | undefined): boolean {
 // Wrapping the whole body once, at block construction, is what keeps scrolling flat: the previous
 // shape re-wrapped every line from the top of the event on each createRows call, so a long tool
 // output cost its full length on every scroll step.
-function eventWrappedLines(text: string, width: number): string[] {
-  return text.split('\n').flatMap((rawLine) => wrappedProseTexts(rawLine, width));
+function eventWrappedLines(
+  text: string,
+  width: number,
+  indent = 0,
+  continuationIndent = 0,
+): string[] {
+  return text.split('\n').flatMap((rawLine) => {
+    let lines = wrappedProseTexts(rawLine, width);
+    const firstLine = lines[0];
+    if (continuationIndent > 0 && firstLine !== undefined && lines.length > 1) {
+      const continuationWidth = Math.max(1, width - continuationIndent);
+      let continuationStart = firstLine.length;
+      if (rawLine[continuationStart] === ' ') continuationStart += 1;
+      if (rawLine.startsWith(SOFT_SEP, continuationStart - 1)) {
+        continuationStart += SOFT_SEP.length - 1;
+      }
+      lines = [
+        firstLine,
+        ...wrappedProseTexts(rawLine.slice(continuationStart), continuationWidth),
+      ];
+    }
+    return lines.map(
+      (line, index) => `${' '.repeat(indent + (index === 0 ? 0 : continuationIndent))}${line}`,
+    );
+  });
 }
 
 function eventWrappedRowsWindow(input: {
