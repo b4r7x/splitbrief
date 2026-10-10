@@ -26,6 +26,7 @@ export interface SpawnOptions {
   onProgress: (text: string) => void;
   onStderr?: ((chunk: string) => void) | undefined;
   stdinInput?: string | undefined;
+  stdinOptional?: boolean | undefined;
   notFoundMessage?: string | undefined;
   signal?: AbortSignal | undefined;
   idle?: SpawnIdleOptions | undefined;
@@ -57,6 +58,7 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult>
       detached: true,
       ledger: opts.ledger,
       stdin: opts.stdinInput,
+      stdinOptional: opts.stdinOptional,
       signal,
       idle: opts.idle,
       onSpawned: (proc) => {
@@ -75,9 +77,6 @@ export async function spawnWithTimeout(opts: SpawnOptions): Promise<SpawnResult>
       onClose: (code) => {
         const outputSnapshot = output.snapshot();
         const stderrSnapshot = stderrOutput.snapshot();
-        if (code === 127) {
-          throw processError.notFound(opts.command, opts.notFoundMessage);
-        }
         if (code !== 0) {
           throw processError.exitCode({
             command: opts.command,

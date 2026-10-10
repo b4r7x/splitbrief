@@ -50,6 +50,7 @@ function pipe(opts: {
     | undefined;
   signal?: AbortSignal | undefined;
   stdin?: string | undefined;
+  stdinOptional?: boolean | undefined;
   onStdout?: (chunk: string) => SpawnPipeFatalSignal | undefined;
   onStderr?: (chunk: string) => undefined;
   onSpawned?: ((pid: number) => void) | undefined;
@@ -63,6 +64,7 @@ function pipe(opts: {
     signal: opts.signal,
     idle: opts.idle,
     stdin: opts.stdin,
+    stdinOptional: opts.stdinOptional,
     onStdout: opts.onStdout ?? (() => undefined),
     onStderr: opts.onStderr ?? (() => undefined),
     onSpawned: (proc) => {
@@ -375,6 +377,66 @@ describe('spawnPipe stdin failure', () => {
   afterEach(async () => {
     await killAllProcesses();
   });
+
+  itUnix.each([
+    { path: 'error event', mode: 'absent' },
+    { path: 'error event', mode: 'optional' },
+    { path: 'write callback', mode: 'optional' },
+    { path: 'error event', mode: 'required' },
+    { path: 'write callback', mode: 'required' },
+  ])('handles ENOTCONN from the $path with $mode stdin', async ({ path, mode }) => {
+    const stdinError = Object.assign(new Error('write ENOTCONN'), { code: 'ENOTCONN' });
+    const pending = spawnPipe({
+      command: process.execPath,
+      args: ['-e', 'process.exit(0)'],
+      detached: true,
+      stdin: mode === 'absent' ? undefined : 'payload',
+      stdinOptional: mode === 'optional',
+      onStdout: () => undefined,
+      onStderr: () => undefined,
+      onClose: (code, signal) => ({ code, signal }),
+      onSpawned: (proc) => {
+        const stdin = proc.stdin;
+        if (stdin === null) throw new Error('stdin unavailable');
+        if (path === 'error event') {
+          stdin.emit('error', stdinError);
+        } else {
+          vi.spyOn(stdin, 'write').mockImplementationOnce((_chunk, callback: unknown) => {
+            if (typeof callback === 'function') callback(stdinError);
+            return false;
+          });
+        }
+      },
+    });
+
+    if (mode === 'required') {
+      await expect(pending).rejects.toMatchObject({
+        kind: 'process-stdin-incomplete',
+        cause: stdinError,
+      });
+    } else {
+      await expect(pending).resolves.toEqual({ code: 0, signal: null });
+    }
+  });
+
+  itUnix.each([0, 7])(
+    'preserves exit code %i when the child exits before the first optional stdin write',
+    async (code) => {
+      let pid = 0;
+      const pending = pipe({
+        script: `process.exit(${code})`,
+        stdin: 'payload',
+        stdinOptional: true,
+        onSpawned: (spawnedPid) => {
+          pid = spawnedPid;
+          blockUntilExited(spawnedPid);
+        },
+      });
+
+      await expect(pending).resolves.toEqual({ code, signal: null });
+      expect(processIsAbsent(pid)).toBe(true);
+    },
+  );
 
   itUnix('delivers the stderr of a child that exits before the first stdin write', async () => {
     let pid = 0;

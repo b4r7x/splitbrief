@@ -52,6 +52,7 @@ export async function runHook(
       cwd: ctx.projectDir,
       timeout: entry.timeout_ms,
       stdinInput: stdin,
+      stdinOptional: true,
       onProgress: () => undefined,
       // Short-lived hook commands skip the runner-pid ledger: the per-spawn
       // sync `ps` exec and jsonl rewrite buy no crash-recovery benefit here.
