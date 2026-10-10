@@ -411,7 +411,6 @@ function fixtureConfig(isolation?: IsolationStrategy): Config {
     validation: { endChecks: false, testCommand: 'node --version' },
     workflow: {
       approve: 'none',
-      maxRetries: 1,
       ...(isolation !== undefined ? { isolation } : {}),
     },
   });

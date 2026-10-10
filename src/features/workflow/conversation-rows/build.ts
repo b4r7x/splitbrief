@@ -6,7 +6,6 @@ import {
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type {
   ConversationRowInputs,
-  ConversationRowsResult,
   ConversationRowsProjection,
   ConversationRowBlock,
   RowBuildContext,
@@ -29,7 +28,6 @@ import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
 } from './markdown-rows.js';
-import { materializeConversationRowsWindow } from './materialize-window.js';
 import { settledRowBlock } from './settled-row-block.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
@@ -37,18 +35,6 @@ const MIN_ROW_WIDTH = 1;
 // One blank row separates consecutive top-level transcript sections, giving the log a calmer
 // one-row rhythm. renderableUnits stays 0 so the spacer never registers as a scrolled-past event.
 const SECTION_SPACER_ROWS = 1;
-
-export function buildConversationRows(inputs: ConversationRowInputs): ConversationRowsResult {
-  const projection = buildConversationRowsProjection(inputs);
-  return {
-    rows: materializeConversationRowsWindow({
-      projection,
-      windowStart: 0,
-      windowEnd: projection.totalRows,
-    }),
-    renderableCount: projection.renderableCount,
-  };
-}
 
 export function buildConversationRowsProjection(
   inputs: ConversationRowInputs,

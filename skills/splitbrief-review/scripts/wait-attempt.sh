@@ -64,7 +64,7 @@ run=$1
 task=$2
 attempt=$3
 shift 3
-deadline=1200
+deadline=''
 while [ $# -gt 0 ]; do
   case $1 in
     --deadline)
@@ -97,15 +97,17 @@ while :; do
     if [ -f "$done_file" ]; then state=$(cat "$done_file"); fi
     break
   fi
-  if [ "$elapsed" -ge "$deadline" ]; then
+  if [ -n "$deadline" ] && [ "$elapsed" -ge "$deadline" ]; then
     kill_group "$pid"
     printf 'exit=timeout\n' >"$done_file"
     state=timeout
     break
   fi
   step=5
-  remaining=$((deadline - elapsed))
-  if [ "$remaining" -lt "$step" ]; then step=$remaining; fi
+  if [ -n "$deadline" ]; then
+    remaining=$((deadline - elapsed))
+    if [ "$remaining" -lt "$step" ]; then step=$remaining; fi
+  fi
   sleep "$step"
   elapsed=$((elapsed + step))
 done

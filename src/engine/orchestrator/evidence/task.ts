@@ -6,7 +6,6 @@ import type {
   EvidenceCheckEntry,
   EvidenceLedger,
   EvidencePromotedFile,
-  EvidencePromotionAttempt,
   EvidenceTask,
 } from '../../../core/schemas/evidence.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
@@ -187,9 +186,6 @@ function withTargetWrites(input: {
       if (entry.id === task.id) {
         const previous = entry.promotedBriefHash === hash ? (entry.promotedFiles ?? []) : [];
         const created = provenCreatedPaths(entry);
-        for (const file of latest) {
-          if (file.created === true) uniquePush(created, file.path);
-        }
         return {
           ...entry,
           promotedBriefHash: hash,
@@ -252,51 +248,6 @@ export function recordRetryOrEscalationEvidence(
     if (file) uniquePush(next.changedFiles, file);
   }
   return upsertEvidenceTask(input.ledger, next);
-}
-
-export type RecordPromotionFailureEvidenceInput = {
-  ledger: EvidenceLedger;
-  task: Task;
-  attempt: EvidencePromotionAttempt;
-};
-
-export function recordPromotionFailureEvidence(
-  input: RecordPromotionFailureEvidenceInput,
-): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task);
-  next.status = 'failed';
-  next.promotionAttempts = [...(next.promotionAttempts ?? []), input.attempt];
-  // The applied prefix is on the target, so it is a changed file of this task
-  // whatever the promotion did with the rest.
-  for (const applied of input.attempt.appliedFiles) uniquePush(next.changedFiles, applied.path);
-  return withTargetWrites({
-    ledger: upsertEvidenceTask(input.ledger, next),
-    task: input.task,
-    files: input.attempt.appliedFiles,
-    unknownPaths: [input.attempt.failedFile],
-  });
-}
-
-export type RecordPromotedFilesEvidenceInput = {
-  ledger: EvidenceLedger;
-  task: Task;
-  files: EvidencePromotedFile[];
-};
-
-/**
- * What a promotion left on the target, recorded when it lands rather than when the brief ends: an
- * attempt that promoted and then failed validation leaves those bytes to the attempts after it,
- * and a brief parked there needs this record to tell them from an edit made while it was parked.
- */
-export function recordPromotedFilesEvidence(
-  input: RecordPromotedFilesEvidenceInput,
-): EvidenceLedger {
-  const next = findOrSeed(input.ledger, input.task);
-  return withTargetWrites({
-    ledger: upsertEvidenceTask(input.ledger, next),
-    task: input.task,
-    files: input.files,
-  });
 }
 
 export type RecordApiApplyEvidenceInput = {

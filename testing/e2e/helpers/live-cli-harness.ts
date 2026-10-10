@@ -87,7 +87,6 @@ function fixtureConfig(seats: FixtureRowSeats): Config {
     validation: { endChecks: true, testCommand: 'npm test' },
     workflow: {
       approve: 'none',
-      maxRetries: 1,
     },
   });
 }

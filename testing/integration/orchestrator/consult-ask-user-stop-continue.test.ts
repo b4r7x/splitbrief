@@ -122,7 +122,7 @@ describe('a run stopped while a consult question waits', { timeout: 120_000 }, (
     const config = makeConfig({
       implementer: { kind: 'agent', command: 'node', model: 'direct-agent', contextLength: 4096 },
       validation: { endChecks: false, testCommand: 'node validate.mjs' },
-      workflow: { approve: 'none', review: 'task', maxRetries: 1 },
+      workflow: { approve: 'none', review: 'task' },
     });
 
     const stop = new AbortController();

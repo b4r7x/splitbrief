@@ -7,23 +7,29 @@ import {
 import type { BriefRow, CostView, SummaryView } from './view-model.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep } from '../../../core/separators.js';
-import { briefRowParts, crewLine, filesRows, runRowValue, runRows } from './copy.js';
+import type { CopySegment } from './copy.js';
+import { briefRowParts, crewLine, filesRows, runRows } from './copy.js';
 
 describe('runRows', () => {
-  function valueFor(view: SummaryView, label: string): string | undefined {
+  function segmentsFor(view: SummaryView, label: string): readonly CopySegment[] | undefined {
     const row = runRows(view).find((candidate) => candidate.label === label);
-    return row === undefined ? undefined : runRowValue(row);
+    return row?.segments;
   }
 
   it('states a passing review, its packet and its scope once each', () => {
     const view = makeView();
-    expect(valueFor(view, 'Review')).toBe(
-      'pass with notes · 0 blocking, 1 advisory · 3/3 briefs validated',
-    );
-    expect(valueFor(view, 'Packet')).toBe(
-      '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/review-packet.md',
-    );
-    expect(valueFor(view, 'Scope')).toBe('clean');
+    expect(segmentsFor(view, 'Review')).toEqual([
+      { text: 'pass with notes', tone: 'success' },
+      { text: '0 blocking, 1 advisory', tone: 'text' },
+      { text: '3/3 briefs validated', tone: 'text' },
+    ]);
+    expect(segmentsFor(view, 'Packet')).toEqual([
+      {
+        text: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/review-packet.md',
+        tone: 'link',
+      },
+    ]);
+    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'text' }]);
   });
 
   it('names the run.patch a run left its changes in, after the packet', () => {
@@ -33,15 +39,18 @@ describe('runRows', () => {
         patch: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
       },
     });
-    expect(valueFor(view, 'Patch')).toBe(
-      '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
-    );
+    expect(segmentsFor(view, 'Patch')).toEqual([
+      {
+        text: '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/run.patch',
+        tone: 'link',
+      },
+    ]);
     expect(
       runRows(view)
         .map((row) => row.label)
         .slice(0, 3),
     ).toEqual(['Review', 'Packet', 'Patch']);
-    expect(valueFor(makeView(), 'Patch')).toBeUndefined();
+    expect(segmentsFor(makeView(), 'Patch')).toBeUndefined();
   });
 
   it('tones the failing verdict and leaves the counts alone', () => {
@@ -63,14 +72,14 @@ describe('runRows', () => {
 
   it('reads a packet that was never written as a review that never ran', () => {
     const view = makeView({ review: { kind: 'missing' } });
-    expect(valueFor(view, 'Review')).toBe('not run');
-    expect(valueFor(view, 'Packet')).toBeUndefined();
+    expect(segmentsFor(view, 'Review')).toEqual([{ text: 'not run', tone: 'textDim' }]);
+    expect(segmentsFor(view, 'Packet')).toBeUndefined();
   });
 
   it('spells absence with one word each', () => {
     const view = endedInPlanning();
-    expect(valueFor(view, 'Review')).toBe('not run');
-    expect(valueFor(view, 'Scope')).toBe('not checked');
+    expect(segmentsFor(view, 'Review')).toEqual([{ text: 'not run', tone: 'textDim' }]);
+    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'not checked', tone: 'textDim' }]);
   });
 
   it('warns on a scope check that did not pass', () => {
@@ -89,7 +98,9 @@ describe('runRows', () => {
     const view = makeView({
       quality: { score: 0.92, passed: false, errorCount: 0, warningCount: 1 },
     });
-    expect(valueFor(view, 'Briefs')).toBe('quality 0.92 · 1 warning');
+    expect(segmentsFor(view, 'Briefs')).toEqual([
+      { text: 'quality 0.92 · 1 warning', tone: 'warning' },
+    ]);
   });
 
   it.each<[string, CostView]>([
@@ -101,7 +112,9 @@ describe('runRows', () => {
   ])('names no cost row for %s, whatever the record priced', (_label, cost) => {
     const view = makeView({ cost });
     expect(runRows(view).some((row) => row.label === 'Cost')).toBe(false);
-    for (const row of runRows(view)) expect(runRowValue(row)).not.toContain('$');
+    for (const row of runRows(view)) {
+      for (const segment of row.segments) expect(segment.text).not.toContain('$');
+    }
     // The record keeps what `/usage` reports; only the ledger stopped saying it.
     expect(view.cost).toEqual(cost);
   });
@@ -109,11 +122,15 @@ describe('runRows', () => {
   it('names no token row for the seats that booked tokens', () => {
     const view = makeView();
     expect(runRows(view).some((row) => row.label === 'Tokens')).toBe(false);
-    const values = runRows(view).map(runRowValue).join('\n');
-    expect(values).not.toContain('31.2k');
-    expect(values).not.toContain('204.5k');
-    expect(values).not.toContain('18.7k');
-    expect(values).not.toMatch(/token/i);
+    for (const row of runRows(view)) {
+      expect(row.label).not.toMatch(/token/i);
+      for (const segment of row.segments) {
+        expect(segment.text).not.toContain('31.2k');
+        expect(segment.text).not.toContain('204.5k');
+        expect(segment.text).not.toContain('18.7k');
+        expect(segment.text).not.toMatch(/token/i);
+      }
+    }
     expect(view.tokens).toEqual({ plan: 31_200, build: 204_500, review: 18_700 });
   });
 
@@ -123,15 +140,19 @@ describe('runRows', () => {
   });
 
   it('shows phase times only when more than one phase booked time', () => {
-    expect(valueFor(makeView(), 'Phases')).toBe(
-      'planning 2m 50s · implementing 8m 12s · review 1m 5s',
-    );
+    expect(segmentsFor(makeView(), 'Phases')).toEqual([
+      { text: 'planning 2m 50s', tone: 'text' },
+      { text: 'implementing 8m 12s', tone: 'text' },
+      { text: 'review 1m 5s', tone: 'text' },
+    ]);
     const one = makeView({ phases: [{ phase: 'planning', ms: 170_000 }] });
     expect(runRows(one).some((row) => row.label === 'Phases')).toBe(false);
   });
 
   it('names the session and no mode', () => {
-    expect(valueFor(makeView(), 'Session')).toBe('2026-09-14-add-email-validation-with-tests');
+    expect(segmentsFor(makeView(), 'Session')).toEqual([
+      { text: '2026-09-14-add-email-validation-with-tests', tone: 'text' },
+    ]);
   });
 
   it('keeps the rows in one reading order', () => {

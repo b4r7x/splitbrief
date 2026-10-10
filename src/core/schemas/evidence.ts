@@ -77,7 +77,6 @@ const EvidencePromotionAttemptSchema = z.object({
   failedFile: z.string(),
   error: z.string(),
 });
-export type EvidencePromotionAttempt = z.infer<typeof EvidencePromotionAttemptSchema>;
 
 const EvidenceApiAppliedFileSchema = z.object({
   path: z.string(),

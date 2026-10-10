@@ -62,7 +62,7 @@ describe('abort during implementer phase terminates the task loop cleanly', {
         workspaceDir: projectDir,
         sessionId,
         isolation: makeCopyingIsolation({ projectDir, sessionId }),
-        config: makeNoValidationConfig({ workflow: { maxRetries: 1 } }),
+        config: makeNoValidationConfig(),
         callbacks,
         planner,
         reviewer: planner,

@@ -120,7 +120,3 @@ export function reviewCandidateRoot(projectDir: string): string {
     '.custom-runner-review',
   );
 }
-
-export function shellLiteral(value: string): string {
-  return `'${value.replaceAll("'", "'\\\"'\\\"'")}'`;
-}

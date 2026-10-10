@@ -77,7 +77,7 @@ describe('a thirteen-brief run stopped between briefs and continued', { timeout:
     const ref = { projectDir, sessionId };
     const feature = 'thirteen coherent briefs';
     const config = makeNoValidationConfig({
-      workflow: { approve: 'none', maxRetries: 1, isolation: 'staged-copy' },
+      workflow: { approve: 'none', isolation: 'staged-copy' },
       approval: { feedRejectionsToPlanner: false },
     });
 

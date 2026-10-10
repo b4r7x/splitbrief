@@ -244,24 +244,6 @@ export function publishReviewCheck(
   });
 }
 
-export function publishGitCommit(
-  ctx: BusContext,
-  taskId: TaskId,
-  message: string,
-  file?: string,
-  files?: readonly string[],
-): void {
-  ctx.bus.publish({
-    type: 'git_commit',
-    ts: Date.now(),
-    phase: ctx.phase,
-    taskId,
-    message,
-    ...(file !== undefined && { file }),
-    ...(files !== undefined && { files: [...files] }),
-  });
-}
-
 export function publishGitBranchCreated(ctx: BusContext, name: string): void {
   ctx.bus.publish({ type: 'git_branch_created', ts: Date.now(), phase: ctx.phase, name });
 }

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import {
   readConversationHoverSnapshot,
   readConversationScrollSnapshot,
@@ -33,6 +36,11 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { transcriptTailStore } from '../../../stores/workflow/transcript-tail.js';
+import { ConversationFlow } from '../components/conversation-flow/flow.js';
+import type { ConversationRowBlock } from '../conversation-rows/types.js';
+import { row } from '../conversation-rows/row-format/rows.js';
+import { handleWorkflowMouseWheel } from '../hooks/use-mouse-scroll.js';
 
 beforeEach(() => {
   terminalSizeStore.reset();
@@ -43,6 +51,7 @@ beforeEach(() => {
   reviewStore.reset();
   approvalPromptStore.reset();
   questionPromptStore.reset();
+  transcriptTailStore.__testReset();
 });
 
 function makeConfirmRequest(actionDescription: string): TieredApprovalRequest {
@@ -73,6 +82,106 @@ function makeLongTaskStarted(): Extract<EngineEvent, { type: 'task_started' }> {
 }
 
 describe('readConversationScrollSnapshot', () => {
+  it.each([
+    { label: 'recovery reset the running brief to pending', closed: false },
+    { label: 'closed run below the sidebar breakpoint', closed: true },
+  ])('keeps rendered scroll ends and mouse rows aligned after $label', async ({ closed }) => {
+    const cols = 80;
+    const rows = 24;
+    terminalSizeStore.__testReset({ cols, rows, isSmall: false });
+    inputHeightStore.__testReset({ rows: 3 });
+    controlsStore.setSidebar(true);
+    expect(getWorkflowSidebarWidth({ cols, sidebarVisible: true })).toBe(0);
+    lifecycleStore.__testReset({ phase: closed ? 'complete' : 'implementing' });
+    tasksStore.__testReset({
+      currentTask: 1,
+      totalTasks: 1,
+      tasks: [{ id: 'T001', title: 'Reset brief', status: 'pending' }],
+    });
+    eventsStore.__testReset({
+      events: Array.from({ length: 50 }, (_, ts) => ({
+        type: 'planner_text',
+        ts,
+        phase: 'planning',
+        text: `event-${ts}`,
+      })),
+    });
+    const tail: ConversationRowBlock[] = closed
+      ? [
+          {
+            key: 'closed',
+            rowCount: 8,
+            renderableUnits: 0,
+            createRows: (start, end) =>
+              Array.from({ length: end - start }, (_, offset) =>
+                row({ key: `closed-${start + offset}`, text: `closed-row-${start + offset}` }),
+              ),
+          },
+        ]
+      : [];
+    const height = getWorkflowViewportHeight({
+      rows,
+      inputRows: 3,
+      progressRows: getProgressRows({ phase: closed ? 'complete' : 'implementing', cols }),
+    });
+    let above = '';
+    const ui = renderFeature(
+      createElement(ConversationFlow, {
+        height,
+        conversationWidth: cols - 1,
+        contentWidth: cols - 1,
+        tail,
+        onScrollAbove: (label) => {
+          above = label;
+        },
+      }),
+      { cols, rows },
+    );
+    try {
+      await flushEffects();
+      const bottom = readConversationScrollSnapshot();
+      expect(bottom.transcriptViewportHeight).toBe(height);
+      expect(bottom.viewportHeight).toBe(height);
+      expect(bottom.maxOffset).toBe(bottom.totalHeight - height);
+      expect(bottom.scrollOffset).toBe(0);
+      expect(stripAnsiStyles(ui.lastFrame())).not.toContain('Pending');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain(closed ? 'closed-row-7' : 'event-49');
+      expect(above).toBe(`${bottom.maxOffset} lines above`);
+
+      conversationScrollStore.__testReset({ scrollOffset: bottom.maxOffset });
+      await flushEffects();
+      expect(readConversationScrollSnapshot().scrollOffset).toBe(bottom.maxOffset);
+      expect(above).toBe('');
+      expect(stripAnsiStyles(ui.lastFrame())).toContain('event-0');
+      handleWorkflowMouseWheel({
+        type: 'wheel-down',
+        x: 1,
+        y: 4,
+        button: 0,
+        shift: false,
+        meta: false,
+        ctrl: false,
+      });
+      await flushEffects();
+      expect(readConversationScrollSnapshot().scrollOffset).toBe(bottom.maxOffset - 1);
+      expect(above).toBe('1 line above');
+
+      const hover = readConversationHoverSnapshot();
+      expect(hover.viewportHeight).toBe(height);
+      expect(
+        hitTranscriptRow({
+          rect: hover.contentRect,
+          sgrX: hover.contentRect.left,
+          sgrY: hover.contentRect.bottom,
+          visibleCount: hover.viewportHeight,
+        }),
+      ).toBe(height - 1);
+    } finally {
+      ui.unmount();
+      await flushEffects();
+    }
+  });
+
   it('derives the default viewport from the reset stores and pins the empty transcript at zero', () => {
     const snap = readConversationScrollSnapshot();
     expect(snap.viewportHeight).toBe(

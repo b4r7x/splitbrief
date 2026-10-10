@@ -63,18 +63,6 @@ function trailingAxisRun(tokens: readonly string[]): AxisRun {
   return { effort, thinking, fast, head: tokens.slice(0, end) };
 }
 
-/** The effort token a `model-id`-channel selection spells, or undefined when it spells none. */
-export function effortTokenOfModelId(model: string | undefined): EffortLevel | undefined {
-  if (model === undefined) return undefined;
-  const tokens = idTokens(model);
-  for (let index = tokens.length - 1; index >= 0; index -= 1) {
-    const token = tokens[index];
-    if (token === 'high' && tokens[index - 1] === 'extra') return 'xhigh';
-    if (includes(EFFORT_LEVELS, token)) return token;
-  }
-  return undefined;
-}
-
 /** The axis words a `model-id` seat spells, in the order the identity states them. */
 export function optionTokensOfModelId(model: string | undefined): readonly string[] {
   if (model === undefined) return [];

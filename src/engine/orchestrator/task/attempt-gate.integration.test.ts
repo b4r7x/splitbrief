@@ -42,7 +42,7 @@ const EARLIER_TEXT = 'export const earlier = true;\n';
 const BASE_CONFIG = {
   approval: { feedRejectionsToPlanner: true },
   validation: { endChecks: false, testCommand: 'noop' },
-  workflow: { review: 'task', maxRetries: 2 },
+  workflow: { review: 'task' },
 } as const;
 
 const disposers: Array<() => Promise<void>> = [];

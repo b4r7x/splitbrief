@@ -59,7 +59,6 @@ export function buildEvalConfig(pair: ModelPair, mode: EvalMode): Config {
       testCommand: 'npm test',
     },
     workflow: {
-      maxRetries: 1,
       approve: 'none',
     },
   });

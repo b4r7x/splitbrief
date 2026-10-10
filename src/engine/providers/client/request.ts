@@ -3,7 +3,6 @@ import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { warnError } from '../../../lib/warn.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import { providerError } from '../errors.js';
 import { endpointPolicyError } from '../../../core/providers/endpoint-policy.js';
 import {
   createEndpointPolicyFetch,
@@ -82,26 +81,6 @@ export function sanitizeProviderDiagnostic(
  */
 export function isEndpointUnreachable(err: unknown): boolean {
   return err instanceof TypeError || (err instanceof Error && 'code' in err);
-}
-
-export interface FetchJsonWithTimeoutOptions {
-  readonly url: string;
-  readonly timeoutMs: number;
-  readonly signal?: AbortSignal | undefined;
-}
-
-export async function fetchJsonWithTimeout(options: FetchJsonWithTimeoutOptions): Promise<unknown> {
-  throwIfAborted(options.signal);
-  const timeoutSignal = AbortSignal.timeout(options.timeoutMs);
-  const signal =
-    options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
-  const policyFetch = createEndpointPolicyFetch(options.url, endpointPolicyError.invalid);
-  const res = await policyFetch(options.url, { signal });
-  throwIfAborted(options.signal);
-  if (!res.ok) throw providerError.httpFailure(res.status, sanitizeProviderDiagnostic(options.url));
-  const json = await res.json();
-  throwIfAborted(options.signal);
-  return json;
 }
 
 export async function fetchModelList<T>(options: {

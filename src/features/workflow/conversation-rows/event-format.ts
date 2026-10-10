@@ -21,12 +21,6 @@ import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 const NOT_RUN = 'not\u00a0run';
 
-export function formatTaskStartedValue(
-  event: Extract<EngineEvent, { type: 'task_started' }>,
-): string {
-  return formatTaskStartedParts(event).join(SOFT_SEP);
-}
-
 // The value's own facts, one label each. A label can carry the separator inside it — the tool and
 // its model are one label — so callers that lay the value out themselves need the parts, not the
 // joined string, or a wrap cannot tell one label's ` · ` from another's.

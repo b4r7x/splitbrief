@@ -20,10 +20,6 @@ export function registerMouseZone(zone: MouseZone): () => void {
   };
 }
 
-export function unregisterMouseZone(id: string): void {
-  zones = zones.filter((zone) => zone.id !== id);
-}
-
 export function hitTopmostZone(
   x: number,
   y: number,

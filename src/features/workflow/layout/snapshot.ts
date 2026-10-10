@@ -12,7 +12,6 @@ import {
   getWorkflowViewportHeight,
   REVIEW_FRAME_ROWS,
 } from './rect.js';
-import { getSimpleBriefTaskRowBudget, getSimpleBriefVisibleTaskCount } from './brief-review.js';
 import { inputHeightStore } from '../../../stores/ui/input-height.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
@@ -35,6 +34,7 @@ import { getWorkflowPromptRows } from '../prompt-rows/workflow.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 import { splitConversationViewport } from '../conversation-rows/viewport.js';
+import { queuedBriefs } from '../conversation-rows/queued-briefs.js';
 
 export interface ConversationScrollSnapshot {
   conversationWidth: number;
@@ -123,10 +123,6 @@ function readRailFraction(): string {
   });
 }
 
-function hasReviewLoadError(): boolean {
-  return reviewStore.get().loadError !== null;
-}
-
 export interface RailSnapshot {
   zones: RailStageZone[];
   activeIndex: number;
@@ -152,16 +148,6 @@ export function readReviewContentHeight(): number {
     promptRows,
     progressRows: readProgressRows(promptRows),
   });
-  if (lifecycleStore.get().phase === 'reviewing-briefs') {
-    const rowBudget = getSimpleBriefTaskRowBudget({
-      containerHeight: viewportHeight,
-      hasLoadError: hasReviewLoadError(),
-    });
-    return getSimpleBriefVisibleTaskCount({
-      rowBudget,
-      taskCount: reviewStore.get().renderedLineCount,
-    });
-  }
   return getReviewContentLayout(
     Math.max(0, viewportHeight - REVIEW_FRAME_ROWS),
     reviewStore.get().renderedLineCount,
@@ -180,16 +166,17 @@ function readConversationLayoutSnapshot(): ConversationLayoutSnapshot {
     promptRows,
     progressRows: readProgressRows(promptRows),
   });
-  // The queued block stands down while the sidebar lists the same pending work, so the keyboard
-  // path has to read the same suppression the transcript renders under or it budgets rows for a
-  // block that paints nothing.
   const sidebarShowsTasks = getWorkflowSidebarWidth({ cols, sidebarVisible }) > 0;
+  const pendingTasks = queuedBriefs({
+    tasks: tasksStore.get(),
+    phase: lifecycleStore.get().phase,
+    sidebarShowsTasks,
+    closed: transcriptTailStore.get().rowCount > 0,
+  });
   const viewportSplit = splitConversationViewport({
     viewportHeight: contentRect.height,
     sections: getSections(),
-    pendingTaskCount: sidebarShowsTasks
-      ? 0
-      : tasksStore.get().tasks.filter((task) => task.status === 'pending').length,
+    pendingTaskCount: pendingTasks.length,
   });
   return {
     conversationWidth: contentRect.width,

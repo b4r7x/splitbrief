@@ -2,13 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import {
-  buildTestArgs,
-  detectStack,
-  findAffectedTestFiles,
-  isTestFile,
-  sourceForTest,
-} from './registry.js';
+import { buildTestArgs, detectStack, findAffectedTestFiles, isTestFile } from './registry.js';
 import { pythonStack } from './python.js';
 import { rustStack } from './rust.js';
 import { typescriptStack } from './typescript.js';
@@ -54,19 +48,12 @@ describe('detectStack', () => {
   });
 });
 
-describe('isTestFile / sourceForTest', () => {
+describe('isTestFile', () => {
   it('recognises colocated and __tests__ conventions', () => {
     expect(isTestFile('src/a.test.ts', typescriptStack)).toBe(true);
     expect(isTestFile('src/__tests__/a.ts', typescriptStack)).toBe(true);
     expect(isTestFile('src/a.ts', typescriptStack)).toBe(false);
     expect(isTestFile('tests/test_a.py', pythonStack)).toBe(true);
-  });
-
-  it('maps a test file back to its source', () => {
-    expect(sourceForTest('src/a.test.ts', typescriptStack)).toBe('src/a.ts');
-    expect(sourceForTest('src/__tests__/a.ts', typescriptStack)).toBe('src/a.ts');
-    expect(sourceForTest('tests/test_a.py', pythonStack)).toBe(join('tests', 'a.py'));
-    expect(sourceForTest('src/a.ts', typescriptStack)).toBeNull();
   });
 });
 

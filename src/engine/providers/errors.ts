@@ -35,8 +35,6 @@ export const providerError = {
         `Raise ${role}.contextLength or reduce the task context.`,
       { promptTokens, contextLength },
     ),
-  httpFailure: (status: number, url: string) =>
-    error('provider-http-failure', `HTTP ${status}`, { status, url }),
   invalidApiBase: (apiBase: string, reason: string) =>
     error('provider-invalid-api-base', `Invalid apiBase '${redactSecrets(apiBase)}': ${reason}`, {
       apiBase: redactSecrets(apiBase),

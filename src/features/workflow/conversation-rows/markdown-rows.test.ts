@@ -11,11 +11,11 @@ import { layoutMarkdown } from '../../../utils/markdown/layout.js';
 import { colorForTone } from '../display/tone-color.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
-  markdownConversationRows,
   markdownConversationRowsCacheKey,
   markdownConversationRowsProjection,
   resetMarkdownConversationRowsCache,
 } from './markdown-rows.js';
+import { markdownConversationRows } from '#testing/helpers/event-rows.js';
 import { rowText } from './row-format/rows.js';
 
 // The transcript path resolves its own glyphs inside the chunker, so both sides of every

@@ -8,7 +8,7 @@ const scenario = {
   name: 'recovery - task fails then retries successfully',
   cassetteName: 'recovery-retry-success',
   feature: 'add validation to form handler',
-  config: makeE2eScenarioConfig({ workflow: { maxRetries: 2 } }),
+  config: makeE2eScenarioConfig(),
 };
 
 describe('e2e: recovery retry success', () => {

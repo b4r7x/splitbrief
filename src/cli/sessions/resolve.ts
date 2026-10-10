@@ -6,7 +6,10 @@ import { cliError } from '../errors.js';
 
 export function assertSessionExists(projectDir: string, sessionId: string): void {
   if (!existsSync(sessionDir(projectDir, sessionId))) {
-    throw cliError(`session '${sessionId}' not found — run \`splitbrief ps\` to list sessions.`, 1);
+    throw cliError(
+      `session '${sessionId}' not found. Open \`/sessions\` in the TUI to browse runs, or run \`splitbrief status\` for the active run.`,
+      1,
+    );
   }
 }
 

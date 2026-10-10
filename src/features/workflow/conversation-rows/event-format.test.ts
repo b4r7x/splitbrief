@@ -4,7 +4,7 @@ import type { EngineEvent } from '../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import {
-  formatTaskStartedValue,
+  formatTaskStartedParts,
   fullSuiteRow,
   fullSuiteTone,
   reviewChecksDeclinedRows,
@@ -630,17 +630,18 @@ function taskStartedEvent(
   };
 }
 
-describe('formatTaskStartedValue', () => {
+describe('formatTaskStartedParts', () => {
   it('names the build seat in the words the seat identity uses for it', () => {
-    expect(formatTaskStartedValue(taskStartedEvent({}))).toBe(
-      'src/validate.ts (create) · Claude Code CLI · Opus 5.5',
-    );
+    expect(formatTaskStartedParts(taskStartedEvent({}))).toEqual([
+      'src/validate.ts (create)',
+      'Claude Code CLI · Opus 5.5',
+    ]);
   });
 
   // Run 3's T001 row read `profile default · fit fits · why Selected profile default (fits,
   // estimated 5075/1000000 tokens)`: the routing sentence repeated the two facts before it.
   it('names the worker once and says nothing more about a brief that fits', () => {
-    const value = formatTaskStartedValue(
+    const parts = formatTaskStartedParts(
       taskStartedEvent({
         file: 'testing/fixtures/opencode/api-model-full.json',
         action: 'modify',
@@ -652,15 +653,19 @@ describe('formatTaskStartedValue', () => {
       }),
     );
 
-    expect(value).toBe(
-      'testing/fixtures/opencode/api-model-full.json (modify) · Claude Code CLI · Opus 5.5 · worker default',
-    );
-    expect(value).not.toContain('fit fits');
-    expect(value).not.toContain('Selected profile');
+    expect(parts).toEqual([
+      'testing/fixtures/opencode/api-model-full.json (modify)',
+      'Claude Code CLI · Opus 5.5',
+      'worker default',
+    ]);
+    for (const part of parts) {
+      expect(part).not.toContain('fit fits');
+      expect(part).not.toContain('Selected profile');
+    }
   });
 
   it('gives a tight brief its estimate against the context window', () => {
-    const value = formatTaskStartedValue(
+    const parts = formatTaskStartedParts(
       taskStartedEvent({
         implementerProfile: 'default',
         contextFit: 'tight',
@@ -670,18 +675,23 @@ describe('formatTaskStartedValue', () => {
       }),
     );
 
-    expect(value).toBe(
-      'src/validate.ts (create) · Claude Code CLI · Opus 5.5 · worker default · ~24,310 of 32K context tokens (tight)',
-    );
+    expect(parts).toEqual([
+      'src/validate.ts (create)',
+      'Claude Code CLI · Opus 5.5',
+      'worker default',
+      '~24,310 of 32K context tokens (tight)',
+    ]);
   });
 
   it('keeps the estimate when the context window is unknown', () => {
-    const value = formatTaskStartedValue(
+    const parts = formatTaskStartedParts(
       taskStartedEvent({ contextFit: 'overflow', estimatedTokens: 41_200 }),
     );
 
-    expect(value).toBe(
-      'src/validate.ts (create) · Claude Code CLI · Opus 5.5 · ~41,200 context tokens (overflow)',
-    );
+    expect(parts).toEqual([
+      'src/validate.ts (create)',
+      'Claude Code CLI · Opus 5.5',
+      '~41,200 context tokens (overflow)',
+    ]);
   });
 });

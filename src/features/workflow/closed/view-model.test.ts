@@ -13,7 +13,7 @@ import type { RunRecord } from '../../../core/sessions/run-record.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
-import { crewLine, runRows, runRowValue } from './copy.js';
+import { crewLine, runRows } from './copy.js';
 import { bylineText } from './byline.js';
 import { outcomeLine } from './outcome.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
@@ -230,7 +230,7 @@ describe('a run with a workspace', () => {
     const row = runRows(view).find((row) => row.label === 'Apply');
     expect(row).toBeDefined();
     if (row === undefined) throw new Error('Missing Apply row');
-    expect(runRowValue(row)).toBe('undone, 1 conflict kept');
+    expect(row.segments).toEqual([{ text: 'undone, 1 conflict kept', tone: 'warning' }]);
     expect(view.rail.find((stage) => stage.stage === 'apply')?.status).toBe('cancelled');
     expect(bylineText(view, 120)).not.toContain('/run reject');
   });

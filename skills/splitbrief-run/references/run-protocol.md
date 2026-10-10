@@ -2,7 +2,7 @@
 
 Both `splitbrief` and `splitbrief-run` execute this procedure through review and bounded fixes.
 The host session remains the planner. Run one implementer at a time, sequentially in dependency order.
-The read-only review entry selects validation, review, and planner triage only; it never dispatches fixes.
+The read-only review entry selects validation, review, and the reviewer's fix work. It never dispatches fixes.
 
 ## Input and selected stages
 
@@ -18,10 +18,12 @@ For execution, select the entry stage from the input:
 | Existing typed plan or brief set | Use references/planning.md and references/brief-format.md for admission. | build |
 | Prose plan | Convert to the typed contract while preserving the stated outcome. | conversion, then build |
 | Stopped run directory | Load its saved progress and reconcile processes below. | the saved stage, including review or fixes |
-| `error: <review.md>` | Load the review's plan, typed answer, evidence, and saved bounds. | planner triage |
+| `error: <review.md>` | Load the review's plan, typed answer, evidence, and saved bounds. | saved review fix work |
 | Single brief file | Select its task id from the owning plan or recover a complete typed contract. | dependency check, then build for that selection |
 
 For `error:`, use references/recovery.md to append fixes with new ids, then validate and review again.
+Read the saved fix part using references/recovery.md. Run the review again only when neither saved file holds it.
+
 If the review has no owning plan or usable evidence, recover its stated intent before any dispatch.
 For a single brief, check every dependency against recorded completion and current evidence first.
 Pause on an unmet dependency; list it instead of silently executing additional plan tasks.
@@ -46,7 +48,7 @@ Use this table so the waiter and optional stop hook read the same status column:
     | T001 | src/health.ts | pending | 0 | 0 | not run |
 
 Statuses are `pending`, `running`, `retrying`, `done`, `halted`, or `skipped`.
-Save the active stage and next step beside the table, including review, triage, and fixes.
+Save the active stage and next step beside the table, including review and fixes.
 On a stop, retain the stage to resume and its task id, attempt, or review cycle.
 Save the selected task ids, seats, cadence, approvals, lineage roots, revisions, input hashes, and process artifact paths.
 Persist attempts, consults, run planner decisions, fix cycles, and extra allowances using references/recovery.md.
@@ -65,6 +67,11 @@ A live process remains the active attempt. Attach its waiter; never spawn a seco
 For a finished process, read its log and terminal result, then perform its saved validation or review parse step.
 For a dead process without a terminal record, record the interrupted attempt and enter recovery with its existing counters.
 Resume the saved stage after reconciliation. A saved review or fix stage does not restart the build.
+
+For an older run whose next stage is `triage`, read the fix part from `review.json` first.
+If absent, use the saved `triage.json` fields as that review's fix part, following references/recovery.md.
+Run the review again only when neither file holds a fix part. Make no second planner call.
+The session writes no new `triage.json`.
 A completed run needs no dispatch; report its saved completion scope.
 
 ## Dispatch and validation
@@ -95,23 +102,24 @@ Criteria shared with unfinished tasks remain pending. Never claim the whole plan
 There is no batch review cadence. The final review runs every registered check and its reviewer checks first under references/gates.md.
 
 Prepare the current packet and derive the verdict using references/review-format.md.
-Send unresolved findings to planner triage in references/recovery.md.
-Persist the triage and appended briefs before executing the fix tasks. Execute authorized fix tasks through this same dispatch procedure.
+Apply the reviewer's fix work using references/recovery.md.
+Persist the whole answer in `review.json` and save appended briefs before executing the fix tasks.
+Execute authorized fix tasks through this same dispatch procedure.
 Keep all reviews and fixes within the saved global allowance; continuation never renews it.
-For the review-only entry, stop after triage and hand back the fix request without executing it.
+For the review-only entry, hand back the review answer and fix briefs without executing them.
 
 ## Waiting
 
 <!-- generated: wait-protocol -->
 1. **Spawn.** One tool call, detached, writing `<run>/T00N/attempt-N.{pid,log,done}`: `nohup sh -c '<argv> > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID`. The wait is never in the same tool call as the spawn — never `nohup … &` and the wait in one call, and never a command that begins with `sleep`.
-2. **Wait.** A separate tool call running `scripts/wait-attempt.sh <run> <T00N> <n>`: it blocks until `.done` exists or the pid is gone and prints one line, `T00N attempt N: exit=<code>|timeout|missing-pid[ halt=<kind>]`. On Claude Code run it with `run_in_background: true` — the completion notification names the outcome; elsewhere run it in the foreground. The waiter is its own deadline (`--deadline 1200`); no coreutils `timeout` wrapper.
-   Fallback, when the installer dropped `scripts/`: `n=0; until [ -f "$DONE" ] || [ "$n" -ge 1200 ]; do sleep 5; n=$((n+5)); done; cat "$DONE" 2>/dev/null || echo exit=timeout`. Use the same deadline and read the halt phrases from the log. On timeout, reconcile the recorded PID and its implementer children. Confirm they are gone, or stop them and confirm exit, before recovery or another dispatch.
+2. **Wait.** Run `scripts/wait-attempt.sh <run> <T00N> <n>` in a separate tool call. It waits until `.done` exists or the pid is gone. It prints one line: `T00N attempt N: exit=<code>|timeout|no-done|missing-pid[ halt=<kind>]`. On Claude Code, use `run_in_background: true`. The completion notification names the outcome. Elsewhere, run it in the foreground. Add `--deadline <seconds>` only for an explicit limit. Without it, the waiter never kills the call. Monitor silence using references/tool-recipes.md.
+   Fallback, when the installer dropped `scripts/`: `pid=$(cat "$PID"); until [ -f "$DONE" ] || ! kill -0 "$pid" 2>/dev/null; do sleep 5; done; cat "$DONE" 2>/dev/null || echo no-done`. For an explicit limit, set `N` to seconds and use `(pid=$(cat "$PID"); elapsed=0; until [ -f "$DONE" ] || ! kill -0 "$pid" 2>/dev/null; do [ "$elapsed" -ge "$N" ] && { echo exit=timeout; exit; }; sleep 1; elapsed=$((elapsed + 1)); done; cat "$DONE" 2>/dev/null || echo no-done)`. Read the halt phrases from the log. If an explicit limit expires, reconcile the recorded PID and its implementer children. Confirm they are gone, or stop them and confirm exit, before recovery or another dispatch.
 3. **Re-read every turn.** Read `.splitbrief/current-run`, `progress.md` and `scripts/wait-attempt.sh --reconcile <run>`. Read a finished process's log and run its checks before marking the task done. Never re-spawn a live pid. Preserve counters and decisions.
 4. **Monitor (Claude Code, optional).** A persistent `Monitor` on `tail -f <run>/events.log` filtering `done|failed|timeout|halted|run: complete` wakes the session on any terminal state. It is a whole-run wake, never the single-completion primitive — the waiter of point 2 stays.
 5. **Stop-hook safety net.** If the user authorized a host hook, use `scripts/splitbrief-gate.sh`. It checks continuation, not task success. Recorded checks still decide.
 <!-- /generated -->
 
-For reviewer calls, use `review` as the waiter task id and the reviewer deadline from references/tool-recipes.md.
+For reviewer calls, use `review` as the waiter task id. Use a deadline only for an explicit limit.
 Give each attempt distinct pid, log, and done paths, including reviewers.
 Use only the recipe's flags; never forward this session's permissions or keys.
 

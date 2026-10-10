@@ -9,7 +9,6 @@ import {
   publishReviewChecksPlan,
   publishError,
   publishWarning,
-  publishGitCommit,
   createImplementerPublisher,
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,
@@ -321,25 +320,6 @@ describe('publish* payload forwarding', () => {
       category: 'queue',
       code: 'queue_full',
     });
-  });
-
-  it('publishGitCommit — includes file when provided', () => {
-    const { bus, events } = makeBusRecorder();
-    publishGitCommit({ bus: bus, phase: 'implementing' }, TASK, 'chore: commit', 'src/a.ts');
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      type: 'git_commit',
-      message: 'chore: commit',
-      file: 'src/a.ts',
-    });
-  });
-
-  it('publishGitCommit — omits file when not provided', () => {
-    const { bus, events } = makeBusRecorder();
-    publishGitCommit({ bus: bus, phase: 'implementing' }, TASK, 'chore: commit');
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ type: 'git_commit', message: 'chore: commit' });
-    expect('file' in (events[0] as Record<string, unknown>)).toBe(false);
   });
 });
 

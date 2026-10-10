@@ -7,7 +7,7 @@ Choose the entry from the user's request. The names remain stable.
 | `splitbrief` | Plan this here, let another tool build it, then review and fix it. | planning, build, validation, review, bounded fixes | run artifacts; source through the implementer |
 | `splitbrief-brief` | Plan only and write briefs. | planning and brief admission | run artifacts only |
 | `splitbrief-run` | Build an existing plan, continue a stopped run, fix a failed review, or run one task. | saved or selected stage through review and bounded fixes | run artifacts; source through the implementer |
-| `splitbrief-review` | Review someone else's build against its intent. | validation, read-only review, planner triage | review artifacts and appended fix briefs only |
+| `splitbrief-review` | Review someone else's build against its intent. | validation, read-only review with fix work | review artifacts and appended fix briefs only |
 
 ## Seats and arguments
 

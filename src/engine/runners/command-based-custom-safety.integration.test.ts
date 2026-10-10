@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
-import { runnerCallEventToSessionLogEntry } from '../calls/session-log.js';
+import { runnerCallLogEntry } from '#testing/helpers/runner-call-events.js';
 import { boundEngineEventForConsumer } from '../events/bound.js';
 import { invokeCustomCommandBasedRunner } from './command-based.js';
 import {
@@ -118,7 +118,7 @@ describe('invokeCustomCommandBasedRunner safety', () => {
       )
       .map((event) => boundEngineEventForConsumer(event, 'tui'));
     const sessionLogProjection = observation.events.map((event, index) =>
-      runnerCallEventToSessionLogEntry(event, {
+      runnerCallLogEntry(event, {
         rootDir: process.cwd(),
         phase: 'planning',
         sequence: index + 1,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getKnownProviderBaseURL } from '../src/core/providers/catalog.js';
 import { ConfigSchema } from '../src/core/schemas/config.js';
 import { resolveEvalConnection } from './connection.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 describe('eval connection resolution', () => {
   it('fills an empty base URL from the provider catalog', () => {
@@ -77,7 +78,7 @@ function localImplementerConfig(
   connection: { baseUrl: string; apiKey: string },
 ) {
   return {
-    version: 3,
+    ...makeConfig(),
     planner: {
       kind: 'api',
       provider: 'custom-endpoint',
@@ -97,6 +98,5 @@ function localImplementerConfig(
       apiKey: connection.apiKey,
     },
     validation: { testCommand: 'npm test' },
-    workflow: { maxRetries: 1, mode: 'quick' },
   };
 }

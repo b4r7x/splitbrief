@@ -1,7 +1,7 @@
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { error } from '../../utils/error.js';
 import type { InvokeResult } from '../runners/types.js';
-import { normalizeRunnerCallUsage, toTokenDeltaFromRunnerCallUsage } from './usage.js';
+import { toTokenDeltaFromRunnerCallUsage } from './usage.js';
 import type { RunnerCallResult } from './types.js';
 
 export function toInvokeResult(result: RunnerCallResult): InvokeResult {
@@ -19,18 +19,6 @@ export function toInvokeResult(result: RunnerCallResult): InvokeResult {
   return {
     text: result.text,
     usage: result.usage === null ? null : toTokenDeltaFromRunnerCallUsage(result.usage),
-  };
-}
-
-export function applyInvokeResultProjection(
-  result: RunnerCallResult,
-  projection: InvokeResult & { sessionId?: string | null | undefined },
-): RunnerCallResult {
-  return {
-    ...result,
-    text: projection.text,
-    usage: normalizeRunnerCallUsage(projection.usage),
-    nativeSessionId: projection.sessionId ?? result.nativeSessionId,
   };
 }
 

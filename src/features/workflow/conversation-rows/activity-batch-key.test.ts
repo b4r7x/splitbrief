@@ -7,7 +7,7 @@ import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
 import { makeTaskTokens } from '#testing/helpers/events/task.js';
 import { activityBatchKey, findLatestExpandableActivityBatchKey } from './activity-batch-key.js';
-import { buildConversationRows } from './build.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRowActions } from './row-actions.js';
 import { rowText } from './row-format/rows.js';
 

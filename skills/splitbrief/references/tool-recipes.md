@@ -17,9 +17,11 @@ Every `implementer:` / `reviewer:` line below is generated from the SPLITBRIEF C
 Timeouts:
 
 <!-- generated: timeouts -->
-- Implementer 20 minutes per attempt, reviewer 10 minutes. 2 consecutive timeouts on one brief = hard halt.
-- The waiter enforces its own deadline: `scripts/wait-attempt.sh <run> <T00N> <n> --deadline 1200` at 20 minutes.
-- At the deadline, it attempts to terminate a separate process group when it can identify one, otherwise only the recorded PID. Never wrap a spawn in coreutils `timeout`. It does not exist on stock macOS.
+- Seat calls have no default deadline. Use `scripts/wait-attempt.sh <run> <T00N> <n> --deadline <seconds>` only for an explicit `timeout`.
+- Monitor output silence. Warn after `idleWarnMs`, default 300000 ms. Continue the call after the warning.
+- Only an explicit `timeout` or `idleKillMs` limits a call. Without either limit, never kill a silent call.
+- 2 consecutive timeouts on one brief with an explicit limit cause a hard halt.
+- At an explicit deadline, the waiter attempts to terminate a separate process group when it can identify one, otherwise only the recorded PID. Never wrap a spawn in coreutils `timeout`. It does not exist on stock macOS.
 <!-- /generated -->
 
 ## claude — Claude Code
@@ -142,4 +144,4 @@ Report the tool's login or plan page, and its model listing when available.
 
 A spawn match is seat trouble. Pause with the installed tool's diagnosis and preserve task counters and evidence.
 The user may choose a supported seat. Resume on that explicitly selected seat; never substitute one silently.
-Use a separate waiter with the reviewer deadline for review calls.
+Use a separate waiter for review calls. Use a deadline only for an explicit limit.

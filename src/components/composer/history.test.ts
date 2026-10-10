@@ -3,71 +3,67 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { getInputHistoryDocuments, inputHistoryStore } from '../../stores/ui/input-history.js';
-import {
-  INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE,
-  INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
-  stepDocumentHistory,
-  stepInputHistory,
-} from './history.js';
+import { INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE, stepDocumentHistory } from './history.js';
 
-describe('stepInputHistory', () => {
+describe('stepDocumentHistory', () => {
   it('does nothing when there is no history', () => {
-    const result = stepInputHistory({
+    const result = stepDocumentHistory({
       entries: [],
-      state: INITIAL_INPUT_HISTORY_NAVIGATION_STATE,
+      state: INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE,
       direction: 'up',
-      currentValue: 'draft',
+      currentValue: createDraftDocument('draft'),
     });
 
     expect(result.changed).toBe(false);
-    expect(result.nextValue).toBe('draft');
-    expect(result.nextState).toEqual(INITIAL_INPUT_HISTORY_NAVIGATION_STATE);
+    expect(result.nextValue).toEqual(createDraftDocument('draft'));
+    expect(result.nextState).toEqual(INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE);
   });
 
   it('round-trips every Up/Down transition, capturing and restoring the draft', () => {
-    const entries = ['third', 'second', 'first'];
-    let state = INITIAL_INPUT_HISTORY_NAVIGATION_STATE;
-    let value = 'draft';
+    const entries = ['third', 'second', 'first'].map(createDraftDocument);
+    const draft = createDraftDocument('draft');
+    let state = INITIAL_DOCUMENT_HISTORY_NAVIGATION_STATE;
+    let value = draft;
 
-    const up1 = stepInputHistory({ entries, state, direction: 'up', currentValue: value });
+    const up1 = stepDocumentHistory({ entries, state, direction: 'up', currentValue: value });
     expect(up1.changed).toBe(true);
-    expect(up1.nextValue).toBe('third');
-    expect(up1.nextState).toEqual({ historyIndex: 0, draftValue: 'draft' });
+    expect(up1.nextValue).toEqual(createDraftDocument('third'));
+    expect(up1.nextState).toEqual({ historyIndex: 0, draftValue: draft });
     state = up1.nextState;
     value = up1.nextValue;
 
-    const up2 = stepInputHistory({ entries, state, direction: 'up', currentValue: value });
+    const up2 = stepDocumentHistory({ entries, state, direction: 'up', currentValue: value });
     expect(up2.changed).toBe(true);
-    expect(up2.nextValue).toBe('second');
-    expect(up2.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
+    expect(up2.nextValue).toEqual(createDraftDocument('second'));
+    expect(up2.nextState).toEqual({ historyIndex: 1, draftValue: draft });
     state = up2.nextState;
     value = up2.nextValue;
 
-    const up3 = stepInputHistory({ entries, state, direction: 'up', currentValue: value });
+    const up3 = stepDocumentHistory({ entries, state, direction: 'up', currentValue: value });
     expect(up3.changed).toBe(true);
-    expect(up3.nextValue).toBe('first');
-    expect(up3.nextState).toEqual({ historyIndex: 2, draftValue: 'draft' });
+    expect(up3.nextValue).toEqual(createDraftDocument('first'));
+    expect(up3.nextState).toEqual({ historyIndex: 2, draftValue: draft });
     state = up3.nextState;
     value = up3.nextValue;
 
-    const down1 = stepInputHistory({ entries, state, direction: 'down', currentValue: value });
+    const down1 = stepDocumentHistory({ entries, state, direction: 'down', currentValue: value });
     expect(down1.changed).toBe(true);
-    expect(down1.nextValue).toBe('second');
-    expect(down1.nextState).toEqual({ historyIndex: 1, draftValue: 'draft' });
+    expect(down1.nextValue).toEqual(createDraftDocument('second'));
+    expect(down1.nextState).toEqual({ historyIndex: 1, draftValue: draft });
     state = down1.nextState;
     value = down1.nextValue;
 
-    const down2 = stepInputHistory({ entries, state, direction: 'down', currentValue: value });
+    const down2 = stepDocumentHistory({ entries, state, direction: 'down', currentValue: value });
     expect(down2.changed).toBe(true);
-    expect(down2.nextValue).toBe('third');
-    expect(down2.nextState).toEqual({ historyIndex: 0, draftValue: 'draft' });
+    expect(down2.nextValue).toEqual(createDraftDocument('third'));
+    expect(down2.nextState).toEqual({ historyIndex: 0, draftValue: draft });
     state = down2.nextState;
     value = down2.nextValue;
 
-    const down3 = stepInputHistory({ entries, state, direction: 'down', currentValue: value });
+    const down3 = stepDocumentHistory({ entries, state, direction: 'down', currentValue: value });
     expect(down3.changed).toBe(true);
-    expect(down3.nextValue).toBe('draft');
-    expect(down3.nextState).toEqual({ historyIndex: null, draftValue: 'draft' });
+    expect(down3.nextValue).toEqual(createDraftDocument('draft'));
+    expect(down3.nextState).toEqual({ historyIndex: null, draftValue: draft });
   });
 });
 

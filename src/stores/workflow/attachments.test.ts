@@ -3,7 +3,7 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { attachmentShortName } from '../../core/attachments/resolve.js';
-import { removeDraftRange } from '../../core/composer/document.js';
+import { replaceDraftRange } from '../../core/composer/document.js';
 import { prepareDraftSubmission } from '../../core/composer/submission.js';
 import { attachImage, attachmentsStore, detachImage, listAttachments } from './attachments.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
@@ -197,7 +197,11 @@ describe('attachment actions', () => {
     const first = attachmentFor('img-1', real(writeImage('first.png')));
     const second = attachmentFor('img-2', real(writeImage('second.png')));
     attachmentsStore.add(makeAttachment('stale'));
-    const { document } = removeDraftRange(draftOf('A', first, 'B', second), { start: 1, end: 2 });
+    const { document } = replaceDraftRange(
+      draftOf('A', first, 'B', second),
+      { start: 1, end: 2 },
+      [],
+    );
 
     const submission = prepareDraftSubmission(document, { projectDir, supportsImages: true });
     if (submission.ok) attachmentsStore.replacePendingImages(submission.images);

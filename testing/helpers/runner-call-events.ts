@@ -1,4 +1,6 @@
 import type { Phase } from '../../src/core/schemas/enums.js';
+import type { SessionLogEventEntry } from '../../src/core/schemas/session-log.js';
+import { toEngineEventEntry } from '../../src/core/sessions/log-writer.js';
 import { projectRunnerCallEvent } from '../../src/engine/calls/event-projection.js';
 import type { RunnerCallEvent } from '../../src/engine/calls/types.js';
 import { addEvent } from '../../src/stores/workflow/actions/event.js';
@@ -23,6 +25,14 @@ export function runnerCallTerminals(events: readonly RunnerCallEvent[]): RunnerC
     (event): event is RunnerCallTerminalEvent =>
       event.type === 'call_error' || event.type === 'call_completed',
   );
+}
+
+export function runnerCallLogEntry(
+  event: RunnerCallEvent,
+  opts: Parameters<typeof projectRunnerCallEvent>[1],
+): SessionLogEventEntry | null {
+  const projected = projectRunnerCallEvent(event, opts);
+  return projected === null ? null : toEngineEventEntry(projected);
 }
 
 export function replayRunnerCallEventsIntoOperations(

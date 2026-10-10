@@ -127,7 +127,7 @@ function config(overrides: Partial<Config> = {}): Config {
     planner: lmStudioSeat('1234', 'plan-model'),
     implementer: lmStudioSeat('5678', 'build-model'),
     validation: { endChecks: true, testCommand: 'npm test' },
-    workflow: { maxRetries: 3, compactionFormat: 'auto' },
+    workflow: { compactionFormat: 'auto' },
     ...overrides,
   } as Config;
 }

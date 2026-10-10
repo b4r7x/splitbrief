@@ -33,7 +33,6 @@ import { ReviewVerdictSchema } from '../schemas/summary.js';
 import { transition } from '../state/machine.js';
 import { BOUNDS } from './bounds.js';
 import { sliceRuleText } from './brief.js';
-import { DIVERGENCE_TABLE } from './divergences.js';
 import { CAPTURE_LIMITS } from './gates.js';
 import { HALT_SIGNATURES } from './halts.js';
 import { LADDER, RETRY_FRAMINGS } from './ladder.js';
@@ -165,12 +164,6 @@ describe('planning', () => {
 
   it('the skills carry the shared grouping rule and no brief-count limit', () => {
     expect(renderBlock('brief-grouping')).toBe(sliceRuleText());
-  });
-});
-
-describe('divergences', () => {
-  it('exactly one divergence between the CLI and the skills stays by design', () => {
-    expect(DIVERGENCE_TABLE.filter((row) => row.owner === 'intentional')).toHaveLength(1);
   });
 });
 

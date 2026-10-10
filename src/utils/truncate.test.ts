@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { truncateByChars, truncateByLines, truncateByTailLines } from './truncate.js';
+import { truncateByChars, truncateByTailLines } from './truncate.js';
 
 describe('truncateByChars', () => {
   it('returns the original string when within the limit', () => {
@@ -20,16 +20,6 @@ describe('truncateByChars', () => {
   it('returns an empty string when maxChars is zero or negative', () => {
     expect(truncateByChars('abc', 0)).toBe('');
     expect(truncateByChars('abc', -3)).toBe('');
-  });
-});
-
-describe('truncateByLines', () => {
-  it('returns the original when within the limit', () => {
-    expect(truncateByLines('a\nb', 2)).toBe('a\nb');
-  });
-
-  it('keeps the leading lines when over the limit', () => {
-    expect(truncateByLines('a\nb\nc', 2)).toBe('a\nb');
   });
 });
 

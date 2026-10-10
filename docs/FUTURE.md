@@ -109,18 +109,16 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 **What remains.**
 
 - A standalone `splitbrief sessions` CLI command (the picker only exists inside the running TUI today).
-- Read-only replay mode that scrolls through `session.jsonl` rendered the way the live TUI renders events.
 - `splitbrief sessions delete <id>` to remove a session folder with confirmation.
 
 **Why deferred.**
 
 - The in-TUI picker plus the self-contained folder layout already cover inspecting and resuming sessions.
-- Replay needs the event-cards renderer to work in a read-only mode, and delete needs confirmation UX.
+- Session deletion needs a confirmation step.
 
 **Where to start when we do it.**
 
 - New command at `src/cli/commands/sessions.ts`.
-- Reuse `ConversationFlow` and the event-cards renderer in read-only mode.
 
 ---
 
@@ -196,7 +194,7 @@ Not yet designed. The interaction semantics are clear (see `docs/WORKFLOW.md` §
 
 - Extend the `EngineEventSchema` union with an `injection_separator` variant (`src/engine/events/schema.ts`).
 - Publish it from the mid-stream dispatch path in `src/engine/orchestrator/` when a queued message is folded into a live session.
-- Add a renderer in `src/features/workflow/components/event-cards/`.
+- Add the row in `src/features/workflow/components/conversation-flow/row-view.tsx`.
 
 ---
 

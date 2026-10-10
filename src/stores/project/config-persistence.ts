@@ -80,10 +80,6 @@ function deriveValueEdits(before: unknown, after: unknown, path: Path): ConfigEd
   return [...keys].flatMap((key) => deriveValueEdits(before[key], after[key], [...path, key]));
 }
 
-export function deriveConfigEdits(before: Config, after: Config): ConfigEdit[] {
-  return deriveValueEdits(toYaml(before), toYaml(after), []);
-}
-
 /**
  * Keys whose load maps a retired value to a current one (`approve: all` loads as `plan`). The file
  * still holds the retired value, so a save compares against the file and writes the current one.

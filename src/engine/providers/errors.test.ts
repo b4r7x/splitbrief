@@ -30,13 +30,6 @@ describe('providerError factories', () => {
     expect(err.data).toEqual({ role: 'planner' });
   });
 
-  test('httpFailure carries status + url', () => {
-    const err = providerError.httpFailure(503, 'https://api.example/v1');
-    expect(err.kind).toBe('provider-http-failure');
-    expect(err.message).toBe('HTTP 503');
-    expect(err.data).toEqual({ status: 503, url: 'https://api.example/v1' });
-  });
-
   test('ollamaLocalCredentialReference rejects unsafe sources without echoing a secret', () => {
     const err = providerError.ollamaLocalCredentialReference();
     expect(err.kind).toBe('provider-ollama-local-credential-invalid');

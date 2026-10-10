@@ -3,13 +3,15 @@ import { createDraftDocument } from '../../core/composer/document.js';
 import type { DraftDocument } from '../../core/schemas/draft-document.js';
 import {
   getInputHistoryDocuments,
-  getInputHistoryEntries,
+  draftDocumentText,
   inputHistoryStore,
   MAX_INPUT_HISTORY,
 } from './input-history.js';
 
 const homeEntries = () =>
-  getInputHistoryEntries(inputHistoryStore.get(), { currentScreen: 'home' });
+  getInputHistoryDocuments(inputHistoryStore.get(), { currentScreen: 'home' }).map(
+    draftDocumentText,
+  );
 
 describe('inputHistoryStore', () => {
   beforeEach(() => {
@@ -136,13 +138,15 @@ describe('inputHistoryStore', () => {
   });
 
   it('writes workflow prompts to both the persisted entries and the workflow ring', () => {
-    inputHistoryStore.pushSubmission('persisted workflow prompt', { currentScreen: 'workflow' });
+    inputHistoryStore.pushDocumentSubmission(createDraftDocument('persisted workflow prompt'), {
+      currentScreen: 'workflow',
+    });
 
     const state = inputHistoryStore.get();
     expect(state.entries).toEqual([createDraftDocument('persisted workflow prompt')]);
     expect(state.workflowEntries).toEqual([createDraftDocument('persisted workflow prompt')]);
-    expect(getInputHistoryEntries(state, { currentScreen: 'workflow' })).toEqual([
-      'persisted workflow prompt',
+    expect(getInputHistoryDocuments(state, { currentScreen: 'workflow' })).toEqual([
+      createDraftDocument('persisted workflow prompt'),
     ]);
   });
 

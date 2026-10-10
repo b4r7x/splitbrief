@@ -105,7 +105,7 @@ export async function resolveNumericAlias(input: string, projectDir: string): Pr
 
   if (!match) {
     throw cliError(
-      `session alias ${num} is out of range; there are ${sessions.length} session(s). Use \`splitbrief ps\` to see them.`,
+      `session alias ${num} is out of range; there are ${sessions.length} session(s). Open \`/sessions\` in the TUI to browse runs, or run \`splitbrief status\` for the active run.`,
       1,
     );
   }

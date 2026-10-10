@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { MAX_ATTACHMENT_BYTES } from '../schemas/attachment.js';
 import type { Attachment } from '../schemas/attachment.js';
 import type { DraftDocument } from '../schemas/draft-document.js';
-import { createDraftDocument, removeDraftRange } from './document.js';
+import { createDraftDocument, replaceDraftRange } from './document.js';
 import { prepareDraftSubmission } from './submission.js';
 
 let projectDir: string;
@@ -67,10 +67,14 @@ describe('prepareDraftSubmission', () => {
   it('drops a deleted image atom and renumbers the remaining one', () => {
     const first = image('img-1', writeImage(projectDir, 'first.png'));
     const second = image('img-2', writeImage(projectDir, 'second.png'));
-    const { document } = removeDraftRange(draft('A', first, 'B', second, 'C'), {
-      start: 1,
-      end: 2,
-    });
+    const { document } = replaceDraftRange(
+      draft('A', first, 'B', second, 'C'),
+      {
+        start: 1,
+        end: 2,
+      },
+      [],
+    );
 
     const result = prepareDraftSubmission(document, supported());
 

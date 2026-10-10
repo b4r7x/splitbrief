@@ -8,7 +8,7 @@ import { collectRunnerCallResult } from './collector.js';
 import { projectRunnerCallEvents } from './event-projection.js';
 import { createRunnerCallRecorder } from './recorder.js';
 import { RunnerCallResultSchema } from './schema.js';
-import { runnerCallEventToSessionLogEntry } from './session-log.js';
+import { runnerCallLogEntry } from '#testing/helpers/runner-call-events.js';
 import type { RunnerCallContext, RunnerCallEvent } from './types.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
@@ -108,7 +108,7 @@ describe('invocation identity on runner call records', () => {
         projectRunnerCallEvents(event, { rootDir: projectDir, phase: 'planning', sequence }),
       );
       for (const [sequence, event] of events.entries()) {
-        const entry = runnerCallEventToSessionLogEntry(event, {
+        const entry = runnerCallLogEntry(event, {
           rootDir: projectDir,
           phase: 'planning',
           sequence,
@@ -192,7 +192,7 @@ describe('invocation identity on runner call records', () => {
 
     const append = createSessionLogAppender(ref());
     for (const [sequence, event] of events.entries()) {
-      const entry = runnerCallEventToSessionLogEntry(event, {
+      const entry = runnerCallLogEntry(event, {
         rootDir: projectDir,
         phase: 'planning',
         sequence,

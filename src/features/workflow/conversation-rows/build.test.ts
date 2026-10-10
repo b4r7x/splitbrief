@@ -14,7 +14,8 @@ import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js'
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { resetEventBlockCache } from './block-cache.js';
-import { buildConversationRows, buildConversationRowsProjection } from './build.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import { buildConversationRowsProjection } from './build.js';
 import { materializeConversationRowsWindow } from './materialize-window.js';
 import { wrappedTextBlock } from './row-block-compose.js';
 import { rowText } from './row-format/rows.js';

@@ -279,9 +279,6 @@ const CONFIG_BEFORE_THE_OVERRIDE_PARAMETER = makeConfig({
     contextLength: 32_768,
     temperature: 0.2,
   },
-  workflow: {
-    maxRetries: 2,
-  },
 });
 
 const ALL_CASE_COUNT = SCREEN_CASES.length + OVERLAY_CASES.length;

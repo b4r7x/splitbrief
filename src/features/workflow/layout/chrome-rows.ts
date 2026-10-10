@@ -24,27 +24,6 @@ export const WORKFLOW_CHROME_ROWS = {
   inputFooter: 1,
 } as const;
 
-export const WORKFLOW_CHROME_ORDER = [
-  'header',
-  'header-divider',
-  'progress',
-  'body',
-  'footer-divider',
-  'feedback',
-  'composer',
-  'input-footer',
-] as const;
-
-export interface WorkflowChromeRows {
-  header: number;
-  headerDivider: number;
-  progress: number;
-  footerDivider: number;
-  feedback: number;
-  composer: number;
-  inputFooter: number;
-}
-
 const TOP_FIXED_CHROME_ROWS = WORKFLOW_CHROME_ROWS.header + WORKFLOW_CHROME_ROWS.headerDivider;
 const BOTTOM_FIXED_CHROME_ROWS =
   WORKFLOW_CHROME_ROWS.footerDivider +
@@ -54,14 +33,6 @@ export const FIXED_CHROME_ROWS = TOP_FIXED_CHROME_ROWS + BOTTOM_FIXED_CHROME_ROW
 
 function normalizeInputRows(inputRows: number): number {
   return Number.isFinite(inputRows) ? Math.max(0, Math.floor(inputRows)) : 0;
-}
-
-export function getWorkflowChromeRows(inputRows: number, progressRows = 0): WorkflowChromeRows {
-  return {
-    ...WORKFLOW_CHROME_ROWS,
-    progress: normalizeInputRows(progressRows),
-    composer: normalizeInputRows(inputRows),
-  };
 }
 
 // The block rides above the transcript, so its rows leave the body rather than overlapping it. It

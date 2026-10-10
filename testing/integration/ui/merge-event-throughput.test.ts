@@ -4,7 +4,7 @@ import { addEvent } from '../../../src/stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import { collectRunnerCallResult } from '../../../src/engine/calls/collector.js';
 import { projectRunnerCallEvent } from '../../../src/engine/calls/event-projection.js';
-import { runnerCallEventToSessionLogEntry } from '../../../src/engine/calls/session-log.js';
+import { runnerCallLogEntry } from '#testing/helpers/runner-call-events.js';
 import type { RunnerCallEvent } from '../../../src/engine/calls/types.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 
@@ -27,9 +27,7 @@ function addProjectedRunnerEvent(event: RunnerCallEvent, sequence: number): void
   if (projected !== null) addEvent(projected);
 }
 
-function projectedSessionText(
-  entry: ReturnType<typeof runnerCallEventToSessionLogEntry>,
-): string | null {
+function projectedSessionText(entry: ReturnType<typeof runnerCallLogEntry>): string | null {
   if (entry?.type !== 'runner_call_text_delta') return null;
   const data = entry.data;
   if (typeof data !== 'object' || data === null || !('text' in data)) return null;
@@ -87,7 +85,7 @@ describe('mergeEvent throughput', () => {
     const sessionText = rawRunnerEvents
       .map((event, index) =>
         projectedSessionText(
-          runnerCallEventToSessionLogEntry(event, {
+          runnerCallLogEntry(event, {
             rootDir: '/project',
             phase: 'planning',
             sequence: index,

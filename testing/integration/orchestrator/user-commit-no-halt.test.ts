@@ -69,7 +69,7 @@ describe('user commits during a run', { timeout: 120_000 }, () => {
     const ref = { projectDir, sessionId };
     const feature = 'two briefs while the owner commits';
     const config = makeNoValidationConfig({
-      workflow: { approve: 'none', maxRetries: 1, isolation: 'worktree' },
+      workflow: { approve: 'none', isolation: 'worktree' },
       approval: { feedRejectionsToPlanner: false },
     });
 

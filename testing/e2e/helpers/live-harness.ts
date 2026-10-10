@@ -44,7 +44,6 @@ type LiveScenario = Readonly<{
   /** Written to <project>/validate.mjs; run as the validation command. */
   validateScript: string;
   implementerContextLength: number;
-  maxRetries: number;
   tempPrefix: string;
 }>;
 
@@ -251,7 +250,6 @@ export async function runLiveScenario(
       },
       workflow: {
         approve: 'none',
-        maxRetries: scenario.maxRetries,
       },
     });
     mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
@@ -283,7 +281,6 @@ export const EASY_TIER: LiveTier = {
       "if (liveEasy !== 'live-easy') process.exit(1);",
     ].join('\n') + '\n',
   implementerContextLength: 4096,
-  maxRetries: 1,
 };
 
 export function easyAssertions({ summary, projectDir }: LiveRunResult): void {
@@ -307,7 +304,6 @@ export const HEAVY_TIER: LiveTier = {
       'if (doubleLiveHeavy(21) !== 42) process.exit(1);',
     ].join('\n') + '\n',
   implementerContextLength: 128_000,
-  maxRetries: 1,
 };
 
 export function heavyAssertions({ summary }: LiveRunResult): void {
@@ -338,7 +334,6 @@ export type LiveMatrixTier = Readonly<{
   task: string;
   validateScript: string;
   implementerContextLength: number;
-  maxRetries: number;
   artifact: Readonly<{ path: string; accessor: string; expected: string | number }>;
   /** The answer to a question the planner asks before it plans. */
   plannerAnswer?: string | undefined;
@@ -353,7 +348,6 @@ export const MATRIX_TIERS: Readonly<Record<LiveMatrixTierId, LiveMatrixTier>> = 
         "if (liveEasy !== 'live-easy') process.exit(1);",
       ].join('\n') + '\n',
     implementerContextLength: 4096,
-    maxRetries: 1,
     artifact: { path: 'src/live-easy.ts', accessor: 'mod.liveEasy', expected: 'live-easy' },
   },
   'two-files': {
@@ -366,7 +360,6 @@ export const MATRIX_TIERS: Readonly<Record<LiveMatrixTierId, LiveMatrixTier>> = 
         'if (doubleLiveHeavy(21) !== 42) process.exit(1);',
       ].join('\n') + '\n',
     implementerContextLength: 128_000,
-    maxRetries: 1,
     artifact: { path: 'src/live-heavy/value.ts', accessor: 'mod.liveHeavyValue', expected: 42 },
   },
   'question-round': {
@@ -374,7 +367,6 @@ export const MATRIX_TIERS: Readonly<Record<LiveMatrixTierId, LiveMatrixTier>> = 
     validateScript:
       "const { liveQuestion } = await import('./src/live-question.ts');\nif (liveQuestion !== 'live-question') process.exit(1);\n",
     implementerContextLength: 128_000,
-    maxRetries: 1,
     artifact: {
       path: 'src/live-question.ts',
       accessor: 'mod.liveQuestion',
@@ -499,7 +491,6 @@ export function releaseMatrixConfig(run: ReleaseMatrixRun, tier: LiveMatrixTier)
     },
     workflow: {
       approve: 'none',
-      maxRetries: tier.maxRetries,
     },
   });
 }

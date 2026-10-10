@@ -7,7 +7,6 @@ import {
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByTailLines } from '../../../utils/truncate.js';
 import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
-import type { CommandSource } from '../../../core/validation/stage-command.js';
 import { failingTestLabel, parseFailingTests } from './test-failures.js';
 import type { ValidationResult } from './result.js';
 import type { ValidationCommandRunner } from './types.js';
@@ -34,26 +33,23 @@ function sanitizeTestOutput(text: string): string {
 export async function runValidationStep(opts: {
   cmd: string;
   args: string[];
-  source: CommandSource;
   cwd: string;
   timeout: number;
   runCommand: ValidationCommandRunner;
   command: string;
   signal?: AbortSignal | undefined;
 }): Promise<ValidationStepResult> {
-  const { cmd, args, source, cwd, timeout, runCommand, command, signal } = opts;
-  const stage = 'test';
+  const { cmd, args, cwd, timeout, runCommand, command, signal } = opts;
   try {
     const { stdout, stderr, stdoutMetadata, stderrMetadata } = await runCommand(cmd, args, {
       cwd,
       timeout,
-      label: `${stage} validation`,
+      label: 'test validation',
       signal,
     });
     const green = [stdout, stderr].filter((part) => part.trim().length > 0).join('\n');
     return {
       passed: true,
-      stage,
       output: sanitizeTestOutput(green),
       capture: {
         text: green,
@@ -64,25 +60,10 @@ export async function runValidationStep(opts: {
     };
   } catch (err: unknown) {
     if (isENOENT(err) || processError.isNotFound(err)) {
-      if (source === 'config') {
-        return {
-          passed: false,
-          stage,
-          error: `Configured ${stage} command not found: ${cmd}`,
-          output: '',
-          capture: { text: '', complete: true },
-          command,
-          missingExecutable: cmd,
-        };
-      }
-      const notFoundReason = `${cmd} not found, skipping ${stage}`;
       return {
-        passed: true,
-        stage,
-        skipped: true,
-        skippedReason: notFoundReason,
-        output: notFoundReason,
-        capture: { text: notFoundReason, complete: true },
+        passed: false,
+        output: '',
+        capture: { text: '', complete: true },
         command,
         missingExecutable: cmd,
       };
@@ -90,7 +71,6 @@ export async function runValidationStep(opts: {
     if (processError.isTimeout(err)) {
       return {
         passed: false,
-        stage,
         timedOut: true,
         error: boundedOutputTail(err.message),
         output: '',
@@ -117,8 +97,6 @@ export async function runValidationStep(opts: {
             ).trim();
       return {
         passed: false,
-        stage,
-        failingTests,
         output: sanitizeTestOutput(stdout),
         capture,
         error: boundedOutputTail(detail),

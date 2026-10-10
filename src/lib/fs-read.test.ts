@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { readValidatedJson, readJsonl, parseJsonlLine } from './fs.js';
+import { readValidatedJson, parseJsonlLine } from './fs.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -52,35 +52,6 @@ describe('readValidatedJson', () => {
     writeFileSync(file, JSON.stringify({ other: true }));
     const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     expect(readValidatedJson(file, parse, { n: -1 }, 'schema-label')).toEqual({ n: -1 });
-    expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
-  });
-});
-
-describe('readJsonl', () => {
-  const parseLine = (v: unknown): number | null => (typeof v === 'number' ? v : null);
-
-  it('returns [] without warning when the file is missing', () => {
-    const dir = makeTmp();
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    expect(readJsonl(join(dir, 'nope.jsonl'), parseLine, 'label')).toEqual([]);
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
-  });
-
-  it('skips blank lines and collects parsed values', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'lines.jsonl');
-    writeFileSync(file, '1\n\n2\n3\n');
-    expect(readJsonl(file, parseLine, 'label')).toEqual([1, 2, 3]);
-  });
-
-  it('warns and skips a single malformed line without aborting the rest', () => {
-    const dir = makeTmp();
-    const file = join(dir, 'partial.jsonl');
-    writeFileSync(file, '1\n{bad\n3\n');
-    const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    expect(readJsonl(file, parseLine, 'jsonl-label')).toEqual([1, 3]);
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });

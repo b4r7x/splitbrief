@@ -170,7 +170,7 @@ async function runToFirstSeatDown(opencode: 'success' | 'fail'): Promise<SeatDow
       fallback: { tool: 'opencode', model: FALLBACK_MODEL },
     },
     validation: { endChecks: false, testCommand: 'noop' },
-    workflow: { approve: 'none', maxRetries: 1 },
+    workflow: { approve: 'none' },
   });
   writeConfigYamlText(projectDir, YAML.stringify(config));
   await rememberDetectedTools(projectDir, [

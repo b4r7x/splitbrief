@@ -800,7 +800,7 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 **Likely cause:** A closed run is the one thing continuing refuses. `state.json` records `closed: { at, as: 'ended' }` — written by **End run** on the stop sheet or a document gate, the `end-run` recovery action, or `/end` — or the run reached `complete` with a passing final review. Closing a run clears `.splitbrief/active`, so `resume` with no argument finds nothing at all.
 
 **Fix:**
-1. Run `splitbrief ps` to list runs; a closed one shows `× ended` or `✓ complete`.
+1. Open `/sessions` in the TUI to browse runs. Use `splitbrief status` to check the active run.
 2. Its files are still on disk and its session directory is intact — read `summary.json`, `review.md` and the evidence ledger, or open it with `/sessions` and read the `Closed ─` block at the tail of its transcript.
 3. To carry the work on, start a new run: `splitbrief start "<what is left>"`. A closed run is a record, not a workspace.
 

@@ -78,15 +78,16 @@ type FormatWarning = {
 // formatter runs first. Only the brief's own changed files are rewritten: nothing outside its
 // scope mutates and change attribution holds.
 async function formatFiles(opts: {
-  ctx: StageContext;
+  projectDir: string;
+  config: Config;
   changedFiles: readonly string[];
   runCommand: ValidationCommandRunner;
   signal: AbortSignal | undefined;
 }): Promise<FormatWarning | undefined> {
-  const command = detectFormatFixCommand(opts.ctx.projectDir);
+  const command = detectFormatFixCommand(opts.projectDir);
   if (command === null) return undefined;
   const formattable = opts.changedFiles.filter((file) => FORMATTABLE_FILE.test(file));
-  const before = await fingerprintFiles(opts.ctx.projectDir, formattable);
+  const before = await fingerprintFiles(opts.projectDir, formattable);
   // A file the brief deleted is not handed over: the formatter fails the whole pass on a missing path.
   const files = formattable.filter((file) => before.get(file) !== 'missing');
   if (files.length === 0) return undefined;
@@ -95,8 +96,8 @@ async function formatFiles(opts: {
   if (cmd === undefined) return undefined;
   try {
     await opts.runCommand(cmd, [...parts.slice(1), ...files], {
-      cwd: opts.ctx.projectDir,
-      timeout: resolveValidationTimeout(opts.ctx.config),
+      cwd: opts.projectDir,
+      timeout: resolveValidationTimeout(opts.config),
       label: 'format',
       signal: opts.signal,
     });
@@ -109,7 +110,7 @@ async function formatFiles(opts: {
       safety: { category: 'validation', code: 'validation_format_failed' },
     };
   }
-  const after = await fingerprintFiles(opts.ctx.projectDir, files);
+  const after = await fingerprintFiles(opts.projectDir, files);
   const rewritten = files.filter((file) => before.get(file) !== after.get(file));
   if (rewritten.length === 0) return undefined;
   return {
@@ -140,13 +141,9 @@ export function createValidator(deps: ValidatorDeps = {}): Validator {
   const commandRunner = deps.runCommand ?? runCommand;
   async function formatChangedFiles(opts: FormatChangedFilesOptions): Promise<void> {
     if (opts.changedFiles.length === 0) return;
-    const ctx = buildStageContext({
-      ...opts,
-      discoveredValidation: opts.discoveredValidation,
-      notices: { bus: opts.bus, phase: opts.phase },
-    });
     const warning = await formatFiles({
-      ctx,
+      projectDir: opts.projectDir,
+      config: opts.config,
       changedFiles: opts.changedFiles,
       runCommand: commandRunner,
       signal: opts.signal,

@@ -187,16 +187,6 @@ export async function refreshChangedFilesBaseline(opts: {
   };
 }
 
-export async function inferTaskAcceptedChangedFiles(
-  projectDir: string,
-  task: Task,
-  head: string | null,
-): Promise<string[]> {
-  const patterns = taskDeclaredPatterns(task);
-  const changedFiles = await candidateChangedFiles(projectDir, head);
-  return changedFiles.filter((file) => isInDeclaredSet(file, patterns));
-}
-
 /**
  * The brief's own writes since `head`: its declared files, plus every file the ledger records it
  * promoted. A brief may change an unplanned file, so the declared set alone misses its writes.

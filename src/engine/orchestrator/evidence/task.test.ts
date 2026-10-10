@@ -1,14 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import {
+  createEvidenceLedger,
+  findOrSeed,
+  upsertEvidenceTask,
+} from '../../../core/evidence/ledger-state.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { evidenceLedgerPath, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { EvidenceLedgerSchema, type EvidenceLedger } from '../../../core/schemas/evidence.js';
 import {
   checkEntries,
   recordLocalTaskEvidence,
-  recordPromotedFilesEvidence,
-  recordPromotionFailureEvidence,
   recordRetryOrEscalationEvidence,
   recordSkippedTaskEvidence,
   recordedTargetOutput,
@@ -215,22 +218,65 @@ describe('recordSkippedTaskEvidence', () => {
   });
 });
 
-describe('recordPromotedFilesEvidence', () => {
-  it('keeps one entry per path, a later promotion of a path replacing the earlier one', () => {
+describe('recordApiApplyEvidence', () => {
+  it('keeps one entry per path, a later receipt replacing the earlier one', () => {
     const task = makeTask();
     const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const first = recordPromotedFilesEvidence({
+    const first = recordApiApplyEvidence({
       ledger,
       task,
-      files: [
-        { path: 'src/a.ts', sha256: 'a1', mode: 0o644 },
-        { path: 'src/b.ts', sha256: 'b1', mode: 0o644 },
-      ],
+      result: {
+        callId: 'call-1',
+        status: 'applied',
+        candidatePaths: ['src/a.ts', 'src/b.ts'],
+        applied: [
+          {
+            path: 'src/a.ts',
+            action: 'modify',
+            beforeSha256: 'a0',
+            afterSha256: 'a1',
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 1,
+          },
+          {
+            path: 'src/b.ts',
+            action: 'modify',
+            beforeSha256: 'b0',
+            afterSha256: 'b1',
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 1,
+          },
+        ],
+        noops: [],
+        untouched: [],
+      },
     });
-    const second = recordPromotedFilesEvidence({
+    const second = recordApiApplyEvidence({
       ledger: first,
       task,
-      files: [{ path: 'src/a.ts', sha256: 'a2', mode: 0o644 }],
+      result: {
+        callId: 'call-2',
+        status: 'applied',
+        candidatePaths: ['src/a.ts'],
+        applied: [
+          {
+            path: 'src/a.ts',
+            action: 'modify',
+            beforeSha256: 'a1',
+            afterSha256: 'a2',
+            afterMode: 0o644,
+            diff: '',
+            linesAdded: 1,
+            linesRemoved: 1,
+          },
+        ],
+        noops: [],
+        untouched: [],
+      },
     });
 
     expect(EvidenceLedgerSchema.parse(second).tasks[0]?.promotedFiles).toEqual([
@@ -279,20 +325,22 @@ describe('recordedTargetOutput', () => {
   }
 
   function promotedLedger(task: ReturnType<typeof makeTask>): EvidenceLedger {
-    const promoted = recordPromotedFilesEvidence({
-      ledger: createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] }),
-      task,
-      files: [{ path: 'src/promoted.ts', sha256: 'p1', mode: 0o644 }],
-    });
-    return recordPromotionFailureEvidence({
-      ledger: promoted,
-      task,
-      attempt: {
-        ts: '2026-09-25T00:00:00.000Z',
-        appliedFiles: [{ path: 'src/prefix.ts', sha256: null, mode: null }],
-        failedFile: 'src/rest.ts',
-        error: 'conflict',
-      },
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
+    const prefix = { path: 'src/prefix.ts', sha256: null, mode: null };
+    return upsertEvidenceTask(ledger, {
+      ...findOrSeed(ledger, task),
+      status: 'failed',
+      changedFiles: [prefix.path],
+      promotedBriefHash: hashTaskBrief([task]),
+      promotedFiles: [{ path: 'src/promoted.ts', sha256: 'p1', mode: 0o644 }, prefix],
+      promotionAttempts: [
+        {
+          ts: '2026-09-25T00:00:00.000Z',
+          appliedFiles: [prefix],
+          failedFile: 'src/rest.ts',
+          error: 'conflict',
+        },
+      ],
     });
   }
 
@@ -323,12 +371,13 @@ describe('recordedTargetOutput', () => {
     const task = makeTask();
     const ref = { projectDir, sessionId: 'sess-1' };
     const promoted = { path: 'src/promoted.ts', sha256: 'p1', mode: 0o644 };
+    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
     writeEvidenceLedger(
       ref,
-      recordPromotedFilesEvidence({
-        ledger: createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] }),
-        task,
-        files: [promoted],
+      upsertEvidenceTask(ledger, {
+        ...findOrSeed(ledger, task),
+        promotedBriefHash: hashTaskBrief([task]),
+        promotedFiles: [promoted],
       }),
     );
 

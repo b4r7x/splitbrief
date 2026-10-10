@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { describe, it, expect, vi } from 'vitest';
-import { fetchJsonWithTimeout, fetchModelList } from './request.js';
+import { fetchModelList } from './request.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 
 type RequestRecord = Readonly<{
@@ -42,68 +42,6 @@ async function withLoopbackServer(
     if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 }
-
-describe('fetchJsonWithTimeout', () => {
-  setupFetchMock();
-
-  it('returns parsed JSON on 2xx', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(
-      new Response(JSON.stringify({ hello: 'world' }), { status: 200 }),
-    );
-    const result = await fetchJsonWithTimeout({
-      url: 'https://api.example.com/v1',
-      timeoutMs: 1000,
-    });
-    expect(result).toEqual({ hello: 'world' });
-  });
-
-  it('throws on non-ok status with HTTP code in message', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('err', { status: 503 }));
-    await expect(
-      fetchJsonWithTimeout({ url: 'https://api.example.com/v1', timeoutMs: 1000 }),
-    ).rejects.toThrow('HTTP 503');
-  });
-
-  it('aborts with a AbortError when the timeout fires before response', async () => {
-    let signalRef: AbortSignal | undefined;
-    vi.mocked(globalThis.fetch).mockImplementationOnce((_url, init) => {
-      signalRef = (init as RequestInit | undefined)?.signal as AbortSignal;
-      return new Promise((_resolve, reject) => {
-        signalRef?.addEventListener('abort', () => {
-          reject(new DOMException('aborted', 'AbortError'));
-        });
-      });
-    });
-
-    await expect(
-      fetchJsonWithTimeout({ url: 'https://slow.example.com', timeoutMs: 5 }),
-    ).rejects.toThrow(/abort|timeout/i);
-    expect(signalRef?.aborted).toBe(true);
-  });
-
-  it('combines a caller cancellation signal with the timeout signal', async () => {
-    const controller = new AbortController();
-    let signalRef: AbortSignal | undefined;
-    vi.mocked(globalThis.fetch).mockImplementationOnce((_url, init) => {
-      signalRef = (init as RequestInit | undefined)?.signal as AbortSignal;
-      return new Promise((_resolve, reject) => {
-        signalRef?.addEventListener('abort', () => {
-          reject(new DOMException('aborted', 'AbortError'));
-        });
-      });
-    });
-
-    const pending = fetchJsonWithTimeout({
-      url: 'https://slow.example.com',
-      timeoutMs: 60_000,
-      signal: controller.signal,
-    });
-    controller.abort();
-
-    await expect(pending).rejects.toThrow(/abort/i);
-    expect(signalRef?.aborted).toBe(true);
-  });
-});
 
 describe('fetchModelList', () => {
   setupFetchMock();
@@ -238,19 +176,21 @@ describe('fetchModelList', () => {
     expect(diagnostic).toContain('***REDACTED***');
   });
 
-  it('redacts sensitive query values before including an endpoint in HTTP diagnostics', async () => {
-    vi.mocked(globalThis.fetch).mockResolvedValue(new Response('bad', { status: 401 }));
+  it('redacts sensitive query values from model-list diagnostics', async () => {
     const canary = 'canary-query-value-53c1';
+    const endpoint = `https://api.example.com/v1/models?api_key=${canary}`;
+    vi.mocked(globalThis.fetch).mockRejectedValue(new Error(`Request failed: ${endpoint}`));
+    const errors: Array<string | undefined> = [];
 
-    await expect(
-      fetchJsonWithTimeout({
-        url: `https://api.example.com/v1/models?api_key=${canary}`,
-        timeoutMs: 1000,
-      }),
-    ).rejects.toMatchObject({
-      kind: 'provider-http-failure',
-      data: expect.objectContaining({ url: expect.not.stringContaining(canary) }),
+    await fetchModelList({
+      endpoint,
+      onError: (err: string | undefined) => errors.push(err),
+      extractModels: defaultExtract,
     });
+
+    const diagnostic = errors.at(-1) ?? '';
+    expect(diagnostic).not.toContain(canary);
+    expect(diagnostic).toContain('api_key=***REDACTED***');
   });
 
   it('returns [] when body is not a JSON object and reports "Invalid response payload"', async () => {

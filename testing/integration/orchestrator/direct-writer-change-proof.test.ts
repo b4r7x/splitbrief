@@ -50,6 +50,7 @@ import { resolveCustomExecutable } from '../../../src/engine/runners/resolve-cli
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
 import { persistReadyExecutionState } from '#testing/helpers/persisted-execution.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { shellQuoteArg } from '../../../src/utils/shell-quote.js';
 
 const TARGET_SRC = 'src/change-proof.ts';
 const TARGET_TEST = 'tests/change-proof.test.mjs';
@@ -80,10 +81,6 @@ const fixtures: ShimFixture[] = [];
 const ORIGINAL_XDG_STATE_HOME = process.env.XDG_STATE_HOME;
 let originalPath: string | undefined;
 let testStateHome: string;
-
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, "'\\''")}'`;
-}
 
 function trustedGateFor(shimDir: string): CliStartGate {
   const commandPath = join(shimDir, 'opencode');
@@ -180,12 +177,12 @@ function writeOpencodeProofShim(opts: {
   outsidePath?: string;
 }): void {
   const successLines = OPENCODE_PROFILE.successLines
-    .map((line) => `printf '%s\\n' ${shellQuote(line)}`)
+    .map((line) => `printf '%s\\n' ${shellQuoteArg(line)}`)
     .join('\n');
   const outsideWrite =
     opts.outsidePath === undefined
       ? ''
-      : `mkdir -p "$(dirname ${shellQuote(opts.outsidePath)})"\nprintf 'outside\\n' > ${shellQuote(opts.outsidePath)}`;
+      : `mkdir -p "$(dirname ${shellQuoteArg(opts.outsidePath)})"\nprintf 'outside\\n' > ${shellQuoteArg(opts.outsidePath)}`;
   const modeBody: Record<ShimMode, string> = {
     'cwd-relative-write': ['mkdir -p src', `pwd > '${TARGET_SRC}'`, successLines, 'exit 0'].join(
       '\n',
@@ -238,9 +235,9 @@ function writeOpencodeProofShim(opts: {
   const script = [
     '#!/bin/bash',
     'set -euo pipefail',
-    `CAPTURE_DIR=${shellQuote(opts.captureDir)}`,
-    `MODE=${shellQuote(opts.mode)}`,
-    `VERSION_LINE=${shellQuote(OPENCODE_PROFILE.versionLine)}`,
+    `CAPTURE_DIR=${shellQuoteArg(opts.captureDir)}`,
+    `MODE=${shellQuoteArg(opts.mode)}`,
+    `VERSION_LINE=${shellQuoteArg(OPENCODE_PROFILE.versionLine)}`,
     'if [[ " $* " == *" --version "* ]]; then',
     '  printf \'%s\\n\' "$VERSION_LINE"',
     '  exit 0',
@@ -299,7 +296,6 @@ async function runDirectWriterImplementation(
     config: makeConfig({
       implementer: implementerConfig(),
       validation: { endChecks: false, testCommand: 'noop' },
-      workflow: { maxRetries: 0 },
     }),
   });
   wctx.implementer = createCliImplementer(implementerConfig(), { trustedCli: fixture.trustedGate });
@@ -393,7 +389,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           config: makeConfig({
             implementer: implementerConfig(),
             validation: { endChecks: false, testCommand: 'noop' },
-            workflow: { maxRetries: 0 },
             approval: { feedRejectionsToPlanner: false },
           }),
         }),
@@ -454,7 +449,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
           config: makeConfig({
             implementer: implementerConfig(),
             validation: { endChecks: false, testCommand: 'noop' },
-            workflow: { maxRetries: 0 },
             approval: { feedRejectionsToPlanner: false },
           }),
         }),
@@ -510,9 +504,6 @@ describe('direct-writer workflow change proof', { timeout: 90_000 }, () => {
       validation: {
         endChecks: true,
         testCommand: 'node validate.mjs',
-      },
-      workflow: {
-        maxRetries: 0,
       },
       approval: { feedRejectionsToPlanner: false },
       escalation: { enabled: false },

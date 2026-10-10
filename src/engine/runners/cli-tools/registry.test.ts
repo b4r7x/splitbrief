@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
@@ -9,7 +9,6 @@ import {
   PLANNER_CLI_TOOL_IDS,
   hasNativeCliCatalog,
 } from '../../../core/runners/cli-tool-catalog.js';
-import { resolveRepoPath as productionResolveRepoPath } from '../../../core/runners/candidate-admission.js';
 import {
   CLI_IMPLEMENTER_ADAPTERS,
   CLI_PLANNER_ADAPTERS,
@@ -52,16 +51,7 @@ const COMMAND_CODE_STATUS_FIXTURE = readFileSync(
   .slice(2)
   .join('\n');
 
-function resolveRepoPath(relativePath: string): string {
-  return join(REPO_ROOT, relativePath);
-}
-
 describe('CLI role registries', () => {
-  it('resolves production repo root to the workspace package.json', () => {
-    expect(existsSync(productionResolveRepoPath('package.json'))).toBe(true);
-    expect(productionResolveRepoPath('package.json')).toBe(resolveRepoPath('package.json'));
-  });
-
   it('matches planner keys to the core planner tuple', () => {
     expect(Object.keys(CLI_PLANNER_ADAPTERS)).toEqual([...PLANNER_CLI_TOOL_IDS]);
     for (const id of PLANNER_CLI_TOOL_IDS) {

@@ -147,7 +147,6 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
     installEscapingOpencodeShim(checkoutFile);
     const config: Config = makeNoValidationConfig({
       implementer: opencodeConfig(),
-      workflow: { maxRetries: 2 },
     });
     const { bus, events } = makeBusRecorder();
     const taskLoop = (initialState: WorkflowState) =>
@@ -260,7 +259,7 @@ describe('isolation halt through the orchestrator', { timeout: 90_000 }, () => {
           contextLength: 4096,
         },
         validation: { endChecks: false },
-        workflow: { approve: 'none', maxRetries: 2 },
+        workflow: { approve: 'none' },
       });
 
     async function run(input: {

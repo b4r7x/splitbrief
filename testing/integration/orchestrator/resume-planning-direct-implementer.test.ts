@@ -101,7 +101,6 @@ describe('resume planning continuation with a direct-writing implementer', {
         validation: { endChecks: false, testCommand: 'noop' },
         workflow: {
           approve: 'none',
-          maxRetries: 1,
         },
       }),
     );

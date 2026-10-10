@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   admitStart,
-  deriveRunnerStatus,
   type AuthFact,
   type ProbeOutcome,
   type RunnerEvidence,
@@ -69,13 +68,9 @@ function startAdmission(evidence: RunnerEvidence, requiredFacts: readonly StartF
 }
 
 describe('runner evidence', () => {
-  it('keeps an installed runner configurable when authentication is unknown', () => {
+  it('requires disclosure when authentication is unknown', () => {
     const evidence = freshEvidence({ auth: 'unknown', credential: 'present' });
 
-    expect(deriveRunnerStatus(evidence)).toEqual({
-      kind: 'installed-configurable',
-      reason: 'unknown',
-    });
     // Interactive without an accepted disclosure surfaces the unverified
     // credential for review rather than refusing a runner no cheap check can
     // ever verify.
@@ -114,15 +109,6 @@ describe('runner evidence', () => {
     });
   });
 
-  it('reports unknown installation and unresolved executable facts without claiming completion', () => {
-    expect(deriveRunnerStatus(freshEvidence({ installation: 'unknown' }))).toEqual({
-      kind: 'installation-unresolved',
-    });
-    expect(deriveRunnerStatus(freshEvidence({ executable: { kind: 'missing' } }))).toEqual({
-      kind: 'executable-missing',
-    });
-  });
-
   it.each([
     { kind: 'unsupported' },
     { kind: 'missing-credential' },
@@ -145,7 +131,7 @@ describe('runner evidence', () => {
     },
   );
 
-  it('keeps a successful empty catalog distinct from an endpoint failure', () => {
+  it('admits a successful empty catalog', () => {
     const evidence: RunnerEvidence = {
       ...freshEvidence({ catalog: { kind: 'success', value: [] } }),
       runner: { id: 'openai', kind: 'api', locality: 'remote', enabled: 'enabled' },
@@ -153,7 +139,6 @@ describe('runner evidence', () => {
     };
     const admission = startAdmission(evidence, ['catalog']);
 
-    expect(deriveRunnerStatus(evidence)).toEqual({ kind: 'catalog-empty' });
     expect(admission).toEqual({ kind: 'admitted' });
   });
 

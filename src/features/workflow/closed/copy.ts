@@ -14,7 +14,7 @@ import {
 } from '../../../core/crew/identity.js';
 import { formatScoreSummary } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
-import { SOFT_SEP, arrowSep } from '../../../core/separators.js';
+import { arrowSep } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
 
@@ -49,10 +49,6 @@ export interface BriefRowParts {
   duration?: number | undefined;
   file?: string | undefined;
   note?: string | undefined;
-}
-
-export function runRowValue(row: RunRow): string {
-  return row.segments.map((segment) => segment.text).join(SOFT_SEP);
 }
 
 /** The two finding tallies every review sentence spells the same way. */

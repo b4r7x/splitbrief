@@ -21,7 +21,6 @@ import {
   finalizeRunAtRest,
   reopenSessionRecord,
   saveFinalSession,
-  shouldPreserveActiveState,
 } from './finalize.js';
 import { readSession } from '../../../core/sessions/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -264,59 +263,6 @@ describe('reopenSessionRecord', () => {
   });
 });
 
-describe('shouldPreserveActiveState', () => {
-  it('clears when there is no loaded state', () => {
-    expect(shouldPreserveActiveState(null)).toBe(false);
-    expect(shouldPreserveActiveState(undefined)).toBe(false);
-  });
-
-  it('preserves a pending recovery even when the phase looks terminal', () => {
-    const issue = buildRetryExhaustedRecoveryIssue({
-      task: makeTask({ id: 'T001' }),
-      validationSummary: 'tsc failed',
-      attempts: 1,
-      maxAttempts: 2,
-      createdAt: '2026-04-29T00:00:00.000Z',
-    });
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'complete',
-      pendingRecovery: issue,
-    };
-    expect(shouldPreserveActiveState(state)).toBe(true);
-  });
-
-  it('preserves awaiting-continue state', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'escalating',
-      awaitingContinue: true,
-    };
-    expect(shouldPreserveActiveState(state)).toBe(true);
-  });
-
-  it.each(['planning', 'reviewing-briefs', 'implementing', 'final-review', 'analyzing'] as const)(
-    'preserves an open run saved at %s',
-    (phase) => {
-      const state: WorkflowState = { ...createInitialState('feat'), phase };
-      expect(shouldPreserveActiveState(state)).toBe(true);
-    },
-  );
-
-  it('clears a run that passed its review', () => {
-    expect(shouldPreserveActiveState(completedState())).toBe(false);
-  });
-
-  it('clears a run the user explicitly ended', () => {
-    const state: WorkflowState = {
-      ...createInitialState('feat'),
-      phase: 'implementing',
-      closed: { at: '2026-09-01T00:00:00.000Z', as: 'ended' },
-    };
-    expect(shouldPreserveActiveState(state)).toBe(false);
-  });
-});
-
 describe('finalizeEndedRun seat identity', () => {
   it('persists the seat kinds beside their tools in the ending summary', () => {
     const projectDir = makeProjectDir();
@@ -375,7 +321,6 @@ describe('finalizeRunAtRest', () => {
     };
     finalizeRunAtRest({ ref, config: makeConfig(), state });
     expect(readSession(ref)?.status).toBe('complete');
-    expect(shouldPreserveActiveState(state)).toBe(false);
     expect(state.reviewStatus).toBe('failed');
     expect(existsSync(activeFile(projectDir))).toBe(false);
   });
@@ -420,7 +365,6 @@ describe('saveFinalSession for a run with a workspace', () => {
     const row = persisted(projectDir, sessionId);
     expect(row.status).toBe('open');
     expect(row.stop).toBeUndefined();
-    expect(shouldPreserveActiveState(state)).toBe(true);
   });
 
   it.each([

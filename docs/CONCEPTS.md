@@ -138,16 +138,15 @@ The **run workspace** is one worktree or staged copy shared by all tasks, retrie
 
 ## Task briefs
 
-A **Task Brief** is the atomic semantic unit of implementation. It is transported in `tasks.md` and parsed into structured objects by `src/engine/spec/tasks/parse.ts`.
+A **Task Brief** is the atomic semantic unit of implementation. SPLITBRIEF renders the plan tasks as Markdown in `tasks.md`.
 
 - **slice** — what one brief covers: one coherent, reviewable outcome, with its tests, callers, wiring, fixtures and necessary documentation, across as many files as that outcome writes. The planner groups by `sliceRuleText()` (`src/core/pipeline-spec/brief.ts`); no brief count, file count or line count decides a boundary. What bounds one brief is the real model context and prompt transport of its runner.
-- **declared set** — the paths a slice suggests: its `files`, plus every path token its `scope.inBounds` and `scope.approvedOutOfBounds` bullets name. One module answers "did this brief suggest this path" for every consumer — `src/core/scope/declared-set.ts`. The set is guidance: the implementer may edit another ordinary project file when the change needs it and names it with the reason. SPLITBRIEF records such a write as touched, not suggested, for the reviewer and runs its tests; it never fails the attempt. Only a write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) waits for the user to confirm it.
+- **declared set** — the paths a slice suggests: its `suggestedFiles`, plus every path token its `scope.inBounds` and `scope.approvedOutOfBounds` bullets name. One module answers "did this brief suggest this path" for every consumer — `src/core/scope/declared-set.ts`. The set is guidance: the implementer may edit another ordinary project file when the change needs it and names it with the reason. SPLITBRIEF records such a write as touched, not suggested, for the reviewer and runs its tests; it never fails the attempt. Only a write to a protected path (dependency manifests and lockfiles, CI configuration, env and key files, `.git`, `.splitbrief`) waits for the user to confirm it.
 
-Task fields (`src/core/schemas/task.ts`):
+Task fields are defined in `src/core/schemas/task.ts`. See [TASK-CONTRACT.md](./TASK-CONTRACT.md) for the complete contract.
 
 - `id` — branded `TaskId`, unique inside a workflow
-- `file` — the slice's anchor path; the file the task creates or modifies
-- `files` — every path the slice writes, the anchor among them; absent means `[file]`
+- `suggestedFiles` gives the suggested paths, with the anchor first. TaskSchema folds saved `file` and `files` fields into this field.
 - `action` — file operation: `create` or `modify`
 - `description` — longer task body
 - `signature` — language-appropriate function, interface, or type signature hint

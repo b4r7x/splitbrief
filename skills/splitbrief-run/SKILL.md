@@ -22,7 +22,7 @@ Accepted requests:
 - An existing typed plan or brief set starts at build.
 - A prose plan enters typed conversion before build; preserve its stated outcome.
 - A stopped run directory continues from its saved stage.
-- `error: <review.md>` starts planner triage of the failed review.
+- `error: <review.md>` loads the failed review and its saved fix work.
 - A single brief file selects one task and reports completion for that selection only.
 - `--status` inspects the saved run and returns without dispatch.
 
@@ -37,7 +37,7 @@ Read the applicable references before acting. This explicit list supplies the de
 - references/planning.md for the planning session, typed plan, and decisions ledger.
 - references/brief-format.md for the Markdown contract and field placement.
 - references/run-protocol.md for dispatch, waiting, saved progress, continuation, and cadence.
-- references/recovery.md for retries, consults, bounds, and finding triage.
+- references/recovery.md for retries, consults, bounds, and review fix work.
 - references/gates.md for validation, baselines, and change evidence.
 - references/implementer-prompt.md for prompt construction and completion reports.
 - references/review-format.md for the review packet, typed answer, and derived pass.

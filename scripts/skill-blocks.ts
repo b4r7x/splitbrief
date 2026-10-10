@@ -21,6 +21,7 @@ import {
 import type { EffortLevel } from '../src/core/schemas/enums.js';
 import type { Plan } from '../src/core/schemas/plan.js';
 import { MAX_REVIEW_CHECKS } from '../src/core/schemas/review.js';
+import { RUNNER_IDLE_WARN_MS } from '../src/core/schemas/runner-fields.js';
 import { TaskSchema } from '../src/core/schemas/task.js';
 import { STACKS } from '../src/core/validation/stacks/registry.js';
 import type { Stack, TestNarrowing } from '../src/core/validation/stacks/types.js';
@@ -213,7 +214,7 @@ Read the workspace without editing it. Answer from this packet and the current c
 <reviewer check output and required checks by id, with commands, exits and artifact paths>
 
 ## Consults and user answers
-<consult log, triage log, rejected findings with reasons, and user answers>
+<consult log, previous review answers, rejected findings with reasons, and user answers>
 
 ## Instructions
 Check the accepted behaviour, exclusions, edge cases, tests and repository rules.
@@ -223,16 +224,21 @@ Pending criteria are pending. Do not report them as a plan gap.
 Render checks are unavailable in these skills. A required render criterion stays unverified.
 
 ## Typed answer
-Return one JSON object with tasks, criteria and findings.
+Return one JSON object with tasks, criteria, findings, fixTasks, rejected, verify and ask.
 Tasks use plan: met, partial or missed. Criteria use status: pass, fail or unverified, with evidence.
 Findings use kind: defect, plan-gap, unverified or question; severity: blocking or minor.
+
 Use taskId to identify a task. Use checkIds or criterionId for an unverified finding.
 Include exactly one result for each completed task and each criterion due now.
+Address every pending input in this same answer. Write fix tasks as complete TaskSpecs with new ids and findingIds.
+
+Use rejected entries with findingId and reason. Use verify entries with findingId and registered checkIds.
+Set ask to null or a user-only question with question and whyOnlyUserCanAnswer.
 Use this example shape, with real ids and evidence:
 
-{"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","text":"<question>"}]}
+{"tasks":[{"id":"T001","plan":"met","note":"<evidence>"}],"criteria":[{"id":"C1","status":"pass","evidence":"<recorded proof>"}],"findings":[{"id":"F1","kind":"question","severity":"blocking","taskId":"T001","file":null,"line":null,"text":"<question>","acceptance":null,"checkIds":null,"criterionId":null}],"fixTasks":[],"rejected":[],"verify":[],"ask":{"question":"<question>","whyOnlyUserCanAnswer":"<missing product decision>"}}
 
-Use an empty findings array when there are no findings. The session derives the verdict.`);
+Use empty arrays when there are no entries. Save the whole answer in review.json. The session derives the verdict.`);
 }
 
 function implementerReport(): string {
@@ -367,7 +373,7 @@ function consultTable(): string {
     ),
     '',
     `Keep lineage counters across splits and resume: ${BOUNDS.consultsPerLineage} consults and ${BOUNDS.attemptsPerLineage} attempts.`,
-    `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning, including the consults of both seats and triage.`,
+    `Keep the run counter: ${BOUNDS.plannerCallsPerRun} planner decisions after planning. Reviewer consults and review answers spend no planner decision.`,
     'Before dispatch, changed inputs get one successful stale consult per revision: guidance or rewrite-task.',
     'A stale consult spends no run planner decision. A blocked report consults at once.',
     'A thrown or malformed stale consult halts on the seat that answered. Never dispatch the unchanged brief.',
@@ -503,15 +509,21 @@ function gates(): string {
 function gateRules(): string {
   return bullets([
     'At workflow.review: task, run the brief checks and the checks of its due criteria after each brief. At workflow.review: end, an ordinary brief runs no check: only a caller that names checks runs them, such as a consult `verify`.',
-    `Before each review, with End-of-run checks on, the reviewer reads the project in the plan call and chooses at most ${MAX_REVIEW_CHECKS} reviewer checks (\`V1\`, \`V2\`, …) that verify the change, each with a reason, plus the related tests it declines and why. A task-cadence review chooses the tests related to the changed files.`,
+    `End-of-run checks are on by default (\`validation.end_checks\`). With End-of-run checks on, the reviewer makes the plan call before each review. It reads the manifests, scripts, Makefile or justfile, CI configuration and README. It chooses at most ${MAX_REVIEW_CHECKS} reviewer checks (\`V1\`, \`V2\`, …), each with a reason. Each reviewer check must verify the change.`,
+    'It names the related tests it declines and gives the reason. If it chooses no reviewer check, record its reason. At end cadence, the reviewer checks verify the whole change. A task-cadence review chooses the tests related to the changed files.',
     'A failed plan call halts the review the same way a failed verdict call does. It is never a pass.',
-    'Run each reviewer check in the run workspace under the reviewer command policy: any installed program of any language, but no shell syntax, program run by path, inline code, `npx` without `--no-install`, download-and-run launcher or setup command. Refuse a reviewer check whose package script, task file, build wrapper or interpreter script the run changed; a plan or task check is never refused for that. Name each refused reviewer check with its reason.',
-    'Stop at the first reviewer check with new failures; every later one is recorded `not run`. Re-run a red reviewer check at the run base with the same text: a failure also red there is pre-existing. A timeout, or a red with no failure keys, is never pre-existing: report it as not verified at the run base and send it to the reviewer. Plan checks, task checks and the Apply re-check never re-run at the run base.',
-    'A red required check, or a reviewer check with new failures, becomes a pending input; triage turns it into fix tasks, and no completed brief reopens. The fix task carries the red it answers: the check id, its command, its output, its file, its own failure keys and all original red keys per check id. Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. The command must pass.',
-    'The brief gate of a fix task runs each carried check once under the same command policy, with no base re-run. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not owned by the task. Otherwise, the command must pass. A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly.',
+    'Run reviewer checks in order, in the run workspace, under the reviewer command policy. It admits any installed program of any language, such as `mvn test`, `bundle exec rspec` or `make check`.',
+    'Refuse shell syntax, an environment prefix, a program run by path (`bin/test`), a shell or wrapper, and inline code. Refuse `npx` without `--no-install`, a download-and-run launcher or a setup command (`npm ci`, `pip install`, `go generate`). Refuse a program that does not verify a change. Refuse a reviewer check whose package script, task file, build wrapper or interpreter script the run changed. Name each refused reviewer check with its reason; a plan or task check is never refused for that. A plan may add a script and check it.',
+    'Stop at the first reviewer check with new failures. Record each later reviewer check as `not run: <id> failed`. Re-run a red reviewer check at the run base with the same command text. A failure also red there is pre-existing. Report it and assign no fix task to it.',
+    'A timeout, or a red with no failure keys, is never pre-existing. Report it as not verified at the run base and send it to the reviewer. Plan checks, task checks and the Apply re-check never re-run at the run base.',
+    'A red required check, or a new or not verified reviewer failure, becomes a pending input. The reviewer addresses every pending input in its review answer and writes the fix tasks. No completed brief reopens. The fix task carries the check id, command, output, file, its own `failureKeys` and all original `redKeys` per check id. Keep every original red key before the base split.',
+    'Keys come from the full process capture. A test row without FAILED or ERROR and a row with warning severity are not failure keys. SPLITBRIEF reads the severity where the tool prints it, not in the message text. An incomplete capture gives one placeholder key. With an incomplete capture, the fix command must pass.',
+    'At either cadence, the brief gate of a fix task runs each carried check once under the same command policy. It makes no base re-run. A red passes only when no carried failure remains. The re-run must still show an original red key that the task does not own. Otherwise, the command must pass.',
+    'A diagnostic key includes its path, position and message. Match exact keys first. Then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly.',
     'Every unmatched re-run key counts as another failure. Other failures belong to other fix tasks or the next review. A check with no carried keys, or a re-run with no named failure, must pass its command. Older saved fix tasks without own keys or original red keys still load and must pass their commands.',
     'The rule covers reviewer, plan and task checks. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration. A carried failure that remains fails the gate and retries through its ladder before the next review.',
     'With End-of-run checks off, no reviewer check runs and one row says so. Plan and task checks still run.',
+    'The next review chooses and runs its reviewer checks again. Log check ids, commands, output, exits and artifact paths in validation.md. Re-run checks when the candidate changes. Earlier green output cannot verify changed code.',
     'Format the brief changed files with the project formatter after every hand-back. A formatter failure records a warning.',
     `Display at most ${CAPTURE_LIMITS.outputChars} characters per command, and keep the LAST ${CAPTURE_LIMITS.testTailLines} lines of a test command — runners print the pass/fail summary last.`,
     `Narrowing kinds: ${NARROWING_RULE.kinds.map((kind) => `\`${kind}\``).join(', ')}.`,
@@ -565,21 +577,20 @@ function baselineRule(): string {
 }
 
 function timeouts(): string {
-  const minutes = (ms: number): number => ms / 60_000;
-  const deadline = TIMEOUTS.implementerMs / 1000;
   return bullets([
-    `Implementer ${minutes(TIMEOUTS.implementerMs)} minutes per attempt, reviewer ${minutes(TIMEOUTS.reviewerMs)} minutes. ${TIMEOUTS.consecutiveTimeoutsHalt} consecutive timeouts on one brief = hard halt.`,
-    `The waiter enforces its own deadline: \`scripts/wait-attempt.sh <run> <T00N> <n> --deadline ${deadline}\` at ${minutes(TIMEOUTS.implementerMs)} minutes.`,
-    'At the deadline, it attempts to terminate a separate process group when it can identify one, otherwise only the recorded PID. Never wrap a spawn in coreutils `timeout`. It does not exist on stock macOS.',
+    'Seat calls have no default deadline. Use `scripts/wait-attempt.sh <run> <T00N> <n> --deadline <seconds>` only for an explicit `timeout`.',
+    `Monitor output silence. Warn after \`idleWarnMs\`, default ${RUNNER_IDLE_WARN_MS} ms. Continue the call after the warning.`,
+    'Only an explicit `timeout` or `idleKillMs` limits a call. Without either limit, never kill a silent call.',
+    `${TIMEOUTS.consecutiveTimeoutsHalt} consecutive timeouts on one brief with an explicit limit cause a hard halt.`,
+    'At an explicit deadline, the waiter attempts to terminate a separate process group when it can identify one, otherwise only the recorded PID. Never wrap a spawn in coreutils `timeout`. It does not exist on stock macOS.',
   ]);
 }
 
 function waitProtocol(): string {
-  const deadline = TIMEOUTS.implementerMs / 1000;
   return [
     `1. **Spawn.** One tool call, detached, writing \`<run>/T00N/attempt-N.{pid,log,done}\`: \`nohup sh -c '<argv> > $LOG 2>&1; echo "exit=$?" > $DONE' & echo $! > $PID\`. The wait is never in the same tool call as the spawn — never \`nohup … &\` and the wait in one call, and never a command that begins with \`sleep\`.`,
-    `2. **Wait.** A separate tool call running \`scripts/wait-attempt.sh <run> <T00N> <n>\`: it blocks until \`.done\` exists or the pid is gone and prints one line, \`T00N attempt N: exit=<code>|timeout|missing-pid[ halt=<kind>]\`. On Claude Code run it with \`run_in_background: true\` — the completion notification names the outcome; elsewhere run it in the foreground. The waiter is its own deadline (\`--deadline ${deadline}\`); no coreutils \`timeout\` wrapper.`,
-    `   Fallback, when the installer dropped \`scripts/\`: \`n=0; until [ -f "$DONE" ] || [ "$n" -ge ${deadline} ]; do sleep 5; n=$((n+5)); done; cat "$DONE" 2>/dev/null || echo exit=timeout\`. Use the same deadline and read the halt phrases from the log. On timeout, reconcile the recorded PID and its implementer children. Confirm they are gone, or stop them and confirm exit, before recovery or another dispatch.`,
+    '2. **Wait.** Run `scripts/wait-attempt.sh <run> <T00N> <n>` in a separate tool call. It waits until `.done` exists or the pid is gone. It prints one line: `T00N attempt N: exit=<code>|timeout|no-done|missing-pid[ halt=<kind>]`. On Claude Code, use `run_in_background: true`. The completion notification names the outcome. Elsewhere, run it in the foreground. Add `--deadline <seconds>` only for an explicit limit. Without it, the waiter never kills the call. Monitor silence using references/tool-recipes.md.',
+    '   Fallback, when the installer dropped `scripts/`: `pid=$(cat "$PID"); until [ -f "$DONE" ] || ! kill -0 "$pid" 2>/dev/null; do sleep 5; done; cat "$DONE" 2>/dev/null || echo no-done`. For an explicit limit, set `N` to seconds and use `(pid=$(cat "$PID"); elapsed=0; until [ -f "$DONE" ] || ! kill -0 "$pid" 2>/dev/null; do [ "$elapsed" -ge "$N" ] && { echo exit=timeout; exit; }; sleep 1; elapsed=$((elapsed + 1)); done; cat "$DONE" 2>/dev/null || echo no-done)`. Read the halt phrases from the log. If an explicit limit expires, reconcile the recorded PID and its implementer children. Confirm they are gone, or stop them and confirm exit, before recovery or another dispatch.',
     "3. **Re-read every turn.** Read `.splitbrief/current-run`, `progress.md` and `scripts/wait-attempt.sh --reconcile <run>`. Read a finished process's log and run its checks before marking the task done. Never re-spawn a live pid. Preserve counters and decisions.",
     '4. **Monitor (Claude Code, optional).** A persistent `Monitor` on `tail -f <run>/events.log` filtering `done|failed|timeout|halted|run: complete` wakes the session on any terminal state. It is a whole-run wake, never the single-completion primitive — the waiter of point 2 stays.',
     '5. **Stop-hook safety net.** If the user authorized a host hook, use `scripts/splitbrief-gate.sh`. It checks continuation, not task success. Recorded checks still decide.',
@@ -599,8 +610,8 @@ function verdictRules(): string {
 
 function fixCycle(): string {
   return bullets([
-    'Send blocking findings to the session for triage. Append fix tasks with new ids; done tasks stay done.',
-    'Run registered checks for unverified findings. Answer question findings as the planner before asking the user.',
+    'Read fixTasks, rejected, verify and ask from the saved review fix part. Append fix tasks with new ids; done tasks stay done.',
+    'Run registered checks for unverified findings. The reviewer answers question findings from the plan and code before asking the user.',
     'Keep criteria when repairing a check command. Ask the user before changing the accepted outcome.',
     `Allow ${REVIEW_CYCLE_CAP} fix cycles across the run, up to ${REVIEW_CYCLE_CAP + 1} reviews at end cadence. Task cadence adds reviews and shares this fix cap.`,
     'Prepare each fresh review with references/gates.md.',

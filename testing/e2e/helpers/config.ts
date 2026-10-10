@@ -42,7 +42,6 @@ export function makeE2eScenarioConfig(overrides: E2eScenarioConfigOverrides = {}
     implementer: e2eImplementer,
     ...overrides,
     workflow: {
-      maxRetries: 3,
       compactionFormat: 'auto',
       ...overrides.workflow,
     },

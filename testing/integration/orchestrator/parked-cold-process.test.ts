@@ -87,7 +87,7 @@ function makeColdTask() {
 
 function makeColdConfig() {
   return makeNoValidationConfig({
-    workflow: { approve: 'none', maxRetries: 1 },
+    workflow: { approve: 'none' },
     approval: { feedRejectionsToPlanner: false },
   });
 }

@@ -173,26 +173,6 @@ export function readValidatedJson<T>(
   return result.value;
 }
 
-export function readJsonl<T>(
-  filePath: string,
-  parseLine: (value: unknown) => T | null,
-  label: string,
-): T[] {
-  if (!existsSync(filePath)) return [];
-  const results: T[] = [];
-  for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
-    const result = parseJsonlLine(line);
-    if (result.kind === 'blank') continue;
-    if (result.kind === 'corrupt') {
-      warnError(label, result.cause);
-      continue;
-    }
-    const parsed = parseLine(result.value);
-    if (parsed !== null) results.push(parsed);
-  }
-  return results;
-}
-
 /**
  * Every line of a file, without holding the file in memory. The synchronous
  * summary paths cannot await the streaming reader in core/sessions, and a
@@ -265,14 +245,6 @@ export function readProjectFileConfined(projectDir: string, relativePath: string
     return null;
   }
   return readFileSafe(fullPath);
-}
-
-export async function readFileSafeAsync(path: string): Promise<string | null> {
-  try {
-    return await readFile(path, 'utf-8');
-  } catch {
-    return null;
-  }
 }
 
 /**

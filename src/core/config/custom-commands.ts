@@ -49,10 +49,6 @@ export function contractForRunnerKind(kind: CustomCommandRunnerKind): CustomComm
   return kind === 'shell' ? 'output' : 'direct';
 }
 
-export function runnerKindForContract(contract: CustomCommandContract): CustomCommandRunnerKind {
-  return contract === 'output' ? 'shell' : 'agent';
-}
-
 const LiteralStringSchema = z.string().min(1).max(MAX_LITERAL_LENGTH);
 
 export const CustomCommandDefinitionSchema = z

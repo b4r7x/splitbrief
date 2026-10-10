@@ -14,7 +14,7 @@ import {
   IMPLEMENTER_CLI_TOOL_IDS,
   PLANNER_CLI_TOOL_IDS,
 } from '../runners/cli-tool-catalog.js';
-import { effortTokenOfModelId, peelAxisTokensFromModelId } from '../runners/effort-channel.js';
+import { peelAxisTokensFromModelId } from '../runners/effort-channel.js';
 import { PlannerConfigSchema } from './planner-config.js';
 import {
   ActionClassSchema,
@@ -242,7 +242,6 @@ describe('EffortLevelSchema', () => {
   // codex 0.154.0 lists `ultra` on five models, yet kilo 7.0.49, opencode 2.0.14 and cmd 1.62.1
   // list ids whose family name ends in `-ultra`; an `ultra` level would split them into an effort.
   it('keeps codex `ultra` out, so a family name ending in -ultra stays a name', () => {
-    expect(effortTokenOfModelId('sakana/fugu-ultra')).toBeUndefined();
     expect(peelAxisTokensFromModelId('ollama-cloud/nemotron-3-ultra')).toBe(
       'ollama-cloud/nemotron-3-ultra',
     );

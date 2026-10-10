@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultConfig } from '../../core/config/load/defaults.js';
-import { deriveConfigEdits, persistedConfigForSave } from './config-persistence.js';
+import { editsForSave, persistedConfigForSave } from './config-persistence.js';
 
 describe('config persistence', () => {
   it('keeps an unchanged effective override out of the persisted config', () => {
@@ -42,7 +42,16 @@ describe('config persistence', () => {
       },
     };
 
-    expect(deriveConfigEdits(before, after)).toEqual(
+    const rawYaml = `implementer:
+  kind: api
+  provider: ollama
+  service: ollama
+  offering: local
+  api_base: http://localhost:11434/v1
+  model: qwen3-coder:30b
+  context_length: 32768
+`;
+    expect(editsForSave(before, after, rawYaml)).toEqual(
       expect.arrayContaining([
         { path: ['implementer', 'kind'], value: 'cli' },
         { path: ['implementer', 'tool'], value: 'codex' },

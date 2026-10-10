@@ -6,12 +6,16 @@ import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import {
+  createEvidenceLedger,
+  findOrSeed,
+  upsertEvidenceTask,
+} from '../../../core/evidence/ledger-state.js';
+import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { sha256Hex } from '../../../utils/sha256.js';
 import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
-import { recordPromotedFilesEvidence } from '../evidence/task.js';
 import { restoreAttemptFiles, restoreInterruptedTaskFiles } from './rollback.js';
 
 const dirs: string[] = [];
@@ -38,10 +42,14 @@ describe('restoreInterruptedTaskFiles', () => {
     const sessionId = 'interrupted-rollback';
     ensureSessionDir(projectDir, sessionId);
     const ref = { projectDir, sessionId };
-    const ledger = recordPromotedFilesEvidence({
-      ledger: createEvidenceLedger({ sessionId, feature: 'rollback', tasks: [task] }),
-      task,
-      files: [{ path: 'c.ts', sha256: sha256Hex('unfinished task\n'), mode: 0o644, created: true }],
+    const initialLedger = createEvidenceLedger({ sessionId, feature: 'rollback', tasks: [task] });
+    const ledger = upsertEvidenceTask(initialLedger, {
+      ...findOrSeed(initialLedger, task),
+      promotedBriefHash: hashTaskBrief([task]),
+      promotedFiles: [
+        { path: 'c.ts', sha256: sha256Hex('unfinished task\n'), mode: 0o644, created: true },
+      ],
+      apiCreatedPaths: ['c.ts'],
     });
     writeEvidenceLedger(ref, ledger);
 

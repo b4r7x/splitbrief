@@ -23,7 +23,6 @@ import {
   type RequestEstimateReason,
 } from '../../core/schemas/summary.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
-import { SOFT_SEP } from '../../core/separators.js';
 import { uniqueInOrder } from '../../utils/collections.js';
 
 export const USAGE_COUNTERS = ['input', 'output', 'cacheRead', 'cacheCreate', 'reasoning'] as const;
@@ -452,10 +451,6 @@ export interface UsageDetailRow {
   label: string;
   facts: readonly string[];
   tone: UsageTone;
-}
-
-export function usageRowValue(row: UsageDetailRow): string {
-  return row.facts.join(SOFT_SEP);
 }
 
 const COUNTER_LABELS: Readonly<Record<UsageCounter, string>> = {

@@ -124,7 +124,7 @@ function crewConfig(planner: Config['planner']): Config {
       planner,
       implementer: { kind: 'cli', tool: 'opencode', model: 'opencode/test', contextLength: 4096 },
       validation: { endChecks: false, testCommand: 'noop' },
-      workflow: { approve: 'none', maxRetries: 1 },
+      workflow: { approve: 'none' },
     }),
   );
 }
