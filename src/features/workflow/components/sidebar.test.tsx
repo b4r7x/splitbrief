@@ -12,9 +12,8 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { configStore } from '../../../stores/project/config.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { tasksStore, type WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
-import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { Sidebar } from './sidebar.js';
 import chalk from 'chalk';
@@ -83,19 +82,34 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('splits the breakdown line into done versus escalated', async () => {
+  it('uses passed, escalated and failed counts from the task list in the footer', async () => {
     tasksStore.__testReset({
-      tasks: [task('1', 'done'), task('2', 'done'), task('3', 'escalated')],
+      tasks: [task('1', 'done'), task('2', 'done'), task('3', 'escalated'), task('4', 'failed')],
     });
 
-    const ui = renderFeature(<Sidebar width={30} />);
+    const ui = renderFeature(<Sidebar width={40} />);
     await tick();
     const frame = ui.lastFrame() ?? '';
 
-    expect(frame).toContain('2/3');
-    expect(frame).toContain('2 done');
+    expect(frame).toContain('2/4');
+    expect(frame).toContain('2 passed');
     expect(frame).toContain('1 escalated');
+    expect(frame).toContain('1 failed');
+    expect(frame).not.toContain('2 done');
 
+    ui.unmount();
+  });
+
+  it('shows failed counts without an escalated brief and budgets wrapped footer rows', async () => {
+    tasksStore.__testReset({
+      tasks: [task('1', 'done'), task('2', 'failed'), task('3', 'in_progress')],
+    });
+    const ui = renderFeature(<Sidebar width={34} height={14} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('1 passed · 1 failed');
+    expect(frame).toContain('task 3');
+    expect(frame.split('\n')).toHaveLength(14);
     ui.unmount();
   });
 
@@ -134,10 +148,24 @@ describe('Sidebar — passed count', () => {
     await tick();
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
-    expect(frame).toContain('Create helper · src/helper.ts (create)');
-    expect(frame).toContain('No target');
+    expect(frame).toContain('1 Create helper · src/helper.ts (create)');
+    expect(frame).toContain('2 No target');
     expect(frame).not.toContain('undefined');
 
+    ui.unmount();
+  });
+
+  it('drops a target whole when only the id and title fit', async () => {
+    tasksStore.__testReset({
+      tasks: [
+        { ...task('T001', 'pending', 'Create helper'), file: 'src/helper.ts', action: 'create' },
+      ],
+    });
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain('T001 Create helper');
+    expect(frame).not.toMatch(/Create helper ·/u);
     ui.unmount();
   });
 
@@ -440,9 +468,9 @@ describe('Sidebar — title budget', () => {
     chalk.level = 3;
     tasksStore.__testReset({
       tasks: [
-        task('1', 'escalated', LONG_TITLE),
-        task('2', 'failed', LONG_TITLE),
-        task('3', 'skipped', LONG_TITLE),
+        task('T001', 'escalated', LONG_TITLE),
+        task('T002', 'failed', LONG_TITLE),
+        task('T003', 'skipped', LONG_TITLE),
       ],
     });
 
@@ -450,7 +478,7 @@ describe('Sidebar — title budget', () => {
     await tick();
     const rows = stripAnsiStyles(ui.lastFrame() ?? '')
       .split('\n')
-      .filter((line) => line.includes('A task title'));
+      .filter((line) => /T00[123]/u.test(line));
 
     // A dash against a circle is the whole distinction between skipped and queued, so the states
     // the user has to act on keep their word however narrow the panel gets.
@@ -458,6 +486,15 @@ describe('Sidebar — title budget', () => {
     expect(rows[1]).toContain('failed');
     expect(ui.lastFrame()).toContain(paint(defaultTheme.dimError, '  failed'));
     expect(rows[2]).toContain('skipped');
+    expect(rows).toHaveLength(3);
+    for (const [index, row] of rows.entries()) {
+      expect(row).toContain(`T00${index + 1} A task`);
+      expect(row).toContain('…');
+      expect(getTerminalCellWidth(row)).toBeLessThanOrEqual(34);
+    }
+    expect(new Set(rows.map((row) => row.indexOf('T00'))).size).toBe(1);
+    expect(new Set(rows.map((row) => row.indexOf('…'))).size).toBe(1);
+    expect(new Set(rows.map((row) => row.search(/escalated|failed|skipped/u))).size).toBe(1);
 
     ui.unmount();
   });
@@ -614,8 +651,8 @@ describe('Sidebar — persistent task list', () => {
     const populatedTitle = (
       stripAnsiStyles(populated.lastFrame() ?? '')
         .split('\n')
-        .find((line) => line.includes('A real title')) ?? ''
-    ).indexOf('A real title');
+        .find((line) => line.includes('1 A real title')) ?? ''
+    ).indexOf('1 A real title');
 
     expect(titleColumn('No tasks yet')).toBe(populatedTitle);
 

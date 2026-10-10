@@ -4,6 +4,12 @@ import type { Phase, TaskStatus } from '../../core/schemas/enums.js';
 import { isImplementerPhase } from '../../core/phases.js';
 import { taskStatusForCompletionMethod } from '../../core/task-completion.js';
 import { BOUNDS } from '../../core/pipeline-spec/bounds.js';
+import { SOFT_SEP } from '../../core/separators.js';
+import {
+  getTerminalCellWidth,
+  sanitizeTerminalDisplayText,
+  truncateTerminalDisplayText,
+} from '../../utils/display-text.js';
 
 type FileAction = EngineEventOf<'task_started'>['action'];
 
@@ -33,6 +39,27 @@ export function taskTargetLabel(task: WorkflowTask): string {
   const extra = (task.files?.length ?? 1) - 1;
   if (extra === 0) return anchor;
   return `${anchor} · +${extra} ${extra === 1 ? 'file' : 'files'}`;
+}
+
+export function formatTaskHeading(
+  input: Pick<WorkflowTask, 'id' | 'title'>,
+  cells?: number,
+): string {
+  const safeTitle = sanitizeTerminalDisplayText(input.title);
+  const title =
+    cells === undefined
+      ? safeTitle
+      : truncateTerminalDisplayText(safeTitle, cells - getTerminalCellWidth(input.id) - 1);
+  return title === '' ? input.id : `${input.id} ${title}`;
+}
+
+export function taskRowLabel(task: WorkflowTask, cells: number): string {
+  const title = sanitizeTerminalDisplayText(task.title);
+  const heading = formatTaskHeading({ id: task.id, title });
+  const target = sanitizeTerminalDisplayText(taskTargetLabel(task));
+  const label = target === '' ? heading : `${heading}${SOFT_SEP}${target}`;
+  if (getTerminalCellWidth(label) <= cells) return label;
+  return formatTaskHeading({ id: task.id, title }, cells);
 }
 
 export interface TasksState {
@@ -147,6 +174,7 @@ export function updateTaskMap(
         status: existing?.status ?? 'pending',
         file: task.file,
         action: task.action,
+        ...(existing?.files !== undefined && { files: existing.files }),
         ...(existing?.route !== undefined && { route: existing.route }),
       });
     }
@@ -205,28 +233,24 @@ export function updateTaskMap(
     next.set(event.taskId, { ...existing, status: 'pending' });
     return next;
   }
-  // The appended fix tasks have not passed yet.
-  if (event.type === 'review_fix_started') {
-    const next = new Map(taskMap);
-    for (const id of event.taskIds) {
-      const existing = next.get(id);
-      if (existing !== undefined) next.set(id, { ...existing, status: 'pending' });
-    }
-    return next;
-  }
   return taskMap;
 }
 
 export function updateTaskCounts(
   state: TasksState,
   event: EngineEvent,
+  tasks: readonly WorkflowTask[],
 ): Pick<TasksState, 'currentTask' | 'currentAttempt' | 'attemptAllowance' | 'totalTasks'> {
-  let { currentTask, currentAttempt, attemptAllowance, totalTasks } = state;
+  let { currentAttempt, attemptAllowance, totalTasks } = state;
+  const focusedId =
+    event.type === 'task_started' || event.type === 'task_reset'
+      ? event.taskId
+      : state.tasks[state.currentTask - 1]?.id;
+  const currentTask = tasks.findIndex((task) => task.id === focusedId) + 1;
   if (event.type === 'tasks_planned') {
     totalTasks = event.total;
   }
   if (event.type === 'task_started') {
-    currentTask = event.index + 1;
     currentAttempt = event.lineageAttempt ?? 1;
     attemptAllowance = event.attemptAllowance ?? BOUNDS.attemptsPerLineage;
     totalTasks = event.total;

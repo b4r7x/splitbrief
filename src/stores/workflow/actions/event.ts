@@ -1,15 +1,15 @@
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { lifecycleStore } from '../lifecycle.js';
-import { _eventsInternal, mergeEvent, projectEventForTuiEventLog } from '../events.js';
-import { _tasksInternal, updateTaskCounts, updateTaskMap, type TasksState } from '../tasks.js';
-import { _tokensInternal, updateTokens } from '../tokens.js';
 import {
+  lifecycleStore,
   _lifecycleInternal,
   updatePhase,
   updateQueueDepth,
   updateStall,
   type LifecycleState,
 } from '../lifecycle.js';
+import { _eventsInternal, mergeEvent, projectEventForTuiEventLog } from '../events.js';
+import { _tasksInternal, updateTaskCounts, updateTaskMap, type TasksState } from '../tasks.js';
+import { _tokensInternal, updateTokens } from '../tokens.js';
 import { _operationsInternal } from '../operations/state.js';
 import { updateOperations } from '../operations/reducer.js';
 
@@ -37,8 +37,8 @@ export function addEvent(event: EngineEvent): void {
 
 export function reduceTasks(state: TasksState, event: EngineEvent): TasksState {
   const taskMap = updateTaskMap(state.taskMap, event);
-  const counts = updateTaskCounts(state, event);
   const tasks = taskMap !== state.taskMap ? Array.from(taskMap.values()) : state.tasks;
+  const counts = updateTaskCounts(state, event, tasks);
   if (
     taskMap === state.taskMap &&
     tasks === state.tasks &&

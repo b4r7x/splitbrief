@@ -6,6 +6,11 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
+import {
+  makeReviewFixInsertedEvents,
+  makeTaskComplete,
+  makeTaskStart,
+} from '#testing/helpers/events/task.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
   STOP_SHEET_FOOTER,
@@ -166,6 +171,19 @@ describe('readStopMenuRows on a run ready to apply', () => {
 describe('readStopMenuRows right after a continue', () => {
   afterEach(() => {
     resetAllStores();
+  });
+
+  it('pauses after the inserted running fix and holds back the next fix before pending plan work', () => {
+    resetAllStores();
+    for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+    expect(readStopMenuRows().find((row) => row.id === 'pause-after-brief')?.consequence).toBe(
+      'finish T006 including checks and review; do not start T007',
+    );
+    addEvent(makeTaskComplete({ taskId: taskId('T006') }));
+    addEvent(makeTaskStart({ taskId: taskId('T007'), index: 0, total: 7 }));
+    expect(readStopMenuRows().find((row) => row.id === 'pause-after-brief')?.consequence).toBe(
+      'finish T007 including checks and review; do not start T005',
+    );
   });
 
   // Continuing a halt resets its brief before the task loop starts it again, so for that moment no

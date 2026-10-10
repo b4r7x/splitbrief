@@ -3,6 +3,7 @@ import { ACTIVE_OVERLAYS, ALL_SCREENS } from '../../src/core/navigation/types.js
 import { configStore } from '../../src/stores/project/config.js';
 import { routerStore } from '../../src/stores/navigation/router.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
+import { selectRailForm } from '../../src/features/workflow/layout/chrome-rows.js';
 import {
   listVisualScenarios,
   findVisualScenario,
@@ -47,6 +48,9 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-review-check-running', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-implementation-retry', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-implementation-escalated', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-fix-narrow-rail', ['22x45', '160x45']],
+  ['workflow-task-statuses', ['160x45', '80x24']],
   ['workflow-plan-card', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-render-note', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-shared-command', ['120x40', '80x24', '60x18', '160x45']],
@@ -55,6 +59,9 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-question-input', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-question-overflow', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-stop-menu-ended-rewound-gate', ['120x40', '80x24', '60x18', '60x40']],
+  ['workflow-stop-sheet-fix-inserted', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-stop-sheet', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-stop-menu-pause', ['120x40', '80x24', '60x18', '160x45']],
 ]);
 
 afterEach(() => {
@@ -74,6 +81,24 @@ describe('visual catalog', () => {
     expect(workflowFixtureRegistry.has(scenarioId(id))).toBe(true);
   });
 
+  it('covers Form C with inserted fixes and status words with a sidebar', () => {
+    const narrow = findVisualScenario('workflow-review-fix-narrow-rail');
+    expect(narrow?.checkpoints[0]?.marker).toBe('4/7 briefs passed');
+    expect(narrow?.viewports.map(formatViewport)).toEqual(['22x45', '160x45']);
+    expect(narrow?.checkpoints.map((checkpoint) => checkpoint.id)).toEqual([
+      'review-fix-narrow-rail',
+      'review-fix-narrow-rail-stop',
+    ]);
+    expect(selectRailForm({ phase: 'implementing', cols: 22 })).toBe('C');
+    const statuses = findVisualScenario('workflow-task-statuses');
+    expect(statuses?.viewports.map(formatViewport)).toEqual(['160x45', '80x24']);
+  });
+
+  it('covers the running inserted fix pause copy and the sidebar above 120 columns', () => {
+    const scenario = findVisualScenario('workflow-stop-sheet-fix-inserted');
+    expect(scenario?.checkpoints[0]?.marker).toBe('finish T006');
+    expect(scenario?.viewports.map(formatViewport)).toEqual(['120x40', '80x24', '60x18', '160x45']);
+  });
   it('keeps the recovery stop-sheet predicate separate from generic ready checkpoints', () => {
     const scenario = findVisualScenario('workflow-stop-sheet-recovery');
 

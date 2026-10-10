@@ -120,9 +120,9 @@ function readRailFraction(): string {
   const lifecycle = lifecycleStore.get();
   return resolveRailFraction({
     phase: lifecycle.phase,
-    currentTask: tasks.currentTask,
-    totalTasks: tasks.totalTasks,
+    tasks,
     cancelled: lifecycle.cancelled,
+    buildBlockShown: readProgressRows(readWorkflowPromptRows()) > 0,
   });
 }
 

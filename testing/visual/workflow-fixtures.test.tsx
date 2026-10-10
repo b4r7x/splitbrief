@@ -7,9 +7,15 @@ import { questionPromptStore } from '../../src/stores/question-prompt/prompt.js'
 import { controlsStore } from '../../src/stores/ui/controls.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
 import { eventsStore, mergeEventLog } from '../../src/stores/workflow/events.js';
+import { lifecycleStore } from '../../src/stores/workflow/lifecycle.js';
 import { operationsStore } from '../../src/stores/workflow/operations/state.js';
 import { reviewStore } from '../../src/stores/workflow/review.js';
 import { streamingOutputStore } from '../../src/stores/workflow/streaming-output.js';
+import {
+  selectRunningBrief,
+  selectTaskListView,
+  tasksStore,
+} from '../../src/stores/workflow/tasks.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS, WIDE_VIEWPORTS } from './catalog.js';
@@ -47,10 +53,15 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
   const scenario = findVisualScenario(projection.scenarioId);
   if (!scenario) throw new Error(`Missing workflow scenario ${projection.scenarioId}`);
   const checkpoint = scenario.checkpoints[0];
-  if (!checkpoint) throw new Error(`Missing workflow checkpoint ${projection.scenarioId}`);
+  const selectedViewport =
+    scenario.viewports.find(
+      (value) => value.cols === VIEWPORT.cols && value.rows === VIEWPORT.rows,
+    ) ?? scenario.viewports[0];
+  if (!checkpoint || !selectedViewport)
+    throw new Error(`Missing workflow checkpoint or viewport ${projection.scenarioId}`);
   let ui: GalleryCaptureHandle | null = null;
   try {
-    ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
+    ui = await mountGalleryScenario({ scenario, checkpoint, viewport: selectedViewport });
     const frame = await ui.waitForCheckpoint();
     expect(controlsStore.get().inputMode).toBe(projection.inputMode);
     expect(controlsStore.get().sidebarVisible).toBe(projection.sidebarVisible);
@@ -78,7 +89,7 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
         expect(approvalPromptStore.get().status).toBe('pending');
       }
       expect(questionPromptStore.get().hint).toBeNull();
-      expect(getWorkflowFixturePromptRows(projection, VIEWPORT.cols)).toBeGreaterThan(0);
+      expect(getWorkflowFixturePromptRows(projection, selectedViewport.cols)).toBeGreaterThan(0);
     }
     return frame;
   } finally {
@@ -149,6 +160,134 @@ describe('workflow visual fixtures', () => {
       }
     },
   );
+
+  it.each([true, false])(
+    'shows the narrow rail fraction only with the build block down %s',
+    async (blockDown) => {
+      const scenario = findVisualScenario('workflow-review-fix-narrow-rail');
+      const checkpoint = scenario?.checkpoints[blockDown ? 1 : 0];
+      const selectedViewport = scenario?.viewports[0];
+      if (!scenario || !checkpoint || !selectedViewport)
+        throw new Error('Missing narrow rail checkpoint');
+      const handle = await mountGalleryScenario({
+        scenario,
+        checkpoint,
+        viewport: selectedViewport,
+      });
+      try {
+        const frame = stripTerminalControls(await handle.waitForCheckpoint());
+        const rail = frame.split('\n')[0];
+        if (blockDown) {
+          expect(rail).toContain('● Build  4/7 passed');
+          expect(frame).not.toContain('4/7 briefs passed');
+        } else {
+          expect(rail).toContain('● Build');
+          expect(rail).not.toContain('4/7 passed');
+          expect(frame).toContain('4/7 briefs passed');
+        }
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+
+  it.each(WIDE_VIEWPORTS)(
+    'shows T006 running and T007 held back after a fix insertion at %s',
+    async (viewport) => {
+      const scenario = findVisualScenario('workflow-stop-sheet-fix-inserted');
+      const checkpoint = scenario?.checkpoints[0];
+      if (scenario === undefined || checkpoint === undefined)
+        throw new Error('Missing inserted-fix scenario');
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = stripTerminalControls(await handle.waitForCheckpoint())
+          .replaceAll('│', '')
+          .replace(/\s+/g, ' ');
+        expect(frame).toContain('finish T006 including checks and review; do not start T007');
+        expect(lifecycleStore.get().status).toBe('running');
+        expect(eventsStore.get().events[0]?.type).toBe('workflow_started');
+        expect(
+          eventsStore.get().events.filter((event) => event.type === 'workflow_started'),
+        ).toHaveLength(1);
+        expect(tasksStore.get().tasks.map((task) => task.id)).toEqual([
+          'T001',
+          'T002',
+          'T003',
+          'T004',
+          'T006',
+          'T007',
+          'T005',
+        ]);
+        expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+          current: { id: 'T006' },
+          next: { id: 'T007' },
+        });
+        expect(selectTaskListView(tasksStore.get())).toMatchObject({
+          passed: 4,
+          total: 7,
+          unannounced: 0,
+        });
+        if (viewport.cols > 120) {
+          expect(frame).toContain('Implement and test overdue book lookup');
+          expect(frame).toContain('T007 Test overdue report boundari…');
+          expect(frame).toContain('T005 Wire the library dashboard');
+          expect(frame.indexOf('T007 Test overdue report boundari…')).toBeLessThan(
+            frame.indexOf('T005 Wire the library dashboard'),
+          );
+        }
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
+  it('keeps the Build rail active while the pause menu names the running brief', async () => {
+    const scenario = findVisualScenario('workflow-stop-menu-pause');
+    const selectedViewport = scenario?.viewports.find((value) => value.cols === 160);
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || selectedViewport === undefined || checkpoint === undefined)
+      throw new Error('Missing pause menu scenario');
+    const handle = await mountGalleryScenario({ scenario, viewport: selectedViewport, checkpoint });
+    try {
+      const frame = stripTerminalControls(await handle.waitForCheckpoint());
+      expect(frame).toContain('● Build');
+      expect(frame).toContain('finish T002');
+      expect(frame).toContain('Tasks 1/3');
+      expect(frame).toContain('● T001');
+      expect(lifecycleStore.get().status).toBe('running');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([
+    'workflow-stop-sheet',
+    'workflow-stop-menu-parked',
+    'workflow-stop-menu-quit-hint',
+    'workflow-stop-menu-failed',
+    'workflow-quit-hint',
+    'workflow-stop-sheet-after-continue',
+  ])('seeds T001 passing before T002 starts in %s', async (id) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const selectedViewport = scenario?.viewports[0];
+    if (!scenario || !checkpoint || !selectedViewport) throw new Error(`Missing scenario ${id}`);
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: selectedViewport });
+    try {
+      await handle.waitForCheckpoint();
+      expect(selectTaskListView(tasksStore.get())).toMatchObject({ passed: 1, total: 3 });
+      const events = eventsStore.get().events;
+      const completedIndex = events.findIndex(
+        (event) => event.type === 'task_completed' && event.taskId === 'T001',
+      );
+      const startedIndex = events.findIndex(
+        (event) => event.type === 'task_started' && event.taskId === 'T002',
+      );
+      expect(completedIndex).toBeGreaterThan(0);
+      expect(completedIndex).toBeLessThan(startedIndex);
+    } finally {
+      await handle.unmount();
+    }
+  });
 
   it('records the balance refusal, automatic switch, and restarted task with the fallback seat', async () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-seat-switched-balance'));

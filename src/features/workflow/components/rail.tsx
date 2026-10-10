@@ -6,7 +6,7 @@ import { glyph } from '../../../lib/glyphs.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import type { Theme } from '../../../core/theme/palette.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../stores/workflow/tasks.js';
+import { tasksStore, selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
@@ -28,9 +28,12 @@ import {
   railFormBLabel,
   type RailForm,
 } from '../layout/chrome-rows.js';
-import { RAIL_FORM_C_CANCELLED_SUFFIX, resolveRailFraction } from '../layout/hit-test.js';
+import {
+  RAIL_FORM_C_CANCELLED_SUFFIX,
+  railFormCFractionText,
+  resolveRailFraction,
+} from '../layout/hit-test.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
-import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
@@ -71,7 +74,7 @@ export function railFormCText(input: { stages: RailStageState[]; fraction: strin
   const stage = state?.stage ?? 'plan';
   const text = `${stageMarkerGlyph(status)} ${formatStageLabel(stage)}`;
   if (status === 'cancelled') return `${text}${RAIL_FORM_C_CANCELLED_SUFFIX}`;
-  if (status === 'active' && fraction !== '') return `${text}  task ${fraction}`;
+  if (status === 'active') return `${text}${railFormCFractionText(fraction)}`;
   return text;
 }
 
@@ -210,6 +213,7 @@ export function measureRailCells(input: {
   tasks: TasksState;
   events: readonly EngineEvent[];
   recoveryPending: boolean;
+  buildBlockShown: boolean;
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
 }): number {
@@ -226,9 +230,9 @@ export function measureRailCells(input: {
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
       phase: input.phase,
-      currentTask: input.tasks.currentTask,
-      totalTasks: input.tasks.totalTasks,
+      tasks: input.tasks,
       cancelled: input.cancelled,
+      buildBlockShown: input.buildBlockShown,
     });
     return getTerminalCellWidth(railFormCText({ stages, fraction }));
   }
@@ -239,8 +243,10 @@ export function measureRailCells(input: {
 export function Rail({
   form,
   stages: givenStages,
+  buildBlockShown = false,
 }: {
   form?: RailForm | undefined;
+  buildBlockShown?: boolean | undefined;
   /** A run at rest paints the stages its record names, not the ones a live phase implies. */
   stages?: readonly RailStageState[] | undefined;
 }) {
@@ -276,9 +282,9 @@ export function Rail({
   ];
   const fraction = resolveRailFraction({
     phase,
-    currentTask: tasks.currentTask,
-    totalTasks: tasks.totalTasks,
+    tasks,
     cancelled,
+    buildBlockShown,
   });
 
   if (givenStages === undefined && phase === 'complete' && !failedReview) {

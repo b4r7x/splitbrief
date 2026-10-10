@@ -121,8 +121,8 @@ export function publishReviewEvent(
   ctx.bus.publish({ ...event, ts: Date.now(), phase: ctx.phase });
 }
 
-// Announces the whole plan once, so consumers can show what is still coming instead of learning
-// about each task only when it starts. `task_started` stays the per-task lifecycle signal.
+// Announces the current ordered task list at loop entry and after structural changes.
+// `task_started` stays the per-task lifecycle signal.
 export function publishTasksPlanned(
   ctx: BusContext,
   tasks: readonly Pick<Task, 'id' | 'title' | 'suggestedFiles' | 'action'>[],

@@ -3,14 +3,14 @@ import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
 import type { Theme } from '../../../core/theme/palette.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
 import {
-  getTerminalCellWidth,
-  sanitizeTerminalDisplayText,
-  truncateTerminalDisplayText,
-} from '../../../utils/display-text.js';
-import type { WorkflowTask } from '../../../stores/workflow/tasks.js';
+  type WorkflowTask,
+  selectTaskListView,
+  taskRowLabel,
+  tasksStore,
+} from '../../../stores/workflow/tasks.js';
 import { lifecycleStore, runElapsedMs } from '../../../stores/workflow/lifecycle.js';
-import { selectTaskListView, taskTargetLabel, tasksStore } from '../../../stores/workflow/tasks.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -38,6 +38,8 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
+import { taskOutcomeCountsText } from '../display/build-progress.js';
+import { wrapHard } from '../../../utils/wrap.js';
 
 interface SidebarProps {
   width: number;
@@ -192,9 +194,7 @@ function TaskRow({
   const t = useTheme();
   const spec = rowSpec(task.status, t);
   const titleCells = getSidebarTaskTitleWidth({ width, reservedTailCells: statusCells });
-  const target = taskTargetLabel(task);
-  const label = target === '' ? task.title : `${task.title} · ${target}`;
-  const taskLabel = truncateTerminalDisplayText(sanitizeTerminalDisplayText(label), titleCells);
+  const taskLabel = taskRowLabel(task, titleCells);
   return (
     <Box>
       <Text color={spec.labelColor} bold={spec.bold}>
@@ -254,9 +254,11 @@ export function Sidebar({ width, height }: SidebarProps) {
   const displayNames = useCrewDisplayNames(config);
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const tasks = view.items;
-  const doneCount = tasks.filter((tk) => tk.status === 'done').length;
-  const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const innerWidth = Math.max(0, width - 4);
+  const outcomeRows =
+    view.escalated > 0 || view.failed > 0
+      ? wrapHard(taskOutcomeCountsText(`${view.passed} passed`, view), innerWidth).split('\n')
+      : [];
   const seatRows = seats.map((seat) => ({
     seat,
     rows:
@@ -269,7 +271,7 @@ export function Sidebar({ width, height }: SidebarProps) {
   }));
 
   const footerRows =
-    seatRows.reduce((total, { rows }) => total + rows.length, 0) + (escalatedCount > 0 ? 1 : 0);
+    seatRows.reduce((total, { rows }) => total + rows.length, 0) + outcomeRows.length;
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -340,12 +342,11 @@ export function Sidebar({ width, height }: SidebarProps) {
           <Divider width={innerWidth} />
         </Box>
         <Box flexDirection="column" paddingX={1}>
-          {escalatedCount > 0 && (
-            <Text color={t.textDim}>
-              {doneCount} done{SOFT_SEP}
-              {escalatedCount} escalated
+          {outcomeRows.map((row) => (
+            <Text key={row} color={t.textDim}>
+              {row}
             </Text>
-          )}
+          ))}
           {seatRows.map(({ seat, rows }) => (
             <Box key={seat.id} flexDirection="column">
               {rows.map((row, index) => (

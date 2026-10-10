@@ -1,7 +1,6 @@
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { formatTaskHeading } from '../../../components/task-summary.js';
-import { taskTargetLabel } from '../../../stores/workflow/tasks.js';
+import { formatTaskHeading, taskTargetLabel } from '../../../stores/workflow/tasks.js';
 import { formatTaskStartedParts } from './event-format.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from './types.js';
 import { segmentedRow } from './row-format/rows.js';

@@ -5,7 +5,8 @@ import { resetWorkflow } from './reset.js';
 import { eventsStore, MAX_EVENTS } from '../events.js';
 import { lifecycleStore } from '../lifecycle.js';
 import { operationsStore } from '../operations/state.js';
-import { tasksStore } from '../tasks.js';
+import { selectRunningBrief, tasksStore } from '../tasks.js';
+import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
 import { tokensStore } from '../tokens.js';
 import { parseEngineEvent } from '../../../engine/events/schema.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -136,6 +137,27 @@ function mixedFixture(): EngineEvent[] {
 
 describe('loadEvents', () => {
   beforeEach(() => resetWorkflow());
+
+  it('replays inserted task order and id-derived focus exactly as the live stream does', () => {
+    const fixture = makeReviewFixInsertedEvents();
+    for (const event of fixture) addEvent(event);
+    const live = snapshot();
+    loadEvents(fixture);
+    expect(snapshot()).toEqual(live);
+    expect(tasksStore.get().tasks.map((task) => task.id)).toEqual([
+      'T001',
+      'T002',
+      'T003',
+      'T004',
+      'T006',
+      'T007',
+      'T005',
+    ]);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing')).toMatchObject({
+      current: { id: 'T006' },
+      next: { id: 'T007' },
+    });
+  });
 
   it('keeps the last MAX_EVENTS rows and never evicts a structural one', () => {
     const structural = [

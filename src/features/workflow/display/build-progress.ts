@@ -245,10 +245,20 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
   };
 }
 
+export function taskOutcomeCountsText(
+  passedText: string,
+  counts: Pick<BuildProgress, 'escalated' | 'failed'>,
+): string {
+  const parts = [passedText];
+  if (counts.escalated > 0) parts.push(`${counts.escalated} escalated`);
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`);
+  return parts.join(SOFT_SEP);
+}
+
 function countsText(progress: BuildProgress): string {
-  const parts = [`${progress.passed}/${progress.total} briefs passed`];
-  if (progress.escalated > 0) parts.push(`${progress.escalated} escalated`);
-  if (progress.failed > 0) parts.push(`${progress.failed} failed`);
+  const parts = [
+    taskOutcomeCountsText(`${progress.passed}/${progress.total} briefs passed`, progress),
+  ];
   if (progress.attempt !== null) {
     parts.push(`attempt ${progress.attempt.current} of ${progress.attempt.max}`);
   }

@@ -1,15 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { addTuiEvent } from './tui-sink.js';
 import { createEventBus } from '../../engine/events/bus.js';
-import type { EngineEventOf } from '../../engine/events/types.js';
+import type { EngineEventOf, EngineEvent } from '../../engine/events/types.js';
 import { eventsStore } from '../../stores/workflow/events.js';
-import { tasksStore } from '../../stores/workflow/tasks.js';
+import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { resetWorkflow } from '../../stores/workflow/actions/reset.js';
 import { markCancellationRequested } from '../../stores/workflow/actions/interrupt.js';
 import { makePlannerText } from '#testing/helpers/events/planner.js';
 import { makeTaskStart } from '#testing/helpers/events/task.js';
-import type { EngineEvent } from '../../engine/events/types.js';
 
 describe('tuiSink', () => {
   beforeEach(() => resetWorkflow());
@@ -39,7 +38,8 @@ describe('tuiSink', () => {
 
     bus.publish(makeTaskStart({ index: 2, total: 5 }));
 
-    expect(tasksStore.get().currentTask).toBe(3);
+    expect(tasksStore.get().currentTask).toBe(1);
+    expect(selectRunningBrief(tasksStore.get(), 'implementing').current?.id).toBe('T001');
     expect(tasksStore.get().totalTasks).toBe(5);
   });
 

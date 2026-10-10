@@ -18,6 +18,7 @@ export function WorkflowHeader({
   startedAt,
   scrollAboveLabel = '',
   railForm,
+  buildBlockShown,
   stages,
   seatLine,
   children,
@@ -25,6 +26,7 @@ export function WorkflowHeader({
   startedAt: string;
   scrollAboveLabel?: string;
   railForm?: RailForm | undefined;
+  buildBlockShown?: boolean | undefined;
   /** A run at rest names its own stages and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
   seatLine?: string | undefined;
@@ -40,6 +42,7 @@ export function WorkflowHeader({
         <Header
           startedAt={startedAt}
           railForm={railForm}
+          buildBlockShown={buildBlockShown}
           {...(stages !== undefined && { stages })}
           {...(seatLine !== undefined && { seatLine })}
         />

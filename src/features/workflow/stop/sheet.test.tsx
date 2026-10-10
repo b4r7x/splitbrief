@@ -83,6 +83,20 @@ describe('StopSheet', () => {
     ui.unmount();
   });
 
+  it('keeps the title on one row and the legend clear of consequences at 22 columns', async () => {
+    terminalSizeStore.__testReset({ cols: 22, rows: 45, isSmall: true });
+    const ui = renderSheet(stopSheetRows({ ...RUNNING_BRIEF, hasChanges: true }));
+    await tick();
+    const lines = (ui.lastFrame() ?? '')
+      .split('\n')
+      .map((line) => line.replace(/[│|]/g, '').trim());
+    expect(lines.find((line) => line.includes('Stop options'))).toBe('Stop options');
+    const legendIndex = lines.findIndex((line) => line.includes('↑↓ select'));
+    expect(lines[legendIndex]).toBe('↑↓ select');
+    expect(lines[legendIndex - 1]).toBe('keep changes');
+    ui.unmount();
+  });
+
   it('wraps the consequence rather than truncating it, and still fits the shortest terminal', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18, isSmall: true });
     const ui = renderSheet();

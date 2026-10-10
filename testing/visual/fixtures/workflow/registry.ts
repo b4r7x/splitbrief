@@ -1,5 +1,4 @@
-import type { CheckpointId } from '../../contracts/identifiers.js';
-import { checkpointId } from '../../contracts/identifiers.js';
+import { type CheckpointId, checkpointId } from '../../contracts/identifiers.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { CheckpointPredicate, FixtureFactory, FixtureRegistry } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
@@ -34,6 +33,22 @@ const CONSULT_BOUND_NOTE = 'run the formatter first';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (projection.scenarioId === 'workflow-review-fix-narrow-rail') {
+    return () => {
+      const lifecycle = base();
+      let showStopSheet = false;
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          showStopSheet = context.checkpoint.id === 'review-fix-narrow-rail-stop';
+          await lifecycle.setup(context);
+        },
+        afterMount: () => {
+          if (showStopSheet) overlayStore.open('stop-sheet');
+        },
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-stop-sheet-recovery') {
     return () => ({ ...base(), afterMount: () => overlayStore.open('stop-sheet') });
   }
@@ -213,6 +228,9 @@ const checkpointPredicates = [
     includesAll('End-of-run checks', 'off', 'Review · OpenAI Codex CLI'),
   ],
   [checkpointId('implementation-escalated'), includesAll('briefs passed')],
+  [checkpointId('review-fix-narrow-rail'), includesAll('T006')],
+  [checkpointId('review-fix-narrow-rail-stop'), includesAll()],
+  [checkpointId('task-statuses'), includesAll('escalated', 'failed', 'skipped')],
   [checkpointId('validation'), includesAll('Validate', 'test skipped')],
   [checkpointId('planner-commands-refused'), includesAll('Validation')],
   [checkpointId('touched-not-suggested'), includesAll('also changed')],

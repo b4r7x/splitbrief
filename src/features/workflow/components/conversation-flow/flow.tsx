@@ -1,5 +1,4 @@
 import { ThemeText as Text, useTheme } from '../../../../components/theme.js';
-import { formatTaskHeading } from '../../../../components/task-summary.js';
 import { useEffect } from 'react';
 import { Box } from 'ink';
 import { getScrollWindowState } from '../../layout/scroll-window.js';
@@ -13,7 +12,7 @@ import { conversationScrollStore } from '../../../../stores/workflow/conversatio
 import { streamingOutputStore } from '../../../../stores/workflow/streaming-output.js';
 import { transcriptTailStore } from '../../../../stores/workflow/transcript-tail.js';
 import { lifecycleStore } from '../../../../stores/workflow/lifecycle.js';
-import { tasksStore } from '../../../../stores/workflow/tasks.js';
+import { formatTaskHeading, tasksStore } from '../../../../stores/workflow/tasks.js';
 import { useSections } from '../../../../stores/workflow/actions/sections.js';
 import { useStores } from '../../../../stores/use-stores.js';
 import type { ConversationRowBlock } from '../../conversation-rows/types.js';

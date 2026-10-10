@@ -38,6 +38,31 @@ describe('TaskSummary', () => {
     ui.unmount();
   });
 
+  it.each([18, 22, 60, 80])('keeps the settled brief id whole at %s columns', (width) => {
+    const ui = renderFeature(
+      <TaskSummary
+        width={width}
+        id="T001"
+        title="Add the book catalogue schema"
+        state={{ kind: 'settled', method: 'local' }}
+        duration={5000}
+      />,
+      { cols: width, rows: 18 },
+    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${glyph('stageDone')} T001 `);
+    expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
+    if (width === 18) {
+      expect(frame).toBe(` ${glyph('stageDone')} T001 Add the b…`);
+      expect(frame).not.toContain('local');
+    } else if (width >= 60) {
+      expect(frame).toBe(
+        ` ${glyph('stageDone')} T001 Add the book catalogue schema  passed · 5.0s`,
+      );
+    }
+    ui.unmount();
+  });
+
   it('paints a settled stage mark, head and sanitized detail run', () => {
     for (const failed of [false, true]) {
       const ui = renderFeature(
@@ -258,7 +283,7 @@ describe('TaskSummary', () => {
     const longPath =
       'src/engine/subsystems/workflow/coordinator/deeply/nested/components/tasks/resume.ts';
     for (const width of [60, 80, 120]) {
-      const fitted = fitDetailRun(head, [longPath, 'passed', '48.0s'], width);
+      const fitted = fitDetailRun({ id: head, title: '' }, [longPath, 'passed', '48.0s'], width);
       expect(fitted.tail).toContain('passed');
       expect(fitted.tail).toContain('48.0s');
       expect(fitted.tail[0]?.startsWith('src/')).toBe(true);
@@ -267,7 +292,11 @@ describe('TaskSummary', () => {
   });
 
   it('drops retries before shortening file segment', () => {
-    const fitted = fitDetailRun('T1', ['src/auth/session.ts', 'passed', '2 retries', '48.0s'], 45);
+    const fitted = fitDetailRun(
+      { id: 'T1', title: '' },
+      ['src/auth/session.ts', 'passed', '2 retries', '48.0s'],
+      45,
+    );
     expect(fitted.tail).toContain('passed');
     expect(fitted.tail).toContain('48.0s');
     expect(fitted.tail).not.toContain('2 retries');
@@ -285,7 +314,12 @@ describe('TaskSummary', () => {
             : file;
       for (const retries of [[], ['1 retry'], ['2 retries']]) {
         for (const settled of [undefined, true]) {
-          const fitted = fitDetailRun('T1', [file, 'passed', ...retries, '2m 0s'], width, settled);
+          const fitted = fitDetailRun(
+            { id: 'T1', title: '' },
+            [file, 'passed', ...retries, '2m 0s'],
+            width,
+            settled,
+          );
           expect(fitted.tail).toEqual([
             expected,
             'passed',
@@ -310,7 +344,12 @@ describe('TaskSummary', () => {
         [8, 'pro…s.ts'],
       ] as const) {
         const head = 'T1'.padEnd(width - 22 - room, 'x');
-        const fitted = fitDetailRun(head, [file, 'passed', '1 retry', '2m 0s'], width, true);
+        const fitted = fitDetailRun(
+          { id: head, title: '' },
+          [file, 'passed', '1 retry', '2m 0s'],
+          width,
+          true,
+        );
         expect(fitted.tail).toEqual([expected, 'passed', '2m 0s']);
       }
     }
@@ -318,7 +357,7 @@ describe('TaskSummary', () => {
 
   it('uses the settled retry priority for the closed signup row', () => {
     const fitted = fitDetailRun(
-      'T002 Wire validator into the signup form',
+      { id: 'T002', title: 'Wire validator into the signup form' },
       ['src/components/signup/form.ts', 'passed', '1 retry', '2m 21s'],
       80,
       true,
@@ -328,7 +367,7 @@ describe('TaskSummary', () => {
 
   it('cuts title last when room runs out completely', () => {
     const fitted = fitDetailRun(
-      'T1 long task title that exceeds the budget',
+      { id: 'T1', title: 'long task title that exceeds the budget' },
       ['src/auth/session.ts', 'passed', '48.0s'],
       26,
     );

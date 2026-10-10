@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { OverlayType } from '../../../src/core/navigation/types.js';
+import { type OverlayType, seatAxisFocus } from '../../../src/core/navigation/types.js';
 import {
   API_PROVIDER_CATALOG,
   type ApiProviderId,
@@ -30,11 +30,10 @@ import { ModelsDevCatalogSchema } from '../../../src/core/schemas/models-dev.js'
 import type { RecoveryIssue } from '../../../src/core/schemas/recovery/schemas.js';
 import type { CostBreakdown, Summary } from '../../../src/core/schemas/summary.js';
 import type { EvidenceLedger } from '../../../src/core/schemas/evidence.js';
-import type { Task } from '../../../src/core/schemas/task.js';
+import { type Task, taskId } from '../../../src/core/schemas/task.js';
 import { ZERO_TOKEN_USAGE } from '../../../src/core/schemas/tokens.js';
 import type { RunStatus } from '../../../src/core/sessions/run-status.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
-import { seatAxisFocus } from '../../../src/core/navigation/types.js';
 import { deriveCrewRows } from '../../../src/core/crew/rows.js';
 import { crewActivate } from '../../../src/features/crew/rows.js';
 import type { ScopedCliCatalogAttempt } from '../../../src/engine/detection/cli-catalog-outcomes.js';
@@ -48,7 +47,6 @@ import { sessionsStore } from '../../../src/stores/project/sessions.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state.js';
 import { addEvent } from '../../../src/stores/workflow/actions/event.js';
-import { taskId } from '../../../src/core/schemas/task.js';
 import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
@@ -65,6 +63,7 @@ import { cliDetectionFor } from '../../helpers/factories/detection.js';
 import { makeSession } from '../../helpers/factories/session.js';
 import { makeSummary } from '../../helpers/factories/summary.js';
 import { makeTask } from '../../helpers/factories/task.js';
+import { makeReviewFixInsertedEvents } from '../../helpers/events/task.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
@@ -666,11 +665,11 @@ function createOverlayFixture(options: {
 // The workflow screen resets the session-scoped stores in a mount
 // effect (`use-runner.ts:135`), which runs after this fixture has seeded
 // them — `resetWorkflow` clears the token totals a workflow overlay reads. The
-// first token reset after setup is that wipe, so re-apply the seed there.
+// first token reset after setup marks that wipe; replay after every sub-store has reset.
 function reseedAfterWorkflowReset(seed: OverlaySeed): () => void {
   const stop = tokensStore.subscribe(() => {
     stop();
-    seed();
+    queueMicrotask(seed);
   });
   return stop;
 }
@@ -1263,6 +1262,12 @@ const STOP_SHEET_NEXT = taskId('T003');
 // underneath it has to have both.
 function seedStopSheet(): void {
   addEvent({
+    type: 'workflow_started',
+    ts: STOP_SHEET_TS - 1_000,
+    phase: 'implementing',
+    feature: 'Add the stop sheet',
+  });
+  addEvent({
     type: 'tasks_planned',
     ts: STOP_SHEET_TS,
     phase: 'implementing',
@@ -1293,7 +1298,28 @@ function seedStopSheet(): void {
   });
   addEvent({
     type: 'task_started',
-    ts: STOP_SHEET_TS + 100,
+    ts: STOP_SHEET_TS + 10,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'Add the stop sheet rows',
+    index: 0,
+    total: 3,
+    file: 'src/features/workflow/stop/options.ts',
+    action: 'create',
+  });
+  addEvent({
+    type: 'task_completed',
+    ts: STOP_SHEET_TS + 5_010,
+    phase: 'implementing',
+    taskId: taskId('T001'),
+    title: 'Add the stop sheet rows',
+    method: 'local',
+    retries: 0,
+    duration: 5_000,
+  });
+  addEvent({
+    type: 'task_started',
+    ts: STOP_SHEET_TS + 5_100,
     phase: 'implementing',
     taskId: STOP_SHEET_RUNNING,
     title: 'Render the stop sheet',
@@ -1960,6 +1986,25 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     () => ({ ...createStopSheetFixture(), afterMount: (write) => write('\x1b[B') }),
   ],
   [
+    scenarioId('workflow-stop-sheet-fix-inserted'),
+    () => ({
+      ...createOverlayFixture({
+        overlay: 'stop-sheet',
+        underlyingScreen: 'workflow',
+        seed: () => {
+          addEvent({
+            type: 'workflow_started',
+            ts: STOP_SHEET_TS - 1_000,
+            phase: 'implementing',
+            feature: 'Add overdue book reporting',
+          });
+          for (const event of makeReviewFixInsertedEvents()) addEvent(event);
+        },
+      }),
+      afterMount: (write) => write('\x1b[B'),
+    }),
+  ],
+  [
     scenarioId('workflow-stop-sheet-after-continue'),
     // Continuing a halt resets its brief to pending before the build starts it again. The reset
     // lands once, after the screen's own store reset has run to its end, so the run stays in the
@@ -1975,7 +2020,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
           reset = setImmediate(() =>
             addEvent({
               type: 'task_reset',
-              ts: STOP_SHEET_TS + 200,
+              ts: STOP_SHEET_TS + 5_200,
               phase: 'implementing',
               taskId: STOP_SHEET_RUNNING,
             }),
