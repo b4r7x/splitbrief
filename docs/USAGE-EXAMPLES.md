@@ -862,7 +862,7 @@ Press `Ctrl+K` from any screen.
 │  ▌ /help                   Show help                            ctrl+/ █ │
 │    /skills                 Skills for every seat  <skill-id …>         █ │
 │    /sessions               Browse past sessions                        █ │
-│    /settings               Crew, validation, workflow           ctrl+, █ │
+│    /settings               Crew, fallback, validation, workflow ctrl+, █ │
 │    /home                   Return to home screen                       █ │
 │    /quit                   Exit application                     ctrl+q █ │
 │    Skill · Terminal layout Check spacing and terminal-width behavior   █ │

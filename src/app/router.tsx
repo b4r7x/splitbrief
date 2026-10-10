@@ -125,11 +125,17 @@ function renderOverlay({
     case 'settings':
       return <SettingsOverlay />;
     case 'planner-picker':
-      return <ToolModelPicker role="planner" deps={interactionDeps?.picker} />;
+      return <ToolModelPicker role="planner" slot="seat" deps={interactionDeps?.picker} />;
     case 'implementer-picker':
-      return <ToolModelPicker role="implementer" deps={interactionDeps?.picker} />;
+      return <ToolModelPicker role="implementer" slot="seat" deps={interactionDeps?.picker} />;
     case 'reviewer-picker':
-      return <ToolModelPicker role="reviewer" deps={interactionDeps?.picker} />;
+      return <ToolModelPicker role="reviewer" slot="seat" deps={interactionDeps?.picker} />;
+    case 'planner-fallback-picker':
+      return <ToolModelPicker role="planner" slot="fallback" deps={interactionDeps?.picker} />;
+    case 'implementer-fallback-picker':
+      return <ToolModelPicker role="implementer" slot="fallback" deps={interactionDeps?.picker} />;
+    case 'reviewer-fallback-picker':
+      return <ToolModelPicker role="reviewer" slot="fallback" deps={interactionDeps?.picker} />;
     case 'stop-sheet':
       // This focus owner is rendered above the workflow composer, without covering the page.
       return null;

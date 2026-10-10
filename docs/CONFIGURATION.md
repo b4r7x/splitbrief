@@ -84,8 +84,32 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 ### `fallback`
 
 A seat names the CLI runner it uses after an automatic switch.
-Declare `fallback` under `planner`, `implementer`, or `reviewer` in `.splitbrief/config.yaml`.
-The TUI has no control for `fallback`.
+Set it in Settings › Fallback, or write `fallback` under `planner`, `implementer`, or `reviewer` in `.splitbrief/config.yaml`.
+
+The Fallback section is directly below Crew. It has one row per seat: PLAN, BUILD, REVIEW.
+Each row shows the fallback as a seat identity, or `none · pause and ask`.
+A REVIEW that follows PLAN shows `= PLAN · …` and uses PLAN's fallback.
+A note names why the halt cannot offer it: ` · not installed`, a readiness state, or ` · same as the seat`.
+The BUILD row edits the default implementer profile's fallback.
+Setup shows no fallback. Crew rows show no fallback line.
+
+Press ⏎ on a Fallback row to open the tool/model picker in its fallback slot.
+Its title is `<SEAT> fallback · tool, model, effort`.
+The first row, None, clears the fallback. The other rows offer only CLI tools that the seat can host.
+Model, effort and variant choices work as they do for the seat. Model-id axes stay in `fallback.model`.
+The fallback slot has no auth-method row.
+Choosing an automatic model saves no `fallback.model` field.
+The picker refuses the seat's own identity and stays open with `<SEAT> runs <identity> now · choose another tool or model`.
+On the same tool, no model or the seat's resolved model counts as the same identity. Changing only `effort` or `variant` keeps the same identity. Changing an effort token inside the model ID changes the identity.
+A typed custom model saves `fallback.model` only. It does not add to the seat's `customModels`.
+The entry screen is titled `Custom fallback model · <SEAT>`.
+
+When REVIEW follows PLAN, the picker and custom-model entry screen show `REVIEW uses PLAN · saving here gives REVIEW its own seat`.
+Saving copies PLAN's runner into a new `reviewer` block with the new fallback.
+Clearing it from REVIEW when PLAN has a fallback does the same, with no fallback in the new block. PLAN stays unchanged.
+Choosing None when PLAN has no fallback keeps REVIEW inherited.
+An explicit `reviewer` block uses only its own fallback, even when that block has none.
+Presets keep each seat's fallback. A preset with no reviewer makes REVIEW follow PLAN, fallback and all.
 
 Merge this fragment into your existing `version: 3` config:
 
@@ -121,6 +145,17 @@ Declaring a fallback authorizes one automatic switch per run and seat.
 SPLITBRIEF switches only for an account refusal or a rate limit with a reset beyond the run's wait limit.
 The fallback must pass admission checks, and the halt must carry the config revision.
 SPLITBRIEF records each switch in `seatSwitches`.
+An automatic switch makes the old CLI seat the fallback, preserving its tool and model.
+It preserves `effort` only for an `effort-flag` channel, or `variant` only for a `variant` channel.
+Model-ID axes remain in `model`; unused level fields are omitted.
+An old `api`, `shell` or `agent` runner cannot be a fallback, so the new seat has none.
+A manual switch keeps the seat's fallback.
+Switching an inherited REVIEW writes a `reviewer` block and leaves `planner` unchanged.
+
+At each halt, SPLITBRIEF reads the fallback from the config of record with its `configRevision`.
+A fallback saved during a run applies at the next halt in that run, in any phase.
+With no `config.yaml`, the prepared config is the record.
+If an existing `config.yaml` does not load, the halt offers no configured fallback and shows `fallback: not read · config.yaml does not load`.
 See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for the switch conditions and recovery actions.
 
 Use `--on-seat-down halt` to disable automatic switching for headless `start`, `resume`, or `continue`.
@@ -341,7 +376,7 @@ The reviewer is a planner-tier seat and shares the planner's admission set, so a
 - **No `reviewer` block:** the planner runner performs the review. Review tokens are priced at the planner's rates and folded into the planner line in the run summary.
 - **A `reviewer` block:** the reviewer performs the review and gets its own priced line in both.
 - **The review seat's fallback:** `reviewer.fallback` when a `reviewer` block exists, else `planner.fallback`. See [`fallback`](#fallback).
-- **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. **A configured reviewer that fails mid-call** is reported as a failed review (`finalReviewStatus: "failed"` in the run summary, `finalReview.status` in the review packet), with the reviewer's identity in the error and the final-review evidence still recorded. SPLITBRIEF never silently hands the review back to the planner.
+- **A configured reviewer that fails admission** blocks the run before it starts, with a readiness blocker naming the reviewer seat. A mid-call account refusal or long-reset limit raises a Seat down halt and can apply the review seat's configured fallback under the [switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down). A review that ends as failed records `finalReviewStatus: "failed"` in the run summary and `finalReview.status` in the review packet, with the reviewer's identity in the error and the final-review evidence. SPLITBRIEF never silently hands the review back to the planner.
 
 ### YAML — cross-lab review
 

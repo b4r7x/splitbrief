@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import { configPath } from '../../../core/config/load/document.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { switchSeatOffer } from './builders/task.js';
-import { loadSeatSwapContext } from './seat-swap-context.js';
+import { loadSeatSwapContext, readSeatFallbackOfRecord } from './seat-swap-context.js';
 
 let dirs: string[] = [];
 
@@ -23,6 +26,32 @@ async function projectWithRememberedTools(
 }
 
 describe('loadSeatSwapContext', () => {
+  it('returns a read failure for invalid config instead of throwing', () => {
+    const projectDir = createTempDir('seat-fallback-invalid-config');
+    dirs.push(projectDir);
+    const config = makeConfig();
+    writeConfig(projectDir, config);
+    writeFileSync(configPath(projectDir), 'version: 3\nplanner:\n  kind: cli\n  tool: invalid\n');
+    expect(readSeatFallbackOfRecord({ projectDir, seat: 'build', config })).toEqual({
+      kind: 'read-failed',
+    });
+  });
+
+  it('reads the single BUILD fallback when a halt carries a former profile name', async () => {
+    const projectDir = await projectWithRememberedTools('seat-fallback-former-profile', [
+      cliDetectionFor('ready', 'claude-code'),
+    ]);
+    const runner = { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } } as const;
+    const context = await loadSeatSwapContext({
+      projectDir,
+      seat: 'build',
+      runner,
+      config: makeConfig({ implementer: runner }),
+      implementerProfile: 'former-profile',
+    });
+    expect(context?.fallback).toEqual(runner.fallback);
+  });
+
   it('reads the remembered tools regardless of the context they were probed under', async () => {
     const projectDir = await projectWithRememberedTools('seat-swap-remembered', [
       cliDetectionFor('ready', 'codex'),
@@ -33,6 +62,7 @@ describe('loadSeatSwapContext', () => {
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
+      config: makeConfig(),
     });
 
     expect(context).toEqual({
@@ -59,6 +89,7 @@ describe('loadSeatSwapContext', () => {
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex' },
+      config: makeConfig(),
     });
 
     expect(context?.detectedTools).toContainEqual({ tool: 'claude-code', ready: false });
@@ -74,6 +105,7 @@ describe('loadSeatSwapContext', () => {
       projectDir,
       seat: 'build',
       runner: makeConfig().implementer,
+      config: makeConfig(),
     });
 
     expect(context?.currentTool).toBe('');
@@ -89,6 +121,7 @@ describe('loadSeatSwapContext', () => {
         projectDir,
         seat: 'build',
         runner: { kind: 'cli', tool: 'codex' },
+        config: makeConfig(),
       }),
     ).resolves.toBeUndefined();
   });
@@ -102,6 +135,13 @@ describe('loadSeatSwapContext', () => {
     const context = await loadSeatSwapContext({
       projectDir,
       seat: 'build',
+      config: makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'codex',
+          fallback: { tool: 'claude-code', model: 'sonnet', effort: 'high' },
+        },
+      }),
       runner: {
         kind: 'cli',
         tool: 'codex',
@@ -132,6 +172,13 @@ describe('loadSeatSwapContext', () => {
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code', model: 'sonnet' } },
+      config: makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'codex',
+          fallback: { tool: 'claude-code', model: 'sonnet' },
+        },
+      }),
     });
 
     expect(context?.detectedTools.filter((tool) => tool.tool === 'claude-code')).toEqual([
@@ -149,6 +196,9 @@ describe('loadSeatSwapContext', () => {
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+      }),
     });
 
     expect(context?.fallbackBlockedReason).toBe('unauthenticated');
@@ -166,6 +216,9 @@ describe('loadSeatSwapContext', () => {
       projectDir,
       seat: 'build',
       runner: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+      }),
     });
 
     expect(context?.fallbackBlockedReason).toBe('not installed');

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_OVERLAYS,
+  FALLBACK_PICKER_OVERLAYS,
+  fallbackPickerOverlayFor,
   SEAT_PICKER_OVERLAYS,
   overlayAllowsPickerKeys,
   seatPickerOverlayFor,
@@ -23,5 +25,23 @@ describe('seat picker overlays', () => {
     expect(overlayAllowsPickerKeys('none')).toBe(true);
     expect(overlayAllowsPickerKeys('planner-picker')).toBe(true);
     expect(overlayAllowsPickerKeys('settings')).toBe(false);
+  });
+});
+
+describe('fallback picker overlays', () => {
+  it('gives every seat picker role a routable fallback overlay', () => {
+    expect(SEAT_PICKER_ROLES.map(fallbackPickerOverlayFor)).toEqual([
+      'planner-fallback-picker',
+      'implementer-fallback-picker',
+      'reviewer-fallback-picker',
+    ]);
+    expect(SEAT_PICKER_ROLES.map(fallbackPickerOverlayFor)).toEqual([...FALLBACK_PICKER_OVERLAYS]);
+    for (const overlay of FALLBACK_PICKER_OVERLAYS) expect(ACTIVE_OVERLAYS).toContain(overlay);
+  });
+
+  it('keeps the picker keys live on a fallback picker', () => {
+    for (const overlay of FALLBACK_PICKER_OVERLAYS) {
+      expect(overlayAllowsPickerKeys(overlay)).toBe(true);
+    }
   });
 });

@@ -6,7 +6,7 @@ function makeCommand(name: string): RuntimeCommandDef {
   return {
     kind: 'noarg',
     name,
-    description: 'Crew, validation, workflow',
+    description: 'Crew, fallback, validation, workflow',
     category: 'navigate',
     validScreens: ['home'],
     handler: () => {},

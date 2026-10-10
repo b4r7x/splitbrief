@@ -70,7 +70,12 @@ describe('PickerView browsed tool marker', () => {
     'keeps a dim marker on the browsed tool row once %s opens the models column',
     async (_name, key) => {
       const ui = renderFeature(
-        <PickerView role="planner" catalog={browsableCatalog()} actions={makeActions()} />,
+        <PickerView
+          slot="seat"
+          role="planner"
+          catalog={browsableCatalog()}
+          actions={makeActions()}
+        />,
       );
       await flushEffects();
 
@@ -99,7 +104,12 @@ describe('PickerView browsed tool marker', () => {
 
   it('restores the active bar when the left arrow returns to the tools column', async () => {
     const ui = renderFeature(
-      <PickerView role="planner" catalog={browsableCatalog()} actions={makeActions()} />,
+      <PickerView
+        slot="seat"
+        role="planner"
+        catalog={browsableCatalog()}
+        actions={makeActions()}
+      />,
     );
     await flushEffects();
     const activeLine = lineFor(ui.lastFrame() ?? '', 'OpenAI Codex CLI');

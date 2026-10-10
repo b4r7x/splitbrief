@@ -4,6 +4,7 @@ import {
   customModelEntryCopy,
   CUSTOM_COMMAND_PANE_CELLS,
   CUSTOM_COMMAND_PANE_LINES,
+  fallbackInheritanceNotice,
   formatCatalogDiagnostic,
   formatModelCatalogGuidance,
   formatModelsByline,
@@ -27,6 +28,30 @@ import type { ModelOption } from './model-catalog/recency.js';
 import type { RightRow } from './model-catalog/rows.js';
 
 const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom: 0 };
+
+describe('fallbackInheritanceNotice', () => {
+  it('warns that saving an inherited REVIEW fallback gives REVIEW its own seat', () => {
+    expect(fallbackInheritanceNotice({ slot: 'fallback', role: 'reviewer', inherited: true })).toBe(
+      'REVIEW uses PLAN · saving here gives REVIEW its own seat',
+    );
+  });
+
+  it.each([
+    ['seat', 'planner', false],
+    ['seat', 'planner', true],
+    ['seat', 'implementer', false],
+    ['seat', 'implementer', true],
+    ['seat', 'reviewer', false],
+    ['seat', 'reviewer', true],
+    ['fallback', 'planner', false],
+    ['fallback', 'planner', true],
+    ['fallback', 'implementer', false],
+    ['fallback', 'implementer', true],
+    ['fallback', 'reviewer', false],
+  ] as const)('shows no notice for %s / %s / inherited %s', (slot, role, inherited) => {
+    expect(fallbackInheritanceNotice({ slot, role, inherited })).toBeUndefined();
+  });
+});
 
 function readyCliTool(): PickerOption {
   return {

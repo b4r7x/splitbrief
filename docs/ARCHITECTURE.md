@@ -1163,7 +1163,7 @@ The registry holds 22 commands in five categories. `/mode`, `/revise-spec`, `/re
 | `/palette` | Open command palette |
 | `/skills` | Skills for every seat |
 | `/sessions` | Browse past sessions |
-| `/settings` | Crew, validation, workflow |
+| `/settings` | Crew, fallback, validation, workflow |
 | `/home` | Return to home screen |
 | `/quit` | Exit application |
 

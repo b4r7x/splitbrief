@@ -48,27 +48,17 @@ export function CrewRowView({ row, layout, isCursor, width }: CrewRowViewProps) 
       ? formatted.content
       : padTerminalDisplayTextEnd(formatted.content, layout.identityWidth);
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color={t.accent}>
-          {isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER)}
-        </Text>
-        <Text color={seatHue(t, row)} bold>
-          {formatted.label}
-        </Text>
-        <Text color={t.text}>{`${CREW_COLUMN_GAP}${content}`}</Text>
-        {formatted.posture !== undefined && (
-          <Text color={t.textDim}>
-            {`${CREW_COLUMN_GAP}${padStartToCells(formatted.posture, postureWidth)}`}
-          </Text>
-        )}
-      </Box>
-      {formatted.fallback !== undefined && (
+    <Box>
+      <Text color={t.accent}>
+        {isCursor ? `${glyph('liveBar')} ` : ' '.repeat(CREW_MARKER_GUTTER)}
+      </Text>
+      <Text color={seatHue(t, row)} bold>
+        {formatted.label}
+      </Text>
+      <Text color={t.text}>{`${CREW_COLUMN_GAP}${content}`}</Text>
+      {formatted.posture !== undefined && (
         <Text color={t.textDim}>
-          {`${' '.repeat(CREW_IDENTITY_COLUMN)}${truncateTerminalDisplayText(
-            formatted.fallback,
-            width - CREW_IDENTITY_COLUMN,
-          )}`}
+          {`${CREW_COLUMN_GAP}${padStartToCells(formatted.posture, postureWidth)}`}
         </Text>
       )}
     </Box>

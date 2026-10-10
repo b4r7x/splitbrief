@@ -21,7 +21,7 @@ import { buildRightModels, countModelOptions } from './model-catalog/catalog.js'
 import { BROWSE_CATALOG_TEXT, type RightRow } from './model-catalog/rows.js';
 import { formatCatalogDiagnostic } from './picker-format.js';
 import { PickerView } from './picker-view.js';
-import type { PickerOption } from './model-catalog/options.js';
+import { noFallbackOption, type PickerOption } from './model-catalog/options.js';
 import { deriveModelCatalogCapability } from './model-catalog/posture.js';
 import type { ModelOption } from './model-catalog/recency.js';
 import type { PickerCatalog } from './use-picker-catalog.js';
@@ -36,6 +36,101 @@ function pickerItem(
     modelCapability: deriveModelCatalogCapability(item.modelPolicy, automatic),
   };
 }
+
+describe('PickerView fallback slot', () => {
+  beforeEach(() => {
+    resetAllStores();
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    configStore.__testReset({ projectDir: '/tmp/project', config: makeConfig() });
+    overlayStore.open('implementer-fallback-picker');
+  });
+
+  function noneCatalog(): PickerCatalog {
+    const none = noFallbackOption({ isCurrent: true });
+    return pickerCatalog({
+      items: [none],
+      currentItem: none,
+      selectedItemId: none.id,
+      rightModels: [],
+      roleLabel: 'BUILD',
+      modelCounts: zeroCounts,
+    });
+  }
+
+  it('names the fallback slot in the BUILD title', async () => {
+    const ui = renderFeature(
+      <PickerView
+        role="implementer"
+        slot="fallback"
+        catalog={noneCatalog()}
+        actions={makeActions()}
+      />,
+      { cols: 140, rows: 40 },
+    );
+    await flushEffects();
+
+    expect(ui.lastFrame()).toContain(`BUILD fallback${SOFT_SEP}tool, model, effort`);
+    ui.unmount();
+  });
+
+  it('keeps the REVIEW inheritance notice visible while the cursor moves', async () => {
+    overlayStore.close();
+    overlayStore.open('reviewer-fallback-picker');
+    const catalog = noneCatalog();
+    catalog.items.push(
+      pickerItem({
+        kind: 'cli',
+        id: 'codex',
+        displayName: 'Codex CLI',
+        roles: ['planner', 'implementer'],
+        modelPolicy: 'optional',
+        billing: 'subscription-included',
+        permissions: readyPermissions,
+        status: { state: 'ready', remediation: null },
+        available: true,
+      }),
+    );
+    const ui = renderFeature(
+      <PickerView role="reviewer" slot="fallback" catalog={catalog} actions={makeActions()} />,
+      { cols: 140, rows: 40 },
+    );
+    await flushEffects();
+
+    const notice = 'REVIEW uses PLAN · saving here gives REVIEW its own seat';
+    expect(ui.lastFrame()).toContain(notice);
+    const initialFrame = ui.lastFrame();
+    ui.stdin.write('\u001B[B');
+    await flushEffects();
+    expect(ui.lastFrame()).not.toBe(initialFrame);
+    expect(ui.lastFrame()).toContain(notice);
+    ui.unmount();
+  });
+
+  it('explains None in the terminal pane', async () => {
+    const ui = renderFeature(
+      <PickerView
+        role="implementer"
+        slot="fallback"
+        catalog={noneCatalog()}
+        actions={makeActions()}
+      />,
+      { cols: 140, rows: 40 },
+    );
+    await flushEffects();
+
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain('No fallback');
+    for (const line of [
+      'A Seat down halt',
+      'pauses the run and',
+      'asks which tool',
+      'takes the seat.',
+    ]) {
+      expect(frame).toContain(line);
+    }
+    ui.unmount();
+  });
+});
 
 describe('PickerView model confirmation', () => {
   const codex = pickerItem(
@@ -115,7 +210,7 @@ describe('PickerView model confirmation', () => {
     };
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={explicitModelCatalog()} actions={actions} />,
+      <PickerView slot="seat" role="planner" catalog={explicitModelCatalog()} actions={actions} />,
     );
     await flushEffects();
 
@@ -162,7 +257,7 @@ describe('PickerView previews', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const initialFrame = ui.lastFrame() ?? '';
@@ -224,7 +319,7 @@ describe('PickerView previews', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
@@ -273,7 +368,7 @@ describe('PickerView previews', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
 
@@ -284,6 +379,7 @@ describe('PickerView previews', () => {
 
     ui.rerender(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={{
           ...catalog,
@@ -329,7 +425,7 @@ describe('PickerView previews', () => {
 
     terminalSizeStore.__testReset({ cols: 160, rows: 40, isSmall: false });
     const ui = renderFeature(
-      <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="implementer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
@@ -364,7 +460,7 @@ describe('PickerView previews', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="implementer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
@@ -398,7 +494,7 @@ describe('PickerView previews', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
@@ -432,14 +528,14 @@ describe('PickerView previews', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="reviewer" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="reviewer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain('REVIEW');
     ui.unmount();
 
     const implementerUi = renderFeature(
-      <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="implementer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     expect(implementerUi.lastFrame() ?? '').toContain('BUILD');
@@ -509,7 +605,7 @@ describe('PickerView initial left highlight', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
 
@@ -555,7 +651,7 @@ describe('PickerView refreshing discovery', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
@@ -631,7 +727,7 @@ describe('PickerView browse-catalog escape', () => {
     };
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={escapeCatalog(false)} actions={actions} />,
+      <PickerView slot="seat" role="planner" catalog={escapeCatalog(false)} actions={actions} />,
     );
     await flushEffects();
     expect(ui.lastFrame() ?? '').toContain(BROWSE_CATALOG_TEXT);
@@ -646,7 +742,12 @@ describe('PickerView browse-catalog escape', () => {
 
   it('keeps the browse-catalog row visible under a filter query', async () => {
     const ui = renderFeature(
-      <PickerView role="planner" catalog={escapeCatalog(false)} actions={makeActions()} />,
+      <PickerView
+        slot="seat"
+        role="planner"
+        catalog={escapeCatalog(false)}
+        actions={makeActions()}
+      />,
     );
     await flushEffects();
 
@@ -661,7 +762,12 @@ describe('PickerView browse-catalog escape', () => {
 
   it('offers the browse verb on the browse-catalog row', async () => {
     const ui = renderFeature(
-      <PickerView role="planner" catalog={escapeCatalog(true)} actions={makeActions()} />,
+      <PickerView
+        slot="seat"
+        role="planner"
+        catalog={escapeCatalog(true)}
+        actions={makeActions()}
+      />,
     );
     await flushEffects();
 
@@ -716,6 +822,7 @@ describe('PickerView variant axis', () => {
   }) {
     return renderFeature(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={pickerCatalog({
           items: [opencode],
@@ -883,6 +990,7 @@ describe('PickerView variant axis', () => {
     pickerViewStore.setEffortDraft('minimal');
     const ui = renderFeature(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={pickerCatalog({
           items: [opencode],
@@ -927,6 +1035,7 @@ describe('PickerView variant axis', () => {
     };
     const ui = renderFeature(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={pickerCatalog({
           items: [opencode],
@@ -965,6 +1074,7 @@ describe('PickerView variant axis', () => {
     pickerViewStore.expand(luna.id, 'gpt-5.6-luna');
     const ui = renderFeature(
       <PickerView
+        slot="seat"
         role="planner"
         catalog={pickerCatalog({
           items: [cursor],

@@ -145,6 +145,7 @@ function LivePicker() {
   });
   return createElement(PickerView, {
     role: 'planner',
+    slot: 'seat',
     actions,
     catalog: pickerCatalog({
       items: [tool],

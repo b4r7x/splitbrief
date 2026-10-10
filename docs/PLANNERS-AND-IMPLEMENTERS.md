@@ -95,7 +95,11 @@ The review seat has two call types. The first is the review of the run diff at t
 
 When the plan has render checks and the review seat accepts images, the review call attaches at most 4 PNGs of each render check: every `frame.png` first, then the other PNGs, each group in path order (`reviewRenders`, `src/engine/orchestrator/review-renders.ts`). The cap applies to each check, so a scenario that writes many PNGs does not stop the images of the other checks. The prompt names each PNG it does not attach. A render criterion stays unverified only when no image of its check reached the reviewer.
 
-A reviewer that fails mid-call is reported, not replaced: `reviewStatus: 'failed'`, the reviewer's display name in the error, final-review evidence recorded, summary still produced. There is deliberately no automatic fallback to the planner.
+A REVIEW account refusal or long-reset limit raises a Seat down halt. The halt reads the fallback of record, including a fallback saved during the run. Set it in Settings › Fallback, or write it in `.splitbrief/config.yaml`. The [automatic-switch conditions](./APPROVAL-AND-RECOVERY.md#seat-down) apply once per run and seat.
+
+With no `reviewer` block, REVIEW uses PLAN's runner and fallback. A REVIEW switch writes its own `reviewer` block and leaves `planner` unchanged. An explicit reviewer uses only its own fallback, including none. A manual switch keeps that fallback. An automatic switch makes the old CLI runner the fallback; an old non-CLI runner leaves none.
+
+A review that ends as failed records `reviewStatus: 'failed'`, the reviewer's display name in the error and the final-review evidence. The summary still runs. SPLITBRIEF does not silently hand the review to PLAN.
 
 ---
 

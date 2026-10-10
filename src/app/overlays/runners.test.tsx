@@ -106,7 +106,7 @@ describe('ToolModelPicker custom-command input', () => {
   });
 
   it('keeps the text input on Escape under a foreign overlay, then walks back one step', async () => {
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     await openCustomCommand(ui);
 
@@ -140,7 +140,7 @@ describe('ToolModelPicker custom-command input', () => {
   });
 
   it('shows both contracts with distinct permission copy before the command input', async () => {
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     await openContractChoice(ui);
 
@@ -158,7 +158,7 @@ describe('ToolModelPicker custom-command input', () => {
     const projectDir = createTempDir('runners-agent-contract');
     writeConfig(projectDir, makeConfig({ planner: { kind: 'shell', command: 'custom-planner' } }));
     configStore.load(projectDir);
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     await openContractChoice(ui);
 
@@ -182,7 +182,7 @@ describe('ToolModelPicker custom-command input', () => {
   });
 
   it('returns to the tool list when the contract choice is dismissed', async () => {
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     await openContractChoice(ui);
 
@@ -198,7 +198,7 @@ describe('ToolModelPicker custom-command input', () => {
   });
 
   it('preserves the typed draft when stepping back to the contract chooser and forward again', async () => {
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     await openCustomCommand(ui);
 
@@ -330,7 +330,10 @@ describe('ToolModelPicker focus changes', () => {
 
   it('moves the mounted picker to a new tool and clears omitted focus without self-stacking', async () => {
     overlayStore.open('planner-picker', 'tool:claude-code');
-    const ui = renderFeature(<ToolModelPicker role="planner" />, { cols: 120, rows: 40 });
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />, {
+      cols: 120,
+      rows: 40,
+    });
     await flushEffects();
     expect(frameText(ui)).toContain(`${listRowLead('context')}Claude Code CLI`);
     expect(frameText(ui)).toContain('Sonnet 5');
@@ -383,7 +386,10 @@ describe('ToolModelPicker focus changes', () => {
     });
     configStore.__testReset({ config });
     overlayStore.open('planner-picker');
-    const ui = renderFeature(<ToolModelPicker role="planner" />, { cols: 120, rows: 40 });
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />, {
+      cols: 120,
+      rows: 40,
+    });
     await flushEffects();
     expect(frameText(ui)).toContain(`${listRowLead('active')}Claude Code CLI`);
 
@@ -474,7 +480,7 @@ describe('ToolModelPicker provider routes', () => {
 
   it('confirms the one signed-in route without expanding the merged row', async () => {
     seedOpenCode(signedInToAnthropic);
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await focusMergedModelRow(ui);
 
     ui.stdin.write('\r');
@@ -491,7 +497,7 @@ describe('ToolModelPicker provider routes', () => {
 
   it('expands to the route rows when neither route is signed in, then saves the chosen one', async () => {
     seedOpenCode(signedInToGroq);
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await focusMergedModelRow(ui);
 
     ui.stdin.write('\r'); // Enter on the merged row expands its routes
@@ -515,7 +521,7 @@ describe('ToolModelPicker provider routes', () => {
 
   it('esc collapses the expanded routes with nothing saved', async () => {
     seedOpenCode(signedInToGroq);
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await focusMergedModelRow(ui);
 
     ui.stdin.write('\r');
@@ -537,7 +543,7 @@ describe('ToolModelPicker provider routes', () => {
 
   it('saves a single-route model directly without expanding', async () => {
     seedOpenCode(signedInToAnthropic);
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await flushEffects();
     ui.stdin.write('opencode');
     await flushEffects();
@@ -570,7 +576,7 @@ describe('ToolModelPicker discovery state', () => {
 
   it('shows the initializing panel during cold discovery and reveals the picker on publish', async () => {
     detectionStore.beginRefresh({ contexts: catalogContexts });
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     expect(frameText(ui)).toContain('Waking your crew…');
     expect(frameText(ui)).not.toContain('Tools');
@@ -588,7 +594,7 @@ describe('ToolModelPicker discovery state', () => {
   it('labels the picker as refreshing during a warm background refresh', async () => {
     publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
     detectionStore.beginRefresh({ contexts: catalogContexts });
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     const frame = frameText(ui);
     expect(frame).toContain('refreshing…');
@@ -631,7 +637,7 @@ describe('ToolModelPicker discovery state', () => {
       },
     });
 
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
 
     // Warm start: the foreign record's rows are on screen, marked stale.
@@ -750,7 +756,7 @@ describe('ToolModelPicker model catalog', () => {
   });
 
   it('enriches the configured Claude Code alias when the models.dev lane lands, without adding catalog rows', async () => {
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
 
     const before = checkedModelLines(frameText(ui));
@@ -795,7 +801,7 @@ describe('ToolModelPicker model catalog', () => {
     // seam the picker itself reads.
     expect(modelCacheStore.getClaudeCodeModelOptions()).toEqual(PINNED_CLAUDE_CODE_OPTIONS);
 
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
 
     // The probe row can only come from the pin: no bundled model answers to its id, and the
@@ -817,7 +823,11 @@ describe('ToolModelPicker model catalog', () => {
     if (plan === undefined) throw new Error('No plan seat row.');
     crewActivate({ target: { kind: 'crew', row: plan }, config: MAX_SEAT });
     return renderFeature(
-      <ToolModelPicker role="planner" deps={{ ...defaultPickerEffectDeps, saveConfig }} />,
+      <ToolModelPicker
+        slot="seat"
+        role="planner"
+        deps={{ ...defaultPickerEffectDeps, saveConfig }}
+      />,
     );
   }
 
@@ -891,16 +901,71 @@ describe('ToolModelPicker custom model entry', () => {
 
   it("offers the seat's own tool ids, not another tool's", async () => {
     pickerViewStore.open({ kind: 'custom-model' });
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
     const frame = frameText(ui);
 
+    expect(frame).toContain('Custom model · PLAN');
     expect(frame).toContain('Model id for Claude Code CLI');
     expect(frame).toMatch(/e\.g\. claude-[a-z0-9-]+/);
     expect(frame).not.toContain('llama3.3');
     expect(frame).not.toContain('qwen3-coder');
     ui.unmount();
   });
+
+  it.each([
+    { slot: 'seat', title: 'Custom model' },
+    { slot: 'fallback', title: 'Custom fallback model' },
+  ] as const)('names the $slot slot in the BUILD entry title', async ({ slot, title }) => {
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'codex',
+          model: 'gpt-6-sol',
+          fallback: { tool: 'codex', model: 'gpt-6-astra' },
+        },
+      }),
+    });
+    detectionStore.setDetection({ providers: [], cliTools: [cliDetectionFor('ready', 'codex')] });
+    overlayStore.open(slot === 'fallback' ? 'implementer-fallback-picker' : 'implementer-picker');
+    pickerViewStore.open({ kind: 'custom-model' });
+    const ui = renderFeature(<ToolModelPicker slot={slot} role="implementer" />);
+    await tick(20);
+
+    expect(frameText(ui)).toContain(`${title} · BUILD`);
+    ui.unmount();
+  });
+
+  it.each([false, true])(
+    'shows the REVIEW fallback inheritance notice only without its own block (own block: %s)',
+    async (ownReviewer) => {
+      const reviewer = {
+        kind: 'cli' as const,
+        tool: 'claude-code' as const,
+        model: 'opus',
+        fallback: { tool: 'codex', model: 'gpt-6-astra' },
+      };
+      configStore.__testReset({
+        projectDir: '/tmp/project',
+        config: makeConfig({ planner: reviewer, ...(ownReviewer ? { reviewer } : {}) }),
+      });
+      detectionStore.setDetection({ providers: [], cliTools: [cliDetectionFor('ready', 'codex')] });
+      overlayStore.open('reviewer-fallback-picker');
+      pickerViewStore.open({ kind: 'custom-model' });
+      const ui = renderFeature(<ToolModelPicker slot="fallback" role="reviewer" />);
+      await tick(20);
+      const notice = 'REVIEW uses PLAN · saving here gives REVIEW its own seat';
+
+      expect(frameText(ui).includes(notice)).toBe(!ownReviewer);
+      expect(frameText(ui)).toContain('Custom fallback model · REVIEW');
+      ui.stdin.write('custom-model-'.repeat(12));
+      await tick(20);
+      expect(frameText(ui).includes(notice)).toBe(!ownReviewer);
+      ui.unmount();
+    },
+  );
 });
 
 describe('ToolModelPicker leaving a text-output shell seat', () => {
@@ -938,7 +1003,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
     if (plan === undefined) throw new Error('No plan seat row.');
     crewActivate({ target: { kind: 'crew', row: plan }, config });
-    return renderFeature(<ToolModelPicker role="planner" deps={deps} />);
+    return renderFeature(<ToolModelPicker slot="seat" role="planner" deps={deps} />);
   }
 
   // Tool, then the Sonnet row, whose Enter opens its effort axis, whose Enter commits.
@@ -1241,7 +1306,7 @@ describe('ToolModelPicker leaving a hand-written shell seat', () => {
     const plan = deriveCrewRows({ config }).find((row) => row.id === 'plan');
     if (plan === undefined) throw new Error('No plan seat row.');
     crewActivate({ target: { kind: 'crew', row: plan }, config });
-    const ui = renderFeature(<ToolModelPicker role="planner" />);
+    const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await flushEffects();
     ui.stdin.write(ARROW_DOWN);
     await vi.waitFor(() => {

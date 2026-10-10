@@ -167,8 +167,7 @@ export async function haltVerdictlessReview(args: {
   }
   // The review publishes the one error row for every failure it caught; the halt
   // only raises the recovery. A seat out of quota or signed out halts the way a planner
-  // call does. A review that follows the planner runs on the plan seat's tool, so
-  // its swap moves the plan seat and the review keeps following it.
+  // call does.
   if (failure?.kind === 'seat-protocol-error')
     return haltProtocolError({ wctx, state, setTrackedState, error: failure.error });
   if (failure?.kind === 'seat-blocked') {
@@ -176,11 +175,12 @@ export async function haltVerdictlessReview(args: {
     const followsPlan = reviewer.source === 'planner';
     const issue = await plannerCallHaltIssue({
       projectDir: wctx.projectDir,
+      config: wctx.config,
       diagnosis: failure.diagnosis,
       phase: state.phase,
       seat: 'review',
       seatSwitches: state.seatSwitches,
-      swap: { seat: followsPlan ? 'plan' : 'review', runner: reviewer.runner },
+      swap: { seat: 'review', runner: reviewer.runner },
       details: reviewSeatDetails(followsPlan),
     });
     return raisePendingRecovery(ref, state, issue, setTrackedState);

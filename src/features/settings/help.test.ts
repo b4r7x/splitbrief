@@ -3,7 +3,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { REMOVED_COMMANDS } from '../../core/runtime/commands/types.js';
 import { buildSettingsItems, type SettingsItem } from './items.js';
-import { settingsHelpLines } from './help.js';
+import { helpTextRows, settingsHelpLines } from './help.js';
 
 function itemAt(items: readonly SettingsItem[], key: string): SettingsItem {
   const item = items.find((candidate) => candidate.key === key);
@@ -11,7 +11,7 @@ function itemAt(items: readonly SettingsItem[], key: string): SettingsItem {
   return item;
 }
 
-const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS });
+const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS, cliTools: [] });
 
 function linesFor(key: string) {
   return settingsHelpLines(itemAt(items, key));
@@ -23,6 +23,20 @@ describe('settingsHelpLines', () => {
       { text: expect.stringContaining('writes every Task Brief') },
     ]);
   });
+
+  it.each(['plan', 'build', 'review'])(
+    'explains the %s fallback within two 60-column rows',
+    (seat) => {
+      const lines = linesFor(`fallback:${seat}`);
+
+      expect(lines).toEqual([
+        {
+          text: 'Takes the seat once per run when its tool is signed out or out of quota. None pauses the run and asks.',
+        },
+      ]);
+      expect(helpTextRows(lines, 60).length).toBeLessThanOrEqual(2);
+    },
+  );
 
   it('reads a boolean row straight off its definition', () => {
     expect(linesFor('validation.endChecks')).toEqual([

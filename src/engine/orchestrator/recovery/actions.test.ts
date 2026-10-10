@@ -1,5 +1,8 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { writeFileSync } from 'node:fs';
+import { configPath } from '../../../core/config/load/document.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -553,6 +556,69 @@ function usageLimitIssue(task: Task): RecoveryIssue {
 }
 
 describe('applyRecoveryAction: switch-seat', () => {
+  it.each([
+    'version: 3\nplanner:\n  kind: cli\n  tool: invalid-tool\n',
+    'version: 3\nplanner: [broken\n',
+  ])('blocks a manual switch when config.yaml does not load: %s', async (rawYaml) => {
+    const ref = setupSession('manual-switch-invalid-config');
+    const task = makeTask({ id: 'T400', status: 'in_progress' });
+    const issue = usageLimitIssue(task);
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex' } });
+    writeConfig(ref.projectDir, config);
+    writeFileSync(configPath(ref.projectDir), rawYaml);
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      bus,
+      action: 'switch-seat',
+      candidate: { tool: 'claude-code' },
+      config,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 'blocked',
+      code: 'fallback-read-failed',
+      message: expect.stringContaining('config.yaml does not load'),
+    });
+    expect(result.state.pendingRecovery).toEqual(issue);
+    expect(loadState(ref)?.pendingRecovery).toEqual(issue);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'recovery_action_failed' }));
+    expect(events.some((event) => event.type === 'seat_switched')).toBe(false);
+  });
+
+  it('keeps the declared fallback when a manual command chooses an automatic intent candidate', async () => {
+    const ref = setupSession('manual-switch-auto-candidate');
+    const task = makeTask({ id: 'T400', status: 'in_progress' });
+    const candidate = { tool: 'claude-code' };
+    const issue: RecoveryIssue = {
+      ...usageLimitIssue(task),
+      switchSeat: {
+        seat: 'build',
+        candidates: [candidate],
+        auto: { candidate, configRevision: 'revision' },
+      },
+    };
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    saveState(ref, state);
+    const { bus } = makeBusRecorder();
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      bus,
+      action: 'switch-seat',
+      candidate,
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex', fallback: candidate } }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.message);
+    expect(result.switchedConfig?.implementer.fallback).toEqual(candidate);
+    expect(result.state.seatSwitches?.[0]?.auto).toBe(false);
+  });
   it.each([undefined, 'high'] as const)(
     'records the balance cause when committing an automatic seat switch',
     (variant) => {
@@ -577,12 +643,12 @@ describe('applyRecoveryAction: switch-seat', () => {
         runner,
         classification: { class: 'account', cause: 'balance' },
         words: 'Insufficient Balance',
-        fallback: candidate,
         createdAt,
         seatSwap: {
           seat: 'build',
           currentTool: 'opencode',
           currentModel: runner.model,
+          fallback: candidate,
           detectedTools: [{ ...candidate, ready: true }],
           configRevision: 'revision',
         },

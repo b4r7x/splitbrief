@@ -5,6 +5,7 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { loadConfig } from '../../core/config/load/io.js';
+import { deriveFallbackRows, type FallbackRow } from '../../core/crew/fallback.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { deriveCrewRows } from '../../core/crew/rows.js';
 import { SPLITBRIEF_DIR } from '../../core/paths.js';
@@ -13,7 +14,7 @@ import { configStore } from '../../stores/project/config.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
-import { crewActivate, crewVerdict } from './rows.js';
+import { crewActivate, crewVerdict, fallbackActivate } from './rows.js';
 
 const PRESET: CrewPreset = {
   id: 'claude-crew-codex-review',
@@ -217,6 +218,239 @@ describe('crew preset application', () => {
         expect(feedbackStore.get()).toMatchObject({ isError: true });
       });
       expect(currentConfig()).toEqual(before);
+    });
+  });
+});
+
+describe('fallback row activation', () => {
+  beforeEach(() => {
+    overlayStore.reset();
+    pickerViewStore.reset();
+  });
+
+  function fallbackRow(config: Config, id: FallbackRow['id']): FallbackRow {
+    const row = deriveFallbackRows({ config, cliTools: [] }).find((entry) => entry.id === id);
+    if (row === undefined) throw new Error(`No ${id} fallback row.`);
+    return row;
+  }
+
+  it.each<{ label: string; fallback: FallbackRow['fallback'] }>([
+    { label: 'None', fallback: undefined },
+    { label: 'a tool', fallback: { tool: 'codex' } },
+    {
+      label: 'a model',
+      fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+    },
+  ])('returns to the BUILD fallback row after opening on $label', ({ fallback }) => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', fallback },
+    });
+    overlayStore.open('settings');
+
+    fallbackActivate({ row: fallbackRow(config, 'build'), config });
+    overlayStore.close();
+
+    expect(overlayStore.get()).toMatchObject({ active: 'settings', focus: 'fallback:build' });
+  });
+
+  it("opens the seat's fallback picker on the fallback's model and level", () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+        effort: 'max',
+        fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+      },
+    });
+
+    fallbackActivate({ row: fallbackRow(config, 'build'), config });
+
+    expect(overlayStore.get()).toMatchObject({
+      active: 'implementer-fallback-picker',
+      focus: 'seat:build:effort',
+    });
+    expect(pickerViewStore.get()).toMatchObject({
+      expandedModelId: 'gpt-5-codex',
+      effortDraft: 'high',
+    });
+  });
+
+  it('opens on the None row with nothing drafted when the seat sets no fallback', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+    });
+
+    fallbackActivate({ row: fallbackRow(config, 'plan'), config });
+
+    expect(overlayStore.get()).toMatchObject({ active: 'planner-fallback-picker' });
+    expect(overlayStore.get().focus).toBeUndefined();
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+  });
+
+  it('opens the review fallback picker for an inherited review seat, never the planner one', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+    });
+
+    fallbackActivate({ row: fallbackRow(config, 'review'), config });
+
+    expect(overlayStore.get()).toMatchObject({
+      active: 'reviewer-fallback-picker',
+      focus: 'tool:codex',
+    });
+  });
+
+  it.each(['auto', 'default'])('focuses the tool for an automatic fallback model %s', (model) => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'codex',
+        model: 'gpt-5',
+        fallback: { tool: 'claude-code', model },
+      },
+    });
+
+    fallbackActivate({ row: fallbackRow(config, 'plan'), config });
+
+    expect(overlayStore.get()).toMatchObject({
+      active: 'planner-fallback-picker',
+      focus: 'tool:claude-code',
+    });
+    expect(pickerViewStore.get().expandedModelId).toBeNull();
+  });
+
+  it('drafts the fallback variant when the tool spends its level on a variant', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        fallback: { tool: 'opencode', model: 'openai/gpt-5.6', variant: 'high' },
+      },
+    });
+
+    fallbackActivate({ row: fallbackRow(config, 'plan'), config });
+
+    expect(overlayStore.get().focus).toBe('seat:plan:effort');
+    expect(pickerViewStore.get()).toMatchObject({
+      expandedModelId: 'openai/gpt-5.6',
+      effortDraft: 'high',
+    });
+  });
+});
+
+describe('crew presets keep each seat fallback', () => {
+  beforeEach(() => {
+    configStore.reset();
+    feedbackStore.reset();
+    overlayStore.reset();
+  });
+
+  it('changes the seats and keeps the fallback every seat had', async () => {
+    await withTempDir('crew-preset-fallback', async (projectDir) => {
+      configStore.load(projectDir);
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'opus', fallback: { tool: 'codex' } },
+        implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+        reviewer: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'opencode' } },
+      });
+
+      const applied = crewActivate({ target: { kind: 'preset', preset: PRESET }, config });
+      if (applied.kind !== 'applied') throw new Error('The preset was not applied.');
+
+      expect(applied.config.planner).toMatchObject({
+        tool: 'claude-code',
+        fallback: { tool: 'codex' },
+      });
+      expect(resolveImplementerProfiles(applied.config).defaultProfile.config).toMatchObject({
+        tool: 'opencode',
+        fallback: { tool: 'claude-code' },
+      });
+      expect(applied.config.reviewer).toMatchObject({
+        tool: 'codex',
+        fallback: { tool: 'opencode' },
+      });
+      await vi.waitFor(() => {
+        expect(feedbackStore.get().message).toContain(PRESET.label);
+      });
+    });
+  });
+
+  it("gives a review seat the preset creates the planner's fallback it inherited", async () => {
+    await withTempDir('crew-preset-fallback-review', async (projectDir) => {
+      configStore.load(projectDir);
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'opencode' } },
+      });
+
+      const applied = crewActivate({ target: { kind: 'preset', preset: PRESET }, config });
+      if (applied.kind !== 'applied') throw new Error('The preset was not applied.');
+
+      expect(applied.config.reviewer).toMatchObject({
+        tool: 'codex',
+        fallback: { tool: 'opencode' },
+      });
+      await vi.waitFor(() => {
+        expect(feedbackStore.get().message).toContain(PRESET.label);
+      });
+    });
+  });
+
+  it('keeps None when preset blocks carry other fallback choices', async () => {
+    await withTempDir('crew-preset-fallback-none', async (projectDir) => {
+      configStore.load(projectDir);
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code' },
+        implementer: { kind: 'cli', tool: 'codex' },
+        reviewer: { kind: 'cli', tool: 'claude-code' },
+      });
+      const preset: CrewPreset = {
+        ...PRESET,
+        seats: {
+          planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+          implementer: { kind: 'cli', tool: 'opencode', fallback: { tool: 'claude-code' } },
+          reviewer: { kind: 'cli', tool: 'codex', fallback: { tool: 'opencode' } },
+        },
+      };
+
+      const applied = crewActivate({ target: { kind: 'preset', preset }, config });
+      if (applied.kind !== 'applied') throw new Error('The preset was not applied.');
+
+      expect(applied.config.planner).not.toHaveProperty('fallback');
+      expect(applied.config.implementer).not.toHaveProperty('fallback');
+      expect(applied.config.reviewer).not.toHaveProperty('fallback');
+      expect(preset.seats.planner.fallback).toEqual({ tool: 'codex' });
+      expect(preset.seats.implementer.fallback).toEqual({ tool: 'claude-code' });
+      expect(preset.seats.reviewer?.fallback).toEqual({ tool: 'opencode' });
+      await vi.waitFor(() => {
+        expect(feedbackStore.get().message).toContain(PRESET.label);
+      });
+    });
+  });
+
+  it('makes REVIEW inherit PLAN and its fallback when the preset omits a reviewer', async () => {
+    await withTempDir('crew-preset-fallback-inherit', async (projectDir) => {
+      configStore.load(projectDir);
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+        reviewer: { kind: 'cli', tool: 'codex', fallback: { tool: 'opencode' } },
+      });
+      const preset: CrewPreset = {
+        ...PRESET,
+        seats: { planner: PRESET.seats.planner, implementer: PRESET.seats.implementer },
+      };
+
+      const applied = crewActivate({ target: { kind: 'preset', preset }, config });
+      if (applied.kind !== 'applied') throw new Error('The preset was not applied.');
+
+      expect(applied.config.reviewer).toBeUndefined();
+      const review = deriveFallbackRows({ config: applied.config, cliTools: [] }).find(
+        (row) => row.id === 'review',
+      );
+      expect(review).toMatchObject({ inherited: true, fallback: { tool: 'codex' } });
+      await vi.waitFor(() => {
+        expect(feedbackStore.get().message).toContain(PRESET.label);
+      });
     });
   });
 });

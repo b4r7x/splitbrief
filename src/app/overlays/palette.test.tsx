@@ -625,7 +625,7 @@ describe('CommandPaletteOverlay', () => {
     const helpRow = rowContaining(rows, '/help');
     const settingsRow = rowContaining(rows, '/settings');
     expect(helpRow).toContain('Show help');
-    expect(settingsRow).toContain('Crew, validation, workflow');
+    expect(settingsRow).toContain('Crew, fallback, validation, workflow');
 
     instance.unmount();
   });

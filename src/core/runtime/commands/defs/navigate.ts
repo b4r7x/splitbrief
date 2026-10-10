@@ -97,7 +97,7 @@ export function navigateCommands(ctx: RuntimeCommandContext): RuntimeCommandDef[
       kind: 'noarg',
       name: '/settings',
       label: 'settings',
-      description: 'Crew, validation, workflow',
+      description: 'Crew, fallback, validation, workflow',
       shortcut: getShortcutKey('settings'),
       category: 'navigate',
       validScreens: ALL_SCREENS,

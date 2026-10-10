@@ -718,7 +718,7 @@ describe('hydrateRun replaying a seat swap', () => {
         'Error',
         headline,
         `Recovery  Change BUILD tool${arrowSep()}retried`,
-        `BUILD${arrowSep()}OpenCode CLI · ${headline}`,
+        `BUILD${arrowSep()}OpenCode CLI · ${auto ? 'automatic fallback · ' : ''}${headline}`,
       ]);
     },
   );

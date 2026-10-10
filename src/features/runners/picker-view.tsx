@@ -12,7 +12,11 @@ import { configStore } from '../../stores/project/config.js';
 
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
-import { PICKER_ROLE_SEAT_IDS, type SeatPickerRole } from '../../core/runners/seat-roles.js';
+import {
+  PICKER_ROLE_SEAT_IDS,
+  type PickerSlot,
+  type SeatPickerRole,
+} from '../../core/runners/seat-roles.js';
 import { billingWord } from '../../core/runners/runner-billing.js';
 import { includes } from '../../utils/type-guards.js';
 import { getTerminalCellWidth } from '../../utils/display-text.js';
@@ -43,6 +47,7 @@ import {
   bylineDiagnostic,
   CUSTOM_COMMAND_PANE_CELLS,
   CUSTOM_COMMAND_PANE_LINES,
+  fallbackInheritanceNotice,
   formatModelCatalogGuidance,
   formatModelsByline,
   formatPermissionLabels,
@@ -64,6 +69,7 @@ import {
   type PickerEffectDeps,
 } from './use-picker-actions.js';
 import type { PickerModelCounts } from './model-catalog/catalog.js';
+import { inheritsPlannerSeat } from './config-transforms.js';
 
 const MAX_STALE_MODEL_COPY_COUNT = 99;
 
@@ -137,6 +143,7 @@ function ModelGuidance({
 
 interface PickerViewProps {
   role: SeatPickerRole;
+  slot: PickerSlot;
   catalog: PickerCatalog;
   actions: PickerActions;
   deps?: PickerEffectDeps | undefined;
@@ -157,14 +164,22 @@ function keyRows(rows: readonly RightRow[]): KeyedRightRow[] {
 
 export function PickerView({
   role,
+  slot,
   catalog,
   actions,
   deps = defaultPickerEffectDeps,
 }: PickerViewProps) {
   const isRefreshing = catalog.discovery.refreshing;
   const { frame } = useSpinnerFrame(isRefreshing);
-  const resolvedStepLabel = isRefreshing ? `${frame} refreshing…` : undefined;
   const projectDir = configStore.use((s) => s.projectDir);
+  const inheritedReview = configStore.use(
+    (s) => s.config !== null && inheritsPlannerSeat(s.config, 'reviewer'),
+  );
+  const inheritanceNotice = fallbackInheritanceNotice({ slot, role, inherited: inheritedReview });
+  const resolvedStepLabel =
+    [inheritanceNotice, isRefreshing ? `${frame} refreshing…` : undefined]
+      .filter((line) => line !== undefined)
+      .join(SOFT_SEP) || undefined;
   const saveError = feedbackStore.use((s) => (s.isError ? s.message : null));
   const allowsCustom = catalog.currentItem?.modelCapability.allowsCustom ?? false;
 
@@ -184,6 +199,13 @@ export function PickerView({
       : undefined;
 
   const terminalPaneFor = (item: PickerOption): TerminalPane | undefined => {
+    if (item.kind === 'no-fallback') {
+      return {
+        label: 'No fallback',
+        verb: item.isCurrent === true ? 'keep no fallback' : 'clear fallback',
+        lines: ['A Seat down halt', 'pauses the run and', 'asks which tool', 'takes the seat.'],
+      };
+    }
     if (item.kind === 'inherit-planner') {
       return {
         label: PLANNER_INHERITANCE.sentence,
@@ -246,6 +268,7 @@ export function PickerView({
   const resolvePreview = (ctx: PreviewContext<PickerOption, KeyedRightRow>): string | undefined => {
     const tool = ctx.leftItem ?? catalog.currentItem;
     if (!tool) return undefined;
+    if (tool.kind === 'no-fallback') return undefined;
     // A signed-in route needs no remedy, so the byline is what the row falls
     // back to rather than an empty preview line.
     const remedyFor = (auth: RouteAuthState, variant: ModelVariant): string | undefined => {
@@ -351,7 +374,7 @@ export function PickerView({
 
   return (
     <TwoColumnPicker<PickerOption, KeyedRightRow>
-      title={`${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}${SOFT_SEP}tool, model, effort`}
+      title={`${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}${slot === 'fallback' ? ' fallback' : ''}${SOFT_SEP}tool, model, effort`}
       stepLabel={resolvedStepLabel}
       initialColumn={catalog.focusModels ? 'right' : 'left'}
       onConfirm={(left, row) => confirmRightRow(left, row, { actions, auth: authContext })}
@@ -363,10 +386,11 @@ export function PickerView({
         items: catalog.items,
         label: 'Tools',
         getKey: (item) => item.id,
-        // The launcher stays visible under any filter query so adding a custom
-        // command is always reachable.
+        // Clearing a fallback and adding a command stay reachable under any filter.
         filterBy: (item, query) =>
-          item.kind === 'custom-command' || filterByFields(item, query, ['id', 'displayName']),
+          item.kind === 'custom-command' ||
+          item.kind === 'no-fallback' ||
+          filterByFields(item, query, ['id', 'displayName']),
         compare: (a, b) => sortPickerOptions(a, b, { filterActive: true }),
         terminalPane: terminalPaneFor,
         // A local server that is not answering is not a dead row: it still owns an
@@ -401,7 +425,11 @@ export function PickerView({
           const draft = isOptionFamily(row.model)
             ? optionDraftOf(row.model, catalog.currentModel ?? catalog.persistedModel)
             : undefined;
-          pickerViewStore.expand(row.model.id, draft, seatEffortDraft(row.model, draft, role));
+          pickerViewStore.expand(
+            row.model.id,
+            draft,
+            seatEffortDraft(row.model, draft, role, slot),
+          );
         },
         onCollapse: () => pickerViewStore.collapse(),
         onCycle: cycleRightRow,
@@ -425,7 +453,8 @@ export function PickerView({
                 onDelete: (row: KeyedRightRow) => {
                   if (row.kind === 'model') void actions.deleteRight(row.model);
                 },
-                isCustom: (row: KeyedRightRow) => row.kind === 'model' && isCustomModel(row.model),
+                isCustom: (row: KeyedRightRow) =>
+                  slot === 'seat' && row.kind === 'model' && isCustomModel(row.model),
               },
             }
           : {}),

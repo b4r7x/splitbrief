@@ -78,8 +78,7 @@ describe('TextInputOverlay', () => {
 
     const frame = ui.lastFrame() ?? '';
     expect(frame.split('╭').length - 1).toBe(2);
-    expect(frame).toContain('Custom command');
-    expect(frame).toContain('planner');
+    expect(frame).toContain('Custom command · PLAN');
     expect(frame).toContain(`${glyph('prompt')} `);
     expect(frame).toContain(`⏎ save${SOFT_SEP}esc back`);
     expect(frame).toContain('e.g. my-tool');
@@ -179,6 +178,7 @@ describe('TextInputOverlay', () => {
     );
     await tick(20);
 
+    expect(ui.lastFrame() ?? '').toContain('Custom model · PLAN');
     expect(panelWidth(ui.lastFrame() ?? '')).toBe(84);
     ui.unmount();
   });

@@ -15,18 +15,22 @@ function itemAt(items: readonly SettingsItem[], key: string): SettingsItem {
 }
 
 describe('buildSettingsItems', () => {
-  it('opens with the crew diagram, then the settings in section order', () => {
+  it('opens with the crew diagram, then the fallbacks, then the settings in section order', () => {
     const config = makeConfig();
-    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS });
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
 
-    expect(items.slice(0, 3).map((item) => [item.kind, item.key])).toEqual([
+    expect(items.slice(0, 6).map((item) => [item.kind, item.key])).toEqual([
       ['crew', 'seat:plan'],
       ['crew', 'seat:build'],
       ['crew', 'seat:review'],
+      ['fallback', 'fallback:plan'],
+      ['fallback', 'fallback:build'],
+      ['fallback', 'fallback:review'],
     ]);
     expect(items.slice(0, 3).map(settingsItemSection)).toEqual(Array(3).fill('Crew'));
+    expect(items.slice(3, 6).map(settingsItemSection)).toEqual(Array(3).fill('Fallback'));
 
-    const settingSections = items.slice(3).map(settingsItemSection);
+    const settingSections = items.slice(6).map(settingsItemSection);
     expect(settingSections.filter((section, at) => section !== settingSections[at - 1])).toEqual([
       'Tuning',
       'Workflow',
@@ -43,7 +47,7 @@ describe('buildSettingsItems', () => {
       kind: 'boolean',
       appliesTo: () => false,
     };
-    const items = buildSettingsItems({ config: makeConfig(), defs: [skipped] });
+    const items = buildSettingsItems({ config: makeConfig(), defs: [skipped], cliTools: [] });
 
     expect(items.some((item) => item.key === 'test.skipped')).toBe(false);
   });
@@ -51,7 +55,7 @@ describe('buildSettingsItems', () => {
 
 describe('settingsItemFilterText', () => {
   it('carries a crew row key with its row words, and a setting label with its section', () => {
-    const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS });
+    const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS, cliTools: [] });
     const seatText = settingsItemFilterText(itemAt(items, 'seat:plan'));
 
     expect(seatText.startsWith('seat:plan ')).toBe(true);
@@ -59,5 +63,30 @@ describe('settingsItemFilterText', () => {
     expect(settingsItemFilterText(itemAt(items, 'workflow.approve'))).toBe(
       'plan approval workflow',
     );
+  });
+});
+
+describe('fallback items', () => {
+  it('derives the fallback rows from the config of record and the detection it is given', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'opencode' } },
+    });
+    const build = itemAt(buildSettingsItems({ config, defs: [], cliTools: [] }), 'fallback:build');
+
+    expect(build).toMatchObject({
+      kind: 'fallback',
+      row: { id: 'build', fallback: { tool: 'opencode' }, note: 'not installed' },
+    });
+  });
+
+  it('keeps the three fallback rows under a fallback filter', () => {
+    const items = buildSettingsItems({ config: makeConfig(), defs: SETTINGS_DEFS, cliTools: [] });
+    const matching = items.filter((item) => settingsItemFilterText(item).includes('fallback'));
+
+    expect(matching.map((item) => item.key)).toEqual([
+      'fallback:plan',
+      'fallback:build',
+      'fallback:review',
+    ]);
   });
 });

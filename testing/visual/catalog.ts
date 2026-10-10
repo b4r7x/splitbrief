@@ -1731,6 +1731,40 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    ...[
+      {
+        id: 'workflow-recovery-no-fallback',
+        title: 'Workflow · BUILD halt with no fallback',
+        checkpoint: 'recovery-no-fallback',
+      },
+      {
+        id: 'workflow-recovery-fallback-used',
+        title: 'Workflow · BUILD fallback already used in this run',
+        checkpoint: 'recovery-fallback-used',
+      },
+      {
+        id: 'workflow-recovery-fallback-not-installed',
+        title: 'Workflow · BUILD fallback tool is not installed',
+        checkpoint: 'recovery-fallback-not-installed',
+      },
+    ].map((input) =>
+      defineScenario({
+        id: input.id,
+        title: input.title,
+        surface: screenSurface('workflow'),
+        checkpoint: {
+          id: input.checkpoint,
+          title: input.title,
+          kind: 'question',
+          marker: 'Change BUILD tool',
+        },
+        elements: [
+          { id: 'header', title: 'Workflow header' },
+          { id: 'question-panel', title: 'Recovery menu panel' },
+          { id: 'composer', title: 'Workflow composer' },
+        ],
+      }),
+    ),
     defineScenario({
       id: 'workflow-recovery-plan-seat',
       title: 'Workflow · quota halt on the plan seat',
@@ -1787,7 +1821,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'recovery-review',
         title: 'Review-seat usage-limit recovery menu',
         kind: 'question',
-        marker: 'Change PLAN tool',
+        marker: 'Change REVIEW tool',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1831,13 +1865,29 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     // header names the seat it moved to.
     defineScenario({
       id: 'workflow-seat-switched',
-      title: 'Workflow · build seat moved to its declared fallback',
+      title: 'Workflow · BUILD seat moved automatically to its fallback',
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'seat-switched',
         title: 'Seat switch row in the transcript',
         kind: 'implementation',
         // The cause words wrap at 60 columns; the switch arrow and the new seat stay on one line.
+        marker: 'BUILD → OpenCode CLI',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-seat-switched-manual',
+      title: 'Workflow · BUILD seat changed manually',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'seat-switched-manual',
+        title: 'Manual seat switch row in the transcript',
+        kind: 'implementation',
         marker: 'BUILD → OpenCode CLI',
       },
       elements: [
@@ -2540,6 +2590,21 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
+        id: 'overlay-settings-fallback-none',
+        title: 'Overlay · settings · no fallbacks',
+        marker: 'Fallback',
+      },
+      {
+        id: 'overlay-settings-fallback-set',
+        title: 'Overlay · settings · configured fallbacks',
+        marker: 'Fallback',
+      },
+      {
+        id: 'overlay-settings-fallback-filtered',
+        title: 'Overlay · settings · filtered to fallback',
+        marker: 'fallback',
+      },
+      {
         id: 'overlay-settings-inherited-effort',
         title: 'Overlay · settings · effort inherited by the reviewer',
         marker: 'Settings',
@@ -2785,17 +2850,17 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-picker-contract-choice',
         title: 'Overlay · planner picker · custom command contract',
-        marker: 'Custom command',
+        marker: 'Custom command · PLAN',
       },
       {
         id: 'overlay-picker-custom-command',
         title: 'Overlay · planner picker · custom command entry',
-        marker: 'Custom command',
+        marker: 'Custom command · PLAN',
       },
       {
         id: 'overlay-picker-custom-model',
         title: 'Overlay · planner picker · custom model entry',
-        marker: 'Custom model',
+        marker: 'Custom model · PLAN',
       },
       {
         id: 'overlay-picker-custom-model-claude',
@@ -2869,6 +2934,60 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-reviewer-picker-tool',
         title: 'Overlay · reviewer picker · tool chosen',
         marker: PICKER_TITLE_MARKER,
+      },
+    ],
+  }),
+  'planner-fallback-picker': overlayGroup({
+    overlay: 'planner-fallback-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Planner fallback picker panel',
+    checkpointTitle: 'Planner fallback picker ready',
+    scenarios: [
+      {
+        id: 'overlay-fallback-picker-current',
+        title: 'Overlay · PLAN fallback · configured effort expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+    ],
+  }),
+  'implementer-fallback-picker': overlayGroup({
+    overlay: 'implementer-fallback-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Implementer fallback picker panel',
+    checkpointTitle: 'Implementer fallback picker ready',
+    scenarios: [
+      {
+        id: 'overlay-fallback-picker',
+        title: 'Overlay · BUILD fallback · none selected',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-fallback-picker-variant',
+        title: 'Overlay · BUILD fallback · configured variant expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-fallback-picker-same-seat',
+        title: 'Overlay · BUILD fallback · current seat identity refused',
+        marker: PICKER_TITLE_MARKER,
+      },
+    ],
+  }),
+  'reviewer-fallback-picker': overlayGroup({
+    overlay: 'reviewer-fallback-picker',
+    underlyingScreen: 'home',
+    panelTitle: 'Reviewer fallback picker panel',
+    checkpointTitle: 'Reviewer fallback picker ready',
+    scenarios: [
+      {
+        id: 'overlay-fallback-picker-inherited-review',
+        title: 'Overlay · REVIEW fallback · inherited from PLAN',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-fallback-picker-custom-model',
+        title: 'Overlay · REVIEW fallback · custom model entry while inheriting PLAN',
+        marker: 'Custom fallback model · REVIEW',
       },
     ],
   }),

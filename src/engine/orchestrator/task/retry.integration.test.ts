@@ -34,7 +34,7 @@ import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js
 import { error } from '../../../utils/error.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../../core/pipeline-spec/retries.js';
-import { retryAndRecord } from './retry.js';
+import { handleTaskPlannerCallFailure, retryAndRecord } from './retry.js';
 
 vi.mock('../escalation/handle.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../escalation/handle.js')>();
@@ -600,6 +600,33 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     validation: { endChecks: false, testCommand: 'noop' },
   });
 
+  it('offers the REVIEW seat when an inherited reviewer consult is signed out', async () => {
+    const ref = setupProject();
+    await rememberDetectedTools(
+      ref.projectDir,
+      cliDetectionsFor('ready', ['codex', 'claude-code']),
+    );
+    const task = makeTask({ status: 'in_progress' });
+    const state = implementingState([task]);
+    const { bus } = makeBusRecorder();
+    const result = await handleTaskPlannerCallFailure({
+      wctx: makeWorkflowContext({ ...ref, config, bus }),
+      task,
+      state,
+      err: new Error('Please sign in again'),
+      label: 'Reviewer consult failed',
+      seat: 'review',
+      taskStartTime: Date.now(),
+      setTrackedState: vi.fn(),
+    });
+    expect(result.pendingRecovery).toMatchObject({
+      reason: 'runner-unauthenticated',
+      seat: 'review',
+      taskId: task.id,
+      switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
+    });
+  });
+
   async function consultHalted(words = CODEX_LIMIT) {
     const { projectDir, sessionId } = setupProject();
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['codex', 'claude-code']));
@@ -664,7 +691,7 @@ describe('retryAndRecord — a planner out of quota on the consult', () => {
     expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
     expect(issue?.details).toEqual([
       `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
-      'no fallback declared',
+      'no fallback set',
       'The planner could not answer the consult for T001.',
     ]);
     expect(issue?.message).toContain('hit its usage limit');

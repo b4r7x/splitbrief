@@ -1,12 +1,16 @@
 import type { CliProviderAuth } from '../../core/discovery/detection.js';
-import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
-import { seatPickerLane, type SeatPickerRole } from '../../core/runners/seat-roles.js';
+import {
+  seatPickerLane,
+  type PickerSlot,
+  type SeatPickerRole,
+} from '../../core/runners/seat-roles.js';
 import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { PickerOption } from './model-catalog/options.js';
+import { readPickerRunner } from './model-catalog/catalog.js';
 import {
   isOptionFamily,
   optionAxesOf,
@@ -53,11 +57,12 @@ function nextEffortDraft(choices: readonly string[], current: string | null): st
  * same answer the commit gives, so the ladder opens on what the crew row reads rather
  * than on unset.
  */
-function configuredEffort(role: SeatPickerRole): string | null {
+function configuredEffort(role: SeatPickerRole, slot: PickerSlot): string | null {
   const config = configStore.get().config;
   if (config === null) return null;
   const lane = seatPickerLane(role);
-  return seatConfiguredEffort({ runner: readActiveRunner({ config, role: lane }), role: lane });
+  const runner = readPickerRunner(config, lane, slot);
+  return runner === undefined ? null : seatConfiguredEffort({ runner, role: lane });
 }
 
 /** The seat's own preset opens the ladder, but only where that ladder spells it. */
@@ -65,8 +70,9 @@ export function seatEffortDraft(
   model: ModelOption,
   optionDraftId: string | undefined,
   role: SeatPickerRole,
+  slot: PickerSlot,
 ): string | null {
-  const configured = configuredEffort(role);
+  const configured = configuredEffort(role, slot);
   if (configured === null) return null;
   const choices = effortLadderFor(model, optionDraftOf(model, optionDraftId));
   return choices.includes(configured) ? configured : null;

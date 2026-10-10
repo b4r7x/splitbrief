@@ -986,7 +986,12 @@ describe('runHeadless — the seat-down policy and the record', () => {
       words: 'provider.quota: Insufficient Balance',
       requestId: 'req_123',
       resetAt: new Date('2026-04-28T18:00:00.000Z'),
-      fallback: { tool: 'claude-code', model: 'sonnet' },
+      seatSwap: {
+        seat: 'build',
+        currentTool: 'codex',
+        detectedTools: [],
+        fallback: { tool: 'claude-code', model: 'sonnet' },
+      },
       task: makeTask({ id: 'T001' }),
       phase: 'implementing',
       createdAt: '2026-04-28T12:00:00.000Z',

@@ -31,7 +31,7 @@ const reviewerProtocolError = typedOutputError.seatProtocol({
 });
 
 describe('seatProtocolHaltIssue', () => {
-  it('halts a reviewer with no reviewer block on the review seat and swaps the plan seat', async () => {
+  it('halts and switches an inherited reviewer on the review seat', async () => {
     const issue = await seatProtocolHaltIssue({
       projectDir: await projectWithTools(),
       config: makeConfig({}),
@@ -40,7 +40,7 @@ describe('seatProtocolHaltIssue', () => {
     });
 
     expect(issue.seat).toBe('review');
-    expect(issue.switchSeat).toEqual({ seat: 'plan', candidates: [{ tool: 'codex' }] });
+    expect(issue.switchSeat).toEqual({ seat: 'review', candidates: [{ tool: 'codex' }] });
   });
 
   it('swaps the review seat when a reviewer block declares it', async () => {

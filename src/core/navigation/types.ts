@@ -16,6 +16,18 @@ export function seatPickerOverlayFor(role: SeatPickerRole): (typeof SEAT_PICKER_
   return `${role}-picker`;
 }
 
+export const FALLBACK_PICKER_OVERLAYS = [
+  'planner-fallback-picker',
+  'implementer-fallback-picker',
+  'reviewer-fallback-picker',
+] as const;
+
+export function fallbackPickerOverlayFor(
+  role: SeatPickerRole,
+): (typeof FALLBACK_PICKER_OVERLAYS)[number] {
+  return `${role}-fallback-picker`;
+}
+
 const TOOL_ROW_FOCUS_PREFIX = 'tool:';
 
 /** The focus token that lands the picker's cursor on one tool's row. */
@@ -52,6 +64,7 @@ export const ACTIVE_OVERLAYS = [
   'skills',
   'settings',
   ...SEAT_PICKER_OVERLAYS,
+  ...FALLBACK_PICKER_OVERLAYS,
   'stop-sheet',
   'sessions',
   'usage-details',
@@ -60,5 +73,9 @@ export const ACTIVE_OVERLAYS = [
 export type OverlayType = 'none' | (typeof ACTIVE_OVERLAYS)[number];
 
 export function overlayAllowsPickerKeys(active: OverlayType): boolean {
-  return active === 'none' || includes(SEAT_PICKER_OVERLAYS, active);
+  return (
+    active === 'none' ||
+    includes(SEAT_PICKER_OVERLAYS, active) ||
+    includes(FALLBACK_PICKER_OVERLAYS, active)
+  );
 }

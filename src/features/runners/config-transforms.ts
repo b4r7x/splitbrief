@@ -15,12 +15,18 @@ import {
 } from '../../core/runners/seat-roles.js';
 import { seatEffortChannel } from '../../core/runners/capabilities.js';
 import { TOOL_EFFORT_LADDERS } from '../../core/providers/known-models.js';
-import { getRunnerCatalogDisplayName } from '../../core/config/accessors/runner-config.js';
+import {
+  getRunnerCatalogDisplayName,
+  type RunnerConfig,
+} from '../../core/config/accessors/runner-config.js';
 import { EFFORT_LEVELS, type EffortLevel } from '../../core/schemas/enums.js';
 import { includes } from '../../utils/type-guards.js';
 import { updateDefaultImplementerConfig } from '../../core/config/accessors/implementer-profiles.js';
 import type { RunnerPickerOption } from './model-catalog/options.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { fallbackRunner, seatFallback } from '../../core/crew/fallback.js';
+import { isAutomaticModel } from '../../core/providers/automatic-model.js';
+import { configError } from '../../core/config/errors.js';
 
 /** The planner-tier seats share the planner's runner shape; only the config node differs. */
 function updatePlannerTier(
@@ -173,6 +179,54 @@ function joinNotices(...notices: readonly (string | undefined)[]): string | unde
   return lines.length === 0 ? undefined : lines.join(SOFT_SEP);
 }
 
+function commitRunnerSelection<T extends RunnerConfig>(
+  input: Readonly<{
+    role: ActiveRunnerRole;
+    existing: RunnerConfig | undefined;
+    selection: RunnerPickerOption;
+    model: { id: string } | null;
+    effort?: string | null | undefined;
+    effortChoices?: readonly string[] | undefined;
+    parse: (value: unknown) => T;
+  }>,
+): Readonly<{ runner: T; notice?: string; kept?: string }> {
+  const { role, existing, parse } = input;
+  const opts = {
+    kind: input.selection.kind,
+    tool: input.selection.id,
+    ...(input.model !== null && { model: input.model.id }),
+    existing,
+  };
+  const next = parse(
+    role === 'implementer' ? buildRunnerConfig('implementer', opts) : buildRunnerConfig(role, opts),
+  );
+  const drafted = draftedLevel(next, role, input.effort);
+  const effort = decideEffort({
+    next,
+    requested: drafted.effort,
+    carried: existing?.effort,
+    effortChoices: input.effortChoices,
+    role,
+    parse,
+  });
+  const variant = decideVariant({
+    next: effort.runner,
+    requested: drafted.variant,
+    carried: existing?.variant,
+    carriedModel: existing?.model,
+    effortChoices: input.effortChoices,
+    role,
+    parse,
+  });
+  const notice = joinNotices(effort.notice, variant.notice);
+  const kept = variant.runner.variant ?? variant.runner.effort;
+  return {
+    runner: variant.runner,
+    ...(notice !== undefined && { notice }),
+    ...(kept !== undefined && { kept }),
+  };
+}
+
 export interface PlannerTierSelectionInput {
   config: Config;
   role: PlannerTierRole;
@@ -189,33 +243,14 @@ export function commitPlannerTierSelection(input: PlannerTierSelectionInput): Se
   let kept: string | undefined;
   const parse = (value: unknown) => PlannerConfigSchema.parse(value);
   const config = updatePlannerTier(input.config, input.role, (existing) => {
-    const next = buildRunnerConfig(input.role, {
-      kind: input.selection.kind,
-      tool: input.selection.id,
-      ...(input.model !== null && { model: input.model.id }),
+    const committed = commitRunnerSelection({
+      ...input,
       existing,
-    });
-    const drafted = draftedLevel(next, input.role, input.effort);
-    const effort = decideEffort({
-      next,
-      requested: drafted.effort,
-      carried: existing.effort,
-      effortChoices: input.effortChoices,
-      role: input.role,
       parse,
     });
-    const variant = decideVariant({
-      next: effort.runner,
-      requested: drafted.variant,
-      carried: existing.variant,
-      carriedModel: existing.model,
-      effortChoices: input.effortChoices,
-      role: input.role,
-      parse,
-    });
-    notice = joinNotices(effort.notice, variant.notice);
-    kept = variant.runner.variant ?? variant.runner.effort;
-    return variant.runner;
+    notice = committed.notice;
+    kept = committed.kept;
+    return committed.runner;
   });
   return {
     config,
@@ -239,39 +274,72 @@ export function commitImplementerSelection(input: ImplementerSelectionInput): Se
   let kept: string | undefined;
   const parse = (value: unknown) => ImplementerConfigSchema.parse(value);
   const updated = updateDefaultImplementerConfig(input.config, (existing) => {
-    const next = buildRunnerConfig('implementer', {
-      kind: input.selection.kind,
-      tool: input.selection.id,
-      ...(input.model !== null && { model: input.model.id }),
+    const committed = commitRunnerSelection({
+      ...input,
+      role: 'implementer',
       existing,
-    });
-    const drafted = draftedLevel(next, 'implementer', input.effort);
-    const effort = decideEffort({
-      next,
-      requested: drafted.effort,
-      carried: existing.effort,
-      effortChoices: input.effortChoices,
-      role: 'implementer',
       parse,
     });
-    const variant = decideVariant({
-      next: effort.runner,
-      requested: drafted.variant,
-      carried: existing.variant,
-      carriedModel: existing.model,
-      effortChoices: input.effortChoices,
-      role: 'implementer',
-      parse,
-    });
-    notice = joinNotices(effort.notice, variant.notice);
-    kept = variant.runner.variant ?? variant.runner.effort;
-    return variant.runner;
+    notice = committed.notice;
+    kept = committed.kept;
+    return committed.runner;
   });
   return {
     config: updated,
     ...(notice !== undefined && { notice }),
     ...(kept !== undefined && { effort: kept }),
   };
+}
+
+export function commitFallbackSelection(
+  input: Readonly<{
+    config: Config;
+    role: ActiveRunnerRole;
+    selection: RunnerPickerOption;
+    model: { id: string } | null;
+    effort?: string | null | undefined;
+    effortChoices?: readonly string[] | undefined;
+  }>,
+): SeatCommitResult {
+  const current = seatFallback(input.config, input.role);
+  const committed = commitRunnerSelection({
+    ...input,
+    existing: current === undefined ? undefined : fallbackRunner(current),
+    parse: (value) =>
+      input.role === 'implementer'
+        ? ImplementerConfigSchema.parse(value)
+        : PlannerConfigSchema.parse(value),
+  });
+  const runner = committed.runner;
+  if (runner.kind !== 'cli') {
+    throw configError.invalidOverride('fallback', runner.kind, 'A fallback must name a CLI tool');
+  }
+  const fallback = {
+    tool: runner.tool,
+    ...(runner.model !== undefined &&
+      !isAutomaticModel(runner.model, runner.tool) && { model: runner.model }),
+    ...(runner.effort !== undefined && { effort: runner.effort }),
+    ...(runner.variant !== undefined && { variant: runner.variant }),
+  };
+  const updater = <T extends RunnerConfig>(seat: T): T => ({ ...seat, fallback });
+  const config = updateActiveRunner({ config: input.config, role: input.role, updater });
+  return {
+    config,
+    ...(committed.notice !== undefined && { notice: committed.notice }),
+    ...(committed.kept !== undefined && { effort: committed.kept }),
+  };
+}
+
+export function clearSeatFallback(config: Config, role: ActiveRunnerRole): Config {
+  return updateActiveRunner({
+    config,
+    role,
+    updater: <T extends RunnerConfig>(seat: T): T => {
+      const runner = { ...seat };
+      delete runner.fallback;
+      return runner;
+    },
+  });
 }
 
 export interface CommitCustomCommandInput {

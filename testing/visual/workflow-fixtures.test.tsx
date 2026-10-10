@@ -138,6 +138,95 @@ async function renderProjection(projection: WorkflowFixtureProjection): Promise<
 }
 
 describe('workflow visual fixtures', () => {
+  it('offers an inherited REVIEW its own seat and explains the switch', async () => {
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-recovery-review-seat'));
+    if (projection === undefined) throw new Error('Missing inherited REVIEW recovery scenario');
+    expect(projection.resumeState?.pendingRecovery).toMatchObject({
+      seat: 'review',
+      switchSeat: { seat: 'review' },
+    });
+    const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
+    expect(frame).toContain('Change REVIEW tool');
+    expect(frame).toContain('REVIEW uses PLAN. Switching here gives REVIEW its own seat.');
+    expect(frame).not.toContain('Change PLAN tool');
+  });
+
+  it.each([
+    ['workflow-recovery-no-fallback', 'no fallback set'],
+    [
+      'workflow-recovery-fallback-used',
+      'fallback: OpenCode CLI · DeepSeek V4.1 Flash · automatic switch already used in this run',
+    ],
+    [
+      'workflow-recovery-fallback-not-installed',
+      'fallback: OpenCode CLI · DeepSeek V4.1 Flash · max · not offered: not installed',
+    ],
+  ])('renders the fallback detail and BUILD action for %s', async (id, detail) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const projection = workflowFixtureProjections.get(scenarioId(id));
+    if (!scenario || !checkpoint || !projection) throw new Error(`Missing scenario ${id}`);
+    const state = projection.resumeState;
+    const issue = state?.pendingRecovery;
+    expect(issue?.seat).toBe('build');
+    expect(issue?.reason).toBe('runner-usage-limit');
+    expect(issue?.details?.some((row) => row.includes(detail))).toBe(true);
+    expect(issue?.switchSeat?.auto).toBeUndefined();
+    if (id === 'workflow-recovery-no-fallback') {
+      expect(projection.config?.implementer?.fallback).toBeUndefined();
+    } else {
+      expect(issue?.details?.some((row) => row.startsWith('fallback: '))).toBe(true);
+    }
+    if (id === 'workflow-recovery-fallback-used') {
+      expect(state?.seatSwitches).toContainEqual(
+        expect.objectContaining({ seat: 'build', auto: true }),
+      );
+    }
+    if (id === 'workflow-recovery-fallback-not-installed') {
+      expect(issue?.switchSeat?.candidates.some((candidate) => candidate.tool === 'opencode')).toBe(
+        false,
+      );
+    }
+    for (const renderViewport of REQUIRED_VIEWPORTS) {
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint(), {
+          preserveLineBreaks: true,
+        }).replace(/[│\s]+/g, ' ');
+        expect(frame).toContain('Seat down');
+        expect(frame).toContain('Change BUILD tool');
+        if (renderViewport.rows >= 24) expect(frame).toContain(detail);
+      } finally {
+        await ui.unmount();
+      }
+    }
+  });
+
+  it.each([
+    ['workflow-seat-switched', true],
+    ['workflow-seat-switched-manual', false],
+  ])('renders the recorded automatic flag for %s', async (id, auto) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const projection = workflowFixtureProjections.get(scenarioId(id));
+    if (!scenario || !checkpoint || !projection) throw new Error(`Missing scenario ${id}`);
+    expect(projection.events.find((event) => event.type === 'seat_switched')).toMatchObject({
+      seat: 'build',
+      auto,
+    });
+    for (const renderViewport of REQUIRED_VIEWPORTS) {
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripTerminalControls(await ui.waitForCheckpoint()).replace(/\s+/g, ' ');
+        expect(frame).toContain('BUILD → OpenCode CLI');
+        expect(frame.includes('automatic fallback')).toBe(auto);
+        expect(frame).toContain('usage limit');
+      } finally {
+        await ui.unmount();
+      }
+    }
+  });
+
   it.each(WIDE_VIEWPORTS)(
     'counts out-of-scope task review notes at $cols x $rows',
     async (renderViewport) => {
@@ -537,6 +626,7 @@ describe('workflow visual fixtures', () => {
       tool: 'opencode',
       model: 'opencode-go/deepseek-v4.1-flash',
       variant: 'high',
+      fallback: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
     });
     expect(
       projection.events
@@ -562,8 +652,9 @@ describe('workflow visual fixtures', () => {
     );
     const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
     expect(frame).toContain(
-      'BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high · Balance spent on OpenCode CLI',
+      'BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high · automatic fallback',
     );
+    expect(frame).toContain('Balance spent on OpenCode CLI');
     expect(frame).not.toContain('usage limit');
     expect(frame).not.toContain('worker ');
     expect(frame).not.toContain('Workspace kept');
@@ -661,7 +752,8 @@ describe('workflow visual fixtures', () => {
       expect(sidebar).toContain('DeepSeek V4.1 Flash · high');
       expect(frame).toContain('Balance spent on OpenCode CLI');
       expect(frame).not.toContain('worker ');
-      expect(frame).not.toMatch(/DeepSeek[^\n]*· auto/);
+      expect(sidebar).not.toMatch(/DeepSeek[^│]*· auto\b/);
+      expect(frame).not.toMatch(/DeepSeek[^\n]*· auto\b/);
     } finally {
       await ui.unmount();
     }
@@ -690,6 +782,7 @@ describe('workflow visual fixtures', () => {
           reached.some(
             (frame) =>
               frame.includes('BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high') &&
+              frame.includes('automatic fallback') &&
               frame.includes('Balance spent on OpenCode CLI'),
           ),
         ).toBe(true);

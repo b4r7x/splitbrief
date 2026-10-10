@@ -172,7 +172,7 @@ When a recovery-worthy event happens, the orchestrator builds a `RecoveryIssue` 
 
 **A usage-limited runner halts the run the same way — and never gets login advice.** Subscription CLIs report an exhausted quota as an ordinary turn failure too (codex: "You've hit your usage limit. … or try again at Aug 8th, 2026 3:27 PM."; Claude Code: an `is_error` result like "You've hit your session limit · resets 3:45pm" or "Credit balance is too low"), and API providers return HTTP 429 bodies. The pipeline classifies those diagnostics as the `usage-limit` outcome (`src/engine/runners/usage-limit.ts`, applied in `src/engine/implementers/pipeline/call-result.ts` for CLI results and in `src/engine/implementers/pipeline/run.ts` for thrown provider errors), and the orchestrator halts at the same points as the signed-out case with a `runner-usage-limit` recovery. The halt records the reset moment as `resetAt` whenever the tool's diagnostic carried one — codex "try again at Aug 8th, 2026 3:27 PM." or the bare-clock variant "try again at 3:27 PM.", Claude Code "resets 3:45pm" / "resets Mon 12:00am", Groq "try again in 7.66s", or an HTTP `Retry-After` header (threaded into the diagnostic as `(retry-after: Ns)` by `src/engine/streaming/stream-errors.ts`). Every surface spells `resetAt` when it is read, with one formatter (`formatResetNote`, `src/core/recovery/reset-clock.ts`): the panel, the workflow header, the transcript's error row (`Error  resets 15:27`) and the headless `Seat down (runner-usage-limit): …` line. The clock is a 24-hour clock such as `15:27`, dated as `Aug 8, 15:27` when the reset is not today, so a run reopened on a later day dates it on every surface alike. The message is stored and the transcript replays it, so it names no clock: `OpenAI Codex CLI hit its usage limit. Wait for the limit to reset or change the BUILD tool, then continue.` The details keep the tool's words verbatim. Logging out and back in cannot restore quota, so the recovery never suggests it: the real options are moving the seat to another detected tool (`switch-seat`, the recommended action whenever one is offered), waiting for the reset and then `retry-same-worker` (the halt stays pending while you leave the run), skipping the task, or ending the run. A planner-side limit halts the run at the planning call with the same reset-aware guidance instead of a login command, as a `runner-usage-limit` recovery on the `plan` seat.
 
-**Every planner-tier call halts on its own seat.** The planning calls, a brief's consult call and the final review read the tool's words the same way (`diagnosePlannerCallFailure`, `src/engine/orchestrator/recovery/planner-call-failure.ts`): a limit halts as `runner-usage-limit`, a sign-out as `runner-unauthenticated`, and anything else keeps its own recovery. The consult call first runs the seat rules of §Escalation, so a transient failure retries and a reset no more than 10 minutes away waits; a longer or unreported reset halts. A final review that hits a limit halts on the `review` seat instead of as `review-failed`; retry and `switch-seat` run the review again. A consult that hits one halts on the seat that answered it — `plan` for a plan task, `review` for a fix task — and names the brief, so retry and `switch-seat` replay that brief, and `skip-current-task` is offered. With no `reviewer:` block the review and a fix task's consult run on the plan seat's tool, so their halt's swap names the `plan` seat: the panel reads **Change PLAN tool · runs the review again**, the picker and the swap write `planner:`, and the review keeps following it. With a `reviewer:` block the swap moves that block. The error row names the reset once: the `error` event carries the halt's `resetAt`, the row spells it beside its label, and the tool's own clause (`or try again at …`, `· resets …`, `Resets in …`) is dropped from the quote (`stripRecoveryResetClause`, `src/core/recovery/reset-clock.ts`), on a BUILD halt's row too (`runnerHaltRow`). The details keep the words verbatim. A planner-tier row leads with its label and the tool's own words — `Final review failed: You've hit your usage limit. …` — not the call's own `Planner review call failed`.
+**Every planner-tier call halts on its own seat.** The planning calls, a brief's consult call and the final review read the tool's words the same way (`diagnosePlannerCallFailure`, `src/engine/orchestrator/recovery/planner-call-failure.ts`): a limit halts as `runner-usage-limit`, a sign-out as `runner-unauthenticated`, and anything else keeps its own recovery. The consult call first runs the seat rules of §Escalation, so a transient failure retries and a reset no more than 10 minutes away waits; a longer or unreported reset halts. A final review that hits a limit halts on the `review` seat instead of as `review-failed`; retry and `switch-seat` run the review again. A consult that hits one halts on the seat that answered it — `plan` for a plan task, `review` for a fix task — and names the brief, so retry and `switch-seat` replay that brief, and `skip-current-task` is offered. With no `reviewer:` block, REVIEW runs PLAN's tool and inherits its fallback. A REVIEW switch writes a new `reviewer` block and leaves `planner` unchanged. With an explicit `reviewer` block, the switch moves that block and uses only its own fallback. The error row names the reset once: the `error` event carries the halt's `resetAt`, the row spells it beside its label, and the tool's own clause (`or try again at …`, `· resets …`, `Resets in …`) is dropped from the quote (`stripRecoveryResetClause`, `src/core/recovery/reset-clock.ts`), on a BUILD halt's row too (`runnerHaltRow`). The details keep the words verbatim. A planner-tier row leads with its label and the tool's own words — `Final review failed: You've hit your usage limit. …` — not the call's own `Planner review call failed`.
 
 **The captured limit wording classifies.** Beyond codex and Claude Code, the captured phrasings are: antigravity, which prints `error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h6m30s.` on stderr — once beside exit 0 with `(response may be truncated)` appended, then again beside exit 3 — whose compact `Resets in 2h6m30s` is parsed as the reset moment, and whose line classifies whether or not the stream ends on a `result` frame (a planner-tier call that exits 0 with no text beside that line fails as a usage limit, `requireCompletedCall`, `src/engine/planners/require-completed-call.ts`, the way a BUILD call that changed nothing does); opencode 2.x, which emits a flat `provider.quota` error envelope (`{"type":"error","error":{"type":"provider.quota","message":"Go usage limit exceeded","status":429}}`); command-code, which says `You've reached your weekly usage limit`; and the Gemini API body behind antigravity, whose `RESOURCE_EXHAUSTED` status classifies on its own. The gaps are the same as in *Seat failure classes* above: copilot, cursor and kilo-code limit wording, opencode sign-out wording and stderr-only balance text. A tool that prints its limit and exits before it reads a stdin prompt breaks the pipe under that prompt; the limit line on stderr outranks the broken pipe, so the call still halts as `runner-usage-limit` and not as `planner-call-failed` (`src/engine/runners/cli-tools/process-invoke.ts`).
 
@@ -182,15 +182,29 @@ A consult halt keeps the seat that answered and the interrupted task.
 This applies to failed, blocked and stale consults, including malformed answers.
 A stale consult failure never dispatches the unchanged brief.
 Retry replays the task and sends its repair consult to the same seat.
-Switch moves a configured reviewer when its repair consult fails during implementation.
-If the planner holds the review seat, Switch moves the planner's runner.
+Switch moves REVIEW when its repair consult fails during implementation.
+An inherited REVIEW switch writes a `reviewer` block and leaves PLAN unchanged.
 The consult question carries its seat to the composer hint. A reviewer question shows `Reply to the reviewer…`.
 
 A *Seat down* halt means that a seat cannot run. The sign-out and usage-limit halts build through `buildSeatDownIssue` (`src/engine/orchestrator/recovery/builders/task.ts`). Its callers are the BUILD attempt (`task/implementation-failure.ts`), a consult call on the plan or review seat (`task/retry.ts`) and the planner calls (`recovery/builders/planner.ts`). The other seat-down reasons keep their own builders.
 
-The panel title reads `Seat down · <cause>`. The details carry the tool's own words, with its request id when the tool printed one. They end with one row: `fallback: <identity>`, or `no fallback declared`.
+The panel title reads `Seat down · <cause>`. The details carry the tool's own words, with its request id when the tool printed one. They end with the fallback row:
 
-To switch automatically next time, declare the seat's `fallback` in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback).
+| Condition | Detail row |
+|---|---|
+| No fallback | `no fallback set` |
+| Fallback offered | `fallback: <identity>` |
+| Tool cannot run | `fallback: <identity> · not offered: <reason>` |
+| Seat already switched automatically in this run | `fallback: <identity> · automatic switch already used in this run` |
+| Seat already runs the fallback identity | `fallback: <identity> · the seat runs it now` |
+| Config of record does not load | `fallback: not read · config.yaml does not load` |
+
+The reason is `not installed` for a missing tool, or the tool's readiness state.
+`ready` and `unverified` do not block the fallback offer. Switching still requires admission.
+The identity test is `isSeatIdentity` in `src/core/crew/identity.ts`. The same tool with no model, or the same resolved model, counts as the current seat.
+
+Set the seat's fallback in Settings › Fallback, or write it in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback).
+The section is directly below Crew and has one row per seat. With none set, the halt pauses and asks.
 
 The halt offers these actions:
 
@@ -202,7 +216,13 @@ The halt offers these actions:
 
 The recommended action is `switch-seat` when offered. Otherwise it is `retry-later` when a reset is named, else `retry-same-worker`.
 
-**The declared fallback.** A seat names its fallback in its own block. See [`fallback`](./CONFIGURATION.md#fallback). No seat has a default fallback. Declaring one is the only authorization for an automatic switch.
+**The declared fallback.** A seat names its fallback in its own block; an inherited REVIEW uses PLAN's. See [`fallback`](./CONFIGURATION.md#fallback). No seat has a default fallback. Declaring one is the only authorization for an automatic switch.
+
+At every halt, `loadSeatSwapContext` (`src/engine/orchestrator/recovery/seat-swap-context.ts`) reads the fallback from `.splitbrief/config.yaml` of record in the same read that takes `configRevision`.
+A fallback saved during a run applies at the next halt in that run, in every phase.
+A BUILD halt that names an implementer profile reads that profile's fallback.
+With no `config.yaml`, the prepared config is the record.
+If the file exists but does not load, the halt offers no configured fallback. It shows the `not read` row above and does not use the prepared fallback.
 
 **The automatic switch.** A halt carries an automatic-switch intent (`switchSeat.auto`) only when all four conditions hold:
 
@@ -213,11 +233,24 @@ The recommended action is `switch-seat` when offered. Otherwise it is `retry-lat
 
 The TUI applies the intent at once. It asks no question and opens no picker (`createRecoveryDriver`, `src/features/workflow/recovery-driver.ts`). If the swap leaves the halt pending, the run loop drops the spent intent from memory, so the next entry shows the panel. The persisted halt keeps its intent, so a later `continue` applies it again. A halt without an intent opens the seat's picker on the first candidate, with its model and effort drafted.
 
+An automatic switch makes the old CLI seat the fallback, preserving its tool and model.
+It preserves `effort` only for an `effort-flag` channel, or `variant` only for a `variant` channel.
+Model-ID axes remain in `model`; unused level fields are omitted.
+If the old seat was an `api`, `shell` or `agent` runner, the new seat has no fallback.
+A manual switch keeps the seat's fallback.
+An inherited REVIEW uses PLAN's fallback. Switching it writes a `reviewer` block and leaves `planner` unchanged.
+An explicit `reviewer` block keeps its own fallback on a manual switch, including none.
+Settings › Fallback shows the saved fallback after the switch without a restart.
+
 **The switch commit** (`switchSeatAndPrepareResume`, `src/engine/orchestrator/recovery/switch-seat-resume.ts`) runs in this order:
 
 1. **Prepare.** The seat's runner is rebuilt on the switched config through the normal admission checks. Nothing is written yet.
 2. **Write.** `recordSeatOfRecord` (`src/core/config/load/record-seat.ts`) patches that one seat in `.splitbrief/config.yaml`. It writes only when the file's `rawSha256` still equals the revision the halt read.
 3. **Resolve.** The state applies `RESTART_ATTEMPT_ON_SEAT`, appends a record to `seatSwitches` (`seat`, `from`, `to`, `cause`, `auto`, `configRevision`, `ts`, optional `accountCause` and `headline`) and publishes `seat_switched` with the same cause details. The broad `cause` stays `runner-usage-limit` for balance, billing and quota refusals; `accountCause` keeps the classification and `headline` keeps the halt's shared wording. Older records retain their broad cause without an inferred account classification.
+
+An automatic switch adds `<SEAT> → <identity> · automatic fallback · <cause>` to the transcript.
+A manual switch keeps `<SEAT> → <identity> · <cause>`.
+History replay reads the recorded `auto` field. Both rows use `formatSeatSwitchCause` in `src/core/recovery/headline.ts`.
 
 An abort, a refused admission or a conflict keeps the halt pending. A conflict reads `config changed meanwhile · the halt stays`. A project with no `config.yaml` has no revision to check. Its switch commits with no file write, and the switched config travels in memory.
 
@@ -307,7 +340,7 @@ Continue resolves a saved halt on any retired reason with a `stale_file_halt_res
 
 On a `required-checks-unrunnable` halt, "Run the checks again" reads the `validation` block from `.splitbrief/config.yaml` again, so a `validation.render` added while the halt is open is used by the retried pre-review.
 
-`switch-seat` — Offered when another ready detected tool can take the blocked seat. The inline recovery menu above the composer starts on the recommended action. Use Up/Down and Enter to choose; **Change PLAN tool** (or BUILD/REVIEW) opens that seat's own picker — the same overlay Settings and Setup open — with the first offered candidate's model and effort already drafted, so the tool, model and effort are chosen in one place. A declared fallback is applied at once instead ([Seat down](#seat-down)). The row says what the swap runs again: `runs this step again` after a planning halt, `runs the review again` after a final-review halt, and `restarts this brief` after a halt that names a brief, which runs again from its first attempt. The panel lists no tools of its own. Escape in the picker returns to the action list without changing the seat.
+`switch-seat` — Offered when another ready detected tool can take the blocked seat. The inline recovery menu above the composer starts on the recommended action. Use Up/Down and Enter to choose; **Change PLAN tool** (or BUILD/REVIEW) opens that seat's own picker in the `seat` slot with the first offered candidate's model and effort already drafted. An automatic-switch intent applies the configured fallback at once instead ([Seat down](#seat-down)). The row says what the swap runs again: `runs this step again` after a planning halt, `runs the review again` after a final-review halt, and `restarts this brief` after a halt that names a brief, which runs again from its first attempt. The panel lists no tools of its own. Escape in the picker returns to the action list without changing the seat.
 
 Tab switches focus between the menu and the composer. While the menu holds focus, each row shows its letter key. While the composer holds focus, the rows show no letter keys, and the legend reads `⏎ <action> with the typed correction · tab back to the actions` on a halt that takes a correction, else `typing goes to the composer · tab back to the actions` (`src/features/workflow/components/recovery-menu.tsx`). The composer placeholder names the actions while the menu holds focus and the correction while the composer holds it: `Choose an action above, or tab to type a correction…` or `Type a correction, or tab to choose an action…` on a halt that takes a correction, else `Choose an action above…` or `Tab to choose an action…` (`recoveryComposerHint`). A halt takes a typed correction through `retry-same-worker`, else `revise`, else `continue` on a spent consult or planner-call bound (`correctionActionFor`, `src/features/workflow/recovery-prompt.ts`). At a task halt the correction is the implementer's steer for the retry. At a planner halt it accompanies a retry of the current planner step. On a spent bound it becomes the grant's note and the replayed brief's steer. When you pick that action on the panel while the composer holds text, the text goes with the action and the composer clears (`src/features/workflow/recovery-driver.ts`). A halt that offers none of the three refuses typed text on the feedback line. Text typed into the composer of a run at rest is the same correction: on a halt whose correction action is `revise` it is sent with `revise` at once, and on another halt it steers the step that runs after you choose an action on the panel. The footer and activity indicators show the stopped or waiting state until work actually resumes.
 

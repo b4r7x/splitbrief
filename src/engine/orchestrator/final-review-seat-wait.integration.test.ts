@@ -87,12 +87,13 @@ async function review(
   state: WorkflowState,
   reviewer: Planner,
   bus: EventBus,
+  config = CODEX_REVIEWER,
 ): Promise<FinalReviewResult> {
   return runFinalReviewPhase({
     ...ref,
     workspaceDir: ref.projectDir,
     state,
-    config: CODEX_REVIEWER,
+    config,
     bus,
     callbacks: makeCallbacks().callbacks,
     reviewer,
@@ -111,9 +112,10 @@ async function halt(
   ref: { projectDir: string; sessionId: string },
   result: FinalReviewResult,
   bus: EventBus,
+  config = CODEX_REVIEWER,
 ): Promise<WorkflowState> {
   const halted = await haltVerdictlessReview({
-    wctx: makeWctx({ ...ref, config: CODEX_REVIEWER, bus }),
+    wctx: makeWctx({ ...ref, config, bus }),
     state: result.state,
     setTrackedState: vi.fn(),
     review: result,
@@ -166,20 +168,26 @@ describe('a rate-limited codex reviewer', () => {
     expect(passed.verdict?.outcome.kind).toBe('pass');
   });
 
-  it('halts the review seat on a reset past the bound, offering Retry at the clock', async () => {
-    const ref = project();
-    const { bus } = makeBusRecorder();
-    const reviewer = codexReviewer(RESET_PAST_BOUND);
+  it.each([CODEX_REVIEWER, makeNoValidationConfig({ planner: { kind: 'cli', tool: 'codex' } })])(
+    'halts the review seat on a reset past the bound, offering Retry at the clock [%#]',
+    async (config) => {
+      const ref = project();
+      const { bus, events } = makeBusRecorder();
+      const reviewer = codexReviewer(RESET_PAST_BOUND);
 
-    const failed = await review(ref, doneState(makeTask({ id: 'T001' })), reviewer, bus);
-    expect(failed.reviewStatus).toBe('failed');
-    expect(failed.failure?.kind).toBe('seat-blocked');
+      const failed = await review(ref, doneState(makeTask({ id: 'T001' })), reviewer, bus, config);
+      expect(failed.reviewStatus).toBe('failed');
+      expect(failed.failure?.kind).toBe('seat-blocked');
 
-    const halted = await halt(ref, failed, bus);
-    const issue = halted.pendingRecovery;
-    expect(issue).toMatchObject({ seat: 'review', reason: 'runner-usage-limit' });
-    expect(issue?.availableActions).toContain('retry-later');
-    if (issue?.resetAt === undefined) throw new Error('the halt names no reset');
-    expect(recoveryActionLabel('retry-later', { resetAt: issue.resetAt })).toMatch(/^Retry at /);
-  });
+      expect(events.find((event) => event.type === 'error')?.message).toContain(
+        'change the REVIEW tool',
+      );
+      const halted = await halt(ref, failed, bus, config);
+      const issue = halted.pendingRecovery;
+      expect(issue).toMatchObject({ seat: 'review', reason: 'runner-usage-limit' });
+      expect(issue?.availableActions).toContain('retry-later');
+      if (issue?.resetAt === undefined) throw new Error('the halt names no reset');
+      expect(recoveryActionLabel('retry-later', { resetAt: issue.resetAt })).toMatch(/^Retry at /);
+    },
+  );
 });

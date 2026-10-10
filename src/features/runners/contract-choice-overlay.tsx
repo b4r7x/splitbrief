@@ -4,7 +4,8 @@ import { Box } from 'ink';
 import { SOFT_SEP } from '../../core/separators.js';
 import { listRowLead } from '../../components/list-row.js';
 import { useStaticSelector } from '../../hooks/use-static-selector.js';
-import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
+import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { glyph } from '../../lib/glyphs.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
@@ -130,7 +131,7 @@ export function ContractChoiceOverlay({
   return (
     <OverlayPanel
       density="roomy"
-      title={`Custom command${SOFT_SEP}${role}`}
+      title={`Custom command${SOFT_SEP}${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]}`}
       hint={`↑↓ select${SOFT_SEP}⏎ continue${SOFT_SEP}esc back`}
     >
       <Box marginBottom={1}>

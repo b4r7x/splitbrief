@@ -21,6 +21,7 @@ import { assertNever } from '../../utils/type-guards.js';
 import { formatContextLength } from '../../core/formatting.js';
 import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { UNSET_EFFORT_WORD } from '../../core/runners/effort-channel.js';
+import type { PickerSlot, SeatPickerRole } from '../../core/runners/seat-roles.js';
 import {
   formatAxisValue,
   optionAxesOf,
@@ -70,8 +71,16 @@ export const CUSTOM_COMMAND_PANE_LINES: readonly string[] = [
   'Nothing is saved yet.',
 ];
 
+export function fallbackInheritanceNotice(
+  input: Readonly<{ slot: PickerSlot; role: SeatPickerRole; inherited: boolean }>,
+): string | undefined {
+  return input.slot === 'fallback' && input.role === 'reviewer' && input.inherited
+    ? `REVIEW uses PLAN${SOFT_SEP}saving here gives REVIEW its own seat`
+    : undefined;
+}
+
 export function isPickerItemDisabled(item: PickerOption): boolean {
-  if (item.kind === 'custom-command') return false;
+  if (item.kind === 'custom-command' || item.kind === 'no-fallback') return false;
   return !item.available;
 }
 

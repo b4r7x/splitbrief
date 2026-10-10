@@ -8,6 +8,9 @@ import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { collectClickableZones } from '#testing/helpers/mouse-zones.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
+import { detectionStore } from '../../stores/project/detection.js';
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { SETTINGS_DEFS } from '../../core/settings/catalog.js';
 import { glyph } from '../../lib/glyphs.js';
 import { listRowLead } from '../../components/list-row.js';
@@ -71,7 +74,9 @@ function panelText(line: string): string {
 }
 
 function seatRowLines(lines: string[]): string[] {
-  return lines.filter((line) => /\b(PLAN|BUILD|REVIEW)\b/.test(line) && !RULE_ROW.test(line));
+  return lines
+    .slice(indexOfLine(lines, 'Crew') + 1, indexOfLine(lines, 'Fallback'))
+    .filter((line) => /\b(PLAN|BUILD|REVIEW)\b/.test(line) && !RULE_ROW.test(line));
 }
 
 describe('SettingsOverlay', () => {
@@ -80,10 +85,122 @@ describe('SettingsOverlay', () => {
     seed({ validation: { testCommand: RAW_TEST_COMMAND } });
     overlayStore.reset();
     feedbackStore.reset();
+    detectionStore.reset();
   });
 
   afterEach(() => {
+    detectionStore.reset();
     cleanupTempDir(projectDir);
+  });
+
+  it('paints the Fallback section after Crew with one row per seat', async () => {
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const lines = frameLines(ui);
+    const fallbackHeader = indexOfLine(lines, 'Fallback');
+    const tuningHeader = indexOfLine(lines, 'Tuning');
+    const fallbackRows = lines
+      .slice(fallbackHeader + 1, tuningHeader)
+      .filter((line) => /\b(PLAN|BUILD|REVIEW)\b/.test(line));
+
+    expect(fallbackHeader).toBeGreaterThan(indexOfLine(lines, 'REVIEW'));
+    expect(fallbackHeader).toBeLessThan(tuningHeader);
+    expect(fallbackRows).toHaveLength(3);
+    for (const [index, label] of Object.values(CREW_SEAT_LABELS).entries()) {
+      expect(fallbackRows[index]).toContain(label);
+      expect(fallbackRows[index]).toContain('none · pause and ask');
+    }
+
+    ui.unmount();
+  });
+
+  it('paints a BUILD fallback with the same identity as a seat', async () => {
+    seed({
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+      },
+    });
+    detectionStore.setDetection({ providers: [], cliTools: [cliDetectionFor('ready', 'codex')] });
+    overlayStore.open('settings', 'fallback:build');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Codex CLI · GPT-5 Codex · high');
+
+    ui.unmount();
+  });
+
+  it('marks an inherited REVIEW fallback with the planner it follows', async () => {
+    seed({ planner: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } } });
+    detectionStore.setDetection({ providers: [], cliTools: [cliDetectionFor('ready', 'codex')] });
+    const ui = renderAt(120, 40);
+    await flushEffects();
+    const lines = frameLines(ui);
+    const fallbackRows = lines.slice(indexOfLine(lines, 'Fallback') + 1);
+
+    expect(lineWith(fallbackRows, 'REVIEW')).toContain(
+      `${PLANNER_INHERITANCE.mark} · OpenAI Codex CLI · auto`,
+    );
+
+    ui.unmount();
+  });
+
+  it('opens the BUILD fallback picker on Enter', async () => {
+    overlayStore.open('settings', 'fallback:build');
+    const ui = renderAt(120, 40);
+    await flushEffects();
+
+    ui.stdin.write(ENTER);
+    await tick(20);
+
+    expect(overlayStore.get().active).toBe('implementer-fallback-picker');
+    ui.unmount();
+  });
+
+  it.each([undefined, 'seat:plan'])(
+    'restores the BUILD fallback cursor after the picker closes from Settings focus %s',
+    async (focus) => {
+      overlayStore.open('settings', focus);
+      const ui = renderAt(120, 40);
+      await flushEffects();
+      for (let index = 0; index < 4; index += 1) {
+        ui.stdin.write('\u001b[B');
+        await flushEffects();
+      }
+      expect(frameLines(ui).find((line) => RULE_ROW.test(line))).toMatch(/BUILD fallback [─-]{3,}/);
+
+      ui.stdin.write(ENTER);
+      await tick(20);
+      expect(overlayStore.get().active).toBe('implementer-fallback-picker');
+      ui.unmount();
+
+      overlayStore.close();
+      const returned = renderAt(120, 40);
+      await flushEffects();
+      const lines = frameLines(returned);
+      const fallbackRows = lines.slice(
+        indexOfLine(lines, 'Fallback') + 1,
+        indexOfLine(lines, 'Tuning'),
+      );
+      returned.unmount();
+
+      expect(lineWith(fallbackRows, 'BUILD')).toContain(`${glyph('liveBar')} BUILD`);
+      expect(lines.find((line) => RULE_ROW.test(line))).toMatch(/BUILD fallback [─-]{3,}/);
+    },
+  );
+
+  it('labels the selected BUILD fallback help and advertises its action', async () => {
+    overlayStore.open('settings', 'fallback:build');
+    const ui = renderAt(70, 40);
+    await flushEffects();
+
+    expect(frameLines(ui).find((line) => RULE_ROW.test(line))).toMatch(/BUILD fallback [─-]{3,}/);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('⏎ change fallback');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('None pauses the run and asks.');
+
+    ui.unmount();
   });
 
   it('opens on the crew block, above every tuning row', async () => {
@@ -579,14 +696,21 @@ describe('SettingsOverlay', () => {
     const roomy = renderAt(120, 40);
     await tick(20);
     const roomyLines = stripAnsiStyles(roomy.lastFrame()).split('\n');
-    const roomyHeader = indexOfLine(roomyLines, 'Tuning');
-    expect(panelText(roomyLines[roomyHeader - 1] ?? '')).toBe('');
+    const roomyHeader = indexOfLine(roomyLines, 'Fallback');
+    expect(roomyHeader).toBeGreaterThan(-1);
+    // The list scrolls at this size, so the row may carry the scrollbar's own glyph.
+    expect(
+      panelText(roomyLines[roomyHeader - 1] ?? '')
+        .replace(/[#█│]$/, '')
+        .trimEnd(),
+    ).toBe('');
     roomy.unmount();
 
     const tight = renderAt(80, 24);
     await tick(20);
     const tightLines = stripAnsiStyles(tight.lastFrame()).split('\n');
-    const tightHeader = indexOfLine(tightLines, 'Tuning');
+    const tightHeader = indexOfLine(tightLines, 'Fallback');
+    expect(tightHeader).toBeGreaterThan(-1);
     expect(tightLines[tightHeader - 1]).toContain('REVIEW');
     tight.unmount();
   });

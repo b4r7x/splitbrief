@@ -70,6 +70,8 @@ export async function handleFailedImplementation(opts: {
       projectDir: wctx.projectDir,
       seat: 'build',
       runner: wctx.config.implementer,
+      config: wctx.config,
+      implementerProfile: wctx.implementerProfile,
     });
     const issue = buildSeatDownIssue({
       task,
@@ -78,7 +80,6 @@ export async function handleFailedImplementation(opts: {
       runner: wctx.config.implementer,
       classification: { class: 'account', cause: 'auth' },
       words: toolMessage,
-      fallback: wctx.config.implementer.fallback,
       attempts: 1,
       maxAttempts: DEFAULT_LOCAL_RETRIES,
       ...(wctx.implementerProfile !== undefined && {
@@ -110,6 +111,8 @@ export async function handleFailedImplementation(opts: {
       projectDir: wctx.projectDir,
       seat: 'build',
       runner: wctx.config.implementer,
+      config: wctx.config,
+      implementerProfile: wctx.implementerProfile,
     });
     const issue = buildSeatDownIssue({
       task,
@@ -122,7 +125,6 @@ export async function handleFailedImplementation(opts: {
         source: 'result-error',
       }),
       words: toolMessage,
-      fallback: wctx.config.implementer.fallback,
       attempts: 1,
       maxAttempts: DEFAULT_LOCAL_RETRIES,
       ...(wctx.implementerProfile !== undefined && {
@@ -158,6 +160,8 @@ export async function handleFailedImplementation(opts: {
       projectDir: wctx.projectDir,
       seat: 'build',
       runner: wctx.config.implementer,
+      config: wctx.config,
+      implementerProfile: wctx.implementerProfile,
     });
     const issue = buildDefectIssue({
       task,

@@ -18,8 +18,10 @@ import type { CustomCommandRunnerKind } from '../../core/config/custom-commands.
 import {
   CREW_SEAT_LABELS,
   formatSeatIdentity,
+  isSeatIdentity,
   PLANNER_INHERITANCE,
 } from '../../core/crew/identity.js';
+import { seatFallback } from '../../core/crew/fallback.js';
 import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 
@@ -53,11 +55,13 @@ import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
   type ActiveRunnerRole,
+  type PickerSlot,
   type SeatPickerRole,
 } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
 import { assertNever, includes } from '../../utils/type-guards.js';
 import type { PickerOption, RunnerPickerOption } from './model-catalog/options.js';
+import { readPickerRunner } from './model-catalog/catalog.js';
 import {
   compactProviderTag,
   modelProviderAuthKey,
@@ -74,6 +78,8 @@ import {
   commitImplementerSelection,
   commitCustomCommand,
   commitCustomModel,
+  commitFallbackSelection,
+  clearSeatFallback,
   inheritsPlannerSeat,
   removeCustomModel,
   type SeatCommitResult,
@@ -229,11 +235,15 @@ function changesRunningSeat(before: Config, after: Config): boolean {
  * catalog label and every axis the saved block carries, so a level the tool cannot spell, which
  * the commit dropped, is never announced.
  */
-function savedSeatIdentity(saved: Config, role: ActiveRunnerRole): string {
-  const runner = readActiveRunner({ config: saved, role });
+function savedSeatIdentity(saved: Config, role: ActiveRunnerRole, slot: PickerSlot): string {
+  const runner = readPickerRunner(saved, role, slot);
+  if (runner === undefined) {
+    throw error('picker-invalid-fallback', 'Saved fallback has no CLI runner', { role });
+  }
   return formatSeatIdentity({
     seat: runner,
-    displayName: resolveSeatDisplayName(runner, role, modelCacheStore),
+    displayName:
+      slot === 'seat' ? resolveSeatDisplayName(runner, role, modelCacheStore) : undefined,
   });
 }
 
@@ -249,7 +259,11 @@ async function reportFailure(task: () => Promise<void>): Promise<void> {
 /** The seat rows that can carry a model; the terminal rows never reach a commit. */
 function runnerItemOf(item: PickerOption | undefined): RunnerPickerOption | undefined {
   if (item === undefined) return undefined;
-  if (item.kind === 'custom-command' || item.kind === 'inherit-planner') {
+  if (
+    item.kind === 'custom-command' ||
+    item.kind === 'inherit-planner' ||
+    item.kind === 'no-fallback'
+  ) {
     return undefined;
   }
   return item;
@@ -298,10 +312,11 @@ function rowEffortLadder(rows: readonly RightRow[], fullId: string): readonly st
 
 export function usePickerActions(opts: {
   role: SeatPickerRole;
+  slot: PickerSlot;
   catalog: PickerCatalog;
   deps?: PickerEffectDeps | undefined;
 }): PickerActions {
-  const { role, catalog, deps = defaultPickerEffectDeps } = opts;
+  const { role, slot, catalog, deps = defaultPickerEffectDeps } = opts;
   const seatRole: ActiveRunnerRole = seatPickerLane(role);
   const config = configStore.useConfig();
   const view = pickerViewStore.use((s) => s.view);
@@ -341,6 +356,16 @@ export function usePickerActions(opts: {
     effort?: string | null | undefined,
     effortChoices?: readonly string[] | undefined,
   ): SeatCommitResult => {
+    if (slot === 'fallback') {
+      return commitFallbackSelection({
+        config,
+        role: seatRole,
+        selection,
+        model,
+        effort,
+        effortChoices,
+      });
+    }
     switch (seatRole) {
       case 'planner':
         return commitPlannerTierSelection({
@@ -387,6 +412,20 @@ export function usePickerActions(opts: {
     effort?: string | null | undefined,
     effortChoices?: readonly string[] | undefined,
   ) => {
+    if (slot === 'fallback') {
+      const runner = readActiveRunner({ config, role: seatRole });
+      if (
+        isSeatIdentity(
+          { tool: runner.kind === 'cli' ? runner.tool : '', model: runner.model },
+          { tool: selection.id, model: modelId ?? undefined },
+        )
+      ) {
+        feedbackStore.setError(
+          `${catalog.roleLabel} runs ${savedSeatIdentity(config, seatRole, 'seat')} now${SOFT_SEP}choose another tool or model`,
+        );
+        return;
+      }
+    }
     const seat = commitSelection(
       selection,
       modelId === null ? null : { id: modelId },
@@ -395,7 +434,7 @@ export function usePickerActions(opts: {
     );
     await commit(
       seat.config,
-      `${catalog.roleLabel} set to: ${savedSeatIdentity(seat.config, seatRole)}`,
+      `${catalog.roleLabel}${slot === 'fallback' ? ' fallback' : ''} set to: ${savedSeatIdentity(seat.config, seatRole, slot)}`,
     );
     // Both notices are news the save does not carry: neither may overwrite the
     // other, so they land as one line.
@@ -407,6 +446,17 @@ export function usePickerActions(opts: {
   return {
     confirm(selection: PickerOption, model: ModelOption | null) {
       return reportFailure(async () => {
+        if (selection.kind === 'no-fallback') {
+          if (seatFallback(config, seatRole) === undefined) {
+            overlayStore.close();
+            return;
+          }
+          await commit(
+            clearSeatFallback(config, seatRole),
+            `${catalog.roleLabel} fallback cleared${SOFT_SEP}Seat down pauses and asks`,
+          );
+          return;
+        }
         const localProvider = localConnectionProvider(selection);
         if (localProvider !== undefined) {
           openSubView({ kind: 'local-connection', provider: localProvider }, selection);
@@ -462,13 +512,14 @@ export function usePickerActions(opts: {
       // neither may a preset or a method drafted from the tool the cursor left. The
       // column's mount notice names the tool already current, which the cursor never
       // left, so the level a crew row opened the picker on survives the first paint.
-      // Back on the seat's own tool, the ladder reads the level the seat runs again.
+      // Back on the current tool, the ladder reads the saved level again.
       if (item.id !== catalog.currentItem?.id) {
         pickerViewStore.setBrowseCatalog(false);
+        const runner = readPickerRunner(config, seatRole, slot);
         pickerViewStore.setEffortDraft(
-          item.isCurrent === true
+          item.isCurrent === true && runner !== undefined
             ? seatConfiguredEffort({
-                runner: readActiveRunner({ config, role: seatRole }),
+                runner,
                 role: seatRole,
               })
             : null,
@@ -482,6 +533,7 @@ export function usePickerActions(opts: {
     },
     deleteRight(item: ModelOption) {
       return reportFailure(async () => {
+        if (slot === 'fallback') return;
         if (inheritsPlannerSeat(config, seatRole)) {
           feedbackStore.setError(`${item.id} belongs to the planner. Remove it from the planner.`);
           return;
@@ -521,6 +573,10 @@ export function usePickerActions(opts: {
         }
         const customModelItem = runnerItemOf(catalog.currentItem);
         if (customModelItem === undefined) return;
+        if (slot === 'fallback') {
+          await saveModelSelection(customModelItem, modelName);
+          return;
+        }
         const updated = commitCustomModel({
           config,
           role: seatRole,
@@ -530,7 +586,7 @@ export function usePickerActions(opts: {
         });
         await commit(
           updated,
-          `${catalog.roleLabel} set to: ${savedSeatIdentity(updated, seatRole)}`,
+          `${catalog.roleLabel} set to: ${savedSeatIdentity(updated, seatRole, slot)}`,
         );
       });
     },
@@ -597,7 +653,9 @@ export function useLocalConnectionActions(
               });
         const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
-        feedbackStore.setMessage(`${roleLabel} set to: ${savedSeatIdentity(updated, seatRole)}`);
+        feedbackStore.setMessage(
+          `${roleLabel} set to: ${savedSeatIdentity(updated, seatRole, 'seat')}`,
+        );
         overlayStore.close();
       });
     },

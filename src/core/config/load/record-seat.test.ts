@@ -130,7 +130,7 @@ describe('recordSeatOfRecord', () => {
     });
   });
 
-  it('keeps the declared fallback the new runner does not carry', async () => {
+  it('removes the declared fallback when the new runner carries none', async () => {
     const projectDir = newProject();
     writeConfig(
       projectDir,
@@ -156,13 +156,13 @@ describe('recordSeatOfRecord', () => {
     expect(parsed.implementer).toEqual({
       kind: 'cli',
       tool: 'claude-code',
-      fallback: { tool: 'opencode' },
     });
   });
 
-  it('writes the planner when a review seat has no reviewer block of its own', async () => {
+  it('writes a reviewer block and leaves the inherited planner byte-equal', async () => {
     const projectDir = newProject();
     writeConfig(projectDir, makeConfig({ planner: { kind: 'cli', tool: 'codex' } }));
+    const before = readFileSync(configFile(projectDir), 'utf8');
     const switched = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }).planner;
 
     const result = await recordSeatOfRecord(
@@ -174,8 +174,28 @@ describe('recordSeatOfRecord', () => {
 
     expect(result).toBe('saved');
     const parsed = YAML.parse(readFileSync(configFile(projectDir), 'utf8'));
-    expect(parsed.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
-    expect(parsed.reviewer).toBeUndefined();
+    expect(parsed.planner).toEqual({ kind: 'cli', tool: 'codex' });
+    expect(parsed.reviewer).toEqual({ kind: 'cli', tool: 'claude-code' });
+    expect(readFileSync(configFile(projectDir), 'utf8').startsWith(before)).toBe(true);
+  });
+
+  it('writes the fallback carried by the new runner', async () => {
+    const projectDir = newProject();
+    writeConfig(
+      projectDir,
+      makeConfig({ implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'opencode' } } }),
+    );
+    const switched = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'high' },
+      },
+    }).implementer;
+    expect(
+      await recordSeatOfRecord(projectDir, { seat: 'build' }, switched, revisionOf(projectDir)),
+    ).toBe('saved');
+    expect(loadConfig(projectDir).config.implementer).toEqual(switched);
   });
 
   it('conflicts on a stale revision and writes nothing', async () => {

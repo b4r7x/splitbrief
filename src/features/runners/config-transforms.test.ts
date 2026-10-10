@@ -7,8 +7,10 @@ import type { Config } from '../../core/schemas/config.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { realPickerOption } from '#testing/helpers/runner-picker.js';
 import {
+  clearSeatFallback,
   commitCustomCommand,
   commitCustomModel,
+  commitFallbackSelection,
   commitImplementerSelection,
   commitPlannerTierSelection,
   inheritsPlannerSeat,
@@ -1159,5 +1161,266 @@ describe('declared fallback survives the picker', () => {
     });
 
     expect(updated.implementer.fallback).toEqual({ tool: 'claude-code' });
+  });
+});
+
+describe('commitFallbackSelection', () => {
+  const claudePlanner = {
+    kind: 'cli',
+    tool: 'claude-code',
+    model: 'sonnet',
+    effort: 'max',
+  } as const;
+
+  it('writes the chosen tool, model and flag effort onto the seat fallback and nothing else', () => {
+    const config = makeConfig({ planner: claudePlanner });
+
+    const { config: updated, notice } = commitFallbackSelection({
+      config,
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5-codex' },
+      effort: 'high',
+    });
+
+    expect(updated.planner.fallback).toEqual({
+      tool: 'codex',
+      model: 'gpt-5-codex',
+      effort: 'high',
+    });
+    const { fallback: _fallback, ...seat } = updated.planner;
+    expect(seat).toEqual(config.planner);
+    expect(notice).toBeUndefined();
+    expect(() => ConfigSchema.parse(updated)).not.toThrow();
+  });
+
+  it('writes a drafted level as the variant on a variant-channel tool', () => {
+    const { config: updated } = commitFallbackSelection({
+      config: makeConfig({ planner: claudePlanner }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'opencode'),
+      model: { id: OPENCODE_MODEL },
+      effort: 'high',
+    });
+
+    expect(updated.planner.fallback).toEqual({
+      tool: 'opencode',
+      model: OPENCODE_MODEL,
+      variant: 'high',
+    });
+  });
+
+  it('keeps the axes a model-id tool spells inside the model id', () => {
+    const { config: updated } = commitFallbackSelection({
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } }),
+      role: 'implementer',
+      selection: realPickerOption('implementer', 'cursor'),
+      model: { id: 'claude-opus-5-thinking-xhigh-fast' },
+    });
+
+    expect(updated.implementer.fallback).toEqual({
+      tool: 'cursor',
+      model: 'claude-opus-5-thinking-xhigh-fast',
+    });
+  });
+
+  it("drops a level the model's ladder does not spell, and says so", () => {
+    const { config: updated, notice } = commitFallbackSelection({
+      config: makeConfig({ planner: claudePlanner }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5.6-codex' },
+      effort: 'ultra',
+    });
+
+    expect(updated.planner.fallback).toEqual({ tool: 'codex', model: 'gpt-5.6-codex' });
+    expect(notice).toContain('Effort ultra');
+  });
+
+  it("never carries the seat's own effort into the fallback", () => {
+    const { config: updated } = commitFallbackSelection({
+      config: makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'max' },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5-codex' },
+    });
+
+    expect(updated.planner.fallback).toEqual({ tool: 'codex', model: 'gpt-5-codex' });
+  });
+
+  it('starts from the fallback it replaces: an unchanged model keeps its level', () => {
+    const { config: updated } = commitFallbackSelection({
+      config: makeConfig({
+        planner: {
+          ...claudePlanner,
+          fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'low' },
+        },
+      }),
+      role: 'planner',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5-codex' },
+    });
+
+    expect(updated.planner.fallback).toEqual({
+      tool: 'codex',
+      model: 'gpt-5-codex',
+      effort: 'low',
+    });
+  });
+
+  it('writes the default implementer profile only', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-5' },
+    });
+
+    const { config: updated } = commitFallbackSelection({
+      config,
+      role: 'implementer',
+      selection: realPickerOption('implementer', 'claude-code'),
+      model: { id: 'sonnet' },
+    });
+
+    expect(updated.implementer.fallback).toEqual({ tool: 'claude-code', model: 'sonnet' });
+    expect(updated.planner).toEqual(config.planner);
+  });
+
+  it('gives an inherited review seat its own block: a copy of the planner with the new fallback', () => {
+    const config = makeConfig({
+      planner: { ...claudePlanner, fallback: { tool: 'opencode' } },
+    });
+    expect(config.reviewer).toBeUndefined();
+
+    const { config: updated } = commitFallbackSelection({
+      config,
+      role: 'reviewer',
+      selection: realPickerOption('planner', 'codex'),
+      model: { id: 'gpt-5-codex' },
+    });
+
+    const { fallback: _planFallback, ...plannerSeat } = config.planner;
+    expect(updated.reviewer).toEqual({
+      ...plannerSeat,
+      fallback: { tool: 'codex', model: 'gpt-5-codex' },
+    });
+    expect(updated.planner).toEqual(config.planner);
+  });
+
+  it.each(['auto', 'default'])('omits the automatic model %s from a fallback', (id) => {
+    const config = makeConfig({
+      planner: {
+        ...claudePlanner,
+        fallback: { tool: 'claude-code', model: 'opus', effort: 'low' },
+      },
+    });
+
+    const { config: updated } = commitFallbackSelection({
+      config,
+      role: 'planner',
+      selection: realPickerOption('planner', 'claude-code'),
+      model: { id },
+    });
+
+    expect(updated.planner.fallback).toEqual({ tool: 'claude-code', effort: 'low' });
+    expect(() => ConfigSchema.parse(updated)).not.toThrow();
+  });
+
+  it('keeps profile metadata and other profiles when it writes a named default profile', () => {
+    const config = namedImplementerProfileConfig();
+
+    const { config: updated } = commitFallbackSelection({
+      config,
+      role: 'implementer',
+      selection: realPickerOption('implementer', 'claude-code'),
+      model: { id: 'sonnet' },
+    });
+
+    expect(updated.implementerProfiles?.profiles['active-cloud']).toEqual({
+      ...config.implementerProfiles?.profiles['active-cloud'],
+      fallback: { tool: 'claude-code', model: 'sonnet' },
+    });
+    expect(updated.implementerProfiles?.profiles['dormant-local']).toEqual(
+      config.implementerProfiles?.profiles['dormant-local'],
+    );
+    expect(updated.planner).toEqual(config.planner);
+    expect(() => ConfigSchema.parse(updated)).not.toThrow();
+  });
+
+  it('refuses a selection outside the CLI fallback slot', () => {
+    expect(() =>
+      commitFallbackSelection({
+        config: makeConfig({ planner: claudePlanner }),
+        role: 'planner',
+        selection: realPickerOption('planner', 'ollama'),
+        model: { id: 'qwen2.5-coder:7b' },
+      }),
+    ).toThrow('A fallback must name a CLI tool');
+  });
+});
+
+describe('clearSeatFallback', () => {
+  it('removes the key from the seat block and leaves the rest of the block alone', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'sonnet',
+        fallback: { tool: 'codex' },
+      },
+    });
+
+    const updated = clearSeatFallback(config, 'planner');
+
+    const { fallback: _fallback, ...seat } = config.planner;
+    expect(updated.planner).not.toHaveProperty('fallback');
+    expect(updated.planner).toEqual(seat);
+  });
+
+  it('clears the default implementer profile fallback', () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'claude-code' } },
+    });
+
+    expect(clearSeatFallback(config, 'implementer').implementer).not.toHaveProperty('fallback');
+  });
+
+  it("gives an inherited review seat its own block without the planner's fallback", () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', fallback: { tool: 'codex' } },
+    });
+
+    const updated = clearSeatFallback(config, 'reviewer');
+
+    const { fallback: _fallback, ...plannerSeat } = config.planner;
+    expect(updated.reviewer).toEqual(plannerSeat);
+    expect(updated.planner.fallback).toEqual({ tool: 'codex' });
+  });
+
+  it('removes a named default profile fallback and keeps the other profiles and metadata', () => {
+    const config = namedImplementerProfileConfig();
+    const { config: configured } = commitFallbackSelection({
+      config,
+      role: 'implementer',
+      selection: realPickerOption('implementer', 'claude-code'),
+      model: { id: 'sonnet' },
+    });
+
+    const updated = clearSeatFallback(configured, 'implementer');
+
+    expect(updated.implementerProfiles).toEqual(config.implementerProfiles);
+    expect(updated.implementer).not.toHaveProperty('fallback');
+    expect(updated.planner).toEqual(config.planner);
+    expect(() => ConfigSchema.parse(updated)).not.toThrow();
+  });
+
+  it('gives an inherited review seat its own block when PLAN also has no fallback', () => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' } });
+
+    const updated = clearSeatFallback(config, 'reviewer');
+
+    expect(updated.reviewer).toEqual(config.planner);
+    expect(updated.reviewer).not.toHaveProperty('fallback');
+    expect(updated.planner).toEqual(config.planner);
   });
 });

@@ -66,9 +66,9 @@ it('takes the seat swap in one press and never lists the offered tools itself', 
 
 it.each([
   [
-    'the final review, on the plan seat it follows',
+    'the final review, on an inherited tool',
     { seat: 'review', taskId: undefined, phase: 'final-review' },
-    'Change PLAN tool · runs the review again',
+    'Change REVIEW tool · runs the review again',
   ],
   [
     "a brief's hint",
@@ -92,7 +92,7 @@ it.each([
     reason: 'runner-usage-limit',
     availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
     recommendedAction: 'switch-seat',
-    switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+    switchSeat: { seat: halt.seat ?? 'plan', candidates: [{ tool: 'claude-code' }] },
   });
   const ui = mount(vi.fn(), 100, issue);
   await flushEffects();
@@ -131,16 +131,16 @@ it('keeps every action label whole on a 56-column panel', async () => {
     phase: 'final-review',
     availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
     recommendedAction: 'switch-seat',
-    switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+    switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
   });
   const ui = mount(vi.fn(), 56, issue);
   await flushEffects();
   const frame = stripAnsiStyles(ui.lastFrame());
   const rows = frame
     .split('\n')
-    .filter((line) => /Try again|Change PLAN tool|Skip task|End run/.test(line));
+    .filter((line) => /Try again|Change REVIEW tool|Skip task|End run/.test(line));
   expect(rows).toHaveLength(4);
-  expect(frame).toContain('Change PLAN tool · runs the review again');
+  expect(frame).toContain('Change REVIEW tool · runs the review again');
   for (const row of rows) expect(row).not.toContain('…');
   ui.unmount();
 });

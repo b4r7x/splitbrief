@@ -8,7 +8,7 @@ import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
-import type { WorkflowState } from '../../../../src/core/schemas/workflow.js';
+import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
 import { makeReviewFixInsertedEvents } from '../../../helpers/events/task.js';
@@ -51,6 +51,7 @@ import {
   buildLeftIsolationRecoveryIssue,
   buildCheckoutChangedRecoveryIssue,
   runnerHaltRow,
+  type SeatDownRecoveryOptions,
   type SeatSwapContext,
 } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
 import { parseUsageLimitReset } from '../../../../src/engine/runners/usage-limit.js';
@@ -63,10 +64,7 @@ import {
   buildPlanSessionHaltRecoveryIssue,
   buildPlannerCallFailedRecoveryIssue,
 } from '../../../../src/engine/orchestrator/recovery/builders/planner.js';
-import {
-  diagnosePlannerCallFailure,
-  type PlannerCallDiagnosis,
-} from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
+import { diagnosePlannerCallFailure } from '../../../../src/engine/orchestrator/recovery/planner-call-failure.js';
 import { consultFailureLabel } from '../../../../src/engine/orchestrator/task/retry.js';
 import {
   publishError,
@@ -95,6 +93,8 @@ import { seatAxisWords } from '../../../../src/core/runners/effort-channel.js';
 import { formatSeatChangeIdentities } from '../../../../src/core/crew/identity.js';
 import { formatSeatChangeNotice } from '../../../../src/core/state/seats.js';
 import { formatRecoveryHeadline } from '../../../../src/core/recovery/headline.js';
+import { fallbackBlockedReason } from '../../../../src/core/crew/fallback.js';
+import { configWithSwitchedSeat } from '../../../../src/engine/orchestrator/recovery/switch-seat.js';
 import type { ScopedCliCatalogAttempt } from '../../../../src/engine/detection/cli-catalog-outcomes.js';
 import {
   atRestProjections,
@@ -2137,7 +2137,11 @@ const OLLAMA_LIMIT_WORDS = 'quota exhausted · resets 5pm';
  * follow its action rows and not the offer. Built when the capture reads it, because the tool's
  * clock resolves against the capture's own clock and zone.
  */
-function usageLimitRecoveryIssue(): RecoveryIssue {
+function usageLimitRecoveryIssue(
+  overrides: Readonly<
+    Partial<Pick<SeatDownRecoveryOptions, 'runner' | 'seatSwap' | 'seatSwitches'>>
+  > = {},
+): RecoveryIssue {
   const config = visualConfig();
   const resetAt = parseUsageLimitReset(OLLAMA_LIMIT_WORDS);
   const classification: SeatFailureClassification =
@@ -2156,11 +2160,13 @@ function usageLimitRecoveryIssue(): RecoveryIssue {
     seatSwap: {
       seat: 'build',
       currentTool: '',
+      fallback: SEAT_FALLBACK,
       detectedTools: ['opencode', 'codex', 'claude-code', 'cursor', 'copilot', 'kilo-code'].map(
         (tool) => ({ tool, ready: true }),
       ),
     },
     createdAt: new Date(FIXED_TS).toISOString(),
+    ...overrides,
   });
 }
 
@@ -2201,6 +2207,7 @@ const usageLimitRecoveryProjection: WorkflowFixtureProjection = {
   feature: WORKFLOW_FEATURE,
   inputMode: 'question',
   sidebarVisible: false,
+  config: { implementer: { ...BASE_IMPLEMENTER, fallback: SEAT_FALLBACK } },
   get events() {
     const issue = usageLimitRecoveryIssue();
     return publishedEvents(FIXED_TS + 100, (bus) =>
@@ -2645,20 +2652,13 @@ function plannerCallFailed(role: 'planner' | 'review' | 'escalation', words: str
   });
 }
 
-/**
- * What the engine makes of a planner-tier call that failed on a limit. Every halt below is built
- * when the capture reads it: the tools name their reset as a local clock, which resolves against
- * the capture's own clock and zone only then.
- */
-function plannerLimitDiagnosis(
-  input: Readonly<{ err: unknown; label: string; runner: Config['planner'] }>,
-): PlannerCallDiagnosis {
-  return diagnosePlannerCallFailure({ ...input, seat: 'plan' });
-}
-
-/** What the last readiness pass remembered for PLAN: every tool here ready. */
-function planSeatSwap(currentTool: string, tools: readonly string[]): SeatSwapContext {
-  return { seat: 'plan', currentTool, detectedTools: tools.map((tool) => ({ tool, ready: true })) };
+/** What the last readiness pass remembered for the halted seat: every tool here ready. */
+function plannerSeatSwap(
+  seat: 'plan' | 'review',
+  currentTool: string,
+  tools: readonly string[],
+): SeatSwapContext {
+  return { seat, currentTool, detectedTools: tools.map((tool) => ({ tool, ready: true })) };
 }
 
 /**
@@ -2669,26 +2669,27 @@ function planSeatRecoveryIssue(): RecoveryIssue {
   const planner = visualConfig().planner;
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_plan_usage_limit',
-    diagnosis: plannerLimitDiagnosis({
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'plan',
       err: plannerCallFailed('planner', CLAUDE_LIMIT_WORDS),
       label: 'Planning failed',
       runner: planner,
     }),
     phase: 'planning',
     runner: { ...planner, fallback: SEAT_FALLBACK },
-    seatSwap: planSeatSwap('claude-code', ['claude-code', 'codex', 'opencode']),
+    seatSwap: plannerSeatSwap('plan', 'claude-code', ['claude-code', 'codex', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
 }
 
 /**
- * The final review out of quota on the tool it follows PLAN onto: the halt is the review seat's,
- * and its swap moves the plan seat, so the review runs on the new tool with it.
+ * The inherited review out of quota on PLAN's tool: its switch gives REVIEW a separate seat.
  */
 function reviewSeatRecoveryIssue(): RecoveryIssue {
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_review_usage_limit',
-    diagnosis: plannerLimitDiagnosis({
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'review',
       err: plannerCallFailed('review', CODEX_LIMIT_WORDS),
       label: 'Final review failed',
       runner: CODEX_PLAN_SEAT,
@@ -2697,7 +2698,7 @@ function reviewSeatRecoveryIssue(): RecoveryIssue {
     phase: 'final-review',
     runner: { ...CODEX_PLAN_SEAT, fallback: SEAT_FALLBACK },
     details: reviewSeatDetails(true),
-    seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
+    seatSwap: plannerSeatSwap('review', 'codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
 }
@@ -2710,7 +2711,8 @@ function consultSeatRecoveryIssue(): RecoveryIssue {
   const err = plannerCallFailed('escalation', CODEX_LIMIT_WORDS);
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_hint_usage_limit',
-    diagnosis: plannerLimitDiagnosis({
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'plan',
       err,
       label: consultFailureLabel('plan', WORKFLOW_FIXTURE_TASK_ID),
       runner: CODEX_PLAN_SEAT,
@@ -2719,7 +2721,7 @@ function consultSeatRecoveryIssue(): RecoveryIssue {
     phase: 'escalating',
     runner: CODEX_PLAN_SEAT,
     details: consultHaltDetails(WORKFLOW_FIXTURE_TASK_ID, 'plan'),
-    seatSwap: planSeatSwap('codex', ['codex', 'claude-code', 'opencode']),
+    seatSwap: plannerSeatSwap('plan', 'codex', ['codex', 'claude-code', 'opencode']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
 }
@@ -2728,14 +2730,15 @@ function consultSeatRecoveryIssue(): RecoveryIssue {
 function planSwappedRecoveryIssue(): RecoveryIssue {
   return buildPlannerCallFailedRecoveryIssue({
     id: 'rec_visual_plan_swapped',
-    diagnosis: plannerLimitDiagnosis({
+    diagnosis: diagnosePlannerCallFailure({
+      seat: 'plan',
       err: plannerCallFailed('planner', CODEX_LIMIT_WORDS),
       label: 'Planning failed',
       runner: CODEX_PLAN_SEAT,
     }),
     phase: 'planning',
     runner: CODEX_PLAN_SEAT,
-    seatSwap: planSeatSwap('codex', ['codex', 'claude-code']),
+    seatSwap: plannerSeatSwap('plan', 'codex', ['codex', 'claude-code']),
     createdAt: new Date(FIXED_TS).toISOString(),
   });
 }
@@ -2919,17 +2922,102 @@ const seatSwitchedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+const manualSeatSwitchedProjection: WorkflowFixtureProjection = {
+  ...seatSwitchedProjection,
+  scenarioId: scenarioId('workflow-seat-switched-manual'),
+  events: seatSwitchedProjection.events.map((event) =>
+    event.type === 'seat_switched' ? { ...event, auto: false } : event,
+  ),
+};
+
 const BALANCE_SWITCH_FALLBACK = { ...SEAT_FALLBACK, variant: 'high' } as const;
-const BALANCE_SWITCH_RUNNER = {
-  kind: 'cli',
-  ...BALANCE_SWITCH_FALLBACK,
-  fallback: BALANCE_SWITCH_FALLBACK,
-} as const;
+const BALANCE_SWITCH_CONFIG = configWithSwitchedSeat(
+  visualConfig({ implementer: { ...OPENCODE_BALANCE_SEAT, fallback: BALANCE_SWITCH_FALLBACK } }),
+  'build',
+  BALANCE_SWITCH_FALLBACK,
+  undefined,
+  true,
+);
+if (BALANCE_SWITCH_CONFIG === null) throw new Error('Invalid automatic balance-switch fixture');
+const BALANCE_SWITCH_RUNNER = BALANCE_SWITCH_CONFIG.implementer;
 const BALANCE_SWITCH_MODEL_NAME = 'DeepSeek V4.1 Flash';
 const balanceSwitchIdentities = formatSeatChangeIdentities(
   { seat: OPENCODE_BALANCE_SEAT, displayName: BALANCE_SWITCH_MODEL_NAME },
   { seat: BALANCE_SWITCH_RUNNER, displayName: BALANCE_SWITCH_MODEL_NAME },
 );
+
+function fallbackRecoveryProjection(
+  input: Readonly<{
+    scenarioId: ScenarioId;
+    config: Config;
+    seatSwap: SeatSwapContext;
+    seatSwitches?: SeatSwitchRecord[] | undefined;
+  }>,
+): WorkflowFixtureProjection {
+  const issue = () =>
+    usageLimitRecoveryIssue({
+      runner: input.config.implementer,
+      seatSwap: input.seatSwap,
+      seatSwitches: input.seatSwitches,
+    });
+  return {
+    ...usageLimitRecoveryProjection,
+    scenarioId: input.scenarioId,
+    config: { implementer: input.config.implementer },
+    get events() {
+      return haltErrorEvents(issue());
+    },
+    get resumeState() {
+      return { ...haltedResumeState(issue()), seatSwitches: input.seatSwitches };
+    },
+  };
+}
+
+const noFallbackRecoveryProjection = fallbackRecoveryProjection({
+  scenarioId: scenarioId('workflow-recovery-no-fallback'),
+  config: visualConfig(),
+  seatSwap: {
+    seat: 'build',
+    currentTool: '',
+    detectedTools: [{ tool: 'codex', ready: true }],
+  },
+});
+
+const fallbackUsedRecoveryProjection = fallbackRecoveryProjection({
+  scenarioId: scenarioId('workflow-recovery-fallback-used'),
+  config: BALANCE_SWITCH_CONFIG,
+  seatSwap: {
+    seat: 'build',
+    currentTool: BALANCE_SWITCH_FALLBACK.tool,
+    currentModel: BALANCE_SWITCH_FALLBACK.model,
+    fallback: BALANCE_SWITCH_RUNNER.fallback,
+    detectedTools: [{ ...OPENCODE_BALANCE_SEAT, ready: true }],
+  },
+  seatSwitches: [
+    {
+      seat: 'build',
+      from: balanceSwitchIdentities.from,
+      to: balanceSwitchIdentities.to,
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'visual-config-revision',
+      ts: RESUMED_RUN_STARTED_AT,
+    },
+  ],
+});
+
+const fallbackNotInstalledRecoveryProjection = fallbackRecoveryProjection({
+  scenarioId: scenarioId('workflow-recovery-fallback-not-installed'),
+  config: visualConfig({ implementer: { ...BASE_IMPLEMENTER, fallback: SEAT_FALLBACK } }),
+  seatSwap: {
+    seat: 'build',
+    currentTool: '',
+    fallback: SEAT_FALLBACK,
+    fallbackBlockedReason: fallbackBlockedReason(undefined),
+    detectedTools: [{ tool: 'codex', ready: true }],
+  },
+});
+
 const balanceSeatSwitchProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-seat-switched-balance'),
   feature: WORKFLOW_FEATURE,
@@ -4855,6 +4943,9 @@ const projections = [
   touchedNotSuggestedProjection,
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
+  noFallbackRecoveryProjection,
+  fallbackUsedRecoveryProjection,
+  fallbackNotInstalledRecoveryProjection,
   retryExhaustedRecoveryProjection,
   consultBoundRecoveryProjection,
   {
@@ -4878,6 +4969,7 @@ const projections = [
   reviewSeatRecoveryProjection,
   hintSeatRecoveryProjection,
   seatSwitchedProjection,
+  manualSeatSwitchedProjection,
   planActivityProjection,
   planningClaudeFramesProjection,
   implementationSilentProjection,

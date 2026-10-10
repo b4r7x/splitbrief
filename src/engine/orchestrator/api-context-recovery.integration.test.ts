@@ -737,8 +737,8 @@ describe('a REVIEW seat out of quota', () => {
     expect(new Date(issue?.resetAt ?? '')).toEqual(new Date(2026, 9, 3, 13, 2));
     expect(issue?.details).toEqual([
       `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
-      'no fallback declared',
-      'The review runs on the PLAN tool. A new PLAN tool also runs the review.',
+      'no fallback set',
+      'REVIEW uses PLAN. Switching here gives REVIEW its own seat.',
     ]);
     expect(issue?.message).toContain('hit its usage limit');
     expect(issue?.message).not.toContain('codex login');
@@ -761,12 +761,12 @@ describe('a REVIEW seat out of quota', () => {
     expect(events.find((event) => event.type === 'workflow_complete')).toBeUndefined();
   });
 
-  it('offers the PLAN move when REVIEW follows PLAN, and the REVIEW move when it has its own seat', async () => {
+  it('offers the REVIEW move for both inherited and explicit reviewers', async () => {
     const follows = await limited('review-limit-follows', followsPlan);
     const own = await limited('review-limit-own', ownSeat);
 
     expect(follows.issue?.switchSeat).toEqual({
-      seat: 'plan',
+      seat: 'review',
       candidates: [{ tool: 'claude-code' }],
     });
     expect(own.issue?.switchSeat).toEqual({
@@ -775,12 +775,12 @@ describe('a REVIEW seat out of quota', () => {
     });
   });
 
-  it('moves the planner block when REVIEW follows PLAN, and the reviewer block when it has one', async () => {
+  it('moves the reviewer block for both inherited and explicit reviewers', async () => {
     const candidate = { tool: 'claude-code', model: 'opus' };
     const follows = await limited('review-swap-follows', followsPlan);
     const own = await limited('review-swap-own', ownSeat);
 
-    const movedPlan = await applyRecoveryAction({
+    const movedInheritedReview = await applyRecoveryAction({
       ...follows.ref,
       state: follows.result.state,
       action: 'switch-seat',
@@ -797,18 +797,21 @@ describe('a REVIEW seat out of quota', () => {
       config: ownSeat,
     });
 
-    expect(movedPlan).toMatchObject({ ok: true, status: 'continued' });
+    expect(movedInheritedReview).toMatchObject({ ok: true, status: 'continued' });
     expect(movedReview).toMatchObject({ ok: true, status: 'continued' });
-    if (!movedPlan.ok || !movedReview.ok) throw new Error('expected both swaps to apply');
-    // One swap moves both seats: REVIEW keeps following the planner it now runs on.
-    expect(movedPlan.switchedConfig?.planner).toMatchObject({ tool: 'claude-code', model: 'opus' });
-    expect(movedPlan.switchedConfig?.reviewer).toBeUndefined();
+    if (!movedInheritedReview.ok || !movedReview.ok)
+      throw new Error('expected both swaps to apply');
+    expect(movedInheritedReview.switchedConfig?.planner).toEqual(followsPlan.planner);
+    expect(movedInheritedReview.switchedConfig?.reviewer).toMatchObject({
+      tool: 'claude-code',
+      model: 'opus',
+    });
     expect(movedReview.switchedConfig?.reviewer).toMatchObject({
       tool: 'claude-code',
       model: 'opus',
     });
     expect(movedReview.switchedConfig?.planner).toEqual(ownSeat.planner);
-    expect(movedPlan.state.pendingRecovery).toBeUndefined();
+    expect(movedInheritedReview.state.pendingRecovery).toBeUndefined();
   });
 });
 
@@ -838,7 +841,7 @@ describe('a REVIEW seat signed out', () => {
       reason: 'runner-unauthenticated',
       seat: 'review',
       recommendedAction: 'switch-seat',
-      switchSeat: { seat: 'plan', candidates: [{ tool: 'claude-code' }] },
+      switchSeat: { seat: 'review', candidates: [{ tool: 'claude-code' }] },
     });
     expect(issue?.taskId).toBeUndefined();
     expect(issue?.message).toContain('`codex logout` then `codex login`');

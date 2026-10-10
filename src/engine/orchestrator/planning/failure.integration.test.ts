@@ -9,6 +9,7 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel } from '../../../core/runners/cli-tool-catalog.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
@@ -46,6 +47,29 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 describe('handlePlanningFailure', () => {
+  it('offers the prepared planner fallback when no config of record exists', async () => {
+    const ref = setupProject();
+    await rememberDetectedTools(
+      ref.projectDir,
+      cliDetectionsFor('ready', ['codex', 'claude-code']),
+    );
+    const fallback = { tool: 'claude-code', model: 'sonnet' };
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex', fallback } });
+    const state = { ...createInitialState('feature'), phase: 'planning' as const };
+    const { bus } = makeBusRecorder();
+    const result = await handlePlanningFailure({
+      ...ref,
+      state,
+      err: new Error('Please sign in again'),
+      wctx: makeWctx({ ...ref, bus, config }),
+    });
+    expect(result.state.pendingRecovery?.switchSeat).toMatchObject({
+      seat: 'plan',
+      candidates: [fallback],
+    });
+    expect(result.state.pendingRecovery?.facts?.fallback).toBeDefined();
+  });
+
   it('aborted planning publishes no `error` event; non-abort failures still do', async () => {
     const { projectDir, sessionId } = setupProject();
     const state = { ...createInitialState('feature'), phase: 'planning' as const };
@@ -295,7 +319,7 @@ describe('handlePlanningFailure', () => {
     expect(result.state.pendingRecovery?.resetAt).toBeDefined();
     expect(result.state.pendingRecovery?.details).toEqual([
       `OpenAI Codex CLI reported: ${codexLimit}`,
-      'no fallback declared',
+      'no fallback set',
     ]);
     // The error row carries the halt's reset for the row to spell; its words name no clock, and
     // codex's own words drop theirs.

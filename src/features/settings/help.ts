@@ -14,6 +14,13 @@ const SEAT_DESCRIPTIONS: Readonly<Record<CrewSeatId, string>> = {
 
 export function settingsHelpLines(item: SettingsItem): HelpLine[] {
   if (item.kind === 'crew') return [{ text: SEAT_DESCRIPTIONS[item.row.id] }];
+  if (item.kind === 'fallback') {
+    return [
+      {
+        text: 'Takes the seat once per run when its tool is signed out or out of quota. None pauses the run and asks.',
+      },
+    ];
+  }
 
   const def = item.def;
   if (def.kind === 'number' && def.min !== undefined && def.max !== undefined) {

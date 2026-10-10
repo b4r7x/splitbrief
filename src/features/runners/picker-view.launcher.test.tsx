@@ -101,7 +101,7 @@ describe('PickerView launcher filtering', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
     expect(ui.lastFrame()).toContain('+ Add custom command…');
@@ -133,7 +133,7 @@ describe('PickerView launcher filtering', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
 
@@ -165,7 +165,7 @@ describe('PickerView launcher filtering', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
 
@@ -192,7 +192,7 @@ describe('PickerView launcher filtering', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="planner" catalog={catalog} actions={makeActions(calls)} />,
+      <PickerView slot="seat" role="planner" catalog={catalog} actions={makeActions(calls)} />,
     );
     await flushEffects();
 
@@ -234,7 +234,7 @@ describe('PickerView launcher filtering', () => {
     });
 
     const ui = renderFeature(
-      <PickerView role="implementer" catalog={catalog} actions={makeActions()} />,
+      <PickerView slot="seat" role="implementer" catalog={catalog} actions={makeActions()} />,
     );
     await flushEffects();
 

@@ -103,21 +103,21 @@ function publishCliCatalogs(
 let captured: PickerCatalog['catalogDiagnostic'];
 
 function Probe({ role, toolId }: { role: 'planner' | 'implementer'; toolId: string }) {
-  captured = usePickerCatalog(role, 0, toolId).catalogDiagnostic;
+  captured = usePickerCatalog(role, 'seat', 0, toolId).catalogDiagnostic;
   return <Text>probe</Text>;
 }
 
 let capturedRows: PickerCatalog['rightRows'] = [];
 
 function ModelsProbe({ toolId }: { toolId: string }) {
-  capturedRows = usePickerCatalog('planner', 0, toolId).rightRows;
+  capturedRows = usePickerCatalog('planner', 'seat', 0, toolId).rightRows;
   return <Text>models</Text>;
 }
 
 let capturedCatalog: PickerCatalog | undefined;
 
 function BylineProbe({ toolId }: { toolId: string }) {
-  capturedCatalog = usePickerCatalog('planner', 0, toolId);
+  capturedCatalog = usePickerCatalog('planner', 'seat', 0, toolId);
   return <Text>byline</Text>;
 }
 

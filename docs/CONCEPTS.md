@@ -104,6 +104,8 @@ The retired phases `researching`, `specifying`, `reviewing-spec`, `clarifying`, 
 
 **Halt** (`RecoveryHalt`, `src/core/recovery/halt.ts`): a pending recovery as a person sees it, one of two. *Needs you*: a decision only the operator can make — a spent bound, a failed review after the cap, a protected write, a conflict at Apply. *Seat down*: the seat cannot run — signed out, out of quota, refused its command, or answered off its contract twice. `haltOf(reason)` maps every recovery reason onto one halt, and the halt fixes the actions the reason may offer. Every surface shows `Needs you · <cause>` or `Seat down · <cause>`; the reason code stays in the issue, the events and the log.
 
+**Fallback** (`SeatFallback`, `src/core/crew/fallback.ts`): the CLI runner a seat authorizes for one automatic switch per run and seat on an account refusal or long-reset limit. Set it in Settings › Fallback, or in `.splitbrief/config.yaml`. Its row shows a seat identity or `none · pause and ask`. REVIEW inherits PLAN's fallback until it has its own block. Each halt reads the fallback of record. An automatic switch makes the old CLI seat the fallback, or leaves none for an old non-CLI seat. A manual switch keeps it. See [Seat fallback](./FEATURES.md#seat-fallback).
+
 **Step** (`StepRef`, `src/core/schemas/run-step.ts`): a planner call, gate, brief attempt, review cycle or Apply. Older planner and gate names remain readable. `resumeStep(state)` names the next step. Planning continues as one session.
 
 **Closed**: a run that cannot continue. Workspace runs close as `applied`, `discarded` or `ended`. Older passed runs keep `complete`. Closing preserves unapplied work through [the shared close path](./WORKFLOW.md#apply).

@@ -1,9 +1,7 @@
 import type { Config } from '../../../core/schemas/config.js';
+import { ImplementerConfigSchema } from '../../../core/schemas/implementer-config.js';
 import {
-  ImplementerConfigSchema,
-  type ImplementerConfig,
-} from '../../../core/schemas/implementer-config.js';
-import {
+  readImplementerProfileConfig,
   updateDefaultImplementerConfig,
   updateNamedImplementerConfig,
 } from '../../../core/config/accessors/implementer-profiles.js';
@@ -11,6 +9,9 @@ import { PlannerConfigSchema } from '../../../core/schemas/planner-config.js';
 import { ReviewerConfigSchema } from '../../../core/schemas/reviewer-config.js';
 import type { SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
 import type { CrewSeatId } from '../../../core/crew/identity.js';
+import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
+import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
+import { runnerEffortChannel } from '../../../core/runners/effort-channel.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 /**
@@ -22,16 +23,53 @@ import { assertNever } from '../../../utils/type-guards.js';
  */
 function configWithSwitchedBuildSeat(
   config: Config,
-  implementer: ImplementerConfig,
   implementerProfile: string | undefined,
+  candidate: SeatSwapCandidate,
+  auto: boolean,
+  fallbackOfRecord: Pick<RunnerConfig, 'fallback'> | undefined,
 ): Config | null {
-  // The profile that failed keeps its declared fallback across the swap; the
-  // candidate build runner carries none of its own.
-  const keepFallback = (existing: ImplementerConfig): ImplementerConfig =>
-    existing.fallback === undefined ? implementer : { ...implementer, fallback: existing.fallback };
+  const existing = readImplementerProfileConfig(config, implementerProfile);
+  if (existing === undefined) return null;
+  const parsed = ImplementerConfigSchema.safeParse(
+    switchedRunner(existing, candidate, auto, fallbackOfRecord),
+  );
+  if (!parsed.success) return null;
+  const update = () => parsed.data;
   return implementerProfile === undefined
-    ? updateDefaultImplementerConfig(config, keepFallback)
-    : updateNamedImplementerConfig(config, implementerProfile, keepFallback);
+    ? updateDefaultImplementerConfig(config, update)
+    : updateNamedImplementerConfig(config, implementerProfile, update);
+}
+
+function switchedRunner(
+  existing: RunnerConfig,
+  candidate: SeatSwapCandidate,
+  auto: boolean,
+  fallbackOfRecord: Pick<RunnerConfig, 'fallback'> | undefined,
+) {
+  const channel = runnerEffortChannel(existing);
+  const fallback = auto
+    ? existing.kind === 'cli'
+      ? {
+          tool: existing.tool,
+          ...(existing.model !== undefined && { model: existing.model }),
+          ...(channel === 'effort-flag' &&
+            existing.effort !== undefined && {
+              effort: existing.effort,
+            }),
+          ...(channel === 'variant' &&
+            existing.variant !== undefined && {
+              variant: existing.variant,
+            }),
+        }
+      : undefined
+    : fallbackOfRecord === undefined
+      ? existing.fallback
+      : fallbackOfRecord.fallback;
+  return {
+    kind: 'cli',
+    ...candidate,
+    ...(fallback !== undefined && { fallback }),
+  };
 }
 
 /**
@@ -50,38 +88,60 @@ export function configWithSwitchedSeat(
   seat: CrewSeatId,
   candidate: SeatSwapCandidate,
   implementerProfile?: string | undefined,
+  auto = false,
+  fallbackOfRecord?: Pick<RunnerConfig, 'fallback'> | undefined,
 ): Config | null {
-  const runner = {
-    kind: 'cli',
-    tool: candidate.tool,
-    ...(candidate.model !== undefined && { model: candidate.model }),
-    ...(candidate.effort !== undefined && { effort: candidate.effort }),
-    ...(candidate.variant !== undefined && { variant: candidate.variant }),
-  };
   switch (seat) {
     case 'plan': {
-      const parsed = PlannerConfigSchema.safeParse({
-        ...runner,
-        ...(config.planner.fallback !== undefined && { fallback: config.planner.fallback }),
-      });
+      const parsed = PlannerConfigSchema.safeParse(
+        switchedRunner(config.planner, candidate, auto, fallbackOfRecord),
+      );
       return parsed.success ? { ...config, planner: parsed.data } : null;
     }
     case 'build': {
-      const parsed = ImplementerConfigSchema.safeParse(runner);
-      return parsed.success
-        ? configWithSwitchedBuildSeat(config, parsed.data, implementerProfile)
-        : null;
+      return configWithSwitchedBuildSeat(
+        config,
+        implementerProfile,
+        candidate,
+        auto,
+        fallbackOfRecord,
+      );
     }
     case 'review': {
-      // An inherited review seat is the planner's seat, fallback and all.
-      const fallback = config.reviewer?.fallback ?? config.planner.fallback;
-      const parsed = ReviewerConfigSchema.safeParse({
-        ...runner,
-        ...(fallback !== undefined && { fallback }),
-      });
+      const parsed = ReviewerConfigSchema.safeParse(
+        switchedRunner(config.reviewer ?? config.planner, candidate, auto, fallbackOfRecord),
+      );
       return parsed.success ? { ...config, reviewer: parsed.data } : null;
     }
     default:
       return assertNever(seat);
   }
+}
+
+function runnerTool(runner: SeatRunnerValue): string {
+  switch (runner.kind) {
+    case 'cli':
+      return runner.tool;
+    case 'api':
+      return runner.provider;
+    case 'shell':
+      return 'shell';
+    case 'agent':
+      return 'agent';
+    default:
+      return assertNever(runner);
+  }
+}
+
+/** A configured seat as a swap identity, so a switch can name the tool it leaves. */
+export function seatCandidateOfRunner(runner: SeatRunnerValue): SeatSwapCandidate {
+  const model = 'model' in runner && typeof runner.model === 'string' ? runner.model : undefined;
+  const effort = 'effort' in runner ? runner.effort : undefined;
+  const variant = 'variant' in runner ? runner.variant : undefined;
+  return {
+    tool: runnerTool(runner),
+    ...(model !== undefined && { model }),
+    ...(effort !== undefined && { effort }),
+    ...(variant !== undefined && { variant }),
+  };
 }

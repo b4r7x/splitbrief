@@ -936,7 +936,7 @@ export async function runFinalReviewPhase(opts: {
         err,
         label,
         runner: seat.runner,
-        seat: seat.source === 'configured' ? 'review' : 'plan',
+        seat: 'review',
       });
       message = diagnosis.message;
       resetAt = diagnosis.resetsAt?.toISOString();

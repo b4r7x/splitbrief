@@ -89,6 +89,17 @@ export function resolveImplementerProfiles(config: Config): ResolvedImplementerP
   return { defaultProfile, profiles };
 }
 
+/** The failing BUILD block, or the default block when the halt names no profile. */
+export function readImplementerProfileConfig(
+  config: Config,
+  profileName: string | undefined,
+): ImplementerConfig | ImplementerProfileConfig | undefined {
+  const profiles = config.implementerProfiles;
+  if (profiles === undefined) return config.implementer;
+  const name = profileName ?? resolveImplementerProfiles(config).defaultProfile.name;
+  return Object.hasOwn(profiles.profiles, name) ? profiles.profiles[name] : undefined;
+}
+
 export function mergeImplementerProfileMetadata(
   existing: ImplementerProfileConfig,
   updated: ImplementerConfig,

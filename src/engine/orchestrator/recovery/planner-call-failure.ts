@@ -9,6 +9,7 @@ import { classifySeatFailure } from '../../runners/seat-failure.js';
 import type { SeatFailureClassification } from '../../runners/seat-failure.js';
 import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import type { Config } from '../../../core/schemas/config.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -128,12 +129,13 @@ export async function plannerCallHaltIssue(
   input: Omit<PlannerCallFailureRecoveryOptions, 'id' | 'seatSwap' | 'createdAt' | 'runner'> &
     Readonly<{
       projectDir: string;
+      config: Config;
       /** The seat a swap moves, and the runner it runs now. */
-      swap: Omit<Parameters<typeof loadSeatSwapContext>[0], 'projectDir'>;
+      swap: Omit<Parameters<typeof loadSeatSwapContext>[0], 'projectDir' | 'config'>;
     }>,
 ): Promise<RecoveryIssue> {
-  const { projectDir, swap, ...halt } = input;
-  const seatSwap = await loadSeatSwapContext({ projectDir, ...swap });
+  const { projectDir, config, swap, ...halt } = input;
+  const seatSwap = await loadSeatSwapContext({ projectDir, config, ...swap });
   return buildPlannerCallFailedRecoveryIssue({
     ...halt,
     runner: swap.runner,

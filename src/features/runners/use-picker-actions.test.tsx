@@ -21,9 +21,18 @@ import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.
 import type { CliAuthMethod } from '../../core/runners/cli-tool-catalog.js';
 import type { SeatPickerRole } from '../../core/runners/seat-roles.js';
 import type { Config } from '../../core/schemas/config.js';
-import { INHERIT_PLANNER_OPTION_ID, type RunnerPickerOption } from './model-catalog/options.js';
+import {
+  INHERIT_PLANNER_OPTION_ID,
+  noFallbackOption,
+  type RunnerPickerOption,
+} from './model-catalog/options.js';
 import type { LocalConnectionSave } from './local-connection-form.js';
-import { useLocalConnectionActions, usePickerActions } from './use-picker-actions.js';
+import {
+  defaultPickerEffectDeps,
+  useLocalConnectionActions,
+  usePickerActions,
+  type PickerActions,
+} from './use-picker-actions.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
 
 function ConfirmOnKeyProbe({
@@ -35,8 +44,8 @@ function ConfirmOnKeyProbe({
   selection: RunnerPickerOption;
   model?: string | undefined;
 }) {
-  const catalog = usePickerCatalog(role, 0, selection.id);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0, selection.id);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput(() => {
     void actions.confirm(selection, { id: model ?? 'auto' });
@@ -47,8 +56,8 @@ function ConfirmOnKeyProbe({
 
 /** Confirms a catalog row; with no `itemId` it confirms the pre-selected one. */
 function ConfirmRowProbe({ role, itemId }: { role: SeatPickerRole; itemId?: string | undefined }) {
-  const catalog = usePickerCatalog(role, 0);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput(() => {
     const row =
@@ -73,8 +82,8 @@ function ConfirmVariantProbe({
   modelId: string;
   variant?: string | undefined;
 }) {
-  const catalog = usePickerCatalog(role, 0, toolId);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0, toolId);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput(() => {
     void actions.confirmProviderSelection(modelId, variant);
@@ -112,8 +121,8 @@ function ConfirmAuthProbe({
   role: SeatPickerRole;
   method: CliAuthMethod | 'host-configured';
 }) {
-  const catalog = usePickerCatalog(role, 0);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput((input) => {
     if (input === 'c') actions.closeOverlay();
@@ -124,8 +133,8 @@ function ConfirmAuthProbe({
 }
 
 function BrowseOnKeyProbe({ role }: { role: SeatPickerRole }) {
-  const catalog = usePickerCatalog(role, 0);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput(() => {
     actions.browseCatalog();
@@ -141,8 +150,8 @@ function LeftChangeOnKeyProbe({
   role: SeatPickerRole;
   selection: RunnerPickerOption;
 }) {
-  const catalog = usePickerCatalog(role, 0);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput(() => {
     actions.leftChange(selection);
@@ -152,8 +161,8 @@ function LeftChangeOnKeyProbe({
 }
 
 function DeleteOnKeyProbe({ role, modelId }: { role: SeatPickerRole; modelId: string }) {
-  const catalog = usePickerCatalog(role, 0, modelId);
-  const actions = usePickerActions({ role, catalog });
+  const catalog = usePickerCatalog(role, 'seat', 0, modelId);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
 
   useInput(() => {
     void actions.deleteRight({ id: modelId, isCustom: true });
@@ -161,6 +170,188 @@ function DeleteOnKeyProbe({ role, modelId }: { role: SeatPickerRole; modelId: st
 
   return <Text>{catalog.roleLabel}</Text>;
 }
+
+describe('usePickerActions fallback slot', () => {
+  let projectDir = '';
+  let actions: PickerActions | undefined;
+  const saveConfig = vi.fn(configStore.save);
+
+  function FallbackProbe({
+    role = 'implementer',
+    selectedItemId = 'codex',
+  }: {
+    role?: SeatPickerRole;
+    selectedItemId?: string;
+  }) {
+    const catalog = usePickerCatalog(role, 'fallback', 0, selectedItemId);
+    actions = usePickerActions({
+      role,
+      slot: 'fallback',
+      catalog,
+      deps: { ...defaultPickerEffectDeps, saveConfig },
+    });
+    return <Text>{catalog.roleLabel}</Text>;
+  }
+
+  function currentActions(): PickerActions {
+    if (actions === undefined) throw new Error('fallback actions were not rendered');
+    return actions;
+  }
+
+  beforeEach(() => {
+    projectDir = mkdtempSync(join(tmpdir(), 'fallback-picker-actions-'));
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+      }),
+    });
+    actions = undefined;
+    saveConfig.mockClear();
+    detectionStore.reset();
+    modelCacheStore.reset();
+    overlayStore.reset();
+    overlayStore.open('implementer-fallback-picker');
+    feedbackStore.reset();
+    pickerViewStore.reset();
+    routerStore.reset();
+    lifecycleStore.__testReset();
+    detectionStore.setDetection({
+      cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+      providers: [],
+    });
+  });
+
+  afterEach(() => {
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it('sets only the default BUILD profile fallback and reports its identity', async () => {
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'claude-code', model: 'opus' },
+      implementerProfiles: {
+        default: 'main',
+        profiles: {
+          main: { kind: 'cli', tool: 'claude-code', model: 'opus', effort: 'max' },
+          other: { kind: 'cli', tool: 'codex', model: 'gpt-5.5' },
+        },
+      },
+    });
+    configStore.__testReset({ projectDir, config });
+    const ui = renderFeature(<FallbackProbe />);
+    await flushEffects();
+
+    await currentActions().confirm(realPickerOption('implementer', 'codex'), { id: 'gpt-5-codex' });
+
+    const saved = saveConfig.mock.calls[0]?.[0];
+    expect(saved?.implementerProfiles?.profiles.main).toEqual({
+      ...config.implementerProfiles?.profiles.main,
+      fallback: { tool: 'codex', model: 'gpt-5-codex' },
+    });
+    expect(saved?.implementerProfiles?.profiles.other).toEqual(
+      config.implementerProfiles?.profiles.other,
+    );
+    expect(feedbackStore.get().message).toBe(
+      'BUILD fallback set to: OpenAI Codex CLI · GPT-5 Codex',
+    );
+    ui.unmount();
+  });
+
+  it('refuses the current seat identity even with a different effort and keeps the picker open', async () => {
+    const ui = renderFeature(<FallbackProbe selectedItemId="claude-code" />);
+    await flushEffects();
+
+    await currentActions().confirmProviderSelection('opus', 'low');
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(feedbackStore.get().isError).toBe(true);
+    expect(feedbackStore.get().message).toMatch(/^BUILD runs .*choose another tool or model$/);
+    expect(overlayStore.get().active).toBe('implementer-fallback-picker');
+    ui.unmount();
+  });
+
+  it('clears the fallback key with None and reports that Seat down pauses and asks', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        implementer: { kind: 'cli', tool: 'claude-code', fallback: { tool: 'codex' } },
+      }),
+    });
+    const ui = renderFeature(<FallbackProbe selectedItemId="no-fallback" />);
+    await flushEffects();
+    await currentActions().confirm(noFallbackOption({ isCurrent: false }), null);
+
+    expect(saveConfig).toHaveBeenCalledTimes(1);
+    expect(saveConfig.mock.calls[0]?.[0].implementer).not.toHaveProperty('fallback');
+    expect(feedbackStore.get().message).toBe('BUILD fallback cleared · Seat down pauses and asks');
+    ui.unmount();
+  });
+
+  it('closes None on an inherited REVIEW with no PLAN fallback without saving or forking', async () => {
+    overlayStore.close();
+    overlayStore.open('reviewer-fallback-picker');
+    const ui = renderFeature(<FallbackProbe role="reviewer" selectedItemId="no-fallback" />);
+    await flushEffects();
+    await currentActions().confirm(noFallbackOption({ isCurrent: true }), null);
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    expect(configStore.get().config?.reviewer).toBeUndefined();
+    expect(overlayStore.get().active).toBe('none');
+    ui.unmount();
+  });
+
+  it('writes a custom model only to fallback.model', async () => {
+    const config = makeConfig({
+      implementer: {
+        kind: 'cli',
+        tool: 'claude-code',
+        model: 'opus',
+        customModels: ['seat-model'],
+      },
+    });
+    configStore.__testReset({ projectDir, config });
+    pickerViewStore.open({ kind: 'custom-model' });
+    const ui = renderFeature(<FallbackProbe />);
+    await flushEffects();
+    await currentActions().customModel('private-codex-model');
+
+    expect(saveConfig.mock.calls[0]?.[0].implementer).toEqual({
+      ...config.implementer,
+      fallback: { tool: 'codex', model: 'private-codex-model' },
+    });
+    ui.unmount();
+  });
+
+  it('drafts the fallback level when moving back to its tool', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({
+        implementer: {
+          kind: 'cli',
+          tool: 'claude-code',
+          model: 'opus',
+          effort: 'max',
+          fallback: { tool: 'codex', model: 'gpt-5-codex', effort: 'low' },
+        },
+      }),
+    });
+    const ui = renderFeature(<FallbackProbe selectedItemId="claude-code" />);
+    await flushEffects();
+    currentActions().leftChange({ ...realPickerOption('implementer', 'codex'), isCurrent: true });
+
+    expect(pickerViewStore.get().effortDraft).toBe('low');
+    ui.unmount();
+  });
+
+  it('does not delete seat custom models from the fallback slot', async () => {
+    const ui = renderFeature(<FallbackProbe />);
+    await flushEffects();
+    await currentActions().deleteRight({ id: 'seat-only-model', isCustom: true });
+
+    expect(saveConfig).not.toHaveBeenCalled();
+    ui.unmount();
+  });
+});
 
 describe('usePickerActions', () => {
   let projectDir = '';

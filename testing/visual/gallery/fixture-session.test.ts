@@ -428,6 +428,16 @@ describe('a replayed fixture walk', () => {
         () => expect(forwarded).toEqual(['\u001b[D', '\u001b[B', '\u001b[A', '\u001b[C']),
         { timeout: 10_000 },
       );
+      // Forwarding the last key precedes its settlement; wait for the whole walk
+      // so Enter reaches the returned column's input handler.
+      const state = controller.getState();
+      if (state.kind !== 'preview') throw new Error('Fixture walk requires an active preview');
+      await state.session.activate(
+        Object.assign((input: string) => controller.forwardToPreview(input), {
+          press: controller.pressToPreview,
+        }),
+      );
+      expect(controller.forwardToPreview).not.toHaveProperty('press');
       // The return restored the seat's effort level into the draft, and the expanded effort
       // axis reads it again; a reset lands on the unset word, never `high`. Only that axis
       // row carries both words, so this is not the seat identity line's `high`.
