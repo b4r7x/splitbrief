@@ -423,7 +423,9 @@ describe('a seat whose account the provider refuses', () => {
     expect(issue.reason).toBe('runner-usage-limit');
     expect(issue.resetAt).toBeUndefined();
     expect(issue.facts?.cause).toBe('balance');
-    expect(issue.message).toBe('OpenCode CLI account: balance spent');
+    expect(issue.message).toBe(
+      'Balance spent on OpenCode CLI. Add credit or change the BUILD tool, then continue.',
+    );
     expect(issue.recommendedAction).toBe('switch-seat');
     expect(issue.availableActions).toEqual([
       'retry-same-worker',
@@ -437,6 +439,58 @@ describe('a seat whose account the provider refuses', () => {
     });
     expect(issue.details).toContain(`OpenCode CLI reported: ${balance}`);
     expectValidRecoveryIssue(issue);
+  });
+
+  it.each([
+    [
+      'balance',
+      'build',
+      'Balance spent on OpenCode CLI. Add credit or change the BUILD tool, then continue.',
+    ],
+    [
+      'billing',
+      'plan',
+      "Billing refused by OpenCode CLI. Fix the account's billing or change the PLAN tool, then continue.",
+    ],
+    [
+      'quota',
+      'review',
+      'Quota spent on OpenCode CLI. Wait for the quota to renew or change the REVIEW tool, then continue.',
+    ],
+  ] as const)(
+    'gives %s advice for the %s seat with the panel headline as its lead',
+    (cause, seat, message) => {
+      const issue = buildSeatDownIssue({
+        seat,
+        runner,
+        classification: { class: 'account', cause },
+        words: balance,
+        phase: 'implementing',
+        createdAt,
+      });
+
+      expect(issue.message).toBe(message);
+      expect(issue.message.startsWith(`${formatRecoveryHeadline(issue)}.`)).toBe(true);
+    },
+  );
+
+  it('keeps the selected profile on the issue without writing a Worker profile detail', () => {
+    const issue = buildSeatDownIssue({
+      seat: 'build',
+      runner,
+      classification: { class: 'account', cause: 'balance' },
+      words: balance,
+      task: makeTask({ id: 'T001' }),
+      phase: 'implementing',
+      attempts: 1,
+      maxAttempts: 1,
+      selectedImplementerProfile: 'default',
+      seatSwap,
+      createdAt,
+    });
+
+    expect(issue.selectedImplementerProfile).toBe('default');
+    expect(issue.details.some((detail) => detail.startsWith('Worker profile:'))).toBe(false);
   });
 
   it('recommends the seat switch beside the login when the account is signed out', () => {

@@ -22,6 +22,9 @@ const NETWORK_PATH_PATTERN = new RegExp(
 );
 const POSIX_PATH_PATTERN = new RegExp(String.raw`${PATH_BOUNDARY}(\/(?!\/)[^\s'\x22\x60]+)`, 'gu');
 const SLASH_COMMAND_PATTERN = /^\/[a-z][a-z0-9-]*[!),.:;?\]}]*$/u;
+const TRAILING_PROSE_PUNCTUATION_PATTERN = /[!),.:;?\]}]+$/u;
+// These exact synthetic fixture paths identify no operator machine; other host paths remain forbidden.
+const FIXTURE_HOST_PATHS = new Set(['/Users/dev/notes/brief.md']);
 
 export function containsHostPath(value: string): boolean {
   if (
@@ -36,7 +39,13 @@ export function containsHostPath(value: string): boolean {
 
   for (const match of value.matchAll(POSIX_PATH_PATTERN)) {
     const candidate = match[1];
-    if (candidate && !SLASH_COMMAND_PATTERN.test(candidate)) return true;
+    if (
+      candidate &&
+      !SLASH_COMMAND_PATTERN.test(candidate) &&
+      !FIXTURE_HOST_PATHS.has(candidate.replace(TRAILING_PROSE_PUNCTUATION_PATTERN, ''))
+    ) {
+      return true;
+    }
   }
   return false;
 }

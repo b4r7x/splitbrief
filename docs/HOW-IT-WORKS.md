@@ -8,7 +8,9 @@ This is the data flow from CLI entry to workflow completion. You've read the [me
 
 The user types `splitbrief start "add email validation"`. Execution begins in `src/cli.ts`, which creates a Commander program and registers subcommands. `start` is registered by `registerStartCommand()` in `src/cli/commands/start/register.ts` and is the default command — bare `splitbrief "feature"` hits the same path.
 
-If the user provided `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) reads them, inlines text files into `<user-context>`, and queues image files in the attachments store. A headless run needs a feature argument — `--json` or `--plain` without one fails with `--<mode> requires a feature argument`. Then the handler branches into one of two paths:
+A headless run needs a feature argument. `--json` or `--plain` without one fails with `--<mode> requires a feature argument`. A file reference in the feature position stops the command with exit code `2` before startup. An empty feature before `@file` inputs stops it too.
+
+For `@file` arguments, `parseAtFiles()` (`src/cli/parse-at-files.ts`) returns text context, image attachments, attached inputs with resolved paths, and errors. The attached inputs travel with the run to the first `user_message` event. Any refused input stops the command with exit code `2` before startup. After these checks, the handler queues the images in the attachments store and selects one of two paths:
 
 ```mermaid
 graph TD

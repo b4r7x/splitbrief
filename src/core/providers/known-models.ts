@@ -196,6 +196,18 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   ],
   codex: [
     compatibleModel({
+      name: 'gpt-6-astra',
+      displayName: 'GPT-6-Astra',
+      contextLength: 272_000,
+      provenance: 'codex debug models 0.162.1 (2026-10-10): display_name and context_window',
+    }),
+    compatibleModel({
+      name: 'gpt-6.1-sol',
+      displayName: 'GPT-6.1-Sol',
+      contextLength: 272_000,
+      provenance: 'codex debug models 0.162.1 (2026-10-10): display_name and context_window',
+    }),
+    compatibleModel({
       name: 'gpt-5.6-sol',
       contextLength: 272_000,
       catalogProvider: 'openai',
@@ -212,6 +224,14 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       contextLength: 272_000,
       catalogProvider: 'openai',
       provenance: 'Codex native probe cliCatalogs (2026-08)',
+    }),
+  ],
+  antigravity: [
+    compatibleModel({
+      name: 'gemini-3.8-flash-high',
+      displayName: 'Gemini 3.8 Flash (High)',
+      provenance:
+        'agy 1.3.3 CLI log cli-20261010_121650.log (2026-10-10): selected model label; agy models blocked by sandbox',
     }),
   ],
   opencode: [

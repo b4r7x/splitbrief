@@ -19,7 +19,7 @@ import { isAutomaticModel } from '../../core/providers/automatic-model.js';
 import type { ResolvedModelMembership } from '../../engine/providers/model/catalog.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { formatContextLength } from '../../core/formatting.js';
-import { getTerminalCellWidth } from '../../utils/display-text.js';
+import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
 import { UNSET_EFFORT_WORD } from '../../core/runners/effort-channel.js';
 import {
   formatAxisValue,
@@ -40,7 +40,11 @@ const BUNDLED_LIST_COPY = `Bundled model list${SOFT_SEP}ctrl+r detects this tool
 export type ModelCatalogDiagnostic =
   | Readonly<{ kind: 'not-probed' }>
   | Readonly<{ kind: 'unsupported' }>
-  | Readonly<{ kind: 'probe-failed'; failure: Exclude<ProbeOutcomeKind, 'success'> }>;
+  | Readonly<{
+      kind: 'probe-failed';
+      failure: Exclude<ProbeOutcomeKind, 'success' | 'command-failed'>;
+    }>
+  | Readonly<{ kind: 'probe-failed'; failure: 'command-failed'; cause: string }>;
 
 /**
  * The launcher's card is a fixed-height read-only pane that truncates instead of wrapping, so its
@@ -136,6 +140,8 @@ export function formatCatalogDiagnostic(
       return 'Model detection timed out. Press ctrl+r to retry';
     case 'malformed':
       return `Unreadable model list${SOFT_SEP}ctrl+r will not help; add a custom model or report the output`;
+    case 'command-failed':
+      return `${toolName} could not list models: ${diagnostic.cause}${SOFT_SEP}ctrl+r to retry`;
     case 'cancelled':
       return 'Model detection was cancelled. Press ctrl+r to retry';
     case 'not-run':
@@ -504,6 +510,7 @@ export function bylineDiagnostic(input: {
   diagnostic: ModelCatalogDiagnostic | undefined;
   modelCount: number;
   toolName: string;
+  budget: number;
 }): string | undefined {
   const { diagnostic } = input;
   if (diagnostic === undefined) return undefined;
@@ -512,7 +519,17 @@ export function bylineDiagnostic(input: {
   // Rows are listed and detection has not run: they are the bundled list. Saying detection has not
   // run would contradict the column beside it, so name the list the user is reading instead.
   if (input.modelCount > 0 && isDetectionNotRun(diagnostic)) return BUNDLED_LIST_COPY;
-  return formatCatalogDiagnostic(diagnostic, input.toolName);
+  let fitted = formatCatalogDiagnostic(diagnostic, input.toolName);
+  if (diagnostic.kind !== 'probe-failed' || diagnostic.failure !== 'command-failed') return fitted;
+  let causeCells = getTerminalCellWidth(diagnostic.cause);
+  while (causeCells > 0 && wrapOnWords(fitted, input.budget, 2).cut) {
+    causeCells -= 1;
+    fitted = formatCatalogDiagnostic(
+      { ...diagnostic, cause: truncateTerminalDisplayText(diagnostic.cause, causeCells) },
+      input.toolName,
+    );
+  }
+  return fitted;
 }
 
 /**
@@ -537,6 +554,7 @@ export function formatToolsByline(input: {
     diagnostic: input.diagnostic,
     modelCount: input.modelCount,
     toolName: input.toolName,
+    budget: input.budget,
   });
   if (status !== undefined) return status;
 

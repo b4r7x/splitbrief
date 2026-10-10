@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { parseAtFiles } from './parse-at-files.js';
+import { formatAtFileRefusal, parseAtFiles } from './parse-at-files.js';
 
 let tmp: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
+const itReadableByOwnerOnly =
+  process.platform === 'win32' || process.getuid?.() === 0 ? it.skip : it;
 
 beforeEach(() => {
   tmp = createTempDir('parse-at-files-test');
@@ -115,12 +117,38 @@ describe('parseAtFiles', () => {
     expect(result.errors[0]?.reason).toBe('not-found');
   });
 
-  it('reports outside-project error for path traversal', () => {
-    const result = parseAtFiles('fix', ['@../../etc/passwd'], tmp);
+  it('reads a ../ path outside the project and names its resolved path', () => {
+    const outside = createTempDir('parse-at-files-relative-outside');
+    try {
+      const brief = join(outside, 'brief.md');
+      writeFileSync(brief, 'The real brief.');
+      const raw = relative(tmp, brief);
 
-    expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]?.path).toBe('../../etc/passwd');
-    expect(result.errors[0]?.reason).toBe('outside-project');
+      const result = parseAtFiles('fix', [`@${raw}`], tmp);
+
+      expect(raw.startsWith('..')).toBe(true);
+      expect(result.errors).toEqual([]);
+      expect(result.textContext).toContain('The real brief.');
+      expect(result.attachedInputs).toEqual([{ path: realpathSync(brief), kind: 'text' }]);
+    } finally {
+      cleanupTempDir(outside);
+    }
+  });
+
+  it('reads an absolute text path outside the project', () => {
+    const outside = createTempDir('parse-at-files-absolute-outside');
+    try {
+      const brief = join(outside, 'brief.md');
+      writeFileSync(brief, 'The real brief.');
+
+      const result = parseAtFiles('fix', [`@${brief}`], tmp);
+
+      expect(result.errors).toEqual([]);
+      expect(result.textContext).toContain('The real brief.');
+      expect(result.attachedInputs).toEqual([{ path: realpathSync(brief), kind: 'text' }]);
+    } finally {
+      cleanupTempDir(outside);
+    }
   });
 
   it('accepts absolute text paths inside the project', () => {
@@ -134,60 +162,108 @@ describe('parseAtFiles', () => {
     expect(result.errors).toEqual([]);
   });
 
-  itUnix('reports outside-project error for symlinks that resolve outside the project', () => {
+  it('expands a leading ~/ to the home folder', () => {
+    const root = join(
+      homedir(),
+      `.splitbrief-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
+    try {
+      mkdirSync(root, { recursive: true });
+      const brief = join(root, 'brief.md');
+      writeFileSync(brief, 'Brief from home.');
+      const raw = `~/${relative(homedir(), brief)}`;
+
+      const result = parseAtFiles('fix', [`@${raw}`], tmp);
+
+      expect(result.errors).toEqual([]);
+      expect(result.textContext).toContain('Brief from home.');
+      expect(result.attachedInputs).toEqual([{ path: realpathSync(brief), kind: 'text' }]);
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
+
+  it('keeps the typed ~/ spelling in a refusal', () => {
+    const result = parseAtFiles('fix', ['@~/splitbrief-no-such-dir/brief.md'], tmp);
+
+    expect(result.errors).toEqual([
+      { path: '~/splitbrief-no-such-dir/brief.md', reason: 'not-found' },
+    ]);
+  });
+
+  itUnix('follows a text symlink that points outside the project', () => {
     const outside = createTempDir('parse-at-files-outside');
     try {
-      writeFileSync(join(outside, 'secret.md'), 'secret');
-      symlinkSync(join(outside, 'secret.md'), join(tmp, 'linked.md'));
+      writeFileSync(join(outside, 'notes.md'), 'Linked notes.');
+      symlinkSync(join(outside, 'notes.md'), join(tmp, 'linked.md'));
 
       const result = parseAtFiles('fix', ['@linked.md'], tmp);
 
-      expect(result.errors).toEqual([{ path: 'linked.md', reason: 'outside-project' }]);
-      expect(result.textContext).toBe('');
+      expect(result.errors).toEqual([]);
+      expect(result.textContext).toContain('Linked notes.');
+      expect(result.attachedInputs).toEqual([
+        { path: realpathSync(join(outside, 'notes.md')), kind: 'text' },
+      ]);
     } finally {
       cleanupTempDir(outside);
     }
   });
 
-  itUnix(
-    'reports outside-project error for image symlinks that resolve outside the project',
-    () => {
-      const outside = createTempDir('parse-at-files-image-outside');
+  itUnix('follows an image symlink that points outside the project and home folder', () => {
+    const outside = createTempDir('parse-at-files-image-outside');
+    try {
+      writeFileSync(join(outside, 'mock.png'), Buffer.alloc(100));
+      symlinkSync(join(outside, 'mock.png'), join(tmp, 'linked.png'));
+
+      const result = parseAtFiles('fix', ['@linked.png'], tmp);
+
+      const target = realpathSync(join(outside, 'mock.png'));
+      expect(result.errors).toEqual([]);
+      expect(result.attachments).toHaveLength(1);
+      expect(result.attachments[0]?.path).toBe(target);
+      expect(result.attachedInputs).toEqual([{ path: target, kind: 'image' }]);
+    } finally {
+      cleanupTempDir(outside);
+    }
+  });
+
+  it('lists attached inputs in argument order with their kind', () => {
+    writeFileSync(join(tmp, 'notes.md'), 'Design notes.');
+    writeFileSync(join(tmp, 'mock.png'), Buffer.alloc(50));
+    writeFileSync(join(tmp, 'spec.txt'), 'Spec content.');
+
+    const result = parseAtFiles('build', ['@notes.md', '@ghost.md', '@mock.png', '@spec.txt'], tmp);
+
+    expect(result.attachedInputs).toEqual([
+      { path: realpathSync(join(tmp, 'notes.md')), kind: 'text' },
+      { path: realpathSync(join(tmp, 'mock.png')), kind: 'image' },
+      { path: realpathSync(join(tmp, 'spec.txt')), kind: 'text' },
+    ]);
+    expect(result.errors).toEqual([{ path: 'ghost.md', reason: 'not-found' }]);
+  });
+
+  it('refuses a directory named like an image as not a regular file', () => {
+    mkdirSync(join(tmp, 'shots.png'));
+
+    const result = parseAtFiles('fix', ['@shots.png'], tmp);
+
+    expect(result.errors).toEqual([{ path: 'shots.png', reason: 'not-a-file' }]);
+    expect(result.attachments).toEqual([]);
+  });
+
+  itReadableByOwnerOnly.each([['notes.md'], ['mock.png']])(
+    'refuses an unreadable %s as unreadable',
+    (name) => {
+      const file = join(tmp, name);
+      writeFileSync(file, Buffer.alloc(10));
+      chmodSync(file, 0o000);
       try {
-        writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
-        symlinkSync(join(outside, 'secret.png'), join(tmp, 'linked.png'));
+        const result = parseAtFiles('fix', [`@${name}`], tmp);
 
-        const result = parseAtFiles('fix', ['@linked.png'], tmp);
-
-        expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
-        expect(result.attachments).toHaveLength(0);
+        expect(result.errors).toEqual([{ path: name, reason: 'unreadable' }]);
+        expect(result.attachedInputs).toEqual([]);
       } finally {
-        cleanupTempDir(outside);
-      }
-    },
-  );
-
-  itUnix(
-    'reports outside-project error for relative image symlinks into the home safe root',
-    () => {
-      const root = join(
-        homedir(),
-        `.splitbrief-parse-at-files-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      );
-      const project = join(root, 'project');
-      const outside = join(root, 'outside');
-      try {
-        mkdirSync(project, { recursive: true });
-        mkdirSync(outside, { recursive: true });
-        writeFileSync(join(outside, 'secret.png'), Buffer.alloc(100));
-        symlinkSync(join(outside, 'secret.png'), join(project, 'linked.png'));
-
-        const result = parseAtFiles('fix', ['@linked.png'], project);
-
-        expect(result.errors).toEqual([{ path: 'linked.png', reason: 'outside-project' }]);
-        expect(result.attachments).toHaveLength(0);
-      } finally {
-        cleanupTempDir(root);
+        chmodSync(file, 0o600);
       }
     },
   );
@@ -200,5 +276,36 @@ describe('parseAtFiles', () => {
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]?.path).toBe('subdir');
     expect(result.errors[0]?.reason).toBe('not-a-file');
+  });
+});
+
+describe('formatAtFileRefusal', () => {
+  it('names every refused input with its reason and recovery, in argument order', () => {
+    expect(
+      formatAtFileRefusal([
+        { path: 'ghost.md', reason: 'not-found' },
+        { path: 'docs', reason: 'not-a-file' },
+        { path: 'huge.md', reason: 'too-large' },
+        { path: 'locked.md', reason: 'unreadable' },
+      ]),
+    ).toBe(
+      [
+        'Cannot start: SPLITBRIEF refused these @file inputs.',
+        '  @ghost.md: file not found. Check the path and try again.',
+        '  @docs: not a regular file. Name a file, not a directory.',
+        '  @huge.md: file is larger than 10 MiB. Choose a smaller file.',
+        '  @locked.md: cannot read the file. Check its permissions.',
+      ].join('\n'),
+    );
+  });
+
+  it('strips terminal control bytes from the paths it names', () => {
+    const message = formatAtFileRefusal([
+      { path: '\u001b]0;pwned\u0007ghost.md', reason: 'not-found' },
+    ]);
+
+    expect(message).toContain('  @ghost.md: file not found.');
+    expect(message).not.toContain('\u001b');
+    expect(message).not.toContain('pwned');
   });
 });

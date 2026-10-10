@@ -50,10 +50,6 @@ export function attemptDetails(
   return [`Max attempts: ${maxAttempts}`];
 }
 
-export function implementerDetails(selectedImplementerProfile: string | undefined): string[] {
-  return selectedImplementerProfile ? [`Worker profile: ${selectedImplementerProfile}`] : [];
-}
-
 /** A review with no seat of its own runs on the PLAN tool, so a new PLAN tool moves it too. */
 export function reviewSeatDetails(followsPlan: boolean): string[] {
   return followsPlan

@@ -112,6 +112,9 @@ function deriveCatalogDiagnostic(
   const runtime = modelCacheStore.getCliCatalogRuntime({ tool });
   if (runtime === null || runtime === undefined) return { kind: 'not-probed' };
   if (runtime.failure === undefined) return undefined;
+  if (runtime.failure === 'command-failed') {
+    return { kind: 'probe-failed', failure: runtime.failure, cause: runtime.failureCause };
+  }
   return { kind: 'probe-failed', failure: runtime.failure };
 }
 

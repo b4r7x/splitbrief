@@ -447,6 +447,51 @@ describe('Composer image attach gate', () => {
     ui.unmount();
   });
 
+  it('submits a draft starting with an image before /help instead of running a command', async () => {
+    configStore.__testReset({
+      projectDir,
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
+    const submissions: string[] = [];
+    const dispatched: string[] = [];
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="home"
+        mode="normal"
+        hint=""
+        homeHint={HOME_HINT}
+        onSubmit={(text) => submissions.push(text)}
+        onRuntimeCommand={(command) => dispatched.push(command)}
+      />,
+    );
+    await flushEffects();
+    composerDraftStore.requestDocument({
+      version: 1,
+      parts: [
+        {
+          kind: 'image',
+          attachment: {
+            id: 'command-image',
+            kind: 'image',
+            path: imagePath,
+            mimeType: 'image/png',
+            sizeBytes: 9,
+          },
+        },
+        { kind: 'text', text: '/help' },
+      ],
+    });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+
+    expect(submissions).toEqual([expect.stringMatching(/^\[image:command-image\]\/help\n\n/)]);
+    expect(dispatched).toEqual([]);
+    expect(attachmentsStore.peek().map((attachment) => attachment.id)).toEqual(['command-image']);
+    ui.unmount();
+  });
+
   it('sends the images of the draft in document order, around their text', async () => {
     configStore.__testReset({
       projectDir,

@@ -13,6 +13,7 @@ import {
   formatToolsByline,
   modelBylineAxes,
   pickerListingSource,
+  wrapOnWords,
   type ModelCatalogDiagnostic,
 } from './picker-format.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -198,6 +199,14 @@ describe('formatCatalogDiagnostic', () => {
     [
       { kind: 'probe-failed', failure: 'not-run' },
       'Model detection has not run yet. Press ctrl+r to refresh',
+    ],
+    [
+      {
+        kind: 'probe-failed',
+        failure: 'command-failed',
+        cause: 'Server at http://127.0.0.1:49374 did not provide a compatible V2 health response',
+      },
+      `OpenCode could not list models: Server at http://127.0.0.1:49374 did not provide a compatible V2 health response${SOFT_SEP}ctrl+r to retry`,
     ],
   ] satisfies Array<[ModelCatalogDiagnostic, string]>)(
     'gives actionable copy for %j',
@@ -403,6 +412,22 @@ describe('formatToolsByline', () => {
 
   const segments = (line: string): string[] => line.split(SOFT_SEP);
 
+  it.each([56, 76, 108])('keeps command failure recovery within two rows of %i cells', (budget) => {
+    const line = byline({
+      toolName: 'OpenCode CLI',
+      budget,
+      diagnostic: {
+        kind: 'probe-failed',
+        failure: 'command-failed',
+        cause: `Server at http://127.0.0.1:49374 ${'failed '.repeat(25)}`,
+      },
+    });
+
+    expect(line).toContain('OpenCode CLI could not list models: Server at');
+    expect(line).toContain('ctrl+r to retry');
+    expect(wrapOnWords(line, budget, 2).cut).toBe(false);
+  });
+
   it('uses the singular noun for a single row', () => {
     const single = byline({ modelCount: 1 });
     expect(single).toContain('1 model');
@@ -421,6 +446,7 @@ describe('formatToolsByline', () => {
         diagnostic: { kind: 'probe-failed', failure: 'malformed' },
         modelCount: 1,
         toolName: 'Kilo Code CLI',
+        budget: 108,
       }),
     ).toBe(
       formatCatalogDiagnostic({ kind: 'probe-failed', failure: 'malformed' }, 'Kilo Code CLI'),
@@ -430,6 +456,7 @@ describe('formatToolsByline', () => {
         diagnostic: { kind: 'unsupported' },
         modelCount: 9,
         toolName: 'Claude Code CLI',
+        budget: 108,
       }),
     ).toBeUndefined();
     expect(
@@ -437,6 +464,7 @@ describe('formatToolsByline', () => {
         diagnostic: undefined,
         modelCount: 0,
         toolName: 'X',
+        budget: 108,
       }),
     ).toBeUndefined();
   });
@@ -447,14 +475,15 @@ describe('formatToolsByline', () => {
   ] satisfies ModelCatalogDiagnostic[])(
     'names the bundled list rather than denying it when rows are listed for %j',
     (diagnostic) => {
-      const listed = bylineDiagnostic({ diagnostic, modelCount: 3, toolName: 'OpenCode' }) ?? '';
+      const listed =
+        bylineDiagnostic({ diagnostic, modelCount: 3, toolName: 'OpenCode', budget: 108 }) ?? '';
 
       expect(listed).toContain('Bundled model list');
       expect(listed).toContain('ctrl+r');
       expect(listed).not.toContain('has not run');
-      expect(bylineDiagnostic({ diagnostic, modelCount: 0, toolName: 'OpenCode' })).toBe(
-        formatCatalogDiagnostic(diagnostic, 'OpenCode'),
-      );
+      expect(
+        bylineDiagnostic({ diagnostic, modelCount: 0, toolName: 'OpenCode', budget: 108 }),
+      ).toBe(formatCatalogDiagnostic(diagnostic, 'OpenCode'));
     },
   );
 

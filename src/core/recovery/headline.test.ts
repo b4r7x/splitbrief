@@ -34,6 +34,29 @@ describe('formatRecoveryHeadline', () => {
     expect(formatRecoveryHeadline(issue)).toBe('Usage limit on Claude Code');
   });
 
+  it.each([
+    ['balance', 'Balance spent on OpenCode CLI'],
+    ['billing', 'Billing refused by OpenCode CLI'],
+    ['quota', 'Quota spent on OpenCode CLI'],
+  ] as const)('names an account %s cause instead of a usage limit', (cause, headline) => {
+    const issue = makeRecoveryIssue({
+      ...usageLimitIssue,
+      resetAt: undefined,
+      facts: { tool: 'OpenCode CLI', cause },
+    });
+    expect(formatRecoveryHeadline(issue)).toBe(headline);
+  });
+
+  it('keeps the usage-limit words and the clock for a rate limit', () => {
+    const issue = makeRecoveryIssue({
+      ...usageLimitIssue,
+      facts: { tool: 'Claude Code', cause: 'rate-limit' },
+    });
+    expect(formatRecoveryHeadline(issue).startsWith('Usage limit on Claude Code · resets ')).toBe(
+      true,
+    );
+  });
+
   it('words the halts that have their own sentence', () => {
     const cases: Array<[Parameters<typeof makeRecoveryIssue>[0], string]> = [
       [{ reason: 'runner-unauthenticated', facts: { tool: 'Codex' } }, 'Signed out of Codex'],

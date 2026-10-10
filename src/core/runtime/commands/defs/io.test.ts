@@ -54,7 +54,7 @@ describe('/image command', () => {
     const errors: string[] = [];
     const command = imageCommand(
       makeCtx({
-        insertImage: () => ({ ok: false, reason: 'outside-safe-roots' }),
+        insertImage: () => ({ ok: false, reason: 'not-found' }),
         setFeedbackError: (message) => errors.push(message),
       }),
     );
@@ -62,7 +62,7 @@ describe('/image command', () => {
     await command.handler('/tmp/outside.png');
 
     expect(errors).toEqual([
-      'Cannot attach image: the file must be inside the project or home folder.',
+      'Cannot attach image: the file was not found. Check the path and try again.',
     ]);
   });
 });

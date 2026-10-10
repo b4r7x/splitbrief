@@ -14,9 +14,13 @@ import {
   VISUAL_FIXTURE_VERSION,
 } from './catalog.js';
 import { formatViewport } from './contracts/geometry.js';
+import { checkpointId } from './contracts/identifiers.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
 import { screenFixtureRegistry } from './fixtures/screen-fixtures.js';
-import { workflowFixtureRegistry } from './fixtures/workflow/registry.js';
+import {
+  workflowCheckpointPredicates,
+  workflowFixtureRegistry,
+} from './fixtures/workflow/registry.js';
 import { mountGalleryScenario } from './gallery/mount.js';
 
 function sorted(values: Iterable<string>): string[] {
@@ -26,6 +30,9 @@ function sorted(values: Iterable<string>): string[] {
 /** Scenarios whose surface cannot mount at the default matrix and say so in the catalog. */
 const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new Map([
   ['home-cold-detecting', ['80x40']],
+  ['home-cold-crew', ['120x40', '80x24', '60x18', '200x50']],
+  ['workflow-crew-wide', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '200x50']],
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
@@ -46,6 +53,43 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('keeps the recovery stop-sheet predicate separate from generic ready checkpoints', () => {
+    const scenario = findVisualScenario('workflow-stop-sheet-recovery');
+
+    expect(scenario?.checkpoints.map((checkpoint) => checkpoint.id)).toEqual([
+      'stop-sheet-recovery',
+    ]);
+    expect(workflowCheckpointPredicates.has(checkpointId('stop-sheet-recovery'))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId('ready'))).toBe(false);
+  });
+
+  it('rejects recovery stop-sheet frames that offer pause or typed correction', () => {
+    const scenario = findVisualScenario('workflow-stop-sheet-recovery');
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports[0];
+    const predicate = workflowCheckpointPredicates.get(checkpointId('stop-sheet-recovery'));
+    if (
+      scenario === undefined ||
+      checkpoint === undefined ||
+      viewport === undefined ||
+      predicate === undefined
+    ) {
+      throw new Error('Missing recovery stop-sheet checkpoint');
+    }
+    const context = { scenario, checkpoint, viewport, output: 'Stop options\nStop now\nEnd run' };
+
+    expect(predicate(context)).toBe(true);
+    for (const stale of ['Pause after this brief', 'tab to type a correction']) {
+      expect(predicate({ ...context, output: `${context.output}\n${stale}` })).toBe(false);
+    }
+  });
+
+  it('requires the balance headline before capturing a spent-balance frame', () => {
+    const scenario = findVisualScenario('workflow-recovery-balance-spent');
+
+    expect(scenario?.checkpoints[0]?.marker).toBe('Seat down · Balance spent on OpenCode CLI');
+  });
+
   it('keeps the interrupted fix row stopped while the continued brief runs', async () => {
     const scenario = findVisualScenario('workflow-fix-check-stopped-continued');
     if (scenario === undefined) throw new Error('Missing stopped-check scenario');
@@ -185,6 +229,8 @@ describe('visual catalog', () => {
       'home-preparation-isolation-blocked',
       'workflow-continuing',
       'home-draft-image',
+      'home-draft-path',
+      'workflow-planning-path-notice',
       'overlay-usage-details',
       'overlay-usage-details-legacy',
       'overlay-usage-context-insufficient',

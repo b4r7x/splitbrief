@@ -268,6 +268,22 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ## Planner issues
 
+### Symptom: `splitbrief start` stops with `Cannot start:` and names an `@file` input or the feature description
+
+**Likely cause:** An `@file` input is missing, is not a regular file, exceeds 10 MiB, or SPLITBRIEF cannot read it. The feature description is empty before `@file` inputs, or it starts with `@`.
+
+**Fix:**
+
+1. Check each refused path against its error message. `~/` works. Relative paths resolve against the project root. SPLITBRIEF follows symlinks.
+2. Name a regular, readable file up to 10 MiB.
+3. Put the feature description first: `splitbrief start "<feature>" @<file>`.
+
+**Prevention:** Check each path before you start. Put the feature description before all `@file` inputs.
+
+**See also:** [CLI Reference: splitbrief start](./CLI-REFERENCE.md#splitbrief-start).
+
+---
+
 ### Symptom: `runners.cli.claude-code.readiness` is `unauthenticated` on macOS
 
 **Likely cause:** Claude Code keeps its subscription session in the macOS login keychain. A `session` runner on macOS reads that keychain with your real `HOME` and `USER`, so readiness runs `claude auth status` inside the staged environment and reports exactly what the child answered. `unauthenticated` here means the child got `"loggedIn": false` — the host is not signed in, or is signed in as a different account.

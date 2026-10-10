@@ -121,6 +121,26 @@ type Mention = {
   disposition: 'existing' | 'new';
 };
 
+export function absolutePathsNamed(text: string): string[] {
+  const mentions: Array<{ path: string; index: number }> = [];
+  const recordPath = (raw: string, index: number): void => {
+    const path = normalizeCandidate(raw.replace(/^`+|`+$/g, '').replace(/\\ /g, ' '));
+    if (path.startsWith('/')) mentions.push({ path, index });
+  };
+  const rest = text.replace(
+    /(?<=^|[\s([{])(["'`])(\/[^\n]*?)\1(?=$|[\s.,;:!?)\]}])/g,
+    (span: string, _quote: string, path: string, index: number) => {
+      recordPath(path, index);
+      return ' '.repeat(span.length);
+    },
+  );
+  for (const token of rest.matchAll(/(?:\\ |[^\s])+/g)) {
+    recordPath(token[0], token.index);
+  }
+  mentions.sort((a, b) => a.index - b.index);
+  return [...new Set(mentions.map((mention) => mention.path))];
+}
+
 function isCandidatePath(raw: string): boolean {
   if (raw.length === 0 || raw.length > PATH_MAX_LENGTH) return false;
   if (raw.startsWith('/') || raw.includes('\\') || raw.includes('\u0000')) return false;

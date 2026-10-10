@@ -193,7 +193,7 @@ export function formatSeatCandidateIdentity(
 }
 
 type CollapsedSeat = Readonly<{
-  label: string;
+  id: CrewSeatId;
   identity: string;
   named: boolean;
   /** A condition the seat carries while it lasts, parenthesized so it binds to this seat and not the next. */
@@ -201,8 +201,9 @@ type CollapsedSeat = Readonly<{
 }>;
 
 function collapsedSeatText(seat: CollapsedSeat): string {
-  if (seat.note === undefined) return `${seat.label} ${seat.identity}`;
-  return `${seat.label} ${seat.identity} (${seat.note})`;
+  const label = CREW_SEAT_LABELS[seat.id];
+  if (seat.note === undefined) return `${label} ${seat.identity}`;
+  return `${label} ${seat.identity} (${seat.note})`;
 }
 
 // An elided seat leaves the line entirely. `REVIEW …` names no seat and reads as "pending" beside
@@ -223,7 +224,11 @@ function collapsedSeatLine(seats: readonly CollapsedSeat[], elided: ReadonlySet<
  * name standing buys no line at all: labels and ellipses state nothing, and
  * beside the workflow rail an ellipsis already reads as "pending".
  */
-function elideCollapsedSeats(seats: readonly CollapsedSeat[], budget: number): string {
+function elideCollapsedSeats(
+  seats: readonly CollapsedSeat[],
+  budget: number,
+  haltedSeat?: CrewSeatId,
+): string {
   const lastFirst = seats
     .map((seat, index) => ({ index, width: getTerminalCellWidth(seat.identity) }))
     .reverse();
@@ -235,10 +240,9 @@ function elideCollapsedSeats(seats: readonly CollapsedSeat[], budget: number): s
     getTerminalCellWidth(collapsedSeatLine(seats, elided)) > budget
   ) {
     const remaining = lastFirst.filter((seat) => !elided.has(seat.index));
-    // A note sits beside a name or not at all, so the seat carrying one is never
-    // the seat elided: the line reports the failure instead and is measured again
-    // without any notes.
-    const pool = remaining.filter((seat) => seats[seat.index]?.note === undefined);
+    const pool = remaining.filter(
+      (seat) => seats[seat.index]?.note === undefined && seats[seat.index]?.id !== haltedSeat,
+    );
     if (pool.length === 0) return '';
     // When no single name is enough, the widest goes and the line is measured
     // again, so the line never hides more names than it has to.
@@ -256,16 +260,26 @@ function elideCollapsedSeats(seats: readonly CollapsedSeat[], budget: number): s
  * happening right now, and the elision rule already spends those names to buy
  * room. What it never outranks is its own seat's name — a clock beside `BUILD …`
  * names no seat — so a budget that cannot seat the noted name drops every note
- * and lays the plain line out instead.
+ * and lays the plain line out. The halted seat stays protected while the plain line names a seat.
  */
-function fitCollapsedSeats(seats: readonly CollapsedSeat[], budget: number): string {
-  const noted = elideCollapsedSeats(seats, budget);
+function fitCollapsedSeats(
+  seats: readonly CollapsedSeat[],
+  budget: number,
+  haltedSeat?: CrewSeatId,
+): string {
+  const plainSeats = seats.map((seat) => ({
+    id: seat.id,
+    identity: seat.identity,
+    named: seat.named,
+  }));
+  const protectedSeat =
+    haltedSeat !== undefined && elideCollapsedSeats(plainSeats, budget, haltedSeat) !== ''
+      ? haltedSeat
+      : undefined;
+  const noted = elideCollapsedSeats(seats, budget, protectedSeat);
   if (seats.every((seat) => seat.note === undefined)) return noted;
   if (noted !== '' && getTerminalCellWidth(noted) <= budget) return noted;
-  return elideCollapsedSeats(
-    seats.map((seat) => ({ label: seat.label, identity: seat.identity, named: seat.named })),
-    budget,
-  );
+  return elideCollapsedSeats(plainSeats, budget, protectedSeat);
 }
 
 export function formatCollapsedSeatLine(
@@ -274,6 +288,7 @@ export function formatCollapsedSeatLine(
     build: RunnerConfig;
     reviewer: RunnerConfig | undefined;
     budget?: number | undefined;
+    haltedSeat?: CrewSeatId | undefined;
     /** What each seat is carrying right now, e.g. the reset clock of a quota-blocked seat. */
     notes?: Partial<Record<CrewSeatId, string>> | undefined;
     displayNames?:
@@ -298,6 +313,7 @@ export function formatCollapsedSeatLine(
         ? null
         : formatShortSeatIdentity({ seat: input.reviewer, displayName: reviewerName }),
     budget: input.budget,
+    haltedSeat: input.haltedSeat,
     notes: input.notes,
   });
 }
@@ -313,32 +329,33 @@ export function formatCollapsedSeatLineFromIdentities(
     build: string;
     review: string | null;
     budget?: number | undefined;
+    haltedSeat?: CrewSeatId | undefined;
     notes?: Partial<Record<CrewSeatId, string>> | undefined;
   }>,
 ): string {
   const notes = input.notes;
   const seats: CollapsedSeat[] = [
     {
-      label: CREW_SEAT_LABELS.plan,
+      id: 'plan',
       identity: input.plan,
       named: true,
       ...(notes?.plan !== undefined && { note: notes.plan }),
     },
     {
-      label: CREW_SEAT_LABELS.build,
+      id: 'build',
       identity: input.build,
       named: true,
       ...(notes?.build !== undefined && { note: notes.build }),
     },
     // The inheritance mark points at the planner's name; it is not one itself.
     {
-      label: CREW_SEAT_LABELS.review,
+      id: 'review',
       identity: input.review ?? PLANNER_INHERITANCE.mark,
       named: input.review !== null,
       ...(notes?.review !== undefined && { note: notes.review }),
     },
   ];
-  return fitCollapsedSeats(seats, input.budget ?? Number.POSITIVE_INFINITY);
+  return fitCollapsedSeats(seats, input.budget ?? Number.POSITIVE_INFINITY, input.haltedSeat);
 }
 
 /**
@@ -354,6 +371,15 @@ export function cutSeatIdentity(identity: string, budget: number): string {
   return `${truncated.slice(0, -ELLIPSIS.length).replace(HANGING_SEPARATOR, '')}${ELLIPSIS}`;
 }
 
+export function wrapSeatIdentity(identity: string, budget: number): string[] {
+  if (getTerminalCellWidth(identity) <= budget) return [identity];
+  const segments = identity.split(CREW_IDENTITY_SEPARATOR);
+  return [
+    segments.slice(0, 1).join(CREW_IDENTITY_SEPARATOR),
+    segments.slice(1).join(CREW_IDENTITY_SEPARATOR),
+  ].map((row) => cutSeatIdentity(row, budget));
+}
+
 function shedSegments(identity: string, budget: number): string {
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
   let kept = segments.length;
@@ -361,14 +387,4 @@ function shedSegments(identity: string, budget: number): string {
     getTerminalCellWidth(segments.slice(0, count).join(CREW_IDENTITY_SEPARATOR));
   while (kept > 1 && width(kept) > budget) kept -= 1;
   return segments.slice(0, kept).join(CREW_IDENTITY_SEPARATOR);
-}
-
-/** A seat row cuts its full identity to the block budget; it never falls back to the short form. */
-export function fitSeatIdentity(
-  input: Readonly<{ runner: RunnerConfig; budget: number; displayName?: string | undefined }>,
-): string {
-  return cutSeatIdentity(
-    formatSeatIdentity({ seat: input.runner, displayName: input.displayName }),
-    input.budget,
-  );
 }

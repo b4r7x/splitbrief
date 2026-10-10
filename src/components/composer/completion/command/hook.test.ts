@@ -236,6 +236,35 @@ describe('useCommandCompletion submit routing', () => {
     ui.unmount();
   });
 
+  it.each(['/Users/dev/notes/brief.md', '/tmp/brief.md read this first'])(
+    'sends the pasted path %s to the planner on Enter, not to the commands',
+    async (typed) => {
+      const { ui, commandCalls, submits } = renderComposer();
+
+      await flushEffects();
+      ui.stdin.write(typed);
+      await tick(20);
+      await vi.waitFor(
+        () => {
+          expect(ui.lastFrame()).toContain(typed);
+        },
+        { timeout: 5000 },
+      );
+      await flushEffects();
+      ui.stdin.write(ENTER);
+      await vi.waitFor(
+        () => {
+          expect(submits).toEqual([typed]);
+        },
+        { timeout: 5000 },
+      );
+
+      expect(commandCalls).toEqual([]);
+      expect(ui.lastFrame()).not.toContain('Unknown command');
+      ui.unmount();
+    },
+  );
+
   it('runs the highlighted command when one matches the token', async () => {
     const { ui, commandCalls } = renderComposer();
 
@@ -405,6 +434,15 @@ describe('useCommandCompletion closed arguments', () => {
     await tick(20);
     expect(hidden.lastFrame()).toContain('false');
     hidden.unmount();
+  });
+
+  it('shows no suggestions for a pasted absolute path', async () => {
+    for (const value of ['/Users/dev/Projects/app/docs', '/tmp/brief.md']) {
+      const hidden = renderFeature(createElement(ShowSuggestionsHarness, { value }));
+      await tick(20);
+      expect(hidden.lastFrame(), value).toContain('false');
+      hidden.unmount();
+    }
   });
 
   it('shows no suggestions once a free-argument command has its space', async () => {

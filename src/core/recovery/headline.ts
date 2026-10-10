@@ -5,6 +5,7 @@ import { formatResetAt } from './reset-clock.js';
 import { haltOf, recoveryHaltLabel } from './halt.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
+import { formatAccountCause } from './account-cause.js';
 
 function toolName(issue: RecoveryIssue): string {
   return recoveryFactString(issue.facts, 'tool') ?? 'the tool';
@@ -71,6 +72,13 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
     case 'apply-partial':
       return 'Apply stopped part way';
     case 'runner-usage-limit': {
+      const cause = recoveryFactString(issue.facts, 'cause');
+      switch (cause) {
+        case 'balance':
+        case 'billing':
+        case 'quota':
+          return formatAccountCause(cause, toolName(issue));
+      }
       const reset = formatResetAt(issue.resetAt, now);
       return `Usage limit on ${toolName(issue)}${reset === undefined ? '' : ` · ${reset}`}`;
     }

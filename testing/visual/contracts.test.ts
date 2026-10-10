@@ -296,6 +296,28 @@ describe('visual contract boundaries', () => {
     expect(GitRevisionSchema.safeParse('ABCDEF1').success).toBe(false);
   });
 
+  it('allows the exact synthetic fixture path with prose punctuation and rejects other host paths', () => {
+    for (const safe of [
+      '/Users/dev/notes/brief.md',
+      '/Users/dev/notes/brief.md.',
+      '/Users/dev/notes/brief.md,',
+      '/Users/dev/notes/brief.md!),.:;?]}',
+      'The plan seat reads no files, so it cannot open /Users/dev/notes/brief.md. Put @ before a file path to attach its text.',
+    ]) {
+      expect(containsHostPath(safe)).toBe(false);
+      expect(isSafePersistedTerminalText(safe)).toBe(true);
+    }
+    for (const hostile of [
+      '/Users/dev/notes/other.md',
+      '/Users/dev/notes',
+      '/Users/dev/notes/brief.md.bak',
+      'Read /Users/dev/notes/brief.md, then /Users/dev/notes/other.md.',
+    ]) {
+      expect(containsHostPath(hostile)).toBe(true);
+      expect(isSafePersistedTerminalText(hostile)).toBe(false);
+    }
+  });
+
   it('sanitizes public and project-file hyperlinks and drops unsafe destinations', () => {
     const publicUrl: PublicHttpUrl = PublicHttpUrlSchema.parse('https://openai.com/docs');
     expect(

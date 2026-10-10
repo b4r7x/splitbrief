@@ -23,6 +23,7 @@ import {
 } from '../row-block-compose.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
 import { answeredQuestionsRowBlock } from './answered-questions.js';
+import { attachedInputsRowBlock } from './attached-inputs.js';
 import { taskStartedMetadata, taskStartedRowBlock } from '../task-started-row-block.js';
 import { isRunnerCallTranscriptRowSuppressed } from '../runner-call-classification.js';
 import {
@@ -279,10 +280,20 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'textDim',
       });
-    case 'user_message':
-      return event.qa !== undefined && event.qa.length > 0
-        ? answeredQuestionsRowBlock({ keyPrefix, qa: event.qa, width: ctx.width })
-        : promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
+    case 'user_message': {
+      if (event.qa !== undefined && event.qa.length > 0)
+        return answeredQuestionsRowBlock({ keyPrefix, qa: event.qa, width: ctx.width });
+      const prompt = promptTextBlock({ keyPrefix, text: event.text, width: ctx.width });
+      if (event.attachedInputs === undefined || event.attachedInputs.length === 0) return prompt;
+      return compositeBlock(keyPrefix, [
+        prompt,
+        attachedInputsRowBlock({
+          keyPrefix: `${keyPrefix}-attached-inputs`,
+          attachedInputs: event.attachedInputs,
+          width: ctx.width,
+        }),
+      ]);
+    }
     case 'planner_attachments_dropped':
       return cardRowsBlock({
         keyPrefix,

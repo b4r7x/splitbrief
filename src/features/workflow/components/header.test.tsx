@@ -18,9 +18,12 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
+import { routerStore } from '../../../stores/navigation/router.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { taskId } from '../../../core/schemas/task.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
@@ -42,12 +45,24 @@ const QUOTA_HALT = makeRecoveryIssue({
   switchSeat: { seat: 'build', candidates: [{ tool: 'opencode' }] },
 });
 
+const BUILD_HALT = makeRecoveryIssue({
+  reason: 'runner-usage-limit',
+  phase: 'implementing',
+  seat: 'build',
+});
+
+const HALTED_CREW_CONFIG = makeConfig({
+  planner: { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' },
+  implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+});
+
 /** The clock the bar pins right, read off a rendered frame. */
 function clockText(frame: string | undefined): string | undefined {
   return stripAnsiStyles(frame ?? '').match(/\d+:\d{2}(?::\d{2})?/)?.[0];
 }
 
 function resetStores(): void {
+  routerStore.reset();
   recoveryNoticeStore.reset();
   terminalSizeStore.reset();
   controlsStore.__testReset();
@@ -213,6 +228,68 @@ describe('Header — seat line', () => {
     await tick();
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).not.toContain('resets');
     instance.unmount();
+  });
+
+  it('keeps BUILD without a reset or swap offer until the halt clears on a constrained rail', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'running',
+      startedAt: Date.now(),
+    });
+    recoveryNoticeStore.open({ seat: 'build', resetAt: null, issue: BUILD_HALT });
+
+    const ui = renderFeature(
+      <Box paddingX={WORKFLOW_GUTTER_X}>
+        <Header startedAt={STARTED_AT} />
+      </Box>,
+      { cols: 80, rows: 24 },
+    );
+    await tick();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash');
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
+
+    recoveryNoticeStore.clear();
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame());
+    expect(frame).toContain('PLAN Sonnet 4 · REVIEW = PLAN');
+    expect(frame).not.toContain('BUILD');
+    ui.unmount();
+  });
+
+  it('keeps BUILD for an open halted record at rest with no open notice', async () => {
+    terminalSizeStore.__testReset({ cols: 80, rows: 24, isSmall: true });
+    configStore.__testReset({ projectDir: '/tmp/p', config: HALTED_CREW_CONFIG });
+    lifecycleStore.__testReset({
+      phase: 'implementing',
+      status: 'paused',
+      startedAt: 0,
+      endedAt: 5_000,
+      durationMs: 5_000,
+    });
+    routerStore.navigate({
+      to: 'workflow',
+      execution: { kind: 'at-rest' },
+      run: makeRunRecord({
+        status: {
+          kind: 'open',
+          stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue: BUILD_HALT } },
+          resumeAt: { kind: 'brief', taskId: taskId('T001'), attempt: 1 },
+        },
+      }),
+    });
+
+    const ui = renderFeature(
+      <Box paddingX={WORKFLOW_GUTTER_X}>
+        <Header startedAt={STARTED_AT} />
+      </Box>,
+      { cols: 80, rows: 24 },
+    );
+    await tick();
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash');
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
+    ui.unmount();
   });
 
   it('keeps the halted seat named and spends another seat when the note crowds the bar', async () => {

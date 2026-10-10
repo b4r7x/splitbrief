@@ -91,6 +91,47 @@ afterEach(() => {
 });
 
 describe('hydrateRun', () => {
+  it('restores the first request with every attached file in the transcript', async () => {
+    writeLog([
+      ...RUN.slice(0, 1),
+      {
+        type: 'user_message',
+        ts: 1_100,
+        phase: 'idle',
+        text: 'replay me',
+        attachedInputs: [
+          { path: '/Users/dev/briefs/feature.md', kind: 'text' },
+          { path: '/Users/dev/Desktop/receiving-flow.png', kind: 'image' },
+        ],
+      },
+      ...RUN.slice(1),
+    ]);
+
+    await hydrateRun(
+      makeRunRecord({
+        ref: { projectDir, sessionId: SESSION_ID },
+        hydration: { kind: 'loaded', state: savedState() },
+      }),
+    );
+    const { rows } = buildConversationRows({
+      sections: [{ type: 'events', startIndex: 0, items: [...eventsStore.get().events] }],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 80,
+      viewportHeight: 20,
+      streaming: { taskId: null, lines: [], active: false },
+    });
+    const lines = rows.map((row) => rowText(row).trim());
+    const header = lines.indexOf('Attached files · 2');
+
+    expect(header).toBeGreaterThan(-1);
+    expect(lines.slice(header, header + 3)).toEqual([
+      'Attached files · 2',
+      '/Users/dev/briefs/feature.md · text',
+      '/Users/dev/Desktop/receiving-flow.png · image',
+    ]);
+  });
+
   it('settles a fix check cut by Stop before a replayed retry and an in-place continuation', async () => {
     const fix: EngineEventOf<'full_suite'> = {
       type: 'full_suite',

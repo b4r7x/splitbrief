@@ -16,8 +16,9 @@ import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
   CREW_LABEL_WIDTH,
-  fitSeatIdentity,
+  formatSeatIdentity,
   PLANNER_INHERITANCE,
+  wrapSeatIdentity,
 } from '../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
@@ -250,13 +251,6 @@ function combinedOverflowLabel(above: string, below: string, width: number): str
   return `${above.replace(' above', '')}${SOFT_SEP}${below.replace(' below', '')}`;
 }
 
-// The seat row spends its whole budget on the full identity; an inherited review seat says so
-// instead of repeating the planner's words a row above it.
-function seatIdentity(seat: CrewSeat, budget: number, displayName?: string | undefined): string {
-  if (seat.id === 'review' && seat.source === 'planner') return PLANNER_INHERITANCE.mark;
-  return fitSeatIdentity({ runner: seat.runner, budget, displayName });
-}
-
 function taskHasStatusTail(task: WorkflowTask): boolean {
   return task.status === 'escalated' || task.status === 'failed' || task.status === 'skipped';
 }
@@ -280,9 +274,20 @@ export function Sidebar({ width, height }: SidebarProps) {
   const doneCount = tasks.filter((tk) => tk.status === 'done').length;
   const escalatedCount = tasks.filter((tk) => tk.status === 'escalated').length;
   const innerWidth = Math.max(0, width - 4);
+  const seatRows = seats.map((seat) => ({
+    seat,
+    rows:
+      seat.id === 'review' && seat.source === 'planner'
+        ? [PLANNER_INHERITANCE.mark]
+        : wrapSeatIdentity(
+            formatSeatIdentity({ seat: seat.runner, displayName: displayNames?.[seat.id] }),
+            innerWidth - CREW_LABEL_WIDTH,
+          ),
+  }));
 
   // The local-share row is unconditional; the done/escalated split is not.
-  const footerRows = seats.length + 1 + (escalatedCount > 0 ? 1 : 0);
+  const footerRows =
+    seatRows.reduce((total, { rows }) => total + rows.length, 0) + 1 + (escalatedCount > 0 ? 1 : 0);
   // Without a height the caller is not budgeting rows, so the list never windows.
   const listRows =
     height === undefined ? tasks.length : getSidebarTaskListRows({ height, footerRows });
@@ -356,15 +361,17 @@ export function Sidebar({ width, height }: SidebarProps) {
               {escalatedCount} escalated
             </Text>
           )}
-          {seats.map((seat) => (
-            <Text key={seat.id} wrap="truncate">
-              <Text color={t[CREW_SEAT_ROLES[seat.id]]} bold>
-                {seat.label.padEnd(CREW_LABEL_WIDTH)}
-              </Text>
-              <Text color={t[CREW_SEAT_ROLES[seat.id]]}>
-                {seatIdentity(seat, innerWidth - CREW_LABEL_WIDTH, displayNames?.[seat.id])}
-              </Text>
-            </Text>
+          {seatRows.map(({ seat, rows }) => (
+            <Box key={seat.id} flexDirection="column">
+              {rows.map((row, index) => (
+                <Text key={index} wrap="truncate">
+                  <Text color={t[CREW_SEAT_ROLES[seat.id]]} bold>
+                    {(index === 0 ? seat.label : '').padEnd(CREW_LABEL_WIDTH)}
+                  </Text>
+                  <Text color={t[CREW_SEAT_ROLES[seat.id]]}>{row}</Text>
+                </Text>
+              ))}
+            </Box>
           ))}
           <Text color={t.textDim}>
             local{' '}

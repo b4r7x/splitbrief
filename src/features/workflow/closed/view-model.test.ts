@@ -427,7 +427,7 @@ describe('seats', () => {
       }),
     );
     expect(crewLine(view, 200)).toBe(
-      `PLAN not recorded · BUILD Gemini 3.8 Flash High${arrowSep()}DeepSeek V4.1 Flash · REVIEW not recorded`,
+      `PLAN not recorded · BUILD Gemini 3.8 Flash (High)${arrowSep()}DeepSeek V4.1 Flash · REVIEW not recorded`,
     );
   });
 
@@ -452,7 +452,7 @@ describe('seats', () => {
       }),
     );
     expect(crewLine(view, 200)).toContain(
-      'BUILD 3 briefs on Gemini 3.8 Flash High, 1 on DeepSeek V4.1 Flash',
+      'BUILD 3 briefs on Gemini 3.8 Flash (High), 1 on DeepSeek V4.1 Flash',
     );
   });
 

@@ -5,6 +5,7 @@ import type {
   RuntimeCommandDef,
 } from '../../../../core/runtime/commands/types.js';
 import {
+  isRuntimeCommandLine,
   rankClosedOptions,
   suggestRuntimeCommand,
 } from '../../../../core/runtime/commands/lookup.js';
@@ -88,7 +89,7 @@ export function useCommandCompletion({
     openRunAtRest,
   };
 
-  const commandMode = value.startsWith('/');
+  const commandMode = isRuntimeCommandLine(value);
   const whitespaceIndex = value.search(/\s/);
   const hasArgs = whitespaceIndex >= 0;
   const commandToken = hasArgs ? value.slice(0, whitespaceIndex) : value;

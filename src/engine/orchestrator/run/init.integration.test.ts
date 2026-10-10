@@ -16,6 +16,7 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { SpecMetadata } from '../../../core/paths-io.js';
 import { ensureSessionDir } from '../../../core/paths-io.js';
 import { appendMessage } from '../../../core/sessions/log-writer.js';
@@ -29,6 +30,7 @@ import { taskId, type Task } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
+import { readRunEvents } from '../../events/replay.js';
 import { loadState } from '../../../core/state/persistence.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -75,6 +77,7 @@ async function preparedTestExecution(
     allowHooks: boolean;
     allowRepoRunners?: boolean;
     plannerContext?: string | undefined;
+    attachedInputs?: readonly AttachedInput[];
   }>,
 ): Promise<Readonly<{ config: Config; execution: PreparedExecution }>> {
   const hooks = input.inputConfig.hooks;
@@ -124,6 +127,7 @@ async function preparedTestExecution(
         allowHooks: input.allowHooks,
         allowRepoRunners: input.allowRepoRunners ?? false,
         ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+        ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
       },
     },
   };
@@ -149,6 +153,7 @@ async function initializeTestWorkflow(
     headless?: boolean;
     isolation?: RunIsolation;
     plannerContext?: string | undefined;
+    attachedInputs?: readonly AttachedInput[];
     resumeHolder?: ResumeContextHolder;
   }>,
 ): Promise<{
@@ -173,6 +178,7 @@ async function initializeTestWorkflow(
     inputConfig: config,
     allowHooks: true,
     ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
+    ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
   });
   const planner = input.plannerRunner ?? makePlanner();
   const implementer = makeImplementer();
@@ -235,6 +241,69 @@ afterEach(() => {
 });
 
 describe('initializeWorkflow', () => {
+  it.each<{ name: string; attachedInputs?: readonly AttachedInput[] }>([
+    {
+      name: 'with attached inputs',
+      attachedInputs: [
+        { path: '/Users/dev/briefs/feature.md', kind: 'text' },
+        { path: '/Users/dev/Desktop/receiving-flow.png', kind: 'image' },
+      ],
+    },
+    { name: 'without attached inputs' },
+    { name: 'with an empty attached-input list', attachedInputs: [] },
+  ])('publishes and replays the first request $name', async ({ attachedInputs }) => {
+    await withTempDir('splitbrief-init-attached-inputs', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const sessionId = 'session-init-attached-inputs';
+      const feature = 'plan the receiving workflow';
+      const events: EngineEvent[] = [];
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId,
+        feature,
+        eventSink: (event) => events.push(event),
+        ...(attachedInputs !== undefined && { attachedInputs }),
+      });
+
+      expect(init.ok).toBe(true);
+      const messages = events.filter((event) => event.type === 'user_message');
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ text: feature });
+      if (attachedInputs !== undefined && attachedInputs.length > 0) {
+        expect(messages[0]).toHaveProperty('attachedInputs', attachedInputs);
+      } else {
+        expect(messages[0]).not.toHaveProperty('attachedInputs');
+      }
+      const replay = await readRunEvents({ projectDir, sessionId });
+      expect(replay.events.filter((event) => event.type === 'user_message')).toEqual(messages);
+    });
+  });
+
+  it('does not attach the start inputs to a continuation message', async () => {
+    await withTempDir('splitbrief-init-continued-inputs', async (tempDir) => {
+      const projectDir = realpathSync(tempDir);
+      const feature = 'plan the receiving workflow';
+      const events: EngineEvent[] = [];
+
+      const { init } = await initializeTestWorkflow({
+        projectDir,
+        sessionId: 'session-init-continued-inputs',
+        feature,
+        attachedInputs: [{ path: '/Users/dev/briefs/feature.md', kind: 'text' }],
+        steer: 'include the receiving screen',
+        savedState: { ...createInitialState(feature), phase: 'planning' },
+        eventSink: (event) => events.push(event),
+      });
+
+      expect(init.ok).toBe(true);
+      const messages = events.filter((event) => event.type === 'user_message');
+      expect(messages).toHaveLength(1);
+      expect(messages[0]).toMatchObject({ text: 'include the receiving screen' });
+      expect(messages[0]).not.toHaveProperty('attachedInputs');
+    });
+  });
+
   it.each([
     {
       name: 'seats the planner in the review chair when no reviewer is configured',

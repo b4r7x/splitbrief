@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cloneScopedCliCatalogAttempt,
   findCliCatalogRuntime,
   reconcileScopedCliCatalogAttempts,
   scopedCliCatalogConnection,
@@ -167,5 +168,13 @@ describe('scoped CLI catalog outcomes', () => {
     expect(JSON.stringify([first, replacement])).not.toContain('/trusted/codex');
     expect(JSON.stringify([first, replacement])).not.toContain('a'.repeat(64));
     expect(JSON.stringify([first, replacement])).not.toContain('b'.repeat(64));
+  });
+
+  it('carries a failed listing command and its cause through a clone', () => {
+    const cause =
+      'Server at http://127.0.0.1:49374 did not provide a compatible V2 health response';
+    const attempt = { connection: opencode, outcome: { kind: 'command-failed', cause } } as const;
+
+    expect(cloneScopedCliCatalogAttempt(attempt)).toEqual(attempt);
   });
 });

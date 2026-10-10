@@ -27,7 +27,7 @@ const contexts = {
 function cliCatalogAttempt(input: {
   tool: 'codex' | 'opencode';
   models?: readonly string[];
-  failure?: Exclude<ProbeOutcomeKind, 'success'>;
+  failure?: Exclude<ProbeOutcomeKind, 'success' | 'command-failed'>;
 }): ScopedCliCatalogAttempt {
   return {
     connection: {
@@ -167,6 +167,22 @@ describe('usePickerCatalog catalog diagnostic', () => {
       ui.unmount();
     },
   );
+
+  it('carries the cause of a failed listing command to the diagnostic', () => {
+    const cause =
+      'Server at http://127.0.0.1:49374 did not provide a compatible V2 health response';
+    publishCliCatalogs([
+      {
+        connection: { tool: 'codex', contextKey: 'codex-context' },
+        outcome: { kind: 'command-failed', cause },
+      },
+    ]);
+
+    const ui = renderFeature(<Probe role="planner" toolId="codex" />);
+
+    expect(captured).toEqual({ kind: 'probe-failed', failure: 'command-failed', cause });
+    ui.unmount();
+  });
 
   it('reports a tool without a listing command as unsupported', () => {
     const ui = renderFeature(<Probe role="planner" toolId="claude-code" />);

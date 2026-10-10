@@ -60,8 +60,8 @@ const PREVIEW_MIN_COLS = 50;
 /** The byline's rows: the preview's, and an error's when one stands. */
 const BYLINE_ROWS = 2;
 
-/** An error broken on words into the byline's rows; words left over end its last row in an ellipsis. */
-function errorLines(message: string, cells: number): string[] {
+/** A byline broken on words into its rows; words left over end its last row in an ellipsis. */
+function bylineLines(message: string, cells: number): string[] {
   const { lines, cut } = wrapOnWords(message, cells, BYLINE_ROWS);
   if (!cut) return lines;
   const words = (lines.at(-1) ?? '').split(' ');
@@ -422,17 +422,20 @@ export function TwoColumnPicker<L extends FilterableItem, R extends { id: string
         marginTop={1}
         flexDirection="column"
       >
-        {error === undefined ? (
-          <Text color={t.textDim} wrap="wrap">
-            {showPreview ? previewText : ' '}
+        {(error === undefined
+          ? showPreview
+            ? bylineLines(previewText, totalBoxWidth)
+            : [' ']
+          : bylineLines(sanitizeTerminalDisplayText(error), totalBoxWidth)
+        ).map((line, rowIndex) => (
+          <Text
+            key={rowIndex}
+            color={error === undefined ? t.textDim : t.error}
+            wrap="truncate-end"
+          >
+            {line}
           </Text>
-        ) : (
-          errorLines(sanitizeTerminalDisplayText(error), totalBoxWidth).map((line) => (
-            <Text key={line} color={t.error} wrap="truncate-end">
-              {line}
-            </Text>
-          ))
-        )}
+        ))}
       </Box>
       <Box width={totalBoxWidth}>
         <Text color={t.textDim} wrap="truncate-end">

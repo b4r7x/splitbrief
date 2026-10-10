@@ -34,6 +34,7 @@ import { REVIEW_FILE, sessionDir } from '../../core/paths.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { buildReviewFailedRecoveryIssue } from '../../engine/orchestrator/recovery/builders/task.js';
 import { addTuiEvent } from './tui-sink.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../engine/events/workflow-cancel.js';
 
 let dirs: string[] = [];
 
@@ -175,6 +176,61 @@ function sessionLog(prepared: PreparedExecution): string {
 }
 
 describe('createRecoveryDriver', () => {
+  it('settles the pending question and clears the notice when aborted', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      seat: 'build',
+      resetAt: '2026-10-10T17:00:00.000Z',
+      switchSeat: { seat: 'build', candidates: [{ tool: 'codex' }] },
+    });
+    const controller = new AbortController();
+    const { inputMode } = makeInputMode([]);
+    let cancelQuestion = (): void => {};
+    const promptPendingRecovery = createRecoveryDriver({
+      prepared,
+      inputMode: {
+        ...inputMode,
+        setQuestionMode: () =>
+          new Promise<string>((_resolve, reject) => {
+            cancelQuestion = () => reject(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+          }),
+        resetMode: () => cancelQuestion(),
+      },
+      abortedRef: { current: false },
+      sink: addTuiEvent,
+      setInlineResume: () => {},
+    });
+    const pending = promptPendingRecovery({ state, controller, republishPrompt: false });
+    const settled = expect(pending).rejects.toBe(WORKFLOW_USER_CANCELLED_ABORT_REASON);
+    expect(recoveryNoticeStore.get()).toEqual({
+      seat: 'build',
+      resetAt: Date.parse('2026-10-10T17:00:00.000Z'),
+      issue: state.pendingRecovery,
+    });
+
+    controller.abort();
+
+    await settled;
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+  });
+
+  it('clears the notice if the recovery question fails', async () => {
+    const { prepared, state } = setupSession();
+    const { inputMode } = makeInputMode([]);
+    const failure = new Error('Question failed');
+
+    await expect(
+      runDriver(prepared, state, {
+        ...inputMode,
+        setQuestionMode: async () => {
+          throw failure;
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(recoveryNoticeStore.get().issue).toBeNull();
+  });
+
   it('records skipped brief evidence without the mode an older run saved', async () => {
     const { prepared, state } = setupSession();
     const saved = { ...state, mode: 'speckit' as const };
@@ -196,6 +252,7 @@ describe('createRecoveryDriver', () => {
     expect(feedbackAtPrompt).toHaveLength(1);
     expect(result.shouldRun).toBe(true);
     expect(feedbackStore.get().isError).toBe(false);
+    expect(recoveryNoticeStore.get().issue).toBeNull();
   });
 
   it('keeps the halt menu open when an action cannot be applied', async () => {
@@ -500,6 +557,7 @@ describe('createRecoveryDriver', () => {
   it('marks the halted seat for the header while the operator is answering', async () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
+      seat: 'build',
       message: 'T001 hit the implementer usage limit',
       availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
       recommendedAction: 'switch-seat',
@@ -529,7 +587,7 @@ describe('createRecoveryDriver', () => {
     expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
   });
 
-  it('opens the PLAN picker for a review halt whose REVIEW follows PLAN, and marks PLAN', async () => {
+  it('opens the PLAN picker for a review halt whose REVIEW follows PLAN, and marks REVIEW', async () => {
     const { prepared, state } = setupSession({
       reason: 'runner-usage-limit',
       phase: 'final-review',
@@ -555,7 +613,7 @@ describe('createRecoveryDriver', () => {
         focus: 'tool:claude-code',
       });
     });
-    expect(recoveryNoticeStore.get().seat).toBe('plan');
+    expect(recoveryNoticeStore.get().seat).toBe('review');
     configStore.__testReset({
       projectDir: prepared.session.ref.projectDir,
       config: makeConfig({
@@ -573,7 +631,33 @@ describe('createRecoveryDriver', () => {
     }
   });
 
-  it('publishes a halt that offers no other tool, with no seat for the bar to mark', async () => {
+  it('publishes a BUILD halt without a reset or swap offer', async () => {
+    const { prepared, state } = setupSession({
+      reason: 'runner-usage-limit',
+      seat: 'build',
+      message: 'T001 hit the implementer usage limit',
+      availableActions: ['retry-same-worker', 'skip-current-task', 'end-run'],
+      recommendedAction: 'retry-same-worker',
+    });
+    const noticeAtPrompt: RecoveryNoticeState[] = [];
+    const { inputMode } = makeInputMode(['end']);
+    const observed: UseInputModeResult = {
+      ...inputMode,
+      setQuestionMode: async (hint: string) => {
+        noticeAtPrompt.push({ ...recoveryNoticeStore.get() });
+        return inputMode.setQuestionMode(hint);
+      },
+    };
+
+    await runDriver(prepared, state, observed);
+
+    expect(noticeAtPrompt).toEqual([
+      { seat: 'build', resetAt: null, issue: state.pendingRecovery },
+    ]);
+    expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
+  });
+
+  it('publishes the halted seat even when it offers no other tool', async () => {
     const { prepared, state } = setupSession({
       reason: 'review-failed',
       taskId: undefined,
@@ -606,9 +690,9 @@ describe('createRecoveryDriver', () => {
 
     await runDriver(prepared, state, observed);
 
-    // No swap offer, so the header bar has no seat to annotate — but the halt itself is published,
-    // which is what the details surface reads while this process still holds it.
-    expect(noticeAtPrompt).toEqual([{ seat: null, resetAt: null, issue: state.pendingRecovery }]);
+    expect(noticeAtPrompt).toEqual([
+      { seat: 'review', resetAt: null, issue: state.pendingRecovery },
+    ]);
     expect(recoveryNoticeStore.get()).toEqual({ seat: null, resetAt: null, issue: null });
   });
 

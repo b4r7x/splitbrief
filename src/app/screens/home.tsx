@@ -6,15 +6,17 @@ import {
   FIRST_RUN_NOTE,
   REFRESHING_TOOLS_TITLE,
 } from '../../core/discovery/copy.js';
-import { CREW_SEAT_LABELS, formatShortSeatIdentity } from '../../core/crew/identity.js';
+import { formatCollapsedSeatLine } from '../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
+import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import type { RuntimeCommandDef } from '../../core/runtime/commands/types.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { Composer } from '../../components/composer/composer.js';
 import { ScreenShell } from '../../components/screen-shell.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { HomeSeatBlock, shedToFit } from '../../features/home/components/seat-block.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { RecentSessions } from '../../features/home/components/recent-sessions.js';
 import { useSpinnerFrame } from '../../hooks/use-spinner-frame.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
@@ -104,19 +106,22 @@ function DiscoveryPanel({ width }: { width: number }) {
     (refresh.readiness.outcome === 'failed' || refresh.readiness.outcome === 'not-run');
   if (!refreshing && !stalled) return null;
   const failedOutcome = refresh.readiness.outcome === 'failed';
-  const plannerSeat = `${CREW_SEAT_LABELS.plan} ${formatShortSeatIdentity({
-    seat: config.planner,
-    displayName: displayNames.plan,
-  })}`;
-  const build = resolveImplementerProfiles(config).defaultProfile.config;
-  const implementerSeat = `${CREW_SEAT_LABELS.build} ${formatShortSeatIdentity({
-    seat: build,
-    displayName: displayNames.build,
-  })}`;
+  const seatInput = {
+    planner: config.planner,
+    build: resolveImplementerProfiles(config).defaultProfile.config,
+    reviewer: configuredReviewerRunner(config),
+    displayNames,
+  };
+  const budget = width - DISCOVERY_PANEL_CHROME_COLS;
+  const fullSeatLine = formatCollapsedSeatLine(seatInput);
   const notes = shedToFit({
-    lead: [plannerSeat, implementerSeat],
+    lead: [fullSeatLine],
     optional: [FIRST_RUN_NOTE],
-    width: width - DISCOVERY_PANEL_CHROME_COLS,
+    width: budget,
+  });
+  const seatLine = formatCollapsedSeatLine({
+    ...seatInput,
+    budget: budget - (notes.length > 0 ? getTerminalCellWidth(`${SOFT_SEP}${FIRST_RUN_NOTE}`) : 0),
   });
 
   return (
@@ -140,10 +145,8 @@ function DiscoveryPanel({ width }: { width: number }) {
               {frame} {BOOT_MANIFEST_TITLE}
             </Text>
           </Text>
-          <Text>
-            <Text color={theme.planner}>{plannerSeat}</Text>
-            <Text color={theme.textDim}>{SOFT_SEP}</Text>
-            <Text color={theme.implementer}>{implementerSeat}</Text>
+          <Text color={theme.textDim}>
+            {seatLine}
             {notes.length > 0 && (
               <Text color={theme.textDim}>
                 {SOFT_SEP}

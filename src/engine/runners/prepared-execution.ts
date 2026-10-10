@@ -1,4 +1,5 @@
 import { ConfigSchema, type Config } from '../../core/schemas/config.js';
+import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { ReadinessReport } from '../../core/readiness/types.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import type {
@@ -81,6 +82,7 @@ export type PreparedExecution = Readonly<{
   runtime: Readonly<{
     feature: string;
     plannerContext?: string | undefined;
+    attachedInputs?: readonly AttachedInput[] | undefined;
     resumeState?: WorkflowState | undefined;
     allowRepoRunners: boolean;
     allowHooks: boolean;

@@ -1,5 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { boundEngineEventForConsumer } from '../../events/bound.js';
 import { createEventBus } from '../../events/bus.js';
 import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { createStdoutJsonSink } from '../../events/sinks/stdout-json.js';
@@ -48,6 +49,15 @@ export function attachRunSinks(input: AttachRunSinksInput): EventBus {
   // of the two stdout sinks is ever installed.
   if (opts.headless) {
     unsubs.push(bus.subscribe(opts.plain ? createStdoutTextSink() : createStdoutJsonSink()));
+    if (opts.plain === true) {
+      unsubs.push(
+        bus.subscribe((event) => {
+          if (event.type !== 'warning') return;
+          const bounded = boundEngineEventForConsumer(event, 'stdout-text');
+          if (bounded.type === 'warning') process.stderr.write(`${bounded.message}\n`);
+        }),
+      );
+    }
   }
   if (opts._eventSink) unsubs.push(bus.subscribe(opts._eventSink));
   if (config.hooks)

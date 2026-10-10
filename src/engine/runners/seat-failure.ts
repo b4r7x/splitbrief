@@ -1,4 +1,5 @@
 import { HALT_SIGNATURES } from '../../core/pipeline-spec/halts.js';
+import type { SeatAccountCause } from '../../core/recovery/account-cause.js';
 import { isAuthFailureDiagnostic } from './auth-failure.js';
 import { looksOfflineDiagnostic } from './cli-tools/registry.js';
 import type { RunnerFailureOutcomeState } from './errors.js';
@@ -10,8 +11,6 @@ import {
 
 /** Where a failed seat call's words came from; tail sources are the tool's own last lines. */
 export type SeatFailureSource = 'result-error' | 'thrown' | 'stderr-tail' | 'stdout-tail';
-
-export type SeatAccountCause = 'balance' | 'billing' | 'quota' | 'auth';
 
 export type SeatFailureClassification =
   | Readonly<{ class: 'authoritative' }>

@@ -20,6 +20,8 @@ Handlers reach the engine and stores through the `RuntimeCommandContext` interfa
 
 The slash commands — enumerated by [`src/core/runtime/commands/defs/`](https://github.com/b4r7x/splitbrief/blob/main/src/core/runtime/commands/defs), the single source of truth — are 22 commands. Every one declares a `category` from the closed set in `src/core/runtime/commands/types.ts` — `navigate`, `crew`, `workflow`, `view`, `io` — and is in exactly one; the command palette and the sections below group by it.
 
+A composer line is a slash command only when its first word is `/name` without another `/`; `/Users/me/notes.md` goes to the planner as text.
+
 ---
 
 ## Navigate
@@ -141,6 +143,7 @@ Commands that act on the active run: stop, resume or end the run, manage the que
 - **Example**: `/stop`
 - **Behavior**: The rows follow the run's state: a live run offers `Stop now`, `Pause after this brief` (or `Keep running` when a pause is pending) and `End run`; a parked or stopped run offers `Resume`, `End run` and `Back to sessions`; a failed stop offers `Retry stop` alone. `↑↓` selects, `Enter` executes, `Tab` dismisses back to the composer without touching the run or the draft. Nothing stops, resumes or ends until a row is confirmed.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/workflow.ts`; rows from `readStopMenuRows` (`src/features/workflow/stop/options.ts`).
+- A live run waiting on the recovery panel offers only `Stop now` and `End run`. It cannot finish a brief, so it offers no pause.
 - **See also**: `/resume`, `/end`.
 
 ### `/resume`

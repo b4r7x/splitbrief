@@ -253,6 +253,10 @@ A halt offers only the actions of its kind (`allowedActionsForHalt`). *Needs you
 
 **Recovery reasons and their available actions:**
 
+Account halts name their cause: `Balance spent on <tool>`, `Billing refused by <tool>` or `Quota spent on <tool>`.
+Rate limits keep `Usage limit on <tool>` and the reset clock. The panel omits the internal Worker profile row.
+The issue keeps the selected profile for retry and seat switching. Context overflow keeps its `Context limit: <n> tokens` detail.
+
 | Reason | Halt | When | Available actions | Recommended |
 |---|---|---|---|---|
 | `implementation-error` | Needs you | Implementer crashed, its endpoint is unreachable at the availability gate, or an API response stopped part way through its writes | `retry-same-worker`, `skip-current-task`, `end-run` | `retry-same-worker` |

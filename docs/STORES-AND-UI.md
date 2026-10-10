@@ -239,6 +239,10 @@ reaches the content bottom, which is what all three gallery viewports render —
 the conversation and the document review, so zero-height and prompt-clamped bodies cannot
 introduce a second breakpoint or hidden bottom row.
 
+Sidebar seats keep the tool, model and effort words. An identity that exceeds its column wraps after the tool.
+The second row starts in the identity column and keeps the seat color. Each row uses the existing segment rule.
+The task list pays for every seat row. An inherited review seat stays on one row as `REVIEW = PLAN`.
+
 ## Overlays
 
 `overlayStore` manages a stack. Opening a different overlay pushes the current one onto the stack and clears the exclusive flag. Opening the active overlay again changes only its focus and keeps its exclusive flag and stack. Equal focus leaves the state unchanged. Omitted focus clears the focus. `Esc` pops. When an overlay is active, `Layout` (`src/app/layout.tsx`) hides the screen and renders the overlay in its place.

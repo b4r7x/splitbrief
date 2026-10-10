@@ -408,7 +408,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     bus.publish({ type: 'workflow_started', ts: Date.now(), phase: state.phase, feature });
     publishPlannerStatus(bus, state, 'running');
     appendMessage({ projectDir, sessionId }, { role: 'user', text: feature });
-    publishUserMessage({ bus: bus, phase: state.phase }, feature);
+    publishUserMessage({ bus: bus, phase: state.phase }, feature, {
+      attachedInputs: runtime.attachedInputs,
+    });
 
     if (config.workflow.git?.createBranch) {
       const desired = `${SPLITBRIEF_IDENTITY.branchPrefix}${slugify(feature, 40)}`;

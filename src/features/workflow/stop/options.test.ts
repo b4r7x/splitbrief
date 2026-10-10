@@ -1,8 +1,10 @@
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import {
@@ -217,5 +219,55 @@ describe('readStopMenuRows right after a continue', () => {
 
     const pause = readStopMenuRows().find((row) => row.id === 'pause-after-brief');
     expect(pause?.consequence).toBe('finish T002 including checks and review; do not start T003');
+  });
+});
+
+describe('readStopMenuRows at a recovery halt', () => {
+  afterEach(() => {
+    resetAllStores();
+  });
+
+  beforeEach(() => {
+    const phase = 'implementing' as const;
+    addEvent({
+      type: 'tasks_planned',
+      ts: 1,
+      phase,
+      tasks: [
+        { id: taskId('T001'), title: 'One', index: 0, file: 'a.ts', action: 'create' },
+        { id: taskId('T002'), title: 'Two', index: 1, file: 'b.ts', action: 'create' },
+      ],
+      total: 2,
+    });
+    addEvent({
+      type: 'task_started',
+      ts: 2,
+      phase,
+      taskId: taskId('T001'),
+      title: 'One',
+      index: 0,
+      total: 2,
+      file: 'a.ts',
+      action: 'create',
+    });
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: null,
+      issue: makeRecoveryIssue({ reason: 'runner-usage-limit', taskId: taskId('T001') }),
+    });
+  });
+
+  it('offers Stop now and End run, and no pause after the halted brief', () => {
+    expect(readStopMenuRows().map((row) => row.id)).toEqual(['stop-now', 'end-run']);
+  });
+
+  it('offers pause after the running brief once the halt notice is cleared', () => {
+    recoveryNoticeStore.clear();
+
+    expect(readStopMenuRows().map((row) => row.id)).toEqual([
+      'stop-now',
+      'pause-after-brief',
+      'end-run',
+    ]);
   });
 });

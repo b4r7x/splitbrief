@@ -32,8 +32,27 @@ import { resumeContinuation } from '../run/init.js';
 import { measureApiBudget } from '../../providers/api-budget.js';
 import { runPlanningPhase } from './run.js';
 
+const statFailure = vi.hoisted(() => ({ code: undefined as string | undefined }));
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return {
+    ...actual,
+    stat: (...args: Parameters<typeof actual.stat>) => {
+      if (args[0] === '/path-check/brief.md' && statFailure.code !== undefined) {
+        return Promise.reject(
+          Object.assign(new Error(`${statFailure.code}: cannot stat /path-check/brief.md`), {
+            code: statFailure.code,
+          }),
+        );
+      }
+      return actual.stat(...args);
+    },
+  };
+});
+
 const dirs: string[] = [];
 afterEach(() => {
+  statFailure.code = undefined;
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -214,6 +233,98 @@ describe('a planner that reads no files of its own', () => {
       expect(measured.kind).toBe('fits');
     }
     expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  const pathNotices = (events: readonly { type: string }[]) =>
+    events.filter(
+      (event): event is { type: 'warning'; message: string } =>
+        event.type === 'warning' &&
+        String((event as { message?: unknown }).message).includes('cannot open'),
+    );
+
+  it('names every absolute path it cannot open in one warning before the first call', async () => {
+    let brief = '';
+    let notes = '';
+    const run = await plan({
+      script: [questions(1), makePlanProposal()],
+      callbacks: { onPlannerReply: vi.fn().mockResolvedValue('') },
+      planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
+      setup: (projectDir) => {
+        mkdirSync(join(projectDir, 'notes'), { recursive: true });
+        writeFileSync(join(projectDir, 'notes', 'brief.md'), 'PELICAN-42\n');
+        brief = join(projectDir, 'notes', 'brief.md');
+        notes = join(projectDir, 'notes');
+      },
+      get feature() {
+        return `Plan from ${brief}, and read ${notes}/ too.`;
+      },
+    });
+
+    const notices = pathNotices(run.events);
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.message).toBe(
+      `The plan seat reads no files, so it cannot open ${brief}, ${notes}/. Put @ before a file path to attach its text.`,
+    );
+    expect(run.prompts).toHaveLength(2);
+    expect(run.prompts[0]).not.toContain('PELICAN-42');
+    expect(run.result.disposition).toBe('ready-for-tasks');
+  });
+
+  it('says nothing about a slash route that names no file or folder', async () => {
+    const run = await plan({
+      script: [makePlanProposal()],
+      planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
+      feature: 'Rate-limit /api/users and /v1/login/refresh.',
+    });
+
+    expect(pathNotices(run.events)).toEqual([]);
+  });
+
+  it.each(['ENOENT', 'ENOTDIR', 'ENAMETOOLONG', 'ELOOP', 'EACCES', 'EPERM'])(
+    'does not name a path whose metadata check fails with %s',
+    async (code) => {
+      statFailure.code = code;
+      const run = await plan({
+        script: [makePlanProposal()],
+        planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
+        feature: 'Read /path-check/brief.md.',
+      });
+
+      expect(pathNotices(run.events)).toEqual([]);
+      expect(run.result.disposition).toBe('ready-for-tasks');
+    },
+  );
+
+  it('propagates a metadata EIO failure to the planning error boundary before any call', async () => {
+    statFailure.code = 'EIO';
+    const run = await plan({
+      script: [makePlanProposal()],
+      planner: { resolvePlanningContext: async () => ROOMY_CONTEXT },
+      feature: 'Read /path-check/brief.md.',
+    });
+
+    expect(run.prompts).toEqual([]);
+    expect(pathNotices(run.events)).toEqual([]);
+    expect(run.result).toMatchObject({ disposition: 'terminal', outcome: 'halted' });
+    expect(run.events).toContainEqual(
+      expect.objectContaining({ type: 'error', message: expect.stringContaining('EIO') }),
+    );
+  });
+
+  it('says nothing when the plan seat reads the path with its own tools', async () => {
+    let brief = '';
+    const run = await plan({
+      script: [makePlanProposal()],
+      setup: (projectDir) => {
+        writeFileSync(join(projectDir, 'brief.md'), 'PELICAN-42\n');
+        brief = join(projectDir, 'brief.md');
+      },
+      get feature() {
+        return `Plan the change in ${brief}.`;
+      },
+    });
+
+    expect(pathNotices(run.events)).toEqual([]);
   });
 
   it('halts before any call when the named source does not fit the model', async () => {

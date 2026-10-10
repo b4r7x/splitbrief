@@ -400,7 +400,7 @@ export function WorkflowScreen({
             mode={model.inputMode.mode}
             inputHint={
               recoveryPromptOpen && recoveryIssue !== null
-                ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused)
+                ? recoveryComposerHint(recoveryIssue, recoveryMenuFocused, stopMenuOpen)
                 : structuredQuestion
                   ? 'New instruction — replaces these questions…'
                   : plannerQuestions !== undefined

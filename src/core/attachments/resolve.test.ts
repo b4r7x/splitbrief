@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
-import { attachmentShortName, formatAttachmentFailure, resolveAttachment } from './resolve.js';
+import {
+  attachmentShortName,
+  formatAttachmentFailure,
+  resolveAttachment,
+  resolveRenderAttachment,
+} from './resolve.js';
 
 let projectDir: string;
 let externalDir: string;
@@ -44,23 +49,22 @@ describe('resolveAttachment', () => {
     if (!result.ok) expect(result.reason).toBe('not-found');
   });
 
-  it('rejects relative path that escapes safe roots', () => {
-    const evilPath = join(externalDir, 'evil.png');
-    writeFileSync(evilPath, '');
-    const relativeEvil = relative(projectDir, evilPath);
-    const result = resolveAttachment({ input: relativeEvil, projectDir });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('outside-safe-roots');
+  it('accepts a relative path the user named outside the project', () => {
+    const outsidePath = join(externalDir, 'mock.png');
+    writeFileSync(outsidePath, Buffer.alloc(10));
+    const result = resolveAttachment({ input: relative(projectDir, outsidePath), projectDir });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.attachment.path).toBe(realpathSync(outsidePath));
   });
 
-  it('rejects symlinks pointing outside safe roots', () => {
+  it('follows a symlink the user named to an image outside the project and home folder', () => {
     const target = join(externalDir, 'target.png');
-    writeFileSync(target, '');
+    writeFileSync(target, Buffer.alloc(10));
     const link = join(projectDir, 'link.png');
     symlinkSync(target, link);
     const result = resolveAttachment({ input: link, projectDir });
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('outside-safe-roots');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.attachment.path).toBe(realpathSync(target));
   });
 
   it('rejects a path-traversal attempt that resolves outside to nothing', () => {
@@ -101,6 +105,34 @@ describe('resolveAttachment', () => {
   });
 });
 
+describe('resolveRenderAttachment', () => {
+  it('accepts a render inside the project', () => {
+    const p = join(projectDir, 'frame.png');
+    writeFileSync(p, Buffer.alloc(10));
+    const result = resolveRenderAttachment({ input: p, projectDir });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.attachment.path).toBe(realpathSync(p));
+  });
+
+  it('refuses a render outside the project and home folder', () => {
+    const outsidePath = join(externalDir, 'frame.png');
+    writeFileSync(outsidePath, Buffer.alloc(10));
+    const result = resolveRenderAttachment({ input: outsidePath, projectDir });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('outside-safe-roots');
+  });
+
+  it('refuses a render symlink in the project that points outside the safe roots', () => {
+    const target = join(externalDir, 'target.png');
+    writeFileSync(target, Buffer.alloc(10));
+    const link = join(projectDir, 'frame.png');
+    symlinkSync(target, link);
+    const result = resolveRenderAttachment({ input: link, projectDir });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('outside-safe-roots');
+  });
+});
+
 describe('attachmentShortName', () => {
   it('returns the basename unchanged when within budget', () => {
     expect(attachmentShortName('/some/dir/photo.png')).toBe('photo.png');
@@ -138,9 +170,6 @@ describe('formatAttachmentFailure', () => {
   });
 
   it('describes attachment restrictions without exposing reason codes', () => {
-    expect(formatAttachmentFailure({ action: 'attach', reason: 'outside-safe-roots' })).toBe(
-      'Cannot attach image: the file must be inside the project or home folder.',
-    );
     expect(formatAttachmentFailure({ action: 'attach', reason: 'not-image' })).toContain(
       'PNG, JPEG, GIF, WebP, or BMP',
     );

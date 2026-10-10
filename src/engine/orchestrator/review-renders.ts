@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { resolveAttachment } from '../../core/attachments/resolve.js';
+import { resolveRenderAttachment } from '../../core/attachments/resolve.js';
 import { verificationKey } from '../../core/review/verdict.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { EvidenceCheckEntry, EvidenceLedger } from '../../core/schemas/evidence.js';
@@ -176,7 +176,10 @@ export function reviewRenders(input: {
     if (input.seatSupportsImages) {
       for (const artifact of ordered) {
         if (checkAttached.size === MAX_RENDER_IMAGES_PER_CHECK) break;
-        const resolved = resolveAttachment({ input: artifact.path, projectDir: input.projectDir });
+        const resolved = resolveRenderAttachment({
+          input: artifact.path,
+          projectDir: input.projectDir,
+        });
         if (!resolved.ok) continue;
         images.push(resolved.attachment);
         checkAttached.add(artifact);

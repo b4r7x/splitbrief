@@ -11,6 +11,7 @@ import type {
 import type { RecoveryIssue, SeatSwapCandidate } from '../../core/schemas/recovery/schemas.js';
 import type { ConsultReason, ConsultSeat } from '../../core/schemas/consult.js';
 import type { AnsweredQuestion } from '../../core/schemas/question.js';
+import type { AttachedInput } from '../../core/schemas/attachment.js';
 import type { PlannerCall } from '../../core/schemas/run-step.js';
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
@@ -408,13 +409,24 @@ export function publishWarningFromError(ctx: BusContext, label: string, err: unk
   publishWarning({ ...ctx, message: labelError(label, err) });
 }
 
-export function publishUserMessage(ctx: BusContext, text: string, qa?: AnsweredQuestion[]): void {
+export function publishUserMessage(
+  ctx: BusContext,
+  text: string,
+  options: {
+    qa?: AnsweredQuestion[];
+    attachedInputs?: readonly AttachedInput[] | undefined;
+  } = {},
+): void {
+  const { qa, attachedInputs } = options;
   ctx.bus.publish({
     type: 'user_message',
     ts: Date.now(),
     phase: ctx.phase,
     text,
     ...(qa !== undefined && qa.length > 0 ? { qa } : {}),
+    ...(attachedInputs !== undefined && attachedInputs.length > 0
+      ? { attachedInputs: [...attachedInputs] }
+      : {}),
   });
 }
 

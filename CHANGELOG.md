@@ -8,6 +8,7 @@
 
 ### Changed
 
+- **An `@file` input may name a file anywhere.** Use an absolute path, a path relative to the project root, or `~/…`. Text and images follow one rule. SPLITBRIEF follows symlinks. The transcript names each attached file by its resolved path. A missing, non-regular, oversized, or unreadable input stops `start` with exit code `2`. One error names every refused input, its reason, and the fix. An empty feature before `@file` inputs or a feature that starts with `@` stops `start` too. Render artifacts stay confined to the project and home folder.
 - Consult guards ask the operator through one shared path and keep the consulted seat. An unanswered stale guard question halts on that seat, preserves input hashes, and runs no implementer attempt. An answered stale guard question records fresh hashes and sends the operator's answer as guidance. Successful guidance saves the hashes and stale revision marker together. A failed call or unanswered question leaves both unchanged, so Retry consults the same seat again before dispatch.
 - Failed and malformed stale consults halt on the seat that answered. They never dispatch the unchanged brief. Consult recovery keeps the interrupted task so Retry replays its repair and Switch moves its seat. The composer names an active reviewer consult and shows `Reply to the reviewer…` for its question. All recovery skills describe task ownership and failures by the answering seat.
 - #67: Native session ids produce no activity rows; historical session activities contribute no rows or update counts.
