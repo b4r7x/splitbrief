@@ -55,6 +55,15 @@ describe('runHook', () => {
     expect(outcome.kind).toBe('allow');
   });
 
+  it('returns allow when a hook exits 0 without reading stdin', async () => {
+    const outcome = await runHook(
+      mkEntry({ command: process.execPath, args: ['-e', 'process.exit(0)'] }),
+      event,
+      ctx,
+    );
+    expect(outcome).toEqual({ kind: 'allow' });
+  });
+
   it('command hook spawns bypass the runner-pid ledger', async () => {
     const recorded: number[] = [];
     const released: number[] = [];
@@ -80,6 +89,19 @@ describe('runHook', () => {
   it('returns warn on non-zero exit when on_failure=warn', async () => {
     const outcome = await runHook(mkEntry({ command: 'false', on_failure: 'warn' }), event, ctx);
     expect(outcome.kind).toBe('warn');
+  });
+
+  it('returns warn when a hook exits 127 without reading stdin', async () => {
+    const outcome = await runHook(
+      mkEntry({
+        command: process.execPath,
+        args: ['-e', 'process.exit(127)'],
+        on_failure: 'warn',
+      }),
+      event,
+      ctx,
+    );
+    expect(outcome).toEqual({ kind: 'warn', message: 'command exited with code 127' });
   });
 
   it('returns warn when command not found (ENOENT)', async () => {

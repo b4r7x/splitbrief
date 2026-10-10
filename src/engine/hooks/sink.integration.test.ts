@@ -239,7 +239,8 @@ describe('createHookSink', () => {
 
   it('dispatches on_halt for recovery_prompted with the halt payload', async () => {
     const marker = join(projectDir, 'halt-payload.json');
-    const script = `let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(marker)},s)})`;
+    const tempMarker = `${marker}.tmp`;
+    const script = `let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(tempMarker)},s);fs.renameSync(${JSON.stringify(tempMarker)},${JSON.stringify(marker)})})`;
     const hooks = trust({
       on_halt: [makeCommandHookEntry({ command: 'node', args: ['-e', script], name: 'halt' })],
     });
@@ -265,7 +266,8 @@ describe('createHookSink', () => {
 
   it('resolves the workspace at fire time for a post_task hook', async () => {
     const marker = join(projectDir, 'workspace-payload.json');
-    const script = `let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(marker)},s)})`;
+    const tempMarker = `${marker}.tmp`;
+    const script = `let s='';process.stdin.on('data',(c)=>{s+=c}).on('end',()=>{const fs=require('node:fs');fs.writeFileSync(${JSON.stringify(tempMarker)},s);fs.renameSync(${JSON.stringify(tempMarker)},${JSON.stringify(marker)})})`;
     const hooks = trust({
       post_task: [makeCommandHookEntry({ command: 'node', args: ['-e', script], name: 'ws' })],
     });

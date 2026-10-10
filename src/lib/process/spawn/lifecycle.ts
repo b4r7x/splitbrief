@@ -61,6 +61,7 @@ interface SpawnPipeOptions<T> {
   detached?: boolean | undefined;
   ledger?: boolean | undefined;
   stdin?: string | undefined;
+  stdinOptional?: boolean | undefined;
   signal?: AbortSignal | undefined;
   idle?: SpawnIdleOptions | undefined;
   outputBudgetBytes?: number | undefined;
@@ -75,6 +76,10 @@ interface SpawnPipeOptions<T> {
 
 function abortError(): DOMException {
   return new DOMException('The operation was aborted.', 'AbortError');
+}
+
+function isStdinReaderGone(err: Error): boolean {
+  return 'code' in err && (err.code === 'EPIPE' || err.code === 'ENOTCONN');
 }
 
 function defaultFatalRemediation(state: SpawnPipeFatalState): string {
@@ -378,7 +383,11 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
         unregisterProcess(proc);
         return;
       }
-      if (opts.stdin !== undefined && (!stdinWriteComplete || !stdinEndComplete)) {
+      if (
+        opts.stdin !== undefined &&
+        !opts.stdinOptional &&
+        (!stdinWriteComplete || !stdinEndComplete)
+      ) {
         terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete() });
         return;
       }
@@ -399,7 +408,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
     });
 
     stdin.on('error', (err: NodeJS.ErrnoException) => {
-      if (opts.stdin === undefined && err.code === 'EPIPE') return;
+      if ((opts.stdin === undefined || opts.stdinOptional) && isStdinReaderGone(err)) return;
       terminate(
         opts.stdin === undefined
           ? { kind: 'error', error: err }
@@ -446,6 +455,7 @@ export function spawnPipe<T>(opts: SpawnPipeOptions<T>): Promise<T> {
 
     stdin.write(opts.stdin, (err) => {
       if (err) {
+        if (opts.stdinOptional && isStdinReaderGone(err)) return;
         terminate({ kind: 'stdin-incomplete', error: spawnPipeError.stdinIncomplete(err) });
         return;
       }

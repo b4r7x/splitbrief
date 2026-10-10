@@ -125,6 +125,21 @@ describe('spawnWithTimeout', () => {
     ).rejects.toMatchObject({ kind: 'process-output' });
   });
 
+  it('preserves code, stdout and stderr when a child exits 127', async () => {
+    await expect(
+      spawnWithTimeout({
+        command: process.execPath,
+        args: ['-e', 'console.log("output"); console.error("error"); process.exit(127)'],
+        cwd: process.cwd(),
+        timeout: 5000,
+        onProgress: () => {},
+      }),
+    ).rejects.toMatchObject({
+      kind: 'process-output',
+      data: { code: 127, output: 'output\n', stderr: 'error\n' },
+    });
+  });
+
   it('writes stdinInput when provided', async () => {
     const result = await spawnWithTimeout({
       command: 'node',

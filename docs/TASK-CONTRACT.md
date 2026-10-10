@@ -459,22 +459,55 @@ Every run writes a per-session evidence ledger to `.splitbrief/sessions/<id>/evi
 (constant `EVIDENCE_FILE`, file mode `0o600`). The ledger is the durable record of
 what each check actually did, per task, alongside the writer receipts below. It is
 written incrementally as tasks reach a terminal state and amended once the
-final review completes. API bundle applications in the run workspace update `promotedFiles` (the name
-predates the run workspace) from the writer's result before validation. This collection keeps only the latest receipt for each target path
-across all tasks. `promotedBriefHash` binds it to the single brief definition,
-excluding runtime status, captured code and run output (`checkResults`, `inputHashes`). A changed brief resets its receipt
-collection. Historical `promotionAttempts` from older runs remain available for
-review, but never authorize current ownership. Before a possible target write, the orchestrator invalidates prior ownership
-for the affected paths. If invalidation cannot persist, the writer does not run.
-A missing later receipt therefore cannot revive an earlier version. Unknown
-failed writes also invalidate earlier ownership for their path. Legacy receipts without this identity, or API results
-without a verified mode, cannot prove ownership. Direct writes without writer
-receipts stay unproved; the approval gate does not infer authorship by rereading
-the target. A target that already matches staged bytes takes no write and gains
-no new receipt. An actual write that creates an absent target also records
-`created: true` on its writer receipt. The ledger retains that fact separately
-in `apiCreatedPaths`, so a later API attempt can modify its own created anchor.
-Losing a receipt leaves that creation unproved.
+final review completes.
+
+`persistApiApplyEvidence` records API bundle results in `apiApply` with
+`workspacePath` before the caller handles the attempt outcome. Current build and
+retry callers supply the workspace path. These results do not update
+`promotedFiles`. When called without a workspace path, `recordApiApplyEvidence`
+updates `promotedFiles` from the applied files. This collection keeps only the
+latest receipt for each target path across all tasks. `promotedBriefHash` binds
+it to the single brief definition, excluding runtime status, captured code and
+run output (`checkResults`, `inputHashes`).
+
+The next recorded target write resets the collection when the brief changes.
+`withTargetWrites` replaces receipts for applied paths and removes those paths
+from other tasks' collections. It also removes prior receipts for the failed
+path of a partial or failed result. It does not invalidate receipts before a
+write.
+
+Historical `promotionAttempts` remain available for review, but never
+authorize current ownership. Historical receipts do not prove current contents.
+Direct workspace writes have separate completion evidence in
+`review-changes.json`.
+
+A promotion whose target changed from the acquisition baseline but now matches
+the staged entry takes no write and gains no receipt. Staged promotion still
+sets `created: true` on `appliedFiles` when a write creates a target that the
+acquisition baseline proves absent. The evidence schema still accepts this flag
+in `promotedFiles` and `promotionAttempts`. `withTargetWrites` does not copy the
+flag into `apiCreatedPaths`.
+
+`provenCreatedPaths` reads retained `apiCreatedPaths` and creation entries from
+`apiApply.applied`. An entry proves creation when `action` is `create`,
+`beforeSha256` is null, and its path is absent from `revertedPaths`. The receipt's
+`workspacePath` must be absent or match the requested workspace. Checkout
+recovery calls `recordApiRevertEvidence` to mark applied paths as reverted. Those
+applied entries no longer prove creation; retained `apiCreatedPaths` stay
+unchanged.
+
+`recordApiApplyEvidence` and `withTargetWrites` retain existing `apiCreatedPaths`
+and creations from an `apiApply` receipt without `workspacePath`.
+Both call `provenCreatedPaths` without a workspace argument.
+An API result recorded without `workspacePath` also adds its new creations there.
+A receipt with `workspacePath` proves creation only while it is the current
+`apiApply` for the same workspace. The next recorded API result replaces that
+receipt. These calls do not retain that receipt's creations in `apiCreatedPaths`.
+
+`recordedApiCreatedPaths` reads available creation proof for later build and
+retry calls. They pass it as `createdByThisTask` so an API attempt can modify
+its own created anchor. The creation check does not read `created: true` from
+promotion receipts. A missing or unreadable ledger supplies no creation proof.
 
 ### Shape
 
@@ -515,7 +548,7 @@ type EvidenceLedger = {
     // Absent on sessions written before this spec; readers treat absent and `null` identically.
     briefHash?: string | null;
     promotedBriefHash?: string; // hashTaskBrief([task]) of the brief that wrote promotedFiles
-    promotedFiles?: Array<{ path: string; sha256: string | null; mode: number | null; created?: true }>;  // latest writer receipt per target path; null digest and mode = deleted
+    promotedFiles?: Array<{ path: string; sha256: string | null; mode: number | null; created?: true }>;  // latest target writer receipt per path; API workspace results use apiApply; null digest and mode = deleted
   }>;
   validationSummary: { passed: number; failed: number; skipped: number; escalated: number };
   finalReview?: { path: string; status: 'written' | 'failed' | 'skipped' };
