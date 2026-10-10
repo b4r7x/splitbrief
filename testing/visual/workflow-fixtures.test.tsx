@@ -299,10 +299,10 @@ describe('workflow visual fixtures', () => {
           await new Promise((resolve) => setTimeout(resolve, 20));
         }
         expect(
-          reached.some((frame) =>
-            frame.includes(
-              'BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high · Balance spent on OpenCode CLI',
-            ),
+          reached.some(
+            (frame) =>
+              frame.includes('BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high') &&
+              frame.includes('Balance spent on OpenCode CLI'),
           ),
         ).toBe(true);
       } finally {
@@ -346,6 +346,55 @@ describe('workflow visual fixtures', () => {
       }
     },
   );
+
+  it('no gallery fixture seeds final-review planner prose', () => {
+    for (const projection of workflowFixtureProjections.values()) {
+      expect(
+        projection.events.filter(
+          (event) => event.type === 'planner_text' && event.phase === 'final-review',
+        ),
+        projection.scenarioId,
+      ).toHaveLength(0);
+    }
+  });
+
+  it('drift fixtures contain no synthetic reviewer prose', async () => {
+    for (const fixture of [
+      { id: 'workflow-review-drift-clean', headline: 'Drift · clean' },
+      {
+        id: 'workflow-review-drift-found',
+        headline: 'Drift · failed · 2 errors · 3 warnings',
+      },
+    ]) {
+      const projection = workflowFixtureProjections.get(scenarioId(fixture.id));
+      if (!projection) throw new Error(`Missing drift scenario ${fixture.id}`);
+      expect(
+        projection.events.filter(
+          (event) => event.type === 'planner_text' && event.phase === 'final-review',
+        ),
+      ).toHaveLength(0);
+      expect(projection.events).toContainEqual(
+        expect.objectContaining({ type: 'review_checks', scope: 'final', status: 'planned' }),
+      );
+      expect(
+        projection.events.filter((event) => event.type === 'full_suite' && event.status === 'done'),
+      ).toHaveLength(4);
+      expect(projection.events).toContainEqual(expect.objectContaining({ type: 'drift_report' }));
+
+      const scenario = findVisualScenario(fixture.id);
+      const checkpoint = scenario?.checkpoints[0];
+      if (!scenario || !checkpoint) throw new Error(`Missing drift checkpoint ${fixture.id}`);
+      for (const renderViewport of REQUIRED_VIEWPORTS) {
+        const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+        try {
+          const frame = stripTerminalControls(await ui.waitForCheckpoint());
+          expect(frame).toContain(fixture.headline);
+        } finally {
+          await ui.unmount();
+        }
+      }
+    }
+  });
 
   it('shows three completed briefs before the mixed base review checks', async () => {
     const projection = workflowFixtureProjections.get(scenarioId('workflow-review-base-mixed'));

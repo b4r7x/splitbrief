@@ -34,6 +34,94 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
 });
 
 describe('parseEngineEvent', () => {
+  it('round-trips a drift_report with findings', () => {
+    const event = {
+      type: 'drift_report',
+      ts: 1,
+      phase: 'final-review',
+      passed: false,
+      errorCount: 1,
+      warningCount: 1,
+      findings: [
+        {
+          severity: 'error',
+          code: 'failed_task_with_diff',
+          taskId: 'T002',
+          file: 'src/b.ts',
+          message: 'Failed task T002 left changes in src/b.ts.',
+        },
+        { severity: 'warning', code: 'missing_expected_file', message: 'No changes in src/a.ts.' },
+        { severity: 'info', code: 'out_of_scope_file', message: 'src/extra.ts touched.' },
+      ],
+    };
+
+    expect(parseEngineEvent(JSON.parse(JSON.stringify(event)))).toEqual(event);
+  });
+
+  it('still parses a legacy drift_report without findings', () => {
+    const event = {
+      type: 'drift_report',
+      ts: 1,
+      phase: 'final-review',
+      passed: false,
+      errorCount: 1,
+      warningCount: 2,
+      score: 0.6,
+    };
+
+    expect(parseEngineEvent(event)).toEqual(event);
+  });
+
+  it('rejects a drift_report with an invalid finding severity', () => {
+    expect(
+      parseEngineEvent({
+        type: 'drift_report',
+        ts: 1,
+        phase: 'final-review',
+        passed: false,
+        errorCount: 1,
+        warningCount: 0,
+        findings: [{ severity: 'fatal', code: 'orphan_diff', message: 'Invalid severity.' }],
+      }),
+    ).toBeNull();
+  });
+
+  it('rejects a drift_report whose findings are not an array', () => {
+    expect(
+      parseEngineEvent({
+        type: 'drift_report',
+        ts: 1,
+        phase: 'final-review',
+        passed: true,
+        errorCount: 0,
+        warningCount: 0,
+        findings: 'clean',
+      }),
+    ).toBeNull();
+  });
+
+  it('drops retired findings from a drift_report through the shared findings schema', () => {
+    const finding = {
+      severity: 'warning',
+      code: 'missing_expected_file',
+      message: 'No changes in src/a.ts.',
+    };
+    const event = {
+      type: 'drift_report',
+      ts: 1,
+      phase: 'final-review',
+      passed: true,
+      errorCount: 0,
+      warningCount: 1,
+      findings: [
+        finding,
+        { severity: 'error', code: 'out_of_bounds_text_match', message: 'Retired finding.' },
+      ],
+    };
+
+    expect(parseEngineEvent(event)).toEqual({ ...event, findings: [finding] });
+  });
+
   it.each([
     ['all', 'plan'],
     ['spec', 'plan'],

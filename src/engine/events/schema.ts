@@ -13,6 +13,7 @@ import {
   WorkflowModeSchema,
 } from '../../core/schemas/enums.js';
 import { AttachedInputSchema } from '../../core/schemas/attachment.js';
+import { DriftFindingsSchema } from '../../core/schemas/drift.js';
 import { CheckResultSchema, TaskIdSchema } from '../../core/schemas/task.js';
 import { AnsweredQuestionSchema } from '../../core/schemas/question.js';
 import { PlannerCallSchema, StepCutSchema, StepRefSchema } from '../../core/schemas/run-step.js';
@@ -406,6 +407,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     passed: z.boolean(),
     errorCount: z.number(),
     warningCount: z.number(),
+    findings: DriftFindingsSchema.optional(),
   }),
   phaseEvent('drift_chain_detected').extend({
     chainLength: z.number(),

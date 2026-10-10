@@ -356,11 +356,17 @@ Older files can name retired actions; `RETIRED_RECOVERY_ACTIONS` reads `revise-s
 
 ### Drift detection (final review)
 
-**What it does.** Before final review, the orchestrator computes a deterministic drift report comparing the Task Brief against the actual git diff and the captured brief diffs. Findings include out-of-scope file edits, missing target files, orphan diffs, out-of-bounds substring matches, and failed tasks that nevertheless left changes.
+**What it does.** Before final review, the orchestrator computes a deterministic drift report. The orchestrator compares the Task Brief with the actual git diff and the captured brief diffs. Findings include out-of-scope file edits, missing target files, orphan diffs, and changes from failed tasks.
 
-**How to use.** Always runs. Persisted as `.splitbrief/sessions/<id>/drift-report.json`; rendered into the final review prompt under `## Deterministic Drift Report`. Event: `drift_report` carrying `passed`, `errorCount`, `warningCount`. Visible in a closed run’s `Run` block's `Scope` row — `clean`, `1 error · 1 warning`, or `not checked`. That row is the only place the screen names the concept.
+**How to use.** The orchestrator always runs drift detection. It saves the report as `.splitbrief/sessions/<id>/drift-report.json`. It includes the report in the final review prompt under `## Deterministic Drift Report`. The `drift_report` event carries `passed`, `errorCount`, `warningCount`, and `findings`.
 
-**When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment. There are no cross-task drift chains and no drift score: `workflow.driftChainThreshold` is a retired key that loads with one notice and is ignored.
+The transcript shows one dim `Drift · clean` row when the report has no errors and no warnings. A report with warnings only shows `Drift · N warnings` in warning tone. A failed report shows `Drift · failed` in error tone. The failed headline includes the error and warning counts when they are not zero.
+
+The transcript lists error and warning findings under the headline, errors first, indented two columns. It shows at most three findings. When more findings exist, it shows a `+N more findings · click` row. A mouse click on the drift rows shows all error and warning findings. Another click hides the findings beyond the first three. The transcript never shows information findings.
+
+An older event without findings shows only the headline. A closed run's `Run` block also shows a `Scope` row with `clean`, `1 error · 1 warning`, or `not checked`.
+
+**When to use.** No setup needed; the report is the deterministic input to the planner reviewer's qualitative judgment. SPLITBRIEF has no cross-task drift chains and no drift score. The configuration loader ignores the retired `workflow.driftChainThreshold` key and emits one notice.
 
 ### Checks log
 

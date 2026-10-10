@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import { taskId } from '../../../../core/schemas/task.js';
+import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
@@ -143,22 +144,297 @@ describe('event row dispatch', () => {
     expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
   });
 
-  it('states the drift findings without a score, even for an old event that carried one', () => {
-    const text = (event: EngineEvent): string =>
-      eventRows({
+  describe('drift_report rows', () => {
+    const base: EngineEventOf<'drift_report'> = {
+      type: 'drift_report',
+      ts: 0,
+      phase: 'final-review',
+      passed: true,
+      errorCount: 0,
+      warningCount: 0,
+    };
+
+    function driftRows(
+      event: EngineEventOf<'drift_report'>,
+      width = 80,
+      expanded = false,
+    ): ConversationRow[] {
+      return eventRows({
         event,
         globalIndex: 0,
-        expanded: false,
-        ctx: { width: 80, viewportRows: 20, streaming },
-      })
-        .map(rowText)
-        .join('\n');
-    const base = { type: 'drift_report', ts: 0, phase: 'final-review', passed: true } as const;
+        expanded,
+        ctx: { width, viewportRows: 20, streaming },
+      });
+    }
 
-    expect(text({ ...base, errorCount: 0, warningCount: 0 })).toContain('clean');
-    const old = text({ ...base, score: 0.6, errorCount: 1, warningCount: 1 } as EngineEvent);
-    expect(old).toContain('1 error · 1 warning');
-    expect(old).not.toContain('score');
+    it.each([60, 80, 120])('renders clean drift as one quiet message row at width %i', (width) => {
+      const rows = driftRows({ ...base, findings: [] }, width);
+
+      expect(rows.map(rowText)).toEqual(['Drift · clean']);
+      expect(rows.every((row) => row.kind === 'message')).toBe(true);
+      expect(
+        rows.flatMap((row) => row.segments).every((segment) => segment.tone === 'textDim'),
+      ).toBe(true);
+      expect(rows.flatMap((row) => row.segments).some((segment) => segment.bold)).toBe(false);
+    });
+
+    it.each([1, 2])('renders %i warnings with a warning headline and dim detail rows', (count) => {
+      const findings: DriftFinding[] = [
+        { severity: 'warning', code: 'missing_expected_file', message: 'No changes in src/a.ts.' },
+        { severity: 'warning', code: 'missing_evidence', message: 'No evidence for T002.' },
+      ];
+      const event: EngineEventOf<'drift_report'> = {
+        ...base,
+        warningCount: count,
+        findings: findings.slice(0, count),
+      };
+      const rows = driftRows(event);
+
+      expect(rows.map(rowText)).toEqual([
+        count === 1 ? 'Drift · 1 warning' : 'Drift · 2 warnings',
+        '  warning · No changes in src/a.ts.',
+        ...(count === 2 ? ['  warning · No evidence for T002.'] : []),
+      ]);
+      expect(rows[0]?.segments.every((segment) => segment.tone === 'warning')).toBe(true);
+      expect(
+        rows
+          .slice(1)
+          .flatMap((row) => row.segments)
+          .every((segment) => segment.tone === 'textDim'),
+      ).toBe(true);
+    });
+
+    it('renders failed drift in error tone with errors before warnings', () => {
+      const rows = driftRows({
+        ...base,
+        passed: false,
+        errorCount: 1,
+        warningCount: 1,
+        findings: [
+          {
+            severity: 'warning',
+            code: 'missing_expected_file',
+            message: 'No changes in src/a.ts.',
+          },
+          {
+            severity: 'error',
+            code: 'failed_task_with_diff',
+            message: 'Failed task T002 left changes in src/b.ts.',
+          },
+        ],
+      });
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · failed · 1 error · 1 warning',
+        '  error · Failed task T002 left changes in src/b.ts.',
+        '  warning · No changes in src/a.ts.',
+      ]);
+      expect(rows[0]?.segments.every((segment) => segment.tone === 'error')).toBe(true);
+      expect(
+        rows
+          .slice(1)
+          .flatMap((row) => row.segments)
+          .every((segment) => segment.tone === 'textDim'),
+      ).toBe(true);
+    });
+
+    it('keeps recorded counts when findings contain fewer errors', () => {
+      const rows = driftRows({
+        ...base,
+        passed: false,
+        errorCount: 4,
+        findings: [
+          { severity: 'error', code: 'failed_task_with_diff', message: 'First error.' },
+          { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
+          { severity: 'error', code: 'orphan_diff', message: 'Second error.' },
+        ],
+      });
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · failed · 4 errors',
+        '  error · First error.',
+        '  error · Second error.',
+      ]);
+    });
+
+    const manyFindings: EngineEventOf<'drift_report'> = {
+      ...base,
+      passed: false,
+      errorCount: 3,
+      warningCount: 2,
+      findings: [
+        { severity: 'warning', code: 'missing_expected_file', message: 'First warning.' },
+        { severity: 'error', code: 'failed_task_with_diff', message: 'First error.' },
+        { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
+        { severity: 'error', code: 'orphan_diff', message: 'Second error.' },
+        { severity: 'warning', code: 'missing_evidence', message: 'Second warning.' },
+        { severity: 'error', code: 'failed_task_with_diff', message: 'Third error.' },
+      ],
+    };
+
+    it('collapses to three findings and counts only hidden errors and warnings', () => {
+      const rows = driftRows(manyFindings);
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · failed · 3 errors · 2 warnings',
+        '  error · First error.',
+        '  error · Second error.',
+        '  error · Third error.',
+        '  +2 more findings · click',
+      ]);
+      expect(
+        rows
+          .slice(1)
+          .flatMap((row) => row.segments)
+          .every((segment) => segment.tone === 'textDim'),
+      ).toBe(true);
+    });
+
+    it('expands to all findings in severity order without information or a notice', () => {
+      expect(driftRows(manyFindings, 80, true).map(rowText)).toEqual([
+        'Drift · failed · 3 errors · 2 warnings',
+        '  error · First error.',
+        '  error · Second error.',
+        '  error · Third error.',
+        '  warning · First warning.',
+        '  warning · Second warning.',
+      ]);
+    });
+
+    it('uses a singular finding notice', () => {
+      const rows = driftRows({
+        ...manyFindings,
+        errorCount: 2,
+        findings: manyFindings.findings?.slice(0, 5),
+      });
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · failed · 2 errors · 2 warnings',
+        '  error · First error.',
+        '  error · Second error.',
+        '  warning · First warning.',
+        '  +1 more finding · click',
+      ]);
+    });
+
+    it('renders a legacy event with counts only and ignores its score', () => {
+      const legacy = { ...base, passed: false, errorCount: 1, warningCount: 2, score: 0.6 };
+
+      expect(driftRows(legacy).map(rowText)).toEqual(['Drift · failed · 1 error · 2 warnings']);
+      expect(driftRows(legacy, 80, true).map(rowText)).toEqual([
+        'Drift · failed · 1 error · 2 warnings',
+      ]);
+    });
+
+    it.each([
+      [0, 0, 'Drift · failed'],
+      [1, 0, 'Drift · failed · 1 error'],
+      [0, 1, 'Drift · failed · 1 warning'],
+    ])(
+      'omits zero counts from failed drift with %i errors and %i warnings',
+      (errorCount, warningCount, headline) => {
+        const rows = driftRows({ ...base, passed: false, errorCount, warningCount });
+
+        expect(rows.map(rowText)).toEqual([headline]);
+        expect(rows[0]?.segments.every((segment) => segment.tone === 'error')).toBe(true);
+      },
+    );
+
+    it('keeps information findings out of a clean row', () => {
+      expect(
+        driftRows({
+          ...base,
+          findings: [
+            { severity: 'info', code: 'out_of_scope_file', message: 'Hidden information.' },
+          ],
+        }).map(rowText),
+      ).toEqual(['Drift · clean']);
+    });
+
+    it.each([60, 80, 120])('hangs a long finding within width %i under its first row', (width) => {
+      const message =
+        'Failed task T002 left changes in src/b.ts. The changes include 日本語 labels and several additional paths that need review before this run can finish.';
+      const rows = driftRows(
+        {
+          ...base,
+          passed: false,
+          errorCount: 1,
+          findings: [{ severity: 'error', code: 'failed_task_with_diff', message }],
+        },
+        width,
+      );
+      const details = rows.slice(1);
+
+      expect(textAt(rows, 0)).toBe('Drift · failed · 1 error');
+      expect(details.length).toBeGreaterThan(1);
+      expect(
+        details
+          .map((row, index) =>
+            rowText(row)
+              .slice(index === 0 ? 2 : 4)
+              .trimEnd(),
+          )
+          .join(' '),
+      ).toBe(`error · ${message}`);
+      for (const [index, row] of details.entries()) {
+        expect(rowText(row).search(/\S/)).toBe(index === 0 ? 2 : 4);
+        expect(row.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+      }
+      for (const row of rows) {
+        expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
+          width,
+        );
+      }
+    });
+
+    it('hangs a missing-file warning under its finding before the disclosure row', () => {
+      const rows = driftRows(
+        {
+          ...base,
+          warningCount: 5,
+          findings: [
+            { severity: 'warning', code: 'missing_evidence', message: 'First warning.' },
+            { severity: 'warning', code: 'missing_evidence', message: 'Second warning.' },
+            {
+              severity: 'warning',
+              code: 'missing_expected_file',
+              message: 'Task T004 reached done but test/renewals.test.js was not changed.',
+            },
+            { severity: 'warning', code: 'missing_evidence', message: 'Fourth warning.' },
+            { severity: 'warning', code: 'missing_evidence', message: 'Fifth warning.' },
+          ],
+        },
+        45,
+      );
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · 5 warnings',
+        '  warning · First warning.',
+        '  warning · Second warning.',
+        '  warning · Task T004 reached done but ',
+        '    test/renewals.test.js was not changed.',
+        '  +2 more findings · click',
+      ]);
+    });
+
+    it('hangs a wrapped headline and disclosure under their own first rows', () => {
+      const rows = driftRows(manyFindings, 28);
+
+      expect(rows.map(rowText)).toEqual([
+        'Drift · failed · 3 errors',
+        '  2 warnings',
+        '  error · First error.',
+        '  error · Second error.',
+        '  error · Third error.',
+        '  +2 more findings ',
+        '    click',
+      ]);
+      for (const row of rows) {
+        expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
+          28,
+        );
+      }
+    });
   });
 
   it('reads a retired approval toggle without a transcript row', () => {
@@ -1748,16 +2024,42 @@ describe('review_checks rows', () => {
       expanded: false,
       ctx: { width: 60, viewportRows: 20, streaming },
     });
-    const texts = rows.map(rowText).filter((text) => text.trim() !== '');
+    expect(rows.map(rowText)).toEqual([
+      'Reviewer checks · chose 1 · declined 1',
+      '  declined · npm run test:e2e · It needs a browser, and ',
+      '    the change touches no screen at all.',
+    ]);
+    for (const row of rows) {
+      expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
+        60,
+      );
+    }
+  });
 
-    expect(texts[0]?.trim()).toBe('Reviewer checks · chose 1 · declined 1');
-    const headIndent = (texts[0] ?? '').search(/\S/);
-    const declined = texts.slice(1);
-    expect(declined.length).toBeGreaterThan(1);
-    expect(declined[0]?.trim().startsWith('declined · npm run test:e2e ·')).toBe(true);
-    for (const text of declined) {
-      expect(text.search(/\S/)).toBe(headIndent + 2);
-      expect(getTerminalCellWidth(text)).toBeLessThanOrEqual(60);
+  it('hangs a wrapped header and declined reason under their own first rows', () => {
+    const event: EngineEventOf<'review_checks'> = {
+      ...reviewChecks(),
+      declined: [{ target: 'npm run test:e2e', reason: 'Needs a browser.' }],
+    };
+    const width = 35;
+    const rows = eventRows({
+      event,
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width, viewportRows: 20, streaming },
+    });
+    const texts = rows.map(rowText);
+
+    expect(texts).toEqual([
+      'Reviewer checks · chose 1 ',
+      '  declined 1',
+      '  declined · npm run test:e2e ',
+      '    Needs a browser.',
+    ]);
+    for (const text of texts) {
+      expect(text.trimStart().startsWith('·')).toBe(false);
+      expect(text.trimEnd().endsWith(' ·')).toBe(false);
+      expect(getTerminalCellWidth(text)).toBeLessThanOrEqual(width - rowLeadingCells('message'));
     }
   });
 

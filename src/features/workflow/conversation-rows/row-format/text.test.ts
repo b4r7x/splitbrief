@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
 import { sanitizeRowDisplayText, wrappedProseTexts, wrappedRowTexts } from './text.js';
 
@@ -55,22 +56,47 @@ describe('wrappedProseTexts', () => {
     expect(wrappedProseTexts('aaaa bbbb cccc', 9)).toEqual(['aaaa bbbb', 'cccc']);
   });
 
-  it('breaks before a separator dot, never after it', () => {
-    // The plain wrapper takes the space after the dot as its break and leaves the dot trailing.
-    expect(wrappedRowTexts('aaa · bbb · ccc', 11)).toEqual(['aaa · bbb ·', ' ccc']);
-    expect(wrappedProseTexts('aaa · bbb · ccc', 11)).toEqual(['aaa · bbb ', '· ccc']);
-    expect(wrappedProseTexts('aaa · bbb · ccc', 12)).toEqual(['aaa · bbb ', '· ccc']);
-    expect(wrappedProseTexts('aaa · bbb · ccc', 9)).toEqual(['aaa · bbb', '· ccc']);
+  it('drops a separator at a soft wrap boundary', () => {
+    for (const width of [9, 11, 12]) {
+      const lines = wrappedProseTexts('aaa · bbb · ccc', width);
+
+      expect(lines.map((line) => line.trim())).toEqual(['aaa · bbb', 'ccc']);
+      expect(lines.every((line) => !line.trimEnd().endsWith(' ·'))).toBe(true);
+      expect(lines.every((line) => getTerminalCellWidth(line) <= width)).toBe(true);
+    }
   });
 
-  it('keeps a fix check verdict whole and ends no line on a separator at 80 columns', () => {
+  it('keeps reviewer verdicts on their continuation', () => {
+    const examples = [
+      {
+        width: 56,
+        check: 'Reviewer check V3 · node --test test/member.test.js',
+        verdict: 'passed · 0.1s',
+      },
+      {
+        width: 76,
+        check: 'Reviewer check V4 · node --test test/checkout.test.js test/returns.…',
+        verdict: 'passed · 0.2s',
+      },
+    ];
+
+    for (const { width, check, verdict } of examples) {
+      const lines = wrappedProseTexts(`${check} · ${verdict}`, width);
+
+      expect(lines.map((line) => line.trim())).toEqual([check, verdict]);
+      expect(lines.every((line) => !line.trimEnd().endsWith(' ·'))).toBe(true);
+      expect(lines.every((line) => getTerminalCellWidth(line) <= width)).toBe(true);
+    }
+  });
+
+  it('preserves duration NBSPs when dropping a separator', () => {
     const row = 'Fix check V2 · npm run test-ci · your 2 failures gone · 3 others left · 3m 0s';
 
     const lines = wrappedProseTexts(row, 74);
 
     expect(lines).toEqual([
       'Fix check V2 · npm run test-ci · your 2 failures gone · 3 others left ',
-      '· 3m 0s',
+      '3m 0s',
     ]);
     for (const line of lines) expect(line.trimEnd().endsWith('·')).toBe(false);
   });
@@ -78,5 +104,19 @@ describe('wrappedProseTexts', () => {
   it('leaves the first row and a trailing break space as the wrapper wrote them', () => {
     expect(wrappedProseTexts('  indented', 20)).toEqual(['  indented']);
     expect(wrappedProseTexts('aaaa bbbb cccc', 10)).toEqual(wrappedRowTexts('aaaa bbbb cccc', 10));
+  });
+
+  it('keeps inline separators, source-line bullets and indentation', () => {
+    expect(
+      wrappedProseTexts('first\n· item\n · item\n  · indented\n  indented · detail\n', 30),
+    ).toEqual(['first', '· item', ' · item', '  · indented', '  indented · detail', '']);
+  });
+
+  it('hard wraps an oversized token after a separator', () => {
+    const lines = wrappedProseTexts('aaa · abcdefghijklmnop', 9);
+
+    expect(lines.map((line) => line.trim())).toEqual(['aaa', 'abcdefg', 'hijklmnop']);
+    expect(lines.every((line) => !line.trimEnd().endsWith(' ·'))).toBe(true);
+    expect(lines.every((line) => getTerminalCellWidth(line) <= 9)).toBe(true);
   });
 });

@@ -26,6 +26,7 @@ export function publishDriftReport(bus: EventBus, phase: Phase, report: DriftRep
     passed: report.passed,
     errorCount,
     warningCount,
+    findings: report.findings,
   };
   bus.publish(event);
 }

@@ -1063,6 +1063,398 @@ describe('buildConversationRowsProjection section spacers', () => {
   });
 });
 
+describe('buildConversationRowsProjection check lists', () => {
+  const commands = ['loan', 'renewals', 'member', 'services'].map((name, index) => ({
+    id: `V${index + 1}`,
+    command: `node --test test/${name}.test.js`,
+    reason: `Checks ${name}.`,
+  }));
+  const header: EngineEventOf<'review_checks'> = {
+    type: 'review_checks',
+    ts: 1,
+    phase: 'final-review',
+    scope: 'final',
+    status: 'planned',
+    commands,
+    declined: [
+      {
+        target: 'npm run test:e2e',
+        reason: 'It needs a browser, and the change touches no screen.',
+      },
+    ],
+  };
+  const checks: EngineEventOf<'full_suite'>[] = commands.map((command, index) => ({
+    type: 'full_suite',
+    ts: index + 2,
+    phase: 'final-review',
+    status: 'done',
+    id: command.id,
+    command: command.command,
+    moment: 'pre-review',
+    passed: true,
+    duration: index === 1 || index === 3 ? 200 : 100,
+  }));
+  const drift: EngineEventOf<'drift_report'> = {
+    type: 'drift_report',
+    ts: 6,
+    phase: 'final-review',
+    passed: true,
+    errorCount: 0,
+    warningCount: 0,
+  };
+  const firstCheck: EngineEventOf<'full_suite'> = {
+    type: 'full_suite',
+    ts: 2,
+    phase: 'final-review',
+    status: 'done',
+    id: 'V1',
+    command: 'node --test a.js',
+    moment: 'pre-review',
+    passed: true,
+  };
+  const secondCheck: EngineEventOf<'full_suite'> = { ...firstCheck, ts: 3, id: 'V2' };
+  const shortHeader: EngineEventOf<'review_checks'> = { ...header, declined: [] };
+
+  function projectionFor(items: EngineEvent[], cols = 120) {
+    return buildConversationRowsProjection({
+      sections: [{ type: 'events', startIndex: 0, items }],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols,
+      viewportHeight: 20,
+      streaming,
+    });
+  }
+
+  function materialize(projection: ReturnType<typeof buildConversationRowsProjection>) {
+    return materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+  }
+
+  it('stacks reviewer checks and drift between surrounding messages', () => {
+    const projection = projectionFor([
+      { type: 'user_message', ts: 0, phase: 'idle', text: 'Check the changes.' },
+      header,
+      ...checks,
+      drift,
+      { type: 'planner_text', ts: 7, phase: 'final-review', text: 'Review is ready.' },
+    ]);
+    const rows = materialize(projection);
+
+    expect(rows.map(rowText)).toEqual([
+      'Check the changes.',
+      '',
+      'Reviewer checks · chose 4 · declined 1',
+      '  declined · npm run test:e2e · It needs a browser, and the change touches no screen.',
+      'Reviewer check V1 · node --test test/loan.test.js · passed · 0.1s',
+      'Reviewer check V2 · node --test test/renewals.test.js · passed · 0.2s',
+      'Reviewer check V3 · node --test test/member.test.js · passed · 0.1s',
+      'Reviewer check V4 · node --test test/services.test.js · passed · 0.2s',
+      'Drift · clean',
+      '',
+      'Review is ready.',
+    ]);
+    expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(2);
+    expect(rows.at(0)?.kind).not.toBe('spacer');
+    expect(rows.at(-1)?.kind).not.toBe('spacer');
+    expect(projection.renderableCount).toBe(8);
+    expect(projection.totalRows).toBe(rows.length);
+  });
+
+  it('keeps adjacent checks without spacers and hangs the wrapped continuation by two columns', () => {
+    const projection = projectionFor(
+      [
+        {
+          ...firstCheck,
+          command: 'npm run lint',
+          status: 'refused',
+          detail: 'runs the package script lint, and this run changed package.json',
+        },
+        {
+          ...secondCheck,
+          command: 'npx tsc --noEmit',
+          passed: false,
+          duration: 16_000,
+        },
+      ],
+      79,
+    );
+    const rows = materialize(projection);
+
+    expect(rows.map(rowText)).toEqual([
+      'Reviewer check V1 · npm run lint · refused · runs the package script lint, ',
+      '  and this run changed package.json',
+      'Reviewer check V2 · npx tsc --noEmit · failed · 16.0s',
+    ]);
+    expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
+    expect(projection.totalRows).toBe(3);
+    expect(projection.renderableCount).toBe(2);
+    expect(
+      materializeConversationRowsWindow({ projection, windowStart: 1, windowEnd: 3 }).map(rowText),
+    ).toEqual([
+      '  and this run changed package.json',
+      'Reviewer check V2 · npx tsc --noEmit · failed · 16.0s',
+    ]);
+  });
+
+  describe.each(['pre-review', 'brief', 'base', 'plan'] as const)('moment %s', (moment) => {
+    it.each(['running', 'passed', 'failed', 'refused', 'not-run', 'stopped'] as const)(
+      'stacks check rows for every moment and status: %s',
+      (status) => {
+        const check: EngineEventOf<'full_suite'> = {
+          ...firstCheck,
+          moment,
+          status: status === 'passed' || status === 'failed' ? 'done' : status,
+          passed: status === 'passed',
+        };
+        for (const withHeader of [true, false]) {
+          const projection = projectionFor([
+            ...(withHeader ? [shortHeader] : []),
+            check,
+            { ...check, id: 'V2' },
+            drift,
+          ]);
+          const rows = materialize(projection);
+
+          expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
+          expect(rows).toHaveLength(withHeader ? 4 : 3);
+          expect(rows.at(-1)).toMatchObject({ segments: [{ text: 'Drift · clean' }] });
+          expect(projection.renderableCount).toBe(withHeader ? 4 : 3);
+        }
+      },
+    );
+  });
+
+  it.each(['planning', 'implementing', 'validating-task', 'final-review', 'complete'] as const)(
+    'stacks legacy checks without ids in phase %s',
+    (phase) => {
+      const legacy: EngineEventOf<'full_suite'> = {
+        ...firstCheck,
+        phase,
+        id: undefined,
+        stage: 'test',
+      };
+      const rows = materialize(projectionFor([legacy, { ...legacy, command: 'npm test' }, drift]));
+
+      expect(rows.map(rowText)).toEqual([
+        'Pre-review suite · node --test a.js · passed',
+        'Pre-review suite · npm test · passed',
+        'Drift · clean',
+      ]);
+      expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
+    },
+  );
+
+  it('keeps rowless events inside a check list', () => {
+    const projection = projectionFor([
+      shortHeader,
+      makePlannerHeartbeat(),
+      firstCheck,
+      makePlannerStatus(),
+      activity({ kind: 'session', label: 'native session opened' }),
+      { type: 'planner_text', ts: 3, phase: 'final-review', content: 'markdown', text: '' },
+      secondCheck,
+      makePlannerHeartbeat(),
+      drift,
+    ]);
+
+    expect(materialize(projection).map(rowText)).toEqual([
+      'Reviewer checks · chose 4',
+      'Reviewer check V1 · node --test a.js · passed',
+      'Reviewer check V2 · node --test a.js · passed',
+      'Drift · clean',
+    ]);
+    expect(projection.renderableCount).toBe(4);
+  });
+
+  it.each(['off', 'skipped', 'planned'] as const)(
+    'joins drift after a header without commands: %s',
+    (status) => {
+      const projection = projectionFor([
+        { ...shortHeader, status, commands: [], reason: 'No checks needed.' },
+        drift,
+      ]);
+      const rows = materialize(projection);
+
+      expect(rows).toHaveLength(2);
+      expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
+      expect(rows.at(-1)).toMatchObject({ segments: [{ text: 'Drift · clean' }] });
+      expect(projection.renderableCount).toBe(2);
+    },
+  );
+
+  it.each([60, 80, 120])(
+    'materializes compact lists across wrapped row windows at %s columns',
+    (cols) => {
+      const projection = projectionFor(
+        [
+          {
+            ...header,
+            declined: [
+              {
+                target: 'npm run test:e2e',
+                reason:
+                  'This command needs a browser and a running server. The change only touches the loan calculations, so the reviewer chose the unit tests that check those calculations.',
+              },
+            ],
+          },
+          firstCheck,
+          {
+            ...secondCheck,
+            status: 'not-run',
+            detail:
+              'This check needs a running server. Start the server, then run this command from the workspace to check the changed calculations.',
+          },
+          drift,
+        ],
+        cols,
+      );
+      const rows = materialize(projection);
+
+      expect(rows.length).toBeGreaterThan(5);
+      expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
+      expect(projection.totalRows).toBe(rows.length);
+      for (const windowSize of [1, 3, 7]) {
+        const windows: ConversationRow[] = [];
+        for (let start = 0; start < projection.totalRows; start += windowSize) {
+          windows.push(
+            ...materializeConversationRowsWindow({
+              projection,
+              windowStart: start,
+              windowEnd: Math.min(projection.totalRows, start + windowSize),
+            }),
+          );
+        }
+        expect(windows).toEqual(rows);
+      }
+    },
+  );
+
+  it.each<{ name: string; event: EngineEvent }>([
+    {
+      name: 'message',
+      event: { type: 'user_message', ts: 3, phase: 'final-review', text: 'Check this too.' },
+    },
+    { name: 'activity batch', event: activity({ kind: 'read', label: 'reading a.ts' }) },
+    {
+      name: 'recovery row',
+      event: {
+        type: 'recovery_action_selected',
+        ts: 3,
+        phase: 'final-review',
+        issueId: 'issue-1',
+        reason: 'runner-usage-limit',
+        action: 'retry-same-worker',
+        seat: 'review',
+      },
+    },
+    {
+      name: 'validate row',
+      event: {
+        type: 'validate',
+        ts: 3,
+        phase: 'validating-task',
+        taskId: taskId('T001'),
+        status: 'done',
+        passed: true,
+        stages: { typecheck: true, lint: true, test: true },
+      },
+    },
+    { name: 'task header', event: makeTaskStart() },
+  ])('keeps spacers around a $name between checks', ({ event }) => {
+    const boundaryRows = materialize(projectionFor([event]));
+    const rows = materialize(projectionFor([shortHeader, firstCheck, event, secondCheck, drift]));
+
+    expect(rows.map(rowText)).toEqual([
+      'Reviewer checks · chose 4',
+      'Reviewer check V1 · node --test a.js · passed',
+      '',
+      ...boundaryRows.map(rowText),
+      '',
+      'Reviewer check V2 · node --test a.js · passed',
+      'Drift · clean',
+    ]);
+    expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(2);
+  });
+
+  it('keeps a spacer before a second review_checks header', () => {
+    const rows = materialize(
+      projectionFor([shortHeader, firstCheck, shortHeader, secondCheck, drift]),
+    );
+
+    expect(rows.map(rowText)).toEqual([
+      'Reviewer checks · chose 4',
+      'Reviewer check V1 · node --test a.js · passed',
+      '',
+      'Reviewer checks · chose 4',
+      'Reviewer check V2 · node --test a.js · passed',
+      'Drift · clean',
+    ]);
+    expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
+  });
+
+  it('keeps a spacer before a check after drift ends the list', () => {
+    const rows = materialize(projectionFor([firstCheck, drift, secondCheck, drift]));
+
+    expect(rows.map(rowText)).toEqual([
+      'Reviewer check V1 · node --test a.js · passed',
+      'Drift · clean',
+      '',
+      'Reviewer check V2 · node --test a.js · passed',
+      'Drift · clean',
+    ]);
+    expect(rows.filter((row) => row.kind === 'spacer')).toHaveLength(1);
+  });
+
+  it('keeps spacers around settled summaries and none between consecutive summaries', () => {
+    const projection = buildConversationRowsProjection({
+      sections: [
+        { type: 'events', startIndex: 0, items: [shortHeader, firstCheck] },
+        {
+          type: 'settled-stage',
+          startIndex: 2,
+          items: [],
+          summary: { stage: 'plan', feature: 'Check the changes', duration: 1000 },
+        },
+        {
+          type: 'completed-task',
+          startIndex: 3,
+          items: [],
+          summary: {
+            id: 'T001',
+            title: 'Update calculations',
+            method: 'local',
+            retries: 0,
+            duration: 1000,
+          },
+        },
+        { type: 'events', startIndex: 4, items: [secondCheck, drift] },
+      ],
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 20,
+      streaming,
+    });
+    const rows = materialize(projection);
+
+    expect(rows.map((row) => row.kind)).toEqual([
+      'message',
+      'message',
+      'spacer',
+      'summary',
+      'summary',
+      'spacer',
+      'message',
+      'message',
+    ]);
+    expect(projection.renderableCount).toBe(6);
+  });
+});
+
 describe('buildConversationRowsProjection event block cache', () => {
   it('reuses prior event blocks by identity on append', () => {
     resetEventBlockCache();
