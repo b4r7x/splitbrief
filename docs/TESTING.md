@@ -174,6 +174,8 @@ The separation from replay e2e is physical, not conventional: the live scenarios
 
 Skipping is two-layered. With the env unset every case reports skipped and the run exits `0`. With it set, a tool whose readiness detection is not `ready` — binary missing from `PATH`, not logged in — skips with a reason instead of failing, so a partial toolbox still runs what it can.
 
+A per-tool skip prints the readiness reason from `liveToolBlocker`, the tool's own detection state; `ready` requires trusted + compatible + authenticated, so `not ready (…)` almost always means the binary is missing from `PATH` or the login expired. Fix it with the tool's own install or login command, not with SPLITBRIEF. A refused model pin throws instead of skipping. That is intentional: the ceiling exists to stop a mistyped `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL` from billing a frontier model, and a silent skip would hide the typo.
+
 Model pins are cheap by default: `claude-code` → `haiku`, `codex` → `gpt-5.6-luna`, `opencode` → `opencode-go/deepseek-v4.1-flash`, `antigravity` → `gemini-3.8-flash-low`, `command-code` → `deepseek/deepseek-v4-flash`. Each is overridable via `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL`. Pins require no runtime discovery. A ceiling refuses any pin whose tokens include `opus`, `fable`, or `sol` outright, so a mistyped env var cannot burn credits on a frontier model.
 
 Both tiers run the one planning session with `approve: none`; they differ in task and assertions. Easy asks for one file (`EASY_TIER`, a 4096-token implementer context) and has a 300 s per-case timeout. Heavy asks for two files (`HEAVY_TIER`, a 128k implementer context), also asserts planner tokens, a review packet from the final review the planner holds, and the evidence summary, and has a 900 s per-case timeout. The harness aborts preparation and the workflow 10 s before Vitest's timeout, awaits settlement, then applies a ready run before checking the checkout artifact. Rows never overlap.
@@ -194,13 +196,23 @@ Above the easy/heavy pairs sits the release matrix: `testing/e2e/scenarios/live/
 
 Its switch is `SPLITBRIEF_RELEASE_LIVE=1` (the npm script `test:e2e:release` sets `SPLITBRIEF_REAL_CLI_E2E=1` itself); unset, the file prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and every row exits skipped. A tool listed in `SPLITBRIEF_LIVE_SKIP` skips its rows, ready or not, with reason `listed in SPLITBRIEF_LIVE_SKIP`. An unlisted tool that is missing or not `ready` fails its row.
 
-The release live gate is the publish smoke plus the matrix rows for `claude-code`, `codex`, `opencode` and `antigravity`, with `SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code`. Record each skipped tool in the changelog release entry as "not verified live in this release", with its reason. The owner does not need subscriptions for every tool. See [RELEASING.md](./RELEASING.md).
+The release live gate is the publish smoke plus the matrix rows for `claude-code`, `codex`, `opencode` and `antigravity`, with `SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code`. The manifest is the private release record: it names each skipped tool with its reason and is kept in `.release-records/<x>/manifest.json`, never in the changelog or the GitHub release. See [RELEASING.md](./RELEASING.md).
 
 Every row — pass, fail, or skip — is appended to `.test-artifacts/live/manifest.json` with its resolved seats, outcome, reason, totals, and duration. After a run settles, the harness copies its available artifacts, including `summary.json` and `session.jsonl`, to `.test-artifacts/live/<row-id>/` before cleanup, even on failure. Failure reasons retain the halt or last error. Passing rows prove `ready-to-apply` → Apply → `applied` before evaluating the checkout artifact.
 
 ### Publish smoke
 
 `testing/e2e/scenarios/live/publish-smoke.test.ts` is the one-row pre-publish check: the shipped crew pinned in code — `claude-code` · `opus` plans and reviews, `claude-code` · `sonnet` builds — through `runReleaseMatrixRow` on the `one-file` tier task, so the row is gated, configured, asserted and recorded exactly like a release-matrix row, plus two assertions read back from the copied artifacts: `summary.json` status `complete` and a `pass` / `pass_with_notes` verdict in `review.md`. Its switch is `SPLITBRIEF_PUBLISH_LIVE=1`, set by `npm run test:e2e:publish` together with `SPLITBRIEF_REAL_CLI_E2E=1`; unset, the file prints `skipped: SPLITBRIEF_PUBLISH_LIVE not set` and exits `0`. The pins sit above the live cost ceiling on purpose, which is why the row bypasses `liveModelPin` and never runs under the easy, heavy or release switches. One `one-file` tier run under the 300 s ceiling.
+
+## Tests pass locally but fail in CI (or vice versa)
+
+Diagnostic checklist:
+- Node version: engines field requires `>=22`. Check `node --version` matches CI.
+- `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
+- Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
+- API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
+- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` and `integration` (four vitest shards each), `e2e-replay` and `smoke` as parallel jobs, and coverage nightly.
+- Add the nightly coverage job on top with `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) — the superset of both CI workflows.
 
 ## How to add an integration test
 

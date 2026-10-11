@@ -379,39 +379,37 @@ describe('deriveApiStatus qualification gating', () => {
     expect(status).toEqual({ state: 'unavailable', remediation: 'connection refused' });
   });
 
-  it('gates a remote beta descriptor exactly as an unverified one', () => {
+  const GATED_REMEDIATION =
+    'example-provider is not compatible with SPLITBRIEF. Select a supported provider.';
+
+  it('gates a remote beta descriptor as incompatible', () => {
     const remoteBeta: ApiProviderDescriptor = {
       ...LLAMA_CPP,
+      service: 'example-provider',
       locality: 'remote',
       category: 'remote-api',
       offering: 'payg',
     };
 
     expect(deriveApiStatus(remoteBeta, runtimeSnapshot(runtimeFor('llama-cpp', FAILED)))).toEqual({
-      state: 'unverified',
-      remediation: `llama-cpp has no passing provider conformance evidence as of ${LLAMA_CPP.asOf}. Select a verified provider, or re-run \`scripts/provider-conformance.ts\` with a credential to qualify it.`,
+      state: 'incompatible',
+      remediation: GATED_REMEDIATION,
     });
   });
 
-  it.each(['unknown', 'unverified'] as const)(
-    'keeps a %s local descriptor gated',
+  it.each(['unknown', 'unverified', 'incompatible'] as const)(
+    'gates a %s local descriptor as incompatible',
     (compatibility) => {
-      const gated: ApiProviderDescriptor = { ...LLAMA_CPP, compatibility };
+      const gated: ApiProviderDescriptor = {
+        ...LLAMA_CPP,
+        service: 'example-provider',
+        compatibility,
+      };
 
-      expect(
-        deriveApiStatus(gated, runtimeSnapshot(runtimeFor('llama-cpp', FAILED))),
-      ).toMatchObject({
-        state: 'unverified',
+      expect(deriveApiStatus(gated, runtimeSnapshot(runtimeFor('llama-cpp', FAILED)))).toEqual({
+        state: 'incompatible',
+        remediation: GATED_REMEDIATION,
       });
     },
   );
-
-  it('keeps an incompatible local descriptor gated', () => {
-    const gated: ApiProviderDescriptor = { ...LLAMA_CPP, compatibility: 'incompatible' };
-
-    expect(deriveApiStatus(gated, runtimeSnapshot(runtimeFor('llama-cpp', FAILED)))).toEqual({
-      state: 'incompatible',
-      remediation: `llama-cpp failed provider conformance as of ${LLAMA_CPP.asOf}. Select a verified provider.`,
-    });
-  });
 });

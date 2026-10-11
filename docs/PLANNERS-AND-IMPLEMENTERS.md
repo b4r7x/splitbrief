@@ -797,6 +797,72 @@ The check and skill rules live in `tasks.ts` as `GATES_ARE_SPLITBRIEFS` and `SKI
 
 ---
 
+## Auth method research
+
+The research record behind [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md). That user doc states the result; this section keeps the measurements, the unused controls and the open design.
+
+### Enforcement evidence
+
+The runtime enforcement matrix `CLI_AUTH_ENFORCEMENT_EVIDENCE` is empty. No real session/API method switch is proven. `enforceCliAuthInvocation` requires positive evidence for the exact tool, platform and installed version before dispatching an explicit `session` or `api-key` choice. Without it the invocation is refused; omit the selection to use the host CLI configuration. The picker offers no method switch for these rows. A stored login, staged environment or model listing does not establish which billing method a call used.
+
+The measurements below record the staging behavior researched before that enforcement gate was added. They explain why no method was admitted; they are not instructions to configure an explicit method today.
+
+### Measurement environment
+
+macOS (`darwin`), Node 22.22.2, repository baseline `e6ffb1bc`. Every capture is a `--version` or `--help`/help-topic invocation with no prompt and no subcommand that reads or writes credentials. No generation was run, no secret file was read, no login state was touched. Where a control is documented only in a tool's help text and was not exercised, this document says so rather than assuming the text.
+
+Versions are the build on this host; the parenthesised value is `compatibility.testedVersion` in `src/core/runners/cli-tool-catalog.ts`. A control observed on a newer build is not evidence for `minimumAdmittedVersion`.
+
+#### Installed builds measured
+
+| Tool | Executable (installed / catalog tested) | Declared channels | Current method choice offered | Verdict |
+|---|---|---|---|---|
+| `claude-code` | `~/.local/bin/claude` — 2.1.273 (2.0.0) | `session`, `api-key` | no | host-configured |
+| `codex` | `…/node/v22.22.2/bin/codex` — 0.154.0 (0.40.0) | `session`, `api-key` | no | host-configured |
+| `cursor` | `~/.local/bin/cursor-agent` — 2026.09.08-6caf4ff (2026.08.25-3e8eec8) | `session`, `api-key` | no | host-configured |
+| `opencode` | `~/.opencode/bin/opencode` — 2.0.4 (0.5.0) | `provider-dependent` | no | host-configured |
+| `kilo-code` | `/opt/homebrew/bin/kilo` — 7.0.49 (0.1.0) | `provider-dependent` | no | host-configured |
+| `copilot` | `~/.local/bin/copilot` — 1.0.83 (1.0.77) | `session` | no | host-configured |
+| `command-code` | `…/node/v22.22.2/bin/cmd` — 1.54.1 (1.39.2) | `session` | no | host-configured |
+| `antigravity` | `~/.local/bin/agy` — 1.2.4 (1.2.2) | `session` | no | host-configured |
+
+Every tool declares `roles: ['planner', 'implementer']`; the reviewer seat reuses the planner runner (`resolveReviewerRunner`). The channel set is the tool's `auth.channels` in `cli-tool-catalog.ts`; "method choice offered" requires invocation-enforcement evidence, not merely multiple declared channels. The custom-only exclusions (`kiro`, `gemini`, `cline`, `qwen`, `auggie`, `junie`) are not admitted and have no row.
+
+### Follow-up: per-provider key narrowing for OpenCode 2
+
+This is a named follow-up. It is not built. Today an OpenCode or Kilo seat gets every `*_API_KEY` of the parent, so a model on one provider can read the keys of every other provider.
+
+The design:
+
+1. SPLITBRIEF cannot map a model's provider to its key variable by itself. The model id names the provider (`providerID`, for example `kimi-code-plan-global` in `kimi-code-plan-global/<model>`). Only the tool knows which variable that provider reads.
+2. `opencode auth list --standalone --format json` (OpenCode 2, measured 0.6 s on 2.0.14) prints one object per provider: `id`, `name` and `connections`. An `env` connection names its variable, for example `KIMI_API_KEY`, and never its value. The listing names an `env` connection only while that variable is set, so the oracle runs with the staged environment that carries every `*_API_KEY`.
+3. At dispatch, after the CLI start-trust gate has admitted the executable, SPLITBRIEF runs the oracle once with that trusted executable. It keeps the variables of the configured model's provider id and removes every other `*_API_KEY` from the prebuilt environment. `createRunnerSandboxEnv` cannot do this, because the trust gate lives at dispatch, not in the environment builder.
+4. If the oracle fails or times out, the dispatch fails closed with a named reason. It does not fall back to every key in silence.
+5. The cost is one extra trusted spawn per OpenCode dispatch.
+
+The limits, where the current rule stays:
+
+- **Kilo Code:** `kilo auth list` (7.0.49) prints provider display names, not provider ids, so no model maps to a variable.
+- **OpenCode 1.x:** it rejects `--standalone` and prints the boxed listing, which has no provider ids either.
+- **A seat with no model:** OpenCode then picks its own default model, so the provider is unknown.
+
+### Controls that exist in the installed builds but are not used
+
+These are the only per-invocation method controls found in any installed tool's help. None is emitted today, and none is proven; each is recorded so a later card can evaluate it instead of rediscovering it.
+
+- **`claude --bare`** (2.1.273) is the one documented native enforcement in the whole set: "Anthropic auth is strictly `ANTHROPIC_API_KEY` or `apiKeyHelper` via `--settings` (OAuth and keychain are never read)." It would make the `claude-code` `api-key` channel enforceable — but it also disables hooks, LSP, plugin sync, auto-memory and `CLAUDE.md` auto-discovery, so adopting it is a behavior change to the planner seat, not a flag flip. It is absent from `CLAUDE_BASE_ARGS`, and its presence in `minimumAdmittedVersion` 2.0.0 is unknown.
+- **`cursor-agent --api-key <key>`** supplies a key for the invocation and is documented as equivalent to `CURSOR_API_KEY`. The help says nothing about what happens when it is absent or rejected, so it is an input, not proof of precedence.
+- **`codex -c <key=value>` with `--strict-config`** can override any `~/.codex/config.toml` key for one invocation and error on keys this build does not recognise. Whether a method-selecting key exists under that mechanism was not established: settling it means running Codex against a staged config, which is more than a help capture.
+- **`copilot`'s `COPILOT_GITHUB_TOKEN`/`GH_TOKEN`/`GITHUB_TOKEN` precedence** proves the environment beats the stored login when the environment holds a token. It says nothing about the reverse case — an empty environment falls back to the stored login by design — so it cannot enforce a *selected* method.
+- **`cmd --local-only`** and **`codex --oss` / `--local-provider`** are route switches. `cli-tool-catalog.ts` already records that `cmd --help` names no API-key environment variable, which is why Command Code declares a `session` channel only.
+- **`agy --help`** (1.2.4, historical capture) exposed no authentication flag, variable or login subcommand. Current [upstream authentication docs](https://antigravity.google/docs/cli/install/#using-a-gemini-api-key), checked 2026-09-17, describe a Gemini API-key mode using a settings change plus `GEMINI_API_KEY`. SPLITBRIEF still admits only the host-configured session channel; no per-invocation method switch or fallback behavior has been proven for this adapter.
+
+### Limits of the measurements
+
+Single host, macOS only. Linux and Windows file-staging postures are read from declarations, not measured here. Antigravity is the exception: its credential bridge is admitted only on macOS, and other platforms remain unsupported with unknown authentication. Every row reflects the installed build named in the table; the catalog's `minimumAdmittedVersion` is older than every one of them, and no claim here extends downward to it. Nothing was proven by generation, by reading a credential file, or by changing a login.
+
+---
+
 ## What to read next
 
 - **[ARCHITECTURE.md](./ARCHITECTURE.md)** -- full config schemas and YAML examples for all runner kinds

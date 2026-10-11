@@ -29,7 +29,7 @@ Primary state is the `phase` field — one of 15 values from the `Phase` enum. `
 These overlays sit on top of any phase. They do not change `phase`:
 
 - **`closed`** records `{ at, as }`. `as` is `applied`, `discarded` or `ended`. Apply, Discard and `CLOSE_RUN` close worktree and staged-copy runs. A passing review or Accept as is override makes them ready to apply. Checkout runs and older runs without a recorded workspace close as `complete` on either result. An override preserves the failed verdict.
-- **`workspace`** records the run's directory, kind and base snapshot. **`applying`** records an Apply in progress and its backup. **`applied`** records the completed write. **`acceptedAsIs`** records an owner override and its open findings.
+- **`workspace`** records the run's directory, kind and base snapshot. **`applying`** records an Apply in progress and its backup. **`applied`** records the completed write. **`acceptedAsIs`** records an Accept as is override and its open findings.
 - **`interruptedStep`** — the step a stop cut: `{ step, source, cut, partialRef?, at }`. `cut` says whether the stop landed `mid-step` inside a call or on a `boundary` where it cut nothing: between two briefs, or at a gate. `source` says what cut it: `user`, `watchdog`, or `seat` for a seat halt. The run stays open and picks that step up again.
 - **`awaitingContinue`** — the boolean beside it, set by the same action and cleared by `RESUME_STEP`. It predates `interruptedStep`; a state written before that field existed still reads as parked.
 - **`lastFailure`** — `{ step, message, at }`, the error a turn died on. The run is still open; `deriveRunStatus` reports it as `failed` and the operator retries the step. `RESUME_STEP` clears it when the run is re-entered.
@@ -251,7 +251,7 @@ How a run stands is not a phase. It is derived once, by `deriveRunStatus` (`src/
 |---|---|
 | `running` | A live process holds the run. |
 | `open` | The run stopped. It carries `stop` and `resumeAt`. |
-| `ready-to-apply` | A worktree or staged-copy result has a passing review or an owner override. It awaits Apply or Discard. `override` names the override. |
+| `ready-to-apply` | A worktree or staged-copy result has a passing review or an Accept as is override. It awaits Apply or Discard. `override` names the override. |
 | `closed` | The run is over. Workspace outcomes are `applied`, `discarded` and `ended`. A passed checkout-mode run and an older passed run close as `complete`. |
 
 Continuation takes an open run. A ready run takes Apply or Discard, and a closed run takes nothing. A ready run has no pending recovery, interrupted step or Apply in progress. An `apply-conflict` or `apply-partial` halt leaves the run `open` and waiting for you on that halt. An unfinished Apply resumes at its Apply step.
@@ -284,7 +284,7 @@ Apply writes an assessed run result into your checkout once. A checkout-mode run
 
 Apply merges the current checkout into the run workspace. It uses the three states defined in [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply). The checkout receives no candidate writes during this merge.
 
-A conflict raises the `apply-conflict` halt. The owner chooses the result for each file in the workspace. Resolve every conflict before checks or review. The available choices and recovery steps are in [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
+A conflict raises the `apply-conflict` halt. You choose the result for each file in the workspace. Resolve every conflict before checks or review. The available choices and recovery steps are in [Apply conflicts](./APPROVAL-AND-RECOVERY.md#apply-conflicts).
 
 If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and the required checks again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle against `REVIEW_CYCLE_CAP`.
 
@@ -298,7 +298,7 @@ These state actions describe Apply:
 
 | Action | Effect |
 |---|---|
-| `ACCEPT_AS_IS` | Records the owner override and open findings. |
+| `ACCEPT_AS_IS` | Records the Accept as is override and open findings. |
 | `APPLY_REVIEW_START` | Re-enters `final-review` for a changed candidate and marks the checkout hunks. |
 | `APPLY_START` | Records the backup before checkout writes. |
 | `APPLY_DONE` | Records the applied files, clears `applying`, and closes as `applied`. |
@@ -529,7 +529,7 @@ Recovery actions:
 | `retry-later` | A *Seat down* action, offered only when the halt names a reset: the seat waits for that reset, then the run continues |
 | `revise` | Clears recovery and queues the operator's correction for the next planner turn; on `review-failed`, records the correction and opens one more review fix cycle |
 | `continue` | Grants extra allowance on `consult-bound-spent` or `planner-calls-spent` |
-| `accept-as-is` | Records an owner override at final review. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
+| `accept-as-is` | Records an Accept as is override at final review. Workspace runs become ready to apply; checkout runs and older runs without a workspace close. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). |
 | `restore-backup` | Restores a partial Apply through its backup. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). |
 | `skip-current-task` | Records evidence, marks task `skipped`, advances index |
 | `end-run` | Uses the shared close path. Unapplied workspace work stays in `run.patch`; a checkout-mode run writes no patch. The run closes as `ended` or `discarded`. See [Apply](#apply). |

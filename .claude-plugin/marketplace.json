@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "splitbrief",
-      "description": "Four pipeline skills and supervised dogfooding. splitbrief: brief → run → review, with impl=<tool>[:<model>][@<effort>] and review=<…> seats spawned headless. splitbrief-brief: compile briefs. splitbrief-run: execute briefs with gates, drift and retries. splitbrief-review: evidence-bound review. splitbrief-babysit: stop on tool defects, fix, verify and continue the built CLI. Pipeline prompt blocks and tool argv are generated from the SPLITBRIEF CLI",
+      "description": "Four pipeline skills. splitbrief: brief → run → review, with impl=<tool>[:<model>][@<effort>] and review=<…> seats spawned headless. splitbrief-brief: compile briefs. splitbrief-run: execute briefs with gates, drift and retries. splitbrief-review: evidence-bound review. Pipeline prompt blocks and tool argv are generated from the SPLITBRIEF CLI",
       "version": "1.0.0",
       "author": {
         "name": "b4r7x"
@@ -20,8 +20,7 @@
         "./skills/splitbrief",
         "./skills/splitbrief-brief",
         "./skills/splitbrief-run",
-        "./skills/splitbrief-review",
-        "./skills/splitbrief-babysit"
+        "./skills/splitbrief-review"
       ]
     }
   ]

@@ -91,7 +91,7 @@ const EXCLUDED_API_OFFERING_IDS = [
   'nvidia-nim',
 ] as const;
 
-const EXCLUDED_VERDICTS = ['DEFER', 'REJECT', 'GENERIC-ONLY'];
+const EXCLUDED_SUPPORT = ['Not supported', 'Generic endpoint only'];
 
 // `auto` and model absence are the same instruction for a `cli` runner, so no
 // sentence may deny one of them. Only the `api` half of the doc may say `auto`
@@ -417,7 +417,7 @@ describe('configuration documentation', () => {
     }
   });
 
-  it('records a dated defer/reject/generic-only verdict for every excluded API offering', () => {
+  it('states the support and the reason for every excluded API offering', () => {
     const forbidden = new Set<string>(FORBIDDEN_API_PROVIDER_IDS);
     for (const id of EXCLUDED_API_OFFERING_IDS) {
       expect(forbidden.has(id), `${id} is not forbidden by the catalog`).toBe(true);
@@ -429,9 +429,8 @@ describe('configuration documentation', () => {
     );
 
     for (const row of rows) {
-      const [id, verdict, asOf, reason] = row;
-      expect(EXCLUDED_VERDICTS, `verdict for ${id}`).toContain(verdict);
-      expect(asOf, `as-of for ${id}`).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      const [id, support, reason] = row;
+      expect(EXCLUDED_SUPPORT, `support for ${id}`).toContain(support);
       expect((reason ?? '').length, `reason for ${id}`).toBeGreaterThan(40);
     }
   });

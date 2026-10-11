@@ -5,7 +5,7 @@ The loading session is the planner. It spawns one headless implementer CLI per t
 The reviewer reads the candidate without editing it; this session reviews when no reviewer seat is configured.
 The skills require no SPLITBRIEF CLI.
 The CLI also owns sessions, the TUI, isolation, snapshots and token accounting.
-The skills execute in the working tree. A fifth skill, `splitbrief-babysit`, supervises the built CLI.
+The skills execute in the working tree.
 
 ## Install
 
@@ -15,26 +15,22 @@ Non-interactive, one skill into several agents:
 
     npx skills add b4r7x/splitbrief -s splitbrief -a claude-code -a cursor -a opencode -a codex -a github-copilot -a antigravity -a command-code -a kilo -y
 
-skills.sh installs into each agent's own skills directory (`.claude/skills`, `.agents/skills`, `.commandcode/skills`, `.kilo/skills`, `.kilocode/skills`, …). Add `-g` for a user-wide install. The picker lists the five skills under one `Splitbrief` group row (from `.claude-plugin/marketplace.json`).
+skills.sh installs into each agent's own skills directory (`.claude/skills`, `.agents/skills`, `.commandcode/skills`, `.kilo/skills`, `.kilocode/skills`, …). Add `-g` for a user-wide install. The picker lists the skills under one `Splitbrief` group row (from `.claude-plugin/marketplace.json`).
 
-Claude Code can also take the repo as a plugin marketplace, which installs all five at once and updates them together:
+Claude Code can also take the repo as a plugin marketplace, which installs the four skills at once and updates them together:
 
     /plugin marketplace add b4r7x/splitbrief
     /plugin install splitbrief@splitbrief
 
 ### Installers and `scripts/`
 
-The waiter (`wait-attempt.sh`) and the stop-hook gate (`splitbrief-gate.sh`) ship inside the skill directories, so an installer that copied only `SKILL.md` and `references/` would leave the run protocol without its blocking primitive. Every installer that can be exercised today preserves `scripts/` with its executable bit; the commands, trees and versions behind this table are recorded in `.nuke/2026-09-13-094954-spec-loop-granularity-monitoring-parity/evidence/installers.md`.
+The waiter (`wait-attempt.sh`) and the stop-hook gate (`splitbrief-gate.sh`) ship inside the skill directories, so an installer that copied only `SKILL.md` and `references/` would leave the run protocol without its blocking primitive. Every installer below preserves `scripts/` with its executable bit.
 
 | Installer | Command | Result | Fallback |
 |---|---|---|---|
-| skills.sh (local clone) | `npx skills add <path-to-clone> -s splitbrief-run -a claude-code -y` | `.claude/skills/splitbrief-run/scripts/wait-attempt.sh`, mode `755` | not needed |
-| skills.sh (published repo) | `npx skills add b4r7x/splitbrief -s splitbrief-run -a claude-code -y` | unverified: the published `b4r7x/splitbrief` carries no `skills/` yet, so the clone succeeds and the CLI prints `No skills found` | the inline `until … done` waiter in `references/run-protocol.md` |
+| skills.sh | `npx skills add b4r7x/splitbrief -s splitbrief-run -a claude-code -y`, or a local clone path in place of `b4r7x/splitbrief` | `.claude/skills/splitbrief-run/scripts/wait-attempt.sh`, mode `755` | not needed |
 | Claude Code plugin | `/plugin install splitbrief@splitbrief` | `scripts/` under every script-carrying skill in the plugin cache, mode `755` | not needed |
 | Manual copy | `cp -R skills/splitbrief-run ~/.claude/skills/` | the directory as it stands in the repo | not needed |
-
-The canonical `skills/splitbrief/references/run-protocol.md` holds the generated wait protocol, including the inline fallback.
-Sync copies that reference and the explicitly listed scripts into each skill that runs a tool.
 
 ## The skills
 
@@ -43,7 +39,7 @@ Sync copies that reference and the explicitly listed scripts into each skill tha
 - `splitbrief-run`: build an existing plan or brief set, continue a stopped run, fix a failed review, or run one task.
 - `splitbrief-review`: review someone else's build against its intent; leave source files unchanged.
 
-`splitbrief-run` now continues through review and bounded fixes by default.
+`splitbrief-run` continues through review and bounded fixes by default.
 It announces that scope and prints the selected stages before dispatch.
 A run directory resumes its saved stage, including review or fixes, while preserving attempts, bounds, decisions, and completed tasks.
 It reconciles active processes before spawning. `--status` inspects the saved run without dispatch.
@@ -60,15 +56,6 @@ A prose plan becomes the typed contract before dispatch, with its stated outcome
 A review request alone never authorizes source changes or execution of its appended fixes.
 
 The family routing table lives only in [family-map.md](../skills/splitbrief/references/family-map.md).
-The separate `splitbrief-babysit` skill supervises the built CLI.
-
-### Supervised dogfooding
-
-`skills/splitbrief-babysit/` is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the owner `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
-
-The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. A tool defect that blocks the run, including a false tripwire alarm, ends the run: End run, fix, verify with the gates, rebuild, let the owner commit, then start a new run. A cosmetic defect goes to the debt list and the run goes on. A weak seat output is corrected in the composer, not in code. Model mistakes and correctly reported provider limits retain normal CLI recovery.
-
-The watcher source follows the existing script library convention in `skills/splitbrief-run/scripts/`; `skills:sync` copies it into the installed babysit skill. No source-library path is needed at runtime. The four pipeline skills still use generated contract blocks; the babysit procedure is handwritten and its frontmatter and script mirror are checked by `skills:check`.
 
 ## Grammar
 
@@ -126,8 +113,8 @@ An explicit plan approval confirms only the listed protected paths and operation
 There is no batch review cadence and no batch-boundary suite.
 Before final review, run every registered check on the current candidate. Then the reviewer makes the plan call: it reads the project and chooses the reviewer checks that verify the change, at most 6, with a reason each. It names each related test it does not run, or the reason it chose none. Run the reviewer checks in order under the reviewer command policy, and refuse a reviewer check whose package script, task file, build wrapper or interpreter script this run changed or the run base does not hold. Stop at the first reviewer check with new failures. A task-cadence review chooses only the tests related to the task's changed files. Re-run a red reviewer check at the run base with the same command text. Report matching failures as pre-existing. A timeout, or a red with no failure keys, is never pre-existing: report it as not verified at the run base. Send every new or not verified red to the reviewer as a pending input. A failed plan call (a transport error or a protocol error) halts the review the same way a failed verdict call does; it is never a pass. With `validation.end_checks: false`, no reviewer check runs; plan and task checks still run.
 Allow 2 fix cycles globally. At end cadence, this permits up to 3 reviews; task cadence adds reviews and shares the cap.
-The CLI runs the end/task cadence, the decisions ledger, one typed review answer with verdict and fix work, and reviewer questions about product changes.
-The skills follow that agreed design now. Render checks are unavailable in the skills.
+The skills run the same review as the CLI: the end/task cadence, the decisions ledger, one typed review answer with verdict and fix work, and reviewer questions about product changes.
+Render checks run only in the CLI.
 
 The reviewer returns tasks, criteria, findings, fixTasks, rejected, verify and ask in one answer matching `ReviewAnswerSchema`.
 The session saves the whole answer in `review.json`. There is no separate planner call for fix work.
@@ -152,52 +139,12 @@ Two consecutive timeouts on one brief with an explicit limit still halt the run.
 These mappings describe requests, not state compatibility.
 Standalone skill records cannot serve as engine session state for `resume`.
 
-## Contract sources
-
-| Skill step | Engine contract or path |
-|---|---|
-| One planning session, defaults and typed plan | `src/core/schemas/plan.ts`; `src/engine/orchestrator/planning/session.ts` and `plan-session.ts` |
-| Plan admission and Markdown renderings | `src/engine/spec/plan-checks.ts`, `plan-tasks.ts`, `prompts/task-format-example.ts` |
-| One behaviour with its tests and callers | TaskSpec intent/criteria; `src/core/pipeline-spec/brief.ts` |
-| Ordinary files as guidance; protected confirmation | `src/core/pipeline-spec/scope.ts`; DESIGN §5 hard rules |
-| One local retry and planner consult | `src/core/pipeline-spec/retries.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
-| Stale refresh and persistent lineage bounds | `src/engine/orchestrator/task/stale-inputs.ts`; `src/core/pipeline-spec/bounds.ts` |
-| Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions`; TRACE §4 |
-| End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`); TRACE §4 |
-| Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work; DESIGN §§4, 7 |
-| Reviewer checks, base re-run and stop rule | `src/engine/orchestrator/review-checks.ts`; `src/engine/orchestrator/validation/changed-script.ts`; `src/core/schemas/review.ts` |
-| Test check command, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
-| Registered checks at each cadence | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
-| Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
-| Plain CLI output | `src/engine/events/sinks/stdout-text.ts` |
+## Recovery and review
 
 Recovery actions, persistent bounds, and review fix work live in [recovery.md](../skills/splitbrief/references/recovery.md).
 Confirmed deviations reach later briefs, consults, and reviews through the decisions ledger in planning.md.
 Recorded validation decides task completion. The implementer report remains advisory.
 The review contract derives pass from complete task and criterion coverage with no blocking findings.
-
-## Reference library and ownership
-
-Author shared references only in `skills/splitbrief/references/`. The library contains exactly these nine files.
-Each entry file explicitly lists its dependencies; sync copies those files into that skill's own `references/` directory.
-The entry files compose shared procedures and add only their entry-specific input or write boundary.
-
-| Reference | Owns |
-|---|---|
-| `family-map.md` | Entry selection, arguments, and engine command mapping. |
-| `planning.md` | Planning session, typed plan, input conversion, and decisions ledger. |
-| `brief-format.md` | Markdown brief contract and BRIEF_HOME_OF_FIELD placement. |
-| `run-protocol.md` | Dispatch, waiting, saved progress, continuation, and review cadence. |
-| `recovery.md` | Retry, consult, bounds, and review fix work; generated consult-table and fix-cycle. |
-| `gates.md` | Validation resolution, baselines, registered checks, and change evidence. |
-| `implementer-prompt.md` | Prompt construction and advisory completion report. |
-| `review-format.md` | Review packet, typed answer, exact coverage, and derived pass. |
-| `tool-recipes.md` | Tool probes, invocation recipes, terminal records, and seat diagnoses. |
-
-The script library stays at `skills/splitbrief-run/scripts/`.
-Sync copies explicitly named scripts with their executable bits.
-A copied skill folder contains every reference and script it names, including references required by its local library.
-`scripts/sync-skills.test.ts` verifies each pipeline skill copied alone.
 
 ## Evidence trail
 
@@ -214,31 +161,3 @@ Save the baseline bytes as well as hashes; hashes alone cannot reconstruct the d
 Keep done rows, counters, consults, confirmed decisions and the original baseline on resume and fixes.
 Record commands, exits, terminal results, checks and touched-file reasons in the evidence trail.
 Print whether `.splitbrief/` is ignored. The session writes run artifacts; the implementer never edits that protected directory.
-
-## Maintaining the skills
-
-Generated blocks read engine contracts and constants. Handwritten skill steps follow the agreed DESIGN and TRACE.
-Mark unshipped engine behaviour explicitly. Never render a retired rule merely because its constant still exists.
-`npm run skills:sync` updates blocks and mirrors. `npm run skills:check` verifies them.
-
-Use `<!-- generated: <id> -->` and `<!-- /generated -->` in Markdown.
-Use `# generated: <id>` and `# /generated` in shell scripts.
-`scripts/skill-blocks.ts` owns renderers; GENERATED_BLOCK_IDS names the active blocks.
-
-| Source | Blocks |
-|---|---|
-| TaskSpec field map and workspace/report contracts | brief-template, implementer-preamble, body-order, closing-line |
-| ConsultAnswerSchema, retries and BOUNDS | consult-table, consult-contract |
-| BOUNDS seat retries and reset waiting | seat-recovery |
-| Pipeline validation and stack registry | gate-rules, gates, brief-grouping, suggested-files, baseline-rule |
-| Agreed review design and REVIEW_CYCLE_CAP | review-packet, verdict-rules, fix-cycle |
-| Engine halts and deadlines | halt-signatures, halt-signatures-sh, timeouts, wait-protocol |
-| CLI adapters | recipe:<tool> |
-
-Unused renderers have been removed. `consult-table` renders only into canonical `recovery.md`; `wait-protocol` renders only into `run-protocol.md`.
-The consult table derives its actions from ConsultAnswerSchema and its bounds from BOUNDS.
-`seat-recovery` renders the transient retry count and reset-wait bound into `tool-recipes.md` from BOUNDS.
-
-Change either side, run `npm run skills:sync`, and the skills follow; `npm run skills:check` (part of `release-check`) fails when a generated block, a mirror, or a frontmatter rule is out of date.
-
-`skills/splitbrief/references/` is the only place the hand-written parts of a shared reference are edited, and `skills/splitbrief-run/scripts/` is the only place a script is edited. `skills:sync` mirrors the subset each optional skill mentions into its own `references/`, and copies each `scripts/<name>` a `SKILL.md` mentions byte-identically into that skill's own `scripts/`; a stale, missing, or no-longer-mentioned mirror fails `skills:check`. Source and mirrors are both committed — skills.sh reads the repo as is. The SPLITBRIEF CLI itself never injects the four pipeline skills or `splitbrief-babysit` into any seat's prompt (they describe the loop it is already running, and the babysit skill supervises the CLI itself); the contract reaches the planner from the pipeline spec instead. The repo's dev skills are unaffected.

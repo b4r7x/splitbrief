@@ -3,6 +3,7 @@ name: splitbrief-babysit
 description: Supervise the built SPLITBRIEF CLI while it develops its own repository. Use for "odpal splitbrief i pilnuj go", "run splitbrief and babysit it", or a supervised dogfooding run. A tool defect that blocks the run ends it; fix and verify it, rebuild, then start a new run.
 metadata:
   author: b4r7x
+  internal: true
   version: "1.0.0"
   argument-hint: "<task or task file> [run-id to continue]"
 ---

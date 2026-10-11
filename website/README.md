@@ -46,7 +46,7 @@ Structural checks use dependency-cruiser and Knip from the repository's root dev
 
 Feature modules do not import each other. The composition root passes progress into the renderer. Tests are colocated; browser scenarios live in `tests/e2e/`. Import concrete modules with `.js` suffixes, without internal barrels.
 
-The design and interaction contract is in [DESIGN.md](./DESIGN.md). Integration details are in [HANDOFF.md](./HANDOFF.md).
+The design and interaction contract is in [DESIGN.md](./DESIGN.md).
 
 ## Documentation sources
 

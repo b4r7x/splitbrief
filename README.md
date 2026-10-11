@@ -2,7 +2,7 @@
 
 An orchestrator for two AI coding tools: one plans and reviews, the other executes.
 
-> **Maturity.** Early software, pre-1.0. The orchestration loop — brief, validation, retry, consult, review, evidence — is covered end to end by the test suite. What is thin is mileage against live models: no evaluation run has been recorded yet, so nothing below is a claim about output quality on your repo (see [Measurement](#measurement)). Config keys and CLI surfaces can still change between versions.
+> **Maturity.** SPLITBRIEF is pre-1.0. Config keys and CLI surfaces can change between versions. SPLITBRIEF makes no claim about the quality of the code a planner and an implementer produce on your repository: read the diff before you apply it.
 
 ## What is SPLITBRIEF?
 
@@ -344,12 +344,6 @@ Per-token prices are not hardcoded here. They come from models.dev at startup an
 SPLITBRIEF reports what a run spent when it knows the prices: token counts per seat always, and a dollar figure whenever every seat the run used is priced in the catalog. A run that recorded unpriced usage says so instead of publishing a figure it cannot stand behind.
 
 The figure is a fact about the run, not a target. You can hide it in Settings.
-
-## Measurement
-
-Two numbers decide whether this design earns its complexity: **first-pass rate** — how often the implementer satisfies a Task Brief without a retry or a consult — and **cross-lab review effectiveness** — how much the planner's review catches that validation did not. Those are what will be published here.
-
-Neither is measured yet. The `evals/` harness can be driven from a cassette alone — `--replay` needs no API key and no base URL, because the endpoint and a placeholder credential are resolved from the provider catalog — but it has never produced a recorded run, which is also why every model in the bundled catalog is marked `compatible-only` — `recommended` is reserved for models with recorded evaluation metrics, and none exist. Until those numbers appear in this section, nothing in this README is a performance claim. Spend is reported as a fact: a run that recorded no priced usage reports that explicitly instead of a fabricated zero.
 
 ## Use the pipeline as skills
 

@@ -106,9 +106,101 @@ Full config schemas and YAML examples: [docs/ARCHITECTURE.md](./docs/ARCHITECTUR
 
 User-extensible workflow hooks fire shell commands at workflow events (`pre_task`, `post_commit`, etc.). Every hook is a `command` declared in the config's `hooks` section. See [docs/HOOKS-CONFIG.md §Writing your first hook](./docs/HOOKS-CONFIG.md#writing-your-first-hook) for the template, variable substitution, failure modes, and the trust-prompt security model.
 
+## User-facing text
+
+Text a user can read must not show how SPLITBRIEF is built. This covers the shipped docs (the Markdown files in `package.json` `files`), `CHANGELOG.md` and the GitHub release notes, CLI and TUI strings, the website, and the skills a user installs (the skills in `.claude-plugin/marketplace.json` and every skill not marked `metadata.internal: true`).
+
+Never write these there:
+
+- **Admissions.** Do not say that something is untested, unverified, not verified live, not captured live or not checked on a platform, and do not list such tools or "known gaps". State what is supported. Say "not supported" only where the user needs it to act.
+- **Internal process.** No "owner" or "owner decision", no agent or model names used to build the project (Sol, Astra, Opus, codex lanes), no workflows, lanes, smoke runs, review verdicts or handoffs, no dates of internal passes, no `.nuke/` paths, and no finding, task, issue or lane ids (`N-7`, `DOC-2`, `REL-04`, `S11`, `T-080`, `#67`).
+- **Implementation detail in the changelog.** No function names, file paths, gate numbers, internal types or state-machine events. Write what the user gets or what changed for the user, grouped as Added, Changed, Fixed and Removed.
+- **Unfinished or apologetic words.** No "for now", "hack", "TODO", "temporary", "we hope" or "should work".
+
+Contributor docs (`docs/RELEASING.md`, `TESTING.md`, `DOGFOODING.md`, `INVARIANTS.md`, `CODE-STANDARD.md` and the other docs outside `package.json` `files`) may use process language. A contributor skill carries `metadata.internal: true`, so skills.sh hides it, and the marketplace does not list it. The live-matrix manifest is a private release record: it never goes into the changelog or a GitHub release ([RELEASING.md](./docs/RELEASING.md#the-release-rule)). Invariant gate 59 (`scripts/user-facing-text.ts`) checks the clear markers.
+
+## Maintaining the agent skills
+
+[docs/SKILLS.md](./docs/SKILLS.md) describes the skills for their users. This section is for the maintainers. A contributor skill (`splitbrief-babysit` and the dev skills under `.claude/skills/`) carries `metadata.internal: true` and is not listed in `.claude-plugin/marketplace.json`.
+
+### Contract sources
+
+Each skill step follows the engine contract in this table.
+
+| Skill step | Engine contract or path |
+|---|---|
+| One planning session, defaults and typed plan | `src/core/schemas/plan.ts`; `src/engine/orchestrator/planning/session.ts` and `plan-session.ts` |
+| Plan admission and Markdown renderings | `src/engine/spec/plan-checks.ts`, `plan-tasks.ts`, `prompts/task-format-example.ts` |
+| One behaviour with its tests and callers | TaskSpec intent/criteria; `src/core/pipeline-spec/brief.ts` |
+| Ordinary files as guidance; protected confirmation | `src/core/pipeline-spec/scope.ts` |
+| One local retry and planner consult | `src/core/pipeline-spec/retries.ts`; `src/core/schemas/consult.ts`; `src/engine/orchestrator/consult/` |
+| Stale refresh and persistent lineage bounds | `src/engine/orchestrator/task/stale-inputs.ts`; `src/core/pipeline-spec/bounds.ts` |
+| Proposed decisions and confirmed Plan context | ImplementerReport decisions and `plan.decisions` |
+| End/task cadence and completed-task coverage | `workflow.review` (`src/core/schemas/config.ts`) |
+| Typed review, derived pass and appended fixes | `src/core/schemas/review.ts`, `src/core/review/verdict.ts`; review answer with fix work |
+| Reviewer checks, base re-run and stop rule | `src/engine/orchestrator/review-checks.ts`; `src/engine/orchestrator/validation/changed-script.ts`; `src/core/schemas/review.ts` |
+| Test check command, narrowing and capture | `src/core/pipeline-spec/gates.ts`; `src/core/validation/stage-command.ts` and `stacks/` |
+| Registered checks at each cadence | Plan and TaskSpec checks; `src/engine/orchestrator/task/brief-gate.ts`, `src/engine/orchestrator/run/pre-review-checks.ts` |
+| Spawn recipes, halts and deadlines | `src/engine/runners/cli-tools/`; `src/core/pipeline-spec/halts.ts`, `timeouts.ts` |
+| Plain CLI output | `src/engine/events/sinks/stdout-text.ts` |
+
+### Reference library and ownership
+
+The canonical `skills/splitbrief/references/run-protocol.md` holds the generated wait protocol, including the inline fallback.
+Sync copies that reference and the explicitly listed scripts into each skill that runs a tool.
+
+Author shared references only in `skills/splitbrief/references/`. The library contains exactly these nine files.
+Each entry file explicitly lists its dependencies; sync copies those files into that skill's own `references/` directory.
+The entry files compose shared procedures and add only their entry-specific input or write boundary.
+
+| Reference | Owns |
+|---|---|
+| `family-map.md` | Entry selection, arguments, and engine command mapping. |
+| `planning.md` | Planning session, typed plan, input conversion, and decisions ledger. |
+| `brief-format.md` | Markdown brief contract and BRIEF_HOME_OF_FIELD placement. |
+| `run-protocol.md` | Dispatch, waiting, saved progress, continuation, and review cadence. |
+| `recovery.md` | Retry, consult, bounds, and review fix work; generated consult-table and fix-cycle. |
+| `gates.md` | Validation resolution, baselines, registered checks, and change evidence. |
+| `implementer-prompt.md` | Prompt construction and advisory completion report. |
+| `review-format.md` | Review packet, typed answer, exact coverage, and derived pass. |
+| `tool-recipes.md` | Tool probes, invocation recipes, terminal records, and seat diagnoses. |
+
+The script library stays at `skills/splitbrief-run/scripts/`.
+Sync copies explicitly named scripts with their executable bits.
+A copied skill folder contains every reference and script it names, including references required by its local library.
+`scripts/sync-skills.test.ts` verifies each pipeline skill copied alone.
+
+### Generated blocks
+
+Generated blocks read engine contracts and constants. Handwritten skill steps follow the contract sources above.
+Never render a retired rule merely because its constant still exists.
+`npm run skills:sync` updates blocks and mirrors. `npm run skills:check` verifies them.
+
+Use `<!-- generated: <id> -->` and `<!-- /generated -->` in Markdown.
+Use `# generated: <id>` and `# /generated` in shell scripts.
+`scripts/skill-blocks.ts` owns renderers; GENERATED_BLOCK_IDS names the active blocks.
+
+| Source | Blocks |
+|---|---|
+| TaskSpec field map and workspace/report contracts | brief-template, implementer-preamble, body-order, closing-line |
+| ConsultAnswerSchema, retries and BOUNDS | consult-table, consult-contract |
+| BOUNDS seat retries and reset waiting | seat-recovery |
+| Pipeline validation and stack registry | gate-rules, gates, brief-grouping, suggested-files, baseline-rule |
+| The review contract and REVIEW_CYCLE_CAP | review-packet, verdict-rules, fix-cycle |
+| Engine halts and deadlines | halt-signatures, halt-signatures-sh, timeouts, wait-protocol |
+| CLI adapters | recipe:<tool> |
+
+`consult-table` renders only into canonical `recovery.md`; `wait-protocol` renders only into `run-protocol.md`.
+The consult table derives its actions from ConsultAnswerSchema and its bounds from BOUNDS.
+`seat-recovery` renders the transient retry count and reset-wait bound into `tool-recipes.md` from BOUNDS.
+
+Change either side, run `npm run skills:sync`, and the skills follow; `npm run skills:check` (part of `release-check`) fails when a generated block, a mirror, or a frontmatter rule is out of date.
+
+`skills/splitbrief/references/` is the only place the hand-written parts of a shared reference are edited, and `skills/splitbrief-run/scripts/` is the only place a script is edited. `skills:sync` mirrors the subset each optional skill mentions into its own `references/`, and copies each `scripts/<name>` a `SKILL.md` mentions byte-identically into that skill's own `scripts/`; a stale, missing, or no-longer-mentioned mirror fails `skills:check`. Source and mirrors are both committed — skills.sh reads the repo as is. The SPLITBRIEF CLI itself never injects the four pipeline skills or `splitbrief-babysit` into any seat's prompt (they describe the loop it is already running, and the babysit skill supervises the CLI itself); the contract reaches the planner from the pipeline spec instead. The repo's dev skills are unaffected.
+
 ## Release process
 
-Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepare` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. It is npm's only pre-pack hook that also installs devDependencies for a git install, so `npm install <git-url>` builds `dist/` too — as does a plain `npm install`/`npm ci` in a clone. The owner tags and publishes with the procedure in [docs/RELEASING.md § npm release](./docs/RELEASING.md#npm-release).
+Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepare` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. It is npm's only pre-pack hook that also installs devDependencies for a git install, so `npm install <git-url>` builds `dist/` too — as does a plain `npm install`/`npm ci` in a clone. The maintainer tags and publishes with the procedure in [docs/RELEASING.md § npm release](./docs/RELEASING.md#npm-release).
 
 ## Getting help
 

@@ -1,6 +1,6 @@
 # Releasing
 
-The release matrix runs tasks through real installed CLIs. The row table lives in `testing/e2e/live/matrix.ts`: 12 available rows, eight same-tool canaries and four cross-vendor pairs across `one-file`, `two-files` and `question-round`. The release gate uses the tools the owner holds, as defined below. The shared machinery is `testing/e2e/helpers/live-harness.ts`; see [TESTING.md](./TESTING.md) § "Live CLI e2e tier". A row's proof is the manifest.
+The release matrix runs tasks through real installed CLIs. The row table lives in `testing/e2e/live/matrix.ts`: 12 available rows, eight same-tool canaries and four cross-vendor pairs across `one-file`, `two-files` and `question-round`. The release gate uses the tools defined below. The shared machinery is `testing/e2e/helpers/live-harness.ts`; see [TESTING.md](./TESTING.md) § "Live CLI e2e tier". A row's proof is the manifest.
 
 ## Running the release matrix
 
@@ -29,11 +29,13 @@ Default pins include `opencode` → `opencode-go/deepseek-v4.1-flash` and `antig
 
 ## The release rule
 
-A release is cut only from a run whose manifest is attached to the changelog entry.
+A release is cut only from a run whose manifest is kept as the private release record.
 
-The live gate is the publish smoke plus the matrix rows for the tools the owner holds: `claude-code`, `codex`, `opencode` and `antigravity`. Run the matrix with `SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code`. A failure or skip in a required row blocks the release. Re-run the gate before any tag.
+The live gate is the publish smoke plus the matrix rows for `claude-code`, `codex`, `opencode` and `antigravity`. Run the matrix with `SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code`. A failure or skip in a required row blocks the release. Re-run the gate before any tag. The gate covers the tools that the maintainer holds subscriptions for; a full matrix over every tool is not required.
 
-Record each skipped tool in the changelog release entry as "not verified live in this release", with its reason. The owner does not hold subscriptions for `cursor`, `copilot`, `kilo-code` or `command-code`; a full matrix over every tool is not required.
+The manifest is a private release record, never a public one. Copy `.test-artifacts/live/manifest.json` to `.release-records/<x>/manifest.json`; `.release-records/` is ignored by git. The manifest names each skipped tool with its reason, so the changelog does not. Do not attach the manifest to the GitHub release and do not quote it in the changelog.
+
+The changelog release entry and the GitHub release notes describe what changed for users, and nothing else. They never list skipped or unverified tools, test results, review verdicts, internal process, agent or model names used to build SPLITBRIEF, or private paths. The rule is in [CONTRIBUTING.md](../CONTRIBUTING.md#user-facing-text), and invariant gate 59 checks its markers.
 
 The live fixture row (`npm run test:e2e:live:fixture`, [TESTING.md](./TESTING.md) § "Fixture loop row") is outside that rule for now: it writes into the same manifest, but it becomes a release gate only after two recorded manifests show it green on a real toolbox. Until then it is drift evidence — a red fixture row is investigated, not a blocker.
 
@@ -43,7 +45,7 @@ The live fixture row (`npm run test:e2e:live:fixture`, [TESTING.md](./TESTING.md
 
 ## npm release
 
-The owner publishes the npm package with `.github/workflows/release.yml`. The workflow runs only on a manual dispatch from `main`. A dispatch from another ref skips the job. It installs the npm version that `packageManager` in `package.json` names. Trusted publishing needs npm 11.5.1 or later. Then it installs dependencies, builds `dist/`, packs one tarball, and runs the packed-install gate on that tarball.
+The maintainer publishes the npm package with `.github/workflows/release.yml`. The workflow runs only on a manual dispatch from `main`. A dispatch from another ref skips the job. It installs the npm version that `packageManager` in `package.json` names. Trusted publishing needs npm 11.5.1 or later. Then it installs dependencies, builds `dist/`, packs one tarball, and runs the packed-install gate on that tarball.
 
 The first dispatch of every release is a dry run. The `dry_run` input defaults to `true`. Every step runs, and the publish step runs `npm publish <tarball> --provenance --access public --dry-run`. With `dry_run=false`, it publishes the same tested tarball without `--dry-run`.
 
@@ -66,7 +68,7 @@ Do these steps on an up-to-date `main` with a clean working tree. `<x>` is the n
 3. Run `npm version <x> --no-git-tag-version`. It writes `<x>` to `package.json` and `package-lock.json` and makes no commit and no tag.
 4. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<x>] - <YYYY-MM-DD>`.
 5. Add a new empty `## [Unreleased]` section above it.
-6. Attach the matrix manifest to the `[<x>]` entry, and record each allow-listed row with its reason.
+6. Copy `.test-artifacts/live/manifest.json` to `.release-records/<x>/manifest.json`. Do not add the manifest, its skipped rows or any test result to the `[<x>]` entry. Run `npm run check:invariants`; gate 59 fails on internal text in the changelog and the user guides.
 7. Run `npm run release:smoke`.
 8. Commit the version and changelog change, then push `main`.
 9. Run `gh workflow run release.yml --ref main`. The default is a dry run. Run `gh run watch` until it passes.
@@ -74,7 +76,7 @@ Do these steps on an up-to-date `main` with a clean working tree. `<x>` is the n
 11. Run `npm view splitbrief@<x> version` to confirm the publish. The npmjs.com page shows the provenance.
 12. Tag the published commit: `git tag splitbrief@<x>` and `git push origin splitbrief@<x>`.
 13. Write the release notes from the changelog: `awk '/^## \[<x>\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md > /tmp/splitbrief-<x>-notes.md`.
-14. Run `gh release create splitbrief@<x> --title "splitbrief <x>" --notes-file /tmp/splitbrief-<x>-notes.md .test-artifacts/live/manifest.json`.
+14. Run `gh release create splitbrief@<x> --title "splitbrief <x>" --notes-file /tmp/splitbrief-<x>-notes.md`. The release carries the notes only; the manifest stays in `.release-records/<x>/`.
 
 A failed workflow run publishes nothing when it fails before the publish step. Fix the cause on `main` and dispatch again. npm refuses a second publish of the same version, so a fix after a successful publish needs a new version.
 

@@ -21,16 +21,15 @@ evals/results/*
 
 # SpecKit reusable command assets are tracked; generated feature work is not
 .specify/features/*
-!.specify/features/audit-fixes/
-!.specify/features/audit-fixes/handoff-prompt.md
-!.specify/features/audit-fixes/tasks.md
-!.specify/features/audit-fixes/checklist.md
 
 # Agent worktrees
 .claude/worktrees/
 
 # Audit scratch
 .nuke/
+
+# Private release records (the live-matrix manifest of each release)
+.release-records/
 
 # Non-reference working artifacts (audits, dated specs, superpowers runs)
 notes/

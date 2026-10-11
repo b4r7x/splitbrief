@@ -362,6 +362,13 @@ export const gates: readonly Gate[] = [
     command: 'tsx scripts/unit-test-launches.ts | wc -l',
     expected: 0,
   },
+  {
+    id: '59',
+    description:
+      'Shipped docs, the changelog, the website copy and the installable skills carry no internal text (untested admissions, owner decisions, agent names, finding ids, .nuke/ paths)',
+    command: 'tsx scripts/user-facing-text.ts | wc -l',
+    expected: 0,
+  },
 ];
 
 export function getInvariantGates(id: string): readonly Gate[] {

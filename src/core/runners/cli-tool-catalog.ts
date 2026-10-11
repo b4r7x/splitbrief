@@ -666,7 +666,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     admission: Object.freeze({
       state: 'custom-only',
-      reason: 'A structured session-scoped model and output adapter is not yet proven.',
+      reason: 'SPLITBRIEF has no structured session-scoped model and output adapter for it.',
     }),
   } satisfies CustomOnlyCliToolExclusion),
   antigravity: activeCliToolDeclaration({

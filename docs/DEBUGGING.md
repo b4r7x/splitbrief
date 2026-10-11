@@ -60,26 +60,18 @@ Implementation: `src/cli/headless.ts` wires a `createStdoutJsonSink()` (`src/eng
 
 ### Debug environment variables
 
-There is no `debug` package / namespace logger in SPLITBRIEF today. The diagnostic surface is:
+SPLITBRIEF has no `debug` package or namespace logger. The diagnostic surface is:
 
 | Variable | Effect | Source |
 |---|---|---|
 | `SPLITBRIEF_CONTEXT_LENGTH` | Override detected implementer context length (integer) | `src/engine/providers/capabilities.ts` |
 | `CI` | Suppresses fullscreen TUI (`--no-fullscreen` is equivalent) | `src/cli/setup.ts` |
-| `SPLITBRIEF_REAL_CLI_E2E` | Set to `1` to enable the paid live CLI e2e tier (default: every case skips) | `testing/e2e/helpers/live-harness.ts` |
-| `SPLITBRIEF_REAL_CLI_TIER` | `easy` (default) / `heavy` / `all` — which live scenarios run | `testing/e2e/helpers/live-harness.ts` |
 
 For finer-grained traces, use the event log. The API-key-bearing env vars SPLITBRIEF reads are listed in [CONFIGURATION.md §Provider authentication](./CONFIGURATION.md#provider-authentication) — a missing credential fails config load for an API seat and shows as a readiness blocker for a CLI seat.
 
 ### Terminal diagnostics
 
 Direct terminal diagnostics are sanitized before printing. `warnStderr`, `warnError`, process-output errors, and generic CLI error formatting strip ANSI/OSC/control sequences, redact shared secret patterns including JWT-like tokens, and bound diagnostic text before writing to stderr. First-party styling may wrap the sanitized text after that; untrusted subprocess/provider text should not be styled before sanitization.
-
-### Live CLI e2e tier
-
-Reading a skip in `testing/e2e/scenarios/live/`: with `SPLITBRIEF_REAL_CLI_E2E` unset every case is skipped silently — that is the default and means nothing is wrong. With the master switch set, a per-tool skip prints the readiness reason from `liveToolBlocker`, which is the tool's own detection state; `ready` requires trusted + compatible + authenticated, so `not ready (…)` almost always means the binary is missing from `PATH` or the login expired. Fix it with the tool's own install or login command, not with SPLITBRIEF.
-
-A refused model pin throws instead of skipping. That is intentional: the ceiling exists to stop a mistyped `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL` from billing a frontier model, and a silent skip would hide the typo.
 
 ## Common issues
 
@@ -113,19 +105,6 @@ Diagnostic path:
 5. `cost_update` events stop arriving → the subprocess is live but not producing tokens; check remote provider status.
 
 
-### "Cannot find module" for a relative import
-
-Cause: missing `.js` extension in a relative import. ESM requires explicit `.js` on every intra-project import:
-
-```ts
-// correct
-import { loadConfig } from './core/config/load/io.js';
-// wrong — ERR_MODULE_NOT_FOUND
-import { loadConfig } from './core/config/load/io';
-```
-
-See [PRINCIPLES.md](./PRINCIPLES.md) — ESM rule.
-
 ### "No active workflow" on `resume`
 
 Cause: `.splitbrief/active` is missing — closing a run releases it — or the pointed-to session has no readable `state.json`, or its `stateVersion` is one `WORKFLOW_STATE_VERSION` cannot load. Name an older run with `splitbrief continue <session-id>`.
@@ -134,16 +113,6 @@ Fix:
 - Incompatible `stateVersion`: the state file is ignored with a warning — start a fresh workflow with `splitbrief start`.
 - A closed run (ended by the user, or `complete` with a passing review): it is a record, not a workspace — start a fresh workflow with `splitbrief start`. Every other stop is continuable.
 - The `resume` command's exact error messages are in `src/cli/commands/resume.ts`.
-
-### Tests pass locally but fail in CI (or vice versa)
-
-Diagnostic checklist:
-- Node version: engines field requires `>=22`. Check `node --version` matches CI.
-- `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
-- Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
-- API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` and `integration` (four vitest shards each), `e2e-replay` and `smoke` as parallel jobs, and coverage nightly.
-- Add the nightly coverage job on top with `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) — the superset of both CI workflows.
 
 ### Config load fails with "API key exfiltration risk"
 
