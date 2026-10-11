@@ -759,6 +759,10 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     count: z.number(),
     reason: z.enum(['unsupported-backend', 'capability-degraded']),
   }),
+  phaseEvent('build_images_as_paths').extend({
+    taskId: TaskIdSchema,
+    count: z.number().int().positive(),
+  }),
   phaseEvent('cost_update').extend({ tokenUsage: TokenUsageSchema }),
   phaseEvent('approval_prompted').extend({
     tier: ApprovalTierSchema,

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { invokeTestClaude } from '#testing/helpers/claude-planner-steer-test-invoke.js';
 import { createClaudeCodePlanner } from '../../planners/claude-code.js';
 import { join } from 'node:path';
@@ -723,26 +723,60 @@ process.stdout.write(JSON.stringify({
     ).rejects.toMatchObject({ name: 'TimeoutError' });
   });
 
-  it('embeds image attachments as prompt references in stdin, never as --image argv', async () => {
+  it('sends image attachments outside the project as stream-json content blocks', async () => {
     const { argvFile, stdinFile } = installClaudeRecordingShim(shimDir);
+    const firstPath = join(shimDir, 'a.png');
+    const secondPath = join(shimDir, 'b.data');
+    const firstBytes = Buffer.from([137, 80, 78, 71, 0, 255]);
+    const secondBytes = Buffer.from([255, 216, 255, 0, 128]);
+    writeFileSync(firstPath, firstBytes);
+    writeFileSync(secondPath, secondBytes);
+    const images = [
+      { ...makeClaudeTestImage(firstPath), sizeBytes: firstBytes.length },
+      { ...makeClaudeTestImage(secondPath), mimeType: 'image/jpeg', sizeBytes: secondBytes.length },
+    ];
 
     await invokeTrustedClaude({
       prompt: 'describe the screenshot',
       projectDir,
       sessionId: null,
       onOutput: () => {},
-      images: [makeClaudeTestImage('/tmp/a.png'), makeClaudeTestImage('/tmp/b.png')],
+      images,
     });
 
     const argv = readFileSync(argvFile, 'utf8');
     const stdin = readFileSync(stdinFile, 'utf8');
 
     expect(argv).not.toContain('--image');
-    expect(argv).not.toContain('/tmp/a.png');
-
-    expect(stdin).toContain('[image attachment: /tmp/a.png]');
-    expect(stdin).toContain('[image attachment: /tmp/b.png]');
-    expect(stdin).toContain('describe the screenshot');
+    expect(argv).not.toContain(firstPath);
+    expect(argv.split('\n')).toEqual(expect.arrayContaining(['--input-format', 'stream-json']));
+    expect(stdin).toBe(
+      JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'describe the screenshot' },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/png',
+                data: firstBytes.toString('base64'),
+              },
+            },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: 'image/jpeg',
+                data: secondBytes.toString('base64'),
+              },
+            },
+          ],
+        },
+      }) + '\n',
+    );
   });
 
   it('passes effort as an --effort argv flag, never as an /effort stdin prefix', async () => {
@@ -754,7 +788,6 @@ process.stdout.write(JSON.stringify({
       sessionId: null,
       onOutput: () => {},
       effort: 'high',
-      images: [makeClaudeTestImage('/tmp/a.png')],
     });
 
     const argv = readFileSync(argvFile, 'utf8').split('\n');
@@ -765,8 +798,8 @@ process.stdout.write(JSON.stringify({
     expect(argv[effortIdx + 1]).toBe('high');
 
     expect(stdin).not.toContain('/effort');
-    expect(stdin.startsWith('[image attachment: /tmp/a.png]')).toBe(true);
-    expect(stdin).toContain('go');
+    expect(stdin).toBe('go');
+    expect(argv).not.toContain('--input-format');
   });
 
   it("hands the planner the run's global skills to read, never to write", async () => {

@@ -27,7 +27,7 @@ import {
   spawnPipe,
   spawnPipeError,
 } from '../../../lib/process/spawn/lifecycle.js';
-import { createLineBuffer } from '../../../lib/process/line-buffer.js';
+import { createLineBuffer, type LineBufferOverflow } from '../../../lib/process/line-buffer.js';
 import { isENOENT, processError } from '../../../lib/process/errors.js';
 import { assertNever, isRecord } from '../../../utils/type-guards.js';
 import { error, matches } from '../../../utils/error.js';
@@ -374,7 +374,10 @@ export async function invokeProcessCli(
         adapter,
         invocation,
         invocation.args,
-        steeringSession?.prompt ?? context.prompt,
+        steeringSession?.prompt ??
+          (adapter.encodePrompt === undefined
+            ? context.prompt
+            : await adapter.encodePrompt({ invocation, prompt: context.prompt })),
       );
     } catch (cause) {
       if (matches('platform-limitation')(cause)) throw cause;
@@ -405,36 +408,40 @@ export async function invokeProcessCli(
     };
 
     const parse = steeringSession?.parse ?? adapter.createParser?.() ?? adapter.parse;
-    const lineBuffer = createLineBuffer(
-      (line) => {
-        let parsed: readonly CliProtocolEvent[];
-        try {
-          parsed = parse(line);
-        } catch {
-          throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
-        }
-        const turnBoundary = terminalSeen
-          ? false
-          : (steeringSession?.onLine(line, parsed) ?? false);
-        for (const event of parsed) applyProtocolEvent(event, turnBoundary);
+    const lineBufferOptions = {
+      maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
+      onOverflow: (overflow: LineBufferOverflow) => {
+        recorder.warning({
+          warning: runnerCallLimitWarning(
+            runnerCallLineOutputLimit({
+              code: 'stdout_line_overflow',
+              label: 'stdout line',
+              lineBytes: overflow.lineBytes,
+              maxLineBytes: overflow.maxLineBytes,
+            }),
+          ),
+        });
+        return undefined;
       },
-      {
-        maxLineBytes: DEFAULT_PROCESS_LINE_MAX_BYTES,
-        onOverflow: (overflow) => {
-          recorder.warning({
-            warning: runnerCallLimitWarning(
-              runnerCallLineOutputLimit({
-                code: 'stdout_line_overflow',
-                label: 'stdout line',
-                lineBytes: overflow.lineBytes,
-                maxLineBytes: overflow.maxLineBytes,
-              }),
-            ),
-          });
-          return undefined;
-        },
-      },
-    );
+    };
+    const allowInputEcho = (input: string) => {
+      lineBufferOptions.maxLineBytes = Math.max(
+        lineBufferOptions.maxLineBytes,
+        Buffer.byteLength(input, 'utf8') + DEFAULT_PROCESS_LINE_MAX_BYTES,
+      );
+    };
+    const onStdinReady = steeringSession?.onStdinReady;
+    if (onStdinReady !== undefined) allowInputEcho(prepared.stdin ?? '');
+    const lineBuffer = createLineBuffer((line) => {
+      let parsed: readonly CliProtocolEvent[];
+      try {
+        parsed = parse(line);
+      } catch {
+        throw fatal('protocol-failure', 'CLI output did not match its structured protocol');
+      }
+      const turnBoundary = terminalSeen ? false : (steeringSession?.onLine(line, parsed) ?? false);
+      for (const event of parsed) applyProtocolEvent(event, turnBoundary);
+    }, lineBufferOptions);
 
     const executableState = await revalidateCliExecutableIdentity(invocation.executable);
     if (executableState !== 'match') {
@@ -465,7 +472,17 @@ export async function invokeProcessCli(
       env: { ...invocation.environment },
       detached: process.platform !== 'win32',
       stdin: prepared.stdin,
-      onStdinReady: steeringSession?.onStdinReady,
+      onStdinReady:
+        onStdinReady === undefined
+          ? undefined
+          : (writer) =>
+              onStdinReady({
+                write: (input) => {
+                  allowInputEcho(input);
+                  return writer.write(input);
+                },
+                end: () => writer.end(),
+              }),
       signal,
       outputBudgetBytes: CLI_RAW_OUTPUT_MAX_BYTES,
       // The recorder owns every retained byte of this call and nothing here

@@ -216,6 +216,7 @@ describe('makeImplementerRetryInvoker', () => {
       send: () => delivery.promise,
     });
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       steering,
       bus,
@@ -556,88 +557,113 @@ describe('makeImplementerRetryInvoker', () => {
     expect(override.getReceived()?.allowNoChange).toBe(false);
   });
 
-  it('delivers a message from a running retry through a correction pass on the same brief', async () => {
-    const ref = setupProject(directories);
-    const task = makeTask();
-    const state = makeImplState([task], { attempt: 2 });
-    saveState(ref, state);
-    const { bus, events } = makeBusRecorder();
-    const implement = vi.fn(async (_call: ImplementerOptions) => ({
-      success: true,
-      output: 'corrected',
-      usage: { inputTokens: 7, outputTokens: 5 },
-    }));
-    const retry = vi.fn(async (_call: RetryOptions) => {
-      const message = {
-        ...plainUserMessage('keep the parser shared'),
-        images: [
-          {
-            id: 'retry-reference',
-            kind: 'image' as const,
-            path: '/retry-reference.png',
-            mimeType: 'image/png',
-            sizeBytes: 12,
-          },
-        ],
-      };
-      enqueueUserMessage({
-        ...ref,
-        state,
-        bus,
-        phase: 'implementing',
-        message,
+  it.each([true, false])(
+    'uses the effective retry seat image fact (vision=%s) for its correction pass',
+    async (vision) => {
+      const ref = setupProject(directories);
+      const task = makeTask();
+      const state = makeImplState([task], { attempt: 2 });
+      saveState(ref, state);
+      const { bus, events } = makeBusRecorder();
+      const implement = vi.fn(async (_call: ImplementerOptions) => ({
+        success: true,
+        output: 'corrected',
+        usage: { inputTokens: 7, outputTokens: 5 },
+      }));
+      const retry = vi.fn(async (_call: RetryOptions) => {
+        const message = {
+          ...plainUserMessage('keep the parser shared'),
+          images: [
+            {
+              id: 'retry-reference',
+              kind: 'image' as const,
+              path: '/retry-reference.png',
+              mimeType: 'image/png',
+              sizeBytes: 12,
+            },
+          ],
+        };
+        enqueueUserMessage({
+          ...ref,
+          state,
+          bus,
+          phase: 'implementing',
+          message,
+        });
+        return { success: true, output: 'retried', usage: { inputTokens: 10, outputTokens: 4 } };
       });
-      return { success: true, output: 'retried', usage: { inputTokens: 10, outputTokens: 4 } };
-    });
-    const implementer = makeImplementer({ implement, retry });
-    const config = makeConfig();
-    const invoker = makeImplementerRetryInvoker({
-      context: defaultContext,
-      kind: 'local',
-      sessionId: ref.sessionId,
-      languageContext: buildLanguageContext('typescript'),
-      phase: 'implementing',
-    });
+      const implementer = makeImplementer({ implement, retry });
+      const config = makeConfig({
+        implementer: { kind: 'api', provider: 'lm-studio', model: 'fixture' },
+      });
+      const invoker = makeImplementerRetryInvoker({
+        context: defaultContext,
+        kind: 'local',
+        sessionId: ref.sessionId,
+        languageContext: buildLanguageContext('typescript'),
+        phase: 'implementing',
+        config,
+      });
 
-    const result = await invoker({
-      task,
-      lastError: 'validation failed',
-      attempts: 2,
-      projectDir: ref.projectDir,
-      implementer,
-      config,
-      createdByThisTask: ['src/owned.ts'],
-      seat: { ref: { ...ref, bus }, state, usageCategory: 'implementer' },
-    });
+      const result = await invoker({
+        task,
+        lastError: 'validation failed',
+        attempts: 2,
+        projectDir: ref.projectDir,
+        implementer,
+        config: makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'fixture' } }),
+        createdByThisTask: ['src/owned.ts'],
+        seat: {
+          ref: {
+            ...ref,
+            bus,
+            modelCache: {
+              getModelsDevCatalog: () => null,
+              getProviderModels: () => [{ id: 'fixture', supportsImages: vision }],
+            },
+          },
+          state,
+          usageCategory: 'implementer',
+        },
+      });
 
-    expect(retry).toHaveBeenCalledTimes(1);
-    expect(implement).toHaveBeenCalledTimes(1);
-    const pass = implement.mock.calls[0]?.[0];
-    expect(pass?.continuation?.steer).toContain('keep the parser shared');
-    expect(pass?.images).toMatchObject([{ id: 'retry-reference', path: '/retry-reference.png' }]);
-    expect(pass).toMatchObject({
-      task,
-      onOutput: retry.mock.calls[0]?.[0].onOutput,
-      allowNoChange: true,
-      createdByThisTask: [],
-    });
-    expect(pass?.continuation?.partial).toBeUndefined();
-    expect(result).toMatchObject({
-      success: true,
-      output: 'corrected',
-      usage: { inputTokens: 17, outputTokens: 9 },
-      runner: config.implementer,
-    });
-    const saved = loadState(ref);
-    expect(saved?.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
-    expect(saved?.attempt).toBe(2);
-    expect(saved && briefCorrections(saved, task.id)).toEqual([
-      expect.stringContaining('keep the parser shared'),
-    ]);
-    expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
-      expect.objectContaining({ seat: 'build', taskId: task.id, count: 1 }),
-    ]);
-  });
+      expect(retry).toHaveBeenCalledTimes(1);
+      expect(implement).toHaveBeenCalledTimes(1);
+      const pass = implement.mock.calls[0]?.[0];
+      expect(pass?.continuation?.steer).toContain('keep the parser shared');
+      expect(pass?.images).toEqual(
+        vision
+          ? [expect.objectContaining({ id: 'retry-reference', path: '/retry-reference.png' })]
+          : undefined,
+      );
+      expect(pass?.continuation?.steer).toContain('[image:retry-reference] = /retry-reference.png');
+      expect(events.filter((event) => event.type === 'build_images_as_paths')).toEqual(
+        vision ? [] : [expect.objectContaining({ taskId: 'T001', count: 1 })],
+      );
+      expect(pass).toMatchObject({
+        task,
+        onOutput: retry.mock.calls[0]?.[0].onOutput,
+        allowNoChange: true,
+        createdByThisTask: [],
+      });
+      expect(pass?.continuation?.partial).toBeUndefined();
+      expect(result).toMatchObject({
+        success: true,
+        output: 'corrected',
+        usage: { inputTokens: 17, outputTokens: 9 },
+        runner: config.implementer,
+      });
+      const saved = loadState(ref);
+      expect(saved?.messageQueue[0]?.deliveredTo?.implementer).toBeDefined();
+      expect(saved?.attempt).toBe(2);
+      expect(saved && briefCorrections(saved, task.id)).toEqual([
+        expect.stringContaining('keep the parser shared'),
+      ]);
+      expect(events.filter((event) => event.type === 'queue_drained')).toEqual([
+        expect.objectContaining({ seat: 'build', taskId: task.id, count: 1 }),
+      ]);
+    },
+  );
 
   it('puts pending messages into the retry steer before the retry call', async () => {
     const ref = setupProject(directories);

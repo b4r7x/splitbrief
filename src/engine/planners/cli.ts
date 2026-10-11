@@ -11,6 +11,7 @@ import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapte
 import { CLI_PROMPT_SENTINEL } from '../runners/cli-tools/candidate-contract.js';
 import { lookupCliPlannerAdapter } from '../runners/cli-tools/registry.js';
 import { typedOutputCapability } from '../../core/runners/cli-tool-catalog.js';
+import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import type { CliPlannerAdapter, CliSchemaInput } from '../runners/cli-tools/contract.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
 import { withSchemaFile } from '../runners/schema-file.js';
@@ -156,6 +157,7 @@ export function createCliPlanner(
           sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner')),
         ),
         cwd: projectDir,
+        images,
         timeoutMs: timeout,
         signal: effectiveSignal,
       },
@@ -314,6 +316,11 @@ export function createCliPlanner(
       timeout: adapter.probe.version.timeoutMs,
     }),
 
-    capabilities: { ...ONE_SHOT_API_CAPS, supportsSessionResume, supportsEffort },
+    capabilities: {
+      ...ONE_SHOT_API_CAPS,
+      supportsSessionResume,
+      supportsEffort,
+      supportsImages: seatSupportsImages({ runner: plannerCfg }),
+    },
   });
 }

@@ -33,6 +33,7 @@ describe('OpenCode steering invocation', () => {
         mode: 'plan',
         sessionId: null,
         effort: undefined,
+        imagePaths: ['/tmp/design one.png', '/tmp/design-two.png'],
       });
       const invocation: CliInvocation = {
         executable: {
@@ -55,7 +56,18 @@ describe('OpenCode steering invocation', () => {
         'run',
         '--server',
         'http://127.0.0.1:1234',
-        ...args.slice(2),
+        '--model',
+        'provider/model#high',
+        '--file',
+        '/tmp/design one.png',
+        '--file',
+        '/tmp/design-two.png',
+        '--format',
+        'json',
+        '--agent',
+        adapter.role === 'planner' ? 'plan' : 'build',
+        PROMPT,
+        '--title=fixture',
       ]);
       expect(prepared.invocation.baseArgs).toEqual([
         'run',
@@ -68,6 +80,12 @@ describe('OpenCode steering invocation', () => {
         EXISTING: 'value',
         OPENCODE_PASSWORD: 'test-secret',
       });
+      expect(
+        adapter.validateArgs({
+          invocationArgs: prepared.invocation.args,
+          baseArgs: prepared.invocation.baseArgs ?? [],
+        }),
+      ).toEqual({ valid: true });
       const recorder = createRunnerCallRecorder({
         context: {
           callId: 'password',
@@ -127,6 +145,53 @@ function implementerArgs(model: string | undefined, configuredArgs: readonly str
 }
 
 describe('OpenCode role adapters', () => {
+  it.each([
+    [
+      'two images',
+      ['/tmp/design one.png', '/tmp/design-two.png'],
+      ['--file', '/tmp/design one.png', '--file', '/tmp/design-two.png'],
+    ],
+    ['absent images', undefined, []],
+    ['empty images', [], []],
+  ] as const)('passes %s before the prompt in every role', (_label, imagePaths, imageArgs) => {
+    for (const installedVersion of [undefined, '2.0.26']) {
+      for (const [adapter, mode, agent] of [
+        [opencodePlannerAdapter, 'plan', 'plan'],
+        [opencodePlannerAdapter, 'escalate', 'build'],
+        [opencodeImplementerAdapter, 'plan', 'build'],
+      ] as const) {
+        const input = {
+          prompt: PROMPT,
+          model: 'provider/model',
+          projectDir: PROJECT_DIR,
+          configuredArgs: ['--title=fixture'],
+          mode,
+          sessionId: null,
+          effort: undefined,
+          installedVersion,
+          imagePaths,
+        };
+        const expected = [
+          'run',
+          ...(installedVersion === undefined ? [] : ['--standalone']),
+          '--model',
+          'provider/model',
+          ...imageArgs,
+          '--format',
+          'json',
+          '--agent',
+          agent,
+          PROMPT,
+        ];
+        const baseArgs = adapter.baseArgs(input);
+        const invocationArgs = adapter.buildArgs(input);
+        expect(baseArgs).toEqual(expected);
+        expect(invocationArgs).toEqual([...expected, '--title=fixture']);
+        expect(adapter.validateArgs({ invocationArgs, baseArgs })).toEqual({ valid: true });
+      }
+    }
+  });
+
   it('exports planner then implementer candidates with matching canonical hashes', () => {
     expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
     expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.role)).toEqual([

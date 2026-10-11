@@ -10,7 +10,7 @@ import {
 } from '../../calls/steering.js';
 import { formatMessageInput } from '../../orchestrator/queue/prompt.js';
 import { installClaudeSteeringShim } from '#testing/helpers/claude-steering-shim.js';
-import { prependPath } from '#testing/helpers/command-shim.js';
+import { prependPath, writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import type { ChildProcess } from 'node:child_process';
 import {
   chmodSync,
@@ -44,7 +44,7 @@ import { CLI_RAW_OUTPUT_MAX_BYTES, invokeProcessCli } from './process-invoke.js'
 import { runnerCallOutcome, runnerOwnWords } from '../../implementers/pipeline/call-result.js';
 import { requireCompletedCall } from '../../planners/require-completed-call.js';
 import { antigravityImplementerAdapter } from './antigravity.js';
-import { claudeCodeImplementerAdapter } from './claude-code.js';
+import { claudeCodeImplementerAdapter, claudeCodePlannerAdapter } from './claude-code.js';
 import { codexImplementerAdapter } from './codex.js';
 import {
   opencodeImplementerAdapter,
@@ -2047,61 +2047,183 @@ describe('invokeProcessCli structured-terminal halts on stderr', () => {
 });
 
 describe('Claude Code process steering', () => {
-  itUnix('keeps queued image and text attachments in the live Claude user turn', async () => {
-    await withTempDir('claude-steering-attachments', async (dir) => {
-      const shim = installClaudeSteeringShim(dir);
-      const port = createSteeringPort();
-      const images = [
-        {
-          id: 'shot',
-          kind: 'image' as const,
-          path: '/outside/shot.png',
-          mimeType: 'image/png',
-          sizeBytes: 8,
-        },
-      ];
-      const turn: SteerMessage = {
-        id: 'attached',
-        text: formatMessageInput({ text: 'Use these notes:\nattached text contents', images }),
-        images,
-        attachedInputs: [
-          { kind: 'text', path: '/outside/notes.txt' },
-          { kind: 'image', path: '/outside/shot.png' },
-        ],
-      };
-      let delivery: Promise<SteerOutcome> | undefined;
-      const result = await invokeCliAdapter({
-        adapter: claudeCodeImplementerAdapter,
-        invocation: {
-          executable: executableIdentity(shim.executable),
-          args: ['-p'],
-          baseArgs: ['-p'],
-          promptTransport: { kind: 'stdin' },
-          environment: toCliEnvironment(process.env),
-          cwd: dir,
-          signal: undefined,
-          timeoutMs: 5_000,
-        },
-        prompt: 'initial',
-        installedVersion: '2.1.296',
-        steering: port,
-        callContext,
-        onCallEvent: (event) => {
-          if (event.type === 'call_tool_use_delta')
-            delivery = deliverToRunningCall(port.current(), turn);
-        },
+  itUnix.each([claudeCodeImplementerAdapter, claudeCodePlannerAdapter])(
+    'sends images on stream-json stdin for a non-steering $role call',
+    async (selected) => {
+      await withTempDir('claude-image-stdin', async (dir) => {
+        const imagePath = join(dir, 'shot.data');
+        const bytes = Buffer.from([137, 80, 78, 71, 0, 255]);
+        writeFileSync(imagePath, bytes);
+        const images = [
+          {
+            id: 'shot',
+            kind: 'image' as const,
+            path: imagePath,
+            mimeType: 'image/png',
+            sizeBytes: bytes.length,
+          },
+        ];
+        const stdinFile = join(dir, 'stdin.jsonl');
+        const argvFile = join(dir, 'argv.json');
+        const executable = writeFakeNodeCli(
+          dir,
+          'claude',
+          `
+const fs = require('node:fs');
+fs.writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => input += chunk);
+process.stdin.on('end', () => {
+  fs.writeFileSync(${JSON.stringify(stdinFile)}, input);
+  console.log(JSON.stringify({type:'result', result:'done'}));
+});
+`,
+        );
+        const baseArgs = selected.baseArgs({
+          prompt: '',
+          model: undefined,
+          projectDir: dir,
+          configuredArgs: [],
+          mode: 'plan',
+          sessionId: null,
+          effort: undefined,
+          imagePaths: [imagePath],
+        });
+        const result = await invokeCliAdapter({
+          adapter: selected,
+          invocation: {
+            executable: executableIdentity(executable),
+            args: baseArgs,
+            baseArgs,
+            promptTransport: selected.promptTransport,
+            environment: toCliEnvironment(process.env),
+            cwd: dir,
+            signal: undefined,
+            timeoutMs: 5_000,
+            images,
+          },
+          prompt: 'Inspect\nthis screenshot',
+          callContext: { ...callContext, role: selected.role },
+        });
+        expect(result.status).toBe('completed');
+        const args = JSON.parse(readFileSync(argvFile, 'utf8'));
+        expect(
+          args.slice(args.indexOf('--input-format'), args.indexOf('--input-format') + 2),
+        ).toEqual(['--input-format', 'stream-json']);
+        expect(args).not.toContain('--replay-user-messages');
+        expect(readFileSync(stdinFile, 'utf8')).toBe(
+          JSON.stringify({
+            type: 'user',
+            message: {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Inspect\nthis screenshot' },
+                {
+                  type: 'image',
+                  source: {
+                    type: 'base64',
+                    media_type: 'image/png',
+                    data: bytes.toString('base64'),
+                  },
+                },
+              ],
+            },
+          }) + '\n',
+        );
       });
-      expect(result.status).toBe('completed');
-      expect(await delivery).toBe('delivered');
-      const received = readFileSync(shim.stdinFile, 'utf8')
-        .trim()
-        .split('\n')
-        .map((line) => JSON.parse(line).message.content);
-      expect(received).toEqual(['initial', turn.text]);
-      expect(received[1]).toContain('attached text contents');
-      expect(received[1]).toContain('[image:shot] = /outside/shot.png');
-    });
-  });
+    },
+  );
+
+  itUnix.each([
+    [6, true],
+    [900 * 1024, true],
+    [900 * 1024, false],
+  ] as const)(
+    'keeps queued image and text attachments in the live Claude user turn with %i bytes and initial images %s',
+    async (size, initialImages) => {
+      await withTempDir('claude-steering-attachments', async (dir) => {
+        const shim = installClaudeSteeringShim(dir);
+        const port = createSteeringPort();
+        const imagePath = join(dir, 'shot.png');
+        const imageBytes = Buffer.alloc(size, 137);
+        writeFileSync(imagePath, imageBytes);
+        const images = [
+          {
+            id: 'shot',
+            kind: 'image' as const,
+            path: imagePath,
+            mimeType: 'image/png',
+            sizeBytes: imageBytes.length,
+          },
+        ];
+        const turn: SteerMessage = {
+          id: 'attached',
+          text: formatMessageInput({ text: 'Use these notes:\nattached text contents', images }),
+          images,
+          attachedInputs: [
+            { kind: 'text', path: '/outside/notes.txt' },
+            { kind: 'image', path: imagePath },
+          ],
+        };
+        const baseArgs = claudeCodeImplementerAdapter.baseArgs({
+          prompt: '',
+          model: undefined,
+          projectDir: dir,
+          configuredArgs: [],
+          imagePaths: initialImages ? [imagePath] : undefined,
+        });
+        let delivery: Promise<SteerOutcome> | undefined;
+        const result = await invokeCliAdapter({
+          adapter: claudeCodeImplementerAdapter,
+          invocation: {
+            executable: executableIdentity(shim.executable),
+            args: baseArgs,
+            baseArgs,
+            promptTransport: { kind: 'stdin' },
+            environment: toCliEnvironment(process.env),
+            cwd: dir,
+            images: initialImages ? images : undefined,
+            signal: undefined,
+            timeoutMs: 5_000,
+          },
+          prompt: 'initial',
+          installedVersion: '2.1.296',
+          steering: port,
+          callContext,
+          onCallEvent: (event) => {
+            if (event.type === 'call_tool_use_delta')
+              delivery = deliverToRunningCall(port.current(), turn);
+          },
+        });
+        expect(result.status).toBe('completed');
+        expect(await delivery).toBe('delivered');
+        const expectedLine = (text: string, hasImages = true) =>
+          JSON.stringify({
+            type: 'user',
+            message: {
+              role: 'user',
+              content: hasImages
+                ? [
+                    { type: 'text', text },
+                    {
+                      type: 'image',
+                      source: {
+                        type: 'base64',
+                        media_type: 'image/png',
+                        data: imageBytes.toString('base64'),
+                      },
+                    },
+                  ]
+                : text,
+            },
+          }) + '\n';
+        expect(readFileSync(shim.stdinFile, 'utf8')).toBe(
+          expectedLine('initial', initialImages) + expectedLine(turn.text),
+        );
+      });
+    },
+  );
 
   itUnix.each(['tool', 'follow-up', 'repeated'] as const)(
     'acknowledges %s input and keeps the last result',
@@ -2360,7 +2482,7 @@ describe('OpenCode process steering', () => {
     return { shim, port, events, run, home, assertReaped };
   }
 
-  itUnix('keeps queued image and text attachments in the live OpenCode user turn', async () => {
+  itUnix('defers OpenCode image attachments while delivering a following text turn', async () => {
     await withTempDir('opencode-steering-attachments', async (dir) => {
       const fixture = setup(dir);
       const images = [
@@ -2382,16 +2504,23 @@ describe('OpenCode process steering', () => {
         ],
       };
       let delivery: Promise<SteerOutcome> | undefined;
+      let textDelivery: Promise<SteerOutcome> | undefined;
       const result = await fixture.run({
         onEvent: (event) => {
-          if (event.type === 'call_tool_use_delta')
+          if (event.type === 'call_tool_use_delta') {
             delivery = deliverToRunningCall(fixture.port.current(), turn);
+            textDelivery = deliverToRunningCall(fixture.port.current(), {
+              id: 'text',
+              text: 'Continue the current task.',
+            });
+          }
         },
       });
       expect(result.status, JSON.stringify(result.error)).toBe('completed');
-      expect(await delivery).toBe('delivered');
+      expect(await delivery).toBe('deferred');
+      expect(await textDelivery).toBe('delivered');
       expect(JSON.parse(readFileSync(fixture.shim.requestsFile, 'utf8'))).toEqual({
-        text: turn.text,
+        text: 'Continue the current task.',
         delivery: 'steer',
       });
       fixture.assertReaped(fixture.shim.serverFile);

@@ -175,9 +175,40 @@ describe('OpenCode steering HTTP acknowledgement', () => {
     },
   );
 
-  it('delivers a consumed steer with the real message lookup response shape', async () => {
+  it('defers image messages without making an HTTP request', async () => {
+    const fetchMock = vi.fn(() => Response.json({ data: { id: 'msg-image' } }));
+    vi.stubGlobal('fetch', fetchMock);
+    const { session, send } = await openSession();
+    try {
+      expect(
+        await send({
+          id: 'image',
+          text: 'Use this design',
+          images: [
+            {
+              id: 'design',
+              kind: 'image',
+              path: '/tmp/design.png',
+              mimeType: 'image/png',
+              sizeBytes: 1,
+            },
+          ],
+        }),
+      ).toBe('deferred');
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(session.failureSignal?.aborted).toBe(false);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it.each([undefined, []] as const)('delivers a text-only steer with images=%j', async (images) => {
     vi.stubGlobal('fetch', async (url: string, opts: RequestInit) => {
-      if (opts.method === 'POST') return Response.json({ data: { id: 'msg-stored' } });
+      if (opts.method === 'POST') {
+        expect(url).toBe('http://127.0.0.1:1234/api/session/ses-1/prompt');
+        expect(JSON.parse(String(opts.body))).toEqual({ text: 'PINEAPPLE', delivery: 'steer' });
+        return Response.json({ data: { id: 'msg-stored' } });
+      }
       if (url.endsWith('/inbox')) return Response.json({ data: [] });
       if (url.endsWith('/message')) {
         return Response.json({
@@ -198,7 +229,7 @@ describe('OpenCode steering HTTP acknowledgement', () => {
     });
     const { session, send } = await openSession();
     try {
-      expect(await send({ id: 'stored', text: 'PINEAPPLE' })).toBe('delivered');
+      expect(await send({ id: 'stored', text: 'PINEAPPLE', images })).toBe('delivered');
       expect(session.failureSignal?.aborted).toBe(false);
     } finally {
       await session.close();

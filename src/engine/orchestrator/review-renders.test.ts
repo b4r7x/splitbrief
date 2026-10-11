@@ -199,7 +199,7 @@ describe('reviewRenders', () => {
     const projectDir = createTempDir('review-renders');
     const png = join(projectDir, 'dashboard.png');
     writePng(png);
-    const takesImages = seatSupportsImages({ runner: { kind: 'cli', tool: 'opencode' } });
+    const takesImages = seatSupportsImages({ runner: { kind: 'cli', tool: 'cursor' } });
     expect(takesImages).toBe(false);
 
     const renders = reviewRenders({

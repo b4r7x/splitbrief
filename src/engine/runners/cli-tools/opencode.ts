@@ -131,7 +131,10 @@ function createProbe() {
  * `provider/model#variant`, a form 1.x reads as part of the model id.
  */
 function runArgs(
-  input: Pick<OpenCodeImplementerBuildInput, 'installedVersion' | 'model' | 'variant'>,
+  input: Pick<
+    OpenCodeImplementerBuildInput,
+    'installedVersion' | 'model' | 'variant' | 'imagePaths'
+  >,
 ): string[] {
   const { installedVersion, model, variant } = input;
   const standalone =
@@ -143,6 +146,7 @@ function runArgs(
     args.push('--model', standalone && variant !== undefined ? `${model}#${variant}` : model);
   }
   if (!standalone && variant !== undefined) args.push('--variant', variant);
+  args.push(...(input.imagePaths ?? []).flatMap((path) => ['--file', path]));
   return args;
 }
 

@@ -240,6 +240,8 @@ export function createOpencodeSteering(
         void task.then(() => work.delete(task));
       };
       const send: Parameters<typeof input.onReady>[0] = (message) => {
+        if (message.images !== undefined && message.images.length > 0)
+          return Promise.resolve('deferred');
         if (!accepting || sessionId === undefined) return Promise.resolve('deferred');
         const attachedSessionId = sessionId;
         const delivery = Promise.withResolvers<SteerOutcome>();

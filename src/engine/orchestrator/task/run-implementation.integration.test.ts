@@ -1536,7 +1536,15 @@ describe('runImplementation corrections against the persisted head', () => {
         }),
       });
       if (firstCall === 'retry') implementer.retry = vi.fn((call) => implementer.implement(call));
-      const wctx = makeWctx({ projectDir, sessionId, implementer, bus });
+      const wctx = makeWctx({
+        projectDir,
+        sessionId,
+        implementer,
+        bus,
+        config: makeNoValidationConfig({
+          implementer: { kind: 'cli', tool: 'codex', model: 'fixture' },
+        }),
+      });
 
       const result = await runImplementation({
         wctx,
@@ -1597,11 +1605,22 @@ describe('runImplementation corrections against the persisted head', () => {
       });
       const implementer = makeImplementer();
       const message = attachedMessage(projectDir);
+      message.images = [
+        {
+          id: 'seed-image',
+          kind: 'image',
+          path: '/seed.png',
+          mimeType: 'image/png',
+          sizeBytes: 12,
+        },
+      ];
+      const { bus, events } = makeBusRecorder();
       let parked = route === 'parked';
       const wctx = makeWctx({
         projectDir,
         sessionId,
         implementer,
+        bus,
         callbacks: makeCallbacks({ onContinuationNeeded: async () => message }).callbacks,
         ...(route === 'seed' && {
           continuation: createContinuationHolder({
@@ -1629,11 +1648,20 @@ describe('runImplementation corrections against the persisted head', () => {
       });
 
       for (const saved of [result.state, loadState({ projectDir, sessionId })]) {
-        expect(saved?.lineages?.T070?.corrections).toEqual(['first correction', message.text]);
+        expect(saved?.lineages?.T070?.corrections).toEqual([
+          'first correction',
+          `${message.text}\n\nAttached image paths:\n[image:seed-image] = /seed.png`,
+        ]);
       }
       const steer = vi.mocked(implementer.implement).mock.calls[0]?.[0].continuation?.steer;
       expect(steer).toContain('first correction');
-      expect(steer).toBe(`first correction\n\n${message.text}`);
+      expect(steer).toBe(
+        `first correction\n\n${message.text}\n\nAttached image paths:\n[image:seed-image] = /seed.png`,
+      );
+      expect(vi.mocked(implementer.implement).mock.calls[0]?.[0].images).toBeUndefined();
+      expect(events.filter((event) => event.type === 'build_images_as_paths')).toEqual([
+        expect.objectContaining({ taskId: task.id, count: 1 }),
+      ]);
     },
   );
 
@@ -1772,6 +1800,7 @@ describe('BUILD steering wiring', () => {
         send: () => delivery.promise,
       });
       const handler = createQueueHandler({
+        config: makeNoValidationConfig(),
         ...ref,
         steering,
         bus,

@@ -48,5 +48,9 @@ export function queueCopy(input: {
           ? undefined
           : `${count > 1 ? `${count} messages ` : ''}${input.via === 'mid-call' ? 'mid-call ' : ''}to ${target}`,
     },
+    imagesAsPaths: {
+      label: 'Images',
+      value: `${count} ${pluralize(count, 'image')} went to ${target} as paths · this seat takes no images`,
+    },
   };
 }

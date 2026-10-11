@@ -6,6 +6,7 @@ import type {
   RUNNER_CALL_WARNING_SEVERITIES,
 } from '../../../core/runner-call-contract.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import type {
   CliArgumentValidation,
@@ -141,10 +142,18 @@ export type CliInvocation = Readonly<{
   promptTransport: CliPromptTransport;
   environment: Readonly<Record<string, string>>;
   cwd: string;
+  images?: readonly Attachment[] | undefined;
   /** The seat's opt-in total; unset, the call has no deadline. */
   timeoutMs?: number | undefined;
   signal: AbortSignal | undefined;
 }>;
+
+type CliPromptEncoder = (
+  input: Readonly<{
+    invocation: CliInvocation;
+    prompt: string;
+  }>,
+) => Promise<string>;
 
 export type CliProbeCommand = Readonly<{
   command: readonly [string, ...string[]];
@@ -286,6 +295,7 @@ type CliAdapterContract<
   descriptor: (typeof CLI_TOOL_CATALOG)[Tool];
   role: Role;
   promptTransport: CliPromptTransport;
+  encodePrompt?: CliPromptEncoder | undefined;
   steering?: CliSteeringTransport | undefined;
   baseArgs: (input: BuildArgsInput) => readonly string[];
   buildArgs: (input: BuildArgsInput) => readonly string[];
@@ -373,6 +383,7 @@ export type CliProcessAdapter = Readonly<{
     auth: Readonly<{ channels: readonly Readonly<{ env: readonly string[] }>[] }>;
   }>;
   promptTransport: CliPromptTransport;
+  encodePrompt?: CliPromptEncoder | undefined;
   steering?: CliSteeringTransport | undefined;
   validateArgs: (input: {
     invocationArgs: readonly string[];

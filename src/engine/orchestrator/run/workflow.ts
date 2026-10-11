@@ -328,6 +328,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
             bus: wctx.bus,
             config,
             planner: wctx.planner,
+            modelCache: wctx.modelCache,
             steering,
             ...(wctx.signal !== undefined && { signal: wctx.signal }),
           });

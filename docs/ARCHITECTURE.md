@@ -922,8 +922,8 @@ A diagnostic key includes its path, position and message. Match exact keys first
 
 Older logs without these fields still render. `message_injected_native` keeps its existing fields and occurs only in plan phases. `QueuedMessage` adds optional `possibleDuplicate: boolean` and `deliveredMidCall: true`; older saved states still load.
 
-**Attachments (1):**
-`planner_attachments_dropped`
+**Attachments (2):**
+`planner_attachments_dropped`, `build_images_as_paths` (one event per BUILD correction delivery with images when the seat takes no images: `taskId`, `count`)
 
 **Cost (1):**
 `cost_update`

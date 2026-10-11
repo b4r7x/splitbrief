@@ -23,7 +23,11 @@ function apiRunner(input: { provider: string; model: string }): RunnerConfig {
 const claudeCode = { kind: 'cli', tool: 'claude-code' } satisfies RunnerConfig;
 const codex = { kind: 'cli', tool: 'codex' } satisfies RunnerConfig;
 const opencode = { kind: 'cli', tool: 'opencode' } satisfies RunnerConfig;
+const kiloCode = { kind: 'cli', tool: 'kilo-code' } satisfies RunnerConfig;
+const copilot = { kind: 'cli', tool: 'copilot' } satisfies RunnerConfig;
 const cursor = { kind: 'cli', tool: 'cursor' } satisfies RunnerConfig;
+const commandCode = { kind: 'cli', tool: 'command-code' } satisfies RunnerConfig;
+const antigravity = { kind: 'cli', tool: 'antigravity' } satisfies RunnerConfig;
 const shell = { kind: 'shell', command: 'my-planner', model: 'whatever' } satisfies RunnerConfig;
 const agent = { kind: 'agent', command: 'my-agent', model: 'whatever' } satisfies RunnerConfig;
 
@@ -52,8 +56,12 @@ describe('seatSupportsImages', () => {
   it('reads the image channel each CLI tool declares', () => {
     expect(seatSupportsImages({ runner: claudeCode })).toBe(true);
     expect(seatSupportsImages({ runner: codex })).toBe(true);
-    expect(seatSupportsImages({ runner: opencode })).toBe(false);
+    expect(seatSupportsImages({ runner: opencode })).toBe(true);
+    expect(seatSupportsImages({ runner: kiloCode })).toBe(true);
+    expect(seatSupportsImages({ runner: copilot })).toBe(true);
     expect(seatSupportsImages({ runner: cursor })).toBe(false);
+    expect(seatSupportsImages({ runner: commandCode })).toBe(false);
+    expect(seatSupportsImages({ runner: antigravity })).toBe(false);
     expect(seatSupportsImages({ runner: shell })).toBe(false);
   });
 
@@ -95,8 +103,12 @@ describe('plannerSupportsImages', () => {
     for (const [planner, supportsImages] of [
       [claudeCode, true],
       [codex, true],
-      [opencode, false],
+      [opencode, true],
+      [kiloCode, true],
+      [copilot, true],
       [cursor, false],
+      [commandCode, false],
+      [antigravity, false],
       [shell, false],
       [agent, false],
     ] as const) {

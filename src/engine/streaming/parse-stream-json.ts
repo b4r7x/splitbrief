@@ -177,7 +177,13 @@ const AssistantEvent = z.object({
 const InputEchoEvent = z.object({
   type: z.literal('user'),
   parent_tool_use_id: z.null(),
-  message: z.object({ role: z.literal('user'), content: z.string() }),
+  message: z.object({
+    role: z.literal('user'),
+    content: z.union([
+      z.string(),
+      z.array(z.union([TextBlock, z.object({ type: z.literal('image') })])),
+    ]),
+  }),
 });
 
 const UserEvent = z.object({
@@ -562,7 +568,15 @@ function parseLine(
     }
 
     const echo = InputEchoEvent.safeParse(event);
-    if (echo.success) return { inputAck: echo.data.message.content };
+    if (echo.success) {
+      const content = echo.data.message.content;
+      return {
+        inputAck:
+          typeof content === 'string'
+            ? content
+            : content.flatMap((block) => (block.type === 'text' ? [block.text] : [])).join(''),
+      };
+    }
 
     const user = UserEvent.safeParse(event);
     if (user.success) {
