@@ -673,9 +673,8 @@ describe('buildConversationRows', () => {
             sequence: 1,
             activityId: 'call-1:tool:sed-start',
             kind: 'command',
-            label:
-              'running "sed -n \'1,240p\' CLAUDE.md" /bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
-            target: '"sed -n \'1,240p\' CLAUDE.md" /bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
+            label: 'running /bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
+            target: '/bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
           }),
           activity({
             sequence: 2,
@@ -715,7 +714,7 @@ describe('buildConversationRows', () => {
     expect(text).not.toContain('sed -n');
     expect(text).toContain(activityLine('READ', 'CLAUDE.md :1-240'));
     expect(text).toContain(activityLine('RUN', 'wc -l CLAUDE.md'));
-    expect(text).toContain(activityLine('PLAN', 'rg -n \\'));
+    expect(text).toContain(activityLine('PLAN', 'rg -n "Task Brief|brief|tasks\\.md"'));
     expect(text).not.toContain('/bin/zsh -lc');
     expect(text).not.toContain('activity:');
   });

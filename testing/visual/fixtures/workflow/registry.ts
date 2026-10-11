@@ -114,6 +114,14 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       afterMount: () => feedbackStore.setMessage(formatCopyResult('native')),
     });
   }
+  if (projection.scenarioId === 'workflow-implementation-shell-wrapper') {
+    return () => ({
+      ...base(),
+      afterMount: async (write) => {
+        await write.press('\u0001');
+      },
+    });
+  }
   if (projection.scenarioId === 'workflow-recovery-consult-bound-note') {
     return () => ({
       ...base(),
@@ -448,6 +456,10 @@ const checkpointPredicates = [
   [
     checkpointId('implementation-tool-running'),
     includesAll('No output for', 'running npx vitest run'),
+  ],
+  [
+    checkpointId('implementation-shell-wrapper'),
+    includesAll('src/loans/renewals.ts', 'renewal window', 'overdue'),
   ],
   [checkpointId('implementation-silent-bare'), includesAll('Implementing…', 'No output for')],
   [checkpointId('review-check-running'), includesAll('Review · Reviewer check V2')],

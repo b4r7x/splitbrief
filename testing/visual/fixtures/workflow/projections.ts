@@ -4179,6 +4179,43 @@ const implementationSilentBareProjection: WorkflowFixtureProjection = {
   }),
 };
 
+const implementationShellWrapperProjection: WorkflowFixtureProjection = {
+  ...implementationSilentBareProjection,
+  scenarioId: scenarioId('workflow-implementation-shell-wrapper'),
+  events: implementationSilentBareProjection.events.flatMap((event): EngineEvent[] => {
+    if (event.type === 'tasks_planned') {
+      return [{ ...event, tasks: event.tasks.slice(0, 1), total: 1 }];
+    }
+    if (event.type === 'task_started') return [{ ...event, total: 1 }];
+    return event.type === 'runner_call_started'
+      ? [
+          event,
+          ...[
+            `/bin/zsh -lc "sed -n '1,120p' src/loans/renewals.ts"`,
+            `/bin/zsh -lc "rg --files --hidden -g '"'!node_modules'"' -g '"'!.git'"' -g '"'!package-lock.json'"' -g '"'!yarn.lock'"' -g '"'!pnpm-lock.yaml'"'"`,
+            `/bin/bash -lc 'echo '"'"'renewal window'"'"''`,
+            `bash -lc 'echo unfinished`,
+            String.raw`bash -lc $'echo hi\nls'`,
+            String.raw`/bin/zsh -lc "rg -n \"overdue\" src/loans"`,
+          ].map(
+            (target, index): EngineEvent => ({
+              ...event,
+              type: 'runner_call_activity',
+              ts: event.ts + (index + 1) * 1_000,
+              sequence: index + 1,
+              activityId: `${event.callId}:command:${index + 1}`,
+              stage: index === 5 ? 'updated' : 'completed',
+              kind: 'command',
+              label: 'running ' + target,
+              target,
+              redacted: false,
+            }),
+          ),
+        ]
+      : [event];
+  }),
+};
+
 // Every brief passed, and the pre-review full suite is ten minutes into `npm test`. No seat is on a
 // call: the suite is the whole of what the run is doing.
 const PRE_REVIEW_TEST_STARTED_TS = FIXED_TS + 42_000 - 602_000;
@@ -5065,6 +5102,7 @@ const projections = [
   implementationSilentProjection,
   implementationToolRunningProjection,
   implementationSilentBareProjection,
+  implementationShellWrapperProjection,
   reviewCheckRunningProjection,
   reviewRenderRunningProjection,
   reviewPauseRequestedProjection,

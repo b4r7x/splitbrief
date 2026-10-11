@@ -203,6 +203,55 @@ export function truncateTerminalDisplayTextMiddle(text: string, maxCells: number
   return `${head}${ELLIPSIS}${tail}`;
 }
 
+export function truncateTerminalDisplayTextMiddleAtWords(text: string, maxCells: number): string {
+  if (maxCells <= 0) return '';
+
+  const clean = stripTerminalControls(text);
+  if (getTerminalCellWidth(clean) <= maxCells) return clean;
+
+  const separator = ` ${ELLIPSIS} `;
+  const contentWidth = maxCells - getTerminalCellWidth(separator);
+  if (contentWidth <= 0) return truncateTerminalDisplayTextMiddle(clean, maxCells);
+
+  const tokens = Array.from(clean.matchAll(/\S+/gu));
+  let headIndex = 0;
+  let tailIndex = tokens.length - 1;
+  let head = '';
+  let tail = '';
+  let headWidth = 0;
+  let tailWidth = 0;
+
+  while (headIndex <= tailIndex) {
+    const headToken = tokens[headIndex];
+    const tailToken = tokens[tailIndex];
+    if (headToken === undefined || tailToken === undefined) break;
+
+    const nextHead = clean.slice(0, headToken.index + headToken[0].length);
+    const nextTail = clean.slice(tailToken.index);
+    const nextHeadWidth = getTerminalCellWidth(nextHead);
+    const nextTailWidth = getTerminalCellWidth(nextTail);
+    const headFits = nextHeadWidth + tailWidth <= contentWidth;
+    const tailFits = headWidth + nextTailWidth <= contentWidth;
+
+    if ((headWidth <= tailWidth || !tailFits) && headFits) {
+      head = nextHead;
+      headWidth = nextHeadWidth;
+      headIndex += 1;
+    } else if (tailFits) {
+      tail = nextTail;
+      tailWidth = nextTailWidth;
+      tailIndex -= 1;
+    } else {
+      break;
+    }
+  }
+
+  if (head.length === 0 || tail.length === 0) {
+    return truncateTerminalDisplayTextMiddle(clean, maxCells);
+  }
+  return `${head}${separator}${tail}`;
+}
+
 export function elidePathLabel(label: string, width: number): string {
   if (getTerminalCellWidth(label) <= width) return label;
   const segments = label.split('/');

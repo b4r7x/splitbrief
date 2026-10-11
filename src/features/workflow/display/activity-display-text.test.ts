@@ -2,9 +2,59 @@ import { describe, expect, it } from 'vitest';
 import { projectRunnerCallActivity } from '../../../engine/calls/activity.js';
 import { runnerActivityLedgerItem } from './runner-activity-display.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { rowLeadingCells } from '../conversation-rows/row-markers.js';
+import { getWorkflowContentWidth } from '../layout/rect.js';
+import { ACTIVITY_LABEL_PAD, displayActivityLabel } from './activity-label-display.js';
 import { fitCompactActivityDisplayLine } from './activity-display-text.js';
 
 describe('fitCompactActivityDisplayLine', () => {
+  it.each([
+    [60, "rg --files --hidden -g … -g '!pnpm-lock.yaml'"],
+    [80, "rg --files --hidden -g … -g '!yarn.lock' -g '!pnpm-lock.yaml'"],
+    [
+      120,
+      "rg --files --hidden -g '!node_modules' -g … -g '!package-lock.json' -g '!yarn.lock' -g '!pnpm-lock.yaml'",
+    ],
+  ])('keeps whole command tokens in a RUN row at %i columns', (cols, expected) => {
+    const command =
+      "rg --files --hidden -g '!node_modules' -g '!.git' -g '!package-lock.json' -g '!yarn.lock' -g '!pnpm-lock.yaml'";
+    const label = displayActivityLabel('RUN').padEnd(ACTIVITY_LABEL_PAD);
+    const rowCells = getWorkflowContentWidth({ cols, sidebarVisible: true });
+    const prefixCells = rowLeadingCells('activity-child');
+    const line = fitCompactActivityDisplayLine({
+      label,
+      value: command,
+      valueFit: 'middle',
+      rowCells,
+      prefixCells,
+    });
+
+    expect(line.value).toBe(expected);
+    expect(line.text).toBe(`${label}  ${expected}`);
+    const value = line.text.slice(label.length + 2);
+    expect(value).not.toMatch(/(?:^|\s)'(?:\s|$)/u);
+    for (const token of value.split(/\s+/u)) {
+      expect([...command.split(/\s+/u), '…']).toContain(token);
+    }
+    expect(prefixCells + getTerminalCellWidth(line.text)).toBeLessThanOrEqual(rowCells);
+  });
+
+  it('uses the available RUN value budget for a complete test path', () => {
+    const line = fitCompactActivityDisplayLine({
+      label: 'run',
+      value:
+        'npm exec vitest run src/engine/calls/activity.test.ts src/features/workflow/display/activity-display-text.test.ts --reporter=verbose',
+      rowCells: 107,
+      prefixCells: 2,
+    });
+
+    expect(line.value).toBe(
+      'npm exec vitest run … src/features/workflow/display/activity-display-text.test.ts --reporter=verbose',
+    );
+    expect(line.text).toBe(`run  ${line.value}`);
+    expect(2 + getTerminalCellWidth(line.text)).toBeLessThanOrEqual(107);
+  });
+
   it('fits a long run command into one child activity row while preserving the command and SKILL.md tail', () => {
     const rowCells = 56;
     const line = fitCompactActivityDisplayLine({

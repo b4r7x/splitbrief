@@ -2,7 +2,7 @@ import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
-  truncateTerminalDisplayTextMiddle,
+  truncateTerminalDisplayTextMiddleAtWords,
   truncateTerminalDisplayTextStart,
 } from '../../../utils/display-text.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -64,7 +64,7 @@ function fitActivityValue(
     case 'end':
       return truncateTerminalDisplayText(value, maxCells);
     case 'middle':
-      return truncateTerminalDisplayTextMiddle(value, maxCells);
+      return truncateTerminalDisplayTextMiddleAtWords(value, maxCells);
     case 'start':
       return truncateTerminalDisplayTextStart(value, maxCells);
     default:

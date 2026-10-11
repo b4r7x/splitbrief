@@ -1,3 +1,5 @@
+import { scanShellWords } from '../../../utils/parse-shell-command.js';
+
 export interface PrettyShellActivity {
   label: 'READ' | 'FIND' | 'LIST';
   value: string;
@@ -64,9 +66,9 @@ const LS_VALUED_FLAGS: ReadonlySet<string> = new Set([
 // runners emit constantly; anything compound or ambiguous returns null and stays a raw RUN.
 export function prettifyShellActivity(command: string): PrettyShellActivity | null {
   if (COMPOUND_COMMAND_PATTERN.test(command)) return null;
-  const tokens = tokenizeShellCommand(command.trim());
-  if (tokens === null) return null;
-  const [name, ...args] = tokens;
+  const { words, complete } = scanShellWords(command);
+  if (!complete) return null;
+  const [name, ...args] = words;
   switch (name) {
     case 'sed':
       return prettifySed(args);
@@ -87,31 +89,31 @@ export function prettifyShellActivity(command: string): PrettyShellActivity | nu
 
 function prettifySed(args: string[]): PrettyShellActivity | null {
   if (args.length !== 3 || args[0] !== '-n') return null;
-  const range = SED_RANGE_PATTERN.exec(unquote(args[1] ?? ''));
+  const range = SED_RANGE_PATTERN.exec(args[1] ?? '');
   const start = range?.[1];
   const end = range?.[2];
   const file = args[2];
   if (start === undefined || end === undefined || file === undefined || isFlag(file)) return null;
-  return { label: 'READ', value: `${unquote(file)} :${start}-${end}` };
+  return { label: 'READ', value: `${file} :${start}-${end}` };
 }
 
 function prettifyCat(args: string[]): PrettyShellActivity | null {
   const files = args.filter((arg) => !isFlag(arg));
   const file = files[0];
   if (files.length !== 1 || file === undefined) return null;
-  return { label: 'READ', value: unquote(file) };
+  return { label: 'READ', value: file };
 }
 
 function prettifyHeadTail(args: string[]): PrettyShellActivity | null {
   if (args.length === 3 && args[0] === '-n' && COUNT_PATTERN.test(args[1] ?? '')) {
     const file = args[2];
     if (file === undefined || isFlag(file)) return null;
-    return { label: 'READ', value: unquote(file) };
+    return { label: 'READ', value: file };
   }
   if (args.length === 2 && HEAD_TAIL_COUNT_FLAG_PATTERN.test(args[0] ?? '')) {
     const file = args[1];
     if (file === undefined || isFlag(file)) return null;
-    return { label: 'READ', value: unquote(file) };
+    return { label: 'READ', value: file };
   }
   return null;
 }
@@ -133,9 +135,9 @@ function prettifyGrep(args: string[]): PrettyShellActivity | null {
   }
   const [pattern, ...paths] = positional;
   if (pattern === undefined) return null;
-  const quotedPattern = `"${unquote(pattern)}"`;
+  const quotedPattern = `"${pattern}"`;
   if (paths.length === 0) return { label: 'FIND', value: quotedPattern };
-  return { label: 'FIND', value: `${quotedPattern}  ${paths.map(unquote).join(' ')}` };
+  return { label: 'FIND', value: `${quotedPattern}  ${paths.join(' ')}` };
 }
 
 function prettifyLs(args: string[]): PrettyShellActivity | null {
@@ -143,7 +145,7 @@ function prettifyLs(args: string[]): PrettyShellActivity | null {
   const paths = args.filter((arg) => !isFlag(arg));
   if (paths.length > 1) return null;
   const path = paths[0];
-  return { label: 'LIST', value: path === undefined ? '.' : unquote(path) };
+  return { label: 'LIST', value: path === undefined ? '.' : path };
 }
 
 function hasSeparatedValuedFlag(args: string[], valuedFlags: ReadonlySet<string>): boolean {
@@ -156,39 +158,4 @@ function hasEmbeddedPatternFlag(args: string[], prefixes: readonly string[]): bo
 
 function isFlag(token: string): boolean {
   return token.startsWith('-');
-}
-
-function unquote(token: string): string {
-  const first = token[0];
-  if ((first === "'" || first === '"') && token.length >= 2 && token.endsWith(first)) {
-    return token.slice(1, -1);
-  }
-  return token;
-}
-
-function tokenizeShellCommand(command: string): string[] | null {
-  const tokens: string[] = [];
-  let current = '';
-  let quote: '"' | "'" | null = null;
-  for (const char of command) {
-    if (quote !== null) {
-      current += char;
-      if (char === quote) quote = null;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      current += char;
-      continue;
-    }
-    if (char === ' ' || char === '\t') {
-      if (current.length > 0) tokens.push(current);
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  if (quote !== null) return null;
-  if (current.length > 0) tokens.push(current);
-  return tokens;
 }
