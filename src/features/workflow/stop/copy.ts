@@ -6,7 +6,10 @@ import type { RunRecord } from '../../../core/sessions/run-record.js';
 import type { RunningSuiteStage } from '../../../stores/workflow/operations/state.js';
 import type { StopIntent, StopParkKind, StopPhase } from '../../../stores/workflow/stop.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
-import { suiteStatusText } from '../display/phase-verb.js';
+import { suiteStatusParts } from '../display/phase-verb.js';
+import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
+import { separatedSpans } from '../conversation-rows/row-format/text.js';
 
 const PARKED_HINT = `⏎ resume${SOFT_SEP}/stop options${SOFT_SEP}esc back to sessions${SOFT_SEP}ctrl+c quit`;
 
@@ -38,7 +41,8 @@ export interface StopBylineInput {
 }
 
 export interface StopByline {
-  readonly lead: string;
+  readonly tone: StateTone;
+  readonly parts: readonly ConversationRowSegment[];
   /** The lead's clock, kept whole when the byline cuts the lead to its width. */
   readonly clock?: string | undefined;
   readonly hint: string;
@@ -81,36 +85,75 @@ function subject(input: StopBylineInput): string {
  * Where a stop parked the run, in the words its record uses. Only a brief the stop cut mid-step has
  * partial work to keep: a planner step, a gate or a brief not yet started changed nothing.
  */
-function stoppedLead(input: StopBylineInput): string {
+function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSegment[] {
   const status = input.record?.status;
   if (status?.kind !== 'open') {
     const brief = input.parked?.taskId ?? input.currentTaskId;
-    if (brief === null) return 'Stopped';
+    if (brief === null) return stopLeadParts('Stopped', tone);
     const cut: StepCut | undefined =
       input.parked?.kind === 'boundary'
         ? 'boundary'
         : input.parked?.kind === 'mid-brief'
           ? 'mid-step'
           : undefined;
-    const lead = `Stopped ${stopPoint({ kind: 'brief', taskId: taskId(brief), attempt: 0 }, cut)}`;
-    return cut === 'mid-step' ? `${lead}${SOFT_SEP}Partial changes kept` : lead;
+    return stopLeadParts(
+      'Stopped',
+      tone,
+      ` ${stopPoint({ kind: 'brief', taskId: taskId(brief), attempt: 0 }, cut)}`,
+      cut === 'mid-step' ? 'Partial changes kept' : undefined,
+    );
   }
   const at = status.stop.on.kind === 'paused' ? status.stop.on.at : undefined;
-  const lead = `Stopped ${stopPoint(status.resumeAt, at)}`;
   const cutBrief = status.resumeAt.kind === 'brief' && at === 'mid-step';
-  return cutBrief ? `${lead}${SOFT_SEP}Partial changes kept` : lead;
+  return stopLeadParts(
+    'Stopped',
+    tone,
+    ` ${stopPoint(status.resumeAt, at)}`,
+    cutBrief ? 'Partial changes kept' : undefined,
+  );
+}
+
+function stopLeadParts(
+  state: string,
+  tone: StateTone,
+  cause = '',
+  secondary?: string,
+): ConversationRowSegment[] {
+  return [
+    { text: state, tone },
+    ...separatedSpans(cause, 'text'),
+    ...(secondary === undefined
+      ? []
+      : [
+          { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
+          ...separatedSpans(secondary, 'textDim'),
+        ]),
+  ];
 }
 
 export function stopByline(input: StopBylineInput): StopByline | null {
+  const tone = stateTone(input.phase === 'failed' ? 'failed' : 'attention');
+  const byline = (
+    parts: readonly ConversationRowSegment[],
+    hint: string,
+    clock?: string,
+  ): StopByline => {
+    return {
+      tone,
+      parts,
+      hint,
+      ...(clock === undefined ? {} : { clock }),
+    };
+  };
   const name = subject(input);
 
   if (input.intent === 'none') return null;
 
   if (input.phase === 'failed')
-    return {
-      lead: `Stop failed${SOFT_SEP}${input.error ?? 'Cleanup did not finish'}`,
-      hint: '/stop to retry',
-    };
+    return byline(
+      stopLeadParts('Stop failed', tone, `${SOFT_SEP}${input.error ?? 'Cleanup did not finish'}`),
+      '/stop to retry',
+    );
 
   if (input.phase === 'parked') {
     if (input.parked?.kind === 'boundary') {
@@ -118,49 +161,57 @@ export function stopByline(input: StopBylineInput): StopByline | null {
         input.nextTaskId === null
           ? { kind: 'review', cycle: 0 }
           : { kind: 'brief', taskId: taskId(input.nextTaskId), attempt: 0 };
-      return {
-        lead: `Stopped ${stopPoint(next, 'boundary')}${SOFT_SEP}${input.passed} of ${input.total} briefs complete`,
-        hint: PARKED_HINT,
-      };
+      return byline(
+        stopLeadParts(
+          'Stopped',
+          tone,
+          ` ${stopPoint(next, 'boundary')}`,
+          `${input.passed} of ${input.total} briefs complete`,
+        ),
+        PARKED_HINT,
+      );
     }
-    return {
-      lead: stoppedLead(input),
-      hint: PARKED_HINT,
-    };
+    return byline(stoppedLead(input, tone), PARKED_HINT);
   }
 
   // End run closed the run: the closed run's own byline speaks for it.
   if (input.phase === 'ended') return null;
 
   if (input.intent === 'quit') {
-    return { lead: 'Quitting', hint: 'Stopping processes and saving session' };
+    return byline(stopLeadParts('Quitting', tone), 'Stopping processes and saving session');
   }
 
   // A boundary pause kills nothing: the brief runs to its end, so the byline reports the finish
   // rather than a termination that is not happening.
   if (input.intent === 'pause-after-brief') {
     if (input.questionPending) {
-      return { lead: `Answer needed to finish ${name}`, hint: 'Pause requested' };
+      return byline(stopLeadParts('Answer needed', tone, ` to finish ${name}`), 'Pause requested');
     }
     const hint = 'Pause requested; no next brief will start';
-    if (input.suite === null) return { lead: `Finishing ${name}`, hint };
-    return {
-      lead: suiteStatusText({ phase: input.workflowPhase, suite: input.suite }),
-      clock: formatElapsedClock(input.suite.elapsedMs),
+    if (input.suite === null) return byline(stopLeadParts('Finishing', tone, ` ${name}`), hint);
+    return byline(
+      suiteStatusParts(input.workflowPhase, input.suite),
       hint,
-    };
+      formatElapsedClock(input.suite.elapsedMs),
+    );
   }
 
-  const lead = input.intent === 'end-run' ? 'Ending run' : `Stopping ${name}`;
+  const state = input.intent === 'end-run' ? 'Ending run' : 'Stopping';
+  const cause = input.intent === 'end-run' ? '' : ` ${name}`;
   if (input.phase === 'forcing') {
-    return { lead: `${lead}${SOFT_SEP}Forcing remaining processes to exit`, hint: '' };
+    return byline(stopLeadParts(state, tone, cause, 'Forcing remaining processes to exit'), '');
   }
   const progress =
     input.phase === 'terminating'
       ? 'Waiting for processes to exit'
       : 'Finishing cleanup and saving';
-  return {
-    lead: `${lead}${SOFT_SEP}${progress}${SOFT_SEP}${formatElapsedClock(input.elapsedMs)}`,
-    hint: `esc back after stop${SOFT_SEP}ctrl+c quit after stop`,
-  };
+  const clock = formatElapsedClock(input.elapsedMs);
+  return byline(
+    [
+      ...stopLeadParts(state, tone, cause, progress),
+      { text: SOFT_SEP, tone: 'textDim' },
+      { text: clock, tone: 'textDim' },
+    ],
+    `esc back after stop${SOFT_SEP}ctrl+c quit after stop`,
+  );
 }

@@ -5,7 +5,7 @@ import type { StreamingOutputState } from '../../../stores/workflow/streaming-ou
 import { taskId } from '../../../core/schemas/task.js';
 import { eventRows } from '#testing/helpers/event-rows.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
-import { colorForTone } from '../display/tone-color.js';
+import { colorForTone } from '../../../core/theme/tone-color.js';
 import { buildActivityBatchViewModel } from './activity-batch-model.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import { rowText } from './row-format/rows.js';
@@ -61,9 +61,11 @@ describe('runnerActivityBatchRowBlock tree markers', () => {
     ]);
     const header = rows.find((rowValue) => rowValue.kind === 'activity');
     const theme = defaultTheme;
+    const label = header?.segments[0];
+    if (label === undefined) throw new Error('Missing activity header label');
 
-    expect(header?.segments[0]?.tone).toBe('planner');
-    expect(colorForTone(header?.segments[0]?.tone, theme)).toBe(theme.planner);
+    expect(label.tone).toBe('planner');
+    expect(colorForTone(label.tone, theme)).toBe(theme.planner);
   });
 
   it('marks activity-child rows with the Claude Code continuation marker', () => {

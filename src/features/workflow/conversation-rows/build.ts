@@ -99,7 +99,7 @@ function buildConversationRowsProjectionWithContext(
     if (block === undefined) {
       const model = buildActivityBatchViewModel({ events, batchKey, expanded });
       block = runnerActivityBatchRowBlock({
-        model: settled ? { ...model, tone: 'textDim' } : model,
+        model,
         width: ctx.width,
       });
       if (settled && block !== null) block = withoutActiveRow(block);

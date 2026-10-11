@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
@@ -18,8 +19,10 @@ import { routerStore } from '../../../stores/navigation/router.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
-import { formatCollapsedSeatLine, type CrewSeatId } from '../../../core/crew/identity.js';
+import { formatCollapsedSeatSpans, seatLineText } from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
+import type { CrewSeatId, SeatLineSpan } from '../../../core/crew/identity.js';
 import { haltedIssue } from '../../../core/sessions/run-status.js';
 import { formatResetNote } from '../../../core/recovery/reset-clock.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
@@ -32,7 +35,7 @@ interface HeaderProps {
   buildBlockShown?: boolean | undefined;
   /** A run at rest names the stages its own record earned, and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
-  seatLine?: string | undefined;
+  seatLine?: readonly SeatLineSpan[] | undefined;
 }
 
 const TIMER_WIDTH = 8;
@@ -132,7 +135,7 @@ export function Header({
   const { seatRoom } = getHeaderLayout({ cols, railCells });
   const seatNotes = seatResetNotes(recoveryNotice.seat, recoveryNotice.resetAt);
   const liveSeatLine = config
-    ? formatCollapsedSeatLine({
+    ? formatCollapsedSeatSpans({
         planner: config.planner,
         build: resolveImplementerProfiles(config).defaultProfile.config,
         reviewer: configuredReviewerRunner(config),
@@ -141,7 +144,7 @@ export function Header({
         displayNames,
         ...(seatNotes !== undefined && { notes: seatNotes }),
       })
-    : '';
+    : [];
   const seatLine = givenSeatLine ?? liveSeatLine;
   return (
     <HeaderRow
@@ -174,12 +177,15 @@ export function HeaderRow({
 }: {
   rail: ReactNode;
   railCells: number;
-  seatLine: string;
+  seatLine: readonly SeatLineSpan[];
   clock: ReactNode;
   cols: number;
 }) {
-  const t = useTheme();
-  const layout = getHeaderLayout({ cols, railCells, seatCells: getTerminalCellWidth(seatLine) });
+  const layout = getHeaderLayout({
+    cols,
+    railCells,
+    seatCells: getTerminalCellWidth(seatLineText(seatLine)),
+  });
   return (
     <Box width="100%" height={1} overflow="hidden">
       <Box width={layout.railWidth} overflow="hidden">
@@ -188,7 +194,14 @@ export function HeaderRow({
       <Box flexGrow={1} />
       {layout.showSeats && (
         <Box flexShrink={0} marginRight={layout.showElapsed ? SEAT_GAP : 0}>
-          <Text color={t.textDim}>{seatLine}</Text>
+          <Text>
+            <TextSpans
+              parts={seatLine.map((span) => ({
+                text: span.text,
+                tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
+              }))}
+            />
+          </Text>
         </Box>
       )}
       {layout.showElapsed && <Box justifyContent="flex-end">{clock}</Box>}

@@ -1,3 +1,4 @@
+import { segmentsForRowText } from '../../../utils/display-text.js';
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
@@ -6,6 +7,7 @@ import { fitKeyLegend } from '../../../core/key-legend.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { stopMenuLayout } from '../stop/options.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import {
   RESULT_MENU_LEGEND,
   resultMenuFindingLines,
@@ -86,6 +88,11 @@ function ResultMenuBody({
   const findingLines = confirming
     ? resultMenuFindingLines(findings, boxHeight - 4 - layout.bodyRows)
     : [];
+  const titleParts = resultMenuTitle(input);
+  const title = fitKeyLegend(
+    titleParts.map((part) => part.text).join(''),
+    Math.max(1, layout.width - 4),
+  );
   return (
     <Box
       width={layout.width}
@@ -99,7 +106,7 @@ function ResultMenuBody({
       flexShrink={0}
     >
       <Text color={t.textDim} wrap="truncate-end">
-        {fitKeyLegend(resultMenuTitle(input), Math.max(1, layout.width - 4))}
+        <TextSpans parts={segmentsForRowText(titleParts, title)} />
       </Text>
       {findingLines.map((line, index) => (
         <Text key={index} color={t.text} wrap="truncate-end">
@@ -107,12 +114,12 @@ function ResultMenuBody({
         </Text>
       ))}
       <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-        {layout.options.map(({ row, lines }, index) => (
+        {layout.options.map(({ row, parts }, index) => (
           <Box key={row.id} flexDirection="column">
-            {lines.map((line, lineIndex) => (
-              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.text}>
+            {parts.map((line, lineIndex) => (
+              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.textDim}>
                 {listRowLead(index === selectedIndex && lineIndex === 0 ? 'active' : 'default')}
-                {line}
+                <TextSpans parts={line} selected={index === selectedIndex} />
               </Text>
             ))}
           </Box>

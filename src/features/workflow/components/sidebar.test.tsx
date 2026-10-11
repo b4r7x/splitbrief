@@ -18,6 +18,7 @@ import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { Sidebar } from './sidebar.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
+import { TaskSummary } from '../../../components/task-summary.js';
 import { paint } from '../../../core/theme/paint.js';
 
 const originalColorLevel = chalk.level;
@@ -484,7 +485,7 @@ describe('Sidebar — title budget', () => {
     // the user has to act on keep their word however narrow the panel gets.
     expect(rows[0]).toContain('escalated');
     expect(rows[1]).toContain('failed');
-    expect(ui.lastFrame()).toContain(paint(defaultTheme.dimError, '  failed'));
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.error, '  failed'));
     expect(rows[2]).toContain('skipped');
     expect(rows).toHaveLength(3);
     for (const [index, row] of rows.entries()) {
@@ -981,6 +982,104 @@ describe('Sidebar — no mode row', () => {
 
     expect(frame).not.toMatch(/\b(quick|standard|speckit)\b/);
 
+    ui.unmount();
+  });
+});
+
+describe('Sidebar concept colors', () => {
+  it('keeps the skipped summary word, mark and sidebar tail in the same dim color', () => {
+    forceUnicodeGlyphs();
+    chalk.level = 3;
+    tasksStore.__testReset({ tasks: [task('T002', 'skipped', 'Stock brief')] });
+    const ui = renderFeature(
+      <Box flexDirection="column">
+        <TaskSummary
+          width={60}
+          id="T002"
+          title="Receive stock"
+          state={{ kind: 'settled', method: 'skipped' }}
+        />
+        <Sidebar width={60} />
+      </Box>,
+    );
+    const frame = ui.lastFrame();
+    for (const text of [
+      ` ${glyph('statusSkipped')} T002 Receive stock  skipped`,
+      ` ${glyph('statusSkipped')} T002 Stock brief`,
+      '  skipped',
+    ]) {
+      expect.soft(frame).toContain(paint(defaultTheme.textDim, text));
+    }
+    ui.unmount();
+  });
+
+  it.each([
+    ['in_progress', 'accent', 'statusInProgress'],
+    ['done', 'success', 'stageDone'],
+    ['failed', 'error', 'statusFailed'],
+    ['escalated', 'warning', 'statusEscalated'],
+    ['skipped', 'textDim', 'statusSkipped'],
+  ] as const)('paints the %s mark with %s', (status, tone, mark) => {
+    chalk.level = 3;
+    tasksStore.__testReset({ tasks: [task('T001', status, 'Task title')] });
+    const ui = renderFeature(<Sidebar width={60} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme[tone], `${status === 'skipped' ? ' ' : ''}${glyph(mark)} `).replace(
+        '\u001b[39m',
+        '',
+      ),
+    );
+    if (status === 'failed' || status === 'escalated' || status === 'skipped') {
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme[tone], `  ${status}`).replace('\u001b[39m', ''),
+      );
+    }
+    ui.unmount();
+  });
+
+  it('colors Planner and interrupted separately', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({ status: 'interrupted', phase: 'planning' });
+    const ui = renderFeature(<Sidebar width={60} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.planner, 'Planner').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.warning, 'interrupted').replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Planner interrupted');
+    ui.unmount();
+  });
+
+  it('keeps the planning stage in the planner color without the removed local share', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'planning',
+      startedAt: Date.now() - 42_000,
+    });
+    const ui = renderFeature(<Sidebar width={60} />);
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.planner, 'Plan').replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ' · 0:42').replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('local');
+    ui.unmount();
+  });
+  it('colors the summary state words while keeping counts dim', () => {
+    chalk.level = 3;
+    tasksStore.__testReset({ tasks: [task('T001', 'done'), task('T002', 'escalated')] });
+    const ui = renderFeature(<Sidebar width={60} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.success, 'passed').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.warning, 'escalated').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ' · 1 ').replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('1 passed · 1 escalated');
     ui.unmount();
   });
 });

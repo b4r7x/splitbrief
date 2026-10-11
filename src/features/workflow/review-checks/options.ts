@@ -1,5 +1,7 @@
 import type { ReviewChecksApprovalRequest } from '../../../core/approval/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { oneLineDisplayText } from '../../../utils/display-text.js';
 import { stopMenuLayout } from '../stop/options.js';
 
@@ -26,8 +28,17 @@ export const REVIEW_CHECKS_ROWS: readonly ReviewChecksRow[] = [
   },
 ];
 
-export function reviewChecksCardTitle(request: ReviewChecksApprovalRequest): string {
-  return ['Reviewer checks', `chose ${request.commands.length}`, 'none has run yet'].join(SOFT_SEP);
+export function reviewChecksCardTitle(
+  request: ReviewChecksApprovalRequest,
+): readonly ConversationRowSegment[] {
+  return [
+    { text: 'Reviewer', tone: CREW_SEAT_ROLES.review },
+    { text: ' checks', tone: 'textDim' },
+    { text: SOFT_SEP, tone: 'textDim' },
+    { text: `chose ${request.commands.length}`, tone: 'textDim' },
+    { text: SOFT_SEP, tone: 'textDim' },
+    { text: 'none has run yet', tone: 'textDim' },
+  ];
 }
 
 /**

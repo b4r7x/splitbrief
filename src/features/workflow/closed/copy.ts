@@ -10,30 +10,40 @@ import type {
 } from './view-model.js';
 import {
   PLANNER_INHERITANCE,
-  formatCollapsedSeatLineFromIdentities,
+  formatCollapsedSeatSpansFromIdentities,
+  type SeatLineSpan,
+  type CrewSeatId,
 } from '../../../core/crew/identity.js';
-import { formatScoreSummary } from '../../../core/formatting.js';
+import { formatScoreSummaryParts } from '../../../core/formatting.js';
 import { SESSIONS_DIR, SPLITBRIEF_DIR } from '../../../core/paths.js';
 import { arrowSep } from '../../../core/separators.js';
 import { formatTime } from '../../../utils/format-time.js';
 import { countNoun } from '../../../utils/pluralize.js';
+import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 
 /**
  * Theme keys, so a row says which colour it wants and the renderer indexes the theme instead of
  * translating a second vocabulary. `link` is the one that is not a top-level key: it is
  * `theme.markdown.link`, the colour every other file path on the screen already wears.
  */
-export type CopyTone = 'text' | 'textDim' | 'success' | 'warning' | 'error' | 'link';
+export type CopyTone = 'text' | 'link' | StateTone | 'planner' | 'implementer' | 'reviewer';
 
 export interface CopySegment {
   text: string;
   tone: CopyTone;
 }
 
+export type CopyFact = CopySegment | Readonly<{ spans: readonly CopySegment[] }>;
+
+export function factSpans(fact: CopyFact): readonly CopySegment[] {
+  return 'spans' in fact ? fact.spans : [fact];
+}
+
 export interface RunRow {
   label: string;
-  /** The value, in reading order; the renderer joins them with ` · `. */
-  segments: readonly CopySegment[];
+  seat?: CrewSeatId;
+  /** Each fact fits as one unit; the renderer joins facts with ` · `. */
+  segments: readonly CopyFact[];
 }
 
 export interface FileRow {
@@ -44,7 +54,7 @@ export interface FileRow {
 export interface BriefRowParts {
   id: string;
   title: string;
-  state: TaskSummaryState;
+  state: Exclude<TaskSummaryState, { kind: 'stage' }>;
   retries?: number | undefined;
   duration?: number | undefined;
   file?: string | undefined;
@@ -64,15 +74,21 @@ export function findingCounts(counts: Readonly<{ critical: number; warning: numb
  * from states the work instead.
  */
 export function runRows(view: SummaryView): RunRow[] {
-  const rows: RunRow[] = [{ label: 'Review', segments: reviewSegments(view.review) }];
+  const rows: RunRow[] = [
+    { label: 'Review', seat: 'review', segments: reviewSegments(view.review) },
+  ];
   if (view.applyUndo !== null) {
     const conflicts = view.applyUndo.conflicts.length;
     rows.push({
       label: 'Apply',
       segments: [
         {
-          text: conflicts === 0 ? 'undone' : `undone, ${countNoun(conflicts, 'conflict')} kept`,
-          tone: conflicts === 0 ? 'text' : 'warning',
+          spans: [
+            { text: 'undone', tone: stateTone('attention') },
+            ...(conflicts === 0
+              ? []
+              : [{ text: `, ${countNoun(conflicts, 'conflict')} kept`, tone: 'textDim' as const }]),
+          ],
         },
       ],
     });
@@ -85,15 +101,18 @@ export function runRows(view: SummaryView): RunRow[] {
   rows.push({ label: 'Scope', segments: scopeSegments(view.scope) });
   const quality = view.quality;
   if (quality !== null) {
-    rows.push({
-      label: 'Briefs',
-      segments: [
-        {
-          text: formatScoreSummary(quality.score, quality, 'quality'),
-          tone: quality.passed ? 'text' : 'warning',
-        },
-      ],
-    });
+    const spans = formatScoreSummaryParts(quality.score, quality, 'quality').map(
+      (part): CopySegment => ({
+        text: part.text,
+        tone:
+          part.kind === 'error'
+            ? stateTone('failed')
+            : part.kind === 'warning' || (part.kind === 'score' && !quality.passed)
+              ? stateTone('attention')
+              : 'textDim',
+      }),
+    );
+    rows.push({ label: 'Briefs', segments: [{ spans }] });
   }
   const phases = phaseSegments(view.phases);
   if (phases.length > 0) rows.push({ label: 'Phases', segments: phases });
@@ -106,11 +125,11 @@ function reviewSegments(review: ReviewView): CopySegment[] {
   const segments: CopySegment[] = [];
   const verdict = verdictSegment(review.verdict);
   if (verdict !== null) segments.push(verdict);
-  segments.push({ text: findingCounts(review.counts), tone: 'text' });
+  segments.push({ text: findingCounts(review.counts), tone: 'textDim' });
   if (review.evidence.total > 0) {
     segments.push({
       text: `${review.evidence.validated}/${review.evidence.total} briefs validated`,
-      tone: 'text',
+      tone: 'textDim',
     });
   }
   if (review.missingArtifacts > 0) {
@@ -143,15 +162,23 @@ function packetPath(view: SummaryView): string | null {
   return `${SPLITBRIEF_DIR}/${SESSIONS_DIR}/${sessionId}/${stored}`;
 }
 
+export function scopeCleanSegment(scope: ScopeView): CopySegment | null {
+  if (scope.kind === 'not-run' || scope.errors + scope.warnings !== 0) return null;
+  return { text: 'clean', tone: stateTone('passed') };
+}
+
 function scopeSegments(scope: ScopeView): CopySegment[] {
   if (scope.kind === 'not-run') return [{ text: 'not checked', tone: 'textDim' }];
-  const tone = scope.passed ? 'text' : 'warning';
-  const counts = [
-    ...(scope.errors > 0 ? [countNoun(scope.errors, 'error')] : []),
-    ...(scope.warnings > 0 ? [countNoun(scope.warnings, 'warning')] : []),
+  const clean = scopeCleanSegment(scope);
+  if (clean !== null) return [clean];
+  return [
+    ...(scope.errors > 0
+      ? [{ text: countNoun(scope.errors, 'error'), tone: stateTone('failed') }]
+      : []),
+    ...(scope.warnings > 0
+      ? [{ text: countNoun(scope.warnings, 'warning'), tone: stateTone('attention') }]
+      : []),
   ];
-  if (counts.length === 0) return [{ text: 'clean', tone }];
-  return counts.map((text) => ({ text, tone }));
 }
 
 /** One phase would only restate the run clock the header already shows. */
@@ -159,20 +186,20 @@ function phaseSegments(phases: SummaryView['phases']): CopySegment[] {
   if (phases.length < 2) return [];
   return phases.map((timing) => ({
     text: `${timing.phase} ${formatTime(timing.ms)}`,
-    tone: 'text',
+    tone: 'textDim',
   }));
 }
 
 function sessionSegments(run: SummaryView['run']): CopySegment[] {
-  return [{ text: run.sessionId, tone: 'text' }];
+  return [{ text: run.sessionId, tone: 'textDim' }];
 }
 
 /**
  * The crew line the header would paint, laid out to whatever the Run block can spare. The summary
  * has names on record rather than runner blocks, so it enters the layout half directly.
  */
-export function crewLine(view: SummaryView, budget: number): string {
-  return formatCollapsedSeatLineFromIdentities({
+export function crewLine(view: SummaryView, budget: number): readonly SeatLineSpan[] {
+  return formatCollapsedSeatSpansFromIdentities({
     plan: seatWord(view.seats.plan),
     build: seatWord(view.seats.build),
     review: view.seats.review.kind === 'inherits' ? null : seatWord(view.seats.review),
@@ -238,7 +265,7 @@ export function briefRowParts(input: Readonly<{ row: BriefRow }>): BriefRowParts
 }
 
 /** The brief the run was inside when it closed wears the run's own ending, in one word. */
-function briefState(row: BriefRow): TaskSummaryState {
+function briefState(row: BriefRow): BriefRowParts['state'] {
   if (row.state === 'pending') return { kind: 'pending' };
   if (row.state === 'stopped') return { kind: 'halted', tone: 'cancelled', word: 'stopped' };
   return { kind: 'settled', method: row.method ?? SETTLED_METHODS[row.state] };

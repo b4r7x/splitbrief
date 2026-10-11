@@ -2,10 +2,12 @@ import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
   splitTerminalGraphemes,
+  segmentsForRowText,
 } from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
+import type { ConversationRowSegment, ConversationRowTone } from '../types.js';
 
 const MIN_ROW_WIDTH = 1;
 const BOUND_SEP_DOT = `${SOFT_SEP.trim()} `;
@@ -107,15 +109,74 @@ export function wrappedPrefixedRowTexts(text: string, width: number, prefix: str
 // above. A no-break space binds the dot to the part it introduces while the row wraps, so the row
 // breaks before the dot; soft continuations drop the dot before restoring plain separator spaces.
 export function wrappedProseTexts(text: string, width: number): string[] {
-  return text.split('\n').flatMap((sourceLine) =>
-    wrappedRowTexts(sourceLine.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map(
-      (line, index) => {
-        let continuation = index > 0 && line.startsWith(' ') ? line.slice(1) : line;
-        if (index > 0 && continuation.startsWith(BOUND_SEP_DOT)) {
-          continuation = continuation.slice(BOUND_SEP_DOT.length);
-        }
-        return continuation.replaceAll(BOUND_SEP_DOT, `${SOFT_SEP.trim()} `);
-      },
-    ),
+  return text
+    .split('\n')
+    .flatMap((line) => wrappedProseLineParts(line, width).map((part) => part.text));
+}
+
+function wrappedProseLineParts(text: string, width: number): { text: string; start: number }[] {
+  let offset = 0;
+  return wrappedRowTexts(text.replaceAll(SOFT_SEP, ` ${BOUND_SEP_DOT}`), width).map(
+    (line, index) => {
+      let trim = index > 0 && line.startsWith(' ') ? 1 : 0;
+      if (index > 0 && line.startsWith(BOUND_SEP_DOT, trim)) trim += BOUND_SEP_DOT.length;
+      const part = {
+        text: line.slice(trim).replaceAll(BOUND_SEP_DOT, `${SOFT_SEP.trim()} `),
+        start: offset + trim,
+      };
+      offset += line.length;
+      return part;
+    },
   );
+}
+
+export function wrappedProseSegments(
+  segments: readonly ConversationRowSegment[],
+  width: number,
+  indent = 0,
+  continuationIndent = 0,
+): ConversationRowSegment[][] {
+  const clean = segments.map((segment) => ({
+    ...segment,
+    text: sanitizeRowDisplayText(segment.text),
+  }));
+  const text = clean.map((segment) => segment.text).join('');
+  const rows: ConversationRowSegment[][] = [];
+  let offset = 0;
+  for (const sourceLine of text.split('\n')) {
+    let parts = wrappedProseLineParts(sourceLine, Math.max(1, width - indent));
+    const first = parts[0];
+    if (continuationIndent > 0 && first !== undefined && parts.length > 1) {
+      let start = first.text.length;
+      if (sourceLine[start] === ' ') start += 1;
+      if (sourceLine.startsWith(SOFT_SEP, start - 1)) start += SOFT_SEP.length - 1;
+      parts = [
+        first,
+        ...wrappedProseLineParts(
+          sourceLine.slice(start),
+          Math.max(1, width - indent - continuationIndent),
+        ).map((part) => ({ ...part, start: start + part.start })),
+      ];
+    }
+    for (const [index, part] of parts.entries()) {
+      const padding = ' '.repeat(indent + (index === 0 ? 0 : continuationIndent));
+      rows.push([
+        ...(padding === '' ? [] : [{ text: padding, tone: 'textDim' as const }]),
+        ...segmentsForRowText(clean, part.text, offset + part.start),
+      ]);
+    }
+    offset += sourceLine.length + 1;
+  }
+  return rows;
+}
+
+export function separatedSpans(text: string, tone: ConversationRowTone): ConversationRowSegment[] {
+  return text
+    .split(SOFT_SEP)
+    .flatMap((part, index) => [
+      ...(index === 0
+        ? []
+        : [{ text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment]),
+      ...(part === '' ? [] : [{ text: part, tone }]),
+    ]);
 }

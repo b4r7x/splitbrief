@@ -227,6 +227,22 @@ describe('selectRailForm', () => {
 });
 
 describe('getRailDriftPassed', () => {
+  it('does not call a warnings-only report clean', () => {
+    expect(
+      getRailDriftPassed([
+        {
+          type: 'drift_report',
+          ts: 1,
+          phase: 'final-review',
+          passed: true,
+          score: 1,
+          errorCount: 0,
+          warningCount: 1,
+        },
+      ]),
+    ).toBe(false);
+  });
+
   it('returns the most recent drift verdict, undefined when none', () => {
     expect(getRailDriftPassed([])).toBeUndefined();
     expect(getRailDriftPassed([plannerText('final-review')])).toBeUndefined();

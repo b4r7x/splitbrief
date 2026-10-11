@@ -51,6 +51,12 @@ function orderedSteps(section: string, steps: readonly string[]): void {
 }
 
 describe('required-step', () => {
+  it('directs new halt reasons to the span formatter and keeps the text projection', () => {
+    const recovery = sectionSlice('## 16. New halt reason');
+    expect(recovery).toContain('Give the reason its headline in `formatRecoveryHeadlineSpans()`');
+    expect(recovery).toContain('`formatRecoveryHeadline()` projects them to text.');
+  });
+
   it('lists every CLI admission step in order', () => {
     orderedSteps(sectionSlice('### CLI admission checklist'), CLI_REQUIRED_STEPS);
   });

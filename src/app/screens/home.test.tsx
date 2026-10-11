@@ -1,6 +1,9 @@
 import { existsSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import chalk from 'chalk';
+import { defaultTheme } from '../../components/theme.js';
+import { paint } from '../../core/theme/paint.js';
 import {
   installClipboardExecFixture,
   readClipboardExecCalls,
@@ -363,6 +366,8 @@ describe('HomeScreen', () => {
   });
 
   it('marks an inherited review seat on the wake card', async () => {
+    const originalColorLevel = chalk.level;
+    chalk.level = 3;
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
 
@@ -372,7 +377,15 @@ describe('HomeScreen', () => {
     const titleRow = lines.findIndex((line) => line.includes('Waking your crew…'));
 
     expect(lines[titleRow + 1]).toContain('REVIEW = PLAN');
+    const rawLine = (ui.lastFrame() ?? '').split('\n')[titleRow + 1] ?? '';
+    expect(rawLine).toContain(paint(defaultTheme.planner, 'PLAN ').replace('\u001b[39m', ''));
+    expect(rawLine).toContain(paint(defaultTheme.implementer, 'BUILD ').replace('\u001b[39m', ''));
+    expect(rawLine).toContain(
+      paint(defaultTheme.reviewer, 'REVIEW = PLAN').replace('\u001b[39m', ''),
+    );
+    expect(rawLine).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
     ui.unmount();
+    chalk.level = originalColorLevel;
   });
 
   it('shows the cold initialization notice while first discovery runs, then hides it', async () => {

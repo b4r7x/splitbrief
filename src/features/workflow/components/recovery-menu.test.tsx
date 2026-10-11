@@ -1,8 +1,14 @@
+import chalk from 'chalk';
+import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
+import { resolveTheme } from '../../../core/theme/resolve.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
 import { expect, it, vi } from 'vitest';
 import { renderFeature, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { listRowLead } from '../../../components/list-row.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { RecoveryMenu } from './recovery-menu.js';
 
 function mount(onResolve: (answer: string) => void, width = 80, issue = makeRecoveryIssue()) {
@@ -29,6 +35,68 @@ function seatSwapIssue() {
     },
   });
 }
+
+it.each([
+  ['dark', 24],
+  ['dark', 80],
+  ['light', 24],
+  ['light', 80],
+] as const)(
+  'keeps multiline recovery frame rows and span colors in %s at width %s',
+  (variant, width) => {
+    const colorLevel = chalk.level;
+    chalk.level = 3;
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <RecoveryMenu
+          issue={makeRecoveryIssue({
+            reason: 'seat-protocol-error',
+            seat: 'review',
+            attempts: undefined,
+            taskId: undefined,
+            taskTitle: undefined,
+            files: [],
+            affectedTaskIds: [],
+            details: [],
+            message: 'Provider refused request\n  try another tool',
+          })}
+          width={width}
+          clampedBoxRows={14}
+          focused
+          onFocusChange={() => {}}
+          onResolve={() => {}}
+        />
+      </ThemeProvider>,
+    );
+    try {
+      const frame = ui.lastFrame();
+      const rows = stripAnsiStyles(frame).split('\n');
+      expect(rows.slice(1, 4).map((line) => line.slice(2, -2).trimEnd())).toEqual([
+        width === 24 ? 'Seat down · Provide…' : 'Seat down · Provider refused request',
+        '',
+        '    try another tool',
+      ]);
+      expect(rows.map(getTerminalCellWidth)).toEqual(Array(14).fill(width));
+      expect(frame).toContain(
+        paint(theme[stateTone('attention')], 'Seat down').replace('\u001b[39m', ''),
+      );
+      expect(frame).toContain(paint(theme.textDim, ' · ').replace('\u001b[39m', ''));
+      expect(frame).toContain(
+        paint(theme.text, width === 24 ? 'Provide' : 'Provider refused request').replace(
+          '\u001b[39m',
+          '',
+        ),
+      );
+      expect(frame).toContain(
+        paint(theme.textDim, '    try another tool').replace('\u001b[39m', ''),
+      );
+    } finally {
+      ui.unmount();
+      chalk.level = colorLevel;
+    }
+  },
+);
 
 it('a letter key presses the offered row it names', async () => {
   const onResolve = vi.fn();
@@ -271,4 +339,90 @@ it('says only where typing goes when the halt takes no note and the composer hol
     'typing goes to the composer · tab back to the actions',
   );
   ui.unmount();
+});
+
+it.each([
+  ['validation-failed', 'Needs you', 'PLAN', 'planner'],
+  ['seat-protocol-error', 'Seat down', 'BUILD', 'implementer'],
+] as const)(
+  'paints the %s halt and keeps seat words in its explanation in the prose tone',
+  (reason, label, seat, tone) => {
+    const colorLevel = chalk.level;
+    chalk.level = 3;
+    const ui = mount(
+      vi.fn(),
+      100,
+      makeRecoveryIssue({
+        reason,
+        seat: tone === 'planner' ? 'plan' : 'build',
+        message: `${seat} needs repair`,
+        attempts: undefined,
+      }),
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.warning, label).replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.text, `${seat} needs repair`).replace('\u001b[39m', ''),
+    );
+    ui.unmount();
+    chalk.level = colorLevel;
+  },
+);
+
+it.each([true, false])(
+  'keeps the seat and consequence tones on a selected=%s action',
+  (focused) => {
+    const colorLevel = chalk.level;
+    chalk.level = 3;
+    const ui = renderFeature(
+      <RecoveryMenu
+        issue={makeRecoveryIssue({
+          seat: 'build',
+          availableActions: ['switch-seat', 'end-run'],
+          recommendedAction: 'switch-seat',
+        })}
+        width={100}
+        clampedBoxRows={14}
+        focused={focused}
+        onFocusChange={() => {}}
+        onResolve={() => {}}
+      />,
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.implementer, 'BUILD').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(focused ? defaultTheme.accent : defaultTheme.text, 'Change ').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ' · restarts this brief').replace('\u001b[39m', ''),
+    );
+    ui.unmount();
+    chalk.level = colorLevel;
+  },
+);
+
+it('preserves the action whole-word cut and seat tone at width 30', () => {
+  const colorLevel = chalk.level;
+  chalk.level = 3;
+  const ui = mount(
+    vi.fn(),
+    30,
+    makeRecoveryIssue({
+      seat: 'build',
+      availableActions: ['switch-seat'],
+      recommendedAction: 'switch-seat',
+    }),
+  );
+  const line = stripAnsiStyles(ui.lastFrame())
+    .split('\n')
+    .find((line) => line.includes('Change'));
+  expect(line).toContain('w   Change BUILD tool…');
+  expect(getTerminalCellWidth(line ?? '')).toBe(30);
+  expect(ui.lastFrame()).toContain(
+    paint(defaultTheme.implementer, 'BUILD').replace('\u001b[39m', ''),
+  );
+  expect(ui.lastFrame()).toContain(paint(defaultTheme.accent, ' tool').replace('\u001b[39m', ''));
+  expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, '…'));
+  ui.unmount();
+  chalk.level = colorLevel;
 });

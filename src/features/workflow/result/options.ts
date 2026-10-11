@@ -1,4 +1,6 @@
 import { SOFT_SEP } from '../../../core/separators.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { countNoun, pluralize } from '../../../utils/pluralize.js';
 import { stopMenuLayout } from '../stop/options.js';
 
@@ -71,17 +73,28 @@ export function resultMenuHeight(input: ResultMenuInput, cols: number): number {
   return input.confirming ? sheet + input.findings.length : sheet;
 }
 
-export function resultMenuTitle(input: ResultMenuInput): string {
-  if (input.confirming) return `Apply with ${countNoun(input.findings.length, 'open finding')}?`;
-  const changed = input.files === null ? [] : [`${countNoun(input.files, 'file')} changed`];
-  if (input.override) {
+export function resultMenuTitle(input: ResultMenuInput): readonly ConversationRowSegment[] {
+  if (input.confirming)
     return [
-      'Ready to apply as is',
-      countNoun(input.findings.length, 'open finding'),
-      ...changed,
-    ].join(SOFT_SEP);
-  }
-  return ['Ready to apply', ...changed, 'run changes await Apply'].join(SOFT_SEP);
+      {
+        text: `Apply with ${countNoun(input.findings.length, 'open finding')}?`,
+        tone: stateTone('attention'),
+      },
+    ];
+  const changed = input.files === null ? [] : [`${countNoun(input.files, 'file')} changed`];
+  const facts = input.override
+    ? [countNoun(input.findings.length, 'open finding'), ...changed]
+    : [...changed, 'run changes await Apply'];
+  return [
+    {
+      text: input.override ? 'Ready to apply as is' : 'Ready to apply',
+      tone: stateTone(input.override ? 'attention' : 'running'),
+    },
+    ...facts.flatMap((text): ConversationRowSegment[] => [
+      { text: SOFT_SEP, tone: 'textDim' },
+      { text, tone: 'textDim' },
+    ]),
+  ];
 }
 
 export function resultRowCommand(id: ResultRowId): string | null {

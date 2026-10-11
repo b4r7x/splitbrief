@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from './theme.js';
+import { TextSpans } from './text-spans.js';
 import { Box } from 'ink';
 import type { Theme } from '../core/theme/palette.js';
 import type { TaskCompletionMethod } from '../core/schemas/enums.js';
@@ -10,6 +11,7 @@ import {
   elidePathMiddle,
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
+  segmentsForRowText,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
 } from '../utils/display-text.js';
@@ -17,6 +19,7 @@ import { countNoun } from '../utils/pluralize.js';
 import { glyph, type GlyphName } from '../lib/glyphs.js';
 import { ROW_LEADING } from './row-leading.js';
 import { formatTaskHeading, type WorkflowTask } from '../stores/workflow/tasks.js';
+import { stateTone, type StateTone } from '../core/theme/state-tone.js';
 
 // The transcript's leading: the shared one-cell pad the hover bar paints into, then the marker and
 // its trailing space. A brief's mark lands on column 1 with its title on column 3, the same shape a
@@ -32,7 +35,12 @@ const FAILED_SUFFIX = ' failed';
 
 interface FittedDetailRun {
   head: string;
-  tail: string[];
+  tail: DetailSpan[];
+}
+
+interface DetailSpan {
+  text: string;
+  tone: StateTone;
 }
 
 const SETTLED_METHODS = new Set([
@@ -51,20 +59,20 @@ function isRetrySegment(segment: string): boolean {
   return /^\d+\s+(?:retry|retries)$/.test(segment);
 }
 
-function isSettledTail(tail: string[]): boolean {
-  return tail.some((segment) => SETTLED_METHODS.has(segment));
+function isSettledTail(tail: DetailSpan[]): boolean {
+  return tail.some((segment) => SETTLED_METHODS.has(segment.text));
 }
 
-function partitionSettledTail(tail: string[]): {
-  file: string | undefined;
-  retries: string | undefined;
-  keptMeta: string[];
+function partitionSettledTail(tail: DetailSpan[]): {
+  file: DetailSpan | undefined;
+  retries: DetailSpan | undefined;
+  keptMeta: DetailSpan[];
 } {
-  let file: string | undefined;
-  let meta: string[];
+  let file: DetailSpan | undefined;
+  let meta: DetailSpan[];
 
   const first = tail[0];
-  if (first !== undefined && !SETTLED_METHODS.has(first)) {
+  if (first !== undefined && !SETTLED_METHODS.has(first.text)) {
     file = first;
     meta = tail.slice(1);
   } else {
@@ -72,11 +80,11 @@ function partitionSettledTail(tail: string[]): {
     meta = [...tail];
   }
 
-  let retries: string | undefined;
-  const keptMeta: string[] = [];
+  let retries: DetailSpan | undefined;
+  const keptMeta: DetailSpan[] = [];
 
   for (const segment of meta) {
-    if (retries === undefined && isRetrySegment(segment)) {
+    if (retries === undefined && isRetrySegment(segment.text)) {
       retries = segment;
     } else {
       keptMeta.push(segment);
@@ -88,7 +96,7 @@ function partitionSettledTail(tail: string[]): {
 
 export function fitDetailRun(
   task: Pick<WorkflowTask, 'id' | 'title'>,
-  tail: string[],
+  tail: DetailSpan[],
   width: number,
   settled?: boolean,
   fileNote?: string,
@@ -96,15 +104,16 @@ export function fitDetailRun(
 ): FittedDetailRun {
   const head = formatTaskHeading(task);
   const budget = Math.max(0, width - LEADING_CELLS);
-  const cells = (parts: string[]): number =>
-    getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${parts.join(SOFT_SEP)}`);
+  const tailText = (parts: DetailSpan[]): string => parts.map((part) => part.text).join(SOFT_SEP);
+  const cells = (parts: DetailSpan[]): number =>
+    getTerminalCellWidth(parts.length === 0 ? head : `${head}${TITLE_SEP}${tailText(parts)}`);
   const filePath = tail[0];
   if (filePath !== undefined && (isPresent(fileNote) || isPresent(extraFiles))) {
     const annotatedTail = [
-      isPresent(fileNote) ? `${filePath} ${fileNote}` : filePath,
-      extraFiles,
+      { ...filePath, text: isPresent(fileNote) ? `${filePath.text} ${fileNote}` : filePath.text },
+      ...(isPresent(extraFiles) ? [{ text: extraFiles, tone: 'textDim' as const }] : []),
       ...tail.slice(1),
-    ].filter(isPresent);
+    ];
     if (cells(annotatedTail) <= budget) return { head, tail: annotatedTail };
   }
 
@@ -117,28 +126,32 @@ export function fitDetailRun(
     const only = segments[0];
     const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length;
     if (only !== undefined && room > 0) {
-      return { head, tail: [truncateTerminalDisplayTextMiddle(only, room)] };
+      return {
+        head,
+        tail: [{ ...only, text: truncateTerminalDisplayTextMiddle(only.text, room) }],
+      };
     }
     return { head: formatTaskHeading(task, budget), tail: [] };
   }
 
   if (cells(tail) <= budget) return { head, tail };
 
-  const skipIndex = tail.indexOf('skipped');
+  const skipIndex = tail.findIndex((part) => part.text === 'skipped');
   if (skipIndex >= 0 && tail.length > skipIndex + 1) {
     const withoutReason = tail.slice(0, skipIndex + 1);
     const reason = tail[skipIndex + 1];
     const room = budget - cells(withoutReason) - getTerminalCellWidth(SOFT_SEP);
     if (reason !== undefined && room > 0) {
-      const shortenedReason = truncateTerminalDisplayText(reason, room);
-      if (shortenedReason !== '…') return { head, tail: [...withoutReason, shortenedReason] };
+      const shortenedReason = truncateTerminalDisplayText(reason.text, room);
+      if (shortenedReason !== '…')
+        return { head, tail: [...withoutReason, { ...reason, text: shortenedReason }] };
     }
     return fitDetailRun(task, withoutReason, width, true);
   }
 
   const { file, retries, keptMeta } = partitionSettledTail(tail);
 
-  const tailWithoutRetries = [file, ...keptMeta].filter(isPresent);
+  const tailWithoutRetries = file === undefined ? keptMeta : [file, ...keptMeta];
   if (retries !== undefined && cells(tailWithoutRetries) <= budget) {
     return { head, tail: tailWithoutRetries };
   }
@@ -147,11 +160,11 @@ export function fitDetailRun(
     const keptMetaWidth =
       keptMeta.length === 0
         ? 0
-        : getTerminalCellWidth(SOFT_SEP) + getTerminalCellWidth(keptMeta.join(SOFT_SEP));
+        : getTerminalCellWidth(SOFT_SEP) + getTerminalCellWidth(tailText(keptMeta));
     const room = budget - getTerminalCellWidth(head) - TITLE_SEP.length - keptMetaWidth;
     if (room > 0) {
-      const shortenedFile = elidePathMiddle(file, room);
-      return { head, tail: [shortenedFile, ...keptMeta] };
+      const shortenedFile = elidePathMiddle(file.text, room);
+      return { head, tail: [{ ...file, text: shortenedFile }, ...keptMeta] };
     }
   }
 
@@ -160,7 +173,7 @@ export function fitDetailRun(
   }
 
   const keptMetaWidth =
-    keptMeta.length === 0 ? 0 : TITLE_SEP.length + getTerminalCellWidth(keptMeta.join(SOFT_SEP));
+    keptMeta.length === 0 ? 0 : TITLE_SEP.length + getTerminalCellWidth(tailText(keptMeta));
   const headBudget = Math.max(0, budget - keptMetaWidth);
   if (headBudget < getTerminalCellWidth(task.id) + 2) {
     return { head: formatTaskHeading(task, budget), tail: [] };
@@ -180,13 +193,19 @@ export type TaskSummaryState =
   | Readonly<{
       kind: 'stage';
       outcome: 'passed' | 'failed' | 'no-verdict' | 'stopped';
+      headingParts: Readonly<{
+        id: readonly TaskSummaryHeadingPart[];
+        title: TaskSummaryHeadingPart | null;
+      }>;
       detail: readonly string[];
     }>;
 
-interface TaskSummaryProps {
-  id: string;
-  title: string;
-  state: TaskSummaryState;
+export interface TaskSummaryHeadingPart {
+  readonly text: string;
+  readonly tone: StateTone | 'planner' | 'implementer' | 'reviewer' | 'text';
+}
+
+interface TaskSummaryBaseProps {
   width: number;
   retries?: number | undefined;
   duration?: number | undefined;
@@ -198,6 +217,12 @@ interface TaskSummaryProps {
   note?: string | undefined;
   focused?: boolean | undefined;
 }
+
+type TaskSummaryProps = TaskSummaryBaseProps &
+  (
+    | { state: Extract<TaskSummaryState, { kind: 'stage' }>; id?: never; title?: never }
+    | { state: Exclude<TaskSummaryState, { kind: 'stage' }>; id: string; title: string }
+  );
 
 interface MarkerSpec {
   name: GlyphName;
@@ -231,20 +256,9 @@ function markerSpec(state: TaskSummaryState, t: Theme): MarkerSpec {
   return settledMarker(state.method, t);
 }
 
-export function TaskSummary({
-  id,
-  title,
-  state,
-  width,
-  retries,
-  duration,
-  file,
-  fileNote,
-  extraFiles,
-  reason,
-  note,
-  focused,
-}: TaskSummaryProps) {
+export function TaskSummary(props: TaskSummaryProps) {
+  const { state, width, retries, duration, file, fileNote, extraFiles, reason, note, focused } =
+    props;
   const t = useTheme();
   const safeFile = file === undefined ? undefined : sanitizeTerminalDisplayText(file);
   const safeFileNote = fileNote === undefined ? undefined : sanitizeTerminalDisplayText(fileNote);
@@ -278,9 +292,34 @@ export function TaskSummary({
     (state.kind === 'settled' && state.method === 'failed') ||
     (state.kind === 'stage' && state.outcome === 'failed');
   const quiet =
-    failed || state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
+    state.kind === 'pending' || (state.kind === 'settled' && state.method === 'skipped');
+  let headingParts: readonly TaskSummaryHeadingPart[] | null = null;
+  let taskHeading: Pick<WorkflowTask, 'id' | 'title'>;
+  if (props.id !== undefined) {
+    taskHeading = { id: props.id, title: props.title };
+  } else {
+    const idParts = props.state.headingParts.id.map((part) => ({
+      ...part,
+      text: sanitizeTerminalDisplayText(part.text),
+    }));
+    const titlePart = props.state.headingParts.title;
+    const title = titlePart === null ? '' : sanitizeTerminalDisplayText(titlePart.text);
+    taskHeading = { id: idParts.map((part) => part.text).join(''), title };
+    headingParts = [
+      ...idParts,
+      ...(titlePart === null
+        ? []
+        : [
+            {
+              text: ' ',
+              tone: titlePart.tone === 'text' ? ('text' as const) : ('textDim' as const),
+            },
+            { ...titlePart, text: title },
+          ]),
+    ];
+  }
   const fitted = fitDetailRun(
-    { id, title },
+    taskHeading,
     detailRun({ state, safeFile, safeReason, safeNote, retries, duration, t }),
     width - (failed ? FAILED_SUFFIX.length : 0),
     state.kind === 'settled',
@@ -292,12 +331,21 @@ export function TaskSummary({
     <Box>
       <Text wrap="truncate-end">
         {markerSlot}
-        <Text color={quiet ? t.textDim : t.text}>{fitted.head}</Text>
-        {failed && <Text color={t.dimError}>{FAILED_SUFFIX}</Text>}
+        {headingParts !== null ? (
+          <TextSpans parts={segmentsForRowText(headingParts, fitted.head)} />
+        ) : (
+          <Text color={quiet ? t.textDim : t.text}>{fitted.head}</Text>
+        )}
+        {failed && <Text color={t[stateTone('failed')]}>{FAILED_SUFFIX}</Text>}
         {fitted.tail.length > 0 && (
           <Text color={t.textDim}>
             {TITLE_SEP}
-            {fitted.tail.join(SOFT_SEP)}
+            {fitted.tail.map((part, index) => (
+              <Text key={index}>
+                {index > 0 && <Text color={t.textDim}>{SOFT_SEP}</Text>}
+                <Text color={t[part.tone]}>{part.text}</Text>
+              </Text>
+            ))}
           </Text>
         )}
       </Text>
@@ -313,19 +361,44 @@ function detailRun(input: {
   retries: number | undefined;
   duration: number | undefined;
   t: Theme;
-}): string[] {
+}): DetailSpan[] {
   const { state, safeFile, safeReason, safeNote, retries, duration } = input;
   if (state.kind === 'pending') return [];
-  if (state.kind === 'stage') return state.detail.map((part) => sanitizeTerminalDisplayText(part));
+  if (state.kind === 'stage')
+    return state.detail.map((part) => ({
+      text: sanitizeTerminalDisplayText(part),
+      tone: 'textDim',
+    }));
   if (state.kind === 'halted') {
-    return [safeFile, state.word, safeNote].filter(isPresent);
+    return [
+      ...(safeFile ? [{ text: safeFile, tone: 'textDim' as const }] : []),
+      { text: state.word, tone: stateTone(state.tone === 'failed' ? 'failed' : 'attention') },
+      ...(safeNote ? [{ text: safeNote, tone: 'textDim' as const }] : []),
+    ];
   }
-  if (state.method === 'failed') return [safeFile].filter(isPresent);
-  if (state.method === 'skipped') return [safeFile, 'skipped', safeReason].filter(isPresent);
+  if (state.method === 'failed')
+    return [safeFile].filter(isPresent).map((text) => ({ text, tone: 'textDim' }));
+  if (state.method === 'skipped')
+    return [
+      ...(safeFile ? [{ text: safeFile, tone: 'textDim' as const }] : []),
+      { text: 'skipped', tone: stateTone('pending') },
+      ...(safeReason ? [{ text: safeReason, tone: 'textDim' as const }] : []),
+    ];
   const meta = [getMethodDisplay(state.method, input.t).text];
   if (retries !== undefined && retries > 0) meta.push(countNoun(retries, 'retry', 'retries'));
   if (duration != null) meta.push(formatDuration(duration));
-  return [safeFile, ...meta].filter(isPresent);
+  return [
+    ...(safeFile ? [{ text: safeFile, tone: 'textDim' as const }] : []),
+    ...meta.map((text, index) => ({
+      text,
+      tone:
+        index === 0
+          ? stateTone(
+              classifyTaskCompletionMethod(state.method) === 'escalated' ? 'attention' : 'passed',
+            )
+          : ('textDim' as const),
+    })),
+  ];
 }
 
 function isPresent(part: string | undefined): part is string {

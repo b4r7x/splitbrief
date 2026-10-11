@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
+import { TextSpans } from '../../components/text-spans.js';
 import { Fragment, useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import {
@@ -6,7 +7,8 @@ import {
   FIRST_RUN_NOTE,
   REFRESHING_TOOLS_TITLE,
 } from '../../core/discovery/copy.js';
-import { formatCollapsedSeatLine } from '../../core/crew/identity.js';
+import { formatCollapsedSeatSpans, seatLineText } from '../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
 import { resolveImplementerProfiles } from '../../core/config/accessors/implementer-profiles.js';
 import { configuredReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
@@ -114,13 +116,13 @@ function DiscoveryPanel({ width }: { width: number }) {
     displayNames,
   };
   const budget = width - DISCOVERY_PANEL_CHROME_COLS;
-  const fullSeatLine = formatCollapsedSeatLine(seatInput);
+  const fullSeatLine = seatLineText(formatCollapsedSeatSpans(seatInput));
   const notes = shedToFit({
     lead: [fullSeatLine],
     optional: [FIRST_RUN_NOTE],
     width: budget,
   });
-  const seatLine = formatCollapsedSeatLine({
+  const seatLine = formatCollapsedSeatSpans({
     ...seatInput,
     budget: budget - (notes.length > 0 ? getTerminalCellWidth(`${SOFT_SEP}${FIRST_RUN_NOTE}`) : 0),
   });
@@ -147,7 +149,12 @@ function DiscoveryPanel({ width }: { width: number }) {
             </Text>
           </Text>
           <Text color={theme.textDim}>
-            {seatLine}
+            <TextSpans
+              parts={seatLine.map((span) => ({
+                text: span.text,
+                tone: span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
+              }))}
+            />
             {notes.length > 0 && (
               <Text color={theme.textDim}>
                 {SOFT_SEP}

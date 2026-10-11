@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import { taskId } from '../../../../core/schemas/task.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
+import { parseEngineEvent } from '../../../../engine/events/schema.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../../stores/workflow/streaming-output.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
@@ -14,7 +15,7 @@ import {
 } from '#testing/helpers/events/runner-call.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../../display/activity-label-display.js';
 import { configStore } from '../../../../stores/project/config.js';
-import { eventRowBlock } from './dispatch.js';
+import { eventRowBlock, recoveryRowBlock } from './dispatch.js';
 import { rowText } from '../row-format/rows.js';
 import { rowLeadingCells } from '../row-markers.js';
 import type { ConversationRow } from '../types.js';
@@ -219,6 +220,467 @@ describe('event row dispatch', () => {
     }
   });
 
+  it.each(['plan', 'build', 'review'] as const)(
+    'colors a %s seat switch by the recorded seat',
+    (seat) => {
+      const to = { tool: 'codex', model: 'gpt-5' };
+      const rows = eventRows({
+        event: {
+          type: 'seat_switched',
+          ts: 0,
+          phase: 'implementing',
+          seat,
+          from: { tool: 'opencode' },
+          to,
+          cause: 'runner-usage-limit',
+          auto: true,
+          configRevision: 'rev',
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 200, viewportRows: 50, streaming },
+      });
+      const tone = seat === 'plan' ? 'planner' : seat === 'build' ? 'implementer' : 'reviewer';
+      expect(rows[0]?.segments).toEqual([
+        { text: CREW_SEAT_LABELS[seat], tone },
+        { text: ` ${glyph('connectorHandoff')} `, tone: 'textDim' },
+        { text: formatSeatCandidateIdentity(to), tone },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'automatic fallback', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'usage limit', tone: 'textDim' },
+      ]);
+    },
+  );
+
+  it.each([
+    ['user_cancelled', 'Stopped by you', 'warning'],
+    [undefined, 'Build failed', 'error'],
+  ] as const)('colors workflow halt %s by its outcome', (reason, text, tone) => {
+    const rows = eventRows({
+      event: {
+        type: 'workflow_cancelled',
+        ts: 0,
+        phase: 'implementing',
+        ...(reason === undefined ? {} : { reason }),
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 200, viewportRows: 50, streaming },
+    });
+    expect(rows.map(rowText)).toEqual([text]);
+    if (reason === undefined) {
+      expect(rows[0]?.segments).toEqual([
+        { text: 'Build', tone: 'implementer', bold: true },
+        { text: ' ', tone: 'textDim', bold: true },
+        { text: 'failed', tone, bold: true },
+      ]);
+    } else {
+      expect(rows[0]?.segments).toContainEqual({ text, tone, bold: true });
+    }
+  });
+
+  it.each([
+    ['continued', 'success'],
+    ['retry-current-task', 'success'],
+    ['skipped-current-task', 'warning'],
+    ['aborted', 'warning'],
+  ] as const)('colors the recovery label for %s', (outcome, tone) => {
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        resolved: {
+          type: 'recovery_resolved',
+          ts: 0,
+          phase: 'implementing',
+          issueId: 'issue',
+          reason: 'validation-failed',
+          action: 'retry-same-worker',
+          outcome,
+        },
+      },
+      200,
+    );
+    const segments = block?.createRows(0, block.rowCount).flatMap((row) => row.segments);
+    expect(segments?.find((span) => span.text.startsWith('Recovery'))?.tone).toBe(tone);
+    expect(
+      segments
+        ?.filter((span) => !span.text.startsWith('Recovery'))
+        .every((span) => span.tone === 'textDim'),
+    ).toBe(true);
+  });
+
+  it('colors a reviewer halt during implementing from the prompted seat before any action', () => {
+    const prompted = parseEngineEvent({
+      type: 'recovery_prompted',
+      ts: 0,
+      phase: 'implementing',
+      issueId: 'issue',
+      reason: 'planner-call-failed',
+      seat: 'review',
+      headline: 'Reviewer call failed',
+      headlineSpans: [{ text: 'Reviewer', seat: 'review' }, { text: ' call failed' }],
+      availableActions: ['retry-same-worker'],
+      recommendedAction: 'retry-same-worker',
+      files: [],
+      affectedTaskIds: [],
+      resumeCommand: 'splitbrief resume',
+    });
+    if (prompted?.type !== 'recovery_prompted') throw new Error('Expected recovery event');
+    const block = recoveryRowBlock('recovery', { firstIndex: 0, issueId: 'issue', prompted }, 120);
+    expect(block?.createRows(0, block.rowCount).flatMap((row) => row.segments)).toContainEqual({
+      text: 'Reviewer',
+      tone: 'reviewer',
+    });
+  });
+
+  it('uses the recorded recovery headline without reading the current clock', () => {
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => {
+      throw new Error('Persisted recovery must not read the live clock');
+    });
+    try {
+      const block = recoveryRowBlock(
+        'recovery',
+        {
+          firstIndex: 0,
+          issueId: 'issue',
+          prompted: {
+            type: 'recovery_prompted',
+            ts: 1_000,
+            phase: 'implementing',
+            issueId: 'issue',
+            reason: 'planner-call-failed',
+            seat: 'review',
+            headline: 'Reviewer call failed on the saved attempt',
+            headlineSpans: [
+              { text: 'Reviewer', seat: 'review' },
+              { text: ' call failed on the saved attempt' },
+            ],
+            availableActions: ['retry-same-worker'],
+            recommendedAction: 'retry-same-worker',
+            files: [],
+            affectedTaskIds: [],
+            resumeCommand: 'splitbrief resume',
+          },
+        },
+        120,
+      );
+      expect(block?.createRows(0, block.rowCount).flatMap((row) => row.segments)).toEqual([
+        { text: 'Recovery  ', tone: 'warning' },
+        { text: 'Reviewer', tone: 'reviewer' },
+        { text: ' call failed on the saved attempt', tone: 'textDim' },
+      ]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('parses and renders a saved prompt without a seat using no seat tone', () => {
+    const prompted = parseEngineEvent({
+      type: 'recovery_prompted',
+      ts: 0,
+      phase: 'final-review',
+      issueId: 'issue',
+      reason: 'planner-call-failed',
+      headline: 'Reviewer call failed',
+      availableActions: ['switch-seat'],
+      recommendedAction: 'switch-seat',
+      files: [],
+      affectedTaskIds: [],
+      resumeCommand: 'splitbrief resume',
+    });
+    if (prompted?.type !== 'recovery_prompted') throw new Error('Expected recovery event');
+    const block = recoveryRowBlock('recovery', { firstIndex: 0, issueId: 'issue', prompted }, 120);
+    expect(block?.createRows(0, block.rowCount)[0]?.segments).toEqual([
+      { text: 'Recovery  ', tone: 'warning' },
+      { text: 'Reviewer call failed', tone: 'textDim' },
+    ]);
+  });
+
+  it('renders recorded seat spans without rebuilding the cause from a partial issue', () => {
+    const prompted = parseEngineEvent({
+      type: 'recovery_prompted',
+      ts: 1_000,
+      phase: 'implementing',
+      issueId: 'issue',
+      reason: 'required-checks-unrunnable',
+      seat: 'review',
+      headline: 'Review cannot run required checks V1, V2',
+      headlineSpans: [
+        { text: 'Review', seat: 'review' },
+        { text: ' cannot run required checks V1, V2' },
+      ],
+      availableActions: ['retry-same-worker'],
+      recommendedAction: 'retry-same-worker',
+      files: [],
+      affectedTaskIds: [],
+      resumeCommand: 'splitbrief resume',
+    });
+    if (prompted?.type !== 'recovery_prompted') throw new Error('Expected recovery event');
+    const block = recoveryRowBlock('recovery', { firstIndex: 0, issueId: 'issue', prompted }, 120);
+    expect(block?.createRows(0, block.rowCount).flatMap((row) => row.segments)).toEqual([
+      { text: 'Recovery  ', tone: 'warning' },
+      { text: 'Review', tone: 'reviewer' },
+      { text: ' cannot run required checks V1, V2', tone: 'textDim' },
+    ]);
+  });
+
+  it.each(['The reviewer call failed on the saved attempt', 'Planner call failed'])(
+    'keeps a recorded headline intact when its formatted seat prefix differs: %s',
+    (headline) => {
+      const prompted: EngineEventOf<'recovery_prompted'> = {
+        type: 'recovery_prompted',
+        ts: 1_000,
+        phase: 'implementing',
+        issueId: 'issue',
+        reason: 'planner-call-failed',
+        seat: 'review',
+        headline,
+        availableActions: ['retry-same-worker'],
+        recommendedAction: 'retry-same-worker',
+        files: [],
+        affectedTaskIds: [],
+        resumeCommand: 'splitbrief resume',
+      };
+      const block = recoveryRowBlock(
+        'recovery',
+        { firstIndex: 0, issueId: 'issue', prompted },
+        120,
+      );
+      expect(block?.createRows(0, block.rowCount).flatMap((row) => row.segments)).toEqual([
+        { text: 'Recovery  ', tone: 'warning' },
+        { text: headline, tone: 'textDim' },
+      ]);
+    },
+  );
+
+  it('preserves an indented recovery failure continuation while keeping its error lead', () => {
+    const rows = eventRows({
+      event: {
+        type: 'recovery_action_failed',
+        ts: 0,
+        phase: 'implementing',
+        issueId: 'issue',
+        reason: 'validation-failed',
+        action: 'retry-same-worker',
+        message: 'unavailable\n  try another tool',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText)).toEqual([
+      'Recovery  Try again blocked: unavailable',
+      '  try another tool',
+    ]);
+    expect(rows[0]?.segments).toEqual([
+      { text: 'Recovery  ', tone: 'error' },
+      { text: 'Try again', tone: 'textDim' },
+      { text: ' ', tone: 'textDim' },
+      { text: 'blocked', tone: 'error' },
+      { text: ': ', tone: 'textDim' },
+      { text: 'unavailable', tone: 'textDim' },
+    ]);
+    expect(rows[1]?.segments).toEqual([{ text: '  try another tool', tone: 'textDim' }]);
+  });
+
+  it('preserves explicit recovery headline indentation and seat tones in a folded card', () => {
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        prompted: {
+          type: 'recovery_prompted',
+          ts: 0,
+          phase: 'planning',
+          issueId: 'issue',
+          reason: 'planner-call-failed',
+          seat: 'plan',
+          headline: 'Planner unavailable\n  try another tool\n    then continue',
+          headlineSpans: [
+            { text: 'Planner', seat: 'plan' },
+            { text: ' unavailable\n  try another tool\n    then continue' },
+          ],
+          availableActions: ['retry-same-worker'],
+          recommendedAction: 'retry-same-worker',
+          files: [],
+          affectedTaskIds: [],
+          resumeCommand: 'splitbrief resume',
+        },
+      },
+      120,
+    );
+    const rows = block?.createRows(0, block.rowCount);
+    expect(rows?.map(rowText)).toEqual([
+      'Recovery  Planner unavailable',
+      '  try another tool',
+      '    then continue',
+    ]);
+    expect(rows?.map((row) => row.segments)).toEqual([
+      [
+        { text: 'Recovery  ', tone: 'warning' },
+        { text: 'Planner', tone: 'planner' },
+        { text: ' unavailable', tone: 'textDim' },
+      ],
+      [{ text: '  try another tool', tone: 'textDim' }],
+      [{ text: '    then continue', tone: 'textDim' }],
+    ]);
+  });
+
+  it('colors an unresolved recovery label as warning', () => {
+    const block = recoveryRowBlock('recovery', { firstIndex: 0, issueId: 'issue' }, 200);
+    expect(block?.createRows(0, block.rowCount)[0]?.segments[0]?.tone).toBe('warning');
+  });
+
+  it.each([
+    ['planner-call-failed', 'review', 'Reviewer call failed', 'Reviewer', 'reviewer'],
+    ['planner-call-failed', 'plan', 'Planner call failed', 'Planner', 'planner'],
+    [
+      'plan-checks-failed',
+      'plan',
+      'Plan still fails its checks after one repair',
+      'Plan',
+      'planner',
+    ],
+    ['review-input-too-large', 'review', 'Review input too large for Codex', 'Review', 'reviewer'],
+  ] as const)('colors the seat in a %s recovery headline', (reason, seat, headline, word, tone) => {
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        prompted: {
+          type: 'recovery_prompted',
+          ts: 0,
+          phase: 'planning',
+          issueId: 'issue',
+          reason,
+          seat,
+          headline,
+          headlineSpans: [{ text: word, seat }, { text: headline.slice(word.length) }],
+          availableActions: ['switch-seat'],
+          files: [],
+          affectedTaskIds: [],
+          recommendedAction: 'switch-seat',
+          resumeCommand: 'splitbrief resume',
+        },
+        selected: {
+          type: 'recovery_action_selected',
+          ts: 0,
+          phase: 'planning',
+          issueId: 'issue',
+          reason,
+          seat,
+          action: 'switch-seat',
+        },
+      },
+      120,
+    );
+    const spans = block?.createRows(0, block.rowCount).flatMap((row) => row.segments);
+    expect(spans).toContainEqual({ text: word, tone });
+    expect(spans).toContainEqual({ text: CREW_SEAT_LABELS[seat], tone });
+    expect(spans).toContainEqual({ text: ' · ', tone: 'textDim' });
+  });
+
+  it.each([
+    [true, 0, 0, 'success'],
+    [false, 1, 0, 'error'],
+    [true, 0, 1, 'warning'],
+    [true, 1, 0, 'error'],
+  ] as const)(
+    'colors drift passed=%s errors=%i warnings=%i',
+    (passed, errorCount, warningCount, tone) => {
+      const rows = eventRows({
+        event: {
+          type: 'drift_report',
+          ts: 0,
+          phase: 'final-review',
+          passed,
+          errorCount,
+          warningCount,
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 200, viewportRows: 50, streaming },
+      });
+      expect(
+        rows
+          .flatMap((row) => row.segments)
+          .find(
+            (span) =>
+              span.text ===
+              (passed && errorCount === 0 && warningCount === 0
+                ? 'clean'
+                : !passed
+                  ? 'failed'
+                  : errorCount > 0
+                    ? `${errorCount} error`
+                    : `${warningCount} warning`),
+          )?.tone,
+      ).toBe(tone);
+    },
+  );
+
+  it('colors a verified no-change result separately from its explanation', () => {
+    const rows = eventRows({
+      event: {
+        type: 'implementer_generate_done',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        file: 'src/a.ts',
+        duration: 1_000,
+        noChange: true,
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming },
+    });
+    const summary = requireRow(rows, (row) => rowText(row).includes('verified'));
+    expect(rowText(summary)).toBe('verified · no change needed');
+    expect(summary.segments).toEqual([
+      { text: 'verified', tone: 'success' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'no change needed', tone: 'textDim' },
+    ]);
+  });
+
+  it.each(['plan', 'build', 'review'] as const)(
+    'colors the %s seat in a recovery action',
+    (seat) => {
+      const rows = eventRows({
+        event: {
+          type: 'recovery_action_failed',
+          ts: 0,
+          phase: 'implementing',
+          issueId: 'issue',
+          reason: 'runner-usage-limit',
+          action: 'switch-seat',
+          seat,
+          message: 'unavailable',
+        },
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width: 80, viewportRows: 20, streaming },
+      });
+      expect(rows[0]?.segments).toEqual([
+        { text: 'Recovery  ', tone: 'error' },
+        { text: 'Change ', tone: 'textDim' },
+        {
+          text: CREW_SEAT_LABELS[seat],
+          tone: seat === 'plan' ? 'planner' : seat === 'build' ? 'implementer' : 'reviewer',
+        },
+        { text: ' tool', tone: 'textDim' },
+        { text: ' ', tone: 'textDim' },
+        { text: 'blocked', tone: 'error' },
+        { text: ': ', tone: 'textDim' },
+        { text: 'unavailable', tone: 'textDim' },
+      ]);
+    },
+  );
   it('names the files a brief changed beyond its suggested files on one dim row', () => {
     const rows = eventRows({
       event: {
@@ -266,7 +728,17 @@ describe('event row dispatch', () => {
       expect(rows.map(rowText)).toEqual(['Drift · clean']);
       expect(rows.every((row) => row.kind === 'message')).toBe(true);
       expect(
-        rows.flatMap((row) => row.segments).every((segment) => segment.tone === 'textDim'),
+        rows
+          .flatMap((row) => row.segments)
+          .every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'Drift'
+                ? 'text'
+                : segment.text === 'clean'
+                  ? 'success'
+                  : 'textDim'),
+          ),
       ).toBe(true);
       expect(rows.flatMap((row) => row.segments).some((segment) => segment.bold)).toBe(false);
     });
@@ -288,12 +760,24 @@ describe('event row dispatch', () => {
         '  warning · No changes in src/a.ts.',
         ...(count === 2 ? ['  warning · No evidence for T002.'] : []),
       ]);
-      expect(rows[0]?.segments.every((segment) => segment.tone === 'warning')).toBe(true);
+      expect(rows[0]?.segments).toEqual([
+        { text: 'Drift', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: `${count} ${count === 1 ? 'warning' : 'warnings'}`, tone: 'warning' },
+      ]);
       expect(
         rows
           .slice(1)
           .flatMap((row) => row.segments)
-          .every((segment) => segment.tone === 'textDim'),
+          .every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'error'
+                ? 'error'
+                : segment.text === 'warning'
+                  ? 'warning'
+                  : 'textDim'),
+          ),
       ).toBe(true);
     });
 
@@ -322,12 +806,34 @@ describe('event row dispatch', () => {
         '  error · Failed task T002 left changes in src/b.ts.',
         '  warning · No changes in src/a.ts.',
       ]);
-      expect(rows[0]?.segments.every((segment) => segment.tone === 'error')).toBe(true);
+      expect(rows[0]?.segments).toContainEqual({ text: 'failed', tone: 'error' });
+      expect(rows[0]?.segments).toContainEqual({ text: 'Drift', tone: 'text' });
+      expect(
+        rows[0]?.segments
+          .filter((segment) => segment.text === ' · ')
+          .every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'error'
+                ? 'error'
+                : segment.text === 'warning'
+                  ? 'warning'
+                  : 'textDim'),
+          ),
+      ).toBe(true);
       expect(
         rows
           .slice(1)
           .flatMap((row) => row.segments)
-          .every((segment) => segment.tone === 'textDim'),
+          .every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'error'
+                ? 'error'
+                : segment.text === 'warning'
+                  ? 'warning'
+                  : 'textDim'),
+          ),
       ).toBe(true);
     });
 
@@ -379,7 +885,15 @@ describe('event row dispatch', () => {
         rows
           .slice(1)
           .flatMap((row) => row.segments)
-          .every((segment) => segment.tone === 'textDim'),
+          .every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'error'
+                ? 'error'
+                : segment.text === 'warning'
+                  ? 'warning'
+                  : 'textDim'),
+          ),
       ).toBe(true);
     });
 
@@ -429,7 +943,21 @@ describe('event row dispatch', () => {
         const rows = driftRows({ ...base, passed: false, errorCount, warningCount });
 
         expect(rows.map(rowText)).toEqual([headline]);
-        expect(rows[0]?.segments.every((segment) => segment.tone === 'error')).toBe(true);
+        expect(rows[0]?.segments).toContainEqual({ text: 'failed', tone: 'error' });
+        expect(rows[0]?.segments).toContainEqual({ text: 'Drift', tone: 'text' });
+        expect(
+          rows[0]?.segments
+            .filter((segment) => segment.text === ' · ')
+            .every(
+              (segment) =>
+                segment.tone ===
+                (segment.text === 'error'
+                  ? 'error'
+                  : segment.text === 'warning'
+                    ? 'warning'
+                    : 'textDim'),
+            ),
+        ).toBe(true);
       },
     );
 
@@ -471,7 +999,17 @@ describe('event row dispatch', () => {
       ).toBe(`error · ${message}`);
       for (const [index, row] of details.entries()) {
         expect(rowText(row).search(/\S/)).toBe(index === 0 ? 2 : 4);
-        expect(row.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+        expect(
+          row.segments.every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'error'
+                ? 'error'
+                : segment.text === 'warning'
+                  ? 'warning'
+                  : 'textDim'),
+          ),
+        ).toBe(true);
       }
       for (const row of rows) {
         expect(getTerminalCellWidth(rowText(row)) + rowLeadingCells(row.kind)).toBeLessThanOrEqual(
@@ -612,7 +1150,11 @@ describe('event row dispatch', () => {
     expect(rows.map(rowText)).toEqual([
       `${CREW_SEAT_LABELS.build} ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
     ]);
-    expect(rows[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+    expect(
+      rows[0]?.segments
+        .filter((segment) => segment.tone === 'implementer')
+        .map((segment) => segment.text),
+    ).toEqual([CREW_SEAT_LABELS.build, formatSeatCandidateIdentity(to)]);
     expect(rows.map(rowText).join('\n')).not.toContain('Balance spent');
   });
 
@@ -1245,7 +1787,7 @@ describe('event row dispatch', () => {
         model: 'qwen2.5-coder:7b',
         error: 'Tool implementer (opencode) exited without changing any files',
       },
-      stateWord: `${CREW_SEAT_LABELS.build} failed`,
+      stateWord: 'failed',
       body: 'Tool implementer (opencode) exited without changing any files',
     },
   ] satisfies {
@@ -1254,7 +1796,7 @@ describe('event row dispatch', () => {
     stateWord: string;
     body: string;
   }[])(
-    'keeps only the state word error-toned and dims the cause for $name',
+    'keeps only the state word toned and dims the cause for $name',
     ({ event, stateWord, body }) => {
       const segments = eventRows({
         event,
@@ -1263,7 +1805,8 @@ describe('event row dispatch', () => {
         ctx: { width: 80, viewportRows: 20, streaming },
       }).flatMap((rowValue) => rowValue.segments);
 
-      const errorSegments = segments.filter((segment) => segment.tone === 'error');
+      const tone = 'error';
+      const errorSegments = segments.filter((segment) => segment.tone === tone);
       const dimSegments = segments.filter((segment) => segment.tone === 'textDim');
 
       expect(errorSegments.some((segment) => segment.text.includes(stateWord))).toBe(true);
@@ -1287,9 +1830,11 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([`${CREW_SEAT_LABELS.build} failed`]);
-    expect(rows.flatMap((rowValue) => rowValue.segments).some((s) => s.tone === 'textDim')).toBe(
-      false,
-    );
+    expect(rows[0]?.segments).toEqual([
+      { text: 'BUILD', tone: 'implementer' },
+      { text: ' ', tone: 'textDim' },
+      { text: 'failed', tone: 'error' },
+    ]);
   });
 
   function implementerFailedRows(error: string, width: number): ConversationRow[] {
@@ -1464,7 +2009,7 @@ describe('event row dispatch', () => {
     expect(rows[1]?.segments[0]?.text).toBe('1.');
     expect(rows[1]?.segments[0]?.tone).toBe('planner');
     expect(rows[1]?.segments[0]?.bold).toBe(true);
-    expect(rows[1]?.segments[1]?.tone).toBeUndefined();
+    expect(rows[1]?.segments[1]?.tone).toBe('text');
     expect(rows[1]?.segments[2]?.tone).toBe('planner');
     expect(rows[1]?.segments[2]?.bold).not.toBe(true);
     expect(rows[2]?.segments[0]?.tone).toBe('planner');
@@ -2174,6 +2719,40 @@ describe('validate failure output', () => {
 describe('consult answer rows', () => {
   const arrow = glyph('connectorHandoff');
 
+  it.each(['plan', 'review', undefined] as const)(
+    'keeps the recorded %s seat tone through wrapping',
+    (seat) => {
+      const label = CREW_SEAT_LABELS[seat ?? 'plan'];
+      for (const width of [32, 120]) {
+        const rows = eventRows({
+          event: {
+            type: 'consult_answered',
+            ts: 0,
+            phase: 'implementing',
+            taskId: taskId('T003'),
+            seat,
+            reason: 'failed',
+            action: 'guidance',
+            diagnosis: 'Run the checks again.',
+            newTaskIds: null,
+          },
+          globalIndex: 0,
+          expanded: false,
+          ctx: { width, viewportRows: 20, streaming },
+        });
+        const spans = rows.flatMap((row) => row.segments);
+        expect(spans).toContainEqual({
+          text: label,
+          tone: seat === 'review' ? 'reviewer' : 'planner',
+        });
+        expect(
+          spans.filter((span) => span.text !== label).every((span) => span.tone === 'textDim'),
+        ).toBe(true);
+        expect(rows.every((row) => getTerminalCellWidth(rowText(row)) <= width)).toBe(true);
+      }
+    },
+  );
+
   function rowsFor(event: EngineEventOf<'consult_answered'>): ConversationRow[] {
     return eventRows({
       event,
@@ -2264,37 +2843,47 @@ describe('consult answer rows', () => {
     expect(rows.map(rowText)).toEqual([`PLAN ${arrow} T003: asks you`]);
   });
 
-  it('renders a decision-confirm as one row counting the confirmed decisions', () => {
-    const rows = rowsFor({
-      type: 'consult_answered',
-      ts: 0,
-      phase: 'implementing',
-      taskId: taskId('T004'),
-      reason: 'deviation',
-      action: 'confirm',
-      diagnosis: 'Both are changes of how.',
-      newTaskIds: null,
-      decisionCount: 2,
-    });
+  it.each([undefined, 'review'] as const)(
+    'renders a decision-confirm as one row counting the confirmed decisions with seat %s',
+    (seat) => {
+      const rows = rowsFor({
+        type: 'consult_answered',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T004'),
+        reason: 'deviation',
+        action: 'confirm',
+        diagnosis: 'Both are changes of how.',
+        newTaskIds: null,
+        decisionCount: 2,
+        ...(seat === undefined ? {} : { seat }),
+      });
 
-    expect(rows.map(rowText)).toEqual(['PLAN confirmed 2 decisions for T004']);
-    expect(rows.some((rowValue) => rowValue.kind === 'card-top')).toBe(false);
-  });
+      expect(rows.map(rowText)).toEqual(['PLAN confirmed 2 decisions for T004']);
+      expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
+      expect(rows.some((rowValue) => rowValue.kind === 'card-top')).toBe(false);
+    },
+  );
 
-  it('renders a decision-confirm that asks the user as one row', () => {
-    const rows = rowsFor({
-      type: 'consult_answered',
-      ts: 0,
-      phase: 'implementing',
-      taskId: taskId('T004'),
-      reason: 'deviation',
-      action: 'ask-user',
-      diagnosis: 'Dropping the flag changes what is built.',
-      newTaskIds: null,
-    });
+  it.each([undefined, 'review'] as const)(
+    'renders a decision-confirm that asks the user as one row with seat %s',
+    (seat) => {
+      const rows = rowsFor({
+        type: 'consult_answered',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T004'),
+        reason: 'deviation',
+        action: 'ask-user',
+        diagnosis: 'Dropping the flag changes what is built.',
+        newTaskIds: null,
+        ...(seat === undefined ? {} : { seat }),
+      });
 
-    expect(rows.map(rowText)).toEqual(['PLAN asks you about the decisions T004 reported']);
-  });
+      expect(rows.map(rowText)).toEqual(['PLAN asks you about the decisions T004 reported']);
+      expect(rows[0]?.segments[0]).toMatchObject({ text: 'PLAN', tone: 'planner' });
+    },
+  );
 
   it('keeps the consult consequence events out of the transcript', () => {
     const events: EngineEvent[] = [
@@ -2434,6 +3023,32 @@ describe('review_checks rows', () => {
 
     expect(texts.map((text) => text.trim())).toEqual([
       'End-of-run checks · off · no reviewer check ran',
+    ]);
+  });
+
+  it('paints skipped checks as warning with a reviewer seat and dim metadata', () => {
+    const rows = eventRows({
+      event: {
+        ...reviewChecks(),
+        status: 'skipped',
+        declined: [],
+        reason: 'Skip all was chosen on the card',
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText)).toEqual([
+      'Reviewer checks · not\u00a0run V1 · Skip all was chosen on the card',
+    ]);
+    expect(rows[0]?.segments).toEqual([
+      { text: 'Reviewer', tone: 'reviewer' },
+      { text: ' checks', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'not\u00a0run', tone: 'warning' },
+      { text: ' V1', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Skip all was chosen on the card', tone: 'textDim' },
     ]);
   });
 });

@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { renderToString } from 'ink';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
@@ -15,7 +16,6 @@ import { conversationScrollStore } from '../../../../src/stores/workflow/convers
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
-import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import type { CheckpointPredicate, FixtureFactory, FixtureRegistry } from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
@@ -157,16 +157,12 @@ export const workflowFixtureRegistry: FixtureRegistry = new Map(
 
 function includesAll(...markers: readonly string[]): CheckpointPredicate {
   return ({ output, checkpoint }) => {
-    const text = stripAnsiStyles(output);
-    return text.includes(checkpoint.marker) && markers.every((marker) => text.includes(marker));
+    return output.includes(checkpoint.marker) && markers.every((marker) => output.includes(marker));
   };
 }
 
 function excludesAll(...markers: readonly string[]): CheckpointPredicate {
-  return ({ output }) => {
-    const text = stripAnsiStyles(output);
-    return markers.every((marker) => !text.includes(marker));
-  };
+  return ({ output }) => markers.every((marker) => !output.includes(marker));
 }
 
 export function workflowTranscriptText(): string {
@@ -283,7 +279,7 @@ const checkpointPredicates = [
   [
     checkpointId('review-fix-cycles'),
     (context) => {
-      const text = stripAnsiStyles(context.output);
+      const text = context.output;
       return (
         includesAll(
           '4/4 briefs passed',
@@ -498,6 +494,7 @@ const checkpointPredicates = [
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
+/** Predicates receive ANSI-free frame text from checkpointPredicate or waitForCheckpoint. */
 export const workflowCheckpointPredicates: ReadonlyMap<CheckpointId, CheckpointPredicate> = new Map(
   checkpointPredicates,
 );

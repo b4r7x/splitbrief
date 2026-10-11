@@ -6,6 +6,54 @@ import { wrapWidthFor } from '../row-markers.js';
 import { fullSuiteRowBlock } from './execution.js';
 
 describe('fullSuiteRowBlock', () => {
+  it.each(['pre-review', 'plan', 'brief', 'base'] as const)(
+    'paints V2 skipped after V1 failed in a %s check row',
+    (moment) => {
+      const event: EngineEventOf<'full_suite'> = {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        moment,
+        id: 'V2',
+        command: 'npm test',
+        status: 'not-run',
+        detail: 'V1 failed',
+        duration: 1_000,
+      };
+      const block = fullSuiteRowBlock('skipped-check', event, 120);
+      if (block === null) throw new Error('Expected a skipped check block');
+      const rows = block.createRows(0, block.rowCount);
+      const label =
+        moment === 'pre-review'
+          ? 'Reviewer check'
+          : moment === 'plan'
+            ? 'Plan check'
+            : moment === 'brief'
+              ? 'Fix check'
+              : 'Base re-run';
+      expect(rows.map(rowText)).toEqual([`${label} V2 · npm test · not\u00a0run · V1 failed`]);
+      expect(rows.flatMap((row) => row.segments)).toEqual([
+        ...(moment === 'pre-review'
+          ? [
+              { text: 'Reviewer', tone: 'reviewer' },
+              { text: ' check V2', tone: 'textDim' },
+            ]
+          : moment === 'plan'
+            ? [
+                { text: 'Plan', tone: 'planner' },
+                { text: ' check V2', tone: 'textDim' },
+              ]
+            : [{ text: `${label} V2`, tone: 'textDim' }]),
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'not\u00a0run', tone: 'warning' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'V1 failed', tone: 'textDim' },
+      ]);
+    },
+  );
+
   it('fullSuiteRowBlock keeps a wrapped verdict attached to its check', () => {
     const examples = [
       {
@@ -50,7 +98,17 @@ describe('fullSuiteRowBlock', () => {
       for (const row of rows) {
         expect(rowText(row).trimStart().startsWith('·')).toBe(false);
         expect(rowText(row).trimEnd().endsWith(' ·')).toBe(false);
-        expect(row.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+        expect(
+          row.segments.every(
+            (segment) =>
+              segment.tone ===
+              (segment.text === 'Reviewer'
+                ? 'reviewer'
+                : segment.text === 'passed'
+                  ? 'success'
+                  : 'textDim'),
+          ),
+        ).toBe(true);
         expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(
           wrapWidthFor('message', width),
         );

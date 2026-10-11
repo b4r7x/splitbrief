@@ -11,6 +11,7 @@ import { Divider } from '../../../components/divider.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { queuePlaceholder, type ComposerBoxHintOverride } from '../input-hints.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
+import type { SeatLineSpan } from '../../../core/crew/identity.js';
 import { getChromeContentWidth, WORKFLOW_GUTTER_X, type RailForm } from '../layout/chrome-rows.js';
 import type { readClipboardImage as readSystemClipboardImage } from '../../../core/attachments/clipboard-image.js';
 import type { listProjectFiles as listFiles } from '../../../lib/file-listing.js';
@@ -34,7 +35,7 @@ export function WorkflowHeader({
   buildBlockShown?: boolean | undefined;
   /** A run at rest names its own stages and the crew that actually ran it. */
   stages?: readonly RailStageState[] | undefined;
-  seatLine?: string | undefined;
+  seatLine?: readonly SeatLineSpan[] | undefined;
   /** Chrome rows that belong above the divider, so the body starts at one boundary. */
   children?: ReactNode;
 }) {
@@ -98,7 +99,7 @@ export function WorkflowFooter({
   /** A stopped run that cannot be resumed has nothing to take but commands. */
   commandsOnly?: boolean | undefined;
   /** The byline of a run at rest, which has no live status to derive one from. */
-  byline?: string | undefined;
+  byline?: Parameters<typeof InputFooter>[0]['byline'];
   disabled: boolean;
   compactInput?: boolean | undefined;
   beforeComposer?: ReactNode;

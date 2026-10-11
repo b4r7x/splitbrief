@@ -1,3 +1,9 @@
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
+import chalk from 'chalk';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
+import { openRunBylineParts } from '../closed/byline.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
@@ -8,6 +14,7 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { configStore } from '../../../stores/project/config.js';
 import { routerStore } from '../../../stores/navigation/router.js';
+import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -19,7 +26,7 @@ import {
 } from '../../../stores/workflow/operations/state.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
-import { BRAILLE_SPINNER_FRAMES, glyph } from '../../../lib/glyphs.js';
+import { BRAILLE_SPINNER_FRAMES, glyph, spinnerFrames } from '../../../lib/glyphs.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
 import { InputFooter } from './input-footer.js';
 
@@ -41,6 +48,8 @@ import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js'
 import { makeMessage } from '#testing/helpers/queue.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+
+const originalColorLevel = chalk.level;
 
 function runningOn(runnerName: string): RunningOperation {
   return {
@@ -86,6 +95,9 @@ describe('InputFooter', () => {
   });
 
   afterEach(() => {
+    chalk.level = originalColorLevel;
+    preparationStore.reset();
+    recoveryNoticeStore.clear();
     eventsStore.__testReset();
     configStore.__testReset();
     routerStore.init({ screen: 'home' });
@@ -100,13 +112,34 @@ describe('InputFooter', () => {
   it('renders flush, leaving the gutter to the footer that wraps it', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
 
-    const ui = renderFeature(<InputFooter byline="Stopped at T002 — stopped by you" />);
+    const ui = renderFeature(
+      <InputFooter byline={[{ text: 'Stopped at T002 — stopped by you', tone: 'warning' }]} />,
+    );
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     // A live byline opens with its pip on the mark column; this one has none, so it keeps an empty
     // mark slot and puts its words on the text column instead of a letter where the pip would be.
     expect(frame.indexOf('Stopped at T002')).toBe(MARK_SLOT_CELLS);
 
+    ui.unmount();
+  });
+
+  it('paints a preparation check spinner accent and its words and command dim', () => {
+    chalk.level = 3;
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    preparationStore.submit({
+      origin: 'continue',
+      stage: 'Checking tools',
+      prepare: async () => ({ kind: 'aborted' }),
+      onPrepared: () => {},
+    });
+    const ui = renderFeature(<InputFooter />);
+    const frame = ui.lastFrame() ?? '';
+    expect(stripAnsiStyles(frame)).toBe(`${spinnerFrames()[0]} Checking tools · esc cancel`);
+    expect(frame).toContain(
+      paint(defaultTheme.accent, `${spinnerFrames()[0]} `).replace('\u001b[39m', ''),
+    );
+    expect(frame).toContain(paint(defaultTheme.textDim, 'Checking tools · esc cancel'));
     ui.unmount();
   });
 
@@ -778,7 +811,12 @@ describe('InputFooter', () => {
         tasks: [{ id: 'T003', title: 'Running brief', status: 'in_progress' }],
       });
       const ui = renderFeature(
-        <InputFooter byline="Stopped at T003 · type a correction or ⏎ to continue" />,
+        <InputFooter
+          byline={[
+            { text: 'Stopped at T003', tone: 'warning' },
+            { text: ' · type a correction or ⏎ to continue', tone: 'textDim' },
+          ]}
+        />,
         { cols, rows: 24 },
       );
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
@@ -811,7 +849,17 @@ describe('InputFooter', () => {
       });
       hydrateFromState(state);
 
-      const ui = renderFeature(<InputFooter byline="Ended · Build 0/1" />, { cols, rows: 24 });
+      const ui = renderFeature(
+        <InputFooter
+          byline={[
+            { text: 'Ended', tone: 'warning' },
+            { text: ' · ', tone: 'textDim' },
+            { text: 'Build', tone: 'implementer' },
+            { text: ' 0/1', tone: 'textDim' },
+          ]}
+        />,
+        { cols, rows: 24 },
+      );
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame.trim()).toBe('Ended · Build 0/1');
       expect(lifecycleStore.get().queueDepth).toBe(1);
@@ -841,18 +889,22 @@ describe('InputFooter', () => {
     });
     hydrateFromState(state);
 
-    const ui = renderFeature(<InputFooter byline="Ready to apply" />);
+    const ui = renderFeature(<InputFooter byline={[{ text: 'Ready to apply', tone: 'accent' }]} />);
     expect(stripAnsiStyles(ui.lastFrame() ?? '').trim()).toBe('Ready to apply');
     expect(lifecycleStore.get().queueDepth).toBe(1);
     ui.unmount();
   });
 
   it('queued count renders as an info byline segment that survives narrow widths', () => {
+    chalk.level = 3;
     lifecycleStore.__testReset({ phase: 'implementing', status: 'complete', queueDepth: 2 });
 
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     const wide = renderFeature(<InputFooter />);
     expect(stripAnsiStyles(wide.lastFrame() ?? '')).toContain('2 queued');
+    expect(wide.lastFrame()).toContain(
+      paint(defaultTheme.info, ' · 2 queued').replace('\u001b[39m', ''),
+    );
     wide.unmount();
 
     terminalSizeStore.__testReset({ cols: 24, rows: 24, isSmall: false });
@@ -1020,5 +1072,187 @@ describe('InputFooter', () => {
 
     ui.unmount();
     terminalSizeStore.reset();
+  });
+  it('paints a failed stop with error and its cause with text', () => {
+    chalk.level = 3;
+    stopStore.request('stop-now');
+    stopStore.fail('Disk full');
+    const ui = renderFeature(<InputFooter width={120} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.error, `${glyph('statusPending')} Stop failed`).replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.text, 'Disk full'));
+    ui.unmount();
+  });
+
+  it.each(['paused', 'waiting'] as const)('paints %s with warning', (state) => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({
+      status: state === 'paused' ? 'paused' : 'running',
+      phase: 'planning',
+    });
+    const ui = renderFeature(<InputFooter width={120} waiting={state === 'waiting'} />);
+    const word = state === 'paused' ? 'Paused' : 'Waiting for your answer';
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.warning, `${glyph('statusPending')} ${word}`).replace('\u001b[39m', ''),
+    );
+    ui.unmount();
+  });
+
+  it('paints the live review spinner accent, its seat reviewer and its clock dim', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({
+      status: 'running',
+      phase: 'final-review',
+      startedAt: Date.now() - 42_000,
+      phaseFirstSeenTs: { 'final-review': Date.now() - 42_000 },
+    });
+    const ui = renderFeature(<InputFooter width={120} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.accent, `${spinnerFrames()[0]} `).replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.reviewer, 'Review').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ' · waiting for the verdict 0:42'),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ' · waiting for the verdict 0:42').replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Review · waiting for the verdict 0:42',
+    );
+    ui.unmount();
+  });
+
+  it.each([
+    ['paused', 'warning', 'Stopped at the plan', 'type a correction or ⏎ to continue'],
+    ['failed', 'error', 'Stopped by an error · Disk full', '⏎ to retry the step'],
+  ] as const)('paints the at-rest %s reason and dim action', (kind, tone, reason, action) => {
+    chalk.level = 3;
+    const byline = openRunBylineParts({
+      status: {
+        kind: 'open',
+        stop: {
+          kind: 'stopped',
+          on: kind === 'paused' ? { kind, at: 'mid-step' } : { kind, message: 'Disk full' },
+        },
+        resumeAt: { kind: 'planner', call: 'plan' },
+      },
+      continuable: true,
+      width: 120,
+    });
+    const ui = renderFeature(<InputFooter width={120} byline={byline} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme[tone], kind === 'failed' ? 'Stopped by an error' : reason).replace(
+        '\u001b[39m',
+        '',
+      ),
+    );
+    if (kind === 'failed') {
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.text, 'Disk full').replace('\u001b[39m', ''),
+      );
+    }
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ` · ${action}`).replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(`${reason} · ${action}`);
+    ui.unmount();
+  });
+  it('paints the stopping clock with textDim without changing its separators', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({ status: 'running', phase: 'implementing' });
+    stopStore.__testReset({
+      intent: 'stop-now',
+      phase: 'terminating',
+      requestedAt: Date.now() - 42_000,
+    });
+    const ui = renderFeature(<InputFooter width={120} />);
+    const frame = ui.lastFrame();
+    expect(frame).toContain(paint(defaultTheme.textDim, ' · Waiting for processes to exit · 0:42'));
+    expect(stripAnsiStyles(frame)).toContain(
+      'Stopping the run · Waiting for processes to exit · 0:42',
+    );
+    ui.unmount();
+  });
+
+  it('carries state, stage and fraction tones in the waiting byline', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    tasksStore.__testReset({
+      totalTasks: 5,
+      tasks: [
+        { id: 'T001', title: 'One', status: 'done' },
+        { id: 'T002', title: 'Two', status: 'done' },
+      ],
+    });
+    const ui = renderFeature(<InputFooter width={120} waiting />);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('Waiting for your answer · Review 2/5');
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.warning, `${glyph('statusPending')} Waiting for your answer`).replace(
+        '\u001b[39m',
+        '',
+      ),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.reviewer, 'Review').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' 2/5').replace('\u001b[39m', ''));
+    ui.unmount();
+  });
+
+  it('keeps paused commands dim and only the state word warning', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({ status: 'paused', phase: 'planning' });
+    const ui = renderFeature(<InputFooter width={120} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.warning, `${glyph('statusPending')} Paused`).replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, ' — resume with /resume or `splitbrief resume`'),
+    );
+    ui.unmount();
+  });
+
+  it('paints a running reviewer check mark accent and only its seat words reviewer', () => {
+    chalk.level = 3;
+    lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+    operationsStore.__testReset({
+      suiteStage: {
+        id: 'V1',
+        moment: 'pre-review',
+        command: 'npm test',
+        stageStartedTs: Date.now() - 42_000,
+      },
+    });
+    const ui = renderFeature(<InputFooter width={120} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.accent, `${spinnerFrames()[0]} `).replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.reviewer, 'Review').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.reviewer, 'Reviewer').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' check V1 · npm test 0:42'));
+    ui.unmount();
+  });
+
+  it('paints a recovery stop with warning', () => {
+    chalk.level = 3;
+    recoveryNoticeStore.open({ seat: 'build', resetAt: null, issue: makeRecoveryIssue() });
+    const ui = renderFeature(<InputFooter width={120} />);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.warning, `${glyph('statusFailed')} Run stopped`),
+    );
+    ui.unmount();
   });
 });

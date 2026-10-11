@@ -4,7 +4,12 @@ import { formatStageLabel } from '../../../core/phase-display.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import type { Theme } from '../../../core/theme/palette.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
+import { TextSpans } from '../../../components/text-spans.js';
+import { assertNever } from '../../../utils/type-guards.js';
+import type { ConversationRowSegment, ConversationRowTone } from '../conversation-rows/types.js';
+import { colorForTone } from '../../../core/theme/tone-color.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore, selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
@@ -13,9 +18,8 @@ import { useStores } from '../../../stores/use-stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
   getRailStages,
-  railStageRole,
+  railStageSeat,
   selectRailStage,
-  type RailRole,
   type RailStageState,
   type RailStageStatus,
 } from '../../../core/rail-stages.js';
@@ -30,7 +34,7 @@ import {
 } from '../layout/chrome-rows.js';
 import {
   RAIL_FORM_C_CANCELLED_SUFFIX,
-  railFormCFractionText,
+  railFormCFractionSpans,
   resolveRailFraction,
 } from '../layout/hit-test.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
@@ -38,17 +42,12 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
+import { passedFractionSpans } from '../display/build-progress.js';
 
 interface RailDoneSummary {
   passed: number;
   total: number;
   driftPassed: boolean | undefined;
-}
-
-function roleColor(role: RailRole, t: Theme): string | undefined {
-  if (role === 'implementer') return t.implementer;
-  if (role === 'validator') return t.validator;
-  return t.planner;
 }
 
 // Done and active share the filled mark, so the three marks a live rail paints are one family of
@@ -61,63 +60,77 @@ function stageMarkerGlyph(status: RailStageStatus): string {
   return glyph('stagePending');
 }
 
-function haltColor(status: RailStageStatus, t: Theme): string | undefined | null {
-  if (status === 'cancelled') return t.warning;
-  if (status === 'failed') return t.error;
-  return null;
+function stageMarkerTone(state: RailStageState): ConversationRowTone {
+  switch (state.status) {
+    case 'done':
+      return stateTone('passed');
+    case 'active':
+      return stageLabelTone(state);
+    case 'pending':
+      return stateTone('pending');
+    case 'cancelled':
+      return stateTone('attention');
+    case 'failed':
+      return stateTone('failed');
+    default:
+      return assertNever(state.status);
+  }
+}
+
+function stageLabelTone(state: RailStageState): ConversationRowTone {
+  if (state.status === 'pending') return stateTone('pending');
+  const seat = railStageSeat(state.stage);
+  return seat === null ? 'text' : CREW_SEAT_ROLES[seat];
 }
 
 export function railFormCText(input: { stages: RailStageState[]; fraction: string }): string {
+  return railFormCSpans(input)
+    .map((span) => span.text)
+    .join('');
+}
+
+function railFormCSpans(input: {
+  stages: RailStageState[];
+  fraction: string;
+}): ConversationRowSegment[] {
   const { stages, fraction } = input;
-  const state = selectRailStage(stages)?.state;
-  const status = state?.status ?? 'pending';
-  const stage = state?.stage ?? 'plan';
-  const text = `${stageMarkerGlyph(status)} ${formatStageLabel(stage)}`;
-  if (status === 'cancelled') return `${text}${RAIL_FORM_C_CANCELLED_SUFFIX}`;
-  if (status === 'active') return `${text}${railFormCFractionText(fraction)}`;
-  return text;
+  const state = selectRailStage(stages)?.state ?? { stage: 'plan', status: 'pending' };
+  const { status, stage } = state;
+  const spans: ConversationRowSegment[] = [
+    {
+      text: `${stageMarkerGlyph(status)} `,
+      tone: stageMarkerTone(state),
+      bold: status === 'active',
+    },
+    { text: formatStageLabel(stage), tone: stageLabelTone(state), bold: status === 'active' },
+  ];
+  if (status === 'cancelled')
+    spans.push({ text: RAIL_FORM_C_CANCELLED_SUFFIX, tone: stateTone('attention') });
+  if (status === 'active') spans.push(...railFormCFractionSpans(fraction));
+  return spans;
 }
 
 function RailFormBNode({
   state,
   index,
-  stages,
   short,
 }: {
   state: RailStageState;
   index: number;
-  stages: RailStageState[];
   short: boolean;
 }) {
   const t = useTheme();
   const live = state.status === 'active';
-  // The stage the run is on is the one bright, bold node; the stages behind it and ahead of it are
-  // secondary, told apart by the filled mark and the ring (the marker+label text keeps its cell count,
-  // so the hit-test geometry never moves).
-  const halt = haltColor(state.status, t);
-  const rc = roleColor(railStageRole(state.stage), t);
   const label = railFormBLabel(state, { short });
-  const left = index > 0 ? stages[index - 1] : undefined;
-  const connector =
-    left !== undefined
-      ? {
-          text: railConnectorString(),
-          color: left.status === 'done' ? roleColor(railStageRole(left.stage), t) : t.textDim,
-        }
-      : undefined;
   return (
     <Box>
-      {connector !== undefined && <Text color={connector.color}>{connector.text}</Text>}
-      {halt === null ? (
-        <Text color={live ? rc : t.textDim} bold={live}>
-          {`${stageMarkerGlyph(state.status)} ${label}`}
-        </Text>
-      ) : (
-        <>
-          <Text color={halt}>{`${stageMarkerGlyph(state.status)} `}</Text>
-          <Text color={t.textDim}>{label}</Text>
-        </>
-      )}
+      {index > 0 && <Text color={t.border}>{railConnectorString()}</Text>}
+      <Text color={colorForTone(stageMarkerTone(state), t)} bold={live}>
+        {`${stageMarkerGlyph(state.status)} `}
+      </Text>
+      <Text color={colorForTone(stageLabelTone(state), t)} bold={live}>
+        {label}
+      </Text>
     </Box>
   );
 }
@@ -133,27 +146,17 @@ export function RailFormB({
   return (
     <Box height={1} overflow="hidden">
       {stages.map((state, index) => (
-        <RailFormBNode
-          key={state.stage}
-          state={state}
-          index={index}
-          stages={stages}
-          short={short}
-        />
+        <RailFormBNode key={state.stage} state={state} index={index} short={short} />
       ))}
     </Box>
   );
 }
 
 function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: string }) {
-  const t = useTheme();
-  const state = selectRailStage(stages)?.state;
-  const live = state?.status === 'active';
-  const rc = roleColor(railStageRole(state?.stage ?? 'plan'), t);
   return (
     <Box height={1} overflow="hidden">
-      <Text color={live ? rc : t.textDim} bold={live}>
-        {railFormCText({ stages, fraction })}
+      <Text>
+        <TextSpans parts={railFormCSpans({ stages, fraction })} />
       </Text>
     </Box>
   );
@@ -162,18 +165,44 @@ function RailFormC({ stages, fraction }: { stages: RailStageState[]; fraction: s
 // The fraction the build block states, out of the plan as it stands — fix tasks a review appended
 // included — so a brief is counted once however many completions the log carried for it.
 function railCompleteText(summary: RailDoneSummary): string {
-  const parts = ['done'];
-  if (summary.total > 0) parts.push(`${summary.passed}/${summary.total} briefs passed`);
-  if (summary.driftPassed === undefined) parts.push('drift not run');
-  else parts.push(summary.driftPassed ? 'no drift' : 'drift found');
-  return `${glyph('stageDone')} ${parts.join(SOFT_SEP)}`;
+  return railCompleteSpans(summary)
+    .map((span) => span.text)
+    .join('');
+}
+
+function railCompleteSpans(summary: RailDoneSummary): ConversationRowSegment[] {
+  const spans: ConversationRowSegment[] = [
+    { text: `${glyph('stageDone')} done`, tone: stateTone('passed') },
+  ];
+  if (summary.total > 0)
+    spans.push(
+      { text: SOFT_SEP, tone: 'textDim' },
+      ...passedFractionSpans(`${summary.passed}/${summary.total} briefs`),
+    );
+  spans.push({ text: SOFT_SEP, tone: 'textDim' });
+  spans.push({
+    text:
+      summary.driftPassed === undefined
+        ? 'drift not run'
+        : summary.driftPassed
+          ? 'no drift'
+          : 'drift found',
+    tone:
+      summary.driftPassed === undefined
+        ? stateTone('pending')
+        : summary.driftPassed
+          ? stateTone('passed')
+          : stateTone('attention'),
+  });
+  return spans;
 }
 
 function RailComplete({ summary }: { summary: RailDoneSummary }) {
-  const t = useTheme();
   return (
     <Box height={1} overflow="hidden">
-      <Text color={t.success}>{railCompleteText(summary)}</Text>
+      <Text>
+        <TextSpans parts={railCompleteSpans(summary)} />
+      </Text>
     </Box>
   );
 }

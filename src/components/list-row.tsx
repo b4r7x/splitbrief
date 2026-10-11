@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from './theme.js';
+import { TextSpans } from './text-spans.js';
 import { Box } from 'ink';
 import { glyph } from '../lib/glyphs.js';
 import { SOFT_SEP } from '../core/separators.js';
@@ -6,13 +7,14 @@ import {
   ELLIPSIS,
   elidePathLabel,
   getTerminalCellWidth,
+  segmentsForRowText,
   stripTerminalControls,
   truncateTerminalDisplayText,
 } from '../utils/display-text.js';
 
 export type ListRowState = 'default' | 'active' | 'context';
 
-interface ListRowProps {
+interface ListRowBaseProps {
   label: string;
   state?: ListRowState | undefined;
   accelerator?: string | undefined;
@@ -29,13 +31,6 @@ interface ListRowProps {
   width?: number | undefined;
   labelWidth?: number | undefined;
   /**
-   * Which end of the label the cut takes. `start` keeps the tail, which is what a
-   * slash-namespaced id is distinguished by: cutting its tail leaves rows that read alike.
-   * `path` keeps the tail too, but gives up whole leading segments, so the cut lands on a
-   * separator and what is left is still a whole path.
-   */
-  labelTruncate?: 'end' | 'start' | 'path' | undefined;
-  /**
    * Set, the row cuts no word: `med…` names no level and `opencod…` no provider. The metadata
    * sheds whole ` · ` segments from its tail and the label whole words from its tail, and a row
    * over its width spends its blank alignment cells (a blank trailing cell, an unticked check)
@@ -45,6 +40,15 @@ interface ListRowProps {
    */
   keepWhole?: 'label' | 'metadata' | undefined;
 }
+
+type ListRowProps = ListRowBaseProps &
+  (
+    | { labelParts?: undefined; labelTruncate?: 'end' | 'start' | 'path' | undefined }
+    | {
+        labelParts: readonly Readonly<{ text: string; color?: string | undefined }>[];
+        labelTruncate?: 'end' | undefined;
+      }
+  );
 
 const LEAD_BLANK = '  ';
 /** A tree row's value is the point of the row, so its connector never squeezes it to nothing. */
@@ -135,6 +139,7 @@ export function listRowLead(state: ListRowState): string {
 
 export function ListRow({
   label,
+  labelParts,
   state = 'default',
   accelerator,
   acceleratorWidth,
@@ -242,6 +247,14 @@ export function ListRow({
       ? Math.min(getTerminalCellWidth(displayLabel), labelW ?? getTerminalCellWidth(displayLabel))
       : labelW;
 
+  const fittedLabelParts =
+    labelParts === undefined
+      ? undefined
+      : segmentsForRowText(
+          labelParts.map((part) => ({ ...part, text: stripTerminalControls(part.text) })),
+          displayLabel,
+        );
+
   return (
     <Box width={width} height={1} overflow="hidden" backgroundColor={backgroundColor}>
       <Text color={leadColor}>{listRowLead(state)}</Text>
@@ -264,7 +277,16 @@ export function ListRow({
         backgroundColor={backgroundColor}
       >
         <Text color={labelColor} wrap={labelWrap}>
-          {displayLabel}
+          {fittedLabelParts === undefined ? (
+            displayLabel
+          ) : (
+            <TextSpans
+              parts={fittedLabelParts.map((part) => ({
+                text: part.text,
+                color: part.color ?? labelColor,
+              }))}
+            />
+          )}
         </Text>
       </Box>
       {showMetadata ? (

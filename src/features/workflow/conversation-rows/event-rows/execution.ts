@@ -1,4 +1,6 @@
 import type { EngineEvent } from '../../../../engine/events/types.js';
+import { SOFT_SEP } from '../../../../core/separators.js';
+import { stateTone } from '../../../../core/theme/state-tone.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../../core/schemas/enums.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { implementerExpandedDiffCardBlock } from '../implementer-diff-card-block.js';
@@ -7,15 +9,18 @@ import { sanitizeRowDisplayText } from '../row-format/text.js';
 import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
 import {
-  fullSuiteRow,
-  fullSuiteTone,
+  fullSuiteSegments,
   reviewChecksDeclinedRows,
-  reviewChecksRow,
-  reviewChecksTone,
+  reviewChecksSegments,
   validationStageNotes,
   validationSummarySegments,
 } from '../event-format.js';
-import { compositeBlock, rowsBlock, wrappedTextBlock } from '../row-block-compose.js';
+import {
+  compositeBlock,
+  rowsBlock,
+  wrappedSegmentsBlock,
+  wrappedTextBlock,
+} from '../row-block-compose.js';
 
 /** ` (+a -b)` when the call counted its lines; nothing when its baseline could not. */
 function lineCounts(event: {
@@ -72,16 +77,19 @@ export function implementerDoneRowBlock(
   if (!event.diff) {
     return compositeBlock(keyPrefix, [
       header,
-      wrappedTextBlock({
+      wrappedSegmentsBlock({
         keyPrefix: `${keyPrefix}-summary-1`,
         // A review fix that verified the brief and edited nothing never reads as a code change;
         // the header above already names the file, so the verdict stands alone and never wraps.
-        text:
+        segments:
           event.noChange === true
-            ? 'verified · no change needed'
-            : `${event.file}${lineCounts(event)}`,
+            ? [
+                { text: 'verified', tone: stateTone('passed') },
+                { text: SOFT_SEP, tone: 'textDim' },
+                { text: 'no change needed', tone: 'textDim' },
+              ]
+            : [{ text: `${event.file}${lineCounts(event)}`, tone: 'textDim' }],
         width: ctx.width,
-        tone: 'textDim',
       }),
     ]);
   }
@@ -161,11 +169,10 @@ export function fullSuiteRowBlock(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
   width: number,
 ): ConversationRowBlock | null {
-  return wrappedTextBlock({
+  return wrappedSegmentsBlock({
     keyPrefix,
-    text: fullSuiteRow(event),
+    segments: fullSuiteSegments(event),
     width,
-    tone: fullSuiteTone(event),
     continuationIndent: 2,
   });
 }
@@ -176,11 +183,10 @@ export function reviewChecksRowBlock(
   width: number,
 ): ConversationRowBlock | null {
   return compositeBlock(keyPrefix, [
-    wrappedTextBlock({
+    wrappedSegmentsBlock({
       keyPrefix,
-      text: reviewChecksRow(event),
+      segments: reviewChecksSegments(event),
       width,
-      tone: reviewChecksTone(event),
       continuationIndent: 2,
     }),
     ...reviewChecksDeclinedRows(event).map((text, index) =>

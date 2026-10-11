@@ -16,7 +16,7 @@ describe('paint', () => {
   });
 
   it('paints truecolor without faint', () => {
-    expect(paint('#b4bad0', 'text')).toBe('\u001b[38;2;180;186;208mtext\u001b[39m');
+    expect(paint('#9fa7bf', 'text')).toBe('\u001b[38;2;159;167;191mtext\u001b[39m');
   });
 
   it('keeps a resolved 256 index at level 2', () => {
@@ -31,7 +31,7 @@ describe('paint', () => {
 
   it('paints nothing at level 0', () => {
     chalk.level = 0;
-    expect(paint('#b4bad0', 'text')).toBe('text');
+    expect(paint('#9fa7bf', 'text')).toBe('text');
     expect(paint('ansi256(250)', 'text')).toBe('text');
     expect(paint('white', 'text')).toBe('text');
   });

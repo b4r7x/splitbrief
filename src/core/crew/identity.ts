@@ -271,6 +271,8 @@ export function formatSeatCandidateIdentity(
   );
 }
 
+export type SeatLineSpan = Readonly<{ text: string; seat?: CrewSeatId }>;
+
 type CollapsedSeat = Readonly<{
   id: CrewSeatId;
   identity: string;
@@ -279,19 +281,32 @@ type CollapsedSeat = Readonly<{
   note?: string | undefined;
 }>;
 
-function collapsedSeatText(seat: CollapsedSeat): string {
+function collapsedSeatText(seat: CollapsedSeat): SeatLineSpan {
   const label = CREW_SEAT_LABELS[seat.id];
-  if (seat.note === undefined) return `${label} ${seat.identity}`;
-  return `${label} ${seat.identity} (${seat.note})`;
+  const text =
+    seat.note === undefined
+      ? `${label} ${seat.identity}`
+      : `${label} ${seat.identity} (${seat.note})`;
+  return { text, seat: seat.id };
+}
+
+export function seatLineText(spans: readonly SeatLineSpan[]): string {
+  return spans.map((span) => span.text).join('');
 }
 
 // An elided seat leaves the line entirely. `REVIEW …` names no seat and reads as "pending" beside
 // the workflow rail, so the seats that still fit are stated and the rest are silent.
-function collapsedSeatLine(seats: readonly CollapsedSeat[], elided: ReadonlySet<number>): string {
-  return seats
-    .filter((_seat, index) => !elided.has(index))
-    .map(collapsedSeatText)
-    .join(CREW_IDENTITY_SEPARATOR);
+function collapsedSeatLine(
+  seats: readonly Readonly<{ span: SeatLineSpan }>[],
+  elided: ReadonlySet<number>,
+): SeatLineSpan[] {
+  const spans: SeatLineSpan[] = [];
+  for (const [index, seat] of seats.entries()) {
+    if (elided.has(index)) continue;
+    if (spans.length > 0) spans.push({ text: CREW_IDENTITY_SEPARATOR });
+    spans.push(seat.span);
+  }
+  return spans;
 }
 
 /**
@@ -304,25 +319,23 @@ function collapsedSeatLine(seats: readonly CollapsedSeat[], elided: ReadonlySet<
  * beside the workflow rail an ellipsis already reads as "pending".
  */
 function elideCollapsedSeats(
-  seats: readonly CollapsedSeat[],
+  seats: readonly (CollapsedSeat & Readonly<{ span: SeatLineSpan }>)[],
   budget: number,
   haltedSeat?: CrewSeatId,
-): string {
+): SeatLineSpan[] {
   const lastFirst = seats
     .map((seat, index) => ({ index, width: getTerminalCellWidth(seat.identity) }))
     .reverse();
   const elided = new Set<number>();
-  const fitsWithout = (index: number): boolean =>
-    getTerminalCellWidth(collapsedSeatLine(seats, new Set([...elided, index]))) <= budget;
-  while (
-    elided.size < seats.length &&
-    getTerminalCellWidth(collapsedSeatLine(seats, elided)) > budget
-  ) {
+  const width = (omitted: ReadonlySet<number>): number =>
+    getTerminalCellWidth(seatLineText(collapsedSeatLine(seats, omitted)));
+  const fitsWithout = (index: number): boolean => width(new Set([...elided, index])) <= budget;
+  while (elided.size < seats.length && width(elided) > budget) {
     const remaining = lastFirst.filter((seat) => !elided.has(seat.index));
     const pool = remaining.filter(
       (seat) => seats[seat.index]?.note === undefined && seats[seat.index]?.id !== haltedSeat,
     );
-    if (pool.length === 0) return '';
+    if (pool.length === 0) return [];
     // When no single name is enough, the widest goes and the line is measured
     // again, so the line never hides more names than it has to.
     const chosen =
@@ -331,7 +344,7 @@ function elideCollapsedSeats(
     elided.add(chosen.index);
   }
   const namesSomeone = seats.some((seat, index) => seat.named && !elided.has(index));
-  return namesSomeone ? collapsedSeatLine(seats, elided) : '';
+  return namesSomeone ? collapsedSeatLine(seats, elided) : [];
 }
 
 /**
@@ -345,23 +358,24 @@ function fitCollapsedSeats(
   seats: readonly CollapsedSeat[],
   budget: number,
   haltedSeat?: CrewSeatId,
-): string {
-  const plainSeats = seats.map((seat) => ({
-    id: seat.id,
-    identity: seat.identity,
-    named: seat.named,
-  }));
+): SeatLineSpan[] {
+  const notedSeats = seats.map((seat) => ({ ...seat, span: collapsedSeatText(seat) }));
+  const plainSeats = notedSeats.map((seat) => {
+    if (seat.note === undefined) return seat;
+    const plain = { id: seat.id, identity: seat.identity, named: seat.named };
+    return { ...plain, span: collapsedSeatText(plain) };
+  });
   const protectedSeat =
-    haltedSeat !== undefined && elideCollapsedSeats(plainSeats, budget, haltedSeat) !== ''
+    haltedSeat !== undefined && elideCollapsedSeats(plainSeats, budget, haltedSeat).length > 0
       ? haltedSeat
       : undefined;
-  const noted = elideCollapsedSeats(seats, budget, protectedSeat);
+  const noted = elideCollapsedSeats(notedSeats, budget, protectedSeat);
   if (seats.every((seat) => seat.note === undefined)) return noted;
-  if (noted !== '' && getTerminalCellWidth(noted) <= budget) return noted;
+  if (noted.length > 0 && getTerminalCellWidth(seatLineText(noted)) <= budget) return noted;
   return elideCollapsedSeats(plainSeats, budget, protectedSeat);
 }
 
-export function formatCollapsedSeatLine(
+export function formatCollapsedSeatSpans(
   input: Readonly<{
     planner: RunnerConfig;
     build: RunnerConfig;
@@ -380,11 +394,11 @@ export function formatCollapsedSeatLine(
         }>
       | undefined;
   }>,
-): string {
+): SeatLineSpan[] {
   const plannerName = input.displayNames?.planner ?? input.displayNames?.plan;
   const buildName = input.displayNames?.build;
   const reviewerName = input.displayNames?.reviewer ?? input.displayNames?.review ?? plannerName;
-  return formatCollapsedSeatLineFromIdentities({
+  return formatCollapsedSeatSpansFromIdentities({
     plan: formatShortSeatIdentity({ seat: input.planner, displayName: plannerName }),
     build: formatShortSeatIdentity({ seat: input.build, displayName: buildName }),
     review:
@@ -402,7 +416,7 @@ export function formatCollapsedSeatLine(
  * names on record but no runner blocks, so this is the seam the summary header enters through.
  * A `null` review seat is the planner's, and says so with the inheritance mark.
  */
-export function formatCollapsedSeatLineFromIdentities(
+export function formatCollapsedSeatSpansFromIdentities(
   input: Readonly<{
     plan: string;
     build: string;
@@ -411,7 +425,7 @@ export function formatCollapsedSeatLineFromIdentities(
     haltedSeat?: CrewSeatId | undefined;
     notes?: Partial<Record<CrewSeatId, string>> | undefined;
   }>,
-): string {
+): SeatLineSpan[] {
   const notes = input.notes;
   const seats: CollapsedSeat[] = [
     {

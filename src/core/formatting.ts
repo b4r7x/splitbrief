@@ -1,15 +1,25 @@
 import { countNoun } from '../utils/pluralize.js';
 import { SOFT_SEP } from './separators.js';
 
-export function formatScoreSummary(
+export function formatScoreSummaryParts(
   score: number,
   counts: { errorCount: number; warningCount: number },
   label = 'score',
-): string {
-  const parts = [`${label} ${score.toFixed(2)}`];
-  if (counts.errorCount > 0) parts.push(countNoun(counts.errorCount, 'error'));
-  if (counts.warningCount > 0) parts.push(countNoun(counts.warningCount, 'warning'));
-  return parts.join(SOFT_SEP);
+): Readonly<{ text: string; kind: 'score' | 'separator' | 'error' | 'warning' }>[] {
+  const parts: ReturnType<typeof formatScoreSummaryParts> = [
+    { text: `${label} ${score.toFixed(2)}`, kind: 'score' },
+  ];
+  if (counts.errorCount > 0)
+    parts.push(
+      { text: SOFT_SEP, kind: 'separator' },
+      { text: countNoun(counts.errorCount, 'error'), kind: 'error' },
+    );
+  if (counts.warningCount > 0)
+    parts.push(
+      { text: SOFT_SEP, kind: 'separator' },
+      { text: countNoun(counts.warningCount, 'warning'), kind: 'warning' },
+    );
+  return parts;
 }
 
 /** Floors: a context window may be shown smaller than it is, never larger. */

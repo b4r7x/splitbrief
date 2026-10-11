@@ -2,17 +2,22 @@ import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { recoveryFactNumber, recoveryFactString } from '../schemas/recovery/facts.js';
 import { SOFT_SEP } from '../separators.js';
 import { formatResetAt } from './reset-clock.js';
-import { haltOf, recoveryHaltLabel } from './halt.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { countNoun } from '../../utils/pluralize.js';
 import { formatAccountCause } from './account-cause.js';
+import type { SeatLineSpan } from '../crew/identity.js';
 import type { SeatSwitchRecord } from '../schemas/workflow.js';
 
-function toolName(issue: RecoveryIssue): string {
+type RecoveryHeadlineInput = Pick<
+  RecoveryIssue,
+  'reason' | 'seat' | 'taskId' | 'files' | 'facts' | 'resetAt'
+>;
+
+function toolName(issue: RecoveryHeadlineInput): string {
   return recoveryFactString(issue.facts, 'tool') ?? 'the tool';
 }
 
-function taskName(issue: RecoveryIssue): string {
+function taskName(issue: RecoveryHeadlineInput): string {
   return issue.taskId ?? 'the current brief';
 }
 
@@ -66,80 +71,110 @@ export function leftIsolationCause(task: string): string {
  * The halt in the words the operator needs: what stopped, on which tool or
  * brief, and — for a quota halt — when it comes back. Never the raw enums.
  */
-export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.now()): string {
+export function formatRecoveryHeadlineSpans(
+  issue: RecoveryHeadlineInput,
+  now: number = Date.now(),
+): readonly SeatLineSpan[] {
   switch (issue.reason) {
     case 'apply-conflict':
-      return `Apply found ${countNoun(issue.files.length, 'conflicting file')}`;
+      return [{ text: `Apply found ${countNoun(issue.files.length, 'conflicting file')}` }];
     case 'apply-partial':
-      return 'Apply stopped part way';
+      return [{ text: 'Apply stopped part way' }];
     case 'runner-usage-limit': {
       const cause = recoveryFactString(issue.facts, 'cause');
       switch (cause) {
         case 'balance':
         case 'billing':
         case 'quota':
-          return formatAccountCause(cause, toolName(issue));
+          return [{ text: formatAccountCause(cause, toolName(issue)) }];
       }
       const reset = formatResetAt(issue.resetAt, now);
-      return `Usage limit on ${toolName(issue)}${reset === undefined ? '' : ` · ${reset}`}`;
+      return [
+        { text: `Usage limit on ${toolName(issue)}${reset === undefined ? '' : ` · ${reset}`}` },
+      ];
     }
     case 'runner-unauthenticated':
-      return `Signed out of ${toolName(issue)}`;
+      return [{ text: `Signed out of ${toolName(issue)}` }];
     case 'retry-exhausted':
-      return retryExhaustedCause({
-        task: taskName(issue),
-        plannerVerdict: recoveryFactString(issue.facts, 'plannerVerdict'),
-        hookReason: recoveryFactString(issue.facts, 'escalationBlockedBy'),
-      });
+      return [
+        {
+          text: retryExhaustedCause({
+            task: taskName(issue),
+            plannerVerdict: recoveryFactString(issue.facts, 'plannerVerdict'),
+            hookReason: recoveryFactString(issue.facts, 'escalationBlockedBy'),
+          }),
+        },
+      ];
     case 'consult-bound-spent':
-      return `${taskName(issue)} used its consult allowance`;
+      return [{ text: `${taskName(issue)} used its consult allowance` }];
     case 'planner-calls-spent':
-      return 'The run used its planner-call allowance';
+      return [{ text: 'The run used its planner-call allowance' }];
     case 'scope-violation':
-      return `${taskName(issue)} wrote outside its declared files`;
+      return [{ text: `${taskName(issue)} wrote outside its declared files` }];
     case 'implementer-recipe-invalid':
-      return `Tool recipe rejected by ${toolName(issue)}`;
+      return [{ text: `Tool recipe rejected by ${toolName(issue)}` }];
     case 'implementer-left-isolation':
-      return leftIsolationCause(taskName(issue));
+      return [{ text: leftIsolationCause(taskName(issue)) }];
     case 'checkout-changed':
-      return repositoryChangedCause(taskName(issue), recoveryFactString(issue.facts, 'changes'));
+      return [
+        {
+          text: repositoryChangedCause(taskName(issue), recoveryFactString(issue.facts, 'changes')),
+        },
+      ];
     case 'runner-timeout-repeated':
-      return `Two timeouts in a row on ${taskName(issue)}`;
+      return [{ text: `Two timeouts in a row on ${taskName(issue)}` }];
     case 'planner-call-failed':
-      return issue.seat === 'review' ? 'Reviewer call failed' : 'Planner call failed';
+      return [
+        {
+          text: issue.seat === 'review' ? 'Reviewer' : 'Planner',
+          seat: issue.seat === 'review' ? 'review' : 'plan',
+        },
+        { text: ' call failed' },
+      ];
     case 'seat-protocol-error':
-      return 'Seat answer did not match its contract';
+      return [{ text: 'Seat answer did not match its contract' }];
     case 'planner-returned-no-briefs':
-      return 'Planner returned no briefs';
+      return [{ text: 'Planner', seat: 'plan' }, { text: ' returned no briefs' }];
     case 'constitution-check-failed':
-      return 'Constitution check failed';
+      return [{ text: 'Constitution check failed' }];
     case 'brief-review-no-progress':
-      return 'Brief review is not making progress';
+      return [{ text: 'Brief review is not making progress' }];
     case 'brief-quality-unrepaired':
-      return 'Task Briefs still fail the quality gate';
+      return [{ text: 'Task Briefs still fail the quality gate' }];
     case 'plan-questions-exhausted':
-      return 'Planner still asks questions after 2 rounds';
+      return [{ text: 'Planner', seat: 'plan' }, { text: ' still asks questions after 2 rounds' }];
     case 'plan-checks-failed':
-      return 'Plan still fails its checks after one repair';
+      return [{ text: 'Plan', seat: 'plan' }, { text: ' still fails its checks after one repair' }];
     case 'review-input-too-large':
-      return `Review input too large for ${toolName(issue)}`;
+      return [
+        { text: 'Review', seat: 'review' },
+        { text: ` input too large for ${toolName(issue)}` },
+      ];
     case 'required-checks-unrunnable': {
       const ids = recoveryFactString(issue.facts, 'requiredCheckIds');
-      return ids === undefined
-        ? 'Required checks cannot run'
-        : `Required checks cannot run: ${ids}`;
+      return [
+        {
+          text:
+            ids === undefined ? 'Required checks cannot run' : `Required checks cannot run: ${ids}`,
+        },
+      ];
     }
     case 'review-failed': {
       // A final review halt names no brief: it judged the whole run, or it judged nothing.
       const cycles = recoveryFactNumber(issue.facts, 'fixCycles');
-      if (cycles !== undefined) return finalReviewCapCause(cycles);
+      if (cycles !== undefined) return [{ text: finalReviewCapCause(cycles) }];
       const unverified = recoveryFactNumber(issue.facts, 'unverified');
-      if (unverified !== undefined) return finalReviewUnverifiedCause(unverified);
+      if (unverified !== undefined) return [{ text: finalReviewUnverifiedCause(unverified) }];
       const blocking = recoveryFactNumber(issue.facts, 'blocking');
-      if (blocking !== undefined) return finalReviewFailedCause(blocking);
-      return recoveryFactString(issue.facts, 'reviewFailureKind') === undefined
-        ? 'Final review failed'
-        : 'Final review reached no verdict';
+      if (blocking !== undefined) return [{ text: finalReviewFailedCause(blocking) }];
+      return [
+        {
+          text:
+            recoveryFactString(issue.facts, 'reviewFailureKind') === undefined
+              ? 'Final review failed'
+              : 'Final review reached no verdict',
+        },
+      ];
     }
     case 'implementation-error':
     case 'validation-failed':
@@ -149,15 +184,16 @@ export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.
     case 'dependency-blocked':
     case 'approval-denied':
     case 'snapshot-failed':
-      return `${sentenceCase(issue.reason)} on ${taskName(issue)}`;
+      return [{ text: `${sentenceCase(issue.reason)} on ${taskName(issue)}` }];
     default:
       return assertNever(issue.reason);
   }
 }
 
-/** The halt and its cause on one line: "Needs you · …" or "Seat down · …". */
-export function formatRecoveryTitle(cause: string, issue: Pick<RecoveryIssue, 'reason'>): string {
-  return `${recoveryHaltLabel(haltOf(issue.reason))} · ${cause}`;
+export function formatRecoveryHeadline(issue: RecoveryIssue, now: number = Date.now()): string {
+  return formatRecoveryHeadlineSpans(issue, now)
+    .map((span) => span.text)
+    .join('');
 }
 
 export function formatSeatSwitchCause(

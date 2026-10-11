@@ -18,9 +18,13 @@ import { countNoun } from '../../utils/pluralize.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { formatResetAt, stripRecoveryResetClause } from '../../core/recovery/reset-clock.js';
-import { formatRecoveryHeadline, formatRecoveryTitle } from '../../core/recovery/headline.js';
+import {
+  formatRecoveryHeadline,
+  formatRecoveryHeadlineSpans,
+} from '../../core/recovery/headline.js';
 import {
   recoveryActionLabel,
+  recoveryActionParts,
   type RecoveryActionChoiceContext,
 } from '../../core/recovery/action-label.js';
 import { formatTruncatedList } from '../../core/formatting.js';
@@ -29,6 +33,11 @@ import {
   recoveryContextCauseWords,
   recoveryContextSeatLabel,
 } from './usage-details-model.js';
+
+import { haltOf, recoveryHaltLabel } from '../../core/recovery/halt.js';
+import { stateTone } from '../../core/theme/state-tone.js';
+import type { ConversationRowSegment } from './conversation-rows/types.js';
+import { separatedSpans } from './conversation-rows/row-format/text.js';
 
 const ACTION_ORDER = RECOVERY_ACTIONS;
 
@@ -60,7 +69,20 @@ export function isActionRowLine(line: string): boolean {
 }
 
 export type PromptRow =
-  | { kind: 'headline'; tone: 'pass' | 'failed' | 'attention'; text: string; detail?: string }
+  | {
+      kind: 'headline';
+      tone: 'pass' | 'failed' | 'text';
+      text: string;
+      detail?: string;
+      parts?: readonly ConversationRowSegment[];
+    }
+  | {
+      kind: 'headline';
+      tone: 'attention';
+      text: string;
+      detail?: string;
+      parts: readonly ConversationRowSegment[];
+    }
   | { kind: 'message'; text: string }
   | { kind: 'blank' }
   | { kind: 'facts'; items: string[]; grid: boolean }
@@ -213,17 +235,36 @@ function switchSeatRowKey(index: number, offered: number): string {
  * restarts the brief. On a short panel the facts above the rows are what drops.
  */
 export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue): string {
+  return recoveryMenuParts(action, issue)
+    .map((part) => part.text)
+    .join('');
+}
+
+export function recoveryMenuParts(
+  action: RecoveryAction,
+  issue: RecoveryIssue,
+): ConversationRowSegment[] {
   const apply =
     action === 'retry-same-worker' || action === 'restore-backup'
       ? applyRecoveryActionText(action, issue.reason)
       : undefined;
-  if (apply !== undefined) return apply.charAt(0).toUpperCase() + apply.slice(1);
-  const label = recoveryActionLabel(action, {
+  if (apply !== undefined)
+    return separatedSpans(apply.charAt(0).toUpperCase() + apply.slice(1), 'text').map(
+      (part, index) =>
+        index === 0 ? part : ({ ...part, tone: 'textDim' } satisfies ConversationRowSegment),
+    );
+  const label = recoveryActionParts(action, {
     reason: issue.reason,
     switchSeat: issue.switchSeat,
     seat: issue.seat,
     resetAt: issue.resetAt,
-  });
+  }).flatMap((part) =>
+    part.seat === undefined
+      ? separatedSpans(part.text, 'text').map((span, index) =>
+          index === 0 ? span : ({ ...span, tone: 'textDim' } satisfies ConversationRowSegment),
+        )
+      : [{ text: part.text, tone: CREW_SEAT_ROLES[part.seat] }],
+  );
   const seatLevel = isSeatLevelRetry(issue);
   const consequence = seatLevel
     ? issue.phase === 'final-review'
@@ -235,7 +276,9 @@ export function recoveryMenuLabel(action: RecoveryAction, issue: RecoveryIssue):
     (action === 'retry-same-worker' &&
       !seatLevel &&
       (issue.seat === 'plan' || issue.seat === 'review'));
-  return says ? `${label}${SOFT_SEP}${consequence}` : label;
+  return says
+    ? [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }]
+    : label;
 }
 
 function switchSeatRowText(seat: CrewSeatId, candidate: SeatSwapCandidate): string {
@@ -354,8 +397,9 @@ function buildRecoveryPromptRows(issue: RecoveryIssue): PromptRow[] {
   const recommended = resolveRecommendedAction(issue, actions);
   const facts = [...formatSubjectLines(issue), ...formatDetailLines(issue)];
 
+  const parts = formatRecoveryHeaderParts(issue);
   const rows: PromptRow[] = [
-    { kind: 'headline', tone: 'attention', text: formatRecoveryHeader(issue) },
+    { kind: 'headline', tone: 'attention', text: parts.map((part) => part.text).join(''), parts },
   ];
   if (facts.length > 0) {
     rows.push({ kind: 'blank' }, { kind: 'facts', items: facts, grid: false });
@@ -390,7 +434,7 @@ function promptRowToLines(row: PromptRow): string[] {
   }
 }
 
-export function promptRowsToString(rows: PromptRow[]): string {
+export function promptRowsToString(rows: readonly PromptRow[]): string {
   const lines = rows.flatMap(promptRowToLines);
   return lines
     .filter((line, index) => line.length > 0 || lines[index - 1] !== '')
@@ -403,12 +447,13 @@ export function formatRecoveryPrompt(issue: RecoveryIssue): string {
 }
 
 /** The issue and its facts for the picker; action rows are rendered as real selectable rows. */
-export function formatRecoveryPromptSummary(issue: RecoveryIssue): string {
+export function recoveryPromptSummaryRows(issue: RecoveryIssue): PromptRow[] {
   const rows = buildRecoveryPromptRows(issue).filter(
     (row): row is Exclude<PromptRow, { kind: 'action' } | { kind: 'note' }> =>
       row.kind !== 'action' && row.kind !== 'note',
   );
-  return promptRowsToString(rows);
+  while (rows.at(-1)?.kind === 'blank') rows.pop();
+  return rows;
 }
 
 export function recommendedRecoveryAction(issue: RecoveryIssue): RecoveryAction | undefined {
@@ -461,11 +506,29 @@ function resolveRecommendedAction(
   return actions[0];
 }
 
-function formatRecoveryHeader(issue: RecoveryIssue): string {
-  const context = formatApiContextHeadline(issue);
-  if (context !== undefined) return formatRecoveryTitle(context, issue);
-  const usageLimit = formatUsageLimitHeadline(issue);
-  if (usageLimit !== undefined) return formatRecoveryTitle(usageLimit, issue);
+function formatRecoveryHeaderParts(issue: RecoveryIssue): ConversationRowSegment[] {
+  return [
+    { text: recoveryHaltLabel(haltOf(issue.reason)), tone: stateTone('attention') },
+    { text: SOFT_SEP, tone: 'textDim' },
+    ...recoveryCauseParts(issue),
+  ];
+}
+
+function recoveryCauseParts(issue: RecoveryIssue): ConversationRowSegment[] {
+  const context = readRecoveryContext(issue);
+  if (context !== null)
+    return [
+      { text: 'Nothing was sent to ', tone: 'text' },
+      { text: recoveryContextSeatLabel(context), tone: CREW_SEAT_ROLES[context.seat] },
+      { text: SOFT_SEP, tone: 'textDim' },
+      { text: recoveryContextCauseWords(context), tone: 'text' },
+    ];
+  if (
+    issue.reason === 'runner-usage-limit' &&
+    recoveryFactString(issue.facts, 'tool') !== undefined
+  ) {
+    return separatedSpans(formatRecoveryHeadline(issue), 'text');
+  }
   // The engine's sentence carries the evidence for the headless sinks; here the evidence is the
   // first fact row, so the header names the halt and nothing is said twice. A checkout halt's
   // rows do not repeat its changes, so its header names them.
@@ -479,7 +542,7 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.reason === 'plan-questions-exhausted' ||
     issue.reason === 'plan-checks-failed'
   ) {
-    return formatRecoveryTitle(formatRecoveryHeadline(issue), issue);
+    return recoveryHeadlineParts(issue);
   }
   // "T003 validation failed" takes "after 3 attempts"; a cause that already
   // ends a sentence would read it as part of that sentence ("or abort after 2
@@ -492,34 +555,15 @@ function formatRecoveryHeader(issue: RecoveryIssue): string {
     issue.attempts !== undefined && issue.attempts > 0 && !cause.endsWith('.')
       ? ` after ${countNoun(issue.attempts, 'attempt')}`
       : '';
-  return formatRecoveryTitle(`${cause}${attemptSuffix}`, issue);
+  return separatedSpans(`${cause}${attemptSuffix}`, 'text');
 }
 
-/**
- * A packet the seat was never given states two things: that no call was made, and why. The seat is
- * named in the word the crew uses for it, so the row is not read as a review that found nothing or
- * a brief that needs repairing. Every figure the refusal compared stays in `/usage`; the message
- * the boundary wrote repeats the missing sections the details already carry, so the panel states
- * the cause once and lets the detail row hold the list.
- */
-function formatApiContextHeadline(issue: RecoveryIssue): string | undefined {
-  const context = readRecoveryContext(issue);
-  if (context === null) return undefined;
-  return `Nothing was sent to ${recoveryContextSeatLabel(context)} · ${recoveryContextCauseWords(context)}`;
-}
-
-/**
- * A quota halt states three things and no more: that recovery is needed, the tool
- * that ran out, and the clock it comes back on — the same words the header uses,
- * so one instant is never spelled two ways on one screen. The engine's own
- * sentence keeps the advice for the headless sinks; here the action rows are the
- * advice, and the tool's verbatim diagnostic stays in the facts as a quote.
- */
-function formatUsageLimitHeadline(issue: RecoveryIssue): string | undefined {
-  if (issue.reason !== 'runner-usage-limit') return undefined;
-  return recoveryFactString(issue.facts, 'tool') === undefined
-    ? undefined
-    : formatRecoveryHeadline(issue);
+export function recoveryHeadlineParts(issue: RecoveryIssue): ConversationRowSegment[] {
+  return formatRecoveryHeadlineSpans(issue).flatMap((part) =>
+    part.seat === undefined
+      ? separatedSpans(part.text, 'text')
+      : [{ text: part.text, tone: CREW_SEAT_ROLES[part.seat] }],
+  );
 }
 
 function formatSubjectLines(issue: RecoveryIssue): string[] {

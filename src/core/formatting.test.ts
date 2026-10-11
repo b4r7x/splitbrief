@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { formatContextLength, formatScoreSummary } from './formatting.js';
+import { formatContextLength, formatScoreSummaryParts } from './formatting.js';
 
-describe('formatScoreSummary', () => {
+describe('formatScoreSummaryParts', () => {
   it.each([
     [
       'orders errors before warnings',
@@ -33,7 +33,21 @@ describe('formatScoreSummary', () => {
       'quality 0.95 · 1 error · 2 warnings',
     ],
   ] as const)('%s', (_label, score, counts, customLabel, expected) => {
-    expect(formatScoreSummary(score, counts, customLabel)).toBe(expected);
+    expect(
+      formatScoreSummaryParts(score, counts, customLabel)
+        .map((part) => part.text)
+        .join(''),
+    ).toBe(expected);
+  });
+
+  it('records score, separators and count meanings before rendering', () => {
+    expect(formatScoreSummaryParts(0.5, { errorCount: 1, warningCount: 2 }, 'quality')).toEqual([
+      { text: 'quality 0.50', kind: 'score' },
+      { text: ' · ', kind: 'separator' },
+      { text: '1 error', kind: 'error' },
+      { text: ' · ', kind: 'separator' },
+      { text: '2 warnings', kind: 'warning' },
+    ]);
   });
 });
 

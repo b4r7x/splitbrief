@@ -6,16 +6,19 @@ import { borderStyleFor } from '../../../lib/glyphs.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { ListRow } from '../../../components/list-row.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
+import { colorForTone } from '../../../core/theme/tone-color.js';
 import { ListViewport } from '../../../components/pickers/list-viewport.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { formatKeyHints, SELECT_HINT } from '../prompt-rows/approval.js';
 import { PromptBody } from './prompt-body.js';
 import {
   correctionActionFor,
-  formatRecoveryPromptSummary,
+  recoveryPromptSummaryRows,
   getRecoveryPromptActions,
   recoveryActionKey,
   recoveryMenuLabel,
+  recoveryMenuParts,
   recommendedRecoveryAction,
 } from '../recovery-prompt.js';
 import { countPromptBodyRows } from '../prompt-body-rows.js';
@@ -23,7 +26,7 @@ import { countPromptBodyRows } from '../prompt-body-rows.js';
 interface ActionItem {
   action: RecoveryAction;
   key: string;
-  label: string;
+  parts: readonly ConversationRowSegment[];
 }
 
 interface RecoveryMenuProps {
@@ -39,28 +42,40 @@ function actionItems(issue: RecoveryIssue): ActionItem[] {
   return getRecoveryPromptActions(issue).map((action) => ({
     action,
     key: recoveryActionKey(action),
-    label: recoveryMenuLabel(action, issue),
+    parts: recoveryMenuParts(action, issue),
   }));
 }
 
-function renderAction(
-  item: ActionItem,
-  selected: boolean,
-  recommended: boolean,
-  width: number,
-  keyWidth: number,
-  keysLive: boolean,
-) {
+function RecoveryActionRow({
+  item,
+  selected,
+  recommended,
+  width,
+  keyWidth,
+  keysLive,
+}: {
+  item: ActionItem;
+  selected: boolean;
+  recommended: boolean;
+  width: number;
+  keyWidth: number;
+  keysLive: boolean;
+}) {
+  const t = useTheme();
   return (
     <ListRow
-      label={item.label}
-      width={width}
+      label={item.parts.map((part) => part.text).join('')}
+      labelParts={item.parts.map((part) => ({
+        text: part.text,
+        color: colorForTone(selected && part.tone === 'text' ? 'accent' : part.tone, t),
+      }))}
       state={selected ? 'active' : 'default'}
-      accelerator={keysLive ? item.key : undefined}
+      accelerator={keysLive ? item.key : ''}
       acceleratorWidth={keyWidth}
       metadata={recommended ? 'recommended' : undefined}
       metadataAfterLabel
       keepWhole="label"
+      width={width}
     />
   );
 }
@@ -83,7 +98,8 @@ export function RecoveryMenu({
   );
   const innerWidth = Math.max(1, width - 4);
   const innerHeight = Math.max(1, clampedBoxRows - 2);
-  const summaryRows = countPromptBodyRows(formatRecoveryPromptSummary(issue), innerWidth);
+  const summary = recoveryPromptSummaryRows(issue);
+  const summaryRows = countPromptBodyRows(summary, innerWidth);
   const minimumListRows = Math.min(4, Math.max(actions.length, 1));
   const summaryHeight = Math.min(
     Math.max(1, summaryRows),
@@ -150,11 +166,7 @@ export function RecoveryMenu({
       overflow="hidden"
       flexShrink={0}
     >
-      <PromptBody
-        prompt={formatRecoveryPromptSummary(issue)}
-        height={summaryHeight}
-        width={innerWidth}
-      />
+      <PromptBody prompt={summary} height={summaryHeight} width={innerWidth} />
       {innerHeight > summaryHeight && (
         <Text color={t.border}>{'─'.repeat(Math.max(1, innerWidth))}</Text>
       )}
@@ -200,16 +212,16 @@ function ActionList({
       getKey={(item) => item.action}
       rowBudget={rowBudget}
       width={width}
-      renderItem={(item, ctx) =>
-        renderAction(
-          item,
-          ctx.isCursor && focused,
-          item.action === recommended,
-          ctx.contentWidth,
-          keyWidth,
-          focused,
-        )
-      }
+      renderItem={(item, ctx) => (
+        <RecoveryActionRow
+          item={item}
+          selected={ctx.isCursor && focused}
+          recommended={item.action === recommended}
+          width={ctx.contentWidth}
+          keyWidth={keyWidth}
+          keysLive={focused}
+        />
+      )}
     />
   );
 }

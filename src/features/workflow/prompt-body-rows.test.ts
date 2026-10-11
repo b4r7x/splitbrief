@@ -2,6 +2,8 @@ import { createElement } from 'react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { renderFeature } from '#testing/helpers/ink.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { stateTone } from '../../core/theme/state-tone.js';
 import { PromptBody } from './components/prompt-body.js';
 import { QuestionPrompt } from './components/question-prompt.js';
 import {
@@ -9,17 +11,35 @@ import {
   countPromptBodyRows,
   fitRecommendedText,
   promptBodyRows,
+  type PromptBodyLine,
   splitActionRow,
 } from './prompt-body-rows.js';
 import {
   getQuestionPromptRows,
   QUESTION_PROMPT_HORIZONTAL_CHROME,
 } from './prompt-rows/question.js';
-import { passHeadlinePrefix } from './recovery-prompt.js';
+import {
+  passHeadlinePrefix,
+  promptRowsToString,
+  recoveryPromptSummaryRows,
+} from './recovery-prompt.js';
 
 const PANEL_WIDTH = 80;
 const BODY_WIDTH = PANEL_WIDTH - QUESTION_PROMPT_HORIZONTAL_CHROME;
 const LONG_TOKEN = 'x'.repeat(BODY_WIDTH + 32);
+const trailingControlSummary = recoveryPromptSummaryRows(
+  makeRecoveryIssue({
+    reason: 'seat-protocol-error',
+    seat: 'review',
+    message: 'Provider refused request',
+    attempts: undefined,
+    taskId: undefined,
+    taskTitle: undefined,
+    files: [],
+    affectedTaskIds: [],
+    details: ['abcdefghijklmnopqr   \u001b[0m'],
+  }),
+);
 
 function frameRows(frame: string): string[] {
   return stripAnsiStyles(frame).split('\n');
@@ -33,6 +53,212 @@ function renderedPromptBodyRows(prompt: string, count: number): string[] {
 }
 
 describe('promptBodyRows', () => {
+  it('matches string rows for a recovery detail ending in spaces and a terminal reset', () => {
+    const rows = promptBodyRows(trailingControlSummary, 20);
+    expect(rows).toEqual([
+      {
+        kind: 'headline',
+        row: {
+          kind: 'headline',
+          tone: 'attention',
+          text: 'Seat down · Provider refused request',
+          parts: [
+            { text: 'Seat down', tone: stateTone('attention') },
+            { text: ' · ', tone: 'textDim' },
+            { text: 'Provider refused request', tone: 'text' },
+          ],
+        },
+      },
+      { kind: 'blank' },
+      { kind: 'facts-line', text: '  abcdefghijklmnopqr' },
+      { kind: 'facts-line', text: '  ' },
+    ]);
+    expect(rows.slice(1)).toEqual(
+      promptBodyRows(promptRowsToString(trailingControlSummary), 20).slice(1),
+    );
+  });
+
+  it('counts four recovery summary rows when the final detail ends in a terminal reset', () => {
+    expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(4);
+    expect(countPromptBodyRows(trailingControlSummary, 20)).toBe(
+      countPromptBodyRows(promptRowsToString(trailingControlSummary), 20),
+    );
+  });
+
+  it('keeps first-line spans and hangs non-blank headline continuations as facts', () => {
+    expect(
+      promptBodyRows(
+        [
+          {
+            kind: 'headline',
+            tone: 'attention',
+            text: 'Review · first\n\n  second\n  ',
+            parts: [
+              { text: 'Review', tone: 'reviewer' },
+              { text: ' · ', tone: 'textDim' },
+              { text: 'first\n\n  second\n  ', tone: 'text' },
+            ],
+          },
+        ],
+        30,
+      ),
+    ).toEqual([
+      {
+        kind: 'headline',
+        row: {
+          kind: 'headline',
+          tone: 'attention',
+          text: 'Review · first',
+          parts: [
+            { text: 'Review', tone: 'reviewer' },
+            { text: ' · ', tone: 'textDim' },
+            { text: 'first', tone: 'text' },
+          ],
+        },
+      },
+      { kind: 'blank' },
+      { kind: 'facts-line', text: '    second' },
+    ]);
+  });
+
+  it.each([20, 76])('matches HEAD recovery continuation rows and tones at width %s', (width) => {
+    const issue = makeRecoveryIssue({
+      reason: 'seat-protocol-error',
+      seat: 'review',
+      attempts: undefined,
+      taskId: undefined,
+      taskTitle: undefined,
+      files: [],
+      affectedTaskIds: [],
+      details: [],
+      message: 'Provider refused request\n  try another tool',
+    });
+    const prompt = recoveryPromptSummaryRows(issue);
+    const headline = {
+      kind: 'headline',
+      row: {
+        kind: 'headline',
+        tone: 'attention',
+        text: 'Seat down · Provider refused request',
+        parts: [
+          { text: 'Seat down', tone: stateTone('attention') },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'Provider refused request', tone: 'text' },
+        ],
+      },
+    };
+    expect(promptBodyRows(prompt, width)).toEqual([
+      headline,
+      { kind: 'blank' },
+      { kind: 'facts-line', text: '    try another tool' },
+    ]);
+    expect(countPromptBodyRows(prompt, width)).toBe(3);
+
+    const withFacts = recoveryPromptSummaryRows(
+      makeRecoveryIssue({ ...issue, files: ['src/example.ts'], details: ['Validation: npm test'] }),
+    );
+    expect(promptBodyRows(withFacts, width)).toEqual([
+      headline,
+      { kind: 'blank' },
+      { kind: 'facts-line', text: '    try another tool' },
+      ...(width === 20
+        ? [
+            { kind: 'facts-line', text: '  Files ' },
+            { kind: 'facts-line', text: '  src/example.ts' },
+            { kind: 'facts-line', text: '  Last check npm ' },
+            { kind: 'facts-line', text: '  test' },
+          ]
+        : [
+            { kind: 'facts-line', text: '  Files src/example.ts' },
+            { kind: 'facts-line', text: '  Last check npm test' },
+          ]),
+    ]);
+    expect(countPromptBodyRows(withFacts, width)).toBe(width === 20 ? 7 : 5);
+  });
+
+  it.each([20, 76])('drops empty recovery fact lines at width %s', (width) => {
+    const prompt = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        reason: 'seat-protocol-error',
+        seat: 'review',
+        message: 'Provider refused request',
+        attempts: undefined,
+        taskId: undefined,
+        taskTitle: undefined,
+        files: [],
+        affectedTaskIds: [],
+        details: ['First\n\nsecond'],
+      }),
+    );
+    const rows = promptBodyRows(prompt, width);
+    const facts = rows.filter((row) => row.kind === 'facts-line');
+
+    expect(facts.every((row) => row.text.trim().length > 0)).toBe(true);
+    const first = rows.findIndex((row) => row.kind === 'facts-line' && row.text === '  First');
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(rows.slice(first, first + 2)).toEqual([
+      { kind: 'facts-line', text: '  First' },
+      { kind: 'facts-line', text: '  second' },
+    ]);
+    expect(countPromptBodyRows(prompt, width)).toBe(4);
+    expect(countPromptBodyRows(prompt, width)).toBe(
+      countPromptBodyRows(promptRowsToString(prompt), width),
+    );
+  });
+
+  it.each([20, 52, 76])('matches serialized summary layout and tones at width %s', (width) => {
+    const headline =
+      'Provider refused request because the answer did not include any usable evidence from the required checks';
+    const issue = makeRecoveryIssue({
+      reason: 'seat-protocol-error',
+      seat: 'review',
+      message: 'Provider refused request',
+      attempts: undefined,
+      taskId: undefined,
+      taskTitle: undefined,
+      files: [],
+      affectedTaskIds: [],
+      details: [],
+    });
+    const project = (row: PromptBodyLine) => ({
+      kind: row.kind,
+      text: row.kind === 'headline' ? row.row.text : 'text' in row ? row.text : undefined,
+    });
+    for (const overrides of [
+      { details: ['First\n\nsecond'] },
+      { message: headline, details: ['   '] },
+      { details: ['First   ', 'second   '] },
+      { details: ['First \n\nsecond   '] },
+      { message: 'Provider refused request\n\n  try another tool\n  ', details: ['First'] },
+      { message: 'Provider refused request\n\n  try another tool   \n  ', details: [] },
+      { message: `${headline}   `, details: [] },
+    ]) {
+      const prompt = recoveryPromptSummaryRows(makeRecoveryIssue({ ...issue, ...overrides }));
+      const rows = promptBodyRows(prompt, width);
+      expect(rows.map(project)).toEqual(
+        promptBodyRows(promptRowsToString(prompt), width).map(project),
+      );
+      const parts = rows.flatMap((row) =>
+        row.kind === 'headline'
+          ? (row.row.parts ?? [])
+          : row.kind === 'message-line'
+            ? (row.parts ?? [])
+            : [],
+      );
+      expect(parts).toContainEqual({ text: 'Seat down', tone: stateTone('attention') });
+      expect(parts).toContainEqual({ text: ' · ', tone: 'textDim' });
+      expect(parts.some((part) => part.tone === 'text')).toBe(true);
+    }
+  });
+
+  it('keeps trailing fact spaces in a string prompt', () => {
+    expect(
+      promptBodyRows('Question\n\nFirst   \nsecond   ', 76)
+        .filter((row) => row.kind === 'facts-line')
+        .map((row) => row.text),
+    ).toEqual(['  First   ', '  second   ']);
+  });
+
   beforeEach(() => {
     process.env.TERM = 'xterm-256color';
     process.env.LANG = 'en_US.UTF-8';

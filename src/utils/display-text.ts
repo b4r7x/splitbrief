@@ -323,3 +323,22 @@ function isWideCodePoint(codePoint: number): boolean {
       (codePoint >= 0x20000 && codePoint <= 0x3fffd))
   );
 }
+
+export function segmentsForRowText<Segment extends { text: string }>(
+  segments: readonly Segment[],
+  text: string,
+  start = 0,
+): Segment[] {
+  const result: Segment[] = [];
+  const end = start + text.length;
+  let offset = 0;
+  for (const segment of segments) {
+    const segmentEnd = offset + segment.text.length;
+    const from = Math.max(start, offset);
+    const to = Math.min(end, segmentEnd);
+    if (to > from) result.push({ ...segment, text: text.slice(from - start, to - start) });
+    offset = segmentEnd;
+    if (offset >= end) break;
+  }
+  return result;
+}

@@ -29,6 +29,7 @@ import {
   workflowTranscriptText,
 } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario } from './gallery/mount.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 function sorted(values: Iterable<string>): string[] {
   return [...values].sort();
@@ -211,7 +212,7 @@ describe('visual catalog', () => {
     if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
-      const frame = await handle.waitForCheckpoint();
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('Fix check V2 · npm test · stopped');
       expect(frame).toContain('working on T904');
       expect(frame).toContain('Stopped at T904');
@@ -232,7 +233,7 @@ describe('visual catalog', () => {
       if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
       const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
       try {
-        const frame = await handle.waitForCheckpoint();
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
         expect(frame).toContain('3/3 briefs passed');
         expect(frame).toContain('Review · Render workflow-review');
         expect(frame).toContain('running 0:12');
@@ -258,7 +259,7 @@ describe('visual catalog', () => {
     if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
-      const frame = await handle.waitForCheckpoint();
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain(
         'PLAN · Claude Code CLI · Claude Sonnet 4 · answering the consult on T901',
       );
@@ -275,7 +276,7 @@ describe('visual catalog', () => {
     if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
-      const frame = await handle.waitForCheckpoint();
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain(
         'REVIEW · Claude Code CLI · Claude Sonnet 4 · answering the consult on T904',
       );
@@ -293,7 +294,7 @@ describe('visual catalog', () => {
     if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
-      const frame = await handle.waitForCheckpoint();
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('2\u00a0failures gone');
       expect(frame).toContain('3\u00a0others left');
       expect(frame).toContain('not\u00a0proven\u00a0fixed');
@@ -313,7 +314,7 @@ describe('visual catalog', () => {
     if (checkpoint === undefined || viewport === undefined) throw new Error('Missing checkpoint');
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
     try {
-      const frame = await handle.waitForCheckpoint();
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('Try again');
       expect(frame.includes('/crew review')).toBe(needsContext);
       expect(frame).not.toContain('/resume');
@@ -330,7 +331,7 @@ describe('visual catalog', () => {
     if (checkpoint === undefined || wide === undefined) throw new Error('Missing wide checkpoint');
     const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: wide });
     try {
-      const frame = await handle.waitForCheckpoint();
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
       expect(frame).toContain('attempt 7 of 12');
       expect(frame.split('\n').some((row) => /Register.*failed/.test(row))).toBe(true);
     } finally {
@@ -438,7 +439,7 @@ describe('visual catalog', () => {
     for (const viewport of REQUIRED_VIEWPORTS) {
       const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
       try {
-        const frame = await handle.waitForCheckpoint();
+        const frame = stripAnsiStyles(await handle.waitForCheckpoint());
         expect(frame).toContain(text);
         expect(frame).toContain('retry');
         if (state !== 'unauthorized') expect(frame).not.toContain('rejected the token');

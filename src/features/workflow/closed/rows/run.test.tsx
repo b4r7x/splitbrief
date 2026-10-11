@@ -1,10 +1,16 @@
 import { Box } from 'ink';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import chalk from 'chalk';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
 import type { Summary } from '../../../../core/schemas/summary.js';
 import { defaultTheme } from '../../../../components/theme.js';
+import { paint } from '../../../../core/theme/paint.js';
+import { resolveTheme } from '../../../../core/theme/resolve.js';
+import { formatScoreSummaryParts } from '../../../../core/formatting.js';
+import { truncateTerminalDisplayTextMiddle } from '../../../../utils/display-text.js';
+import { makeView } from '#testing/helpers/factories/summary-view.js';
 import { glyph } from '../../../../lib/glyphs.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import type { RunnerCallCounterCoverage } from '../../../../core/runner-call-contract.js';
@@ -19,6 +25,11 @@ const FULL_COVERAGE: RunnerCallCounterCoverage = {
   cacheCreate: 'reported',
   reasoning: 'reported',
 };
+
+const originalColorLevel = chalk.level;
+afterEach(() => {
+  chalk.level = originalColorLevel;
+});
 
 function renderRun(input: { summary: Summary; width: number; crewNamed: boolean }) {
   const view = deriveSummaryView({
@@ -73,6 +84,87 @@ const priced = makeSummary({
 });
 
 describe('runSectionRows', () => {
+  it('keeps the link color on an ellipsis that cuts the Packet path', () => {
+    chalk.level = 3;
+    const row = runSectionRows({
+      view: makeView(),
+      width: 34,
+      theme: defaultTheme,
+      crewNamed: true,
+    }).find((candidate) => candidate.key === 'run:Packet');
+    if (row === undefined) throw new Error('expected a Packet row');
+    const ui = renderFeature(<Box>{row.node}</Box>, { cols: 34, rows: 1 });
+    const cut = truncateTerminalDisplayTextMiddle(
+      '.splitbrief/sessions/2026-09-14-add-email-validation-with-tests/review-packet.md',
+      21,
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.markdown.link, cut));
+    ui.unmount();
+  });
+  it.each(['dark', 'light'] as const)(
+    'paints quality scores, findings and separators by concept in %s',
+    (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      for (const passed of [true, false]) {
+        const quality = { score: 0.92, passed, errorCount: passed ? 0 : 2, warningCount: 3 };
+        const row = runSectionRows({
+          view: makeView({ quality }),
+          width: 100,
+          theme,
+          crewNamed: true,
+        }).find((candidate) => candidate.key === 'run:Briefs');
+        if (row === undefined) throw new Error('expected a quality row');
+        const ui = renderFeature(<Box>{row.node}</Box>, { cols: 100, rows: 1 });
+        const frame = ui.lastFrame() ?? '';
+        expect(frame).toContain(
+          paint(passed ? theme.textDim : theme.warning, 'quality 0.92').replace('\u001b[39m', ''),
+        );
+        expect(frame).toContain(
+          paint(theme.textDim, passed ? 'quality 0.92 · ' : ' · ').replace('\u001b[39m', ''),
+        );
+        expect(frame).toContain(paint(theme.warning, '3 warnings'));
+        if (!passed) {
+          expect(frame).toContain(
+            paint(theme.error, '2 errors').replace('\u001b[39m', '') +
+              paint(theme.textDim, ' · ').replace('\u001b[39m', ''),
+          );
+        }
+        expect(stripAnsiStyles(frame)).toBe(
+          `   Briefs    ${formatScoreSummaryParts(quality.score, quality, 'quality')
+            .map((part) => part.text)
+            .join('')}`,
+        );
+        ui.unmount();
+      }
+    },
+  );
+
+  it('cuts the quality fact as one unit at the same cell and preserves the surviving tones', () => {
+    chalk.level = 3;
+    const quality = { score: 0.92, passed: false, errorCount: 2, warningCount: 3 };
+    const row = runSectionRows({
+      view: makeView({ quality }),
+      width: 34,
+      theme: defaultTheme,
+      crewNamed: true,
+    }).find((candidate) => candidate.key === 'run:Briefs');
+    if (row === undefined) throw new Error('expected a quality row');
+    const ui = renderFeature(<Box>{row.node}</Box>, { cols: 34, rows: 1 });
+    const frame = ui.lastFrame() ?? '';
+    const cut = truncateTerminalDisplayTextMiddle(
+      formatScoreSummaryParts(quality.score, quality, 'quality')
+        .map((part) => part.text)
+        .join(''),
+      21,
+    );
+    expect(cut).toBe('quality 0.…3 warnings');
+    expect(stripAnsiStyles(frame)).toBe(`   Briefs    ${cut}`);
+    expect(frame).toContain(paint(defaultTheme.warning, 'quality 0.…').replace('\u001b[39m', ''));
+    expect(frame).toContain(paint(defaultTheme.warning, 'quality 0.…3 warnings'));
+    ui.unmount();
+  });
+
   it('lays every fact out in one label column under a labelled rule', () => {
     const ui = renderRun({ summary: priced, width: 100, crewNamed: true });
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');

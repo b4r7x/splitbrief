@@ -3,10 +3,23 @@ import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { wrapHard } from '../../../../utils/wrap.js';
 import {
   sanitizeRowDisplayText,
+  separatedSpans,
   wrappedPrefixedRowTexts,
   wrappedProseTexts,
+  wrappedProseSegments,
   wrappedRowTexts,
 } from './text.js';
+
+it('keeps concept separators dim without a React renderer', () => {
+  expect(separatedSpans('Build · stopped · partial changes kept', 'warning')).toEqual([
+    { text: 'Build', tone: 'warning' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'stopped', tone: 'warning' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'partial changes kept', tone: 'warning' },
+  ]);
+  expect(separatedSpans('', 'warning')).toEqual([]);
+});
 
 // The fast path skips wrap-ansi for a printable-ASCII line that already fits. It is only allowed to
 // exist while it is indistinguishable from the wrapper, so the contract is asserted directly rather
@@ -130,6 +143,35 @@ describe('wrappedPrefixedRowTexts', () => {
 });
 
 describe('wrappedProseTexts', () => {
+  it.each([1, 5, 9, 11, 60, 200])(
+    'preserves tones and existing prose layout at width %i',
+    (width) => {
+      const segments = [
+        { text: 'Reviewer', tone: 'reviewer' },
+        { text: ' check V1 · npm test · ', tone: 'textDim' },
+        { text: 'failed', tone: 'error' },
+        { text: ' · 3.0s', tone: 'textDim' },
+      ] as const;
+      const lines = wrappedProseSegments(segments, width);
+      expect(lines.map((line) => line.map((span) => span.text).join(''))).toEqual(
+        wrappedProseTexts(segments.map((span) => span.text).join(''), width),
+      );
+      expect(
+        lines
+          .flat()
+          .filter((span) => span.tone === 'reviewer')
+          .map((span) => span.text)
+          .join(''),
+      ).toBe('Reviewer');
+      expect(
+        lines
+          .flat()
+          .filter((span) => span.tone === 'error')
+          .map((span) => span.text)
+          .join(''),
+      ).toBe('failed');
+    },
+  );
   it('drops the break space a continuation would otherwise open with', () => {
     // The word before the break fills the row exactly, so the wrapper hands the space to the next
     // row; prose starts that row on its own column instead.

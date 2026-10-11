@@ -4,8 +4,21 @@ import { describe, expect, it } from 'vitest';
 import { WIDE, endedInBuild, makeView } from '#testing/helpers/factories/summary-view.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { taskId } from '../../../core/schemas/task.js';
-import { bylineText, legendText, openRunByline } from './byline.js';
+import { bylineParts, legendText, openRunBylineParts } from './byline.js';
 import { stopPoint } from '../stop/copy.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
+
+function joinedByline(parts: readonly ConversationRowSegment[]): string {
+  return parts.map((part) => part.text).join('');
+}
+
+function bylineText(view: Parameters<typeof bylineParts>[0], width: number): string {
+  return joinedByline(bylineParts(view, width));
+}
+
+function openRunByline(input: Parameters<typeof openRunBylineParts>[0]): string {
+  return joinedByline(openRunBylineParts(input));
+}
 
 describe('bylineText', () => {
   it('offers the undo on an applied run', () => {
@@ -474,4 +487,221 @@ describe('legendText', () => {
     expect(fitted).toBe('esc home · ctrl+k commands');
     expect(fitted).not.toContain('…');
   });
+});
+
+describe('fitted byline parts', () => {
+  it.each([
+    [{ kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } }, 'Stopped at the plan', 'warning'],
+    [
+      { kind: 'waiting-for-you', on: { kind: 'gate', gate: 'plan', reopens: true } },
+      'Waiting at the plan',
+      'warning',
+    ],
+    [{ kind: 'waiting-for-you', on: { kind: 'question' } }, 'Waiting for your answer', 'warning'],
+    [
+      { kind: 'stopped', on: { kind: 'failed', message: 'Disk full' } },
+      'Stopped by an error · Disk full',
+      'error',
+    ],
+    [{ kind: 'stopped', on: { kind: 'interrupted' } }, 'Stopped at the plan', 'warning'],
+    [
+      {
+        kind: 'stopped',
+        on: { kind: 'seat-wait', seat: 'build', tool: 'codex', resetAt: '2026-10-10T17:00:00Z' },
+      },
+      'Waiting for codex',
+      'warning',
+    ],
+  ] as const)('keeps %s structured and preserves its joined text', (stop, reason, reasonTone) => {
+    const input = {
+      status: {
+        kind: 'open',
+        stop,
+        resumeAt: { kind: 'planner', call: 'plan' },
+      },
+      continuable: true,
+      width: WIDE,
+    } as const;
+    const parts = openRunBylineParts(input);
+    expect(parts.slice(0, reason.includes(' · ') ? 3 : 1)).toEqual(
+      reason.includes(' · ')
+        ? [
+            { text: 'Stopped by an error', tone: reasonTone },
+            { text: ' · ', tone: 'textDim' },
+            { text: 'Disk full', tone: 'text' },
+          ]
+        : [{ text: reason, tone: reasonTone }],
+    );
+    expect(joinedByline(parts)).toBe(openRunByline(input));
+  });
+
+  it('keeps the halt name before shedding the cause, then keeps the action alone', () => {
+    const status: RunStatus = {
+      kind: 'open',
+      stop: {
+        kind: 'waiting-for-you',
+        on: {
+          kind: 'halt',
+          issue: makeRecoveryIssue({
+            reason: 'implementer-left-isolation',
+            taskId: taskId('T002'),
+          }),
+        },
+      },
+      resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 1 },
+    };
+    expect(openRunBylineParts({ status, continuable: true, width: 40 })).toEqual([
+      { text: 'Seat down', tone: 'warning' },
+      { text: ' · ', tone: 'textDim' },
+      { text: '⏎ to decide', tone: 'textDim' },
+    ]);
+    expect(openRunBylineParts({ status, continuable: true, width: 12 })).toEqual([
+      { text: '⏎ to decide', tone: 'textDim' },
+    ]);
+  });
+
+  it.each([
+    [{ kind: 'ready-to-apply', override: false }, 'accent'],
+    [{ kind: 'ready-to-apply', override: true }, 'warning'],
+    [{ kind: 'running' }, 'accent'],
+  ] as const)('colors %s from its state', (status, reasonTone) => {
+    expect(openRunBylineParts({ status, continuable: true, width: WIDE })[0]).toEqual({
+      text:
+        status.kind === 'running'
+          ? 'Running in another process'
+          : status.override
+            ? 'Ready to apply as is'
+            : 'Ready to apply',
+      tone: reasonTone,
+    });
+  });
+
+  it.each([
+    ['accepted', 'Accepted', 'success'],
+    ['rejected', 'Rejected', 'warning'],
+  ] as const)(
+    'keeps the %s state separate from its dim action',
+    (checkpoint, reason, reasonTone) => {
+      const view = makeView({ checkpoint });
+      const parts = bylineParts(view, WIDE);
+      expect(parts.slice(0, reason.includes(' · ') ? 3 : 1)).toEqual(
+        reason.includes(' · ')
+          ? [
+              { text: 'Stopped by an error', tone: reasonTone },
+              { text: ' · ', tone: 'textDim' },
+              { text: 'Disk full', tone: 'text' },
+            ]
+          : [{ text: reason, tone: reasonTone }],
+      );
+      expect(joinedByline(parts)).toBe(bylineText(view, WIDE));
+    },
+  );
+});
+
+it('keeps status receipt text and fitting while coloring Apply undone and Ended', () => {
+  const undone = makeView({ applyUndo: { conflicts: [] } });
+  expect(bylineParts(undone, WIDE)[0]).toEqual({ text: 'Apply undone', tone: 'warning' });
+  expect(bylineParts(endedInBuild(), WIDE)[0]).toEqual({ text: 'Ended', tone: 'warning' });
+  for (const [width, expected, expectedParts] of [
+    [5, 'Appl…', [{ text: 'Appl…', tone: 'warning' }]],
+    [11, 'Apply undo…', [{ text: 'Apply undo…', tone: 'warning' }]],
+    [12, 'Apply undon…', [{ text: 'Apply undon…', tone: 'warning' }]],
+    [
+      13,
+      'Apply undone…',
+      [
+        { text: 'Apply undone', tone: 'warning' },
+        { text: '…', tone: 'textDim' },
+      ],
+    ],
+    [
+      14,
+      'Apply undone …',
+      [
+        { text: 'Apply undone', tone: 'warning' },
+        { text: ' …', tone: 'textDim' },
+      ],
+    ],
+    [
+      15,
+      'Apply undone ·…',
+      [
+        { text: 'Apply undone', tone: 'warning' },
+        { text: ' ·…', tone: 'textDim' },
+      ],
+    ],
+    [
+      16,
+      'Apply undone · …',
+      [
+        { text: 'Apply undone', tone: 'warning' },
+        { text: ' · ', tone: 'textDim' },
+        { text: '…', tone: 'textDim' },
+      ],
+    ],
+    [
+      20,
+      'Apply undone · noth…',
+      [
+        { text: 'Apply undone', tone: 'warning' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'noth…', tone: 'textDim' },
+      ],
+    ],
+    [
+      WIDE,
+      'Apply undone · nothing left to undo',
+      [
+        { text: 'Apply undone', tone: 'warning' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'nothing left to undo', tone: 'textDim' },
+      ],
+    ],
+  ] as const) {
+    const parts = bylineParts(undone, width);
+    expect(joinedByline(parts)).toBe(expected);
+    expect(bylineText(undone, width)).toBe(expected);
+    expect(parts).toEqual(expectedParts);
+  }
+});
+
+it('keeps the separator inside a failed reason dim', () => {
+  const parts = openRunBylineParts({
+    status: {
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'failed', message: 'Disk full' } },
+      resumeAt: { kind: 'planner', call: 'plan' },
+    },
+    continuable: true,
+    width: WIDE,
+  });
+  expect(parts).toEqual([
+    { text: 'Stopped by an error', tone: 'error' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Disk full', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: '⏎ to retry the step', tone: 'textDim' },
+  ]);
+});
+
+it('keeps the review seat in an at-rest halt title', () => {
+  const issue = makeRecoveryIssue({ reason: 'planner-call-failed', seat: 'review' });
+  const parts = openRunBylineParts({
+    status: {
+      kind: 'open',
+      stop: { kind: 'waiting-for-you', on: { kind: 'halt', issue } },
+      resumeAt: { kind: 'review', cycle: 0 },
+    },
+    continuable: true,
+    width: WIDE,
+  });
+  expect(joinedByline(parts)).toBe('Seat down · Reviewer call failed · ⏎ to decide');
+  expect(parts).toEqual([
+    { text: 'Seat down', tone: 'warning' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Reviewer', tone: 'reviewer' },
+    { text: ' call failed', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: '⏎ to decide', tone: 'textDim' },
+  ]);
 });

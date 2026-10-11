@@ -6,7 +6,6 @@ import {
   isRetiredRecoveryReason,
   recoveryHaltLabel,
 } from './halt.js';
-import { formatRecoveryTitle } from './headline.js';
 
 describe('recovery halts', () => {
   it('puts every cause a seat cannot get past on seat down', () => {
@@ -53,11 +52,6 @@ describe('recovery halts', () => {
 
   it('names the halt before the cause', () => {
     expect(recoveryHaltLabel('seat-down')).toBe('Seat down');
-    expect(formatRecoveryTitle('Signed out of codex', { reason: 'runner-unauthenticated' })).toBe(
-      'Seat down · Signed out of codex',
-    );
-    expect(formatRecoveryTitle('T001 failed', { reason: 'retry-exhausted' })).toBe(
-      'Needs you · T001 failed',
-    );
+    expect(recoveryHaltLabel('needs-you')).toBe('Needs you');
   });
 });

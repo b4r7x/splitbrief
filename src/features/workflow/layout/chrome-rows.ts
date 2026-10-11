@@ -97,7 +97,8 @@ export function getContentTopRowIndex(): number {
 export function getRailDriftPassed(events: readonly EngineEvent[]): boolean | undefined {
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
-    if (event?.type === 'drift_report') return event.passed;
+    if (event?.type === 'drift_report')
+      return event.passed && event.errorCount === 0 && event.warningCount === 0;
   }
   return undefined;
 }

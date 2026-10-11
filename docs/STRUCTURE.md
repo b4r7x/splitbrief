@@ -171,6 +171,8 @@ src/core/recovery/           # halt.ts, headline.ts, action-label.ts, resume-com
 ### `src/core/theme/` and `src/lib/terminal/`
 
 `core/theme/palette.ts` owns the theme types, roles and bundled swatches.
+`core/theme/state-tone.ts` maps state meanings to the tokens for state words and marks.
+`core/theme/tone-color.ts` owns text tones and resolves them to theme colours.
 `core/theme/resolve.ts` maps tokens for the terminal. `core/theme/paint.ts` paints plain output.
 `lib/terminal/background.ts` queries and parses the terminal background at startup.
 
@@ -274,6 +276,7 @@ features/workflow/
 ├── keyboard.ts               # pure helper — keyboard action dispatchers
 ├── input-footer-byline.ts    # pure byline layout — width budget, truncation, accessory ordering
 ├── display/                  # pure display formatters — activity labels, shell prettifier, tones
+├── prompt-rows/              # approval, question and recovery row models
 └── layout/                   # geometry helpers — rects, chrome rows, snapshots
 ```
 
@@ -388,6 +391,8 @@ When one surface needs UI owned by another (e.g. the `setup` page reaching the `
 The one sanctioned cross-cutting channel between features is **stores**. Feature A can write to `workflowStore`, and feature B can read from it — that is the same engine→UI pattern already described in [`STORES.md`](./STORES.md).
 
 ## Shared components
+
+`components/text-spans.tsx` renders text spans with colours and bold text across home and workflow.
 
 `src/components/` holds UI that is not tied to any single feature:
 

@@ -17,6 +17,7 @@ import {
   type RailForm,
 } from './chrome-rows.js';
 import type { WorkflowContentRect } from './rect.js';
+import { passedFractionSpans } from '../display/build-progress.js';
 
 function withinRectX(rect: WorkflowContentRect, sgrX: number): boolean {
   return sgrX >= rect.left && sgrX <= rect.right;
@@ -70,7 +71,13 @@ const RAIL_GLYPH_PREFIX_WIDTH = 2;
 export const RAIL_FORM_C_CANCELLED_SUFFIX = '  cancelled';
 
 export function railFormCFractionText(fraction: string): string {
-  return fraction === '' ? '' : `  ${fraction} passed`;
+  return railFormCFractionSpans(fraction)
+    .map((span) => span.text)
+    .join('');
+}
+
+export function railFormCFractionSpans(fraction: string) {
+  return fraction === '' ? [] : passedFractionSpans(`  ${fraction}`);
 }
 
 export function buildRailFraction(stage: RailStage, passed: number, total: number): string {

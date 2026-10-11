@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Box } from 'ink';
+import chalk from 'chalk';
+import { ThemeProvider } from '../../../components/theme.js';
+import { resolveTheme } from '../../../core/theme/resolve.js';
+import { paint } from '../../../core/theme/paint.js';
 import { render } from 'ink-testing-library';
 import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -25,11 +29,15 @@ import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { glyph } from '../../../lib/glyphs.js';
-import { PLANNER_INHERITANCE } from '../../../core/crew/identity.js';
+import {
+  formatCollapsedSeatSpansFromIdentities,
+  PLANNER_INHERITANCE,
+} from '../../../core/crew/identity.js';
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
 
 const STARTED_AT = new Date(0).toISOString();
+const originalColorLevel = chalk.level;
 /** Today's local 17:00: the note the bar shows for a same-day reset is the bare clock, in every timezone the suite runs in. */
 const RESET_AT = (() => {
   const at = new Date();
@@ -77,6 +85,7 @@ function resetStores(): void {
 beforeEach(resetStores);
 
 afterEach(() => {
+  chalk.level = originalColorLevel;
   vi.useRealTimers();
   resetStores();
 });
@@ -134,6 +143,69 @@ describe('Header — layout', () => {
 });
 
 describe('Header — seat line', () => {
+  it.each(['dark', 'light'] as const)(
+    'paints each seat, the separators and the frozen clock in the %s theme',
+    (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      lifecycleStore.__testReset({ status: 'complete', durationMs: 197_000 });
+      terminalSizeStore.__testReset({ cols: 200, rows: 50, isSmall: false });
+      const seatLine = formatCollapsedSeatSpansFromIdentities({
+        plan: 'GPT-6-Astra',
+        build: 'Gemini 3.8 Flash (High)',
+        review: null,
+      });
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <Header startedAt={STARTED_AT} seatLine={seatLine} />
+        </ThemeProvider>,
+        { cols: 200, rows: 50 },
+      );
+      const frame = ui.lastFrame();
+      for (const [text, color] of [
+        ['PLAN GPT-6-Astra', theme.planner],
+        ['BUILD Gemini 3.8 Flash (High)', theme.implementer],
+        ['REVIEW = PLAN', theme.reviewer],
+        [' · ', theme.textDim],
+        ['3:17', theme.textDim],
+      ]) {
+        expect(frame).toContain(paint(color, text ?? '').replace('\u001b[39m', ''));
+      }
+      ui.unmount();
+    },
+  );
+
+  it.each(['dark', 'light'] as const)(
+    'keeps reviewer color in the active rail after seat elision in %s',
+    (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      lifecycleStore.__testReset({ status: 'running', phase: 'final-review' });
+      terminalSizeStore.__testReset({ cols: 200, rows: 50, isSmall: false });
+      const seatLine = formatCollapsedSeatSpansFromIdentities({
+        plan: 'Astra',
+        build: 'Flash',
+        review: 'Sol',
+        budget: 24,
+      });
+      expect(seatLine.some((span) => span.seat === 'review')).toBe(false);
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <Header startedAt={STARTED_AT} seatLine={seatLine} />
+        </ThemeProvider>,
+        { cols: 200, rows: 50 },
+      );
+      const frame = ui.lastFrame();
+      expect(frame).toContain(
+        paint(theme.reviewer, `${glyph('stageDone')} Review`).replace('\u001b[39m', ''),
+      );
+      expect(frame.slice(frame.indexOf('PLAN Astra'))).not.toContain(
+        paint(theme.reviewer, 'x').split('x')[0],
+      );
+      ui.unmount();
+    },
+  );
+
   const ESC = String.fromCharCode(27);
   const hostileSequence = `${ESC}[2J`;
 

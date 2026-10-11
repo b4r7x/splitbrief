@@ -12,6 +12,7 @@ import {
   createImplementerPublisher,
   publishRecoveryActionFailed,
   publishRecoveryActionSelected,
+  publishRecoveryPrompted,
   publishRecoveryResolved,
 } from './events.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -323,7 +324,32 @@ describe('publish* payload forwarding', () => {
   });
 });
 
-describe('recovery events name the halted seat', () => {
+describe('recovery events carry headline spans', () => {
+  it.each(['plan', 'build', 'review'] as const)(
+    'records headline spans for a %s halt without an unused prompt seat',
+    (seat) => {
+      const { bus, events } = makeBusRecorder();
+      const issue = makeRecoveryIssue({
+        reason: 'planner-call-failed',
+        seat,
+        phase: 'implementing',
+      });
+      publishRecoveryPrompted({ bus, phase: issue.phase }, 'session', issue);
+      expect(events[0]).toMatchObject({ type: 'recovery_prompted' });
+      expect(events[0]).not.toHaveProperty('seat');
+      expect(parseEngineEvent(events[0])).not.toHaveProperty('seat');
+      expect(parseEngineEvent(events[0])).toMatchObject({
+        headlineSpans: [
+          {
+            text: seat === 'review' ? 'Reviewer' : 'Planner',
+            seat: seat === 'review' ? 'review' : 'plan',
+          },
+          { text: ' call failed' },
+        ],
+      });
+    },
+  );
+
   function publishAll(issue: ReturnType<typeof makeRecoveryIssue>) {
     const { bus, events } = makeBusRecorder();
     const opts = { bus, phase: issue.phase, issue, action: 'switch-seat' } as const;

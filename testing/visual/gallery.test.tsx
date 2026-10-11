@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { configStore } from '../../src/stores/project/config.js';
 import { WORKFLOW_GUTTER_X } from '../../src/features/workflow/layout/chrome-rows.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
-import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { formatElapsedClock } from '../../src/utils/format-time.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
 import { viewport, type Viewport } from './contracts/geometry.js';
@@ -12,6 +11,7 @@ import { VISUAL_FIXTURE_EPOCH } from './fixtures/common.js';
 import { FIXED_CLOCK } from './gallery/environment.js';
 import { mountGalleryScenario } from './gallery/mount.js';
 import { parseTerminalFrame } from './terminal/parse.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { createFrameIdentity } from './visual-contract-fixtures.js';
 
 interface GalleryCase {
@@ -58,7 +58,7 @@ describe('production App gallery mount', () => {
         projectRoot: process.cwd(),
       });
 
-      expect(frame).toContain(checkpoint.marker);
+      expect(stripAnsiStyles(frame)).toContain(checkpoint.marker);
       expect(grid.rect).toEqual({
         x: 0,
         y: 0,
@@ -150,7 +150,7 @@ describe('the capture clock', () => {
       expect(counted).not.toBe('0:00');
       expect(rows[0] ?? '').toContain(counted);
       // The checkpoint's own state is on screen with the counted clock, not only the header.
-      expect(frame).toContain(checkpoint.marker);
+      expect(stripAnsiStyles(frame)).toContain(checkpoint.marker);
     } finally {
       await handle.unmount();
     }
@@ -232,7 +232,7 @@ const BOX_DRAWING_END_CODE = 0x257f;
 const ASCII_BOX_CORNER = '+';
 
 function frameRows(frame: string): string[] {
-  const rows = stripTerminalControls(frame, { preserveLineBreaks: true }).split('\n');
+  const rows = stripAnsiStyles(frame).split('\n');
   while (rows.length > 0 && rows[rows.length - 1] === '') {
     rows.pop();
   }

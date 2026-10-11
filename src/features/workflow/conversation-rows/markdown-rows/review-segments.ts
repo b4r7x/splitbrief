@@ -6,14 +6,8 @@ import type { Theme } from '../../../../core/theme/palette.js';
 import { assertNever } from '../../../../utils/type-guards.js';
 import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path-links.js';
 import { workflowMarkdownParts, type WorkflowMarkdownPart } from './workflow-markers.js';
-
-const PROSE_STATUS_MARKERS: readonly string[] = [
-  'NOT VERIFIED',
-  'INCONCLUSIVE',
-  'VERIFIED',
-  'BLOCKED',
-  'FAILED',
-];
+import { workflowStatusTone } from './conversation-segments.js';
+import { colorForTone } from '../../../../core/theme/tone-color.js';
 
 export const workflowMarkdownRenderSegments: MarkdownSegmentDecorator = ({
   segment,
@@ -22,7 +16,6 @@ export const workflowMarkdownRenderSegments: MarkdownSegmentDecorator = ({
   previousLineText,
 }) =>
   workflowMarkdownParts(segment, {
-    statusMarkers: PROSE_STATUS_MARKERS,
     previousLineText,
   }).map((part) => workflowMarkdownPartToRenderSegment(part, theme, projectDir));
 
@@ -39,7 +32,10 @@ function workflowMarkdownPartToRenderSegment(
     case 'filePath':
       return filePathRenderSegment(part, theme, projectDir);
     case 'status':
-      return { text: part.text, style: { color: statusColor(part.text, theme), bold: false } };
+      return {
+        text: part.text,
+        style: { color: colorForTone(workflowStatusTone(part.text), theme), bold: false },
+      };
     case 'risk':
       return { text: part.text };
     default:
@@ -60,18 +56,4 @@ function filePathRenderSegment(
     style: { color: theme.markdown.link, underline: true },
     href: filePathUrl({ path: part.text, rootDir: projectDir }),
   };
-}
-
-function statusColor(text: string, theme: Theme): string | undefined {
-  const value = text.toUpperCase();
-  if (
-    value.includes('FAIL') ||
-    value.includes('ERROR') ||
-    value.includes('BLOCKED') ||
-    value.includes('NOT VERIFIED')
-  ) {
-    return theme.dimError;
-  }
-  if (value.includes('WARN') || value.includes('INCONCLUSIVE')) return theme.textDim;
-  return theme.dimSuccess;
 }

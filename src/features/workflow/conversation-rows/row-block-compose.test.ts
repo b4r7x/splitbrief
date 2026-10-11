@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { wrappedTextBlock } from './row-block-compose.js';
+import { wrappedTextBlock, wrappedSegmentsBlock } from './row-block-compose.js';
 import { rowText } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
 
@@ -130,5 +130,30 @@ describe('wrappedTextBlock', () => {
     expect(block.createRows(1, 3).map(rowText)).toEqual(['  ghij']);
     expect(block.createRows(1, 3)).toEqual(rows.slice(1, 3));
     expect(block.createRows(1, 2)[0]?.key).toBe('text-1');
+  });
+});
+
+describe('wrappedSegmentsBlock', () => {
+  it('keeps seat and separator tones while wrapping and windowing once', () => {
+    const block = wrappedSegmentsBlock({
+      keyPrefix: 'review',
+      width: 24,
+      kind: 'card',
+      segments: [
+        { text: 'Reviewer', tone: 'reviewer' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'call failed after one repair', tone: 'textDim' },
+      ],
+    });
+    if (block === null) throw new Error('Expected wrapped block');
+    const rows = block.createRows(0, block.rowCount);
+    expect(rows.flatMap((row) => row.segments)).toContainEqual({
+      text: 'Reviewer',
+      tone: 'reviewer',
+    });
+    expect(rows.flatMap((row) => row.segments)).toContainEqual({ text: ' · ', tone: 'textDim' });
+    expect(rows.map(rowText).join('')).toBe('Reviewer · call failed after one repair');
+    expect(block.createRows(1, block.rowCount)).toEqual(rows.slice(1));
+    expect(rows.every((row) => row.kind === 'card')).toBe(true);
   });
 });

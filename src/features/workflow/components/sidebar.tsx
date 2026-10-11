@@ -3,7 +3,11 @@ import { Box } from 'ink';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { borderStyleFor, glyph, type GlyphName } from '../../../lib/glyphs.js';
 import type { Theme } from '../../../core/theme/palette.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  truncateTerminalDisplayText,
+  segmentsForRowText,
+} from '../../../utils/display-text.js';
 import {
   type WorkflowTask,
   selectTaskListView,
@@ -23,7 +27,8 @@ import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/c
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
-import { getActiveRailStage } from '../../../core/rail-stages.js';
+import { getActiveRailStage, railStageSeat } from '../../../core/rail-stages.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
 import {
   getSidebarTaskListRows,
   getSidebarTaskTitleWidth,
@@ -38,7 +43,8 @@ import { controlsStore } from '../../../stores/ui/controls.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
-import { taskOutcomeCountsText } from '../display/build-progress.js';
+import { passedCountSpans, taskOutcomeCountsSpans } from '../display/build-progress.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import { wrapHard } from '../../../utils/wrap.js';
 
 interface SidebarProps {
@@ -80,7 +86,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
       return {
         bar: ' ',
         marker: statusGlyph('done'),
-        markerColor: t.success,
+        markerColor: t[stateTone('passed')],
         labelColor: t.textDim,
         bold: false,
       };
@@ -88,7 +94,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
       return {
         bar: glyph('liveBar'),
         marker: statusGlyph('in_progress'),
-        markerColor: t.text,
+        markerColor: t[stateTone('running')],
         labelColor: t.text,
         bold: true,
       };
@@ -96,7 +102,7 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
       return {
         bar: ' ',
         marker: statusGlyph('pending'),
-        markerColor: t.textDim,
+        markerColor: t[stateTone('pending')],
         labelColor: t.textDim,
         bold: false,
       };
@@ -104,19 +110,19 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
       return {
         bar: ' ',
         marker: statusGlyph('escalated'),
-        markerColor: t.warning,
+        markerColor: t[stateTone('attention')],
         labelColor: t.text,
         bold: false,
-        tail: { text: 'escalated', color: t.textDim },
+        tail: { text: 'escalated', color: t[stateTone('attention')] },
       };
     case 'failed':
       return {
         bar: ' ',
         marker: statusGlyph('failed'),
-        markerColor: t.error,
+        markerColor: t[stateTone('failed')],
         labelColor: t.text,
         bold: false,
-        tail: { text: 'failed', color: t.dimError },
+        tail: { text: 'failed', color: t[stateTone('failed')] },
       };
     case 'skipped':
       return {
@@ -153,28 +159,36 @@ function SidebarWaiting() {
   const now = useSharedClock({ active: lifecycle.status === 'running' });
 
   if (recovery.issue !== null) {
-    return <Text color={t.warning}>{`${LIST_INDENT}Planning stopped`}</Text>;
+    return <Text color={t[stateTone('attention')]}>{`${LIST_INDENT}Planning stopped`}</Text>;
   }
   if (display.kind === 'waiting') {
-    return <Text color={t.textDim}>{`${LIST_INDENT}Waiting for your answer`}</Text>;
+    return <Text color={t[stateTone('attention')]}>{`${LIST_INDENT}Waiting for your answer`}</Text>;
   }
   if (lifecycle.status !== 'running' && lifecycle.status !== 'interrupted') {
     return <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>;
   }
 
   const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
+  const seat = stage === '' ? null : railStageSeat(stage);
   const runMs = runElapsedMs(lifecycle, now);
   const elapsed = runMs === null ? '' : formatElapsedClock(runMs);
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>
       {lifecycle.status === 'interrupted' ? (
-        <Text color={t.textDim}>{`${LIST_INDENT}Planner interrupted`}</Text>
+        <Text color={t.textDim}>
+          {LIST_INDENT}
+          <Text color={t[CREW_SEAT_ROLES.plan]}>Planner</Text>{' '}
+          <Text color={t[stateTone('attention')]}>interrupted</Text>
+        </Text>
       ) : (
         // The spinner row already says the planner is running and names the stage, so a separate
         // "Planner is working" line would float between two rows that each say more than it does.
         <Text color={t.textDim}>
-          {` ${frame} ${formatStageLabel(stage)}`}
+          {` ${frame} `}
+          <Text color={seat === null ? t.text : t[CREW_SEAT_ROLES[seat]]}>
+            {formatStageLabel(stage)}
+          </Text>
           {elapsed === '' ? '' : `${SOFT_SEP}${elapsed}`}
         </Text>
       )}
@@ -255,10 +269,16 @@ export function Sidebar({ width, height }: SidebarProps) {
   const seats: readonly CrewSeat[] = config ? deriveCrewSeats({ config, displayNames }) : [];
   const tasks = view.items;
   const innerWidth = Math.max(0, width - 4);
+  const outcomeSpans = taskOutcomeCountsSpans(passedCountSpans(`${view.passed}`), view);
+  const outcomeText = outcomeSpans.map((part) => part.text).join('');
   const outcomeRows =
-    view.escalated > 0 || view.failed > 0
-      ? wrapHard(taskOutcomeCountsText(`${view.passed} passed`, view), innerWidth).split('\n')
-      : [];
+    view.escalated > 0 || view.failed > 0 ? wrapHard(outcomeText, innerWidth).split('\n') : [];
+  let outcomeOffset = 0;
+  const outcomeRowSpans = outcomeRows.map((row) => {
+    const spans = segmentsForRowText(outcomeSpans, row, outcomeOffset);
+    outcomeOffset += row.length;
+    return spans;
+  });
   const seatRows = seats.map((seat) => ({
     seat,
     rows:
@@ -342,9 +362,9 @@ export function Sidebar({ width, height }: SidebarProps) {
           <Divider width={innerWidth} />
         </Box>
         <Box flexDirection="column" paddingX={1}>
-          {outcomeRows.map((row) => (
-            <Text key={row} color={t.textDim}>
-              {row}
+          {outcomeRowSpans.map((spans, index) => (
+            <Text key={index}>
+              <TextSpans parts={spans} />
             </Text>
           ))}
           {seatRows.map(({ seat, rows }) => (

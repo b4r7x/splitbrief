@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import { useState } from 'react';
 import { Box, useInput } from 'ink';
 import { borderStyleFor } from '../../../lib/glyphs.js';
@@ -6,7 +7,7 @@ import { listRowLead } from '../../../components/list-row.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { pluralize } from '../../../utils/pluralize.js';
-import { oneLineDisplayText } from '../../../utils/display-text.js';
+import { oneLineDisplayText, segmentsForRowText } from '../../../utils/display-text.js';
 import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { closeReviewChecksPrompt } from '../../../stores/review-checks-prompt/prompt.js';
@@ -46,6 +47,8 @@ export function ReviewChecksCard({
   const innerWidth = Math.max(1, layout.width - 4);
   const idWidth = reviewChecksIdWidth(request);
   const visible = reviewChecksVisibleCommands(request, cols, height ?? layout.height);
+  const titleParts = reviewChecksCardTitle(request);
+  const title = fitKeyLegend(titleParts.map((part) => part.text).join(''), innerWidth);
   // A ⏎ already on its way to the composer when the card opens answers nothing.
   const [graceUntil] = useState(() => Date.now() + PROMPT_TYPEAHEAD_GRACE_MS);
 
@@ -78,7 +81,7 @@ export function ReviewChecksCard({
     >
       <Box flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
-          {fitKeyLegend(reviewChecksCardTitle(request), innerWidth)}
+          <TextSpans parts={segmentsForRowText(titleParts, title)} />
         </Text>
       </Box>
       {visible.shown.map((command) => (
@@ -87,7 +90,7 @@ export function ReviewChecksCard({
             {listRowLead('default')}
             <Text color={t.textDim}>{command.id.padEnd(idWidth)}</Text>
             {'  '}
-            <Text color={t.text}>{oneLineDisplayText(command.command)}</Text>
+            <Text color={t.textDim}>{oneLineDisplayText(command.command)}</Text>
             <Text color={t.textDim}>{`${SOFT_SEP}${reviewChecksReasonLine(command.reason)}`}</Text>
           </Text>
         </Box>
@@ -106,12 +109,12 @@ export function ReviewChecksCard({
         </Box>
       )}
       <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-        {layout.options.map(({ row, lines }, index) => (
+        {layout.options.map(({ row, parts }, index) => (
           <Box key={row.id} flexDirection="column">
-            {lines.map((line, lineIndex) => (
-              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.text}>
+            {parts.map((line, lineIndex) => (
+              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.textDim}>
                 {listRowLead(index === selectedIndex && lineIndex === 0 ? 'active' : 'default')}
-                {line}
+                <TextSpans parts={line} selected={index === selectedIndex} />
               </Text>
             ))}
           </Box>

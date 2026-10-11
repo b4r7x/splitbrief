@@ -3,14 +3,17 @@ import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
+  segmentsForRowText,
 } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { wrapHard } from '../../utils/wrap.js';
+import type { ConversationRowSegment } from './conversation-rows/types.js';
 import {
   FAILED_REVIEW_MARKER,
   isActionRowLine,
   passHeadlinePrefix,
   type PromptRow,
+  promptRowsToString,
   recommendedRowPrefix,
 } from './recovery-prompt.js';
 
@@ -21,7 +24,7 @@ const ACTION_ROW_PREFIX = /^\[(.+?)\]\s*/;
 
 export type PromptBodyLine =
   | { kind: 'blank' }
-  | { kind: 'message-line'; text: string }
+  | { kind: 'message-line'; text: string; parts?: readonly ConversationRowSegment[] }
   | { kind: 'headline'; row: Extract<PromptRow, { kind: 'headline' }> }
   | { kind: 'facts-line'; text: string }
   | { kind: 'facts-grid-pair'; left: string; right: string }
@@ -33,6 +36,12 @@ const FACT_INDENT = '  ';
 
 function clean(text: string, multiline = false): string {
   return sanitizeTerminalDisplayText(text, { preserveLineBreaks: multiline });
+}
+
+function normalizeFactLines(items: readonly string[]): string[] {
+  return items
+    .flatMap((text) => clean(text, true).split('\n'))
+    .filter((line) => line.trim().length > 0);
 }
 
 export function splitActionRow(text: string): { key: string; text: string } {
@@ -66,7 +75,7 @@ function parseHeadline(headline: string): Extract<PromptRow, { kind: 'headline' 
       detail: headline.slice(marker + FAILED_REVIEW_MARKER.length),
     };
   }
-  return { kind: 'headline', tone: 'attention', text: headline };
+  return { kind: 'headline', tone: 'text', text: headline };
 }
 
 function parsePromptRows(prompt: string): PromptRow[] {
@@ -74,13 +83,11 @@ function parsePromptRows(prompt: string): PromptRow[] {
   const headline = parseHeadline(lines[0] ?? '');
   const body = lines.slice(1);
   const actionStart = body.findIndex(isActionRowLine);
-  const factLines = (actionStart === -1 ? body : body.slice(0, actionStart)).filter(
-    (line) => line.trim().length > 0,
-  );
+  const factLines = normalizeFactLines(actionStart === -1 ? body : body.slice(0, actionStart));
   const actionLines = actionStart === -1 ? [] : body.slice(actionStart);
 
   if (factLines.length === 0 && actionLines.length === 0) {
-    return headline.tone === 'attention' ? [{ kind: 'message', text: headline.text }] : [headline];
+    return headline.tone === 'text' ? [{ kind: 'message', text: headline.text }] : [headline];
   }
 
   const rows: PromptRow[] = [headline];
@@ -124,13 +131,9 @@ function wrappedMessageLines(text: string, width: number): PromptBodyLine[] {
 // A break that lands on a space leaves that space at the head of the next line, so a wrapped
 // continuation drops it; a line the fact itself starts keeps its own indentation.
 function wrappedFactLines(item: string, width: number): PromptBodyLine[] {
-  return clean(item, true)
+  return wrapHard(item, Math.max(1, width - FACT_INDENT.length))
     .split('\n')
-    .flatMap((source) =>
-      wrapHard(source, Math.max(1, width - FACT_INDENT.length))
-        .split('\n')
-        .map((line, index) => (index === 0 ? line : line.trimStart())),
-    )
+    .map((line, index) => (index === 0 ? line : line.trimStart()))
     .map((line) => ({ kind: 'facts-line', text: `${FACT_INDENT}${line}` }));
 }
 
@@ -180,9 +183,40 @@ function promptBodyLinesForRow(row: PromptRow, width: number, keyWidth: number):
   }
 }
 
-export function promptBodyRows(prompt: string, width: number): PromptBodyLine[] {
+export function promptBodyRows(
+  prompt: string | readonly PromptRow[],
+  width: number,
+): PromptBodyLine[] {
   const promptWidth = Math.max(MIN_PROMPT_WIDTH, width);
-  const rows = parsePromptRows(prompt);
+  const rows = parsePromptRows(typeof prompt === 'string' ? prompt : promptRowsToString(prompt));
+  const headline = rows[0];
+  const sourceHeadline = typeof prompt === 'string' ? undefined : prompt[0];
+  if (
+    sourceHeadline?.kind === 'headline' &&
+    (headline?.kind === 'headline' || headline?.kind === 'message')
+  ) {
+    const text = headline.text;
+    const parts = sourceHeadline.parts?.map((part) => ({ ...part, text: clean(part.text, true) }));
+    rows[0] = {
+      ...sourceHeadline,
+      text,
+      ...(headline.kind === 'headline' &&
+        headline.detail !== undefined && { detail: headline.detail }),
+      ...(parts !== undefined && { parts: segmentsForRowText(parts, text) }),
+    };
+  }
+  const onlyRow = rows.length === 1 ? rows[0] : undefined;
+  if (onlyRow?.kind === 'headline' && onlyRow.tone === 'attention') {
+    const parts = onlyRow.parts;
+    const text = onlyRow.text;
+    let start = 0;
+    return wrappedMessageLines(text, promptWidth).map((row) => {
+      if (row.kind !== 'message-line') return row;
+      const result = { ...row, parts: segmentsForRowText(parts, row.text, start) };
+      start += row.text.length;
+      return result;
+    });
+  }
   const keyWidth = rows.reduce(
     (widest, row) =>
       row.kind === 'action'
@@ -216,6 +250,6 @@ export function clipPromptBodyRows(
   return [...head, ...kept, ...tail];
 }
 
-export function countPromptBodyRows(prompt: string, width: number): number {
+export function countPromptBodyRows(prompt: string | readonly PromptRow[], width: number): number {
   return promptBodyRows(prompt, width).length;
 }

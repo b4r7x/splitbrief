@@ -29,7 +29,11 @@ import {
 } from '../../features/workflow/hooks/workflow-screen/use-model.js';
 import { closedTranscriptBlock } from '../../features/workflow/closed/block.js';
 import { closedHeader } from '../../features/workflow/closed/header.js';
-import { bylineText, legendText, openRunByline } from '../../features/workflow/closed/byline.js';
+import {
+  bylineParts,
+  legendText,
+  openRunBylineParts,
+} from '../../features/workflow/closed/byline.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
 import { controlsStore } from '../../stores/ui/controls.js';
@@ -339,8 +343,8 @@ export function WorkflowScreen({
     model.atRestRecord === undefined
       ? undefined
       : model.closedView !== null
-        ? bylineText(model.closedView, bylineWidth)
-        : openRunByline({
+        ? bylineParts(model.closedView, bylineWidth)
+        : openRunBylineParts({
             status: model.atRestRecord.status,
             continuable: model.continuable,
             width: bylineWidth,

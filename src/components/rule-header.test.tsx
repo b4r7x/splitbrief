@@ -4,6 +4,8 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { RuleHeader } from './rule-header.js';
+import { defaultTheme } from './theme.js';
+import { paint } from '../core/theme/paint.js';
 
 const originalForceColor = vi.hoisted(() => {
   const saved = process.env['FORCE_COLOR'];
@@ -46,6 +48,7 @@ describe('RuleHeader', () => {
     expect(labelColor).not.toBe('');
     expect(dashColor).not.toBe('');
     expect(labelColor).not.toBe(dashColor);
+    expect(raw).toContain(paint(defaultTheme.border, ` ${'─'.repeat(15)}`));
 
     ui.unmount();
   });

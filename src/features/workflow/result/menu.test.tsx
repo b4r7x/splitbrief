@@ -1,3 +1,7 @@
+import { listRowLead } from '../../../components/list-row.js';
+import chalk from 'chalk';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
@@ -5,6 +9,8 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { ResultMenu } from './menu.js';
+
+const originalColorLevel = chalk.level;
 
 const DOWN = '\x1b[B';
 
@@ -42,8 +48,40 @@ describe('ResultMenu', () => {
   });
 
   afterEach(() => {
+    chalk.level = originalColorLevel;
     resetAllStores();
   });
+
+  it.each([60, 120])(
+    'keeps action names and wrapped dim consequences separate at %s columns',
+    async (cols) => {
+      chalk.level = 3;
+      terminalSizeStore.__testReset({ cols, rows: 40 });
+      const { ui } = renderMenu();
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.accent, `${listRowLead('active')}Apply`).replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.text, 'Show diff').replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.textDim, ' · open the run’s changes').replace('\u001b[39m', ''),
+      );
+      await flushEffects();
+      ui.stdin.write(DOWN);
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.accent, `${listRowLead('active')}Show diff`).replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.textDim, ' · open the run’s changes').replace('\u001b[39m', ''),
+      );
+      ui.unmount();
+    },
+  );
 
   it('paints Apply, Show diff and Discard with the legend', async () => {
     const { ui } = renderMenu();
@@ -189,6 +227,37 @@ describe('ResultMenu', () => {
     await tick(30);
     expect(onCommand).toHaveBeenCalledTimes(1);
     expect(onCommand).toHaveBeenCalledWith('/run accept confirm');
+    ui.unmount();
+  });
+  it.each([
+    [false, 'accent', 'Ready to apply'],
+    [true, 'warning', 'Ready to apply as is'],
+  ] as const)('paints the override=%s title with %s', (override, tone, title) => {
+    chalk.level = 3;
+    const { ui } = renderMenu({ override, findings: ['Finding stays open'] });
+    expect(ui.lastFrame()).toContain(paint(defaultTheme[tone], title).replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(
+      paint(
+        defaultTheme.textDim,
+        override
+          ? ' · 1 open finding · 4 files changed'
+          : ' · 4 files changed · run changes await Apply',
+      ),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.accent, `${listRowLead('active')}Apply`).replace('\u001b[39m', ''),
+    );
+    ui.unmount();
+  });
+
+  it('keeps the override confirmation warning and findings text', async () => {
+    chalk.level = 3;
+    const { ui } = renderMenu({ override: true, findings: ['Finding stays open'] });
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.warning, 'Apply with 1 open finding?'));
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.text, '- Finding stays open'));
     ui.unmount();
   });
 });

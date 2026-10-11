@@ -7,13 +7,10 @@ export interface Theme {
   success: ThemeColor;
   error: ThemeColor;
   warning: ThemeColor;
-  dimError: ThemeColor;
-  dimSuccess: ThemeColor;
   info: ThemeColor;
   planner: ThemeColor;
   implementer: ThemeColor;
   reviewer: ThemeColor;
-  validator: ThemeColor;
   border: ThemeColor;
   suggestionPanelBg: ThemeColor;
   selectionBg: ThemeColor;
@@ -102,57 +99,53 @@ export const PALETTES: Readonly<Record<ThemeVariant, Palette>> = {
     ground: '#303446',
     swatches: {
       text: { truecolor: '#e6e9f2', ansi: undefined },
-      textDim: { truecolor: '#b4bad0', ansi: 'white' },
+      textDim: { truecolor: '#9fa7bf', ansi: 'white' },
       // Cyan belongs to paths and links; chrome uses blue.
       accent: { truecolor: '#8cb4ff', ansi: 'blueBright' },
       success: { truecolor: '#9fd88a', ansi: 'green' },
       error: { truecolor: '#ff8f9f', ansi: 'red' },
       warning: { truecolor: '#f0c674', ansi: 'yellow' },
-      dimError: { truecolor: '#e5a3ad', ansi: 'red' },
-      dimSuccess: { truecolor: '#b2d6a5', ansi: 'green' },
       // Info stays neutral; its label names its role.
-      info: { truecolor: '#b4bad0', ansi: 'white' },
+      info: { truecolor: '#9fa7bf', ansi: 'white' },
       planner: { truecolor: '#e0a8f0', ansi: 'magenta' },
       implementer: { truecolor: '#6aa8f7', ansi: 'blue' },
       // The review seat has its own hue, distinct from warning.
       reviewer: { truecolor: '#ffa95e', ansi: 'yellowBright' },
-      // The validate label and stage glyphs carry the role and severity.
-      validator: { truecolor: '#d4d8e4', ansi: 'white' },
       border: { truecolor: '#8a91ad', ansi: 'gray' },
       suggestionPanelBg: { truecolor: '#1f2233', ansi: undefined },
       selectionBg: { truecolor: '#363a4e', ansi: 'black' },
-      scrollIndicator: { truecolor: '#b4bad0', ansi: 'white' },
+      scrollIndicator: { truecolor: '#9fa7bf', ansi: 'white' },
       diff: {
         // Removed lines carry polarity, distinct from the error hue.
         added: { truecolor: '#8fe0a0', ansi: 'greenBright' },
         removed: { truecolor: '#ff8a5c', ansi: 'redBright' },
-        context: { truecolor: '#b4bad0', ansi: 'white' },
+        context: { truecolor: '#9fa7bf', ansi: 'white' },
       },
       markdown: {
         // Headings rank above body text through brightness and weight.
         heading: { truecolor: '#ffffff', ansi: 'whiteBright' },
         bold: { truecolor: '#e6e9f2', ansi: undefined },
-        italic: { truecolor: '#b4bad0', ansi: 'white' },
+        italic: { truecolor: '#9fa7bf', ansi: 'white' },
         // Inline code stays distinct from warning yellow.
         code: { truecolor: '#f5a8e8', ansi: 'magentaBright' },
         codeBg: { truecolor: '#1f2233', ansi: undefined },
         codeGutter: { truecolor: '#8a91ad', ansi: 'gray' },
-        blockquote: { truecolor: '#b4bad0', ansi: 'white' },
-        list: { truecolor: '#b4bad0', ansi: 'white' },
+        blockquote: { truecolor: '#9fa7bf', ansi: 'white' },
+        list: { truecolor: '#9fa7bf', ansi: 'white' },
         rule: { truecolor: '#8a91ad', ansi: 'gray' },
         link: { truecolor: '#7fd8e8', ansi: 'cyan' },
-        strike: { truecolor: '#b4bad0', ansi: 'white' },
+        strike: { truecolor: '#9fa7bf', ansi: 'white' },
         tableBorder: { truecolor: '#8a91ad', ansi: 'gray' },
       },
       syntax: {
         keyword: { truecolor: '#e0a8f0', ansi: 'magenta' },
         string: { truecolor: '#9fd88a', ansi: 'green' },
-        comment: { truecolor: '#b4bad0', ansi: 'white' },
+        comment: { truecolor: '#9fa7bf', ansi: 'white' },
         number: { truecolor: '#f0c674', ansi: 'yellow' },
         literal: { truecolor: '#f0c674', ansi: 'yellow' },
         type: { truecolor: '#7fd8e8', ansi: 'cyan' },
         function: { truecolor: '#6aa8f7', ansi: 'blue' },
-        punctuation: { truecolor: '#b4bad0', ansi: 'white' },
+        punctuation: { truecolor: '#9fa7bf', ansi: 'white' },
       },
       cursor: {
         fg: { truecolor: '#1f2233', ansi: 'black' },
@@ -176,13 +169,10 @@ export const PALETTES: Readonly<Record<ThemeVariant, Palette>> = {
       success: { truecolor: '#116329', ansi: 'green' },
       error: { truecolor: '#a40e26', ansi: 'red' },
       warning: { truecolor: '#6b5900', ansi: 'yellow' },
-      dimError: { truecolor: '#8a2f4f', ansi: 'red' },
-      dimSuccess: { truecolor: '#2d5a3a', ansi: 'green' },
       info: { truecolor: '#454c59', ansi: undefined },
       planner: { truecolor: '#7a2fb8', ansi: 'magenta' },
       implementer: { truecolor: '#1d3c8f', ansi: 'blue' },
       reviewer: { truecolor: '#a34a00', ansi: 'yellowBright' },
-      validator: { truecolor: '#2f353f', ansi: undefined },
       border: { truecolor: '#6b7181', ansi: 'gray' },
       suggestionPanelBg: { truecolor: '#f6f7f9', ansi: undefined },
       selectionBg: { truecolor: '#e1e4ea', ansi: 'white' },

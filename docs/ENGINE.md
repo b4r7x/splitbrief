@@ -468,9 +468,10 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'recovery_prompted'; issueId: string; reason: RecoveryReason;
   taskId?: TaskId; files: string[]; affectedTaskIds: TaskId[];
   availableActions: RecoveryAction[]; recommendedAction: RecoveryAction;
-  headline: string; resumeCommand: string }
+  headline: string; headlineSpans?: { text: string; seat?: 'plan' | 'build' | 'review' }[];
+  resumeCommand: string }
 // The one event that fires the `on_halt` hook. `headline` is the operator-facing sentence
-// (`formatRecoveryHeadline`) and `resumeCommand` the line that carries the run on
+// (the projection of `formatRecoveryHeadlineSpans`) and `resumeCommand` the line that carries the run on
 // (`formatResumeCommand`), both from `src/core/recovery/`.
 
 // Tiered approval

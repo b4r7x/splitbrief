@@ -535,7 +535,7 @@ src/
 │   │                              the route changes so no screen does IO)
 │   ├── settings/                  catalog (settings registry),
 │   │                              presentation (UI labels)
-│   ├── theme/                     palette, resolve, paint
+│   ├── theme/                     palette, state-tone, resolve, paint
 │   ├── runtime/commands/          registry, dispatch, lookup, types
 │   ├── keybindings/registry.ts    Keyboard shortcut table (Ctrl+K, Ctrl+/, …)
 │   ├── state/                     machine (reducer), persistence (state.json
@@ -739,6 +739,7 @@ src/
 │       │                          rail, review-view.tsx, sidebar
 │       ├── display/               activity-display-text,
 │       │                          runner-activity-display
+│       ├── prompt-rows/           approval, question, recovery
 │       ├── handlers.ts            Runtime command context actions
 │       ├── at-rest.ts             Rail + composer contract when nothing runs
 │       ├── closed/                A closed run's ledger: view-model,
@@ -881,7 +882,7 @@ S7 adds `apply-conflict` and `apply-partial`, built by `recovery/builders/apply.
 The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
 
 S7 deletes `orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/apply-changed-files.ts`, `escalation/approval-conflict.ts` and `core/recovery/user-edit-actions.ts`. The old halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
-`recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The last three carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped, so a transcript row names it; a log written before the field existed replays without it and its row names no seat.
+`recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The selected, failed and resolved events carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped. A prompt carries no top-level `seat`. Its optional `headlineSpans` record each span's text and optional seat, formatted from the complete issue at publication. The transcript replays those spans without rebuilding the issue or finding seat words inside formatted text. Older prompts without spans keep their recorded headline in the secondary text tone.
 
 **Planner stream:**
 `planner_status`, `planner_text`, `planner_heartbeat`

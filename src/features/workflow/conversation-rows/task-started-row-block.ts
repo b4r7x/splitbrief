@@ -1,3 +1,4 @@
+import { segmentsForRowText } from '../../../utils/display-text.js';
 import type { EngineEventOf } from '../../../engine/events/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { formatTaskHeading, taskTargetLabel } from '../../../stores/workflow/tasks.js';
@@ -6,7 +7,7 @@ import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } fr
 import { segmentedRow } from './row-format/rows.js';
 import { sanitizeRowDisplayText, wrappedRowTexts } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
-import { compositeBlock, wrappedTextBlock } from './row-block-compose.js';
+import { compositeBlock, wrappedSegmentsBlock } from './row-block-compose.js';
 
 // A wrapped continuation carries the space it broke on, and when the break lands before a
 // separator it carries that too — `· sonnet` on its own row reads as a new bullet, not as the tail
@@ -14,11 +15,9 @@ import { compositeBlock, wrappedTextBlock } from './row-block-compose.js';
 const LEADING_BREAK = /^\s+(?:·\s+)?|^·\s+/;
 
 function withoutLeadingBreak(segments: ConversationRowSegment[]): ConversationRowSegment[] {
-  const [first, ...rest] = segments;
-  if (first === undefined) return segments;
-  const text = first.text.replace(LEADING_BREAK, '');
-  if (text === first.text) return segments;
-  return text.length === 0 ? rest : [{ ...first, text }, ...rest];
+  const full = segments.map((segment) => segment.text).join('');
+  const text = full.replace(LEADING_BREAK, '');
+  return text === full ? segments : segmentsForRowText(segments, text, full.length - text.length);
 }
 
 // Metadata is labels joined by the soft separator — a path, a tool and its model, a worker. A
@@ -36,25 +35,24 @@ function unusedSpacePlaceholder(text: string): string | null {
   return null;
 }
 
-function protectMetadataSpaces(labels: readonly string[], placeholder: string): string {
-  return labels
-    .map((label) => label.replaceAll(' ', placeholder))
-    .join(` ${SOFT_SEP.trim()}${placeholder}`);
-}
-
 // The header names one target, and a slice writes more than one file. The anchor plus a count is
 // what fits, so the row says the same thing the sidebar and the editor say.
-export function taskStartedMetadata(event: EngineEventOf<'task_started'>): readonly string[] {
+export function taskStartedMetadata(
+  event: EngineEventOf<'task_started'>,
+): readonly ConversationRowSegment[] {
   const [, ...rest] = formatTaskStartedParts(event);
   return [
-    taskTargetLabel({
-      id: event.taskId,
-      title: event.title,
-      status: 'in_progress',
-      file: event.file,
-      ...(event.files === undefined ? {} : { files: [...event.files] }),
-      action: event.action,
-    }),
+    {
+      text: taskTargetLabel({
+        id: event.taskId,
+        title: event.title,
+        status: 'in_progress',
+        file: event.file,
+        ...(event.files === undefined ? {} : { files: [...event.files] }),
+        action: event.action,
+      }),
+      tone: 'textDim',
+    },
     ...rest,
   ];
 }
@@ -67,12 +65,11 @@ export function taskStartedCrewRowBlock(input: {
   const [, ...metadata] = taskStartedMetadata(input.event);
   return compositeBlock(
     input.keyPrefix,
-    metadata.map((text, index) =>
-      wrappedTextBlock({
+    metadata.map((segment, index) =>
+      wrappedSegmentsBlock({
         keyPrefix: `${input.keyPrefix}-metadata-${index}`,
-        text,
+        segments: [segment],
         width: input.width,
-        tone: 'textDim',
       }),
     ),
   );
@@ -84,22 +81,34 @@ export function taskStartedRowBlock(input: {
   keyPrefix: string;
   taskId: string;
   title: string;
-  metadata: readonly string[];
+  metadata: readonly ConversationRowSegment[];
   width: number;
 }): ConversationRowBlock | null {
   const idText = sanitizeRowDisplayText(input.taskId);
   const titleText = sanitizeRowDisplayText(
     formatTaskHeading({ id: idText, title: input.title }).slice(idText.length),
   );
-  const labels = input.metadata.map((label) => sanitizeRowDisplayText(label));
-  const placeholder = unusedSpacePlaceholder(`${idText}${titleText}${labels.join(' ')}`);
-  const metadataText =
-    placeholder === null
-      ? `  ${labels.join(SOFT_SEP)}`
-      : `  ${protectMetadataSpaces(labels, placeholder)}`;
-  const protectedFullText = `${idText}${titleText}${metadataText}`;
-  const idEnd = idText.length;
-  const titleEnd = idEnd + titleText.length;
+  const labels = input.metadata.map((label) => ({
+    ...label,
+    text: sanitizeRowDisplayText(label.text),
+  }));
+  const placeholder = unusedSpacePlaceholder(
+    `${idText}${titleText}${labels.map((label) => label.text).join(' ')}`,
+  );
+  const metadata = labels.flatMap((label, index): ConversationRowSegment[] => [
+    {
+      text:
+        index === 0 ? '  ' : placeholder === null ? SOFT_SEP : ` ${SOFT_SEP.trim()}${placeholder}`,
+      tone: 'textDim',
+    },
+    { ...label, text: placeholder === null ? label.text : label.text.replaceAll(' ', placeholder) },
+  ]);
+  const parts: ConversationRowSegment[] = [
+    { text: idText, tone: 'text', bold: true },
+    { text: titleText, tone: 'text', bold: true },
+    ...metadata,
+  ];
+  const protectedFullText = parts.map((part) => part.text).join('');
 
   const wrapped = wrappedRowTexts(protectedFullText, wrapWidthFor('task-header', input.width)).map(
     (line) => (placeholder === null ? line : line.replaceAll(placeholder, ' ')),
@@ -110,34 +119,8 @@ export function taskStartedRowBlock(input: {
   let offset = 0;
   for (let lineIndex = 0; lineIndex < wrapped.length; lineIndex += 1) {
     const line = wrapped[lineIndex] ?? '';
-    const lineStart = offset;
     const lineEnd = offset + line.length;
-    const segments: ConversationRowSegment[] = [];
-    let pos = lineStart;
-    while (pos < lineEnd) {
-      let regionEnd: number;
-      let tone: ConversationRowSegment['tone'];
-      let bold = false;
-      if (pos < idEnd) {
-        regionEnd = Math.min(idEnd, lineEnd);
-        tone = 'text';
-        bold = true;
-      } else if (pos < titleEnd) {
-        regionEnd = Math.min(titleEnd, lineEnd);
-        tone = 'text';
-        bold = true;
-      } else {
-        regionEnd = lineEnd;
-        tone = 'textDim';
-      }
-      const segment: ConversationRowSegment = {
-        text: line.slice(pos - lineStart, regionEnd - lineStart),
-        tone,
-      };
-      if (bold) segment.bold = true;
-      segments.push(segment);
-      pos = regionEnd;
-    }
+    const segments = segmentsForRowText(parts, line, offset);
     const row = segmentedRow(
       `${input.keyPrefix}-${lineIndex}`,
       lineIndex === 0 ? segments : withoutLeadingBreak(segments),

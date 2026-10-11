@@ -78,7 +78,9 @@ afterEach(() => {
 describe('BuildProgressBlock', () => {
   it('states the counts, and the attempt only once a retry has spent one', () => {
     const first = renderFeature(<BuildProgressBlock cols={120} />);
-    expect(first.lastFrame() ?? '').toContain('1/3 briefs passed');
+    expect(stripAnsiStyles(first.lastFrame())).toContain('1/3 briefs passed');
+    expect(first.lastFrame()).toContain(`${colorOpen(defaultTheme.textDim)}1/3 briefs passed`);
+    expect(first.lastFrame()).not.toContain(`${colorOpen(defaultTheme.success)}passed`);
     expect(first.lastFrame() ?? '').not.toContain('attempt');
     expect(first.lastFrame() ?? '').not.toContain('ETA');
     first.unmount();
@@ -103,7 +105,7 @@ describe('BuildProgressBlock', () => {
 
     for (const cols of [120, 80, 60]) {
       const ui = renderFeature(<BuildProgressBlock cols={cols} />);
-      const frame = ui.lastFrame() ?? '';
+      const frame = stripAnsiStyles(ui.lastFrame());
 
       expect(frame).toContain('1/3 briefs passed');
       expect(frame).toContain('Between calls');
@@ -149,7 +151,9 @@ describe('BuildProgressBlock', () => {
     expect(stripAnsiStyles(frame)).toContain(
       'OpenCode CLI · auto · working · No output for 5:12 · tools report when done',
     );
-    expect(frame).toContain(`${warning}No output for 5:12 · tools report when done`);
+    expect(frame).toContain(`${warning}No output for 5:12`);
+    expect(frame).toContain(`${colorOpen(defaultTheme.textDim)} · `);
+    expect(frame).toContain(`${warning}tools report when done`);
     expect(frame).not.toContain(`${warning}OpenCode CLI · auto · working`);
 
     ui.unmount();
@@ -175,7 +179,11 @@ describe('BuildProgressBlock', () => {
         cols === 120 ? 'No output for 5:12' : 'No output for 5:12 · tools report when done';
       const separator = cols === 120 ? ' · ' : '\n';
       expect(stripAnsiStyles(frame)).toContain(`OpenCode CLI · working${separator}${silence}`);
-      expect(frame).toContain(`${warning}${silence}`);
+      expect(frame).toContain(`${warning}No output for 5:12`);
+      if (cols !== 120) {
+        expect(frame).toContain(`${colorOpen(defaultTheme.textDim)} · `);
+        expect(frame).toContain(`${warning}tools report when done`);
+      }
       expect(frame).not.toContain(`${warning}OpenCode CLI`);
       if (cols === 120) expect(stripAnsiStyles(frame)).not.toContain('tools report when done');
       ui.unmount();
@@ -214,7 +222,9 @@ describe('BuildProgressBlock', () => {
       expect(stripAnsiStyles(frame)).toContain(
         `OpenAI Codex CLI · GPT-5 · high · working${separator}No output for 5:12 · running npm test`,
       );
-      expect(frame).toContain(`${warning}No output for 5:12 · running npm test`);
+      expect(frame).toContain(`${warning}No output for 5:12`);
+      expect(frame).toContain(`${colorOpen(defaultTheme.textDim)} · `);
+      expect(frame).toContain(`${warning}running npm test`);
       expect(frame).not.toContain(`${warning}OpenAI Codex CLI`);
       ui.unmount();
     }

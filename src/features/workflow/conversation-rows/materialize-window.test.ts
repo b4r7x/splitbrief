@@ -15,7 +15,7 @@ describe('materializeConversationRowsWindow', () => {
         return Array.from({ length: windowEnd - windowStart }, (_, index) => ({
           key: `${key}-${windowStart + index}`,
           kind: 'message',
-          segments: [{ text: `${key}-${windowStart + index}` }],
+          segments: [{ text: `${key}-${windowStart + index}`, tone: 'text' }],
         }));
       },
     });

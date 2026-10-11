@@ -1,4 +1,5 @@
-import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { ThemeText as Text } from '../../../components/theme.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import { Box } from 'ink';
 import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
@@ -9,7 +10,6 @@ import { buildProgressRows, deriveBuildProgress } from '../display/build-progres
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 
 export function BuildProgressBlock({ cols }: { cols: number }) {
-  const t = useTheme();
   const [tasks, lifecycle, operations] = useStores(tasksStore, lifecycleStore, operationsStore);
   const running = lifecycle.status === 'running';
   // Freshness counts the seconds since the seat last spoke, so it has to move while the seat says
@@ -20,18 +20,11 @@ export function BuildProgressBlock({ cols }: { cols: number }) {
   const lines = buildProgressRows(progress, width);
   return (
     <Box flexDirection="column" flexShrink={0}>
-      {lines.map(({ key, text, silenceStart }, index) => {
-        // Freshness closes the last row at every width. A silence takes the warning colour the
-        // byline's stall lead wears, cut or whole; the facts that share its row keep theirs.
-        const start = silenceStart ?? text.length;
-        const silence = silenceStart !== null && text.length > start;
-        return (
-          <Text key={key} color={index === 0 ? t.text : t.textDim} wrap="truncate">
-            {silence ? text.slice(0, start) : text}
-            {silence && <Text color={t.warning}>{text.slice(start)}</Text>}
-          </Text>
-        );
-      })}
+      {lines.map(({ key, spans }) => (
+        <Text key={key} wrap="truncate">
+          <TextSpans parts={spans} />
+        </Text>
+      ))}
     </Box>
   );
 }

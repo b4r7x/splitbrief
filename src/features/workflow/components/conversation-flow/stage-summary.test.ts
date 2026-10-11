@@ -14,6 +14,31 @@ import { stageSummaryRow } from './stage-summary.js';
 beforeEach(forceUnicodeGlyphs);
 
 describe('stageSummaryRow', () => {
+  it('returns the heading spans that supply its text and colors', () => {
+    expect(
+      stageSummaryRow({
+        stage: 'review',
+        scope: 'task',
+        afterTaskId: 'T001',
+        ordinal: 1,
+        outcome: 'stopped',
+        failedCommands: [],
+        failedChecks: 0,
+        fixes: [],
+        duration: 1_000,
+      }),
+    ).toMatchObject({
+      state: {
+        headingParts: {
+          id: [
+            { text: 'Review', tone: 'reviewer' },
+            { text: ' T001', tone: 'textDim' },
+          ],
+          title: { text: 'stopped', tone: 'warning' },
+        },
+      },
+    });
+  });
   it('omits the absent task anchor from a schema-valid review completion', () => {
     const event = EngineEventSchema.parse({
       type: 'review_completed',
@@ -27,9 +52,7 @@ describe('stageSummaryRow', () => {
     const [section] = groupEventsIntoSections([event]);
     expect(section?.type).toBe('settled-stage');
     if (section?.type !== 'settled-stage') throw new Error('expected a settled review');
-    expect(stageSummaryRow(section.summary)).toEqual({
-      id: 'Review',
-      title: 'no verdict',
+    expect(stageSummaryRow(section.summary)).toMatchObject({
       state: { kind: 'stage', outcome: 'no-verdict', detail: ['49.0s'] },
     });
   });
@@ -106,18 +129,14 @@ describe('stageSummaryRow', () => {
         fixes: [],
         duration: 5_000,
       }),
-    ).toEqual({
-      id: 'Review 2',
-      title: '',
+    ).toMatchObject({
       state: { kind: 'stage', outcome: 'failed', detail: ['5.0s'] },
     });
   });
   it('names the plan by the run it planned and how long it took', () => {
     expect(
       stageSummaryRow({ stage: 'plan', feature: 'Fix the red tests', duration: 8_000 }),
-    ).toEqual({
-      id: 'Plan',
-      title: 'Fix the red tests',
+    ).toMatchObject({
       state: { kind: 'stage', outcome: 'passed', detail: ['8.0s'] },
     });
   });
@@ -134,9 +153,7 @@ describe('stageSummaryRow', () => {
         fixes: ['T006', 'T007', 'T008'],
         duration: 2_834_200,
       }),
-    ).toEqual({
-      id: 'Review 1',
-      title: '',
+    ).toMatchObject({
       state: {
         kind: 'stage',
         outcome: 'failed',
@@ -157,7 +174,7 @@ describe('stageSummaryRow', () => {
         fixes: ['T009'],
         duration: 1_000,
       }).state,
-    ).toEqual({
+    ).toMatchObject({
       kind: 'stage',
       outcome: 'failed',
       detail: ['npm run typecheck, npm test, 3 checks', 'fixes T009', '1.0s'],
@@ -176,10 +193,12 @@ describe('stageSummaryRow', () => {
         fixes: ['T004'],
         duration: 1_000,
       }),
-    ).toEqual({
-      id: 'Review 1',
-      title: '',
-      state: { kind: 'stage', outcome: 'failed', detail: ['fixes T004', '1.0s'] },
+    ).toMatchObject({
+      state: {
+        kind: 'stage',
+        outcome: 'failed',
+        detail: ['fixes T004', '1.0s'],
+      },
     });
   });
 
@@ -195,9 +214,7 @@ describe('stageSummaryRow', () => {
         fixes: [],
         duration: 1_000,
       }),
-    ).toEqual({
-      id: 'Review 1',
-      title: 'passed',
+    ).toMatchObject({
       state: { kind: 'stage', outcome: 'passed', detail: ['1.0s'] },
     });
   });

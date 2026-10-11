@@ -418,7 +418,8 @@ describe('a replayed fixture walk', () => {
         rendered.stdin.write(text);
       },
     });
-    rendered = renderFeature(createElement(PreviewView, { controller }), WIDE);
+    const ui = renderFeature(createElement(PreviewView, { controller }), WIDE);
+    rendered = ui;
     try {
       await flushEffects();
       await controller.selectScenario('overlay-picker-claude-effort-returned');
@@ -444,7 +445,7 @@ describe('a replayed fixture walk', () => {
       await vi.waitFor(
         () => {
           expect(pickerViewStore.get().effortDraft).toBe('high');
-          const lines = frame(rendered as RenderFeatureResult).split('\n');
+          const lines = frame(ui).split('\n');
           expect(
             lines.some((line) => line.includes('effort') && line.includes('high')),
             lines.join('\n'),
@@ -460,7 +461,9 @@ describe('a replayed fixture walk', () => {
       // Enter waits for the scripted Right key to settle; the forwarded list fills before it does.
       await flushEffects();
       await controller.pressToPreview('\r');
-      await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'), { timeout: 10_000 });
+      await vi.waitFor(() => expect(overlayStore.get().active, frame(ui)).toBe('none'), {
+        timeout: 10_000,
+      });
       expect(configStore.get().config?.planner).toEqual({
         kind: 'cli',
         tool: 'claude-code',
@@ -469,7 +472,7 @@ describe('a replayed fixture walk', () => {
       });
     } finally {
       await controller.dispose();
-      rendered.unmount();
+      ui.unmount();
     }
   }, 30_000);
 });

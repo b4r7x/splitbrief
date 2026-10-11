@@ -1,25 +1,36 @@
 import { PHASES, type Phase, type RunnerKind } from '../../../core/schemas/enums.js';
 import type { PlannerCall } from '../../../core/schemas/run-step.js';
 import type { CliToolId } from '../../../core/runners/cli-tool-catalog.js';
-import { activeVerb, suiteStatusText, reviewActivityText } from './phase-verb.js';
+import {
+  activeVerb,
+  suiteStatusParts,
+  reviewActivityParts,
+  reviewActivitySpans,
+} from './phase-verb.js';
 import { formatRecordedSeatIdentity } from './recorded-seat-identity.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
 import type {
   ActiveOperation,
   RunningSuiteStage,
 } from '../../../stores/workflow/operations/state.js';
-import { assertNever } from '../../../utils/type-guards.js';
 import {
   getActiveRailStage,
   getRailActiveIndex,
   railStageCompletionTimesFromPhaseFirstSeen,
-  railStageRole,
-  type RailRole,
+  railStageSeat,
 } from '../../../core/rail-stages.js';
-import type { ConversationRowTone } from '../conversation-rows/types.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 
-export const PAUSED_LIVE_STATUS_VERB = `Paused — resume with /resume or \`${SPLITBRIEF_IDENTITY.executable} resume\``;
+export const PAUSED_LIVE_STATUS_PARTS: readonly ConversationRowSegment[] = [
+  { text: 'Paused', tone: stateTone('attention') },
+  {
+    text: ` — resume with /resume or \`${SPLITBRIEF_IDENTITY.executable} resume\``,
+    tone: 'textDim',
+  },
+];
 
 // Review gates use the waiting byline while their document replaces the transcript. A change
 // request sent from a gate rewrites the document inside that gate, and that call is live work.
@@ -48,25 +59,11 @@ export function stallRunnerHint(
   return QUIET_STREAM_RUNNERS.has(runnerName) ? 'tools report when done' : null;
 }
 
-function railRoleTone(role: RailRole): ConversationRowTone {
-  switch (role) {
-    case 'planner':
-      return 'planner';
-    case 'implementer':
-      return 'implementer';
-    case 'validator':
-      return 'validator';
-    default:
-      return assertNever(role);
-  }
-}
-
 export interface LiveStatus {
-  verb: string;
   stageStart: number;
   /** Time the stage spent waiting on the user: its clock ran, the run did not. */
   waitedMs: number;
-  tone: ConversationRowTone;
+  parts: readonly ConversationRowSegment[];
 }
 
 export function deriveLiveStatus(input: {
@@ -85,35 +82,35 @@ export function deriveLiveStatus(input: {
 }): LiveStatus | null {
   if (input.status !== 'running') return null;
   if (input.cancelled) return null;
+  const activeStage = getActiveRailStage(input.phase);
+  const seat = activeStage === null ? null : railStageSeat(activeStage.stage);
+  const stageTone = seat === null ? stateTone('running') : CREW_SEAT_ROLES[seat];
   // A reviewer check can run for minutes before the review, and so can its re-run at the run base:
   // it is the run's work at that moment, so it leads on its own clock rather than the rail stage's.
   if (input.suiteStage !== null) {
+    const parts = suiteStatusParts(input.phase, input.suiteStage, input.activeOperation ?? null);
     return {
-      verb: suiteStatusText({
-        phase: input.phase,
-        suite: input.suiteStage,
-        operation: input.activeOperation ?? null,
-      }),
+      parts,
       stageStart: input.suiteStage.stageStartedTs,
       waitedMs: 0,
-      tone: 'validator',
     };
   }
   if (input.activeOperation?.status === 'running' && input.activeOperation.role === 'review') {
-    return {
-      verb: reviewActivityText(
+    const parts = reviewActivitySpans(
+      reviewActivityParts(
         input.activeOperation,
         formatRecordedSeatIdentity({ ...input.activeOperation, role: 'reviewer' }) ??
           input.reviewerLabel,
       ),
+    );
+    return {
+      parts,
       stageStart: Math.max(input.activeOperation.startedAt, input.resumedAt ?? 0),
       waitedMs: 0,
-      tone: 'validator',
     };
   }
   if (RAIL_GATE_PHASES.has(input.phase) && input.plannerCall === null) return null;
   const activeIndex = getRailActiveIndex(input.phase);
-  const activeStage = getActiveRailStage(input.phase);
   if (activeIndex < 0 || activeStage === null) return null;
   const completionTimes = railStageCompletionTimesFromPhaseFirstSeen(input.phaseFirstSeenTs);
   const stageOpened =
@@ -127,13 +124,14 @@ export function deriveLiveStatus(input: {
       getRailActiveIndex(phase) === activeIndex ? total + (input.waitedMs[phase] ?? 0) : total,
     0,
   );
+  const tone = input.phase === 'escalating' ? CREW_SEAT_ROLES.plan : stageTone;
+  const parts =
+    input.phase === 'final-review'
+      ? reviewActivitySpans(reviewActivityParts(input.activeOperation, input.reviewerLabel))
+      : [{ text: activeVerb(input.phase, null, input.plannerCall), tone }];
   return {
-    verb:
-      input.phase === 'final-review'
-        ? reviewActivityText(input.activeOperation, input.reviewerLabel)
-        : activeVerb(input.phase, null, input.plannerCall),
+    parts,
     stageStart,
     waitedMs,
-    tone: railRoleTone(railStageRole(activeStage.stage)),
   };
 }

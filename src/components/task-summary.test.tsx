@@ -1,15 +1,27 @@
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import chalk from 'chalk';
 import { defaultTheme } from './theme.js';
 import { paint } from '../core/theme/paint.js';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
-import { TaskSummary, fitDetailRun } from './task-summary.js';
+import { TaskSummary, fitDetailRun as fitDetailSpans } from './task-summary.js';
 import { glyph } from '../lib/glyphs.js';
 import { getTerminalCellWidth } from '../utils/display-text.js';
 import { getMethodDisplay } from '../core/sessions/display.js';
 import { taskTargetParts } from '../stores/workflow/tasks.js';
+import { stageSummaryRow } from '../features/workflow/components/conversation-flow/stage-summary.js';
+
+const originalForceColor = vi.hoisted(() => {
+  const saved = process.env['FORCE_COLOR'];
+  process.env['FORCE_COLOR'] = '3';
+  return saved;
+});
+
+afterAll(() => {
+  if (originalForceColor === undefined) delete process.env['FORCE_COLOR'];
+  else process.env['FORCE_COLOR'] = originalForceColor;
+});
 
 const jwt =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
@@ -20,9 +32,63 @@ afterEach(() => {
   chalk.level = originalColorLevel;
 });
 
+function expectForeground(frame: string, text: string, color: string | undefined): void {
+  const [opening] = paint(color, '\0').split('\0');
+  if (opening === undefined || opening === '') throw new Error(`No foreground for ${color}`);
+  expect(frame).toContain(`${opening}${text}`);
+}
+
+function fitDetailRun(
+  task: Parameters<typeof fitDetailSpans>[0],
+  tail: string[],
+  width: number,
+  settled?: boolean,
+) {
+  const fitted = fitDetailSpans(
+    task,
+    tail.map((text) => ({ text, tone: 'textDim' })),
+    width,
+    settled,
+  );
+  return { head: fitted.head, tail: fitted.tail.map((span) => span.text) };
+}
+
 beforeEach(forceUnicodeGlyphs);
 
 describe('TaskSummary', () => {
+  it('accepts one heading source for a stage', () => {
+    type StageProps = ReturnType<typeof stageSummaryRow> & { width: number };
+    expectTypeOf<StageProps>().toExtend<Parameters<typeof TaskSummary>[0]>();
+    expectTypeOf<StageProps & { id: string; title: string }>().not.toExtend<
+      Parameters<typeof TaskSummary>[0]
+    >();
+  });
+  it('keeps the heading ellipsis when a Review label fills the available cells', () => {
+    chalk.level = 3;
+    const ui = renderFeature(
+      <TaskSummary
+        width={9}
+        state={{
+          kind: 'stage',
+          headingParts: {
+            id: [
+              { text: 'Review', tone: 'reviewer' },
+              { text: ' T001', tone: 'textDim' },
+            ],
+            title: { text: 'no verdict', tone: 'error' },
+          },
+          outcome: 'no-verdict',
+          detail: [],
+        }}
+      />,
+      { cols: 9, rows: 18 },
+    );
+    const frame = ui.lastFrame();
+    expect(stripAnsiStyles(frame).trim()).toBe('✗ Revie…');
+    expectForeground(frame, 'Revie…', defaultTheme.reviewer);
+    ui.unmount();
+  });
+
   it.each([
     ['no-verdict', 'no verdict', '✗'],
     ['stopped', 'stopped', '×'],
@@ -30,9 +96,18 @@ describe('TaskSummary', () => {
     const ui = renderFeature(
       <TaskSummary
         width={60}
-        id="Review T001"
-        title={title}
-        state={{ kind: 'stage', outcome, detail: ['49.0s'] }}
+        state={{
+          kind: 'stage',
+          headingParts: {
+            id: [
+              { text: 'Review', tone: 'reviewer' },
+              { text: ' T001', tone: 'textDim' },
+            ],
+            title: { text: title, tone: outcome === 'stopped' ? 'warning' : 'error' },
+          },
+          outcome,
+          detail: ['49.0s'],
+        }}
       />,
       { cols: 60, rows: 18 },
     );
@@ -139,6 +214,7 @@ describe('TaskSummary', () => {
   it.each([40, 60])(
     'keeps the skipped brief title ahead of a long reason at %s columns',
     (width) => {
+      chalk.level = 3;
       const ui = renderFeature(
         <TaskSummary
           width={width}
@@ -151,24 +227,169 @@ describe('TaskSummary', () => {
         />,
         { cols: width, rows: 18 },
       );
-      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      const rawFrame = ui.lastFrame();
+      const frame = stripAnsiStyles(rawFrame);
       expect(frame).toContain('T002 Receive stock');
       expect(frame).toContain('skipped');
       expect(getTerminalCellWidth(frame)).toBeLessThanOrEqual(width);
+      expect(rawFrame).toBe(paint(defaultTheme.textDim, frame));
       ui.unmount();
     },
   );
 
+  it.each([false, true])('keeps the skipped mark and word dim when focused=%s', (focused) => {
+    chalk.level = 3;
+    const ui = renderFeature(
+      <TaskSummary
+        width={100}
+        id="T002"
+        title="Receive stock"
+        state={{ kind: 'settled', method: 'skipped' }}
+        file="src/orders.js"
+        reason="Denied by hook"
+        focused={focused}
+      />,
+    );
+    const frame = ui.lastFrame();
+    expect(frame).toContain(
+      paint(
+        defaultTheme.textDim,
+        `${focused ? '' : ' '}${glyph('statusSkipped')} T002 Receive stock  src/orders.js · skipped · Denied by hook`,
+      ),
+    );
+    ui.unmount();
+  });
+
+  it.each([5, 6, 8])('keeps a cut stage word in its seat tone at %s columns', (width) => {
+    chalk.level = 3;
+    const ui = renderFeature(
+      <TaskSummary
+        state={{
+          kind: 'stage',
+          headingParts: {
+            id: [{ text: 'Plan', tone: 'planner' }],
+            title: { text: 'Long feature title', tone: 'text' },
+          },
+          outcome: 'passed',
+          detail: [],
+        }}
+        width={width}
+      />,
+      { cols: width, rows: 18 },
+    );
+    const head = width === 5 ? 'P…' : width === 6 ? 'Pl…' : 'Plan';
+    expectForeground(ui.lastFrame(), head, defaultTheme.planner);
+    expect(getTerminalCellWidth(stripAnsiStyles(ui.lastFrame()))).toBeLessThanOrEqual(width);
+    ui.unmount();
+  });
+
+  it.each([
+    ['cancelled', 'stopped', 'warning'],
+    ['cancelled', 'cancelled', 'warning'],
+    ['failed', 'failed', 'error'],
+  ] as const)('keeps halted %s %s colored after fitting', (tone, word, token) => {
+    chalk.level = 3;
+    for (const width of [16, 60, 120]) {
+      const ui = renderFeature(
+        <TaskSummary
+          id="T1"
+          title=""
+          state={{ kind: 'halted', tone, word }}
+          width={width}
+          file={width > 16 ? 'src/a.ts' : undefined}
+          note="2 partial files"
+        />,
+      );
+      const frame = ui.lastFrame();
+      expectForeground(frame, word, defaultTheme[token]);
+      expectForeground(
+        frame,
+        ` ${glyph(tone === 'failed' ? 'statusFailed' : 'statusCancelled')} `,
+        defaultTheme[token],
+      );
+      if (width > 16) {
+        expectForeground(frame, ' · 2 partial files', defaultTheme.textDim);
+      }
+      expect(getTerminalCellWidth(stripAnsiStyles(frame))).toBeLessThanOrEqual(width);
+      ui.unmount();
+    }
+  });
+  it.each([false, true])(
+    'colors the settled review seat and failed=%s state separately',
+    (failed) => {
+      chalk.level = 3;
+      const summary = stageSummaryRow({
+        stage: 'review',
+        scope: 'final',
+        ordinal: 1,
+        outcome: failed ? 'failed' : 'passed',
+        failedCommands: [],
+        failedChecks: 0,
+        fixes: [],
+        duration: 1_000,
+      });
+      const ui = renderFeature(<TaskSummary {...summary} width={120} />);
+      const frame = ui.lastFrame();
+      expectForeground(frame, 'Review', defaultTheme.reviewer);
+      expectForeground(
+        frame,
+        failed ? ' failed' : 'passed',
+        failed ? defaultTheme.error : defaultTheme.success,
+      );
+      expect(frame).toContain('1.0s');
+      ui.unmount();
+    },
+  );
+
+  it.each([
+    [20, '✗ Review T001 fail…', ' fail…'],
+    [60, '✗ Review T001 failed  1.0s', ' failed'],
+  ] as const)('keeps the failed task review heading at %s columns', (width, expected, suffix) => {
+    chalk.level = 3;
+    const summary = stageSummaryRow({
+      stage: 'review',
+      scope: 'task',
+      afterTaskId: 'T001',
+      ordinal: 1,
+      outcome: 'failed',
+      failedCommands: [],
+      failedChecks: 0,
+      fixes: [],
+      duration: 1_000,
+    });
+    const ui = renderFeature(<TaskSummary {...summary} width={width} />, { cols: width, rows: 18 });
+    const frame = ui.lastFrame();
+    expect(stripAnsiStyles(frame).trim()).toBe(expected);
+    expectForeground(frame, 'Review', defaultTheme.reviewer);
+    expectForeground(frame, ' T001', defaultTheme.textDim);
+    expectForeground(frame, suffix, defaultTheme.error);
+    if (width === 60) expectForeground(frame, '  1.0s', defaultTheme.textDim);
+    ui.unmount();
+  });
+
+  it('colors the settled Plan label with planner and its title with text', () => {
+    chalk.level = 3;
+    const summary = stageSummaryRow({ stage: 'plan', feature: 'Fix the tests', duration: 1_000 });
+    const ui = renderFeature(<TaskSummary {...summary} width={120} />);
+    expectForeground(ui.lastFrame(), 'Plan', defaultTheme.planner);
+    expectForeground(ui.lastFrame(), ' Fix the tests', defaultTheme.text);
+    ui.unmount();
+  });
   it('paints a settled stage mark, head and sanitized detail run', () => {
     for (const failed of [false, true]) {
       const ui = renderFeature(
         <TaskSummary
           width={80}
-          id="Review 1"
-          title={failed ? '' : 'passed'}
           state={{
             kind: 'stage',
             outcome: failed ? 'failed' : 'passed',
+            headingParts: {
+              id: [
+                { text: 'Review', tone: 'reviewer' },
+                { text: ' 1', tone: 'textDim' },
+              ],
+              title: failed ? null : { text: 'passed', tone: 'success' },
+            },
             detail: ['fixes \u001b[31mT006\u001b[0m', '8.0s'],
           }}
         />,
@@ -189,14 +410,29 @@ describe('TaskSummary', () => {
     chalk.level = 3;
     for (const state of [
       { kind: 'settled', method: 'failed' },
-      { kind: 'stage', outcome: 'failed', detail: ['fixes T904', '8.0s'] },
+      {
+        kind: 'stage',
+        headingParts: {
+          id: [
+            { text: 'Review', tone: 'reviewer' },
+            { text: ' 1', tone: 'textDim' },
+          ],
+          title: null,
+        },
+        outcome: 'failed',
+        detail: ['fixes T904', '8.0s'],
+      },
     ] as const) {
-      const ui = renderFeature(<TaskSummary width={80} id="Review 1" title="" state={state} />);
+      const row = state.kind === 'stage' ? { state } : { state, id: 'Review 1', title: '' };
+      const ui = renderFeature(<TaskSummary width={80} {...row} />);
       const frame = ui.lastFrame() ?? '';
 
-      const [headColor] = paint(defaultTheme.textDim, '\0').split('\0');
-      const [failedColor] = paint(defaultTheme.dimError, '\0').split('\0');
-      expect(frame).toContain(`${headColor}Review 1${failedColor} failed`);
+      expectForeground(
+        frame,
+        state.kind === 'stage' ? 'Review' : 'Review 1',
+        state.kind === 'stage' ? defaultTheme.reviewer : defaultTheme.text,
+      );
+      expectForeground(frame, ' failed', defaultTheme.error);
       expect(stripAnsiStyles(frame)).toContain('Review 1 failed');
       expect(stripAnsiStyles(frame).match(/failed/gu)).toHaveLength(1);
       if (state.kind === 'stage') expect(stripAnsiStyles(frame)).toContain('fixes T904 · 8.0s');
@@ -280,7 +516,7 @@ describe('TaskSummary', () => {
 
     expect(frame).toContain('T3 wire login route');
     expect(frame).toContain('failed');
-    expect(frame).toContain(paint(defaultTheme.dimError, ' failed'));
+    expect(frame).toContain(paint(defaultTheme.error, ' failed'));
     expect(frame).toContain(glyph('statusFailed'));
 
     ui.unmount();

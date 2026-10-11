@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { Box } from 'ink';
 import { render } from 'ink-testing-library';
-import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { glyph } from '../lib/glyphs.js';
 import { ELLIPSIS } from '../utils/display-text.js';
@@ -63,9 +63,53 @@ function frameOf(node: ReactElement, width = 40): string {
 }
 
 describe('ListRow', () => {
+  it('accepts structured labels only with end truncation or whole-word fitting', () => {
+    type StructuredLabel = { label: string; labelParts: { text: string }[] };
+    expectTypeOf<StructuredLabel & { labelTruncate: 'end' }>().toExtend<
+      Parameters<typeof ListRow>[0]
+    >();
+    expectTypeOf<StructuredLabel & { keepWhole: 'label' }>().toExtend<
+      Parameters<typeof ListRow>[0]
+    >();
+    expectTypeOf<StructuredLabel & { labelTruncate: 'path' }>().not.toExtend<
+      Parameters<typeof ListRow>[0]
+    >();
+    expectTypeOf<StructuredLabel & { labelTruncate: 'start' }>().not.toExtend<
+      Parameters<typeof ListRow>[0]
+    >();
+  });
   beforeEach(() => {
     forceUnicodeGlyphs();
   });
+
+  it.each([true, false])(
+    'keeps structured label colors through the shared fit when active=%s',
+    (active) => {
+      const frame = frameOf(
+        <ListRow
+          label="Change BUILD tool · restarts this brief"
+          labelParts={[
+            { text: 'Change ', color: active ? defaultTheme.accent : defaultTheme.text },
+            { text: 'BUILD', color: defaultTheme.implementer },
+            { text: ' tool', color: active ? defaultTheme.accent : defaultTheme.text },
+            { text: ' · ', color: defaultTheme.textDim },
+            { text: 'restarts this brief', color: defaultTheme.textDim },
+          ]}
+          state={active ? 'active' : 'default'}
+          accelerator="w"
+          acceleratorWidth={1}
+          metadata="recommended"
+          metadataAfterLabel
+          keepWhole="label"
+          width={24}
+        />,
+      );
+      expect(stripAnsiStyles(frame)).toContain('w   Change BUILD tool…');
+      expect(frame).toContain(paint(defaultTheme.implementer, 'BUILD').replace('\u001b[39m', ''));
+      expect(frame).toContain(paint(defaultTheme.textDim, '…'));
+      expect(stripAnsiStyles(frame)).not.toContain('recommended');
+    },
+  );
 
   it('exports listRowLead', () => {
     expect(listRowLead('active')).toBe(`${glyph('liveBar')} `);

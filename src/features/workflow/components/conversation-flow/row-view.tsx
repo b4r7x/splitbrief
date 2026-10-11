@@ -11,7 +11,7 @@ import {
   rowLeadingCells,
   type RowMarkerStatus,
 } from '../../conversation-rows/row-markers.js';
-import { colorForTone } from '../../display/tone-color.js';
+import { colorForTone } from '../../../../core/theme/tone-color.js';
 import { prefersReducedMotion } from '../../../../lib/terminal/reduce-motion.js';
 
 function RowSegment({ segment }: { segment: ConversationRowSegment }) {
@@ -47,7 +47,7 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   }, [reduced]);
   const lit = reduced || on;
   return (
-    <Text color={lit ? theme.text : theme.textDim} bold={lit}>
+    <Text color={lit ? theme.accent : theme.textDim} bold={lit}>
       {alignLeadingWithinWidth(`${glyph('statusInProgress')} `, leadingWidth)}
     </Text>
   );
@@ -114,10 +114,11 @@ function markerColorFor(
   lifecycle: RowLifecycle,
   t: Theme,
 ): string | undefined {
-  if (row.markerTone !== undefined) return colorForTone(row.markerTone, t);
   if (lifecycle === 'queued') return t.textDim;
+  if (row.markerTone !== undefined) return colorForTone(row.markerTone, t);
   if (row.kind === 'activity' || row.kind === 'callout-top' || row.kind === 'callout-body') {
-    return colorForTone(row.segments[0]?.tone, t);
+    const first = row.segments[0];
+    return first === undefined ? t.text : colorForTone(first.tone, t);
   }
   if (row.kind === 'task-header') return t.text;
   return t.textDim;

@@ -6,9 +6,11 @@ import { configStore } from '../../../stores/project/config.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
-import { getActiveRailStage, phaseStage } from '../../../core/rail-stages.js';
-import { deriveLiveStatus, PAUSED_LIVE_STATUS_VERB } from '../display/live-activity.js';
-import { colorForTone } from '../display/tone-color.js';
+import { getActiveRailStage, phaseStage, railStageSeat } from '../../../core/rail-stages.js';
+import { deriveLiveStatus, PAUSED_LIVE_STATUS_PARTS } from '../display/live-activity.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import { runnerSilenceMs, silenceTail, silenceText } from '../display/build-progress.js';
 import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { SOFT_SEP } from '../../../core/separators.js';
@@ -24,6 +26,7 @@ import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
 import {
   getTerminalCellWidth,
   sanitizeTerminalDisplayText,
+  segmentsForRowText,
   truncateTerminalDisplayText,
 } from '../../../utils/display-text.js';
 import { glyph } from '../../../lib/glyphs.js';
@@ -43,6 +46,7 @@ import { queueCopy } from '../queue-copy.js';
 import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { deriveWorkflowDisplay } from '../display/workflow-status.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
 
 export function InputFooter({
   width,
@@ -55,7 +59,7 @@ export function InputFooter({
   /** The build block is on screen, and its freshness line states the seat's silence. */
   buildBlockShown?: boolean | undefined;
   /** A run at rest states where it stands from its record; there is no live status to derive. */
-  byline?: string | undefined;
+  byline?: readonly ConversationRowSegment[] | undefined;
 }) {
   const t = useTheme();
   const [lifecycle, { cols }, tasks, operations, controls, approval, recovery] = useStores(
@@ -121,84 +125,133 @@ export function InputFooter({
         });
   const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
 
-  const stageCore = [stageText, fractionText].filter((part) => part.length > 0).join(' ');
-  const stageLead = stageCore.length > 0 ? `${glyph('stageDone')} ${stageCore}` : '';
-  const waitingLead = joinBylineParts([
-    `${glyph('statusPending')} Waiting for your answer`,
-    stageCore,
-  ]);
+  const stageSeat = activeStage === null ? null : railStageSeat(activeStage.stage);
+  const stageParts: ConversationRowSegment[] = [
+    ...(stageText === ''
+      ? []
+      : ([
+          { text: stageText, tone: stageSeat === null ? 'text' : CREW_SEAT_ROLES[stageSeat] },
+        ] satisfies ConversationRowSegment[])),
+    ...(fractionText === ''
+      ? []
+      : ([
+          { text: `${stageText === '' ? '' : ' '}${fractionText}`, tone: 'textDim' },
+        ] satisfies ConversationRowSegment[])),
+  ];
+  const stageLead: ConversationRowSegment[] =
+    stageParts.length === 0
+      ? []
+      : [{ text: `${glyph('stageDone')} `, tone: stateTone('passed') }, ...stageParts];
+  const stageTail: ConversationRowSegment[] =
+    stageParts.length === 0 ? [] : [{ text: SOFT_SEP, tone: 'textDim' }, ...stageParts];
+  const waitingLead: ConversationRowSegment[] = [
+    { text: `${glyph('statusPending')} Waiting for your answer`, tone: stateTone('attention') },
+    ...stageTail,
+  ];
   const elapsed =
     liveStatus !== null && liveStatus.stageStart > 0
       ? formatElapsedClock(Date.now() - liveStatus.stageStart - liveStatus.waitedMs)
       : '';
-  const liveLead =
-    liveStatus !== null
-      ? `${frame} ${
-          operations.active?.apiRuntimeStatus?.phase === 'waiting-first-response'
-            ? 'Waiting for response'
-            : liveStatus.verb
-        }`
-      : '';
+  const liveLead: ConversationRowSegment[] =
+    liveStatus === null
+      ? []
+      : [
+          { text: `${frame} `, tone: stateTone('running') },
+          ...(operations.active?.apiRuntimeStatus?.phase === 'waiting-first-response'
+            ? ([
+                { text: 'Waiting for response', tone: 'textDim' },
+              ] satisfies ConversationRowSegment[])
+            : liveStatus.parts),
+        ];
 
   const interrupted = lifecycle.status === 'interrupted';
   const paused = lifecycle.status === 'paused';
-  const interruptedLead = `${glyph('statusPending')} Interrupted — finishing current step…`;
-  const pausedLead = `${glyph('statusPending')} ${PAUSED_LIVE_STATUS_VERB}`;
+  const interruptedLead: ConversationRowSegment[] = [
+    { text: `${glyph('statusPending')} Interrupted`, tone: stateTone('attention') },
+    { text: ' — finishing current step…', tone: 'textDim' },
+  ];
+  const pausedLead: ConversationRowSegment[] = [
+    { text: `${glyph('statusPending')} `, tone: stateTone('attention') },
+    ...PAUSED_LIVE_STATUS_PARTS,
+  ];
   // A run that ended without finishing must not reach the stageLead fallback: the pip there is
   // `stageDone`, so the one line that survives at every width would report a completed-looking
   // stage for a run that stopped. `user_cancelled` is the only reason the engine names.
   const userCancelled = lifecycle.reason === WORKFLOW_CANCEL_REASON_USER;
   const stoppedGlyph = glyph(userCancelled ? 'statusCancelled' : 'statusFailed');
-  const stoppedWord = userCancelled ? 'Stopped by you' : 'Build failed';
-  const stoppedLead = joinBylineParts([`${stoppedGlyph} ${stoppedWord}`, stageCore]);
-  const recoveryStoppedLead = `${glyph('statusFailed')} Run stopped`;
+  const stoppedLead: ConversationRowSegment[] = [
+    ...((userCancelled
+      ? [{ text: `${stoppedGlyph} Stopped by you`, tone: stateTone('attention') }]
+      : [
+          { text: `${stoppedGlyph} `, tone: stateTone('failed') },
+          { text: 'Build', tone: CREW_SEAT_ROLES.build },
+          { text: ' failed', tone: stateTone('failed') },
+        ]) satisfies ConversationRowSegment[]),
+    ...stageTail,
+  ];
+  const recoveryStoppedLead: ConversationRowSegment[] = [
+    { text: `${glyph('statusFailed')} Run stopped`, tone: stateTone('attention') },
+  ];
   // The silence span and what the seat does through it come from the derivation the block's
   // freshness line reads, so the two surfaces state one fact in one wording; the block prints it
   // while it is on screen, this lead otherwise.
   const stall = lifecycle.status === 'running' && !buildBlockShown ? lifecycle.stall : null;
-  const stalledLead =
+  const stalledLead: ConversationRowSegment[] =
     stall === null
-      ? ''
-      : `${glyph('statusWarning')} ${silenceText(runnerSilenceMs(lifecycle, Date.now()) ?? 0, null)}`;
+      ? []
+      : [
+          {
+            text: `${glyph('statusWarning')} ${silenceText(runnerSilenceMs(lifecycle, Date.now()) ?? 0, null)}`,
+            tone: stateTone('attention'),
+          },
+        ];
   const stalledHint = stall === null ? null : silenceTail(operations.active, stall);
 
   // An actionable prompt takes precedence over the lifecycle state it interrupted.
   // The stop's own keys are the legend row's job: crowding them onto this row would cost the
   // state its words at 80 columns and print half a key at 60.
   // A lead's clock is kept apart from its words, so a byline too narrow for both cuts the words.
-  const { lead, leadClock, leadColor, hintText } = recoveryWaiting
-    ? { lead: `${glyph('statusPending')} Choose how to continue`, leadColor: null, hintText: null }
+  const { lead, leadClock, hintText } = recoveryWaiting
+    ? {
+        lead: [
+          {
+            text: `${glyph('statusPending')} Choose how to continue`,
+            tone: stateTone('attention'),
+          },
+        ] satisfies ConversationRowSegment[],
+        hintText: null,
+      }
     : stopped
       ? {
-          lead: `${glyph('statusPending')} ${stopped.lead}`,
+          lead: [{ text: `${glyph('statusPending')} `, tone: stopped.tone }, ...stopped.parts],
           leadClock: stopped.clock,
-          leadColor: t.warning,
           hintText: null,
         }
       : recoveryStopped
-        ? { lead: recoveryStoppedLead, leadColor: t.error, hintText: null }
+        ? { lead: recoveryStoppedLead, hintText: null }
         : waiting || approval.status === 'pending'
-          ? { lead: waitingLead, leadColor: null, hintText: null }
+          ? { lead: waitingLead, hintText: null }
           : lifecycle.status === 'cancelled'
-            ? { lead: stoppedLead, leadColor: userCancelled ? t.warning : t.error, hintText: null }
+            ? {
+                lead: stoppedLead,
+                hintText: null,
+              }
             : interrupted
-              ? { lead: interruptedLead, leadColor: t.warning, hintText: null }
+              ? { lead: interruptedLead, hintText: null }
               : paused
-                ? { lead: pausedLead, leadColor: null, hintText: null }
+                ? { lead: pausedLead, hintText: null }
                 : stall !== null
                   ? {
                       lead: stalledLead,
-                      leadColor: t.warning,
                       hintText: stalledHint,
                     }
                   : liveStatus !== null
                     ? {
                         lead: liveLead,
                         leadClock: elapsed,
-                        leadColor: colorForTone(liveStatus.tone, t),
                         hintText: null,
                       }
-                    : { lead: stageLead, leadColor: null, hintText: null };
+                    : { lead: stageLead, hintText: null };
 
   const runningBriefId = selectRunningBrief(tasks, lifecycle.phase).current?.id ?? null;
   const seat = phaseStage(lifecycle.phase);
@@ -212,16 +265,24 @@ export function InputFooter({
       : null;
 
   const atRestByline = givenByline !== undefined && stopped === null;
-  const bylineLead = atRestByline ? `${' '.repeat(MARK_SLOT_CELLS)}${givenByline}` : lead;
+  const bylineLead = atRestByline
+    ? ([
+        { text: ' '.repeat(MARK_SLOT_CELLS), tone: 'textDim' },
+        ...givenByline,
+      ] satisfies ConversationRowSegment[])
+    : lead;
   const bylineInput = {
     // Raw width in; the builder owns the framed text measure.
     cols: Math.max(1, width ?? cols),
     lead:
       atRestByline && queuedCopy !== null
-        ? truncateTerminalDisplayText(
+        ? segmentsForRowText(
             bylineLead,
-            getChromeContentWidth(width ?? cols) -
-              getTerminalCellWidth(`${SOFT_SEP}${queuedCopy.shortByline}`),
+            truncateTerminalDisplayText(
+              bylineLead.map((part) => part.text).join(''),
+              getChromeContentWidth(width ?? cols) -
+                getTerminalCellWidth(`${SOFT_SEP}${queuedCopy.shortByline}`),
+            ),
           )
         : bylineLead,
     leadClock: atRestByline ? undefined : leadClock,
@@ -230,7 +291,7 @@ export function InputFooter({
     worktreeLabel: !atRestByline && worktreeName ? sanitizeTerminalDisplayText(worktreeName) : null,
   };
   let byline = buildInputFooterByline(bylineInput);
-  if (queuedCopy !== null && byline.queued.length === 0) {
+  if (queuedCopy !== null && !byline.some((part) => part.text === queuedCopy.byline)) {
     byline = buildInputFooterByline({ ...bylineInput, queuedText: queuedCopy.shortByline });
   }
 
@@ -238,7 +299,8 @@ export function InputFooter({
     return (
       <Box width="100%" height={1} flexShrink={0}>
         <Text color={t.textDim} wrap="truncate-end">
-          {joinBylineParts([`${frame} ${checkingStage}`, 'esc cancel'])}
+          <Text color={t[stateTone('running')]}>{`${frame} `}</Text>
+          {joinBylineParts([checkingStage, 'esc cancel'])}
         </Text>
       </Box>
     );
@@ -247,14 +309,7 @@ export function InputFooter({
   return (
     <Box width="100%" height={1} flexShrink={0}>
       <Text color={t.textDim} wrap="truncate-end">
-        {!atRestByline && leadColor !== null ? (
-          <Text color={leadColor}>{byline.lead}</Text>
-        ) : (
-          byline.lead
-        )}
-        {byline.hint}
-        {byline.queued.length > 0 ? <Text color={t.info}>{byline.queued}</Text> : null}
-        {byline.rest}
+        <TextSpans parts={byline} />
       </Text>
     </Box>
   );

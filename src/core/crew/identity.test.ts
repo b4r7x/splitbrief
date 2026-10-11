@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { ELLIPSIS, getTerminalCellWidth } from '../../utils/display-text.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
+import { resolveTheme } from '../theme/resolve.js';
 import {
   cutSeatIdentity,
-  formatCollapsedSeatLine,
-  formatCollapsedSeatLineFromIdentities,
+  formatCollapsedSeatSpans,
+  formatCollapsedSeatSpansFromIdentities,
   formatSeatCandidateIdentity,
   formatSeatChangeIdentities,
   formatSeatIdentity,
   formatShortSeatIdentity,
   isSeatIdentity,
   PLANNER_INHERITANCE,
+  type SeatLineSpan,
   seatIdsOf,
+  seatLineText,
   wrapSeatIdentity,
 } from './identity.js';
+import { CREW_SEAT_ROLES } from './seats.js';
 
 const planner: RunnerConfig = { kind: 'cli', tool: 'claude-code', model: 'claude-sonnet-4' };
 const build: RunnerConfig = {
@@ -35,6 +39,27 @@ const openCodeMax: RunnerConfig = {
   model: 'openai/gpt-5.6-luna',
   variant: 'max',
 };
+
+describe('seatLineText', () => {
+  it('projects fitted seat spans without changing their copy or separator ownership', () => {
+    const spans = formatCollapsedSeatSpansFromIdentities({
+      plan: 'GPT-6-Astra · xhigh',
+      build: 'Gemini 3.8 Flash (High)',
+      review: null,
+      budget: 200,
+    });
+    expect(spans).toEqual([
+      { text: 'PLAN GPT-6-Astra · xhigh', seat: 'plan' },
+      { text: ' · ' },
+      { text: 'BUILD Gemini 3.8 Flash (High)', seat: 'build' },
+      { text: ' · ' },
+      { text: 'REVIEW = PLAN', seat: 'review' },
+    ]);
+    expect(seatLineText(spans)).toBe(
+      'PLAN GPT-6-Astra · xhigh · BUILD Gemini 3.8 Flash (High) · REVIEW = PLAN',
+    );
+  });
+});
 
 describe('formatSeatChangeIdentities', () => {
   const from: RunnerConfig = {
@@ -546,9 +571,9 @@ describe('a seat named by the ids a run recorded', () => {
   });
 });
 
-describe('formatCollapsedSeatLine', () => {
+describe('formatCollapsedSeatSpans', () => {
   it('states all three seats on one line, with the inheritance mark', () => {
-    expect(formatCollapsedSeatLine({ planner, build, reviewer: undefined })).toBe(
+    expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer: undefined }))).toBe(
       `PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B · REVIEW ${PLANNER_INHERITANCE.mark}`,
     );
   });
@@ -556,33 +581,43 @@ describe('formatCollapsedSeatLine', () => {
   it('names a reviewer that has its own setup', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 
-    expect(formatCollapsedSeatLine({ planner, build, reviewer })).toContain('REVIEW GPT-5 Codex');
+    expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer }))).toContain(
+      'REVIEW GPT-5 Codex',
+    );
   });
 
   it('uses displayNames when provided', () => {
     expect(
-      formatCollapsedSeatLine({
-        planner,
-        build,
-        reviewer: undefined,
-        displayNames: { planner: 'Claude Sonnet 5', build: 'Qwen 2.5 7B' },
-      }),
+      seatLineText(
+        formatCollapsedSeatSpans({
+          planner,
+          build,
+          reviewer: undefined,
+          displayNames: { planner: 'Claude Sonnet 5', build: 'Qwen 2.5 7B' },
+        }),
+      ),
     ).toBe(`PLAN Sonnet 5 · BUILD Qwen 2.5 7B · REVIEW ${PLANNER_INHERITANCE.mark}`);
   });
 
   it('states every seat when the budget holds them', () => {
-    const line = formatCollapsedSeatLine({ planner, build, reviewer: undefined, budget: 80 });
+    const line = seatLineText(
+      formatCollapsedSeatSpans({ planner, build, reviewer: undefined, budget: 80 }),
+    );
 
-    expect(line).toBe(formatCollapsedSeatLine({ planner, build, reviewer: undefined }));
+    expect(line).toBe(
+      seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer: undefined })),
+    );
   });
 
   it('binds a seat note to its own seat', () => {
-    const line = formatCollapsedSeatLine({
-      planner,
-      build,
-      reviewer: undefined,
-      notes: { build: 'resets 17:00' },
-    });
+    const line = seatLineText(
+      formatCollapsedSeatSpans({
+        planner,
+        build,
+        reviewer: undefined,
+        notes: { build: 'resets 17:00' },
+      }),
+    );
 
     expect(line).toContain('BUILD Qwen2.5 Coder 7B (resets 17:00)');
     expect(line).toContain('PLAN Sonnet 4');
@@ -590,13 +625,15 @@ describe('formatCollapsedSeatLine', () => {
 
   it('spends another seat name before the noted seat when the note crowds the line', () => {
     const notes = { build: 'resets 17:00' };
-    const line = formatCollapsedSeatLine({
-      planner,
-      build,
-      reviewer: undefined,
-      notes,
-      budget: 60,
-    });
+    const line = seatLineText(
+      formatCollapsedSeatSpans({
+        planner,
+        build,
+        reviewer: undefined,
+        notes,
+        budget: 60,
+      }),
+    );
 
     expect(line).toBe('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B (resets 17:00)');
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(60);
@@ -604,13 +641,15 @@ describe('formatCollapsedSeatLine', () => {
   });
 
   it('keeps the noted seat named and drops the seats the note crowds out', () => {
-    const line = formatCollapsedSeatLine({
-      planner,
-      build,
-      reviewer: undefined,
-      notes: { build: 'resets 17:00' },
-      budget: 45,
-    });
+    const line = seatLineText(
+      formatCollapsedSeatSpans({
+        planner,
+        build,
+        reviewer: undefined,
+        notes: { build: 'resets 17:00' },
+        budget: 45,
+      }),
+    );
 
     expect(line).toBe('BUILD Qwen2.5 Coder 7B (resets 17:00)');
     expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(45);
@@ -618,8 +657,10 @@ describe('formatCollapsedSeatLine', () => {
 
   it('gives up one whole seat rather than cutting a model name in half', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
-    const budget = getTerminalCellWidth(formatCollapsedSeatLine({ planner, build, reviewer })) - 4;
-    const line = formatCollapsedSeatLine({ planner, build, reviewer, budget });
+    const budget =
+      getTerminalCellWidth(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer }))) -
+      4;
+    const line = seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget }));
 
     expect(line).toBe('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B');
     expect(line).not.toContain(ELLIPSIS);
@@ -632,11 +673,13 @@ describe('formatCollapsedSeatLine', () => {
     const lines: string[] = [];
 
     for (
-      let budget = getTerminalCellWidth(formatCollapsedSeatLine({ planner, build, reviewer })) - 1;
+      let budget =
+        getTerminalCellWidth(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer }))) -
+        1;
       budget >= getTerminalCellWidth(paid);
       budget -= 1
     ) {
-      lines.push(formatCollapsedSeatLine({ planner, build, reviewer, budget }));
+      lines.push(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget })));
     }
 
     expect([...new Set(lines)]).toEqual([paid]);
@@ -651,12 +694,14 @@ describe('formatCollapsedSeatLine', () => {
       model: 'qwen3-coder-plus-instruct-preview',
       apiBase: 'http://127.0.0.1:11434/v1',
     };
-    const line = formatCollapsedSeatLine({
-      planner: longPlanner,
-      build: planner,
-      reviewer: undefined,
-      budget: 54,
-    });
+    const line = seatLineText(
+      formatCollapsedSeatSpans({
+        planner: longPlanner,
+        build: planner,
+        reviewer: undefined,
+        budget: 54,
+      }),
+    );
 
     expect(line).toBe(
       `PLAN Qwen3 Coder Plus Instruct Preview · REVIEW ${PLANNER_INHERITANCE.mark}`,
@@ -667,22 +712,127 @@ describe('formatCollapsedSeatLine', () => {
   it('keeps the seats it can name and states nothing about the rest', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 
-    expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 34 })).toBe(
+    expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget: 34 }))).toBe(
       'PLAN Sonnet 4 · REVIEW GPT-5 Codex',
     );
-    expect(formatCollapsedSeatLine({ planner, build, reviewer, budget: 27 })).toBe('PLAN Sonnet 4');
-    expect(formatCollapsedSeatLine({ planner, build, reviewer: undefined, budget: 28 })).toBe(
+    expect(seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget: 27 }))).toBe(
       'PLAN Sonnet 4',
     );
+    expect(
+      seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer: undefined, budget: 28 })),
+    ).toBe('PLAN Sonnet 4');
   });
 
   it('states no line wider than the budget it was given', () => {
     const reviewer: RunnerConfig = { kind: 'cli', tool: 'codex', model: 'gpt-5-codex' };
 
     for (const budget of [20, 12, 4]) {
-      const line = formatCollapsedSeatLine({ planner, build, reviewer, budget });
+      const line = seatLineText(formatCollapsedSeatSpans({ planner, build, reviewer, budget }));
 
       expect(getTerminalCellWidth(line)).toBeLessThanOrEqual(budget);
+    }
+  });
+});
+
+describe('formatCollapsedSeatSpansFromIdentities', () => {
+  const identities = { plan: 'Sonnet 4', build: 'Qwen2.5 Coder 7B', review: 'GPT-5 Codex' };
+  const planSpan: SeatLineSpan = { text: 'PLAN Sonnet 4', seat: 'plan' };
+  const buildSpan: SeatLineSpan = { text: 'BUILD Qwen2.5 Coder 7B', seat: 'build' };
+  const reviewSpan: SeatLineSpan = { text: 'REVIEW GPT-5 Codex', seat: 'review' };
+  const separator: SeatLineSpan = { text: ' · ' };
+
+  it.each([
+    {
+      name: 'all three named seats',
+      input: identities,
+      expected: [planSpan, separator, buildSpan, separator, reviewSpan],
+    },
+    {
+      name: 'an inherited reviewer',
+      input: { ...identities, review: null },
+      expected: [
+        planSpan,
+        separator,
+        buildSpan,
+        separator,
+        { text: `REVIEW ${PLANNER_INHERITANCE.mark}`, seat: 'review' },
+      ],
+    },
+    {
+      name: 'a note on build',
+      input: { ...identities, notes: { build: 'resets 17:00' } },
+      expected: [
+        planSpan,
+        separator,
+        { text: 'BUILD Qwen2.5 Coder 7B (resets 17:00)', seat: 'build' },
+        separator,
+        reviewSpan,
+      ],
+    },
+    {
+      name: 'an elided reviewer without a dangling separator',
+      input: {
+        ...identities,
+        budget: getTerminalCellWidth('PLAN Sonnet 4 · BUILD Qwen2.5 Coder 7B'),
+      },
+      expected: [planSpan, separator, buildSpan],
+    },
+    {
+      name: 'a budget that names nobody',
+      input: { ...identities, budget: 4 },
+      expected: [],
+    },
+  ])('preserves seat tags and string bytes for $name', ({ input, expected }) => {
+    const spans = formatCollapsedSeatSpansFromIdentities(input);
+
+    expect(spans).toEqual(expected);
+    expect(spans.map((span) => span.text).join('')).toBe(
+      seatLineText(formatCollapsedSeatSpansFromIdentities(input)),
+    );
+  });
+
+  it.each(['dark', 'light'] as const)(
+    'routes each seat and separator through its theme token in %s',
+    (variant) => {
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      const spans = formatCollapsedSeatSpansFromIdentities({ ...identities, review: null });
+
+      expect(
+        spans.map((span) =>
+          span.seat === undefined ? theme.textDim : theme[CREW_SEAT_ROLES[span.seat]],
+        ),
+      ).toEqual([theme.planner, theme.textDim, theme.implementer, theme.textDim, theme.reviewer]);
+    },
+  );
+});
+
+describe('formatCollapsedSeatSpans', () => {
+  it('shares identity resolution and halted-seat fitting with the string entry point', () => {
+    const input = {
+      planner,
+      build,
+      reviewer: undefined,
+      displayNames: { plan: 'Claude Sonnet 5', build: 'Qwen 2.5 7B' },
+      notes: { build: 'resets 17:00' },
+    };
+
+    for (const budget of [80, 45, 34, 19, 4]) {
+      const fittedInput = { ...input, budget, haltedSeat: 'build' as const };
+      const spans = formatCollapsedSeatSpans(fittedInput);
+
+      expect(spans).toEqual(
+        formatCollapsedSeatSpansFromIdentities({
+          plan: 'Sonnet 5',
+          build: 'Qwen 2.5 7B',
+          review: null,
+          budget,
+          haltedSeat: 'build',
+          notes: input.notes,
+        }),
+      );
+      expect(spans.map((span) => span.text).join('')).toBe(
+        seatLineText(formatCollapsedSeatSpans(fittedInput)),
+      );
     }
   });
 });
@@ -853,11 +1003,13 @@ describe('kind-aware seat identity', () => {
   });
 
   it('carries the API kind into the collapsed crew line', () => {
-    const line = formatCollapsedSeatLine({
-      planner: apiTwin('cursor', 'gpt-5.3-codex-high'),
-      build: apiTwin('my-endpoint', 'gpt-5'),
-      reviewer: undefined,
-    });
+    const line = seatLineText(
+      formatCollapsedSeatSpans({
+        planner: apiTwin('cursor', 'gpt-5.3-codex-high'),
+        build: apiTwin('my-endpoint', 'gpt-5'),
+        reviewer: undefined,
+      }),
+    );
     expect(line).toContain('GPT-5.3 Codex High');
     expect(line).not.toContain('Cursor Agent CLI');
   });
@@ -890,12 +1042,12 @@ describe('wrapSeatIdentity', () => {
   });
 });
 
-describe('formatCollapsedSeatLine with a halted seat', () => {
+describe('formatCollapsedSeatSpans with a halted seat', () => {
   const input = { planner, build, reviewer: undefined, budget: 34 };
 
   it('spends another seat before the halted one', () => {
-    expect(formatCollapsedSeatLine(input)).toBe('PLAN Sonnet 4 · REVIEW = PLAN');
-    const halted = formatCollapsedSeatLine({ ...input, haltedSeat: 'build' });
+    expect(seatLineText(formatCollapsedSeatSpans(input))).toBe('PLAN Sonnet 4 · REVIEW = PLAN');
+    const halted = seatLineText(formatCollapsedSeatSpans({ ...input, haltedSeat: 'build' }));
 
     expect(halted).toBe('BUILD Qwen2.5 Coder 7B');
     expect(getTerminalCellWidth(halted)).toBeLessThanOrEqual(34);
@@ -904,32 +1056,40 @@ describe('formatCollapsedSeatLine with a halted seat', () => {
 
   it('keeps the halted seat when its reset note no longer fits', () => {
     expect(
-      formatCollapsedSeatLine({ ...input, haltedSeat: 'build', notes: { build: 'resets 17:00' } }),
+      seatLineText(
+        formatCollapsedSeatSpans({
+          ...input,
+          haltedSeat: 'build',
+          notes: { build: 'resets 17:00' },
+        }),
+      ),
     ).toBe('BUILD Qwen2.5 Coder 7B');
   });
 
   it('falls back to the plain rule when the halted name itself cannot fit', () => {
-    expect(formatCollapsedSeatLine({ ...input, budget: 19, haltedSeat: 'build' })).toBe(
-      'PLAN Sonnet 4',
-    );
+    expect(
+      seatLineText(formatCollapsedSeatSpans({ ...input, budget: 19, haltedSeat: 'build' })),
+    ).toBe('PLAN Sonnet 4');
   });
 
   it('falls back to the plain rule when the protected line would name nobody', () => {
     // An inherited review seat is a mark that points at the planner; keeping it alone names no one.
-    expect(formatCollapsedSeatLine({ ...input, budget: 20, haltedSeat: 'review' })).toBe(
-      'PLAN Sonnet 4',
-    );
+    expect(
+      seatLineText(formatCollapsedSeatSpans({ ...input, budget: 20, haltedSeat: 'review' })),
+    ).toBe('PLAN Sonnet 4');
   });
 
   it('protects the halted seat through the identities entry point', () => {
     expect(
-      formatCollapsedSeatLineFromIdentities({
-        plan: 'Sonnet 4',
-        build: 'Qwen2.5 Coder 7B',
-        review: null,
-        budget: 34,
-        haltedSeat: 'build',
-      }),
+      seatLineText(
+        formatCollapsedSeatSpansFromIdentities({
+          plan: 'Sonnet 4',
+          build: 'Qwen2.5 Coder 7B',
+          review: null,
+          budget: 34,
+          haltedSeat: 'build',
+        }),
+      ),
     ).toBe('BUILD Qwen2.5 Coder 7B');
   });
 });

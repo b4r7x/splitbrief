@@ -1,17 +1,39 @@
 import { describe, expect, it } from 'vitest';
-import { defaultTheme } from '../../../components/theme.js';
+import { defaultTheme } from '../../components/theme.js';
+import { resolveTheme } from './resolve.js';
 import { colorForTone } from './tone-color.js';
 
 describe('the tone palette resolves to exactly the rendered colors', () => {
   const theme = defaultTheme;
 
-  it('maps every surviving tone onto its theme color', () => {
-    expect(colorForTone(undefined, theme)).toBe(theme.text);
-    expect(colorForTone('text', theme)).toBe(theme.text);
-    expect(colorForTone('textDim', theme)).toBe(theme.textDim);
-    expect(colorForTone('success', theme)).toBe(theme.success);
-    expect(colorForTone('error', theme)).toBe(theme.error);
+  it.each(['dark', 'light'] as const)('maps explicit tones onto their %s colors', (variant) => {
+    const resolved = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    expect(colorForTone('text', resolved)).toBe(resolved.text);
+    expect(colorForTone('textDim', resolved)).toBe(resolved.textDim);
+    expect(colorForTone('success', resolved)).toBe(resolved.success);
+    expect(colorForTone('error', resolved)).toBe(resolved.error);
   });
+
+  it('requires a tone instead of inferring a primary colour', () => {
+    expect(() => Reflect.apply(colorForTone, undefined, [undefined, theme])).toThrow(
+      'Unexpected value: undefined',
+    );
+  });
+
+  it.each(['dark', 'light'] as const)('maps the review seat to reviewer in %s', (variant) => {
+    const resolved = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+
+    expect(colorForTone('reviewer', resolved)).toBe(resolved.reviewer);
+  });
+
+  it.each(['dark', 'light'] as const)(
+    'maps closed-ledger links to markdown links in %s',
+    (variant) => {
+      const resolved = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+
+      expect(colorForTone('link', resolved)).toBe(resolved.markdown.link);
+    },
+  );
 
   it('maps markdown and syntax tones onto their theme tokens', () => {
     expect(colorForTone('markdownHeading', theme)).toBe(theme.markdown.heading);

@@ -1,5 +1,6 @@
 import { PHASES, type Phase } from './schemas/enums.js';
 import { assertNever } from '../utils/type-guards.js';
+import type { CrewSeatId } from './crew/identity.js';
 
 export const RAIL_STAGES = ['plan', 'build', 'review'] as const;
 export type RailStage = (typeof RAIL_STAGES)[number] | 'apply';
@@ -23,6 +24,19 @@ export function railStageRole(stage: RailStage): RailRole {
   if (stage === 'build') return 'implementer';
   if (stage === 'review' || stage === 'apply') return 'validator';
   return 'planner';
+}
+
+export function railStageSeat(stage: RailStage): CrewSeatId | null {
+  switch (stage) {
+    case 'plan':
+    case 'build':
+    case 'review':
+      return stage;
+    case 'apply':
+      return null;
+    default:
+      return assertNever(stage);
+  }
 }
 
 // One authoritative current-stage status: 'active' is a live run, 'cancelled' and 'failed' are the

@@ -36,7 +36,7 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `post_validation`| After brief gate checks or plan and task checks before the final review, once per task that owns them (`checks_run` event) | `taskId`, `results` (`{ id, passed }[]`)                         |
 | `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
-| `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
+| `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `headlineSpans`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
 `pre_validation` fires when a brief gate has checks to run. In `review: task` cadence, the gate runs the task's checks and its due checks. The gate also runs the checks of the red a fix task answers, or the checks a consult `verify` names. In `review: end` cadence, an ordinary brief runs no check. The `pre_validation` payload is a `validate` event with `status: 'running'` and `taskId`, and no stages.
@@ -107,6 +107,7 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'consulted'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'` (older runs), `'failed'`, `'skipped'` |
 | `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
 | `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 failed` |
+| `${event.headlineSpans}` | recovery_prompted                  | JSON-stringified headline spans with `text` and an optional `seat` of `plan`, `build` or `review` |
 | `${event.recommendedAction}` | recovery_prompted              | The `RecoveryAction` the halt recommends |
 | `${event.resumeCommand}` | recovery_prompted                  | The step that carries the run on, e.g. `splitbrief continue <id> --action retry`. An action only the recovery panel takes gives a sentence, not a bare command: `splitbrief continue <id>, then choose Continue in the recovery panel` |
 
@@ -129,7 +130,7 @@ Which placeholders resolve depends on the event type. Missing fields collapse to
 | `post_validation` | `${event.taskId}`, `${event.results}`                                             |
 | `pre_escalation`  | `${event.taskId}`                                                                 |
 | `on_error`        | `${event.message}`                                                                |
-| `on_halt`         | `${event.reason}`, `${event.taskId}`, `${event.headline}`, `${event.recommendedAction}`, `${event.resumeCommand}` |
+| `on_halt`         | `${event.reason}`, `${event.taskId}`, `${event.headline}`, `${event.headlineSpans}`, `${event.recommendedAction}`, `${event.resumeCommand}` |
 | `on_complete`     | `${event.ts}`, `${event.phase}`, `${event.type}`                                 |
 
 ## Subprocess protocol

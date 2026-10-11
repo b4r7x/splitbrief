@@ -7,6 +7,8 @@ import {
   RAIL_CONTENT_LEFT_COL,
   RAIL_STAGE_FIRST_ROW,
   resolveRailFraction,
+  railFormCFractionText,
+  railFormCFractionSpans,
   type RailStageZone,
 } from './hit-test.js';
 import type { WorkflowContentRect } from './rect.js';
@@ -55,6 +57,24 @@ describe('hitTranscriptRow calibration', () => {
 });
 
 describe('rail stage hit zones', () => {
+  it.each(['', '0/7', '12/15'])(
+    'measures the dim fraction spans painted by Form C for %s',
+    (fraction) => {
+      const spans = railFormCFractionSpans(fraction);
+      expect(spans).toEqual(
+        fraction === '' ? [] : [{ text: `  ${fraction} passed`, tone: 'textDim' }],
+      );
+      expect(railFormCFractionText(fraction)).toBe(spans.map((span) => span.text).join(''));
+      const zones = getRailStageZones({ form: 'C', phase: 'implementing', cols: 44, fraction });
+      const zone = zoneByIndex(zones, 1);
+      expect(zone.right).toBe(
+        RAIL_CONTENT_LEFT_COL + `● Build${railFormCFractionText(fraction)}`.length - 1,
+      );
+      expect(hitRailStage(zones, zone.right, RAIL_STAGE_FIRST_ROW)).toBe(1);
+      expect(hitRailStage(zones, zone.right + 1, RAIL_STAGE_FIRST_ROW)).toBeNull();
+    },
+  );
+
   it('derives the rail content origin from the gutter the rail row sits in', () => {
     expect(RAIL_CONTENT_LEFT_COL).toBe(WORKFLOW_GUTTER_X);
   });

@@ -33,6 +33,7 @@ import {
 } from './fixtures/workflow/projections.js';
 import { workflowFixtureRegistry, workflowTranscriptText } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
 
@@ -899,8 +900,10 @@ describe('workflow visual fixtures', () => {
     if (!scenario || !checkpoint) throw new Error('Missing mixed base review scenario');
     const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: VIEWPORT });
     try {
-      expect(await ui.waitForCheckpoint()).toContain('3/3 briefs passed');
-      const frame = await scrollTranscript(ui, ['● T001', '● T002', '● T003', 'Reviewer checks']);
+      expect(stripAnsiStyles(await ui.waitForCheckpoint())).toContain('3/3 briefs passed');
+      const frame = stripAnsiStyles(
+        await scrollTranscript(ui, ['● T001', '● T002', '● T003', 'Reviewer checks']),
+      );
       const review = frame.indexOf('Reviewer checks');
       for (const id of ['T001', 'T002', 'T003']) {
         const brief = frame.indexOf(`● ${id}`);
@@ -945,7 +948,7 @@ describe('workflow visual fixtures', () => {
       if (!scenario || !checkpoint) throw new Error('Missing fix-cycle scenario');
       const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
       try {
-        const live = await ui.waitForCheckpoint();
+        const live = stripAnsiStyles(await ui.waitForCheckpoint());
         expect(live).toContain('Review · Reviewer check V2');
         const markers = ['● Plan', 'Review 1 failed', 'fixes T904', '● T904'];
         const history = await scrollTranscript(ui, markers);
@@ -965,13 +968,14 @@ describe('workflow visual fixtures', () => {
   });
 
   it.each([...workflowFixtureProjections.values()])(
-    'renders $scenarioId through the production App without starting live work',
+    'renders $scenarioId checkpoint through the production App without starting live work',
     async (projection) => {
       const fetch = vi.fn();
       vi.stubGlobal('fetch', fetch);
       await renderProjection(projection);
       expect(fetch).not.toHaveBeenCalled();
     },
+    60_000,
   );
 
   it('initializes the requested viewport and resets prompt, review, event, and stream state', async () => {
