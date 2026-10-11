@@ -133,17 +133,10 @@ export function resolveCliVersion(
   return findCliDetection(detections, tool)?.installedVersion ?? undefined;
 }
 
-function unverifiedQualification(descriptor: ApiProviderDescriptor): PickerOptionStatus {
-  return {
-    state: 'unverified',
-    remediation: `${descriptor.service} has no passing provider conformance evidence as of ${descriptor.asOf}. Select a verified provider, or re-run \`scripts/provider-conformance.ts\` with a credential to qualify it.`,
-  };
-}
-
 /**
  * A catalog qualification is an admission verdict, so it outranks a live
  * availability probe: a reachable endpoint and a present credential never
- * upgrade a provider that conformance left unverified or incompatible.
+ * admit a provider whose qualification is not `verified`.
  *
  * An admitted local `beta` profile is the one qualification that does not gate:
  * it runs on the shared transport against a server the operator owns, so it
@@ -152,19 +145,12 @@ function unverifiedQualification(descriptor: ApiProviderDescriptor): PickerOptio
  * `unknown` beta stays gated.
  */
 function compatibilityStatus(descriptor: ApiProviderDescriptor): PickerOptionStatus | null {
-  switch (descriptor.compatibility) {
-    case 'verified':
-      return null;
-    case 'beta':
-      return descriptor.locality === 'local' ? null : unverifiedQualification(descriptor);
-    case 'incompatible':
-      return {
-        state: 'incompatible',
-        remediation: `${descriptor.service} failed provider conformance as of ${descriptor.asOf}. Select a verified provider.`,
-      };
-    default:
-      return unverifiedQualification(descriptor);
-  }
+  if (descriptor.compatibility === 'verified') return null;
+  if (descriptor.compatibility === 'beta' && descriptor.locality === 'local') return null;
+  return {
+    state: 'incompatible',
+    remediation: `${descriptor.service} is not compatible with SPLITBRIEF. Select a supported provider.`,
+  };
 }
 
 /**

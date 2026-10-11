@@ -35,8 +35,8 @@ describe('maturity disclosure', () => {
     expect(doc.slice(0, marker).split('\n').length).toBeLessThan(12);
 
     const banner = doc.slice(marker, marker + 800);
-    expect(banner).toMatch(/early software/i);
-    expect(banner).toMatch(/no evaluation run has been recorded/i);
+    expect(banner).toMatch(/pre-1\.0/);
+    expect(banner).toMatch(/makes no claim about the quality of the code/i);
   });
 
   it('keeps the pre-1.0 wording tied to the shipped version', () => {

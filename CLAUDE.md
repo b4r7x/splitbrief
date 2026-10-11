@@ -86,7 +86,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Develop SPLITBRIEF with SPLITBRIEF itself: run the built CLI on this repo, end the run on a tool defect, fix, rebuild, start a new run | [docs/DOGFOODING.md](./docs/DOGFOODING.md) — the dogfooding procedure, the stop/continue smoke |
 | Work with workflow hooks | [docs/HOOKS-CONFIG.md](./docs/HOOKS-CONFIG.md) |
 | Tune the planner repo-map | [docs/REPOMAP.md](./docs/REPOMAP.md) |
-| Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — four pipeline skills, supervised dogfooding, grammar, sync script |
+| Install the pipeline as agent skills | [docs/SKILLS.md](./docs/SKILLS.md) — four pipeline skills, grammar; maintaining them: [CONTRIBUTING.md](./CONTRIBUTING.md#maintaining-the-agent-skills) — contract sources, generated blocks, sync script |
 | Look up release history | [CHANGELOG.md](./CHANGELOG.md) |
 | Continue the 2026-10 finish-pipeline work (S9 verification, S11, plan close) in any session or after a context compaction | `.nuke/2026-10-03-finish-pipeline/HANDOFF.md` — read it first; the state is in `LOG.md` next to it (local, untracked folder) |
 
@@ -110,6 +110,19 @@ These are the rules that apply everywhere; deeper specifications live in the lin
 - **Run contract.** A run is a durable record. `deriveRunStatus` (`src/core/sessions/run-status.ts`) supplies one status: `running`, `open`, `ready-to-apply` or `closed`. An open run is `waiting-for-you` (on a question, a gate or a halt) or `stopped` (paused, failed or interrupted), so a user sees five states: running, waiting for you, stopped, ready to apply, closed. Every listing, guard and screen reads it. An open run stays continuable; a ready run is not continued, it takes Apply or Discard. Before each review the reviewer chooses the reviewer checks that verify the change, and SPLITBRIEF runs them under the reviewer command policy (`validation.end_checks`, Settings *End-of-run checks*, default on); with `validation.approve_checks: ask` one card asks Run all or Skip all first, and a skipped check is never a pass. A failed plan call (a transport error or a protocol error) halts the review the same way a failed verdict call does; it is never a pass. In worktree and staged-copy mode, a passing review makes it ready to apply. Apply, Discard or `CLOSE_RUN` closes it. In checkout mode (`workflow.isolation: none`), or on an older run without a workspace, a passing review or Accept as is override closes the run, with no Apply. The override preserves the failed verdict. A *Seat down* halt moves its seat at once when the seat declares a `fallback` and the halt is an account refusal or a long reset; this happens once per run and seat, and each switch is recorded in `seatSwitches`. `idle` exists only before `START`; gates never reject, and `continueRun` owns continuation. See [WORKFLOW.md](./docs/WORKFLOW.md#run-status).
 - **Change discipline, always.** Load the `change-discipline` skill before you implement, fix or review code, and follow it. Fix the root cause at the function every caller routes through. Reuse what the project already has. Migrate callers and delete the old path in the same change. Do not add speculative options, guards or fallbacks that hide errors. Hand back in its §9 form.
 - **Targeted edits only.** Do not rewrite entire files or modules. Provide targeted patches or unified diffs showing only the modified lines with 3 lines of context.
+
+## User-facing text
+
+Text a user can read must not show how SPLITBRIEF is built. This covers the shipped docs (the Markdown files in `package.json` `files`), `CHANGELOG.md` and the GitHub release notes, CLI and TUI strings, the website, and the skills a user installs (the skills in `.claude-plugin/marketplace.json` and every skill not marked `metadata.internal: true`).
+
+Never write these there:
+
+- **Admissions.** Do not say that something is untested, unverified, not verified live, not captured live or not checked on a platform, and do not list such tools or "known gaps". State what is supported. Say "not supported" only where the user needs it to act.
+- **Internal process.** No "owner" or "owner decision", no agent or model names used to build the project (Sol, Astra, Opus, codex lanes), no workflows, lanes, smoke runs, review verdicts or handoffs, no dates of internal passes, no `.nuke/` paths, and no finding, task, issue or lane ids (`N-7`, `DOC-2`, `REL-04`, `S11`, `T-080`, `#67`).
+- **Implementation detail in the changelog.** No function names, file paths, gate numbers, internal types or state-machine events. Write what the user gets or what changed for the user, grouped as Added, Changed, Fixed and Removed.
+- **Unfinished or apologetic words.** No "for now", "hack", "TODO", "temporary", "we hope" or "should work".
+
+Contributor docs (`docs/RELEASING.md`, `TESTING.md`, `DOGFOODING.md`, `INVARIANTS.md`, `CODE-STANDARD.md` and the other docs outside `package.json` `files`) may use process language. A contributor skill carries `metadata.internal: true`, so skills.sh hides it, and the marketplace does not list it. The live-matrix manifest is a private release record: it never goes into the changelog or a GitHub release ([RELEASING.md](./docs/RELEASING.md#the-release-rule)). Invariant gate 59 (`scripts/user-facing-text.ts`) checks the clear markers.
 
 ## Look-and-logic verification (binding for every user-visible change)
 

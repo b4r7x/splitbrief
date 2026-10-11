@@ -51,7 +51,7 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Provider returned quota or rate-limit pressure (for example HTTP 429). | `quota-rate-limit` | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
 | Runner configuration contains mutually exclusive CLI arguments. | `conflicting-args` | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
 
-A quota that runs out mid-run is not a readiness failure and is not answered here: the run raises a `runner-usage-limit` recovery, and that panel offers `switch-seat` — its recommended action whenever the last readiness pass saw another ready tool for that seat, or the seat declares a `fallback` — beside `retry-later` (when the message names a reset), `retry-same-worker`, skip and end. When the automatic-switch conditions hold, the seat moves to its configured fallback at once and asks nothing; see [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down). The limit wording of these tools was captured live and classifies as a usage limit: codex, Claude Code, antigravity (`Individual quota reached … Resets in 2h6m30s` on stderr, with or without a `result` frame), opencode 2.x (the flat `provider.quota` error envelope) and command-code (`You've reached your weekly usage limit`), plus the Gemini API body behind antigravity (`RESOURCE_EXHAUSTED`). Copilot, cursor and kilo-code have no captured wording: their limits classify only through the shared phrases (`usage limit`, `quota exceeded`, `too many requests`, HTTP 429). A spent account is the same halt with no reset: a provider that will not bill the account (`Insufficient Balance`, HTTP 402, `payment required`, `insufficient_quota`) raises `runner-usage-limit` on the first failed call, with no retry and no planner consult; top up the account, take `switch-seat`, or let a declared `fallback` move the seat. A provider that refuses the login (HTTP 401 or 403, `unauthenticated`, `sign in`) raises `runner-unauthenticated`, which offers `switch-seat` beside the re-login retry.
+A quota that runs out mid-run is not a readiness failure and is not answered here: the run raises a `runner-usage-limit` recovery, and that panel offers `switch-seat` — its recommended action whenever the last readiness pass saw another ready tool for that seat, or the seat declares a `fallback` — beside `retry-later` (when the message names a reset), `retry-same-worker`, skip and end. When the automatic-switch conditions hold, the seat moves to its configured fallback at once and asks nothing; see [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down). SPLITBRIEF reads the limit message of these tools as a usage limit: codex, Claude Code, antigravity (`Individual quota reached … Resets in 2h6m30s` on stderr, with or without a `result` frame), opencode 2.x (the flat `provider.quota` error envelope) and command-code (`You've reached your weekly usage limit`), plus the Gemini API body behind antigravity (`RESOURCE_EXHAUSTED`). The limits of copilot, cursor and kilo-code classify through the shared phrases (`usage limit`, `quota exceeded`, `too many requests`, HTTP 429). A spent account is the same halt with no reset: a provider that will not bill the account (`Insufficient Balance`, HTTP 402, `payment required`, `insufficient_quota`) raises `runner-usage-limit` on the first failed call, with no retry and no planner consult; top up the account, take `switch-seat`, or let a declared `fallback` move the seat. A provider that refuses the login (HTTP 401 or 403, `unauthenticated`, `sign in`) raises `runner-unauthenticated`, which offers `switch-seat` beside the re-login retry.
 
 Set the seat's fallback in Settings › Fallback, or write it in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback).
 A fallback saved during a run applies at the next halt, in any phase.
@@ -319,9 +319,9 @@ Files can be inside or outside the project. Relative paths use the project root.
 **Fix:**
 1. `claude /login` (or `claude setup-token`), then `claude auth status` to confirm `"loggedIn": true`.
 2. Re-run `splitbrief doctor`.
-3. Do not set an explicit `auth_channel` to work around it: readiness refuses any explicit method until [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) records an enforceable row for the tool, so the child runs on the login `claude` itself holds.
+3. Do not set an explicit `auth_channel` to work around it: readiness refuses any explicit method, because no CLI tool has an enforceable method ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md)), so the child runs on the login `claude` itself holds.
 
-**Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents alone. For session-channel tools such as Codex, a positive `codex login status` proves a credential is present, not that the token is still live — the first real call settles liveness, and a dead token fails there with its own remediation (measured 2026-08-06: a host whose refresh token had already been rotated away server-side still printed `Logged in using ChatGPT` while every real call returned 401). A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
+**Prevention:** Trust `splitbrief doctor` — including its refusals to overclaim. Readiness never reads a login off directory contents alone. For session-channel tools such as Codex, a positive `codex login status` proves a credential is present, not that the token is still live — the first real call settles liveness, and a dead token fails there with its own remediation (a host whose refresh token was rotated away server-side can still print `Logged in using ChatGPT` while every real call returns 401). A definitive negative — no credential, or the tool answering signed-out — still blocks, because that run really would have failed.
 
 **See also:** [docs/API-KEYS.md](./API-KEYS.md), [docs/CONFIGURATION.md](./CONFIGURATION.md).
 
@@ -460,7 +460,7 @@ SPLITBRIEF tries to fix it before it tells you. Each Critical finding is mapped 
 
 **Fix:**
 1. Read `.splitbrief/sessions/<id>/review.md` — the Critical findings are the blocking list, in the reviewer's own words. The recovery panel's headline reads `Final review failed with <n> blocking findings`, and the run's `Packet` row names the `review-packet.md` to open.
-2. Choose **Send a correction** to send the findings back for one more fix cycle, with your note beside them. On a worktree or staged-copy run, **Accept as is** records an owner override and makes the result ready to apply with the open findings; see [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). Nothing reaches your checkout before Apply.
+2. Choose **Send a correction** to send the findings back for one more fix cycle, with your note beside them. On a worktree or staged-copy run, **Accept as is** records an Accept as is override and makes the result ready to apply with the open findings; see [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is). Nothing reaches your checkout before Apply.
 3. A finding whose paths name no brief cannot be routed back, so it is never auto-fixed — those are the ones to read first.
 4. An unparseable verdict is re-asked once; a second unparseable reply is reported as `review: failed (unparseable verdict)`. That is a reviewer-output problem, not a code problem — check the reviewer's output format before re-running.
 5. Headless runs exit `1` on a failed review even when every task reached `done`, and `--plain` writes `review: failed (<n> blocking)` followed by the closing `done:` line. In CI, treat that exit as "the diff needs a human", not as an infrastructure failure.
@@ -1311,22 +1311,6 @@ Copied images remain in `~/.splitbrief/clipboard/` so history and runs retain re
 ---
 
 ## Git operations
-
-### Symptom: `git commit` is blocked when running under SPLITBRIEF
-
-**Likely cause:** This repository's agent workflow blocks staging and commits so the human owner reviews the final diff manually. The product also leaves staging and commits to the user; retired `commitStrategy` values do not enable checkpoints. A pre-tool-use hook (`.claude/hooks/block-git-commits.sh`) enforces the repo rule.
-
-**Fix:**
-1. Exit the SPLITBRIEF session.
-2. Review the changes (`git status`, `git diff`).
-3. If you are the human owner, stage and commit yourself (`git add ...`, `git commit -m "..."`). Agents working in this repository must not stage or commit.
-4. If you need SPLITBRIEF to coexist with auto-commit tooling, run the auto-commit step outside this repository's agent session.
-
-**Prevention:** Treat the post-session commit step as a manual review checkpoint, not a chore to automate away.
-
-**See also:** [CLAUDE.md](https://github.com/b4r7x/splitbrief/blob/main/CLAUDE.md) ("CRITICAL — NEVER COMMIT, NEVER STAGE").
-
----
 
 ### Symptom: Per-task commit messages have unfamiliar format
 

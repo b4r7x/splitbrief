@@ -276,7 +276,7 @@ planner:
 
 Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and parses what comes out of stdout, using `outputFormat` to pick a parser. No shell or network sandbox is applied; the command runs as a normal child process under the current user.
 
-**A `shell` or `agent` command is not trusted because it is in the config.** `.splitbrief/config.yaml` travels with `git clone`, so the command a project declares is the repository author's proposal until *this machine's* owner accepts it. See [Runner command trust](#runner-command-trust).
+**A `shell` or `agent` command is not trusted because it is in the config.** `.splitbrief/config.yaml` travels with `git clone`, so the command a project declares is the repository author's proposal until you accept it on *this machine*. See [Runner command trust](#runner-command-trust).
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
@@ -1401,7 +1401,7 @@ Credential prefix or env presence validates the configured offering but **never 
 
 ### Provider matrix
 
-`asOf` for every row: **2026-07-31** (release-time research; runtime does not fetch terms or pricing pages).
+`asOf` for every row: **2026-07-31**. SPLITBRIEF does not fetch terms or pricing pages at runtime.
 
 <!-- api-provider-matrix -->
 | Provider | Service | Offering | Normalized endpoint | Credential env | Prefix validation | Roles | Billing |
@@ -1414,19 +1414,19 @@ Credential prefix or env presence validates the configured offering but **never 
 
 Local `ollama` talks only to a loopback daemon and normally omits `apiKey`; if that daemon requires authentication, the only accepted reference is `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never resolved or sent to local Ollama.
 
-**Deferred / not admitted:** researched subscription coding plans, retired consumer CLI entitlements, generic self-hosted OpenAI-compatible shims, and every other candidate without a PASS verdict have **no** first-class provider ID, descriptor, or support row here. Verdict-pending offerings remain absent until a credentialed production gate passes. Per-offering verdicts and dates: [Excluded API offerings](#excluded-api-offerings). Excluded CLI candidates: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#excluded-researched-candidates).
+**Not supported as providers:** subscription coding plans, retired consumer CLI entitlements, generic self-hosted OpenAI-compatible shims, and every other offering this table does not list have **no** first-class provider ID, descriptor, or support row. Per-offering verdicts and dates: [Excluded API offerings](#excluded-api-offerings). Excluded CLI candidates: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md#excluded-researched-candidates).
 
-### Bundled model catalog (T-081 runtime state)
+### Bundled model catalog
 
 `KNOWN_MODELS` (`src/core/providers/known-models.ts`) is the offline picker fallback. Live native CLI rows — or, for an `api` provider, models.dev rows — hide `bundled-suggestion` placements in the picker (`buildRightRows`); `resolveModelCatalog` still emits them. For `api` runners pricing and context stay on models.dev first, as in [Pricing metadata](#pricing-metadata); a CLI tool's context comes from its own listing or this table.
 
-Recommendation labels mirror `src/core/providers/known-models.ts`. A row becomes **`recommended`** only after T-080 records five-scenario evaluation metrics for it. No credentialed evaluation run exists, so every bundled row is **`compatible-only`** — selectable, with no SPLITBRIEF quality claim.
+Recommendation labels mirror `src/core/providers/known-models.ts`. No bundled row is **`recommended`**: every row is **`compatible-only`** — selectable, with no SPLITBRIEF quality claim.
 
 <!-- api-model-catalog -->
 | Provider | Model | Recommendation | Notes |
 |---|---|---|---|
-| ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. T-080: OMIT-NOT-APPLICABLE. |
-| lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. T-080: OMIT-NOT-APPLICABLE. |
+| ollama | qwen3-coder:30b | compatible-only | Local default; context limit discovered from the daemon — not hard-coded. |
+| lm-studio | qwen2.5-coder-7b | compatible-only | Local default; context limit discovered from the daemon. |
 
 ### Independent local seats
 
@@ -1535,24 +1535,24 @@ Writing the triple explicitly keeps save/load, run metadata, and billing present
 
 ### Excluded API offerings
 
-These researched offerings have **dated blocked verdicts** — no first-class provider ID, descriptor, endpoint policy, or picker row. `GENERIC-ONLY` means the endpoint is reachable through the generic remote or loopback configuration above and carries no SPLITBRIEF support claim.
+These offerings have no built-in provider ID, descriptor, endpoint policy or picker row. **Generic endpoint only** means you can reach the endpoint through the generic remote or loopback configuration above, without SPLITBRIEF support.
 
 <!-- api-excluded-offerings -->
-| offering | verdict | as-of | reason |
-|---|---|---|---|
-| `minimax-token-plan` | DEFER | 2026-07-31 | The `sk-cp-…` plan key is documented for "any OpenAI-compatible tool", but the plan is also limited to individual interactive development with dynamic throttling. Gate on written or public confirmation that an orchestrated SPLITBRIEF run is permitted interactive use. PAYG `minimax` is unaffected. |
-| `kimi-code` | DEFER | 2026-07-31 | Personal-interactive-only guidelines prohibit non-interactive automation and batch use; the supported-tool lists conflict and SPLITBRIEF is unlisted. Gate on explicit vendor support for custom orchestrators. Never spoof another client identity. PAYG `moonshot` is unaffected. |
-| `zai-coding-plan` | REJECT | 2026-07-31 | GLM Coding Plan terms restrict quota to officially supported tools and prohibit SDK or custom-app direct calls without a separate written agreement. Falsifier: written Z.AI approval naming SPLITBRIEF. PAYG `zai` is unaffected. |
-| `alibaba-coding-plan` | REJECT | 2026-07-31 | Plan terms expressly prohibit automated scripts, application backends, and non-interactive use, and the `sk-sp-…` key is scoped to that route. Falsifier: revised public terms or written approval for human-triggered headless runs. PAYG `dashscope` is unaffected. |
-| `siliconflow` | DEFER | 2026-07-31 | `stream_options.include_usage` is undocumented, the extra `eos` finish reason needs mapping, model churn is high, 40K TPM can block a brief, and public terms restrict commercial and third-party use. Personal generic experimentation only. |
-| `cloudflare` | GENERIC-ONLY | 2026-07-31 | The account-scoped base (`…/accounts/{account_id}/ai/v1`) needs dynamic-endpoint support, and free neurons are not comparable to tokens. No Cloudflare-specific transport. |
-| `github-models` | REJECT | 2026-07-31 | Public preview positioned for experimentation, with a typical 8K input / 4K output account-tier cap far below the practical brief target. Falsifier: GA, materially larger limits, and exact stream compatibility. Experimental generic use only. |
-| `huggingface` | GENERIC-ONLY | 2026-07-31 | The USD 0.10/month free credit is negligible and capability plus data policy vary by downstream provider. Reconsider only for a stable pinned coding route with meaningful quota. |
-| `vllm` | GENERIC-ONLY | 2026-07-31 | Ports, auth, and models are operator-defined; a per-deployment provider ID adds nothing over the loopback or generic remote block. |
-| `localai` | GENERIC-ONLY | 2026-07-31 | Same operator-defined surface as vLLM across a broader backend set; behavior depends on the selected backend, not on a SPLITBRIEF descriptor. |
-| `local-openai` | GENERIC-ONLY | 2026-07-31 | A generic local OpenAI-server runner kind requires loopback/LAN trust design and is outside this feature. Configure such servers as a loopback API runner. |
-| `sambanova` | DEFER | 2026-07-31 | Official free-tier and onboarding pages conflict, and the documented free rate is only 20 requests/day. Reconsider after the entitlement is consistent and the exact stream payload passes. |
-| `nvidia-nim` | DEFER | 2026-07-31 | Hosted free use is explicitly prototyping and development only; production requires NVIDIA AI Enterprise licensing. Not a free production provider. |
+| offering | support | reason |
+|---|---|---|
+| `minimax-token-plan` | Not supported | The `sk-cp-…` plan key is documented for "any OpenAI-compatible tool", but the plan is limited to individual interactive development with dynamic throttling, and an orchestrated SPLITBRIEF run is not confirmed as interactive use. PAYG `minimax` is unaffected. |
+| `kimi-code` | Not supported | Personal-interactive-only guidelines prohibit non-interactive automation and batch use, and SPLITBRIEF is not on the supported-tool lists. Never spoof another client identity. PAYG `moonshot` is unaffected. |
+| `zai-coding-plan` | Not supported | GLM Coding Plan terms restrict quota to officially supported tools and prohibit SDK or custom-app direct calls without a separate written agreement. PAYG `zai` is unaffected. |
+| `alibaba-coding-plan` | Not supported | Plan terms expressly prohibit automated scripts, application backends and non-interactive use, and the `sk-sp-…` key is scoped to that route. PAYG `dashscope` is unaffected. |
+| `siliconflow` | Not supported | `stream_options.include_usage` is undocumented, the extra `eos` finish reason has no mapping, model churn is high, 40K TPM can block a brief, and public terms restrict commercial and third-party use. |
+| `cloudflare` | Generic endpoint only | The account-scoped base (`…/accounts/{account_id}/ai/v1`) needs a dynamic endpoint, and free neurons are not comparable to tokens. There is no Cloudflare-specific transport. |
+| `github-models` | Not supported | A public preview for experimentation, with a typical 8K input / 4K output account-tier cap far below the practical brief size. |
+| `huggingface` | Generic endpoint only | The USD 0.10/month free credit is negligible, and capability and data policy vary by downstream provider. |
+| `vllm` | Generic endpoint only | Ports, auth and models are operator-defined; a per-deployment provider ID adds nothing over the loopback or generic remote block. |
+| `localai` | Generic endpoint only | The same operator-defined surface as vLLM across a broader backend set; behaviour depends on the selected backend, not on a SPLITBRIEF descriptor. |
+| `local-openai` | Generic endpoint only | Configure a generic local OpenAI-compatible server as a loopback API runner. |
+| `sambanova` | Not supported | The official free-tier and onboarding pages conflict, and the documented free rate is only 20 requests/day. |
+| `nvidia-nim` | Not supported | Hosted free use is for prototyping and development only; production use requires NVIDIA AI Enterprise licensing. |
 
 ---
 

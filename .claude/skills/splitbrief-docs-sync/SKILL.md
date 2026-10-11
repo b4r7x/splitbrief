@@ -1,6 +1,8 @@
 ---
 name: splitbrief-docs-sync
 description: Audit whether docs/ matches the current state of the code. Use when the user says "sync the docs", "docs look out of date", "check the docs for stale references", or after a change that may have diverged docs from code. Does not rewrite specs under notes/superpowers/specs/ or notes/specs/ — those are immutable.
+metadata:
+  internal: true
 ---
 
 # Sync SPLITBRIEF docs with current code

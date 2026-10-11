@@ -128,7 +128,7 @@ The **run workspace** is one worktree or staged copy shared by all tasks, retrie
 
 **Workspace-base** is the named snapshot captured when the run workspace is created. Apply uses it as the merge base. It includes captured uncommitted files. See [the three Apply states](./HOW-IT-WORKS.md#run-workspace-and-apply).
 
-**Ready to apply** means the workspace result awaits Apply or Discard. A passing review or owner override can produce this status. It has no unresolved recovery. It is not continued: choose Apply or Discard. See [Run status](./WORKFLOW.md#run-status).
+**Ready to apply** means the workspace result awaits Apply or Discard. A passing review or an Accept as is override can produce this status. It has no unresolved recovery. It is not continued: choose Apply or Discard. See [Run status](./WORKFLOW.md#run-status).
 
 **Apply** merges the checkout's current state into the workspace and writes the assessed candidate into the checkout once. [WORKFLOW.md](./WORKFLOW.md#apply) owns its sequence and safeguards.
 

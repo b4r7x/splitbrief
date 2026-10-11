@@ -264,17 +264,15 @@ Adding a hook to `.splitbrief/config.yaml` is RCE on the next `splitbrief start`
 
 **In CI** (non-TTY): you must pass `--allow-hooks` explicitly. Without it, SPLITBRIEF refuses to start with an actionable error message. With it, the same disclosure is written to stderr before the grant, so the build log records what was authorized.
 
-### Accepted release limits
+### What the trust digest does not cover
 
-Five boundaries are accepted release limits rather than open defects of this round. Each entry quotes the limit as accepted and carries the same disposition.
+The trust digest has these limits:
 
-- **S5:** “Workspace lists and workspace package manifests are outside the trust digest. Unreadable workspace lists do not trigger a dedicated refusal. Workspace-wide change detection is not guaranteed.” Status: accepted release limit; policy owner: project maintainer.
-- **F3-scope:** “Package-script trust covers selected root script text and recognized lifecycle siblings. Files those scripts execute are not traced; child-file changes alone need not invalidate trust.” Status: accepted release limit; policy owner: project maintainer.
-- **F6:** “Implicit Makefile and other task-runner recipe discovery is outside the trust digest. Project-driven command classification does not bind recipe contents.” Status: accepted release limit; policy owner: project maintainer.
-- **F3d:** “An extracted-code write parked before its target receipt remains external input. Apply the existing external-edit gate policy; never infer ownership from matching bytes.” Status: accepted release limit; policy owner: project maintainer.
-- **F3f:** “Legacy, missing, or incomplete receipts do not establish ownership. Preserve external-edit handling, including the initial pre-task decision where no receipt exists; do not reconstruct ownership.” Status: accepted release limit; policy owner: project maintainer.
-
-Reopen S5/F3-scope/F6 before claiming broader trust coverage. Reopen F3d/F3f only through a dedicated receipt-contract change.
+- Workspace lists and workspace package manifests are not in the digest. A change to them does not ask for trust again, and an unreadable workspace list does not refuse the hook.
+- For a package script, the digest holds the root script text and the `pre` and `post` scripts that the package manager runs with it. The files that those scripts run are not in the digest, so a change to such a file alone does not ask for trust again.
+- The recipes of `make` and other task runners are not in the digest.
+- A file that an API or shell implementer wrote before a stop, without a write receipt, counts as an outside edit, also when its bytes match. The external-edit check treats it as your change.
+- A missing, incomplete or older receipt never proves that SPLITBRIEF wrote a file. The external-edit check treats such a file as your change.
 
 ## Writing your first hook
 
@@ -311,7 +309,7 @@ Module: `src/engine/hooks/`
 - `run-pre.ts` — sequential pre_* runner; deny short-circuits
 
 Trust:
-- `src/core/hooks/trust.ts` — receipts in the owner's trust store
+- `src/core/hooks/trust.ts` — receipts in your machine's trust store
 - `src/core/hooks/trust-digest.ts` — sha256 + canonical JSON over the config and the hook files it reaches
 - `src/core/trust/receipt-store.ts` — the machine-scoped receipt store shared with custom runner trust (`~/.splitbrief/trust/`, canonical-checkout identity, owner-only read)
 - `src/cli/hook-trust-prompt.ts` — `ensureHooksTrusted()` disclosure + prompt + non-TTY refusal

@@ -26,7 +26,7 @@ Environment variables are not committed to git, are not stored on disk in projec
 
 Every credential environment variable SPLITBRIEF reads. The first four describe credentials understood by host CLIs, not API providers or proven method switches. An environment variable alone does not establish the authentication or billing method actually used.
 
-The `api-key` channel rows describe what that channel stages. Selecting it explicitly (`auth_channel: api-key`) is refused at readiness until [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) records an enforceable row for the tool; until then the host CLI's own login decides.
+The `api-key` channel rows describe what that channel stages. Selecting it explicitly (`auth_channel: api-key`) is refused at readiness, because no CLI tool has an enforceable method ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md)); the host CLI's own login decides.
 
 | Credential | Environment variable | Prefix validation | Notes |
 |----------|---------------------|-------------------|-------|
@@ -109,7 +109,7 @@ The historical `api-key` staging alternative is not an available method switch t
 
 The admitted Antigravity adapter uses the host-configured session channel and has no credential file to bridge. SPLITBRIEF hands a macOS Antigravity `session` runner **your real `HOME` and `USER`** (`host-account`) and copies nothing. Being able to reach the keychain is not treated as being signed in: readiness reports `authenticated`, and the picker lists models, only when `agy models` run in that staged environment exits `0`. A non-zero exit is `unauthenticated`, and SPLITBRIEF never runs a sign-in command for you.
 
-The cost is the same as Claude Code's: `~` resolves to your real home, and `agy` may write its own state there. Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory. SPLITBRIEF has no admitted Antigravity `api-key` channel or proven per-invocation method switch. [Upstream Antigravity documentation](https://antigravity.google/docs/cli/install/#using-a-gemini-api-key) describes a Gemini API-key mode configured through settings and `GEMINI_API_KEY`; that upstream capability is not an authentication method this adapter can select or enforce. This distinction was checked on 2026-09-17.
+The cost is the same as Claude Code's: `~` resolves to your real home, and `agy` may write its own state there. Everything else the sandbox redirects still points inside `<project>/.splitbrief/sandbox/`, except the private `TMPDIR` in the system temp directory. SPLITBRIEF has no Antigravity `api-key` channel and no per-invocation method switch for it. [Upstream Antigravity documentation](https://antigravity.google/docs/cli/install/#using-a-gemini-api-key) describes a Gemini API-key mode configured through settings and `GEMINI_API_KEY`; that upstream capability is not an authentication method this adapter can select or enforce.
 
 SPLITBRIEF has no admitted Antigravity credential bridge on Linux or Windows. No host credential is handed over and `agy models` is not run. Authentication stays unknown, catalog access is unsupported, and readiness explains that signing in again cannot enable the bridge on those platforms.
 
@@ -135,7 +135,7 @@ Which runners keep a private HOME, and which do not:
 | Any runner on an `api-key` channel | private | none — the credential arrives as an environment variable |
 | Every `api`, `shell`, or `agent` runner | private | none |
 
-One probe, not a runner, also takes your real `HOME` and `USER`: OpenCode 2's model listing, `opencode api GET /api/model`. It is a read that its own server answers, and OpenCode runs keep the row above. The reason and the measured writes are in the catalog-probe exception of [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
+One probe, not a runner, also takes your real `HOME` and `USER`: OpenCode 2's model listing, `opencode api GET /api/model`. It is a read that its own server answers, and OpenCode runs keep the row above. The reason and the writes are in the catalog-probe exception of [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md).
 
 What the `host-account` child gains:
 

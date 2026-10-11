@@ -3,7 +3,7 @@
 > **Status:** stable (state/config v4).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
-A brief that fails after its one retry, reports `blocked`, or is stale goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load; S9 removes those readers.
+A brief that fails after its one retry, reports `blocked`, or is stale goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
 
 ## v4 contract boundary
 
@@ -443,7 +443,7 @@ The output must match the shape above.
 
 ## Older runs: `brief-quality.json`
 
-A run planned before the typed plan session ran a brief-quality pass over `tasks.md` and wrote `brief-quality.json`. A new run writes no such file: its briefs are compiled from a plan that passed `checkPlan`. `BriefQualityReport` and `isBriefQualityReport` (`src/engine/spec/brief-quality.ts`) stay so that an older session folder still reads, but the `brief_quality_*` and `brief_readiness_*` events no longer replay. The owner accepted this detail loss for sessions older than S7. The scorer itself is deleted.
+A run planned before the typed plan session ran a brief-quality pass over `tasks.md` and wrote `brief-quality.json`. A new run writes no such file: its briefs are compiled from a plan that passed `checkPlan`. `BriefQualityReport` and `isBriefQualityReport` (`src/engine/spec/brief-quality.ts`) stay so that an older session folder still reads, but the `brief_quality_*` and `brief_readiness_*` events no longer replay, so such a session shows no rows for them. The scorer itself is deleted.
 
 ## API BUILD file bundles
 

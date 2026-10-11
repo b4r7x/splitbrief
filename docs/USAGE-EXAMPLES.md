@@ -214,7 +214,7 @@ validation:
   end_checks: true
 ```
 
-Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Named `implementerProfiles` persist in config. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
+Load the model in LM Studio and start its server before the run; the model ID must match what `/v1/models` reports. Like every bundled row, a local default is **`compatible-only`**, so it carries no SPLITBRIEF quality claim (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog)). Named `implementerProfiles` persist in config. LM Studio is local: no key, no metered spend, and prompts never leave your machine.
 
 **Run:**
 
@@ -279,7 +279,7 @@ validation:
   end_checks: true
 ```
 
-`claude-code` is an admitted PASS CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The bundled Ollama default is **`compatible-only`** — selectable, but not a runtime recommendation (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state)). Local implementers keep code on your machine; no API credential is required for default loopback Ollama.
+`claude-code` is a supported CLI runner with subscription-included billing (see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The bundled Ollama default is **`compatible-only`** — selectable, but not a runtime recommendation (see the [bundled model catalog](./CONFIGURATION.md#bundled-model-catalog)). Local implementers keep code on your machine; no API credential is required for default loopback Ollama.
 
 **Run:**
 

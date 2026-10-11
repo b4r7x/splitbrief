@@ -282,8 +282,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     compatibleModel({
       name: 'qwen3-coder:30b',
       isDefault: true,
-      provenance:
-        'Ollama local model fallback; context limit discovered from the daemon (2026-07); T-080 evaluation candidate',
+      provenance: 'Ollama local model fallback; context limit discovered from the daemon (2026-07)',
     }),
   ],
   'lm-studio': [
@@ -291,7 +290,7 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
       name: 'qwen2.5-coder-7b',
       isDefault: true,
       provenance:
-        'LM Studio local model fallback; context limit discovered from the daemon (2026-07); T-080 evaluation candidate',
+        'LM Studio local model fallback; context limit discovered from the daemon (2026-07)',
     }),
   ],
 };

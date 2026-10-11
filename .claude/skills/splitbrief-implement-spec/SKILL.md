@@ -1,6 +1,8 @@
 ---
 name: splitbrief-implement-spec
 description: Execute a specific implementation spec from notes/superpowers/specs/. Use when the user asks to implement a numbered spec like "implement 01", "run notes/superpowers/specs/04-rpc-mode", "do the polyglot validation spec", or similar. Reads the spec's execute-prompt and agent-briefs; executes briefs in order; runs tests between phases; updates docs at the end.
+metadata:
+  internal: true
 ---
 
 # Implement a SPLITBRIEF spec end-to-end

@@ -261,12 +261,13 @@ describe('live e2e tier gating', () => {
 describe('live e2e tier documentation', () => {
   const tierDoc = docSection('\n## Live CLI e2e tier\n');
 
-  it('defines the release gate for the owner toolbox and records every excluded tool', () => {
+  it('defines the release gate and keeps the matrix manifest out of the public release', () => {
     const releasing = readFileSync(join(REPO_ROOT, 'docs/RELEASING.md'), 'utf-8');
     const skip = 'SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code';
     for (const doc of [releasing, tierDoc]) {
       expect(doc).toContain(skip);
-      expect(doc).toContain('not verified live in this release');
+      expect(doc).toContain('.release-records/<x>/manifest.json');
+      expect(doc).not.toContain('not verified live');
       expect(doc).toContain('opencode-go/deepseek-v4.1-flash');
       expect(doc).toContain('gemini-3.8-flash-low');
     }
@@ -278,6 +279,9 @@ describe('live e2e tier documentation', () => {
       expect(rule).toContain(tool);
     expect(rule).toContain('publish smoke');
     expect(rule).toContain('reason');
+    const releaseCreate = releasing.split('\n').find((line) => line.includes('gh release create'));
+    expect(releaseCreate).toBeDefined();
+    expect(releaseCreate).not.toContain('manifest.json');
   });
 
   it('promises only the timeouts the scenarios carry', () => {

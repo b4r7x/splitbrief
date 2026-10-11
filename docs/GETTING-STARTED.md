@@ -2,7 +2,7 @@
 
 Install SPLITBRIEF, choose your tools, and run your first change. This guide covers npm installation, building from source, and the workflow inside your repository.
 
-> **Maturity.** SPLITBRIEF is early software, pre-1.0. The orchestration loop — brief, validation, retry, escalation, review, evidence — is covered end to end by the test suite. Mileage against live models is thin: no evaluation run has been recorded yet, so nothing here is a quality claim about what a real planner and implementer will produce on your repo. Read the diffs, and expect config keys and CLI surfaces to still move. Details: [README §Measurement](../README.md#measurement).
+> **Maturity.** SPLITBRIEF is pre-1.0. Config keys and CLI surfaces can change between versions. SPLITBRIEF makes no claim about the quality of the code a planner and an implementer produce on your repository: read the diff before you apply it.
 
 ---
 
@@ -186,7 +186,7 @@ Fastest path from install to a validated run using **admitted** runners only. Fu
 
 **1. Readiness.** `splitbrief doctor` (or `splitbrief doctor --json` for automation) is read-only: no sessions, migrations, or model calls. It surfaces blockers for config, git posture, and configured runners before you spend tokens. Fix every blocker, then continue. `doctor` runs no validation command. During a run, a red reviewer check re-runs at the run base. SPLITBRIEF reports a failure that your tree already had as pre-existing.
 
-**2. Hybrid recipe (subscription planner + local implementer).** The admitted CLI `claude-code` (evidence as-of 2026-07-31, tested version 2.0.0) uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a bundled **`compatible-only`** local row served by LM Studio (`local` billing; no key, traffic stays on loopback). Load the model in LM Studio and start its server first. No bundled model is `recommended` — see the note below:
+**2. Hybrid recipe (subscription planner + local implementer).** The CLI tool `claude-code` uses your existing Claude Code login — billing posture `subscription-included`; SPLITBRIEF shows spend as unpriced, not as zero cost or local. Pair it with a bundled **`compatible-only`** local row served by LM Studio (`local` billing; no key, traffic stays on loopback). Load the model in LM Studio and start its server first. No bundled model is `recommended` — see the note below:
 
 ```yaml
 version: 3
@@ -221,7 +221,7 @@ With `end_checks: true` (the default), the reviewer reads the project before the
 
 **5. Billing and privacy.** `subscription-included` CLIs bill through your vendor login; `api-metered` / `provider-dependent` APIs bill per request; `local` providers keep traffic on loopback. SPLITBRIEF does not persist API keys to session artifacts and redacts known secret patterns in protected output — see [API-KEYS.md](./API-KEYS.md).
 
-**No recommended API models.** Evaluation currently produces zero runtime `recommended` rows, so every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog-t-081-runtime-state) is selectable but carries no SPLITBRIEF quality claim. The LM Studio row above is a working starting point, not a recommendation; SPLITBRIEF publishes no default implementer recipe until a model passes evaluation.
+**No recommended API models.** Every row in the **compatible-only** model table in [CONFIGURATION.md](./CONFIGURATION.md#bundled-model-catalog) is selectable but carries no SPLITBRIEF quality claim. The LM Studio row above is a working starting point, not a recommendation, and SPLITBRIEF ships no default implementer recipe.
 
 For every other planner/implementer combination, swap tools and models via the canonical matrices rather than duplicating lists here.
 
