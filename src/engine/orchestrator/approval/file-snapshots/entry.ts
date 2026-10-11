@@ -1,7 +1,7 @@
 import {
-  chmod,
   link,
   lstat,
+  open,
   readFile,
   readlink,
   realpath,
@@ -9,7 +9,6 @@ import {
   rm,
   symlink,
   unlink,
-  writeFile,
 } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import type { Stats } from 'node:fs';
@@ -249,8 +248,14 @@ async function writeConfinedFileEntry(
   if (stat !== null) assertRegularEntry(fullPath, stat);
   try {
     // Bytes and permissions must both be ready before the target changes.
-    await writeFile(temporary, entry.bytes, { flag: 'wx', mode: 0o600 });
-    await chmod(temporary, entry.mode & 0o777);
+    const handle = await open(temporary, 'wx', 0o600);
+    try {
+      await handle.writeFile(entry.bytes);
+      await handle.chmod(entry.mode & 0o777);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     assertProjectWritablePathConfined(relativePath, projectDir);
     await observeConfinedEntry(projectDir, relativePath);
     await beforeWrite?.();

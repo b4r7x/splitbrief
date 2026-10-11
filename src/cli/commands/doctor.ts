@@ -6,7 +6,6 @@ import {
 } from '../../core/readiness/collect.js';
 import {
   formatReadinessReport,
-  readinessBlockerMessage,
   serializeReadinessReportJson,
 } from '../../core/readiness/format.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
@@ -435,7 +434,7 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       }
 
       if (report.status === 'blocked') {
-        throw cliError(readinessBlockerMessage(report), 1);
+        process.exitCode = 1;
       }
     });
 }

@@ -156,6 +156,25 @@ describe('parseContinueActionOption', () => {
       action: { action: 'skip-current-task' },
     });
   });
+
+  it('omits --action from start help and describes CLI and API model overrides', async () => {
+    const help = addWorkflowOptions(new Command('start')).helpInformation();
+
+    expect(help).not.toContain('--action');
+    expect(
+      help
+        .split('\n')
+        .filter((line) => /--(?:planner|reviewer)-model/.test(line))
+        .join('\n'),
+    ).toMatchInlineSnapshot(`
+        "  --planner-model <model>                Planner model (CLI and API planners)
+          --reviewer-model <model>               Reviewer model (CLI and API reviewers)"
+      `);
+
+    const result = await runCommand(['start', 'smoke', '--action', 'skip']);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("unknown option '--action'");
+  });
 });
 
 describe('parseSkillIdsOption', () => {

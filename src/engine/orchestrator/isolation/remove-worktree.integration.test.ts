@@ -1,13 +1,16 @@
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, mkdir, symlink } from 'node:fs/promises';
 import { existsSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { initConfig } from '../../../core/config/load/io.js';
 import { createWorktree } from './create-worktree.js';
-import { removeWorktree } from './remove-worktree.js';
+import { removeRunWorkspace, removeWorktree } from './remove-worktree.js';
+import { resolveConfinedIsolationWorktreePath } from './path.js';
+import { getGitCommonDir } from '../../../lib/git/repository.js';
+import { ensureSessionDir } from '../../../core/paths-io.js';
 import {
   SPLITBRIEF_DIR,
   ACTIVE_FILE,
@@ -15,6 +18,7 @@ import {
   SESSIONS_DIR,
   TREES_DIR,
   LOCKFILE,
+  sessionDir,
 } from '../../../core/paths.js';
 
 let repoDir: string;
@@ -35,6 +39,95 @@ afterEach(async () => {
 });
 
 describe('removeWorktree', () => {
+  it.each(['project', 'isolation'] as const)(
+    'refuses a run record that names an unrelated %s worktree',
+    async (placement) => {
+      const sessionId = 'record-owner';
+      const slug = 'unrelated';
+      const worktreeDir =
+        placement === 'project'
+          ? join(repoDir, TREES_DIR, slug)
+          : resolveConfinedIsolationWorktreePath({
+              projectDir: repoDir,
+              gitCommonDir: await getGitCommonDir(repoDir),
+              slug,
+            });
+      await createWorktree({ projectDir: repoDir, slug, git, worktreeDir });
+      ensureSessionDir(repoDir, sessionId);
+      const record = join(sessionDir(repoDir, sessionId), 'retained-workspace.json');
+      await writeFile(record, 'kept\n');
+      try {
+        await expect(
+          removeRunWorkspace(repoDir, sessionId, { kind: 'worktree', path: worktreeDir }),
+        ).rejects.toMatchObject({ kind: 'isolation-retention-unavailable' });
+        expect(existsSync(worktreeDir)).toBe(true);
+        expect(await git.raw(['worktree', 'list', '--porcelain'])).toContain(worktreeDir);
+        expect((await git.branch()).all).toContain(`splitbrief/${slug}`);
+        expect(await readFile(record, 'utf8')).toBe('kept\n');
+      } finally {
+        if (existsSync(worktreeDir)) {
+          await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir, deleteBranch: true });
+        }
+      }
+    },
+  );
+
+  it('refuses a recorded isolation path redirected through a symlink', async () => {
+    const sessionId = 'redirected';
+    const recordedPath = resolveConfinedIsolationWorktreePath({
+      projectDir: repoDir,
+      gitCommonDir: await getGitCommonDir(repoDir),
+      slug: sessionId,
+    });
+    const worktreeDir = join(repoDir, TREES_DIR, sessionId);
+    await createWorktree({ projectDir: repoDir, slug: sessionId, git, worktreeDir });
+    await mkdir(join(recordedPath, '..'), { recursive: true });
+    await symlink(worktreeDir, recordedPath);
+    try {
+      await expect(
+        removeRunWorkspace(repoDir, sessionId, { kind: 'worktree', path: recordedPath }),
+      ).rejects.toMatchObject({ kind: 'worktree-isolation-path-overlap' });
+      expect(existsSync(worktreeDir)).toBe(true);
+      expect((await git.branch()).all).toContain(`splitbrief/${sessionId}`);
+    } finally {
+      await rm(recordedPath);
+    }
+  });
+
+  it.each(['leaf', 'parent'] as const)(
+    'leaves a sibling isolation worktree intact through a %s symlink',
+    async (redirect) => {
+      const sessionId = 'alias-owner';
+      const gitCommonDir = await getGitCommonDir(repoDir);
+      const recordedPath = resolveConfinedIsolationWorktreePath({
+        projectDir: repoDir,
+        gitCommonDir,
+        slug: sessionId,
+      });
+      const slug = redirect === 'leaf' ? 'sibling' : sessionId;
+      const worktreeDir =
+        redirect === 'leaf'
+          ? resolveConfinedIsolationWorktreePath({ projectDir: repoDir, gitCommonDir, slug })
+          : join(dirname(dirname(recordedPath)), 'sibling-repository', slug);
+      const linkPath = redirect === 'leaf' ? recordedPath : dirname(recordedPath);
+      await createWorktree({ projectDir: repoDir, slug, git, worktreeDir });
+      await symlink(redirect === 'leaf' ? worktreeDir : dirname(worktreeDir), linkPath);
+      try {
+        await expect(
+          removeRunWorkspace(repoDir, sessionId, { kind: 'worktree', path: recordedPath }),
+        ).rejects.toThrow();
+        expect(existsSync(worktreeDir)).toBe(true);
+        expect(await git.raw(['worktree', 'list', '--porcelain'])).toContain(worktreeDir);
+        expect((await git.branch()).all).toContain(`splitbrief/${slug}`);
+      } finally {
+        await rm(linkPath, { force: true });
+        if (existsSync(worktreeDir)) {
+          await removeWorktree({ projectDir: repoDir, slug, git, worktreeDir, deleteBranch: true });
+        }
+      }
+    },
+  );
+
   it('removes the directory and the git worktree registration', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-h', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-h');

@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import * as fs from 'node:fs/promises';
 import {
   chmodSync,
   existsSync,
@@ -22,16 +23,58 @@ import {
   writeConfinedSymlink,
 } from './entry.js';
 import type { FileSnapshotEntry } from './entry.js';
+import { restoreDirtyFilesFromSnapshot } from './restore.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 const itUnix = process.platform === 'win32' ? it.skip : it;
+
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('node:fs/promises')>()),
+}));
+
+afterEach(() => vi.restoreAllMocks());
 
 function fileEntry(bytes: Buffer, mode: number): FileSnapshotEntry {
   return { kind: 'file', bytes, sha256: sha256Hex(bytes), mode };
 }
 
 describe('confined file snapshot entries', () => {
+  itUnix.each([true, false])(
+    'leaves the target intact when restoration fsync fails, existing: %s',
+    async (existing) => {
+      const dir = createTempDir('entry-sync-failure');
+      const failure = new Error('promotion fsync failed');
+      const open = fs.open;
+      vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+        const handle = await open(...args);
+        vi.spyOn(handle, 'sync').mockRejectedValue(failure);
+        return handle;
+      });
+      try {
+        if (existing) writeFileSync(join(dir, 'restored.txt'), 'keep');
+        await expect(
+          restoreDirtyFilesFromSnapshot(
+            dir,
+            {
+              head: 'saved-head',
+              files: [],
+              dirtyFileContents: {},
+              dirtyFileEntries: {
+                'restored.txt': { base64: Buffer.from('restored').toString('base64'), mode: 0o755 },
+              },
+            },
+            ['restored.txt'],
+          ),
+        ).rejects.toBe(failure);
+        expect(readdirSync(dir)).toEqual(existing ? ['restored.txt'] : []);
+        if (existing) expect(readFileSync(join(dir, 'restored.txt'), 'utf8')).toBe('keep');
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
   itUnix('roundtrips binary bytes exactly and leaves inputs untouched', async () => {
     const dir = createTempDir('entry-roundtrip');
     try {

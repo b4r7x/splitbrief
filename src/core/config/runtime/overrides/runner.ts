@@ -144,20 +144,17 @@ function buildRunnerFromOverrides(
       ? { kind: inferKindFromTool(tool), tool }
       : command !== undefined
         ? { kind: 'shell' as const }
-        : apiBase !== undefined && existing.kind !== 'api'
-          ? { kind: 'api' as const }
-          : existingToOpts(existing);
+        : existingToOpts(existing);
   const kind = baseOpts.kind ?? existing.kind;
   warnUnusableProviderOverrides({ role, kind, tool, apiBase, apiKey });
   const applies =
     tool !== undefined ||
     model !== undefined ||
     command !== undefined ||
-    apiBase !== undefined ||
     args !== undefined ||
     outputFormat !== undefined ||
     contextLength !== undefined ||
-    (apiKey !== undefined && kind === 'api');
+    ((apiBase !== undefined || apiKey !== undefined) && kind === 'api');
   if (!applies) return undefined;
 
   const opts: BuildRunnerOpts = {

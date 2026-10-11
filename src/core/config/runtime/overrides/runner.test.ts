@@ -169,6 +169,54 @@ describe('applyCLIOverrides — unusable provider overrides', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([
+    ...sameTargetCases.filter((testCase) => testCase.existing.kind !== 'api'),
+    ...sameTargetCases
+      .filter((testCase) => testCase.role === 'planner' && testCase.existing.kind !== 'api')
+      .map((testCase) => ({ ...testCase, role: 'reviewer' as const })),
+  ])(
+    'ignores an API base override on the $role $existing.kind seat without changing it',
+    ({ role, existing }) => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const config = makeConfig({ [role]: existing });
+
+      const result = applyCLIOverrides(config, {
+        [role]: { apiBase: 'https://ignored.example.test/v1' },
+      });
+
+      expect(result).toBe(config);
+      expect(stderr.mock.calls.map((call) => String(call[0])).join('')).toContain(
+        `--${role}-api-base is ignored: the ${role} '${existing.kind}' runner does not use it.`,
+      );
+    },
+  );
+
+  it('keeps the inherited reviewer when its API base override is ignored', () => {
+    vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    expect(
+      applyCLIOverrides(baseConfig, { reviewer: { apiBase: 'https://ignored.example.test/v1' } }),
+    ).toBe(baseConfig);
+  });
+
+  it.each(['planner', 'implementer', 'reviewer'] as const)(
+    'updates the API base on an existing API %s without changing its provider',
+    (role) => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const existing = sameTargetCases.find(
+        (testCase) => testCase.existing.kind === 'api',
+      )?.existing;
+      if (existing === undefined) throw new Error('missing API runner fixture');
+      const config = makeConfig({ [role]: existing });
+      const apiBase = 'https://replacement.example.test/v1';
+
+      const result = applyCLIOverrides(config, { [role]: { apiBase } });
+
+      expect(result[role]).toEqual({ ...existing, apiBase });
+      expect(stderr.mock.calls.map((call) => String(call[0])).join('')).not.toContain('is ignored');
+    },
+  );
+
   it('warns when --implementer-api-key-env is supplied for a CLI runner', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
     applyCLIOverrides(baseConfig, {
