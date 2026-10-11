@@ -14,14 +14,15 @@ describe('live release matrix', () => {
   }
 
   for (const row of RELEASE_MATRIX) {
+    const timeoutMs = row.tier === 'one-file' ? 300_000 : 900_000;
     itRelease(
       `release row ${row.id}: ${row.tier}, plan ${row.plan}, build ${row.build}` +
         (row.review === undefined ? '' : `, review ${row.review}`),
       async (ctx) => {
-        const result = await runReleaseMatrixRow(resolveReleaseMatrixRun(row));
+        const result = await runReleaseMatrixRow(resolveReleaseMatrixRun(row), timeoutMs);
         if (result.outcome === 'skip') return ctx.skip(result.reason ?? 'row skipped');
       },
-      row.tier === 'one-file' ? 300_000 : 900_000,
+      timeoutMs,
     );
   }
 });

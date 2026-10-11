@@ -1,14 +1,16 @@
 # Releasing
 
-The release matrix is the definition of "the app works": every task tier of `MATRIX_TIERS` (`one-file`, `two-files`, `question-round`, keyed by what each tier tests), one same-tool canary per CLI tool in the catalog, and cross-vendor pairs where the plan and build tools differ — all through real installed CLIs. The row table lives in `testing/e2e/live/matrix.ts`: 12 rows, eight same-tool canaries and four cross-vendor pairs, including a `question-round` row with an explicit reviewer seat. The shared machinery is `testing/e2e/helpers/live-harness.ts`; the tier background is in [docs/TESTING.md](./TESTING.md) § "Live CLI e2e tier". A row's proof is the manifest.
+The release matrix runs tasks through real installed CLIs. The row table lives in `testing/e2e/live/matrix.ts`: 12 available rows, eight same-tool canaries and four cross-vendor pairs across `one-file`, `two-files` and `question-round`. The release gate uses the tools the owner holds, as defined below. The shared machinery is `testing/e2e/helpers/live-harness.ts`; see [TESTING.md](./TESTING.md) § "Live CLI e2e tier". A row's proof is the manifest.
 
 ## Running the release matrix
 
 ```bash
-SPLITBRIEF_RELEASE_LIVE=1 npm run test:e2e:release
+SPLITBRIEF_RELEASE_LIVE=1 \
+SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code \
+npm run test:e2e:release
 ```
 
-The matrix makes real CLI calls and spends real tokens. The npm script sets `SPLITBRIEF_REAL_CLI_E2E=1` itself. Without `SPLITBRIEF_RELEASE_LIVE=1` the command prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and exits 0, so it is safe in any environment. Rows run sequentially.
+The matrix makes real CLI calls and spends real tokens. The npm script sets `SPLITBRIEF_REAL_CLI_E2E=1` itself. Without `SPLITBRIEF_RELEASE_LIVE=1` the command prints `skipped: SPLITBRIEF_RELEASE_LIVE not set` and exits 0, so it is safe in any environment. Rows run sequentially. Each row aborts 10 s before Vitest's timeout and awaits settlement before the next row starts.
 
 ## Environment variables
 
@@ -16,8 +18,10 @@ The matrix makes real CLI calls and spends real tokens. The npm script sets `SPL
 |---|---|
 | `SPLITBRIEF_RELEASE_LIVE` | Set to `1` to run the matrix. Unset, every row is skipped. |
 | `SPLITBRIEF_REAL_CLI_E2E` | The live master switch. `test:e2e:release` sets it; you rarely need to. |
-| `SPLITBRIEF_LIVE_SKIP` | Comma-separated CLI tool ids that may SKIP when missing or not ready (for a partial toolbox). Any other not-ready tool FAILS its row. |
+| `SPLITBRIEF_LIVE_SKIP` | Comma-separated CLI tool ids whose rows SKIP, ready or not, with reason `listed in SPLITBRIEF_LIVE_SKIP`. Any unlisted not-ready tool FAILS its row. |
 | `SPLITBRIEF_REAL_CLI_<TOOL>_MODEL` | Per-tool model-pin override, e.g. `SPLITBRIEF_REAL_CLI_CODEX_MODEL`. Pins above the cost ceiling (`opus`, `fable`, `sol`) are refused. |
+
+Default pins include `opencode` → `opencode-go/deepseek-v4.1-flash` and `antigravity` → `gemini-3.8-flash-low`. No runtime model discovery is needed.
 
 ## The manifest
 
@@ -27,7 +31,9 @@ The matrix makes real CLI calls and spends real tokens. The npm script sets `SPL
 
 A release is cut only from a run whose manifest is attached to the changelog entry.
 
-A failing or skipping row is a blocker unless its tool is explicitly allow-listed for that release and the reason is recorded in the entry. The matrix is re-run before any tag.
+The live gate is the publish smoke plus the matrix rows for the tools the owner holds: `claude-code`, `codex`, `opencode` and `antigravity`. Run the matrix with `SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code`. A failure or skip in a required row blocks the release. Re-run the gate before any tag.
+
+Record each skipped tool in the changelog release entry as "not verified live in this release", with its reason. The owner does not hold subscriptions for `cursor`, `copilot`, `kilo-code` or `command-code`; a full matrix over every tool is not required.
 
 The live fixture row (`npm run test:e2e:live:fixture`, [TESTING.md](./TESTING.md) § "Fixture loop row") is outside that rule for now: it writes into the same manifest, but it becomes a release gate only after two recorded manifests show it green on a real toolbox. Until then it is drift evidence — a red fixture row is investigated, not a blocker.
 

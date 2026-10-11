@@ -11,9 +11,10 @@ import {
   liveRowGateDecision,
   liveSkipAllowList,
   liveTierEnabled,
-  liveToolBlocker,
   releaseMatrixConfig,
   runLiveScenario,
+  runLiveToolRow,
+  runReleaseMatrixRow,
 } from '../e2e/helpers/live-harness.js';
 import {
   RELEASE_MATRIX,
@@ -25,9 +26,13 @@ import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
 
 const detectAvailableCliToolsMock = vi.hoisted(() => vi.fn());
+const runWorkflowMock = vi.hoisted(() => vi.fn());
 vi.mock('../../src/engine/detection/detect.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../src/engine/detection/detect.js')>()),
   detectAvailableCliTools: detectAvailableCliToolsMock,
+}));
+vi.mock('../../src/engine/orchestrator/run/workflow.js', () => ({
+  runWorkflow: runWorkflowMock,
 }));
 
 const REPO_ROOT = join(import.meta.dirname, '../..');
@@ -55,8 +60,10 @@ function docSection(heading: string): string {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   detectAvailableCliToolsMock.mockReset();
+  runWorkflowMock.mockReset();
 });
 
 function guardScenario(model: string | undefined) {
@@ -67,6 +74,7 @@ function guardScenario(model: string | undefined) {
     validateScript: '',
     implementerContextLength: 4096,
     tempPrefix: 'live-guard',
+    timeoutMs: 300_000,
   };
 }
 
@@ -86,6 +94,10 @@ const MATRIX_MODEL_PINS: Readonly<Record<string, string>> = {
 };
 
 describe('live e2e tier gating', () => {
+  beforeEach(() => {
+    vi.stubEnv('SPLITBRIEF_REAL_CLI_E2E', '1');
+  });
+
   it('stays disabled while the master switch is unset', () => {
     vi.stubEnv('SPLITBRIEF_REAL_CLI_E2E', '');
     vi.stubEnv('SPLITBRIEF_REAL_CLI_TIER', 'all');
@@ -161,16 +173,15 @@ describe('live e2e tier gating', () => {
   });
 
   it('skips a tool that is absent from the CLI catalog instead of failing', async () => {
-    const blocker = await liveToolBlocker('not-a-cli-tool');
-
-    expect(blocker).toContain('not-a-cli-tool');
-    expect(blocker).toContain('catalog');
+    await expect(
+      runLiveToolRow({ tool: 'not-a-cli-tool', timeoutMs: 300_000, run: async () => failIfRun() }),
+    ).resolves.toEqual({ kind: 'skip', reason: 'not-a-cli-tool is not in the CLI tool catalog' });
   });
 
   it("names the tool's own declared auth channel so detection does not withhold it", async () => {
     detectAvailableCliToolsMock.mockResolvedValue([cliDetectionFor('ready', 'command-code')]);
 
-    await liveToolBlocker('command-code');
+    await runLiveToolRow({ tool: 'command-code', timeoutMs: 300_000, run: async () => {} });
 
     expect(detectAvailableCliToolsMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -183,19 +194,91 @@ describe('live e2e tier gating', () => {
 
   it('clears an installed, authenticated tool with no blocker', async () => {
     detectAvailableCliToolsMock.mockResolvedValue([cliDetectionFor('ready', 'command-code')]);
-
-    expect(await liveToolBlocker('command-code')).toBeNull();
+    let completed = false;
+    await expect(
+      runLiveToolRow({
+        tool: 'command-code',
+        timeoutMs: 300_000,
+        run: async () => {
+          completed = true;
+        },
+      }),
+    ).resolves.toEqual({ kind: 'run' });
+    expect(completed).toBe(true);
   });
 
   it('still blocks a catalog tool that is genuinely absent from the machine', async () => {
     detectAvailableCliToolsMock.mockResolvedValue([cliDetectionFor('unavailable', 'command-code')]);
 
-    expect(await liveToolBlocker('command-code')).toBe('command-code is not ready (unavailable)');
+    await expect(
+      runLiveToolRow({ tool: 'command-code', timeoutMs: 300_000, run: async () => failIfRun() }),
+    ).resolves.toEqual({ kind: 'skip', reason: 'command-code is not ready (unavailable)' });
+  });
+
+  it('reports an unavailable tool as a scenario skip before executing the workflow', async () => {
+    detectAvailableCliToolsMock.mockResolvedValue([cliDetectionFor('unavailable', 'claude-code')]);
+    await expect(runLiveScenario(guardScenario('haiku'), failIfRun)).resolves.toEqual({
+      kind: 'skip',
+      reason: 'claude-code is not ready (unavailable)',
+    });
+  });
+
+  it('cuts a delayed readiness probe at the row deadline before running the scenario', async () => {
+    vi.useFakeTimers();
+    detectAvailableCliToolsMock.mockImplementation(
+      ({ signal }: { signal?: AbortSignal }) =>
+        new Promise((resolve, reject) => {
+          const timer = setTimeout(
+            () => resolve([cliDetectionFor('ready', 'claude-code')]),
+            40_000,
+          );
+          signal?.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(signal.reason);
+            },
+            { once: true },
+          );
+        }),
+    );
+    const startedAt = Date.now();
+    let settledAt: number | undefined;
+    const row = runLiveScenario(
+      { ...guardScenario('haiku'), timeoutMs: 30_000 },
+      failIfRun,
+    ).finally(() => {
+      settledAt = Date.now() - startedAt;
+    });
+    const rejected = expect(row).rejects.toThrow('Live row timed out after 20000ms.');
+    await vi.advanceTimersByTimeAsync(40_000);
+    await rejected;
+    expect(settledAt).toBe(20_000);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
 
 describe('live e2e tier documentation', () => {
   const tierDoc = docSection('\n## Live CLI e2e tier\n');
+
+  it('defines the release gate for the owner toolbox and records every excluded tool', () => {
+    const releasing = readFileSync(join(REPO_ROOT, 'docs/RELEASING.md'), 'utf-8');
+    const skip = 'SPLITBRIEF_LIVE_SKIP=cursor,copilot,kilo-code,command-code';
+    for (const doc of [releasing, tierDoc]) {
+      expect(doc).toContain(skip);
+      expect(doc).toContain('not verified live in this release');
+      expect(doc).toContain('opencode-go/deepseek-v4.1-flash');
+      expect(doc).toContain('gemini-3.8-flash-low');
+    }
+    const rule = releasing.slice(
+      releasing.indexOf('## The release rule'),
+      releasing.indexOf('## Pre-publish smoke'),
+    );
+    for (const tool of ['claude-code', 'codex', 'opencode', 'antigravity'])
+      expect(rule).toContain(tool);
+    expect(rule).toContain('publish smoke');
+    expect(rule).toContain('reason');
+  });
 
   it('promises only the timeouts the scenarios carry', () => {
     const scenarios = readdirSync(LIVE_SCENARIO_DIR).filter((name) => name.endsWith('.test.ts'));
@@ -276,6 +359,25 @@ describe('release matrix invariants', () => {
       }
     }
   });
+
+  it('skips model resolution for an excluded row before checking any seat pin', () => {
+    vi.stubEnv('SPLITBRIEF_LIVE_SKIP', 'cursor');
+    vi.stubEnv('SPLITBRIEF_REAL_CLI_CURSOR_MODEL', 'gpt-5.6-sol');
+    vi.stubEnv('SPLITBRIEF_REAL_CLI_CODEX_MODEL', 'gpt-5.6-sol');
+    const row = RELEASE_MATRIX.find((entry) => entry.id === 'one-file-cross-codex-cursor');
+    if (row === undefined) throw new Error('missing cross-tool row');
+    const run = resolveReleaseMatrixRun(row);
+    expect(run.plan).toEqual({ tool: 'codex', model: undefined });
+    expect(run.build).toEqual({ tool: 'cursor', model: undefined });
+    expect(
+      liveRowGateDecision({
+        readiness: [run.plan, run.build].map(({ tool }) => ({ tool, state: 'ready' })),
+        allowList: liveSkipAllowList('cursor'),
+      }),
+    ).toEqual({ kind: 'skip', reason: 'listed in SPLITBRIEF_LIVE_SKIP' });
+    vi.stubEnv('SPLITBRIEF_LIVE_SKIP', '');
+    expect(() => resolveReleaseMatrixRun(row)).toThrow(/cost ceiling/);
+  });
 });
 
 describe('release matrix readiness gate', () => {
@@ -295,15 +397,47 @@ describe('release matrix readiness gate', () => {
     });
   });
 
-  it('skips a not-ready tool that the allow-list names', () => {
-    const gate = liveRowGateDecision({
-      readiness: [{ tool: 'codex', state: 'unavailable' }],
-      allowList: liveSkipAllowList('codex'),
-    });
-    if (gate.kind !== 'skip') throw new Error('unreachable');
+  it.each(['ready', 'unavailable', 'no detection record'])(
+    'skips a listed tool regardless of readiness: %s',
+    (state) => {
+      const gate = liveRowGateDecision({
+        readiness: [{ tool: 'codex', state }],
+        allowList: liveSkipAllowList('codex'),
+      });
+      expect(gate).toEqual({ kind: 'skip', reason: 'listed in SPLITBRIEF_LIVE_SKIP' });
+    },
+  );
 
-    expect(gate.reason).toContain('codex');
-    expect(gate.reason).toContain('unavailable');
+  it('skips a cross-tool row before checking an unlisted unavailable seat', () => {
+    expect(
+      liveRowGateDecision({
+        readiness: [
+          { tool: 'codex', state: 'unavailable' },
+          { tool: 'cursor', state: 'ready' },
+        ],
+        allowList: liveSkipAllowList('cursor'),
+      }),
+    ).toEqual({ kind: 'skip', reason: 'listed in SPLITBRIEF_LIVE_SKIP' });
+  });
+
+  it('ignores skip entries for tools outside the row', () => {
+    expect(
+      liveRowGateDecision({
+        readiness: [{ tool: 'codex', state: 'ready' }],
+        allowList: liveSkipAllowList('cursor'),
+      }),
+    ).toEqual({ kind: 'run' });
+  });
+
+  it('skips a listed row before any readiness probe', async () => {
+    vi.stubEnv('SPLITBRIEF_LIVE_SKIP', 'cursor');
+    detectAvailableCliToolsMock.mockRejectedValue(new Error('unexpected readiness probe'));
+    await expect(
+      gateLiveMatrixRow(['codex', 'cursor'], new AbortController().signal),
+    ).resolves.toEqual({
+      kind: 'skip',
+      reason: 'listed in SPLITBRIEF_LIVE_SKIP',
+    });
   });
 
   it('fails a not-ready tool outside the allow-list', () => {
@@ -315,22 +449,86 @@ describe('release matrix readiness gate', () => {
   });
 
   it('probes every seat tool with its declared auth channel', async () => {
+    const signal = new AbortController().signal;
     detectAvailableCliToolsMock.mockResolvedValue([
       cliDetectionFor('ready', 'codex'),
       cliDetectionFor('ready', 'cursor'),
     ]);
 
-    await expect(gateLiveMatrixRow(['codex', 'cursor'])).resolves.toEqual({ kind: 'run' });
+    await expect(gateLiveMatrixRow(['codex', 'cursor'], signal)).resolves.toEqual({ kind: 'run' });
 
     expect(detectAvailableCliToolsMock).toHaveBeenCalledWith(
       expect.objectContaining({
         tools: ['codex', 'cursor'],
+        signal,
         authChannels: {
           codex: defaultCliAuthChannel('codex').id,
           cursor: defaultCliAuthChannel('cursor').id,
         },
       }),
     );
+  });
+
+  it('rejects an aborted probe even when it returns ready records', async () => {
+    const controller = new AbortController();
+    const reason = new Error('matrix readiness cancelled');
+    detectAvailableCliToolsMock.mockImplementation(async () => {
+      controller.abort(reason);
+      return [cliDetectionFor('ready', 'codex')];
+    });
+
+    await expect(gateLiveMatrixRow(['codex'], controller.signal)).rejects.toBe(reason);
+  });
+
+  it('cuts a delayed matrix readiness probe at the row deadline before running the workflow', async () => {
+    await withTempDir('live-matrix-probe-deadline', async (root) => {
+      const originalCwd = process.cwd();
+      process.chdir(root);
+      try {
+        vi.stubEnv('SPLITBRIEF_REAL_CLI_E2E', '1');
+        vi.stubEnv('SPLITBRIEF_LIVE_SKIP', '');
+        vi.useFakeTimers();
+        detectAvailableCliToolsMock.mockImplementation(
+          ({ signal }: { signal?: AbortSignal }) =>
+            new Promise((resolve, reject) => {
+              const timer = setTimeout(() => resolve([cliDetectionFor('ready', 'codex')]), 40_000);
+              signal?.addEventListener(
+                'abort',
+                () => {
+                  clearTimeout(timer);
+                  reject(signal.reason);
+                },
+                { once: true },
+              );
+            }),
+        );
+        const timeoutMs = 30_000;
+        const startedAt = Date.now();
+        let settledAt: number | undefined;
+        const row = runReleaseMatrixRow(
+          {
+            id: 'probe-deadline',
+            tier: 'one-file',
+            task: MATRIX_TIERS['one-file'].task,
+            plan: { tool: 'codex', model: 'pin' },
+            build: { tool: 'codex', model: 'pin' },
+          },
+          timeoutMs,
+        ).finally(() => {
+          settledAt = Date.now() - startedAt;
+        });
+        const rejected = expect(row).rejects.toThrow('Live row timed out after 20000ms.');
+        await vi.advanceTimersByTimeAsync(timeoutMs - 10_001);
+        expect(settledAt).toBeUndefined();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(settledAt).toBe(timeoutMs - 10_000);
+        await rejected;
+        expect(runWorkflowMock).not.toHaveBeenCalled();
+        expect(vi.getTimerCount()).toBe(0);
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
   });
 });
 
