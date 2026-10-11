@@ -31,6 +31,7 @@ npm test                         # unit; no git, no fake CLIs
 npm run test:integration         # git, worktree, run-loop, Apply, fake CLI and node shim tests
 npm run release-check            # PR gate: format:check && typecheck && lint && test && test:integration && test:e2e && invariants && skills:check
 npm run test-ci                  # exhaustive form: same, with test:coverage thresholds
+npm run release:smoke            # npm pack, install the tarball in a temp project, run splitbrief --version and --help
 node scripts/dangling-imports.mjs  # audit: relative imports that resolve to nothing (exit 1 on findings)
 ```
 
@@ -72,7 +73,7 @@ Read the canonical doc **before** touching the matching area. Every link below e
 | Add a startup step | [docs/BOOTSTRAP.md](./docs/BOOTSTRAP.md) |
 | Create a new error type | [docs/ERRORS.md](./docs/ERRORS.md) |
 | Place a test | [docs/TESTING.md](./docs/TESTING.md) |
-| Cut a release | [docs/RELEASING.md](./docs/RELEASING.md) — the live release matrix and its manifest |
+| Cut a release | [docs/RELEASING.md](./docs/RELEASING.md) — the live release matrix and its manifest, the npm release procedure |
 | Enforce a cross-cutting rule | [docs/INVARIANTS.md](./docs/INVARIANTS.md) — pre-merge grep gates |
 | Orient yourself in the codebase | [docs/PRINCIPLES.md](./docs/PRINCIPLES.md) — one-page rule index |
 | Judge code against the SOTA review bar | [docs/CODE-STANDARD.md](./docs/CODE-STANDARD.md) — consolidated quality standard + reviewer checklist |

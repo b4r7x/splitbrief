@@ -1,0 +1,43 @@
+name: Release
+
+# Publishes the npm package. The owner dispatches it by hand; the procedure is
+# docs/RELEASING.md § "npm release".
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # GitHub Actions are pinned to full SHAs; update by resolving the latest release tag before changing these refs.
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+      # Trusted publishing needs npm >= 11.5.1; package.json `packageManager` holds the pin.
+      - run: npm install -g "npm@$(node -p "require('./package.json').packageManager.split('@')[1]")"
+      # The build needs no install scripts; the smoke install below runs them.
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Pack
+        id: pack
+        run: |
+          tarball=$(npm pack --json --pack-destination "$RUNNER_TEMP" | node -p "JSON.parse(require('fs').readFileSync(0, 'utf-8'))[0].filename")
+          echo "tarball=$RUNNER_TEMP/$tarball" >> "$GITHUB_OUTPUT"
+      - run: node scripts/pack-install-smoke.mjs "${{ steps.pack.outputs.tarball }}"
+      # Publishes the tarball the smoke installed. NPM_TOKEN is only the bootstrap for the
+      # first publish; with trusted publishing configured, npm authenticates through OIDC.
+      - run: npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

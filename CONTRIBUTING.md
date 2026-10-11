@@ -108,7 +108,7 @@ User-extensible workflow hooks fire shell commands at workflow events (`pre_task
 
 ## Release process
 
-Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepare` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. It is npm's only pre-pack hook that also installs devDependencies for a git install, so `npm install <git-url>` builds `dist/` too — as does a plain `npm install`/`npm ci` in a clone. Maintainers handle the tag + publish.
+Version lives in [`package.json`](./package.json); notable changes are recorded in [CHANGELOG.md](./CHANGELOG.md). The `prepare` script triggers `npm run build`, so `npm pack`/`npm publish` rebuild `dist/` automatically. It is npm's only pre-pack hook that also installs devDependencies for a git install, so `npm install <git-url>` builds `dist/` too — as does a plain `npm install`/`npm ci` in a clone. The owner tags and publishes with the procedure in [docs/RELEASING.md § npm release](./docs/RELEASING.md#npm-release).
 
 ## Getting help
 
