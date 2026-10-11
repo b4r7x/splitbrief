@@ -100,8 +100,9 @@ describe('eventRows task header and planner phase header', () => {
 
     expect(first.kind).toBe('task-header');
     expect(text).toContain('T001 Route ordinary task');
+    expect(text).toContain('OpenAI Codex CLI');
     expect(metadata).toContain('src/app.ts (modify)');
-    expect(metadata).toContain('OpenAI Codex CLI');
+    expect(first.segments.some((segment) => segment.tone === 'implementer')).toBe(true);
     expect(metadata).not.toContain('worker cheap-cloud');
     expect(metadata).not.toContain('fit');
     expect(metadata).not.toContain('selected cheapest capable');
@@ -118,6 +119,48 @@ describe('eventRows task header and planner phase header', () => {
 
     expect(rowText(requireRow(rows, 0))).toMatch(/^T002 Route ordinary task/);
   });
+
+  it.each([22, 60, 120, 200])(
+    'keeps build identity toned across wrapping at %i columns',
+    (width) => {
+      const rows = eventRows({
+        event: makeTaskStarted({
+          title: 'Query overdue loans',
+          file: 'src/storage/loans.js',
+          files: ['src/storage/loans.js', 'src/a.js', 'src/b.js', 'src/c.js'],
+          tool: 'codex',
+          model: 'gpt-5',
+          axes: ['high'],
+          contextFit: 'tight',
+        }),
+        globalIndex: 0,
+        expanded: false,
+        ctx: { width, viewportRows: 50, streaming },
+      });
+      const segments = rows.flatMap((row) => row.segments);
+      expect(
+        segments
+          .filter((part) => part.tone === 'implementer')
+          .map((part) => part.text)
+          .join('')
+          .replaceAll(/[ ·]/g, ''),
+      ).toBe('OpenAICodexCLIGPT-5high');
+      if (width === 22) {
+        expect(
+          rows.filter((row) => row.segments.some((part) => part.tone === 'implementer')).length,
+        ).toBeGreaterThan(1);
+      }
+      const meta = segments
+        .filter((part) => part.tone === 'textDim')
+        .map((part) => part.text)
+        .join('');
+      expect(meta).toContain('src/storage/loans.js (modify)');
+      expect(meta).toContain('+3 files');
+      expect(meta).toContain('context tokens (tight)');
+      expect(segments.every((part) => part.tone !== 'markdownLink')).toBe(true);
+      expect(segments.filter((part) => part.bold).every((part) => part.tone === 'text')).toBe(true);
+    },
+  );
 
   it('keeps title bold on wrapped continuation lines before metadata', () => {
     const event = makeTaskStarted({

@@ -53,7 +53,6 @@ const NEUTRAL_TEXT = [
   'text',
   'textDim',
   'info',
-  'validator',
   'scrollIndicator',
   'diff.context',
   'markdown.heading',
@@ -165,6 +164,37 @@ describe('bundled themes reach the contrast at truecolor and 256 colours', () =>
 });
 
 describe('one mapping from a token to what the terminal can show', () => {
+  it.each(THEME_VARIANTS)('removes superseded painter tokens from %s', (variant) => {
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    for (const token of ['dimError', 'dimSuccess', 'validator']) {
+      expect(theme).not.toHaveProperty(token);
+      expect(PALETTES[variant].swatches).not.toHaveProperty(token);
+    }
+  });
+  it.each([
+    ['dark', '#9fa7bf'],
+    ['light', '#454c59'],
+  ] as const)('uses one neutral-secondary value in %s', (variant, expected) => {
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    const swatches = PALETTES[variant].swatches;
+
+    expect(swatches.textDim.truecolor).toBe(expected);
+    expect(theme.textDim).toBe(expected);
+    for (const path of [
+      'info',
+      'scrollIndicator',
+      'diff.context',
+      'markdown.italic',
+      'markdown.blockquote',
+      'markdown.list',
+      'markdown.strike',
+      'syntax.comment',
+      'syntax.punctuation',
+    ]) {
+      expect(colorAt(theme, path), `${variant} ${path}`).toBe(expected);
+    }
+  });
+
   it('ships the bundled truecolor values unchanged when no background was detected', () => {
     for (const variant of THEME_VARIANTS) {
       const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });

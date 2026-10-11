@@ -1,6 +1,8 @@
 import { INLINE_LABEL_GAP } from '../row-format/label-card.js';
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
+import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import { stateTone } from '../../../../core/theme/state-tone.js';
 import { arrowSep, SOFT_SEP } from '../../../../core/separators.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
 import { glyph } from '../../../../lib/glyphs.js';
@@ -15,12 +17,19 @@ import { borderedCardRowsBlock } from '../bordered-card-block.js';
 import { calloutRowsBlock } from '../callout-block.js';
 import { wrapWidthFor } from '../row-markers.js';
 import { sanitizeRowDisplayText } from '../row-format/text.js';
-import type { ConversationRowBlock, ConversationRowTone, RowBuildContext } from '../types.js';
+import { segmentedRow } from '../row-format/rows.js';
+import type {
+  ConversationRowBlock,
+  ConversationRowSegment,
+  ConversationRowTone,
+  RowBuildContext,
+} from '../types.js';
 import {
   cardRowsBlock,
   compositeBlock,
   promptTextBlock,
-  rowSeedsBlock,
+  rowsBlock,
+  wrappedSegmentsBlock,
   wrappedTextBlock,
 } from '../row-block-compose.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
@@ -45,7 +54,7 @@ import { isTranscriptRowlessEvent } from './visibility.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../../../engine/events/workflow-cancel.js';
 import { formatResetAt, stripRecoveryResetClause } from '../../../../core/recovery/reset-clock.js';
 import { stopPoint } from '../../stop/copy.js';
-import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
+import { recoveryActionParts } from '../../../../core/recovery/action-label.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import type { RecoveryFold, SettledTranscriptSection } from '../transcript-walk.js';
 import { phaseStage } from '../../../../core/rail-stages.js';
@@ -69,26 +78,36 @@ export function eventRowBlock(options: {
   if (isTranscriptRowlessEvent(event)) return null;
 
   switch (event.type) {
-    case 'workflow_cancelled':
-      // Two different endings wore one word. A run the user stopped kept its changes on purpose; a
-      // run that fell over did not, and the transcript must not read the same for both.
-      return rowSeedsBlock(keyPrefix, [
-        {
-          key: `${keyPrefix}-title`,
-          text: event.reason === WORKFLOW_CANCEL_REASON_USER ? 'Stopped by you' : 'Build failed',
-          tone: 'textDim',
-          bold: true,
-        },
+    case 'workflow_cancelled': {
+      const segments: ConversationRowSegment[] =
+        event.reason === WORKFLOW_CANCEL_REASON_USER
+          ? [{ text: 'Stopped by you', tone: stateTone('attention') }]
+          : [
+              { text: 'Build', tone: CREW_SEAT_ROLES.build },
+              { text: ' ', tone: 'textDim' },
+              { text: 'failed', tone: stateTone('failed') },
+            ];
+      return rowsBlock(keyPrefix, [
+        segmentedRow(
+          `${keyPrefix}-title`,
+          segments.map((segment) => ({ ...segment, bold: true })),
+          'message',
+        ),
       ]);
+    }
     case 'recovery_action_failed':
-      return cardRowsBlock({
+      return recoveryCardBlock(
         keyPrefix,
-        label: 'Recovery',
-        value: `${recoveryActionLabel(event.action, { seat: event.seat })} blocked: ${event.message}`,
-        width: ctx.width,
-        labelTone: 'error',
-        valueTone: 'textDim',
-      });
+        [
+          ...recoveryActionSegments(event),
+          { text: ' ', tone: 'textDim' },
+          { text: 'blocked', tone: stateTone('failed') },
+          { text: ': ', tone: 'textDim' },
+          { text: event.message, tone: 'textDim' },
+        ],
+        ctx.width,
+        stateTone('failed'),
+      );
     // `walkTranscript` folds these into one Recovery row, painted by `recoveryRowBlock`.
     case 'recovery_prompted':
     case 'recovery_action_selected':
@@ -122,19 +141,24 @@ export function eventRowBlock(options: {
       const visible = expanded ? findings : findings.slice(0, COLLAPSED_DRIFT_FINDING_LIMIT);
       const remaining = findings.length - visible.length;
       return compositeBlock(keyPrefix, [
-        wrappedTextBlock({
+        wrappedSegmentsBlock({
           keyPrefix,
-          text: driftHeadline(event),
+          segments: driftHeadlineSegments(event),
           width: ctx.width,
-          tone: driftTone(event),
           continuationIndent: 2,
         }),
         ...visible.map((finding, index) =>
-          wrappedTextBlock({
+          wrappedSegmentsBlock({
             keyPrefix: `${keyPrefix}-finding-${index}`,
-            text: `${finding.severity}${SOFT_SEP}${finding.message}`,
+            segments: [
+              {
+                text: finding.severity,
+                tone: stateTone(finding.severity === 'error' ? 'failed' : 'attention'),
+              },
+              { text: SOFT_SEP, tone: 'textDim' },
+              { text: finding.message, tone: 'textDim' },
+            ],
             width: ctx.width,
-            tone: 'textDim',
             indent: 2,
             continuationIndent: 2,
           }),
@@ -201,11 +225,22 @@ export function eventRowBlock(options: {
         tone: 'textDim',
       });
     case 'seat_switched':
-      return wrappedTextBlock({
+      return wrappedSegmentsBlock({
         keyPrefix,
-        text: `${CREW_SEAT_LABELS[event.seat]}${arrowSep()}${formatSeatCandidateIdentity(event.to)}${SOFT_SEP}${event.auto ? `automatic fallback${SOFT_SEP}` : ''}${formatSeatSwitchCause(event)}`,
+        segments: [
+          { text: CREW_SEAT_LABELS[event.seat], tone: CREW_SEAT_ROLES[event.seat] },
+          { text: arrowSep(), tone: 'textDim' },
+          { text: formatSeatCandidateIdentity(event.to), tone: CREW_SEAT_ROLES[event.seat] },
+          { text: SOFT_SEP, tone: 'textDim' },
+          ...(event.auto
+            ? [
+                { text: 'automatic fallback', tone: 'textDim' } satisfies ConversationRowSegment,
+                { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
+              ]
+            : []),
+          { text: formatSeatSwitchCause(event), tone: 'textDim' },
+        ],
         width: ctx.width,
-        tone: 'textDim',
       });
     case 'task_reset':
       return cardRowsBlock({
@@ -217,26 +252,27 @@ export function eventRowBlock(options: {
         valueTone: 'textDim',
       });
     case 'consult_answered':
-      return wrappedTextBlock({
+      return wrappedSegmentsBlock({
         keyPrefix,
-        text: consultAnsweredText(event),
+        segments: consultAnsweredSegments(event),
         width: ctx.width,
-        tone: 'textDim',
       });
     case 'implementer_generate_running':
       return runningImplementerRowBlock(keyPrefix, event, ctx);
     case 'implementer_generate_done':
       return implementerDoneRowBlock(keyPrefix, event, ctx, expanded);
     case 'implementer_generate_failed': {
-      const label = `${CREW_SEAT_LABELS.build} failed`;
       const { value } = implementerFailureCard(event, ctx.width, expanded);
-      return cardRowsBlock({
+      return wrappedSegmentsBlock({
         keyPrefix,
-        label,
-        value,
+        segments: [
+          { text: CREW_SEAT_LABELS.build, tone: CREW_SEAT_ROLES.build },
+          { text: ' ', tone: 'textDim' },
+          { text: 'failed', tone: stateTone('failed') },
+          ...(value ? [{ text: `  ${value}`, tone: 'textDim' as const }] : []),
+        ],
         width: ctx.width,
-        labelTone: 'error',
-        valueTone: 'textDim',
+        kind: 'card',
       });
     }
     case 'validate':
@@ -421,18 +457,17 @@ export function eventRowBlock(options: {
   }
 }
 
-function driftHeadline(event: EngineEventOf<'drift_report'>): string {
-  const parts = ['Drift'];
-  if (!event.passed) parts.push('failed');
-  if (event.errorCount > 0) parts.push(countNoun(event.errorCount, 'error'));
-  if (event.warningCount > 0) parts.push(countNoun(event.warningCount, 'warning'));
-  if (parts.length === 1) parts.push('clean');
-  return parts.join(SOFT_SEP);
-}
-
-function driftTone(event: EngineEventOf<'drift_report'>): ConversationRowTone {
-  if (!event.passed) return 'error';
-  return event.warningCount > 0 ? 'warning' : 'textDim';
+function driftHeadlineSegments(event: EngineEventOf<'drift_report'>): ConversationRowSegment[] {
+  const parts: ConversationRowSegment[] = [{ text: 'Drift', tone: 'text' }];
+  if (!event.passed) parts.push({ text: 'failed', tone: stateTone('failed') });
+  if (event.errorCount > 0)
+    parts.push({ text: countNoun(event.errorCount, 'error'), tone: stateTone('failed') });
+  if (event.warningCount > 0)
+    parts.push({ text: countNoun(event.warningCount, 'warning'), tone: stateTone('attention') });
+  if (parts.length === 1) parts.push({ text: 'clean', tone: stateTone('passed') });
+  return parts.flatMap((part, index) =>
+    index === 0 ? [part] : [{ text: SOFT_SEP, tone: 'textDim' }, part],
+  );
 }
 
 export function orderedDriftFindings(event: EngineEventOf<'drift_report'>): DriftFinding[] {
@@ -469,39 +504,76 @@ export function implementerFailureCard(
   };
 }
 
-function consultAnsweredText(event: EngineEventOf<'consult_answered'>): string {
+function consultAnsweredSegments(
+  event: EngineEventOf<'consult_answered'>,
+): ConversationRowSegment[] {
+  const seat =
+    event.reason === 'deviation' && (event.action === 'confirm' || event.action === 'ask-user')
+      ? 'plan'
+      : (event.seat ?? 'plan');
+  const label = { text: CREW_SEAT_LABELS[seat], tone: CREW_SEAT_ROLES[seat] };
   if (event.reason === 'deviation') {
     if (event.action === 'confirm') {
-      return `${CREW_SEAT_LABELS.plan} confirmed ${countNoun(event.decisionCount ?? 0, 'decision')} for ${event.taskId}`;
+      return [
+        label,
+        {
+          text: ` confirmed ${countNoun(event.decisionCount ?? 0, 'decision')} for ${event.taskId}`,
+          tone: 'textDim',
+        },
+      ];
     }
     if (event.action === 'ask-user') {
-      return `${CREW_SEAT_LABELS.plan} asks you about the decisions ${event.taskId} reported`;
+      return [
+        label,
+        { text: ` asks you about the decisions ${event.taskId} reported`, tone: 'textDim' },
+      ];
     }
   }
-  return `${CREW_SEAT_LABELS[event.seat ?? 'plan']}${arrowSep()}${event.taskId}: ${consultAnsweredAction(event)}`;
+  return [
+    label,
+    { text: `${arrowSep()}${event.taskId}: `, tone: 'textDim' },
+    ...consultAnsweredAction(event),
+  ];
 }
 
-function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): string {
+function consultAnsweredAction(event: EngineEventOf<'consult_answered'>): ConversationRowSegment[] {
+  const detail = (text: string): ConversationRowSegment[] => [
+    { text, tone: 'textDim' },
+    { text: SOFT_SEP, tone: 'textDim' },
+    { text: event.diagnosis, tone: 'textDim' },
+  ];
   switch (event.action) {
     case 'guidance':
-      return `guidance${SOFT_SEP}${event.diagnosis}`;
+      return detail('guidance');
     case 'rewrite-task':
-      return event.revision === undefined
-        ? `rewrote ${event.taskId}`
-        : `rewrote ${event.taskId} (rev ${event.revision})`;
+      return [
+        {
+          text:
+            event.revision === undefined
+              ? `rewrote ${event.taskId}`
+              : `rewrote ${event.taskId} (rev ${event.revision})`,
+          tone: 'textDim',
+        },
+      ];
     case 'split-task': {
       const ids = event.newTaskIds;
       const summary = ids === null || ids.length === 0 ? 'split' : `split into ${ids.join(', ')}`;
-      return `${summary}${SOFT_SEP}${event.diagnosis}`;
+      return detail(summary);
     }
     case 'verify':
-      return event.checkIds === undefined || event.checkIds.length === 0
-        ? 'verify'
-        : `verify ${event.checkIds.join(', ')}`;
+      return [
+        {
+          text:
+            event.checkIds === undefined || event.checkIds.length === 0
+              ? 'verify'
+              : `verify ${event.checkIds.join(', ')}`,
+          tone: 'textDim',
+        },
+      ];
     case 'ask-user':
-      return 'asks you';
+      return [{ text: 'asks you', tone: 'textDim' }];
     case 'confirm':
-      return `confirmed the deviation${SOFT_SEP}${event.diagnosis}`;
+      return detail('confirmed the deviation');
     default:
       return assertNever(event.action);
   }
@@ -518,22 +590,54 @@ export function recoveryRowBlock(
     reset === undefined ? null : `${reset.taskId} back to pending`,
     resolved === undefined ? null : recoveryOutcomeWords(resolved.outcome),
   ].filter((part): part is string => part !== null);
-  const action =
-    chosen === undefined ? null : recoveryActionLabel(chosen.action, { seat: chosen.seat });
-  const done =
-    action === null || outcome.length === 0
-      ? action
-      : `${action}${arrowSep()}${outcome.join(', ')}`;
+  const done = chosen === undefined ? [] : recoveryActionSegments(chosen);
+  if (done.length > 0 && outcome.length > 0) {
+    done.push({ text: `${arrowSep()}${outcome.join(', ')}`, tone: 'textDim' });
+  }
   // The prompt panel carries the clock; the row names what happened, once.
-  const halt = prompted === undefined ? null : stripRecoveryResetClause(prompted.headline);
-  return cardRowsBlock({
+  const halt = prompted === undefined ? [] : recoveryHeadlineSegments(prompted);
+  return recoveryCardBlock(
     keyPrefix,
-    label: 'Recovery',
-    value: [halt, done].filter((part): part is string => part !== null).join(SOFT_SEP),
+    [
+      ...halt,
+      ...(halt.length > 0 && done.length > 0 ? [{ text: SOFT_SEP, tone: 'textDim' as const }] : []),
+      ...done,
+    ],
     width,
-    labelTone: resolved === undefined ? 'textDim' : recoveryResolvedTone(resolved.outcome),
-    valueTone: 'textDim',
+    resolved === undefined ? stateTone('attention') : recoveryResolvedTone(resolved.outcome),
+  );
+}
+
+function recoveryCardBlock(
+  keyPrefix: string,
+  value: ConversationRowSegment[],
+  width: number,
+  tone: ConversationRowTone,
+): ConversationRowBlock | null {
+  return wrappedSegmentsBlock({
+    keyPrefix,
+    segments: [{ text: value.length === 0 ? 'Recovery' : 'Recovery  ', tone }, ...value],
+    width,
+    kind: 'card',
   });
+}
+
+function recoveryActionSegments(
+  event: Pick<EngineEventOf<'recovery_action_selected'>, 'action' | 'seat'>,
+): ConversationRowSegment[] {
+  return recoveryActionParts(event.action, { seat: event.seat }).map((part) => ({
+    text: part.text,
+    tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
+  }));
+}
+
+function recoveryHeadlineSegments(
+  event: EngineEventOf<'recovery_prompted'>,
+): ConversationRowSegment[] {
+  return (event.headlineSpans ?? [{ text: event.headline }]).map((part) => ({
+    text: stripRecoveryResetClause(part.text),
+    tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
+  }));
 }
 
 function recoveryOutcomeWords(outcome: EngineEventOf<'recovery_resolved'>['outcome']): string {
@@ -557,11 +661,10 @@ function recoveryResolvedTone(
   switch (outcome) {
     case 'continued':
     case 'retry-current-task':
-      return 'success';
+      return stateTone('passed');
     case 'skipped-current-task':
-      return 'textDim';
     case 'aborted':
-      return 'error';
+      return stateTone('attention');
     default:
       return assertNever(outcome);
   }

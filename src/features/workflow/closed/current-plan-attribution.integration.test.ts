@@ -18,7 +18,7 @@ import {
   makeTaskWorkflowContext,
 } from '#testing/helpers/orchestrator-task-context.js';
 import { deriveSummaryView } from './view-model.js';
-import { outcomeLine } from './outcome.js';
+import { outcomeLineSpans } from './outcome.js';
 
 const oldTask = makeTask({
   id: 'T001',
@@ -93,7 +93,11 @@ describe('independent closed attribution proof', () => {
     expect(result.briefs.rows[0]).toMatchObject({ state: 'pending', partialFiles: 0, retries: 0 });
     expect(result.files.stoppedAt).toBeNull();
     expect([...result.files.partial]).toEqual([]);
-    expect(outcomeLine(result, 120)).not.toContain('stopped in');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).not.toContain('stopped in');
   });
 
   it('does not assign stale persisted partial files to an in-progress brief with a new hash', () => {
@@ -114,15 +118,31 @@ describe('independent closed attribution proof', () => {
 
   it('shows retained files after a rewind with no current briefs', () => {
     const result = view([]);
-    expect(outcomeLine(result, 120)).toContain('no current briefs');
-    expect(outcomeLine(result, 120)).toContain('changes kept');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('no current briefs');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('changes kept');
     expect(result.briefs.earlierRows).toHaveLength(1);
   });
 
   it('does not claim nothing built when earlier completed work has no recorded changed set', () => {
     const result = view([], { changedFiles: undefined });
-    expect(outcomeLine(result, 120)).not.toContain('nothing built');
-    expect(outcomeLine(result, 120)).toContain('files not recorded');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).not.toContain('nothing built');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('files not recorded');
   });
 
   it.each(['hash', 'legacy'] as const)(
@@ -224,8 +244,16 @@ describe('independent closed attribution proof', () => {
   it('keeps an empty prebuild closure honest', () => {
     const ledger = createEvidenceLedger({ sessionId: 'proof', feature: 'proof', tasks: [] });
     const result = view([], { changedFiles: undefined, taskBreakdown: [] }, ledger);
-    expect(outcomeLine(result, 120)).toContain('no briefs compiled');
-    expect(outcomeLine(result, 120)).toContain('nothing built');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('no briefs compiled');
+    expect(
+      outcomeLineSpans(result, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('nothing built');
   });
 
   it('folds repeated executions of a current brief into its one current row', () => {

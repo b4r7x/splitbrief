@@ -6,14 +6,27 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import {
   formatTaskStartedParts,
-  fullSuiteRow,
+  fullSuiteSegments,
   fullSuiteTone,
   reviewChecksDeclinedRows,
-  reviewChecksRow,
+  reviewChecksSegments,
   reviewChecksTone,
   validationStageNotes,
   validationSummarySegments,
 } from './event-format.js';
+import type { ConversationRowSegment } from './types.js';
+
+function segmentText(segments: readonly ConversationRowSegment[]): string {
+  return segments.map((segment) => segment.text).join('');
+}
+
+function fullSuiteRow(event: Extract<EngineEvent, { type: 'full_suite' }>): string {
+  return segmentText(fullSuiteSegments(event));
+}
+
+function reviewChecksRow(event: Extract<EngineEvent, { type: 'review_checks' }>): string {
+  return segmentText(reviewChecksSegments(event));
+}
 
 function validateEvent(
   overrides: Partial<Extract<EngineEvent, { type: 'validate' }>>,
@@ -40,15 +53,19 @@ function stageTone(
   event: Extract<EngineEvent, { type: 'validate' }>,
   stage: string,
 ): string | undefined {
-  return validationSummarySegments(event).find((segment) => segment.text.endsWith(` ${stage}`))
-    ?.tone;
+  const segments = validationSummarySegments(event);
+  const index = segments.findIndex((segment) => segment.text === ` ${stage}`);
+  expect(segments[index]?.tone).toBe('textDim');
+  return segments[index - 1]?.tone;
 }
 
 describe('validationSummarySegments', () => {
-  it('renders an interrupted older gate as stopped in the dim tone', () => {
+  it('colors an interrupted older gate as attention with a dim label and separator', () => {
     const event = validateEvent({ status: 'stopped', activeStage: 'test', passed: false });
     expect(validationSummarySegments(event)).toEqual([
-      { text: 'Validate · stopped', tone: 'textDim' },
+      { text: 'Validate', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'stopped', tone: 'warning' },
     ]);
   });
   it('tones a passing stage apart from a stage that never ran', () => {
@@ -91,7 +108,7 @@ describe('validationSummarySegments', () => {
       commands: { typecheck: 'npm run typecheck' },
     });
 
-    expect(stageTone(event, 'typecheck')).toBe('info');
+    expect(stageTone(event, 'typecheck')).toBe('accent');
     expect(stageTone(event, 'lint')).toBe('textDim');
   });
 
@@ -208,7 +225,7 @@ describe('fullSuiteRow', () => {
   });
 
   // Review render (red gate): `failed 16.0s` wore the same dim as the `not run` rows under it.
-  it('paints a failed stage as an error and leaves running, passed and not run dim', () => {
+  it('paints failed, passed, running and skipped stages with their state tones', () => {
     const suite = {
       type: 'full_suite',
       ts: 0,
@@ -219,9 +236,9 @@ describe('fullSuiteRow', () => {
     } as const;
 
     expect(fullSuiteTone({ ...suite, status: 'done', passed: false })).toBe('error');
-    expect(fullSuiteTone({ ...suite, status: 'done', passed: true })).toBe('textDim');
-    expect(fullSuiteTone({ ...suite, status: 'running' })).toBe('textDim');
-    expect(fullSuiteTone({ ...suite, status: 'not-run' })).toBe('textDim');
+    expect(fullSuiteTone({ ...suite, status: 'done', passed: true })).toBe('success');
+    expect(fullSuiteTone({ ...suite, status: 'running' })).toBe('accent');
+    expect(fullSuiteTone({ ...suite, status: 'not-run' })).toBe('warning');
   });
 
   it('says what a base re-run verdict means: the red was there before the run, or it was not', () => {
@@ -243,7 +260,7 @@ describe('fullSuiteRow', () => {
       'Base re-run · npm test -- src/legacy.test.ts · passes at the run base · 2.0s',
     );
     expect(fullSuiteTone({ ...rerun, passed: false })).toBe('warning');
-    expect(fullSuiteTone({ ...rerun, passed: true })).toBe('textDim');
+    expect(fullSuiteTone({ ...rerun, passed: true })).toBe('success');
   });
 });
 
@@ -263,6 +280,54 @@ function reviewCheck(overrides: Partial<ReviewCheckEvent>): ReviewCheckEvent {
 }
 
 describe('fullSuiteRow for a reviewer check', () => {
+  it.each([
+    [{ status: 'running' }, 'running', 'accent'],
+    [{ status: 'done', passed: true }, 'passed', 'success'],
+    [{ status: 'done', passed: false }, 'failed', 'error'],
+    [{ status: 'refused', detail: 'policy refused' }, 'refused', 'warning'],
+    [{ status: 'not-run', detail: 'previous check failed' }, 'not\u00a0run', 'warning'],
+    [{ status: 'stopped' }, 'stopped', 'warning'],
+    [{ status: 'done', passed: false, moment: 'base' }, 'red at the run base too', 'warning'],
+    [
+      { status: 'done', passed: false, moment: 'base', newFailures: 0, preExisting: 2 },
+      'pre-existing',
+      'warning',
+    ],
+    [
+      { status: 'done', passed: false, moment: 'base', newFailures: 1, preExisting: 0 },
+      '1\u00a0new, 0\u00a0pre-existing',
+      'error',
+    ],
+    [{ status: 'done', passed: true, moment: 'base' }, 'passes at the run base', 'success'],
+  ] satisfies [Partial<ReviewCheckEvent>, string, string][])(
+    'colors only verdict %s as %s',
+    (overrides, verdict, tone) => {
+      for (const scenario of [undefined, 'workflow-x']) {
+        const event = reviewCheck({ ...overrides, scenario, duration: 1_000 });
+        const spans = fullSuiteSegments(event);
+        const word = scenario !== undefined && verdict === 'passed' ? 'rendered' : verdict;
+        expect(spans).toContainEqual({ text: word, tone });
+        expect(
+          spans
+            .filter((span) => span.text !== word && span.text !== 'Reviewer')
+            .every((span) => span.tone === 'textDim'),
+        ).toBe(true);
+        expect(spans.map((span) => span.text).join('')).toBe(fullSuiteRow(event));
+      }
+    },
+  );
+
+  it.each(['plan', 'brief', 'pre-review'] as const)('dims the %s label and command', (moment) => {
+    const spans = fullSuiteSegments(
+      reviewCheck({ moment, status: 'done', passed: false, duration: 1_000 }),
+    );
+    expect(spans.find((span) => span.text.includes('check V1'))?.tone).toBe('textDim');
+    expect(spans.find((span) => span.text.includes('npm test'))?.tone).toBe('textDim');
+    if (moment === 'pre-review')
+      expect(spans).toContainEqual({ text: 'Reviewer', tone: 'reviewer' });
+    if (moment === 'plan') expect(spans).toContainEqual({ text: 'Plan', tone: 'planner' });
+    expect(spans.filter((span) => span.text === ' · ')).toHaveLength(3);
+  });
   it('names plan checks and renders without displaying render commands', () => {
     const plan = reviewCheck({ id: 'K1', moment: 'plan' });
     expect(fullSuiteRow(plan)).toBe('Plan check K1 · npm test · running');
@@ -290,11 +355,11 @@ describe('fullSuiteRow for a reviewer check', () => {
   });
 
   it.each(['pre-review', 'base', 'brief', 'plan'] as const)(
-    'renders a stopped %s check in the dim tone',
+    'renders a stopped %s check in the warning tone',
     (moment) => {
       const event = reviewCheck({ moment, status: 'stopped' });
       expect(fullSuiteRow(event)).toMatch(/ · stopped$/u);
-      expect(fullSuiteTone(event)).toBe('textDim');
+      expect(fullSuiteTone(event)).toBe('warning');
     },
   );
   it('names the check by its id while it runs and once it passed or failed', () => {
@@ -407,7 +472,7 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteRow(gone)).toBe(
       'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 3\u00a0others left · 4.0s',
     );
-    expect(fullSuiteTone(gone)).toBe('textDim');
+    expect(fullSuiteTone(gone)).toBe('success');
     expect(fullSuiteRow({ ...fix, passed: true, own: 1, ownLeft: 0, others: 1 })).toBe(
       'Fix check V1 · npm run test-ci · your 1\u00a0failure gone · 1\u00a0other left · 4.0s',
     );
@@ -421,6 +486,15 @@ describe('fullSuiteRow for a reviewer check', () => {
       'Fix check V1 · npm run test-ci · your 2\u00a0failures not shown · not\u00a0proven\u00a0fixed · 4.0s',
     );
     expect(fullSuiteTone(notProven)).toBe('error');
+    expect(fullSuiteSegments(notProven)).toContainEqual({
+      text: 'your 2\u00a0failures not shown',
+      tone: 'textDim',
+    });
+    expect(fullSuiteSegments(notProven)).toContainEqual({
+      text: 'not\u00a0proven\u00a0fixed',
+      tone: 'error',
+    });
+    expect(fullSuiteSegments(gone)).toContainEqual({ text: '3\u00a0others left', tone: 'textDim' });
     expect(fullSuiteRow({ ...gone, others: 0, proven: true })).toBe(
       'Fix check V1 · npm run test-ci · your 2\u00a0failures gone · 4.0s',
     );
@@ -514,7 +588,7 @@ describe('fullSuiteRow for a reviewer check', () => {
     }
   });
 
-  it('paints a red check as an error, a red base re-run and a refusal as warnings, the rest dim', () => {
+  it('paints a red check as an error and a red base re-run, refusal and skipped check as warnings', () => {
     expect(fullSuiteTone(reviewCheck({ status: 'done', passed: false }))).toBe('error');
     expect(fullSuiteTone(reviewCheck({ moment: 'base', status: 'done', passed: false }))).toBe(
       'warning',
@@ -522,9 +596,9 @@ describe('fullSuiteRow for a reviewer check', () => {
     expect(fullSuiteTone(reviewCheck({ status: 'refused', detail: 'runs a file by path' }))).toBe(
       'warning',
     );
-    expect(fullSuiteTone(reviewCheck({ status: 'done', passed: true }))).toBe('textDim');
-    expect(fullSuiteTone(reviewCheck({ status: 'running' }))).toBe('textDim');
-    expect(fullSuiteTone(reviewCheck({ status: 'not-run', detail: 'V1 failed' }))).toBe('textDim');
+    expect(fullSuiteTone(reviewCheck({ status: 'done', passed: true }))).toBe('success');
+    expect(fullSuiteTone(reviewCheck({ status: 'running' }))).toBe('accent');
+    expect(fullSuiteTone(reviewCheck({ status: 'not-run', detail: 'V1 failed' }))).toBe('warning');
   });
 });
 
@@ -550,6 +624,27 @@ const CHOSEN = [
 ];
 
 describe('reviewChecksRow', () => {
+  it.each(['planned', 'skipped', 'off'] as const)(
+    'isolates the reviewer and %s state tones',
+    (status) => {
+      const spans = reviewChecksSegments(reviewChecksEvent({ status, commands: CHOSEN }));
+      if (status !== 'off') expect(spans).toContainEqual({ text: 'Reviewer', tone: 'reviewer' });
+      const state = status === 'off' ? 'off' : 'not\u00a0run';
+      if (status !== 'planned')
+        expect(spans).toContainEqual({
+          text: state,
+          tone: 'warning',
+        });
+      expect(
+        spans
+          .filter((span) => span.text !== state && span.text !== 'Reviewer')
+          .every((span) => span.tone === 'textDim'),
+      ).toBe(true);
+      expect(spans.map((span) => span.text).join('')).toBe(
+        reviewChecksRow(reviewChecksEvent({ status, commands: CHOSEN })),
+      );
+    },
+  );
   it('counts the commands the reviewer chose and the tests it declined', () => {
     const event = reviewChecksEvent({
       commands: CHOSEN,
@@ -597,7 +692,7 @@ describe('reviewChecksRow', () => {
     expect(reviewChecksTone(event)).toBe('warning');
   });
 
-  it('names, as a warning, every chosen command that did not run and why', () => {
+  it('names every chosen command that did not run and why in the warning tone', () => {
     const event = reviewChecksEvent({
       status: 'skipped',
       commands: CHOSEN,
@@ -609,6 +704,18 @@ describe('reviewChecksRow', () => {
     );
     expect(reviewChecksDeclinedRows(event)).toEqual([]);
     expect(reviewChecksTone(event)).toBe('warning');
+    expect(reviewChecksSegments(event)).toEqual([
+      { text: 'Reviewer', tone: 'reviewer' },
+      { text: ' checks', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'not\u00a0run', tone: 'warning' },
+      { text: ' V1, V2', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
+      {
+        text: 'validation.approve_checks is ask and this run has no screen to ask on',
+        tone: 'textDim',
+      },
+    ]);
   });
 });
 
@@ -631,7 +738,17 @@ function taskStartedEvent(
   };
 }
 
+function taskStartedPartTexts(event: Extract<EngineEvent, { type: 'task_started' }>): string[] {
+  return formatTaskStartedParts(event).map((part) => part.text);
+}
+
 describe('formatTaskStartedParts', () => {
+  it('carries identity and metadata boundaries as tones', () => {
+    expect(formatTaskStartedParts(taskStartedEvent({}))).toEqual([
+      { text: 'src/validate.ts (create)', tone: 'textDim' },
+      { text: 'Claude Code CLI · Opus 5.5', tone: 'implementer' },
+    ]);
+  });
   afterEach(() => modelCacheStore.reset());
 
   it.each(['default', 'local-fixture'])(
@@ -657,7 +774,7 @@ describe('formatTaskStartedParts', () => {
           },
         ],
       });
-      const parts = formatTaskStartedParts(
+      const parts = taskStartedPartTexts(
         taskStartedEvent({
           file: 'src/text.js',
           action: 'modify',
@@ -678,17 +795,17 @@ describe('formatTaskStartedParts', () => {
     ['agent', 'Agent'],
   ] as const)('names a recorded %s build seat consistently', (backendKind, label) => {
     expect(
-      formatTaskStartedParts(taskStartedEvent({ tool: backendKind, model: 'gpt-5', backendKind })),
+      taskStartedPartTexts(taskStartedEvent({ tool: backendKind, model: 'gpt-5', backendKind })),
     ).toEqual(['src/validate.ts (create)', `${label} · GPT-5`]);
     for (const command of ['claude', 'opencode']) {
       expect(
-        formatTaskStartedParts(taskStartedEvent({ tool: command, model: 'gpt-5', backendKind })),
+        taskStartedPartTexts(taskStartedEvent({ tool: command, model: 'gpt-5', backendKind })),
       ).toEqual(['src/validate.ts (create)', `${command} · GPT-5`]);
     }
   });
 
   it('resolves an older CLI command through the same model catalog as a current call', () => {
-    expect(formatTaskStartedParts(taskStartedEvent({ tool: 'claude', model: 'sonnet' }))).toEqual([
+    expect(taskStartedPartTexts(taskStartedEvent({ tool: 'claude', model: 'sonnet' }))).toEqual([
       'src/validate.ts (create)',
       'Claude Code CLI · Sonnet 5',
     ]);
@@ -696,19 +813,19 @@ describe('formatTaskStartedParts', () => {
 
   it('keeps the recorded build axes and backend when the runner name matches a CLI command', () => {
     expect(
-      formatTaskStartedParts(
+      taskStartedPartTexts(
         taskStartedEvent({ tool: 'codex', model: 'gpt-5', axes: ['high'], backendKind: 'cli' }),
       ),
     ).toEqual(['src/validate.ts (create)', 'OpenAI Codex CLI · GPT-5 · high']);
     expect(
-      formatTaskStartedParts(
+      taskStartedPartTexts(
         taskStartedEvent({ tool: 'claude', model: undefined, axes: [], backendKind: 'shell' }),
       ),
     ).toEqual(['src/validate.ts (create)', 'claude · auto']);
   });
 
   it('names the build seat in the words the seat identity uses for it', () => {
-    expect(formatTaskStartedParts(taskStartedEvent({}))).toEqual([
+    expect(taskStartedPartTexts(taskStartedEvent({}))).toEqual([
       'src/validate.ts (create)',
       'Claude Code CLI · Opus 5.5',
     ]);
@@ -717,7 +834,7 @@ describe('formatTaskStartedParts', () => {
   // Run 3's T001 row read `profile default · fit fits · why Selected profile default (fits,
   // estimated 5075/1000000 tokens)`: the routing sentence repeated the two facts before it.
   it('says nothing more about a brief that fits', () => {
-    const parts = formatTaskStartedParts(
+    const parts = taskStartedPartTexts(
       taskStartedEvent({
         file: 'testing/fixtures/opencode/api-model-full.json',
         action: 'modify',
@@ -740,7 +857,7 @@ describe('formatTaskStartedParts', () => {
   });
 
   it('gives a tight brief its estimate against the context window', () => {
-    const parts = formatTaskStartedParts(
+    const parts = taskStartedPartTexts(
       taskStartedEvent({
         implementerProfile: 'default',
         contextFit: 'tight',
@@ -758,7 +875,7 @@ describe('formatTaskStartedParts', () => {
   });
 
   it('keeps the estimate when the context window is unknown', () => {
-    const parts = formatTaskStartedParts(
+    const parts = taskStartedPartTexts(
       taskStartedEvent({ contextFit: 'overflow', estimatedTokens: 41_200 }),
     );
 

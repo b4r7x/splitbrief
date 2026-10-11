@@ -50,7 +50,7 @@ describe('nearestReadableIndex', () => {
 
 describe('readableHex', () => {
   it('returns a colour that already reaches the ratio unchanged', () => {
-    expect(readableHex('#b4bad0', ['#24273a'], 4.5)).toBe('#b4bad0');
+    expect(readableHex('#9fa7bf', ['#24273a'], 4.5)).toBe('#9fa7bf');
   });
 
   it('steps an unreadable colour toward the pole that contrasts with the grounds until it reads', () => {

@@ -3,6 +3,7 @@ import {
   buildProgressRows,
   deriveBuildProgress,
   UI_IDLE_WARN_MS,
+  passedCountSpans,
   type DeriveBuildProgressInput,
 } from './build-progress.js';
 import { getChromeContentWidth, buildProgressRowCount } from '../layout/chrome-rows.js';
@@ -973,6 +974,278 @@ describe('buildProgressRowCount', () => {
 });
 
 describe('buildProgressRows', () => {
+  it('keeps the sidebar passed count in success', () => {
+    expect(passedCountSpans('3')).toEqual([
+      { text: '3 ', tone: 'textDim' },
+      { text: 'passed', tone: 'success' },
+    ]);
+  });
+
+  it.each([
+    [
+      'final-review',
+      { id: 'R1', moment: 'plan', scenario: 'workflow-x', command: 'npm run tui-shots' },
+      'Render workflow-x',
+    ],
+    ['final-review', { id: 'V1', moment: 'base', command: 'npm test' }, 'Base re-run V1'],
+    ['implementing', { id: 'V1', moment: 'brief', command: 'npm test' }, 'Fix check V1'],
+  ] as const)('keeps the %s running lead accent and metadata dim for %s', (phase, suite, lead) => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase }),
+        operations: operationsState({ suiteStage: { ...suite, stageStartedTs: NOW - 42_000 } }),
+      }),
+    );
+    for (const width of [160, 80, 60]) {
+      const spans = buildProgressRows(progress, width).flatMap((row) => row.spans);
+      expect(spans).toContainEqual({ text: lead, tone: 'accent' });
+      expect(spans).toContainEqual({ text: ' 0:42', tone: 'textDim' });
+      if (suite.moment !== 'plan')
+        expect(spans).toContainEqual({ text: suite.command, tone: 'textDim' });
+      for (const span of spans.filter((part) => part.text === ' · '))
+        expect(span.tone).toBe('textDim');
+    }
+  });
+
+  it.each([160, 80, 60])(
+    'keeps the running state accent and its clock dim at %s cells',
+    (width) => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            suiteStage: {
+              id: 'V1',
+              moment: 'pre-review',
+              command: 'npm test',
+              stageStartedTs: NOW - 12_000,
+            },
+          }),
+        }),
+      );
+      const spans = buildProgressRows(progress, width).flatMap((row) => row.spans);
+      expect(spans).toContainEqual({ text: 'running', tone: 'accent' });
+      expect(spans).toContainEqual({ text: ' 0:12', tone: 'textDim' });
+    },
+  );
+
+  it('carries count states, separators and attempts as separate tones', () => {
+    const progress = deriveBuildProgress(
+      input({
+        tasks: tasksState(
+          [
+            { id: 'T001', title: 'One', status: 'done' },
+            { id: 'T002', title: 'Two', status: 'escalated' },
+            { id: 'T003', title: 'Three', status: 'failed' },
+          ],
+          { currentAttempt: 2 },
+        ),
+      }),
+    );
+    expect(buildProgressRows(progress, 160)[0]?.spans).toEqual([
+      { text: '1/3 briefs passed', tone: 'textDim' },
+      { text: ' · 1 ', tone: 'textDim' },
+      { text: 'escalated', tone: 'warning' },
+      { text: ' · 1 ', tone: 'textDim' },
+      { text: 'failed', tone: 'error' },
+      { text: ' · ', tone: 'textDim' },
+      { text: `attempt 2 of ${BOUNDS.attemptsPerLineage}`, tone: 'textDim' },
+    ]);
+  });
+
+  it.each([
+    ['implementer', 'implementer', undefined],
+    ['planner', 'planner', 'PLAN'],
+    ['escalation', 'planner', 'PLAN'],
+    ['review', 'reviewer', 'REVIEW'],
+  ] as const)(
+    'carries the %s identity and consult seat tone through fitting',
+    (role, tone, seat) => {
+      const progress = deriveBuildProgress(
+        input({
+          operations: operationsState({
+            active: runningOperation({
+              role,
+              taskId: 'T013',
+              model: 'gpt-5',
+              axes: ['high'],
+            }),
+          }),
+          lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 16_000 }),
+        }),
+      );
+      const identity = 'OpenAI Codex CLI · GPT-5 · high';
+      for (const width of [160, 80, 45, 12, 1, 0]) {
+        const rows = buildProgressRows(progress, width);
+        const spans = rows[1]?.spans ?? [];
+        expect(spans.some((span) => span.tone === tone && span.text.startsWith('O'))).toBe(
+          width >= 45,
+        );
+        if (width === 160 && seat !== undefined) expect(spans).toContainEqual({ text: seat, tone });
+        if (width === 160) expect(spans).toContainEqual({ text: identity, tone });
+        for (const row of rows) expect(row.spans.map((span) => span.text).join('')).toBe(row.text);
+        for (const span of spans.filter(
+          (span) => span.text.includes('consult') || span.text.includes('working'),
+        )) {
+          expect(span.tone).toBe('textDim');
+        }
+      }
+    },
+  );
+
+  it('keeps the seat tone when a wide-character identity is cut within its leading word', () => {
+    const progress = deriveBuildProgress(
+      input({
+        operations: operationsState({
+          active: runningOperation({ runnerName: '界界界界', backendKind: 'api' }),
+        }),
+      }),
+    );
+    const row = buildProgressRows(progress, 14)[1];
+    expect(row?.text).toBe('界… · working');
+    expect(row?.spans).toEqual([
+      { text: '界…', tone: 'implementer' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'working', tone: 'textDim' },
+    ]);
+  });
+
+  it('colors a final review identity and its lead as the reviewer seat', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          active: runningOperation({ role: 'review', phase: 'final-review' }),
+        }),
+      }),
+    );
+    expect(buildProgressRows(progress, 160)[1]?.spans).toEqual([
+      { text: 'Review', tone: 'reviewer' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'OpenAI Codex CLI · auto', tone: 'reviewer' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'last event 0s ago', tone: 'textDim' },
+    ]);
+  });
+
+  it.each([
+    {
+      suite: { id: 'V1', moment: 'pre-review', command: 'npm test' },
+      labelSpans: [
+        { text: 'Reviewer', tone: 'reviewer' },
+        { text: ' check V1', tone: 'textDim' },
+      ],
+    },
+    {
+      suite: { id: 'C1', moment: 'plan', command: 'npm test' },
+      labelSpans: [
+        { text: 'Plan', tone: 'planner' },
+        { text: ' check C1', tone: 'textDim' },
+      ],
+    },
+    {
+      suite: { id: 'B1', moment: 'base', command: 'npm test' },
+      labelSpans: [{ text: 'Base re-run B1', tone: 'accent' }],
+    },
+    {
+      suite: { id: 'F1', moment: 'brief', command: 'npm test' },
+      labelSpans: [{ text: 'Fix check F1', tone: 'accent' }],
+    },
+    {
+      suite: { moment: 'pre-review', command: 'npm test' },
+      labelSpans: [{ text: 'Pre-review suite', tone: 'textDim' }],
+    },
+  ] as const)('colors seat words in the running $suite.moment check', ({ suite, labelSpans }) => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({ suiteStage: { ...suite, stageStartedTs: NOW - 12_000 } }),
+      }),
+    );
+    const spans = buildProgressRows(progress, 160)[1]?.spans ?? [];
+    expect(spans).toEqual([
+      { text: 'Review', tone: 'reviewer' },
+      { text: ' · ', tone: 'textDim' },
+      ...labelSpans,
+      { text: ' · ', tone: 'textDim' },
+      { text: 'npm test', tone: 'textDim' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'running', tone: 'accent' },
+      { text: ' 0:12', tone: 'textDim' },
+    ]);
+  });
+
+  it('colors the Review seat and running render lead without a command', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          suiteStage: {
+            id: 'R1',
+            moment: 'plan',
+            command: 'npm test',
+            scenario: 'workflow-x',
+            stageStartedTs: NOW - 12_000,
+          },
+        }),
+      }),
+    );
+    expect(buildProgressRows(progress, 160)[1]?.spans).toEqual([
+      { text: 'Review', tone: 'reviewer' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Render workflow-x', tone: 'accent' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'running', tone: 'accent' },
+      { text: ' 0:12', tone: 'textDim' },
+    ]);
+  });
+
+  it('keeps Reviewer and its separator tones when the check command is cut', () => {
+    const progress = deriveBuildProgress(
+      input({
+        lifecycle: lifecycleState({ phase: 'final-review' }),
+        operations: operationsState({
+          suiteStage: {
+            id: 'V1',
+            moment: 'pre-review',
+            command: `npm test -- ${'long-command-argument '.repeat(12)}`,
+            stageStartedTs: NOW - 12_000,
+          },
+        }),
+      }),
+    );
+    for (const width of [80, 120, 160]) {
+      const row = buildProgressRows(progress, width)[1];
+      expect(row?.spans).toContainEqual({ text: 'Reviewer', tone: 'reviewer' });
+      expect(row?.spans).toContainEqual({ text: ' · ', tone: 'textDim' });
+      expect(row?.text).toContain('…');
+      expect(row?.spans.map((span) => span.text).join('')).toBe(row?.text);
+    }
+  });
+
+  it('carries silence as warning at every width while ordinary freshness stays dim', () => {
+    const base = input({
+      operations: operationsState({ active: runningOperation() }),
+      lifecycle: lifecycleState({ lastRunnerEventTs: NOW - 16_000 }),
+    });
+    const normal = deriveBuildProgress(base);
+    const silent = deriveBuildProgress({
+      ...base,
+      lifecycle: lifecycleState({
+        stall: { since: NOW - 12_000, silentMs: 300_000, runnerName: 'codex' },
+      }),
+    });
+    for (const width of [160, 80, 60]) {
+      expect(buildProgressRows(normal, width).flatMap((row) => row.spans)).toContainEqual({
+        text: 'last event 16s ago',
+        tone: 'textDim',
+      });
+      expect(buildProgressRows(silent, width).flatMap((row) => row.spans)).toContainEqual({
+        text: 'No output for 5:12',
+        tone: 'warning',
+      });
+    }
+  });
+
   it('keeps row keys stable when the recorded identity and terminal width change', () => {
     for (const runnerName of ['codex', 'opencode']) {
       const progress = deriveBuildProgress(

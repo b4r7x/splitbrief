@@ -14,7 +14,13 @@ import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { useStopByline } from './use-stop-byline.js';
 
 function Lead() {
-  return <Text>{useStopByline()?.lead ?? 'none'}</Text>;
+  return (
+    <Text>
+      {useStopByline()
+        ?.parts.map((part) => part.text)
+        .join('') ?? 'none'}
+    </Text>
+  );
 }
 
 /** Where a stopped run settles: at rest on its re-read record, parked with no brief named. */

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   getRailStages,
   phaseStage,
+  railStageRole,
+  railStageSeat,
   selectRailStage,
   type RailStage,
   type RailStageState,
@@ -14,6 +16,18 @@ function statusOf(
 ): RailStageStatus | undefined {
   return stages.find((state) => state.stage === stage)?.status;
 }
+
+describe('rail stage seats and roles', () => {
+  it.each([
+    ['plan', 'plan', 'planner'],
+    ['build', 'build', 'implementer'],
+    ['review', 'review', 'validator'],
+    ['apply', null, 'validator'],
+  ] as const)('maps %s to its seat and preserves its copy role', (stage, seat, role) => {
+    expect(railStageSeat(stage)).toBe(seat);
+    expect(railStageRole(stage)).toBe(role);
+  });
+});
 
 describe('rail stage status', () => {
   it('maps phases to their rail stage and leaves idle and complete without one', () => {

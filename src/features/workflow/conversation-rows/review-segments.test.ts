@@ -18,7 +18,7 @@ describe('workflowMarkdownRenderSegments', () => {
     expect(parts).toContainEqual({ text: 'HIGH' });
     expect(parts).toContainEqual({
       text: 'FAILED',
-      style: { color: theme.dimError, bold: false },
+      style: { color: theme.error, bold: false },
     });
     expect(
       parts.every(
@@ -43,7 +43,7 @@ describe('workflowMarkdownRenderSegments', () => {
     );
   });
 
-  it('folds an inconclusive verdict to a dim word on the doc surface', () => {
+  it('colors an inconclusive verdict as warning', () => {
     const theme = defaultTheme;
     const segment: MarkdownLayoutSegment = { kind: 'text', text: 'result is INCONCLUSIVE' };
 
@@ -51,7 +51,24 @@ describe('workflowMarkdownRenderSegments', () => {
 
     expect(parts).toContainEqual({
       text: 'INCONCLUSIVE',
-      style: { color: theme.textDim, bold: false },
+      style: { color: theme.warning, bold: false },
     });
+  });
+
+  it.each([
+    ['FAILED', 'error'],
+    ['BLOCKED', 'error'],
+    ['NOT VERIFIED', 'error'],
+    ['INCONCLUSIVE', 'warning'],
+    ['VERIFIED', 'success'],
+    ['PASSED', 'success'],
+  ] as const)('colors %s with %s', (word, tone) => {
+    expect(
+      workflowMarkdownRenderSegments({
+        segment: { kind: 'text', text: `Result ${word}.` },
+        theme: defaultTheme,
+        projectDir: undefined,
+      }),
+    ).toContainEqual({ text: word, style: { color: defaultTheme[tone], bold: false } });
   });
 });

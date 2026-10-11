@@ -8,6 +8,9 @@ import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { defaultTheme, ThemeProvider, ThemeText as Text } from '../../../../components/theme.js';
 import { resolveTheme } from '../../../../core/theme/resolve.js';
 import { ConversationRowView } from './row-view.js';
+import { eventRows } from '#testing/helpers/event-rows.js';
+import { taskId } from '../../../../core/schemas/task.js';
+import { rowLeading } from '../../conversation-rows/row-markers.js';
 
 // Ink resolves chalk color level 0 against the capture stdout unless FORCE_COLOR is set before
 // ink (and its chalk dependency) first load, so the background assertion below would silently
@@ -55,6 +58,44 @@ function makeTaskHeaderRow(key: string): ConversationRow {
 }
 
 describe('ConversationRowView lifecycle and focus glyphs', () => {
+  it.each(['dark', 'light'] as const)(
+    'renders explicit primary and secondary span colours in %s',
+    (variant) => {
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      const row: ConversationRow = {
+        key: 'explicit-tones',
+        kind: 'message',
+        segments: [
+          { text: 'Primary', tone: 'text' },
+          { text: ' secondary', tone: 'textDim' },
+        ],
+      };
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <ConversationRowView row={row} />
+        </ThemeProvider>,
+      );
+      expect(ui.lastFrame()).toContain(`${colorOpen(theme.text)}Primary`);
+      expect(ui.lastFrame()).toContain(`${colorOpen(theme.textDim)} secondary`);
+      ui.unmount();
+    },
+  );
+
+  it.each(['dark', 'light'] as const)(
+    'keeps an empty activity marker in the primary colour in %s',
+    (variant) => {
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      const row: ConversationRow = { key: 'empty-activity', kind: 'activity', segments: [] };
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <ConversationRowView row={row} />
+        </ThemeProvider>,
+      );
+      expect(ui.lastFrame()).toContain(`${colorOpen(theme.text)}${rowLeading('activity', 'done')}`);
+      ui.unmount();
+    },
+  );
+
   it('fits a long queued title beside its marker inside a narrow row', () => {
     const header = {
       ...makeTaskHeaderRow('queued-T007'),
@@ -73,6 +114,64 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     ui.unmount();
   });
 
+  it('renders verified in success and its separator and explanation in textDim', () => {
+    const rows = eventRows({
+      event: {
+        type: 'implementer_generate_done',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        file: 'src/a.ts',
+        duration: 1_000,
+        noChange: true,
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 80, viewportRows: 20, streaming: { taskId: null, lines: [], active: false } },
+    });
+    const row = rows.find((row) => row.segments.some((span) => span.text.includes('verified')));
+    if (row === undefined) throw new Error('Missing verified row');
+    const ui = renderFeature(<ConversationRowView row={row} />);
+    expect(ui.lastFrame()).toContain(`${colorOpen(defaultTheme.success)}verified`);
+    expect(ui.lastFrame()).toContain(`${colorOpen(defaultTheme.textDim)} · no change needed`);
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('verified · no change needed');
+    ui.unmount();
+  });
+  it.each(['activity', 'task-header'] as const)(
+    'pulses a live %s between accent and textDim',
+    async (kind) => {
+      const ui = renderFeature(
+        <ConversationRowView
+          row={{ key: 'pulse', kind, segments: [{ text: 'running', tone: 'textDim' }] }}
+          lifecycle="live"
+        />,
+      );
+      try {
+        expect(ui.lastFrame().split(LIVE_MARK)[0]).toContain(colorOpen(defaultTheme.accent));
+        await tick(650);
+        expect(ui.lastFrame().split(LIVE_MARK)[0]).toContain(colorOpen(defaultTheme.textDim));
+        await tick(500);
+        expect(ui.lastFrame().split(LIVE_MARK)[0]).toContain(colorOpen(defaultTheme.accent));
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
+
+  it('keeps queued marks dim and a settled mark in its recorded state tone', () => {
+    const row: ConversationRow = {
+      key: 'state',
+      kind: 'activity',
+      markerTone: 'error',
+      segments: [{ text: 'BUILD activity', tone: 'implementer' }],
+    };
+    const queued = renderFeature(<ConversationRowView row={row} lifecycle="queued" />);
+    expect(queued.lastFrame().split(QUEUED_MARK)[0]).toContain(colorOpen(defaultTheme.textDim));
+    queued.unmount();
+    const settled = renderFeature(<ConversationRowView row={row} lifecycle="done" />);
+    expect(settled.lastFrame().split(DONE_MARK)[0]).toContain(colorOpen(defaultTheme.error));
+    settled.unmount();
+  });
   it('renders the live ◉ for an active activity row and the done ● for a finished one', () => {
     const activeRow = makeActivityRow('activity-batch:0:call-1');
 
@@ -114,26 +213,49 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     abandoned.unmount();
   });
 
-  it('paints the task-header marker in the sidebar in-progress colour, not the success colour', () => {
-    const theme = defaultTheme;
-    // Dim segment text, so the only cell that can carry theme.text is the marker itself.
-    const row: ConversationRow = {
-      key: 'task-header:T001',
-      kind: 'task-header',
-      segments: [{ text: 'T001 No-op task', tone: 'textDim' }],
-    };
+  it.each([
+    ['dark', 'active'],
+    ['dark', 'done'],
+    ['light', 'active'],
+    ['light', 'done'],
+  ] as const)(
+    'paints the static task-header marker in text in %s during %s',
+    (variant, lifecycle) => {
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      // Dim segment text isolates the marker's foreground.
+      const row: ConversationRow = {
+        key: 'task-header:T001',
+        kind: 'task-header',
+        segments: [{ text: 'T001 No-op task', tone: 'textDim' }],
+      };
 
-    const ui = renderFeature(
-      <ThemeProvider theme={theme}>
-        <ConversationRowView row={row} lifecycle="active" />
-      </ThemeProvider>,
-    );
-    const frame = ui.lastFrame() ?? '';
-    ui.unmount();
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <ConversationRowView row={row} lifecycle={lifecycle} />
+        </ThemeProvider>,
+      );
+      const frame = ui.lastFrame() ?? '';
+      ui.unmount();
 
-    expect(frame).toContain(colorOpen(theme.text));
-    expect(frame).not.toContain(colorOpen(theme.success));
-  });
+      expect(frame.split(LIVE_MARK)[0]).toContain(colorOpen(theme.text));
+      expect(frame).not.toContain(colorOpen(theme.accent));
+      expect(frame).not.toContain(colorOpen(theme.success));
+    },
+  );
+
+  it.each(['dark', 'light'] as const)(
+    'keeps the queued task-header marker dim in %s',
+    (variant) => {
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <ConversationRowView row={makeTaskHeaderRow('task-header:T001')} lifecycle="queued" />
+        </ThemeProvider>,
+      );
+      expect(ui.lastFrame().split(QUEUED_MARK)[0]).toContain(colorOpen(theme.textDim));
+      ui.unmount();
+    },
+  );
 
   it('wears the ▌ accent bar on a focused transcript row', () => {
     const row = makeActivityRow('activity-batch:0:call-1');

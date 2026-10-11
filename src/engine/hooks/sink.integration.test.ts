@@ -106,6 +106,7 @@ const recoveryPromptedEvent: EngineEvent = {
   availableActions: ['skip-current-task', 'end-run'],
   recommendedAction: 'skip-current-task',
   headline: 'T001 failed',
+  headlineSpans: [{ text: 'T001 failed' }],
   resumeCommand: 'splitbrief continue sess-1 --action skip',
 };
 
@@ -290,6 +291,8 @@ describe('createHookSink', () => {
       type: 'recovery_prompted',
       reason: 'retry-exhausted',
       taskId: 'T001',
+      headline: 'T001 failed',
+      headlineSpans: [{ text: 'T001 failed' }],
       recommendedAction: 'skip-current-task',
       resumeCommand: 'splitbrief continue sess-1 --action skip',
     });

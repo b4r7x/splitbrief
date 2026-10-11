@@ -1,13 +1,21 @@
+import { stateTone, type StateTone } from '../../../core/theme/state-tone.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { RunStatus, StopReason } from '../../../core/sessions/run-status.js';
 import type { SummaryView } from './view-model.js';
-import { formatRecoveryHeadline, formatRecoveryTitle } from '../../../core/recovery/headline.js';
+import { haltOf, recoveryHaltLabel } from '../../../core/recovery/halt.js';
+import { recoveryHeadlineParts } from '../recovery-prompt.js';
 import { formatResetAt } from '../../../core/recovery/reset-clock.js';
 import { fitKeyLegend } from '../../../core/key-legend.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  truncateTerminalDisplayText,
+  segmentsForRowText,
+} from '../../../utils/display-text.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { stepWord, stopPoint } from '../stop/copy.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
+import { separatedSpans } from '../conversation-rows/row-format/text.js';
 
 const REVERT = 'revert it with /run reject confirm';
 const ALTERNATIVE = ', or ';
@@ -16,10 +24,7 @@ const ALTERNATIVE = ', or ';
  * What the user can do next, and — when the run needs one — why. The action is held as it reads
  * standing alone; a reason clause leads the line and lowercases the action behind it.
  */
-interface Byline {
-  reason: string | null;
-  action: string;
-}
+type Byline = { reason: readonly ConversationRowSegment[] | null; action: string };
 
 const HOME_AGAIN = 'Start it again from home';
 
@@ -27,31 +32,82 @@ const HOME_AGAIN = 'Start it again from home';
 const BRING_BACK = 'Bring the changes back with git apply on the Patch file';
 
 /** One sentence for a line too narrow for both halves: the reason goes, the action stays. */
-function fitByline(byline: Byline, width: number): string {
-  const { reason, action } = byline;
-  if (reason !== null) {
+function fitByline(byline: Byline, width: number): readonly ConversationRowSegment[] {
+  const { action } = byline;
+  const reason = byline.reason?.map((part) => part.text).join('') ?? null;
+  if (reason !== null && byline.reason !== null) {
     const whole = `${reason}${SOFT_SEP}${lowercaseLead(action)}`;
-    if (getTerminalCellWidth(whole) <= width) return whole;
+    if (getTerminalCellWidth(whole) <= width) {
+      return [
+        ...byline.reason,
+        { text: SOFT_SEP, tone: 'textDim' },
+        { text: lowercaseLead(action), tone: 'textDim' },
+      ];
+    }
     // A reason in parts leads with its name ("Seat down", "Stopped by an error"): keep that much.
     const lead = reason.split(SOFT_SEP)[0];
     if (lead !== undefined && lead !== reason) {
       const named = `${lead}${SOFT_SEP}${lowercaseLead(action)}`;
-      if (getTerminalCellWidth(named) <= width) return named;
+      if (getTerminalCellWidth(named) <= width) {
+        return [
+          ...segmentsForRowText(byline.reason, lead),
+          { text: SOFT_SEP, tone: 'textDim' },
+          { text: lowercaseLead(action), tone: 'textDim' },
+        ];
+      }
     }
   }
-  if (getTerminalCellWidth(action) <= width) return action;
+  if (getTerminalCellWidth(action) <= width) return [{ text: action, tone: 'textDim' }];
   const at = action.indexOf(ALTERNATIVE);
   const primary = at === -1 ? action : action.slice(0, at);
-  if (getTerminalCellWidth(primary) <= width) return primary;
-  return truncateTerminalDisplayText(primary, width);
+  const fittedAction =
+    getTerminalCellWidth(primary) <= width ? primary : truncateTerminalDisplayText(primary, width);
+  return [{ text: fittedAction, tone: 'textDim' }];
 }
 
 /**
  * The row under the composer of a closed run: what to do next, never what just happened. A line too
  * narrow for everything sheds the reason first and the alternative second.
  */
-export function bylineText(view: SummaryView, width: number): string {
+export function bylineParts(view: SummaryView, width: number): readonly ConversationRowSegment[] {
+  if (view.applyUndo !== null) {
+    return fitStatusByline(
+      'Apply undone',
+      view.applyUndo.conflicts.length > 0 ? 'your later edits were kept' : 'nothing left to undo',
+      stateTone('attention'),
+      width,
+    );
+  }
+  if (view.checkpoint === 'accepted') {
+    return fitStatusByline('Accepted', 'nothing left to do', stateTone('passed'), width);
+  }
+  if (view.checkpoint === 'rejected') {
+    return fitStatusByline('Rejected', 'its files were restored', stateTone('attention'), width);
+  }
   return fitByline(bylineFor(view), width);
+}
+
+function fitStatusByline(
+  reason: string,
+  action: string,
+  reasonTone: StateTone,
+  width: number,
+): readonly ConversationRowSegment[] {
+  const whole = action === '' ? reason : `${reason}${SOFT_SEP}${action}`;
+  const fitted =
+    getTerminalCellWidth(whole) <= width ? whole : truncateTerminalDisplayText(whole, width);
+  return segmentsForRowText(
+    [
+      ...separatedSpans(reason, reasonTone),
+      ...(action === ''
+        ? []
+        : ([
+            { text: SOFT_SEP, tone: 'textDim' },
+            { text: action, tone: 'textDim' },
+          ] satisfies ConversationRowSegment[])),
+    ],
+    fitted,
+  );
 }
 
 function lowercaseLead(sentence: string): string {
@@ -59,24 +115,15 @@ function lowercaseLead(sentence: string): string {
 }
 
 function bylineFor(view: SummaryView): Byline {
-  if (view.applyUndo !== null) {
-    return {
-      reason: null,
-      action: `Apply undone${SOFT_SEP}${view.applyUndo.conflicts.length > 0 ? 'your later edits were kept' : 'nothing left to undo'}`,
-    };
-  }
-  if (view.checkpoint === 'accepted') {
-    return { reason: null, action: `Accepted${SOFT_SEP}nothing left to do` };
-  }
-  if (view.checkpoint === 'rejected') {
-    return { reason: null, action: `Rejected${SOFT_SEP}its files were restored` };
-  }
   const kind = view.outcome.kind;
   if (kind === 'applied') {
     return { reason: null, action: 'Undo the Apply with /run reject confirm' };
   }
   if (kind === 'ended') {
-    return { reason: 'Ended', action: view.files.patch === null ? 'esc home' : BRING_BACK };
+    return {
+      reason: [{ text: 'Ended', tone: stateTone('attention') }],
+      action: view.files.patch === null ? 'esc home' : BRING_BACK,
+    };
   }
   if (view.files.patch !== null) return { reason: null, action: BRING_BACK };
   if (kind === 'complete') {
@@ -85,9 +132,6 @@ function bylineFor(view: SummaryView): Byline {
   if (kind === 'needs-attention') return { reason: null, action: attentionByline(view) };
   return { reason: null, action: 'esc home' };
 }
-
-/** The line a closed run with no record of its own can still say honestly. */
-export const NO_RECORD_LINE = 'Ended · no run record was written';
 
 /** The composer placeholder, by what the run on screen will take. */
 export const AT_REST_PLACEHOLDER = {
@@ -98,28 +142,40 @@ export const AT_REST_PLACEHOLDER = {
 } as const;
 
 const UNREADABLE_BYLINE: Byline = {
-  reason: 'Saved state unreadable',
+  reason: [{ text: 'Saved state unreadable', tone: stateTone('failed') }],
   action: HOME_AGAIN,
 };
 
-const RUNNING_BYLINE: Byline = {
-  reason: null,
-  action: 'Running in another process',
+const RUNNING_BYLINE = {
+  reason: 'Running in another process',
+  tone: stateTone('running'),
+  action: '',
 };
 
 /**
  * The row under the composer of a run at rest: where it stopped, then the one key that moves it.
  * A run nothing can pick up says why before it says where to go.
  */
-export function openRunByline(
+export function openRunBylineParts(
   input: Readonly<{ status: RunStatus; continuable: boolean; width: number }>,
-): string {
+): readonly ConversationRowSegment[] {
   const { status, width } = input;
-  if (status.kind === 'running') return fitByline(RUNNING_BYLINE, width);
+  if (status.kind === 'running')
+    return fitStatusByline(
+      RUNNING_BYLINE.reason,
+      RUNNING_BYLINE.action,
+      RUNNING_BYLINE.tone,
+      width,
+    );
   if (status.kind === 'ready-to-apply') {
     return fitByline(
       {
-        reason: status.override ? 'Ready to apply as is' : 'Ready to apply',
+        reason: [
+          {
+            text: status.override ? 'Ready to apply as is' : 'Ready to apply',
+            tone: stateTone(status.override ? 'attention' : 'running'),
+          },
+        ],
         action: `Pick ${status.override ? 'Apply as is' : 'Apply'}, Show diff or Discard`,
       },
       width,
@@ -136,36 +192,51 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
   switch (stop.on.kind) {
     case 'paused':
       return {
-        reason: `Stopped ${stopPoint(resumeAt, stop.on.at)}`,
+        reason: [
+          { text: `Stopped ${stopPoint(resumeAt, stop.on.at)}`, tone: stateTone('attention') },
+        ],
         action: 'Type a correction or ⏎ to continue',
       };
     // Only a typed plan's card reopens. An old run parked at a gate of the old chain continues as one
     // planning session, which takes a typed correction as its lead.
     case 'gate':
       return {
-        reason: `Waiting at ${stepWord(resumeAt)}`,
+        reason: [{ text: `Waiting at ${stepWord(resumeAt)}`, tone: stateTone('attention') }],
         action: stop.on.reopens ? '⏎ to reopen it' : '⏎ to continue',
       };
     case 'question':
-      return { reason: 'Waiting for your answer', action: 'Type a reply or ⏎ to continue' };
+      return {
+        reason: [{ text: 'Waiting for your answer', tone: stateTone('attention') }],
+        action: 'Type a reply or ⏎ to continue',
+      };
     case 'halt':
       return {
-        reason: formatRecoveryTitle(formatRecoveryHeadline(stop.on.issue), stop.on.issue),
+        reason: [
+          { text: recoveryHaltLabel(haltOf(stop.on.issue.reason)), tone: stateTone('attention') },
+          { text: SOFT_SEP, tone: 'textDim' },
+          ...recoveryHeadlineParts(stop.on.issue),
+        ],
         action: '⏎ to decide',
       };
     case 'failed':
       return {
-        reason: `Stopped by an error${SOFT_SEP}${stop.on.message}`,
+        reason: [
+          { text: 'Stopped by an error', tone: stateTone('failed') },
+          { text: SOFT_SEP, tone: 'textDim' },
+          ...separatedSpans(stop.on.message, 'text'),
+        ],
         action: '⏎ to retry the step',
       };
     case 'seat-wait':
       return {
-        reason: `Waiting for ${stop.on.tool}`,
+        reason: [{ text: `Waiting for ${stop.on.tool}`, tone: stateTone('attention') }],
         action: formatResetAt(stop.on.resetAt) ?? '⏎ to continue',
       };
     default:
       return {
-        reason: `Stopped ${stopPoint(resumeAt, undefined)}`,
+        reason: [
+          { text: `Stopped ${stopPoint(resumeAt, undefined)}`, tone: stateTone('attention') },
+        ],
         action: '⏎ to continue',
       };
   }

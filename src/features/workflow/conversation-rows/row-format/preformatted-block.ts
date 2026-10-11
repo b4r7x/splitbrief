@@ -83,7 +83,7 @@ export function preformattedOutputBlock(
   });
   if (footer !== null) {
     rows.push(
-      ruledRow(`${input.keyPrefix}-pad`, [{ text: '' }], 'callout-body', 'border'),
+      ruledRow(`${input.keyPrefix}-pad`, [{ text: '', tone: 'text' }], 'callout-body', 'border'),
       ruledRow(`${input.keyPrefix}-more`, footer, 'callout-body', 'border'),
     );
   }
@@ -267,8 +267,7 @@ function fitLine(line: string, width: number): string {
 // cannot change what the rows they can see mean, and reading the whole capture to color thirty rows
 // of it is the cost this block exists to avoid.
 //
-// Polarity, not severity: a removed line inside an error block took the error hue while `error`,
-// `dimError` and the rail all resolved to plain red, and the four collapsed into one field.
+// A removed line carries its diff polarity independently of the surrounding block's severity.
 function lineTone(line: string): ConversationRowTone {
   if (isRuledBanner(line)) return 'text';
   const marker = DIFF_MARKER.exec(line)?.[1];
@@ -309,7 +308,7 @@ function headerSegments(
 
   return [
     { text: fittedLabel, tone, bold: true },
-    { text: LABEL_META_GAP },
+    { text: LABEL_META_GAP, tone: 'text' },
     { text: fittedMeta, tone: 'textDim' },
   ];
 }

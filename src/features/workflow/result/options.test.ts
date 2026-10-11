@@ -6,9 +6,28 @@ import {
   resultMenuFindingLines,
   resultMenuHeight,
   resultMenuRows,
-  resultMenuTitle,
+  resultMenuTitle as titleParts,
   resultRowCommand,
 } from './options.js';
+
+function resultMenuTitle(input: Parameters<typeof titleParts>[0]): string {
+  return titleParts(input)
+    .map((part) => part.text)
+    .join('');
+}
+
+it('keeps the ready state, facts and separators in distinct title parts', () => {
+  expect(titleParts({ override: false, findings: [], confirming: false, files: 4 })).toEqual([
+    { text: 'Ready to apply', tone: 'accent' },
+    { text: ' · ', tone: 'textDim' },
+    { text: '4 files changed', tone: 'textDim' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'run changes await Apply', tone: 'textDim' },
+  ]);
+  expect(titleParts({ override: true, findings: ['issue'], confirming: true, files: 4 })).toEqual([
+    { text: 'Apply with 1 open finding?', tone: 'warning' },
+  ]);
+});
 
 describe('resultMenuRows', () => {
   it('offers Apply, Show diff and Discard on a run whose review passed', () => {

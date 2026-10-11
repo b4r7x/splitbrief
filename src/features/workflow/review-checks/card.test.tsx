@@ -1,3 +1,7 @@
+import { listRowLead } from '../../../components/list-row.js';
+import chalk from 'chalk';
+import { defaultTheme } from '../../../components/theme.js';
+import { paint } from '../../../core/theme/paint.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -7,7 +11,9 @@ import { openReviewChecksPrompt } from '../../../stores/review-checks-prompt/pro
 import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../lib/terminal/typeahead-grace.js';
 import type { ReviewChecksApprovalRequest } from '../../../core/approval/types.js';
 import { ReviewChecksCard } from './card.js';
-import { reviewChecksVisibleCommands } from './options.js';
+import { reviewChecksCardTitle, reviewChecksVisibleCommands } from './options.js';
+
+const originalColorLevel = chalk.level;
 
 const DOWN = '\x1b[B';
 const PAST_GRACE = PROMPT_TYPEAHEAD_GRACE_MS + 30;
@@ -29,6 +35,17 @@ function renderCard(focused = true) {
   return { ui, answer, onFocusChange };
 }
 
+it('returns the reviewer title as seat and secondary parts', () => {
+  expect(reviewChecksCardTitle(REQUEST)).toEqual([
+    { text: 'Reviewer', tone: 'reviewer' },
+    { text: ' checks', tone: 'textDim' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'chose 2', tone: 'textDim' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'none has run yet', tone: 'textDim' },
+  ]);
+});
+
 describe('ReviewChecksCard', () => {
   beforeEach(() => {
     resetAllStores();
@@ -36,8 +53,41 @@ describe('ReviewChecksCard', () => {
   });
 
   afterEach(() => {
+    chalk.level = originalColorLevel;
     resetAllStores();
   });
+
+  it.each([60, 120])(
+    'keeps option names distinct from wrapped dim consequences at %s columns',
+    async (cols) => {
+      chalk.level = 3;
+      terminalSizeStore.__testReset({ cols, rows: 40 });
+      const { ui } = renderCard();
+      const frame = ui.lastFrame();
+      expect(frame).toContain(
+        paint(defaultTheme.textDim, 'npm run typecheck').replace('\u001b[39m', ''),
+      );
+      expect(frame).toContain(
+        paint(defaultTheme.accent, `${listRowLead('active')}Run all`).replace('\u001b[39m', ''),
+      );
+      expect(frame).toContain(paint(defaultTheme.text, 'Skip all').replace('\u001b[39m', ''));
+      expect(frame).toContain(paint(defaultTheme.textDim, ' · ').replace('\u001b[39m', ''));
+      expect(frame).toContain(
+        paint(defaultTheme.textDim, ' · run none;').replace('\u001b[39m', ''),
+      );
+      await flushEffects();
+      await tick(PAST_GRACE);
+      ui.stdin.write(DOWN);
+      await flushEffects();
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.accent, `${listRowLead('active')}Skip all`).replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.textDim, ' · run none;').replace('\u001b[39m', ''),
+      );
+      ui.unmount();
+    },
+  );
 
   it('names each chosen command with the first line of its reason, then Run all and Skip all', async () => {
     const { ui } = renderCard();
@@ -150,6 +200,24 @@ describe('ReviewChecksCard', () => {
 
     expect(settled).not.toHaveBeenCalled();
     expect(onFocusChange).toHaveBeenCalledWith(false);
+    ui.unmount();
+  });
+  it('paints Reviewer with reviewer, commands and ids with textDim', () => {
+    chalk.level = 3;
+    const { ui } = renderCard();
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.reviewer, 'Reviewer').replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, 'V1').replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.accent, `${listRowLead('active')}Run all`).replace('\u001b[39m', ''),
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.textDim, 'npm run typecheck').replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Reviewer checks · chose 2 · none has run yet',
+    );
     ui.unmount();
   });
 });

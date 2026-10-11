@@ -4,35 +4,24 @@ import type {
   MarkdownLayoutSegment,
 } from '../../../../utils/markdown/types.js';
 import { assertNever } from '../../../../utils/type-guards.js';
+import { stateTone, type StateTone } from '../../../../core/theme/state-tone.js';
 import {
   filePathUrl,
   projectRelativePathLabel,
   resolveMarkdownLinkTarget,
 } from '../../../../utils/path-links.js';
 import type { ConversationRowSegment, ConversationRowTone } from '../types.js';
-import { workflowMarkdownParts, type WorkflowMarkdownPart } from './workflow-markers.js';
-
-const STATUS_MARKERS: readonly string[] = [
-  'NOT VERIFIED',
-  'INCONCLUSIVE',
-  'VERIFIED',
-  'BLOCKED',
-  'FAILED',
-  'FAIL',
-  'ERROR',
-  'WARN',
-  'WARNING',
-  'DONE',
-  'PASS',
-  'OK',
-];
+import {
+  workflowMarkdownParts,
+  type WorkflowMarkdownPart,
+  type WorkflowStatusMarker,
+} from './workflow-markers.js';
 
 export function workflowMarkdownConversationSegments(
   segment: MarkdownLayoutSegment,
   options: { projectDir: string | undefined; previousLineText?: string | undefined },
 ): ConversationRowSegment[] {
   return workflowMarkdownParts(segment, {
-    statusMarkers: STATUS_MARKERS,
     previousLineText: options.previousLineText,
   }).map((part) => workflowMarkdownPartToConversationSegment(part, options.projectDir));
 }
@@ -49,11 +38,27 @@ function workflowMarkdownPartToConversationSegment(
     case 'filePath':
       return filePathConversationSegment(part, projectDir);
     case 'status':
-      return { text: part.text, tone: 'textDim' };
+      return { text: part.text, tone: workflowStatusTone(part.text) };
     case 'risk':
       return { text: part.text, tone: 'textDim' };
     default:
       return assertNever(part);
+  }
+}
+
+export function workflowStatusTone(status: WorkflowStatusMarker): StateTone {
+  switch (status) {
+    case 'NOT VERIFIED':
+    case 'BLOCKED':
+    case 'FAILED':
+      return stateTone('failed');
+    case 'INCONCLUSIVE':
+      return stateTone('attention');
+    case 'VERIFIED':
+    case 'PASSED':
+      return stateTone('passed');
+    default:
+      return assertNever(status);
   }
 }
 

@@ -23,6 +23,24 @@ import {
 } from './options.js';
 
 describe('stopSheetRows', () => {
+  it('keeps action spans through the existing clause wrapping', () => {
+    const layout = stopMenuLayout(
+      [{ label: 'Run all', consequence: 'run commands; read output' }],
+      34,
+    );
+    expect(layout.options[0]?.parts).toEqual([
+      [
+        { text: 'Run all', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'run commands;', tone: 'textDim' },
+      ],
+      [
+        { text: '  ', tone: 'textDim' },
+        { text: 'read output', tone: 'textDim' },
+      ],
+    ]);
+    expect(layout.options[0]?.lines).toEqual(['Run all · run commands;', '  read output']);
+  });
   it('names the brief it would finish and the one it would not start', () => {
     const rows = stopSheetRows({
       currentTaskId: 'T002',

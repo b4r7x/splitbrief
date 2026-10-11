@@ -14,8 +14,8 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { arrowSep } from '../../../core/separators.js';
 import { crewLine, runRows } from './copy.js';
-import { bylineText } from './byline.js';
-import { outcomeLine } from './outcome.js';
+import { bylineParts } from './byline.js';
+import { outcomeLineSpans } from './outcome.js';
 import { deriveSummaryView, type SummaryView } from './view-model.js';
 import { atRestRailStages } from '../at-rest.js';
 
@@ -205,7 +205,9 @@ describe('a run with a workspace', () => {
         }),
       },
     });
-    const byline = bylineText(view, 120);
+    const byline = bylineParts(view, 120)
+      .map((part) => part.text)
+      .join('');
     expect(byline).not.toContain('/run reject');
     expect(byline.toLowerCase()).toContain('undone');
   });
@@ -230,9 +232,20 @@ describe('a run with a workspace', () => {
     const row = runRows(view).find((row) => row.label === 'Apply');
     expect(row).toBeDefined();
     if (row === undefined) throw new Error('Missing Apply row');
-    expect(row.segments).toEqual([{ text: 'undone, 1 conflict kept', tone: 'warning' }]);
+    expect(row.segments).toEqual([
+      {
+        spans: [
+          { text: 'undone', tone: 'warning' },
+          { text: ', 1 conflict kept', tone: 'textDim' },
+        ],
+      },
+    ]);
     expect(view.rail.find((stage) => stage.stage === 'apply')?.status).toBe('cancelled');
-    expect(bylineText(view, 120)).not.toContain('/run reject');
+    expect(
+      bylineParts(view, 120)
+        .map((part) => part.text)
+        .join(''),
+    ).not.toContain('/run reject');
   });
 
   it('reads a discarded run as discarded, its changes saved in run.patch', () => {
@@ -298,7 +311,11 @@ describe('a run with a workspace', () => {
       { stage: 'review', status: 'cancelled' },
     ]);
     expect(view.rail).toEqual(atRestRailStages(record));
-    expect(outcomeLine(view, 120)).toBe('Ended · Review 3/3 · changes saved in run.patch');
+    expect(
+      outcomeLineSpans(view, 120)
+        .map((span) => span.text)
+        .join(''),
+    ).toBe('Ended · Review 3/3 · changes saved in run.patch');
   });
 
   it('names no patch the close did not record', () => {
@@ -393,7 +410,17 @@ describe('seats', () => {
       identity: 'Claude Code CLI · Sonnet 5',
       short: 'Sonnet 5',
     });
-    expect(crewLine(view, 200)).toBe('PLAN Opus 5.5 · BUILD Sonnet 5 · REVIEW = PLAN');
+    const spans = crewLine(view, 200);
+    expect(spans.map((span) => span.text).join('')).toBe(
+      'PLAN Opus 5.5 · BUILD Sonnet 5 · REVIEW = PLAN',
+    );
+    expect(spans.map((span) => span.seat)).toEqual([
+      'plan',
+      undefined,
+      'build',
+      undefined,
+      'review',
+    ]);
   });
 
   it('shortens each seat with the formatter the live rail uses', () => {
@@ -404,7 +431,11 @@ describe('seats', () => {
         implementerModel: 'gpt-5.3-codex-high',
       }),
     );
-    expect(crewLine(view, 200)).toBe('PLAN auto · BUILD GPT-5.3 Codex · REVIEW = PLAN');
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toBe('PLAN auto · BUILD GPT-5.3 Codex · REVIEW = PLAN');
   });
 
   it('says the build seat moved, from what to what, when each tool ran one stretch', () => {
@@ -426,7 +457,11 @@ describe('seats', () => {
         ],
       }),
     );
-    expect(crewLine(view, 200)).toBe(
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toBe(
       `PLAN not recorded · BUILD Gemini 3.8 Flash (High)${arrowSep()}DeepSeek V4.1 Flash · REVIEW not recorded`,
     );
   });
@@ -451,9 +486,11 @@ describe('seats', () => {
         ],
       }),
     );
-    expect(crewLine(view, 200)).toContain(
-      'BUILD 3 briefs on Gemini 3.8 Flash (High), 1 on DeepSeek V4.1 Flash',
-    );
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('BUILD 3 briefs on Gemini 3.8 Flash (High), 1 on DeepSeek V4.1 Flash');
   });
 
   it('marks the review seat as inherited when only the planner was named', () => {

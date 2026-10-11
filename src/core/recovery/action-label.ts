@@ -1,6 +1,6 @@
 import type { RecoveryAction, RecoveryReason } from '../schemas/enums.js';
 import type { SwitchSeatOffer } from '../schemas/recovery/schemas.js';
-import { CREW_SEAT_LABELS, type CrewSeatId } from '../crew/identity.js';
+import { CREW_SEAT_LABELS, type CrewSeatId, type SeatLineSpan } from '../crew/identity.js';
 import { formatResetAt } from './reset-clock.js';
 
 const RESET_PREFIX = 'resets ';
@@ -19,40 +19,70 @@ export interface RecoveryActionChoiceContext {
  * The words a person reads for an action: the recovery menu, the transcript and the resume
  * line. Machine action names stay in the action channel.
  */
-export function recoveryActionLabel(
+export function recoveryActionParts(
   action: RecoveryAction,
   context: RecoveryActionChoiceContext = {},
-): string {
+): readonly SeatLineSpan[] {
   switch (action) {
     case 'retry-same-worker':
-      if (context.reason === 'required-checks-unrunnable') return 'Run the checks again';
+      if (context.reason === 'required-checks-unrunnable')
+        return [{ text: 'Run the checks again' }];
       return context.seatRetry === undefined
-        ? 'Try again'
-        : `Try again with ${CREW_SEAT_LABELS[context.seatRetry]}`;
+        ? [{ text: 'Try again' }]
+        : [
+            { text: 'Try again with ' },
+            { text: CREW_SEAT_LABELS[context.seatRetry], seat: context.seatRetry },
+          ];
     case 'restore-backup':
-      return 'Restore backup';
+      return [{ text: 'Restore backup' }];
     case 'retry-later': {
       const reset = formatResetAt(context.resetAt);
-      return reset === undefined ? 'Retry later' : `Retry at ${reset.slice(RESET_PREFIX.length)}`;
+      return [
+        {
+          text:
+            reset === undefined ? 'Retry later' : `Retry at ${reset.slice(RESET_PREFIX.length)}`,
+        },
+      ];
     }
     case 'switch-seat': {
       // The seat is the one that halted; a label that cannot name it names no seat at all.
       const seat = context.switchSeat?.seat ?? context.seat;
-      return seat === undefined ? 'Change tool' : `Change ${CREW_SEAT_LABELS[seat]} tool`;
+      return seat === undefined
+        ? [{ text: 'Change tool' }]
+        : [{ text: 'Change ' }, { text: CREW_SEAT_LABELS[seat], seat }, { text: ' tool' }];
     }
     case 'revise':
-      return context.reason === 'review-failed'
-        ? 'Fix again · add a note, grant one more fix cycle'
-        : 'Send a correction';
+      return [
+        {
+          text:
+            context.reason === 'review-failed'
+              ? 'Fix again · add a note, grant one more fix cycle'
+              : 'Send a correction',
+        },
+      ];
     case 'accept-as-is':
-      return context.reason === 'review-input-too-large'
-        ? 'Skip review with a note'
-        : 'Accept as is';
+      return [
+        {
+          text:
+            context.reason === 'review-input-too-large'
+              ? 'Skip review with a note'
+              : 'Accept as is',
+        },
+      ];
     case 'continue':
-      return 'Continue';
+      return [{ text: 'Continue' }];
     case 'skip-current-task':
-      return 'Skip task';
+      return [{ text: 'Skip task' }];
     case 'end-run':
-      return 'End run';
+      return [{ text: 'End run' }];
   }
+}
+
+export function recoveryActionLabel(
+  action: RecoveryAction,
+  context: RecoveryActionChoiceContext = {},
+): string {
+  return recoveryActionParts(action, context)
+    .map((span) => span.text)
+    .join('');
 }

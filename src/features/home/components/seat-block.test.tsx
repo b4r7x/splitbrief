@@ -1,4 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import chalk from 'chalk';
+import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
+import { resolveTheme } from '../../../core/theme/resolve.js';
+import { paint } from '../../../core/theme/paint.js';
+import { CREW_LABEL_WIDTH, formatCollapsedSeatSpans } from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES, deriveCrewSeats } from '../../../core/crew/seats.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
@@ -17,6 +23,7 @@ const DISCOVERY_CONTEXTS = {
 };
 
 const WIDTH = 76;
+const originalColorLevel = chalk.level;
 
 function seed(config: Config = makeConfig()): void {
   configStore.__testReset({ config, projectDir: '/tmp/home-seat-block-test' });
@@ -55,8 +62,51 @@ describe('HomeSeatBlock', () => {
   });
 
   afterEach(() => {
+    chalk.level = originalColorLevel;
     resetAllStores();
   });
+
+  it.each(['dark', 'light'] as const)(
+    'dims collapsed seats until the first discovery result in %s',
+    async (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      for (const cold of [false, true]) {
+        resetAllStores();
+        const config = makeConfig();
+        seed(config);
+        if (!cold) warmDiscovery();
+        const ui = renderFeature(
+          <ThemeProvider theme={theme}>
+            <HomeSeatBlock rows={18} width={WIDTH} />
+          </ThemeProvider>,
+          { cols: 120, rows: 18 },
+        );
+        await tick(20);
+        const spans = formatCollapsedSeatSpans({
+          planner: config.planner,
+          build: config.implementer,
+          reviewer: undefined,
+          budget: WIDTH - 2,
+        });
+        if (cold) {
+          expect(ui.lastFrame()).toContain(
+            paint(theme.textDim, spans.map((span) => span.text).join('')),
+          );
+        } else {
+          for (const span of spans) {
+            expect(ui.lastFrame()).toContain(
+              paint(
+                span.seat === undefined ? theme.textDim : theme[CREW_SEAT_ROLES[span.seat]],
+                span.text,
+              ).replace('\u001b[39m', ''),
+            );
+          }
+        }
+        ui.unmount();
+      }
+    },
+  );
 
   it('names all three seats plus a status line and fits the given width', async () => {
     const { lines, unmount } = await renderBlock(40);
@@ -73,6 +123,77 @@ describe('HomeSeatBlock', () => {
     }
     unmount();
   });
+
+  it.each(['dark', 'light'] as const)(
+    'dims expanded seats until the first discovery result in %s',
+    async (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      for (const cold of [false, true]) {
+        resetAllStores();
+        const config = makeConfig();
+        seed(config);
+        if (!cold) warmDiscovery();
+        const ui = renderFeature(
+          <ThemeProvider theme={theme}>
+            <HomeSeatBlock rows={40} width={WIDTH} />
+          </ThemeProvider>,
+          { cols: 120, rows: 40 },
+        );
+        await tick(20);
+        const frame = ui.lastFrame() ?? '';
+        for (const seat of deriveCrewSeats({ config })) {
+          const identity = seat.id === 'review' ? 'same as planner' : seat.model;
+          if (cold) {
+            expect(frame).toContain(
+              chalk
+                .bold(paint(theme.textDim, seat.label.padEnd(CREW_LABEL_WIDTH)))
+                .replace('\u001b[39m', '') + `  ${identity}`,
+            );
+          } else {
+            expect(frame).toContain(paint(theme[CREW_SEAT_ROLES[seat.id]], identity));
+          }
+        }
+        expect(stripAnsiStyles(frame).includes('detecting')).toBe(cold);
+        ui.unmount();
+      }
+    },
+  );
+
+  it.each([18, 40])(
+    'warms the mounted seats once and keeps them warm during refresh at %s rows',
+    async (rows) => {
+      chalk.level = 3;
+      resetAllStores();
+      const config = makeConfig();
+      seed(config);
+      const ui = renderFeature(<HomeSeatBlock rows={rows} width={WIDTH} />, { cols: 120, rows });
+      await tick(20);
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.textDim, 'PLAN').replace('\u001b[39m', ''),
+      );
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('detecting');
+
+      warmDiscovery();
+      await tick(20);
+      for (const seat of deriveCrewSeats({ config })) {
+        expect(ui.lastFrame()).toContain(
+          paint(defaultTheme[CREW_SEAT_ROLES[seat.id]], seat.label).replace('\u001b[39m', ''),
+        );
+      }
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('detecting');
+
+      detectionStore.beginRefresh({ contexts: DISCOVERY_CONTEXTS });
+      await tick(20);
+      for (const seat of deriveCrewSeats({ config })) {
+        expect(ui.lastFrame()).toContain(
+          paint(defaultTheme[CREW_SEAT_ROLES[seat.id]], seat.label).replace('\u001b[39m', ''),
+        );
+      }
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('detecting');
+      ui.unmount();
+    },
+  );
 
   it('collapses to one seat line plus the status line below 24 rows', async () => {
     const { lines, unmount } = await renderBlock(18);

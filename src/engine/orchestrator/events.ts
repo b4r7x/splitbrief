@@ -18,7 +18,7 @@ import type { EngineEvent, EngineEventOf, EventBus } from '../events/types.js';
 import type { ReviewChecksPlan } from '../../core/schemas/review.js';
 import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { Implementer, ImplementerPublisher } from '../implementers/types.js';
-import { formatRecoveryHeadline } from '../../core/recovery/headline.js';
+import { formatRecoveryHeadlineSpans } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
 import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
@@ -457,13 +457,16 @@ export function publishRecoveryPrompted(
   sessionId: string,
   issue: RecoveryIssue,
 ): void {
+  const ts = Date.now();
+  const headlineSpans = [...formatRecoveryHeadlineSpans(issue, ts)];
   ctx.bus.publish({
     type: 'recovery_prompted',
-    ts: Date.now(),
+    ts,
     phase: ctx.phase,
     issueId: issue.id,
     reason: issue.reason,
-    headline: formatRecoveryHeadline(issue),
+    headline: headlineSpans.map((part) => part.text).join(''),
+    headlineSpans,
     resumeCommand: formatResumeCommand(sessionId, issue),
     ...(issue.taskId !== undefined && { taskId: issue.taskId }),
     files: issue.files,

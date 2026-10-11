@@ -1,8 +1,13 @@
 import { SOFT_SEP } from '../../core/separators.js';
 import { glyph } from '../../lib/glyphs.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../utils/display-text.js';
-import { fitBeforeTail } from './display/build-progress.js';
+import {
+  getTerminalCellWidth,
+  truncateTerminalDisplayText,
+  segmentsForRowText,
+} from '../../utils/display-text.js';
 import { getChromeContentWidth } from './layout/chrome-rows.js';
+import type { ConversationRowSegment } from './conversation-rows/types.js';
+import { separatedSpans } from './conversation-rows/row-format/text.js';
 
 // The rail's fraction counts briefs that passed their checks, never the index of the one running:
 // a run on its last brief must not read as finished.
@@ -12,7 +17,7 @@ export function stageFractionText(view: { passed: number; total: number }): stri
 
 export interface InputFooterBylineInput {
   cols: number;
-  lead: string;
+  lead: readonly ConversationRowSegment[];
   /** The lead's own clock. It follows the lead and survives every width: the lead is cut first. */
   leadClock?: string | null | undefined;
   hintText?: string | null;
@@ -30,20 +35,17 @@ function bylineCells(text: string): number {
   return getTerminalCellWidth(text);
 }
 
-export interface InputFooterByline {
-  lead: string;
-  hint: string;
-  queued: string;
-  rest: string;
-}
-
-export function buildInputFooterByline(input: InputFooterBylineInput): InputFooterByline {
+export function buildInputFooterByline(
+  input: InputFooterBylineInput,
+): readonly ConversationRowSegment[] {
+  const leadParts = input.lead;
+  const lead = leadParts.map((part) => part.text).join('');
   // The byline renders inside the gutter, so its one measure is the chrome content width.
   const width = getChromeContentWidth(input.cols);
   const queuedPart = input.queuedText && input.queuedText.length > 0 ? input.queuedText : null;
   const hintPart = input.hintText && input.hintText.length > 0 ? input.hintText : null;
   const clockTail = input.leadClock && input.leadClock.length > 0 ? ` ${input.leadClock}` : '';
-  const fullLead = `${input.lead}${clockTail}`;
+  const fullLead = `${lead}${clockTail}`;
 
   const candidates: Array<{ hint: boolean; queued: boolean }> = [
     { hint: true, queued: true },
@@ -51,7 +53,7 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
     { hint: false, queued: false },
   ];
 
-  let leadOut = fullLead;
+  let leadOut = lead;
   let hintIncluded = false;
   let queuedIncluded = false;
   let line = '';
@@ -73,19 +75,19 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
   }
 
   if (!matched) {
-    leadOut = fitBeforeTail(input.lead, clockTail, width);
-    line = leadOut;
+    leadOut = truncateTerminalDisplayText(lead, Math.max(1, width - bylineCells(clockTail)));
+    line = `${leadOut}${clockTail}`;
   }
 
   const hintOut =
     hintIncluded && hintPart !== null
-      ? leadOut.length > 0
+      ? leadOut.length + clockTail.length > 0
         ? `${SOFT_SEP}${hintPart}`
         : hintPart
       : '';
   const queuedOut =
     queuedIncluded && queuedPart !== null
-      ? leadOut.length > 0 || hintOut.length > 0
+      ? leadOut.length + clockTail.length > 0 || hintOut.length > 0
         ? `${SOFT_SEP}${queuedPart}`
         : queuedPart
       : '';
@@ -107,5 +109,13 @@ export function buildInputFooterByline(input: InputFooterBylineInput): InputFoot
     }
   }
 
-  return { lead: leadOut, hint: hintOut, queued: queuedOut, rest: restOut };
+  return [
+    ...segmentsForRowText(leadParts, leadOut),
+    ...(clockTail === ''
+      ? []
+      : [{ text: clockTail, tone: 'textDim' } satisfies ConversationRowSegment]),
+    ...separatedSpans(hintOut, 'textDim'),
+    ...separatedSpans(queuedOut, 'info'),
+    ...separatedSpans(restOut, 'textDim'),
+  ];
 }

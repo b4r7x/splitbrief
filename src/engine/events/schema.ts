@@ -288,6 +288,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     availableActions: z.array(RecoveryActionSchema),
     recommendedAction: RecoveryActionSchema,
     headline: z.string(),
+    headlineSpans: z.array(z.object({ text: z.string(), seat: recoverySeat })).optional(),
     resumeCommand: z.string(),
   }),
   phaseEvent('recovery_action_selected').extend({

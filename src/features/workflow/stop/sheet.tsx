@@ -8,6 +8,7 @@ import { useStaticSelector } from '../../../hooks/use-static-selector.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { assertNever } from '../../../utils/type-guards.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import {
   cancelBoundaryPause,
   requestBoundaryPause,
@@ -102,12 +103,12 @@ export function StopSheet({
         )}
       </Text>
       <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-        {layout.options.map(({ row, lines }, index) => (
+        {layout.options.map(({ row, parts }, index) => (
           <Box key={row.id} flexDirection="column">
-            {lines.map((line, lineIndex) => (
-              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.text}>
+            {parts.map((line, lineIndex) => (
+              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.textDim}>
                 {listRowLead(index === selectedIndex && lineIndex === 0 ? 'active' : 'default')}
-                {line}
+                <TextSpans parts={line} selected={index === selectedIndex} />
               </Text>
             ))}
           </Box>

@@ -1,4 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { TextSpans } from '../../../components/text-spans.js';
 import { Box } from 'ink';
 import { configStore } from '../../../stores/project/config.js';
 import { detectionStore } from '../../../stores/project/detection.js';
@@ -11,11 +12,10 @@ import { DETECTING_TOOLS_STATUS } from '../../../core/discovery/copy.js';
 import {
   CREW_LABEL_WIDTH,
   PLANNER_INHERITANCE,
-  formatCollapsedSeatLine,
-  type CrewSeatId,
+  formatCollapsedSeatSpans,
 } from '../../../core/crew/identity.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
-import { deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
+import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { homeConfigBlockRows } from '../layout.js';
 import { MARK_SLOT_CELLS } from '../../../components/row-leading.js';
@@ -68,11 +68,6 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   const displayNames = useCrewDisplayNames(config);
 
   const seats = deriveCrewSeats({ config, displayNames });
-  const seatColor: Record<CrewSeatId, string | undefined> = {
-    plan: theme.planner,
-    build: theme.implementer,
-    review: theme.reviewer,
-  };
 
   // The block is bare text, so it opens two cells inside the composer's column — where the
   // composer's own caret sits — and its lines have that much less of `width` to spend.
@@ -90,23 +85,29 @@ export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) 
   return (
     <Box flexDirection="column" width={width} flexShrink={0} paddingLeft={MARK_SLOT_CELLS}>
       {homeConfigBlockRows(rows) < seats.length + 1 ? (
-        <Text color={coldDiscovery ? theme.textDim : theme.text} wrap="truncate-end">
-          {formatCollapsedSeatLine({
-            planner: config.planner,
-            build: resolveImplementerProfiles(config).defaultProfile.config,
-            reviewer: configuredReviewerRunner(config),
-            budget: textWidth,
-            displayNames,
-          })}
+        <Text wrap="truncate-end">
+          <TextSpans
+            parts={formatCollapsedSeatSpans({
+              planner: config.planner,
+              build: resolveImplementerProfiles(config).defaultProfile.config,
+              reviewer: configuredReviewerRunner(config),
+              budget: textWidth,
+              displayNames,
+            }).map((span) => ({
+              text: span.text,
+              tone:
+                coldDiscovery || span.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[span.seat],
+            }))}
+          />
         </Text>
       ) : (
         seats.map((seat) => (
           <Text key={seat.id} wrap="truncate-end">
-            <Text color={coldDiscovery ? theme.textDim : seatColor[seat.id]} bold>
+            <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]} bold>
               {seat.label.padEnd(CREW_LABEL_WIDTH)}
             </Text>
-            <Text color={coldDiscovery ? theme.textDim : theme.text}>
-              {LABEL_GAP}
+            <Text color={theme.textDim}>{LABEL_GAP}</Text>
+            <Text color={coldDiscovery ? theme.textDim : theme[CREW_SEAT_ROLES[seat.id]]}>
               {seatIdentity(seat)}
             </Text>
           </Text>

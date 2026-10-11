@@ -9,6 +9,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { PromptBody } from './components/prompt-body.js';
+import { countPromptBodyRows, promptBodyRows } from './prompt-body-rows.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import {
   formatActionRow,
   formatMiddotList,
@@ -19,6 +21,8 @@ import {
   passHeadlinePrefix,
   recoveryComposerHint,
   recoveryMenuLabel,
+  recoveryMenuParts,
+  recoveryPromptSummaryRows,
   recommendedRowPrefix,
   switchSeatCandidateForAnswer,
 } from './recovery-prompt.js';
@@ -57,6 +61,106 @@ const baseIssue: RecoveryIssue = {
   recommendedAction: 'retry-same-worker',
   createdAt: '2026-04-29T12:00:00.000Z',
 };
+
+it('builds a context cause from its recorded seat, with dim separators', () => {
+  const issue = makeRecoveryIssue({
+    reason: 'planner-call-failed',
+    seat: 'review',
+    attempts: undefined,
+    facts: {
+      apiContextCode: 'insufficient-context',
+      apiContextSeat: 'review',
+      apiContextCause: 'input-budget',
+    },
+  });
+  expect(recoveryPromptSummaryRows(issue)[0]).toMatchObject({
+    parts: [
+      { text: 'Seat down', tone: 'warning' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Nothing was sent to ', tone: 'text' },
+      { text: 'REVIEW', tone: 'reviewer' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'larger than the context window', tone: 'text' },
+    ],
+  });
+});
+
+it('keeps the default summary at seven rows at width 30 and five at width 120', () => {
+  const issue = makeRecoveryIssue();
+  const rows = recoveryPromptSummaryRows(issue);
+  expect(rows.at(-1)?.kind).toBe('facts');
+  expect(countPromptBodyRows(rows, 30)).toBe(7);
+  expect(countPromptBodyRows(rows, 120)).toBe(5);
+  expect(
+    promptBodyRows(rows, 30)
+      .filter((row) => row.kind === 'facts-line')
+      .map((row) => row.text),
+  ).toEqual([
+    '  Task T001 · Fix login ',
+    '  validation',
+    '  Files src/auth/session.ts',
+    '  npm test failed in ',
+    '  src/auth/session.test.ts',
+  ]);
+});
+
+it('carries the action seat and consequence before formatting the label', () => {
+  expect(recoveryMenuParts('switch-seat', makeRecoveryIssue({ seat: 'build' }))).toEqual([
+    { text: 'Change ', tone: 'text' },
+    { text: 'BUILD', tone: 'implementer' },
+    { text: ' tool', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'restarts this brief', tone: 'textDim' },
+  ]);
+});
+
+it('keeps a fix action hint dim', () => {
+  expect(recoveryMenuParts('revise', makeRecoveryIssue({ reason: 'review-failed' }))).toEqual([
+    { text: 'Fix again', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'add a note, grant one more fix cycle', tone: 'textDim' },
+  ]);
+});
+
+it.each([
+  [
+    'apply-conflict',
+    'retry-same-worker',
+    'Re-run Apply',
+    'after you resolve the files in the workspace',
+  ],
+  ['apply-partial', 'retry-same-worker', 'Re-run Apply', 'writes the files still missing'],
+  [
+    'apply-partial',
+    'restore-backup',
+    'Restore backup',
+    'puts back the files Apply replaced and removes the ones it created',
+  ],
+] as const)('keeps the %s %s action consequence dim', (reason, action, label, consequence) => {
+  expect(recoveryMenuParts(action, makeRecoveryIssue({ reason }))).toEqual([
+    { text: label, tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: consequence, tone: 'textDim' },
+  ]);
+});
+
+it('preserves the canonical retry cause when an old message starts with its seat', () => {
+  const issue = makeRecoveryIssue({
+    reason: 'retry-exhausted',
+    seat: 'build',
+    message: 'BUILD exhausted recovery retries',
+    attempts: 3,
+    facts: {},
+  });
+  expect(recoveryPromptSummaryRows(issue)[0]).toMatchObject({
+    text: 'Needs you · T001 failed after 3 attempts',
+    parts: [
+      { text: 'Needs you', tone: 'warning' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'T001 failed after 3 attempts', tone: 'text' },
+    ],
+  });
+});
 
 describe('recovery prompt', () => {
   beforeEach(() => {

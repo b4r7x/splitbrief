@@ -77,7 +77,11 @@ describe('prepareCardRows', () => {
       bodyLines: [
         {
           text: '+3 -1',
-          segments: [{ text: '+3', tone: 'success' }, { text: ' ' }, { text: '-1', tone: 'error' }],
+          segments: [
+            { text: '+3', tone: 'success' },
+            { text: ' ', tone: 'text' },
+            { text: '-1', tone: 'error' },
+          ],
         },
       ],
       width: 80,
@@ -85,9 +89,9 @@ describe('prepareCardRows', () => {
 
     const body = rows.find((row) => row.kind === 'card-body');
     expect(body?.segments.map((segment) => segment.tone)).toEqual([
-      undefined,
+      'text',
       'success',
-      undefined,
+      'text',
       'error',
     ]);
   });

@@ -61,7 +61,7 @@ function Harness({
   const continuation = useRunContinue({ prepared, inputMode });
   useRunLoop({ prepared, inputMode, continuation, runWorkflow: engine });
   const stopped = useStopByline();
-  return <Text>{stopped?.lead ?? inputMode.mode}</Text>;
+  return <Text>{stopped?.parts.map((part) => part.text).join('') ?? inputMode.mode}</Text>;
 }
 
 type EngineOptions = Parameters<RunWorkflowFn>[0];

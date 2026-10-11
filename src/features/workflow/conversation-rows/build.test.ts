@@ -21,6 +21,7 @@ import {
 } from '#testing/helpers/events/task.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { ACTIVITY_LABEL_PAD, displayActivityLabel } from '../display/activity-label-display.js';
+import { runnerActivityModelRole } from '../display/runner-activity-display.js';
 import { activityBatchKey } from './activity-batch-key.js';
 import { resetEventBlockCache } from './block-cache.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
@@ -345,10 +346,21 @@ describe('buildConversationRows', () => {
     },
   );
 
-  it.each(['planner', 'implementer', 'review'] as const)(
-    'dims a settled %s activity header and keeps its live tone',
-    (role) => {
-      const event = activity({ role, kind: 'read', label: 'reading src/orders.js' });
+  it.each(
+    (['planner', 'implementer', 'review'] as const).flatMap((role) => [
+      { role, kind: 'read' as const, markerTone: runnerActivityModelRole(role) },
+      { role, kind: 'warning' as const, markerTone: 'warning' },
+      { role, kind: 'error' as const, markerTone: 'error' },
+    ]),
+  )(
+    'preserves every segment tone of a settled $role $kind header and keeps its marker tone',
+    ({ role, kind, markerTone }) => {
+      const event = activity({
+        role,
+        kind,
+        label: 'reading src/orders.js',
+        model: 'gpt-5',
+      });
       const sections: Section<EngineEvent>[] =
         role === 'implementer'
           ? [
@@ -400,12 +412,26 @@ describe('buildConversationRows', () => {
       expect(live.rows.find((row) => row.kind === 'activity')?.segments[0]?.tone).not.toBe(
         'textDim',
       );
-      expect(settled.rows.find((row) => row.kind === 'activity')?.segments[0]?.tone).toBe(
-        'textDim',
+      const liveHeader = live.rows.find((row) => row.kind === 'activity');
+      const settledHeader = settled.rows.find((row) => row.kind === 'activity');
+      expect(settledHeader).toBeDefined();
+      expect(settledHeader?.segments).toEqual(liveHeader?.segments);
+      expect(settledHeader?.segments[0]?.tone).toBe(runnerActivityModelRole(role));
+      expect(
+        settledHeader?.segments.find((segment) => segment.text === `${CODEX_LABEL} · GPT-5`),
+      ).toMatchObject({ tone: runnerActivityModelRole(role) });
+      if (kind !== 'read') {
+        expect(
+          settledHeader?.segments.find(
+            (segment) => segment.text === `1 ${kind === 'warning' ? 'warn' : 'err'}`,
+          ),
+        ).toMatchObject({ tone: markerTone });
+      }
+      expect(settledHeader?.segments.map((segment) => segment.text).join('')).toContain(
+        `[${CODEX_LABEL} · GPT-5]`,
       );
-      expect(settled.rows.find((row) => row.kind === 'activity')?.segments[0]?.text).toBe(
-        live.rows.find((row) => row.kind === 'activity')?.segments[0]?.text,
-      );
+      expect(settledHeader?.markerTone).toBe(liveHeader?.markerTone);
+      expect(settledHeader?.markerTone).toBe(markerTone);
     },
   );
 
@@ -1666,7 +1692,13 @@ describe('buildConversationRowsProjection check lists', () => {
 
           expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
           expect(rows).toHaveLength(withHeader ? 4 : 3);
-          expect(rows.at(-1)).toMatchObject({ segments: [{ text: 'Drift · clean' }] });
+          expect(rows.at(-1)).toMatchObject({
+            segments: [
+              { text: 'Drift', tone: 'text' },
+              { text: ' · ', tone: 'textDim' },
+              { text: 'clean', tone: 'success' },
+            ],
+          });
           expect(projection.renderableCount).toBe(withHeader ? 4 : 3);
         }
       },
@@ -1726,7 +1758,28 @@ describe('buildConversationRowsProjection check lists', () => {
 
       expect(rows).toHaveLength(2);
       expect(rows.filter((row) => row.kind === 'spacer')).toEqual([]);
-      expect(rows.at(-1)).toMatchObject({ segments: [{ text: 'Drift · clean' }] });
+      if (status === 'planned') {
+        expect(
+          rows[0]?.segments
+            .filter((segment) => segment.text !== 'Reviewer')
+            .every((segment) => segment.tone === 'textDim'),
+        ).toBe(true);
+      } else {
+        const state = status === 'off' ? 'off' : 'not\u00a0run';
+        expect(rows[0]?.segments).toContainEqual({ text: state, tone: 'warning' });
+        expect(
+          rows[0]?.segments
+            .filter((segment) => segment.text !== 'Reviewer' && segment.text !== state)
+            .every((segment) => segment.tone === 'textDim'),
+        ).toBe(true);
+      }
+      expect(rows.at(-1)).toMatchObject({
+        segments: [
+          { text: 'Drift', tone: 'text' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'clean', tone: 'success' },
+        ],
+      });
       expect(projection.renderableCount).toBe(2);
     },
   );
@@ -2154,7 +2207,7 @@ describe('one recovery reads as one block', () => {
     expect(lines).toEqual(['Recovery  Your checkout changed under T002']);
     const [row] = rows.filter((candidate) => rowText(candidate).trim() !== '');
     expect(row?.kind).toBe('card');
-    expect(row?.segments[0]?.tone).toBe('textDim');
+    expect(row?.segments[0]?.tone).toBe('warning');
   });
 
   it('folds a halt no error row names, and what was done about it, into one row', () => {
@@ -2228,8 +2281,8 @@ describe('one recovery reads as one block', () => {
   it.each([
     ['continued', 'continued', 'success'],
     ['retry-current-task', 'retried', 'success'],
-    ['skipped-current-task', 'skipped', 'textDim'],
-    ['aborted', 'run ended', 'error'],
+    ['skipped-current-task', 'skipped', 'warning'],
+    ['aborted', 'run ended', 'warning'],
   ] as const)('tones an outcome %s as %s', (outcome, outcomeWords, tone) => {
     const { lines, rows } = transcript([
       { ...recovery, type: 'recovery_resolved', action: 'retry-same-worker', outcome },

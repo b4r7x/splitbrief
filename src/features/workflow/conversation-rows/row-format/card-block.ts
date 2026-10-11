@@ -90,12 +90,12 @@ function fittedCardHeaderSegments(input: {
     if (used >= input.width) break;
     const text = truncateTerminalDisplayText(segment.text, input.width - used);
     if (text.length === 0) continue;
-    segments.push({ ...segment, text, tone: segment.tone ?? 'textDim' });
+    segments.push({ ...segment, text });
     used += displayWidth(text);
   }
 
   if (used < input.width) {
-    segments.push({ text: ' '.repeat(input.width - used) });
+    segments.push({ text: ' '.repeat(input.width - used), tone: 'text' });
   }
 
   return segments;
@@ -153,7 +153,7 @@ function cardBodyRowSegments(
 ): ConversationRowSegment[] {
   const only = segments[0];
   if (segments.length === 1 && only !== undefined) {
-    return [{ ...only, tone: only.tone ?? 'text', text: wrappedText }];
+    return [{ ...only, text: wrappedText }];
   }
 
   if (wrappedText === segments.map((segment) => segment.text).join('')) {
@@ -229,7 +229,7 @@ export function prepareCardRows(input: CardBlockInput): PreparedCardRows {
             segmentedRow(
               `${input.keyPrefix}-body-${index}-${offset}`,
               [
-                ...(bodyPrefix === '' ? [] : [{ text: bodyPrefix }]),
+                ...(bodyPrefix === '' ? [] : [{ text: bodyPrefix, tone: 'text' as const }]),
                 ...cardBodyRowSegments(entry.segments, text, entry.body, offset),
               ],
               bodyKind,

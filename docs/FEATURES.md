@@ -390,7 +390,7 @@ Older files can name retired actions; `RETIRED_RECOVERY_ACTIONS` reads `revise-s
 
 **How to use.** The orchestrator always runs drift detection. It saves the report as `.splitbrief/sessions/<id>/drift-report.json`. It includes the report in the final review prompt under `## Deterministic Drift Report`. The `drift_report` event carries `passed`, `errorCount`, `warningCount`, and `findings`.
 
-The transcript shows one dim `Drift · clean` row when the report has no errors and no warnings. A report with warnings only shows `Drift · N warnings` in warning tone. A failed report shows `Drift · failed` in error tone. The failed headline includes the error and warning counts when they are not zero.
+The transcript paints `Drift` in `text` tone and each separator in `textDim`. A passing report with no errors or warnings adds `clean` in `success` tone. Warning counts use `warning`; error counts and `failed` use `error`. A warnings-only report reads `Drift · N warnings`. A failed report adds `failed` and each non-zero error or warning count.
 
 The transcript lists error and warning findings under the headline, errors first, indented two columns. It shows at most three findings. When more findings exist, it shows a `+N more findings · click` row. A mouse click on the drift rows shows all error and warning findings. Another click hides the findings beyond the first three. The transcript never shows information findings.
 

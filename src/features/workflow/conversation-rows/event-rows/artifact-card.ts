@@ -31,7 +31,7 @@ export function artifactWrittenRowBlock(
       `${keyPrefix}-top`,
       [
         { text: artifactLabel(event.filename), tone: 'planner', bold: true },
-        { text: LABEL_GAP },
+        { text: LABEL_GAP, tone: 'text' },
         { text: countNoun(event.lineCount, 'line'), tone: 'textDim' },
       ],
       'card-top',
@@ -44,7 +44,7 @@ export function artifactWrittenRowBlock(
       segmentedRow(
         `${keyPrefix}-line-${index}`,
         [
-          { text: BODY_PREFIX },
+          { text: BODY_PREFIX, tone: 'text' },
           { text: truncateTerminalDisplayText(line, bodyWidth), tone: 'textDim' },
         ],
         'card-body',
@@ -64,7 +64,13 @@ export function artifactWrittenRowBlock(
     width: bodyWidth,
   });
   if (footer !== null) {
-    rows.push(segmentedRow(`${keyPrefix}-source`, [{ text: BODY_PREFIX }, ...footer], 'card-body'));
+    rows.push(
+      segmentedRow(
+        `${keyPrefix}-source`,
+        [{ text: BODY_PREFIX, tone: 'text' }, ...footer],
+        'card-body',
+      ),
+    );
   }
 
   return {

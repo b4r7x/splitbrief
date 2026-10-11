@@ -1,8 +1,13 @@
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { recoveryPromptSummaryRows } from '../recovery-prompt.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import chalk from 'chalk';
-import { defaultTheme } from '../../../components/theme.js';
+import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
 import { paint } from '../../../core/theme/paint.js';
+import { resolveTheme } from '../../../core/theme/resolve.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
 import { render } from 'ink-testing-library';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { PromptBody } from './prompt-body.js';
 import { countPromptBodyRows } from '../prompt-body-rows.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -96,9 +101,7 @@ describe('PromptBody', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
 
     expect(frame).toContain('t3 failed review · add session middleware');
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.dimError, 'failed').replace('\u001b[39m', ''),
-    );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.error, 'failed').replace('\u001b[39m', ''));
     expect(frame).toContain('r   redo task recommended');
   });
 
@@ -123,5 +126,209 @@ describe('PromptBody', () => {
   it('renders nothing when height is non-positive', () => {
     const ui = render(<PromptBody prompt={RECOVERY_PROMPT} height={0} width={70} />);
     expect(ui.lastFrame() ?? '').toBe('');
+  });
+  it.each([
+    ['validation-failed', 'Needs you'],
+    ['seat-protocol-error', 'Seat down'],
+  ] as const)('colors the %s halt and keeps its explanation in the prose tone', (reason, label) => {
+    chalk.level = 3;
+    const prompt = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        reason,
+        seat: 'review',
+        message: 'REVIEW answer needs repair',
+        attempts: undefined,
+      }),
+    );
+    const ui = render(<PromptBody prompt={prompt} height={20} width={100} />);
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.warning, label).replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.text, 'REVIEW').replace('\u001b[39m', ''));
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.text, 'REVIEW answer needs repair').replace('\u001b[39m', ''),
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      `${label} · REVIEW answer needs repair`,
+    );
+    ui.unmount();
+  });
+
+  it('keeps recovery span and fact colors when empty detail lines are removed', () => {
+    chalk.level = 3;
+    const prompt = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        reason: 'seat-protocol-error',
+        seat: 'review',
+        message: 'Provider refused request',
+        attempts: undefined,
+        taskId: undefined,
+        taskTitle: undefined,
+        files: [],
+        affectedTaskIds: [],
+        details: ['First\n\nsecond'],
+      }),
+    );
+    const ui = render(
+      <PromptBody prompt={prompt} height={countPromptBodyRows(prompt, 76)} width={76} />,
+    );
+    const frame = ui.lastFrame() ?? '';
+    expect(frame).toContain(paint(defaultTheme.warning, 'Seat down').replace('\u001b[39m', ''));
+    expect(frame).toContain(
+      paint(defaultTheme.text, 'Provider refused request').replace('\u001b[39m', ''),
+    );
+    for (const fact of ['  First', '  second']) {
+      expect(frame).toContain(paint(defaultTheme.textDim, fact).replace('\u001b[39m', ''));
+    }
+    expect(stripAnsiStyles(frame)).toContain('  First\n  second');
+    ui.unmount();
+  });
+
+  it.each(['dark', 'light'] as const)(
+    'keeps recovery rows and span colors for a detail ending in a terminal reset in %s',
+    (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      const prompt = recoveryPromptSummaryRows(
+        makeRecoveryIssue({
+          reason: 'seat-protocol-error',
+          seat: 'review',
+          message: 'Provider refused request',
+          attempts: undefined,
+          taskId: undefined,
+          taskTitle: undefined,
+          files: [],
+          affectedTaskIds: [],
+          details: ['abcdefghijklmnopqr   \u001b[0m'],
+        }),
+      );
+      const height = countPromptBodyRows(prompt, 20);
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <PromptBody prompt={prompt} height={height} width={20} />
+        </ThemeProvider>,
+      );
+      try {
+        const frame = ui.lastFrame();
+        expect(height).toBe(4);
+        expect(stripAnsiStyles(frame).split('\n')).toEqual([
+          'Seat down · Provide…',
+          '',
+          '  abcdefghijklmnopqr',
+          '  ',
+        ]);
+        expect(frame).toContain(
+          paint(theme[stateTone('attention')], 'Seat down').replace('\u001b[39m', ''),
+        );
+        expect(frame).toContain(paint(theme.textDim, ' · ').replace('\u001b[39m', ''));
+        expect(frame).toContain(paint(theme.text, 'Provide').replace('\u001b[39m', ''));
+        expect(frame).toContain(
+          paint(theme.textDim, '  abcdefghijklmnopqr').replace('\u001b[39m', ''),
+        );
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
+
+  it.each([30, 120])(
+    'wraps a fact-free structured headline at width %s with its prose tone',
+    (width) => {
+      chalk.level = 3;
+      const text =
+        'REVIEW answer needs repair because the answer did not include any usable evidence from the required checks for this brief';
+      const prompt = recoveryPromptSummaryRows(
+        makeRecoveryIssue({
+          reason: 'seat-protocol-error',
+          seat: 'review',
+          message: text,
+          attempts: undefined,
+          taskId: undefined,
+          taskTitle: undefined,
+          files: [],
+          details: [],
+          affectedTaskIds: [],
+        }),
+      );
+      const height = countPromptBodyRows(prompt, width);
+      expect(height).toBe(width === 30 ? 5 : 2);
+      const ui = render(<PromptBody prompt={prompt} height={height} width={width} />);
+      const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+      expect(frame.split('\n')).toEqual(
+        width === 30
+          ? [
+              'Seat down · REVIEW answer ',
+              'needs repair because the ',
+              'answer did not include any ',
+              'usable evidence from the ',
+              'required checks for this brief',
+            ]
+          : [
+              'Seat down · REVIEW answer needs repair because the answer did not include any usable evidence from the required checks ',
+              'for this brief',
+            ],
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(defaultTheme.text, 'REVIEW').replace('\u001b[39m', ''),
+      );
+      expect(frame).not.toContain('…');
+      ui.unmount();
+    },
+  );
+
+  it('colors a generic primary question with text', () => {
+    chalk.level = 3;
+    const ui = render(
+      <PromptBody prompt="Which behavior should this keep?" height={2} width={70} />,
+    );
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.text, 'Which behavior should this keep?').replace('\u001b[39m', ''),
+    );
+    ui.unmount();
+  });
+
+  it('separates headline continuations with one blank row and the fact indent', () => {
+    chalk.level = 3;
+    const ui = render(
+      <PromptBody
+        prompt={[
+          {
+            kind: 'headline',
+            tone: 'attention',
+            text: 'Review\n\n\nWaiting for evidence',
+            parts: [
+              { text: 'Review', tone: 'reviewer' },
+              { text: '\n\n\nWaiting for evidence', tone: 'textDim' },
+            ],
+          },
+        ]}
+        height={3}
+        width={30}
+      />,
+    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').split('\n')).toEqual([
+      'Review',
+      '',
+      '  Waiting for evidence',
+    ]);
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.reviewer, 'Review'));
+    ui.unmount();
+  });
+  it('keeps terminal control and secret sanitization for structured recovery rows', () => {
+    chalk.level = 3;
+    const prompt = recoveryPromptSummaryRows(
+      makeRecoveryIssue({
+        reason: 'seat-protocol-error',
+        seat: 'review',
+        message: 'REVIEW \u001b[31mred\u001b[0m sk-abcdefghijklmnopqrstuvwxyz',
+        attempts: undefined,
+      }),
+    );
+    const ui = render(<PromptBody prompt={prompt} height={20} width={100} />);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      'Seat down · REVIEW red sk-***REDACTED***',
+    );
+    expect(ui.lastFrame()).not.toContain('abcdefghijklmnopqrstuvwxyz');
+    expect(ui.lastFrame()).not.toContain('\u001b[31m');
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.text, 'REVIEW').replace('\u001b[39m', ''));
+    ui.unmount();
   });
 });

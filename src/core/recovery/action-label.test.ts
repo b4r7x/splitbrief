@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SwitchSeatOffer } from '../schemas/recovery/schemas.js';
-import { recoveryActionLabel } from './action-label.js';
+import { recoveryActionLabel, recoveryActionParts } from './action-label.js';
 
 describe('recoveryActionLabel for a seat swap', () => {
   it.each([
@@ -12,10 +12,20 @@ describe('recoveryActionLabel for a seat swap', () => {
 
     expect(recoveryActionLabel('switch-seat', { switchSeat: offer })).toBe(label);
     expect(recoveryActionLabel('switch-seat', { seat })).toBe(label);
+    expect(recoveryActionParts('switch-seat', { seat })).toEqual([
+      { text: 'Change ' },
+      { text: seat.toUpperCase(), seat },
+      { text: ' tool' },
+    ]);
+    expect(recoveryActionParts('retry-same-worker', { seatRetry: seat })).toEqual([
+      { text: 'Try again with ' },
+      { text: seat.toUpperCase(), seat },
+    ]);
   });
 
   it('names no seat when nothing says which one halted', () => {
     expect(recoveryActionLabel('switch-seat')).toBe('Change tool');
+    expect(recoveryActionParts('switch-seat')).toEqual([{ text: 'Change tool' }]);
   });
 });
 

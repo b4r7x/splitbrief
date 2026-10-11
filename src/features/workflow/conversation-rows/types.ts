@@ -2,41 +2,9 @@ import type { ReactNode } from 'react';
 import type { Section } from '../../../core/sections/event-sections.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
+import type { TextTone } from '../../../core/theme/tone-color.js';
 
-export type ConversationRowTone =
-  | 'text'
-  | 'textDim'
-  | 'accent'
-  | 'planner'
-  | 'implementer'
-  | 'validator'
-  | 'success'
-  | 'warning'
-  | 'error'
-  | 'info'
-  | 'markdownHeading'
-  | 'markdownCode'
-  | 'markdownCodeGutter'
-  | 'markdownItalic'
-  | 'markdownBlockquote'
-  | 'markdownList'
-  | 'markdownRule'
-  | 'markdownLink'
-  | 'markdownStrike'
-  | 'markdownTableBorder'
-  | 'syntaxKeyword'
-  | 'syntaxString'
-  | 'syntaxComment'
-  | 'syntaxNumber'
-  | 'syntaxLiteral'
-  | 'syntaxType'
-  | 'syntaxFunction'
-  | 'syntaxPunctuation'
-  | 'reviewFile'
-  | 'diffAdded'
-  | 'diffRemoved'
-  | 'diffContext'
-  | 'border';
+export type ConversationRowTone = TextTone;
 
 export type ConversationRowKind =
   | 'message'
@@ -60,7 +28,7 @@ export type ConversationRowKind =
 
 export interface ConversationRowSegment {
   text: string;
-  tone?: ConversationRowTone;
+  tone: ConversationRowTone;
   bold?: boolean;
   italic?: boolean;
   strikethrough?: boolean;

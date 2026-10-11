@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import chalk from 'chalk';
-import { defaultTheme } from '../../../components/theme.js';
+import { defaultTheme, ThemeProvider } from '../../../components/theme.js';
+import { resolveTheme } from '../../../core/theme/resolve.js';
 import { paint } from '../../../core/theme/paint.js';
 import { Box } from 'ink';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -19,7 +20,7 @@ import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { skillsStore } from '../../../stores/project/skills.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
-import { getRailStages } from '../../../core/rail-stages.js';
+import { getRailStages, type RailStageStatus } from '../../../core/rail-stages.js';
 import {
   RAIL_MARKER_SLOT_WIDTH,
   railConnectorString,
@@ -31,7 +32,7 @@ import {
   hitRailStage,
   RAIL_FORM_C_CANCELLED_SUFFIX,
 } from '../layout/hit-test.js';
-import { measureRailCells, Rail, railFormCText } from './rail.js';
+import { measureRailCells, Rail, RailFormB, railFormCText } from './rail.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { readRailSnapshot } from '../layout/snapshot.js';
 
@@ -102,11 +103,16 @@ describe('Rail — Form B (horizontal pipeline)', () => {
     expect(railLine).toContain(`${DONE} Plan`);
     expect(railLine).toContain(`${PENDING} Review`);
     const raw = ui.lastFrame() ?? '';
-    expect(raw).toContain(paint(defaultTheme.textDim, `${DONE} Plan`).replace('\u001b[39m', ''));
-    expect(raw).toContain(paint(defaultTheme.textDim, `${railConnectorString()}${PENDING} Review`));
+    expect(raw).toContain(paint(defaultTheme.success, `${DONE} `).replace('\u001b[39m', ''));
+    expect(raw).toContain(paint(defaultTheme.planner, 'Plan').replace('\u001b[39m', ''));
     expect(raw).toContain(
-      chalk.bold(paint(defaultTheme.implementer, `${DONE} Build`)).replace('\u001b[39m', ''),
+      paint(defaultTheme.border, railConnectorString()).replace('\u001b[39m', ''),
     );
+    expect(raw).toContain(paint(defaultTheme.textDim, `${PENDING} Review`));
+    expect(raw).toContain(
+      chalk.bold(paint(defaultTheme.implementer, `${DONE} Build`)).replaceAll('\u001b[39m', ''),
+    );
+    expect(raw).not.toContain(paint(defaultTheme.accent, `${DONE} `).replace('\u001b[39m', ''));
     ui.unmount();
   });
 
@@ -201,7 +207,204 @@ describe('Rail — Form B (horizontal pipeline)', () => {
   });
 });
 
+describe('Rail colors', () => {
+  const states: readonly RailStageStatus[] = ['active', 'done', 'pending', 'failed', 'cancelled'];
+
+  it.each([
+    ['dark', 'B'],
+    ['dark', 'C'],
+    ['light', 'B'],
+    ['light', 'C'],
+  ] as const)('paints stage marks and labels in %s Form %s', (variant, form) => {
+    chalk.level = 3;
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    for (const status of states) {
+      const mark =
+        status === 'failed'
+          ? glyph('statusFailed')
+          : status === 'cancelled'
+            ? CANCELLED
+            : status === 'pending'
+              ? PENDING
+              : DONE;
+      for (const [stage, label, seatTone] of [
+        ['plan', 'Plan', 'planner'],
+        ['build', 'Build', 'implementer'],
+        ['review', 'Review', 'reviewer'],
+        ['apply', 'Apply', 'text'],
+      ] as const) {
+        const markTone =
+          status === 'active'
+            ? seatTone
+            : status === 'done'
+              ? 'success'
+              : status === 'failed'
+                ? 'error'
+                : status === 'cancelled'
+                  ? 'warning'
+                  : 'textDim';
+        const ui = renderFeature(
+          <ThemeProvider theme={theme}>
+            {form === 'B' ? (
+              <RailFormB stages={[{ stage, status }]} contentWidth={200} />
+            ) : (
+              <Rail form={form} stages={[{ stage, status }]} />
+            )}
+          </ThemeProvider>,
+        );
+        const frame = ui.lastFrame();
+        const labelTone = status === 'pending' ? 'textDim' : seatTone;
+        expect(frame).toContain(paint(theme[markTone], `${mark} `).replace('\u001b[39m', ''));
+        expect(frame).toContain(
+          paint(
+            theme[labelTone],
+            status === 'pending' || status === 'active' ? `${mark} ${label}` : label,
+          ).replace('\u001b[39m', ''),
+        );
+        expect(frame).not.toContain(paint(theme.accent, `${mark} `).replace('\u001b[39m', ''));
+        if (status === 'active') expect(frame).toContain('\u001b[1m');
+        ui.unmount();
+      }
+    }
+  });
+
+  it.each([
+    ['dark', 'B'],
+    ['dark', 'C'],
+    ['light', 'B'],
+    ['light', 'C'],
+  ] as const)('keeps the stopped run on Build in its seat tone in %s Form %s', (variant, form) => {
+    chalk.level = 3;
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'paused' });
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <Rail form={form} />
+      </ThemeProvider>,
+    );
+    const frame = ui.lastFrame();
+    expect(frame).toContain(
+      `\u001b[1m${paint(theme.implementer, `${DONE} Build`).replace('\u001b[39m', '')}`,
+    );
+    expect(frame).not.toContain(paint(theme.accent, `${DONE} `).replace('\u001b[39m', ''));
+    expect(frame).toContain('\u001b[1m');
+    ui.unmount();
+  });
+
+  it.each(['dark', 'light'] as const)(
+    'paints Form C seat, fraction and halt separately in %s',
+    (variant) => {
+      chalk.level = 3;
+      const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+      tasksStore.__testReset({ currentTask: 2, totalTasks: 5 });
+      lifecycleStore.__testReset({ phase: 'implementing', status: 'running' });
+      const active = renderFeature(
+        <ThemeProvider theme={theme}>
+          <Rail form="C" />
+        </ThemeProvider>,
+      );
+      const frame = active.lastFrame();
+      expect(frame).toContain(paint(theme.implementer, `${DONE} Build`).replace('\u001b[39m', ''));
+      expect(frame).not.toContain(paint(theme.accent, `${DONE} `).replace('\u001b[39m', ''));
+      expect(frame).toContain(paint(theme.textDim, '  0/5 passed').replace('\u001b[39m', ''));
+      expect(frame).not.toContain(paint(theme.success, 'passed').replace('\u001b[39m', ''));
+      active.unmount();
+      const halted = renderFeature(
+        <ThemeProvider theme={theme}>
+          <Rail form="C" stages={[{ stage: 'review', status: 'cancelled' }]} />
+        </ThemeProvider>,
+      );
+      expect(halted.lastFrame()).toContain(
+        paint(theme.warning, `${CANCELLED} `).replace('\u001b[39m', ''),
+      );
+      expect(halted.lastFrame()).toContain(
+        paint(theme.reviewer, 'Review').replace('\u001b[39m', ''),
+      );
+      expect(halted.lastFrame()).toContain(paint(theme.warning, RAIL_FORM_C_CANCELLED_SUFFIX));
+      halted.unmount();
+    },
+  );
+
+  it.each(['dark', 'light'] as const)('paints completion facts by meaning in %s', (variant) => {
+    chalk.level = 3;
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
+    tasksStore.__testReset({
+      tasks: [{ id: 'T001', title: 'One', status: 'done' }],
+      totalTasks: 1,
+    });
+    for (const passed of [true, false, undefined]) {
+      eventsStore.__testReset({
+        events:
+          passed === undefined
+            ? []
+            : [
+                {
+                  type: 'drift_report',
+                  ts: 1,
+                  phase: 'final-review',
+                  passed,
+                  score: 1,
+                  errorCount: 0,
+                  warningCount: 0,
+                },
+              ],
+      });
+      const ui = renderFeature(
+        <ThemeProvider theme={theme}>
+          <Rail />
+        </ThemeProvider>,
+      );
+      const text = passed === undefined ? 'drift not run' : passed ? 'no drift' : 'drift found';
+      const tone = passed === undefined ? 'textDim' : passed ? 'success' : 'warning';
+      expect(ui.lastFrame()).toContain(
+        paint(theme.success, `${glyph('stageDone')} done`).replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(theme.textDim, ' · 1/1 briefs passed').replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).not.toContain(
+        paint(theme.success, 'passed').replace('\u001b[39m', ''),
+      );
+      expect(ui.lastFrame()).toContain(
+        paint(theme[tone], passed === undefined ? ` · 1/1 briefs passed · ${text}` : text).replace(
+          '\u001b[39m',
+          '',
+        ),
+      );
+      ui.unmount();
+    }
+  });
+});
+
 describe('Rail — completion reward', () => {
+  it.each(['dark', 'light'] as const)('warns on advisory drift in %s', (variant) => {
+    chalk.level = 3;
+    const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete' });
+    eventsStore.__testReset({
+      events: [
+        {
+          type: 'drift_report',
+          ts: 1,
+          phase: 'final-review',
+          passed: true,
+          score: 1,
+          errorCount: 0,
+          warningCount: 1,
+        },
+      ],
+    });
+    const ui = renderFeature(
+      <ThemeProvider theme={theme}>
+        <Rail />
+      </ThemeProvider>,
+    );
+    expect(ui.lastFrame()).toContain(paint(theme.warning, 'drift found'));
+    expect(stripAnsiStyles(ui.lastFrame())).not.toContain('no drift');
+    ui.unmount();
+  });
+
   it('collapses to the single done line with the shared done mark', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 40, isSmall: false });
     lifecycleStore.__testReset({
@@ -331,6 +534,7 @@ describe('Rail — completion after a failed review', () => {
   });
 
   it('never says done while the review failed, and marks the review stage failed', async () => {
+    chalk.level = 3;
     tasksStore.__testReset({ currentTask: 10, totalTasks: 10, tasks: briefs(10) });
     eventsStore.__testReset({
       events: [
@@ -344,6 +548,9 @@ describe('Rail — completion after a failed review', () => {
     expect(frame).not.toContain('done');
     expect(frame).toContain(`${DONE} Build`);
     expect(frame).toContain(`${glyph('statusFailed')} Review`);
+    expect(ui.lastFrame()).toContain(
+      paint(defaultTheme.reviewer, 'Review').replace('\u001b[39m', ''),
+    );
     ui.unmount();
   });
 });

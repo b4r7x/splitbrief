@@ -2,12 +2,12 @@ import type {
   ConversationRow,
   ConversationRowBlock,
   ConversationRowKind,
+  ConversationRowSegment,
   ConversationRowTone,
 } from './types.js';
-import { SOFT_SEP } from '../../../core/separators.js';
 import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
-import { row, type RowInput } from './row-format/rows.js';
-import { sanitizeRowDisplayText, wrappedProseTexts } from './row-format/text.js';
+import { row, segmentedRow } from './row-format/rows.js';
+import { sanitizeRowDisplayText, wrappedProseSegments } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
 
 export function rowsBlock(
@@ -32,24 +32,24 @@ export function rowsBlock(
   };
 }
 
-export function rowSeedsBlock(
-  key: string,
-  seeds: readonly RowInput[],
-): ConversationRowBlock | null {
-  if (seeds.length === 0) return null;
-  const safeSeeds = seeds.map((seed) => ({
-    ...seed,
-    text: sanitizeRowDisplayText(seed.text),
-  }));
-  const activeRowKey = [...safeSeeds].reverse().find((seed) => isActiveKind(seed.kind))?.key;
-  return {
-    key,
-    rowCount: safeSeeds.length,
-    renderableUnits: 1,
-    ...(activeRowKey !== undefined ? { activeRowKey } : {}),
-    createRows: (windowStart, windowEnd) =>
-      safeSeeds.slice(windowStart, windowEnd).map((seed) => row(seed)),
-  };
+export function wrappedSegmentsBlock(input: {
+  keyPrefix: string;
+  segments: readonly ConversationRowSegment[];
+  width: number;
+  kind?: ConversationRowKind;
+  indent?: number;
+  continuationIndent?: number;
+}): ConversationRowBlock | null {
+  const kind = input.kind ?? 'message';
+  return rowsBlock(
+    input.keyPrefix,
+    wrappedProseSegments(
+      input.segments,
+      wrapWidthFor(kind, input.width),
+      input.indent,
+      input.continuationIndent,
+    ).map((segments, index) => segmentedRow(`${input.keyPrefix}-${index}`, segments, kind)),
+  );
 }
 
 export function wrappedTextBlock(input: {
@@ -238,25 +238,12 @@ function eventWrappedLines(
   indent = 0,
   continuationIndent = 0,
 ): string[] {
-  return text.split('\n').flatMap((rawLine) => {
-    let lines = wrappedProseTexts(rawLine, width);
-    const firstLine = lines[0];
-    if (continuationIndent > 0 && firstLine !== undefined && lines.length > 1) {
-      const continuationWidth = Math.max(1, width - continuationIndent);
-      let continuationStart = firstLine.length;
-      if (rawLine[continuationStart] === ' ') continuationStart += 1;
-      if (rawLine.startsWith(SOFT_SEP, continuationStart - 1)) {
-        continuationStart += SOFT_SEP.length - 1;
-      }
-      lines = [
-        firstLine,
-        ...wrappedProseTexts(rawLine.slice(continuationStart), continuationWidth),
-      ];
-    }
-    return lines.map(
-      (line, index) => `${' '.repeat(indent + (index === 0 ? 0 : continuationIndent))}${line}`,
-    );
-  });
+  return wrappedProseSegments(
+    [{ text, tone: 'textDim' }],
+    width + indent,
+    indent,
+    continuationIndent,
+  ).map((parts) => parts.map((part) => part.text).join(''));
 }
 
 function eventWrappedRowsWindow(input: {

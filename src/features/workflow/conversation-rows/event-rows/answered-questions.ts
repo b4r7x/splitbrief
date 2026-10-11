@@ -78,7 +78,7 @@ export function answeredQuestionsRowBlock(input: {
           `${input.keyPrefix}-q-${index}-0`,
           [
             { text: label, tone: 'planner', bold: true },
-            { text: ' '.repeat(gutter - label.length) },
+            { text: ' '.repeat(gutter - label.length), tone: 'text' },
             { text: line, tone: 'planner' },
           ],
           'message',

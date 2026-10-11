@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { deriveLiveStatus, stallRunnerHint } from './live-activity.js';
+import { deriveLiveStatus, stallRunnerHint, PAUSED_LIVE_STATUS_PARTS } from './live-activity.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
@@ -26,6 +26,13 @@ const base = {
   activeOperation: null,
 };
 
+it('keeps the paused state separate from its dim resume hint', () => {
+  expect(PAUSED_LIVE_STATUS_PARTS).toEqual([
+    { text: 'Paused', tone: 'warning' },
+    { text: ' — resume with /resume or `splitbrief resume`', tone: 'textDim' },
+  ]);
+});
+
 it.each([
   ['shell', 'Custom Shell'],
   ['agent', 'Agent'],
@@ -45,7 +52,9 @@ it.each([
       ...base,
       phase: 'final-review',
       activeOperation: operationsStore.get().active,
-    })?.verb,
+    })
+      ?.parts.map((part) => part.text)
+      .join(''),
   ).toBe(`Review · ${label} · GPT-5`);
   resetWorkflow();
 });
@@ -68,7 +77,9 @@ it('names the active reviewer from its recorded identity after the configured se
       phase: 'final-review',
       activeOperation: operationsStore.get().active,
       reviewerLabel: 'Claude Code CLI · Sonnet 5 · low',
-    })?.verb,
+    })
+      ?.parts.map((part) => part.text)
+      .join(''),
   ).toBe('Review · OpenAI Codex CLI · GPT-5 · high');
   resetWorkflow();
 });
@@ -85,8 +96,12 @@ it('leads the review byline with the render scenario and its own clock', () => {
       stageStartedTs: 90_000,
     },
   });
-  expect(status).toMatchObject({
-    verb: 'Review · Render workflow-x',
+  expect(status).toEqual({
+    parts: [
+      { text: 'Review', tone: 'reviewer' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Render workflow-x', tone: 'accent' },
+    ],
     stageStart: 90_000,
     waitedMs: 0,
   });
@@ -121,9 +136,14 @@ describe('deriveLiveStatus', () => {
         });
       const reviewer = 'Review · OpenAI Codex CLI · GPT-5 · high';
       expect(liveNow()).toMatchObject({
-        verb: `${reviewer} · waiting for the verdict`,
+        parts: [
+          { text: 'Review', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'OpenAI Codex CLI · GPT-5 · high', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'waiting for the verdict', tone: 'textDim' },
+        ],
         stageStart: 1_000,
-        tone: 'validator',
       });
       addEvent(
         makeRunnerCallStarted({
@@ -136,7 +156,14 @@ describe('deriveLiveStatus', () => {
           axes: ['high'],
         }),
       );
-      expect(liveNow()).toMatchObject({ verb: reviewer, stageStart: 1_100 });
+      expect(liveNow()).toMatchObject({
+        parts: [
+          { text: 'Review', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'OpenAI Codex CLI · GPT-5 · high', tone: 'reviewer' },
+        ],
+        stageStart: 1_100,
+      });
       addEvent(
         makeRunnerCallCompleted({
           ts: 1_200,
@@ -148,7 +175,11 @@ describe('deriveLiveStatus', () => {
           durationMs: 100,
         }),
       );
-      expect(liveNow()?.verb).toBe(`${reviewer} · waiting for the verdict`);
+      expect(
+        liveNow()
+          ?.parts.map((part) => part.text)
+          .join(''),
+      ).toBe(`${reviewer} · waiting for the verdict`);
       addEvent({
         type: 'full_suite',
         ts: 1_300,
@@ -159,7 +190,14 @@ describe('deriveLiveStatus', () => {
         status: 'running',
       });
       expect(liveNow()).toMatchObject({
-        verb: 'Review · Reviewer check V1 · npm test',
+        parts: [
+          { text: 'Review', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'Reviewer', tone: 'reviewer' },
+          { text: ' check V1', tone: 'textDim' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'npm test', tone: 'textDim' },
+        ],
         stageStart: 1_300,
       });
       addEvent({
@@ -172,7 +210,11 @@ describe('deriveLiveStatus', () => {
         status: 'done',
         passed: true,
       });
-      expect(liveNow()?.verb).toBe(`${reviewer} · waiting for the verdict`);
+      expect(
+        liveNow()
+          ?.parts.map((part) => part.text)
+          .join(''),
+      ).toBe(`${reviewer} · waiting for the verdict`);
       addEvent(
         makeRunnerCallStarted({
           ts: 1_500,
@@ -184,7 +226,11 @@ describe('deriveLiveStatus', () => {
           axes: ['high'],
         }),
       );
-      expect(liveNow()?.verb).toBe(reviewer);
+      expect(
+        liveNow()
+          ?.parts.map((part) => part.text)
+          .join(''),
+      ).toBe(reviewer);
       addEvent(
         makeRunnerCallCompleted({
           ts: 1_600,
@@ -205,9 +251,11 @@ describe('deriveLiveStatus', () => {
         verdict: 'pass',
         duration: 700,
       });
-      expect(liveNow()?.verb).toBe(
-        scope === 'task' ? 'Implementing…' : 'Review · waiting for the verdict',
-      );
+      expect(
+        liveNow()
+          ?.parts.map((part) => part.text)
+          .join(''),
+      ).toBe(scope === 'task' ? 'Implementing…' : 'Review · waiting for the verdict');
       resetWorkflow();
     },
   );
@@ -227,14 +275,19 @@ describe('deriveLiveStatus', () => {
           activeOperation,
         }),
       ).toEqual({
-        verb: 'Review · GPT-6 Astra',
+        parts: [
+          { text: 'Review', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'GPT-6 Astra', tone: 'reviewer' },
+        ],
         stageStart: 60_000,
         waitedMs: 0,
-        tone: 'validator',
       });
-      expect(deriveLiveStatus({ ...base, phase, activeOperation: null })?.verb).toBe(
-        phase === 'implementing' ? 'Implementing…' : 'Escalating…',
-      );
+      expect(
+        deriveLiveStatus({ ...base, phase, activeOperation: null })
+          ?.parts.map((part) => part.text)
+          .join(''),
+      ).toBe(phase === 'implementing' ? 'Implementing…' : 'Escalating…');
       resetWorkflow();
     },
   );
@@ -262,30 +315,69 @@ describe('deriveLiveStatus', () => {
     ['planning', 'planner'],
     ['analyzing', 'planner'],
     ['validating-task', 'implementer'],
-    ['escalating', 'implementer'],
-    ['final-review', 'validator'],
+    ['escalating', 'planner'],
+    ['final-review', 'reviewer'],
   ] as const)('derives %s with the live %s byline tone', (phase, tone) => {
-    expect(deriveLiveStatus({ ...base, phase })).toMatchObject({ tone });
+    expect(deriveLiveStatus({ ...base, phase })).toEqual({
+      parts:
+        phase === 'final-review'
+          ? [
+              { text: 'Review', tone: 'reviewer' },
+              { text: ' · ', tone: 'textDim' },
+              { text: 'waiting for the verdict', tone: 'textDim' },
+            ]
+          : [
+              {
+                text:
+                  phase === 'specifying'
+                    ? 'Specifying…'
+                    : phase === 'clarifying'
+                      ? 'Clarifying…'
+                      : phase === 'constitution-check'
+                        ? 'Checking constitution…'
+                        : phase === 'planning'
+                          ? 'Planning…'
+                          : phase === 'analyzing'
+                            ? 'Analyzing…'
+                            : phase === 'validating-task'
+                              ? 'Validating…'
+                              : 'Escalating…',
+                tone,
+              },
+            ],
+      stageStart:
+        phase === 'validating-task' || phase === 'escalating' || phase === 'final-review'
+          ? 0
+          : 1000,
+      waitedMs: 0,
+    });
   });
 
   it('carries the verb, the stage start, and the role tone for a live planner stage', () => {
     const status = deriveLiveStatus({ ...base, phase: 'researching' });
     expect(status).toEqual({
-      verb: 'Researching…',
+      parts: [{ text: 'Researching…', tone: 'planner' }],
       stageStart: 1000,
       waitedMs: 0,
-      tone: 'planner',
     });
   });
 
   it('says one verb for the planning session and names an old chain briefs call', () => {
-    expect(deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'plan' })?.verb).toBe(
-      'Planning…',
-    );
-    expect(deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'tasks' })?.verb).toBe(
-      'Compiling briefs…',
-    );
-    expect(deriveLiveStatus({ ...base, phase: 'planning' })?.verb).toBe('Planning…');
+    expect(
+      deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'plan' })
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Planning…');
+    expect(
+      deriveLiveStatus({ ...base, phase: 'planning', plannerCall: 'tasks' })
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Compiling briefs…');
+    expect(
+      deriveLiveStatus({ ...base, phase: 'planning' })
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Planning…');
   });
 
   it('adds up the waits of the active stage only', () => {
@@ -311,7 +403,7 @@ describe('deriveLiveStatus', () => {
       phase: 'implementing',
       phaseFirstSeenTs: { implementing: 5000 },
     });
-    expect(status?.tone).toBe('implementer');
+    expect(status?.parts).toEqual([{ text: 'Implementing…', tone: 'implementer' }]);
     expect(status?.stageStart).toBe(5000);
   });
 
@@ -326,7 +418,19 @@ describe('deriveLiveStatus', () => {
       waitedMs: { implementing: 2_000 },
       suiteStage: { stage: 'test', command: 'npm test', moment, stageStartedTs: 90_000 },
     });
-    expect(status).toEqual({ verb, stageStart: 90_000, waitedMs: 0, tone: 'validator' });
+    expect(status).toEqual({
+      parts: [
+        {
+          text: moment === 'base' ? 'Base re-run' : 'Pre-review suite',
+          tone: moment === 'base' ? 'accent' : 'textDim',
+        },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
+      stageStart: 90_000,
+      waitedMs: 0,
+    });
+    expect(status?.parts.map((part) => part.text).join('')).toBe(verb);
   });
 
   it.each([
@@ -340,7 +444,23 @@ describe('deriveLiveStatus', () => {
       phaseFirstSeenTs: { 'final-review': 5_000 },
       suiteStage: { id: 'V1', command: 'npm test', moment, stageStartedTs: 90_000 },
     });
-    expect(status).toEqual({ verb, stageStart: 90_000, waitedMs: 0, tone: 'validator' });
+    expect(status).toEqual({
+      parts: [
+        { text: 'Review', tone: 'reviewer' },
+        { text: ' · ', tone: 'textDim' },
+        ...(moment === 'pre-review'
+          ? [
+              { text: 'Reviewer', tone: 'reviewer' },
+              { text: ' check V1', tone: 'textDim' },
+            ]
+          : [{ text: moment === 'base' ? 'Base re-run V1' : 'Fix check V1', tone: 'accent' }]),
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
+      stageStart: 90_000,
+      waitedMs: 0,
+    });
+    expect(status?.parts.map((part) => part.text).join('')).toBe(verb);
   });
 
   it('counts the stage from the later of its opening and the run resuming', () => {
@@ -368,10 +488,9 @@ describe('deriveLiveStatus', () => {
     const waits = { researching: 1_000, specifying: 2_000, planning: 4_000, implementing: 8_000 };
     const oldChain = deriveLiveStatus({ ...base, phase: 'researching', waitedMs: waits });
     expect(oldChain).toEqual({
-      verb: 'Researching…',
+      parts: [{ text: 'Researching…', tone: 'planner' }],
       stageStart: 1000,
       waitedMs: 7_000,
-      tone: 'planner',
     });
 
     const planning = deriveLiveStatus({
@@ -437,21 +556,29 @@ describe('deriveLiveStatus', () => {
 
     regenerate('reviewing-plan', 'plan');
     expect(lifecycleStore.get().phase).toBe('reviewing-plan');
-    expect(liveNow()).toMatchObject({
-      verb: 'Planning…',
+    expect(liveNow()).toEqual({
+      parts: [{ text: 'Planning…', tone: 'planner' }],
+      waitedMs: 0,
       stageStart: 50_000,
-      tone: 'planner',
     });
     addEvent(makePlannerStatus({ phase: 'planning', ts: 60_000, status: 'done', call: 'plan' }));
     addEvent(makePlannerStatus({ phase: 'reviewing-plan', ts: 60_001 }));
     expect(liveNow()).toBeNull();
 
     regenerate('reviewing-spec', 'spec');
-    expect(liveNow()).toMatchObject({ verb: 'Specifying…', stageStart: 50_000 });
+    expect(liveNow()).toEqual({
+      parts: [{ text: 'Specifying…', tone: 'planner' }],
+      stageStart: 50_000,
+      waitedMs: 0,
+    });
 
     regenerate('reviewing-briefs', 'tasks');
     expect(lifecycleStore.get().phase).toBe('reviewing-briefs');
-    expect(liveNow()).toMatchObject({ verb: 'Compiling briefs…', stageStart: 50_000 });
+    expect(liveNow()).toEqual({
+      parts: [{ text: 'Compiling briefs…', tone: 'planner' }],
+      stageStart: 50_000,
+      waitedMs: 0,
+    });
   });
 
   it('names the reviewer seat during final review only while a call runs, and names the step otherwise', () => {
@@ -475,8 +602,7 @@ describe('deriveLiveStatus', () => {
       reviewerLabel: 'Sonnet 4.5',
       activeOperation: running,
     });
-    expect(configured?.verb).toContain('Sonnet 4.5');
-    expect(configured?.tone).toBe('validator');
+    expect(configured?.parts.map((part) => part.text).join('')).toContain('Sonnet 4.5');
 
     const betweenCalls = deriveLiveStatus({
       ...base,
@@ -484,20 +610,25 @@ describe('deriveLiveStatus', () => {
       reviewerLabel: 'Sonnet 4.5',
       activeOperation: null,
     });
-    expect(betweenCalls?.verb).toBe('Review · waiting for the verdict');
-    expect(betweenCalls?.tone).toBe('validator');
+    expect(betweenCalls?.parts.map((part) => part.text).join('')).toBe(
+      'Review · waiting for the verdict',
+    );
 
     const unconfigured = deriveLiveStatus({
       ...base,
       phase: 'final-review',
       activeOperation: running,
     });
-    expect(unconfigured?.verb).toBe('Review · reviewing');
-    expect(unconfigured?.tone).toBe('validator');
+    expect(unconfigured?.parts.map((part) => part.text).join('')).toBe('Review · reviewing');
   });
 
   it('live verbs are Title Case', () => {
-    const verbs = PHASES.flatMap((phase) => deriveLiveStatus({ ...base, phase })?.verb ?? []);
+    const verbs = PHASES.flatMap(
+      (phase) =>
+        deriveLiveStatus({ ...base, phase })
+          ?.parts.map((part) => part.text)
+          .join('') ?? [],
+    );
     expect(verbs.length).toBeGreaterThan(0);
     for (const verb of verbs) {
       expect(verb).toMatch(/^[A-Z]/);
@@ -527,7 +658,9 @@ describe('deriveLiveStatus', () => {
           phase: 'final-review',
           reviewerLabel: 'GPT-6 Astra',
           activeOperation,
-        })?.verb,
+        })
+          ?.parts.map((part) => part.text)
+          .join(''),
       ).toBe('Review · waiting for the verdict');
     },
   );
@@ -554,7 +687,9 @@ describe('deriveLiveStatus', () => {
         phase: 'final-review',
         reviewerLabel: 'GPT-6 Astra',
         activeOperation,
-      })?.verb;
+      })
+        ?.parts.map((part) => part.text)
+        .join('');
       expect(verb).toMatch(/^Review · /);
       expect(verb?.toLowerCase()).toContain(role);
       expect(verb).not.toContain('GPT-6 Astra');
@@ -568,7 +703,9 @@ describe('deriveLiveStatus', () => {
         ...base,
         phase: 'implementing',
         suiteStage: { id: 'V1', command: 'npm test', moment: 'brief', stageStartedTs: 2000 },
-      })?.verb,
+      })
+        ?.parts.map((part) => part.text)
+        .join(''),
     ).toBe('Fix check V1 · npm test');
   });
 });
@@ -596,3 +733,105 @@ describe('stallRunnerHint', () => {
     expect((stallRunnerHint('opencode', 'cli') ?? '').length).toBeLessThanOrEqual(24);
   });
 });
+
+it.each(['planning', 'implementing', 'final-review'] as const)(
+  'keeps running check labels and metadata in their own tones during %s',
+  (phase) => {
+    expect(
+      deriveLiveStatus({
+        ...base,
+        phase,
+        suiteStage: { id: 'V1', command: 'npm test', moment: 'plan', stageStartedTs: 2000 },
+      }),
+    ).toEqual({
+      parts: [
+        ...(phase === 'final-review'
+          ? [
+              { text: 'Review', tone: 'reviewer' },
+              { text: ' · ', tone: 'textDim' },
+            ]
+          : []),
+        { text: 'Plan', tone: 'planner' },
+        { text: ' check V1', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
+      stageStart: 2000,
+      waitedMs: 0,
+    });
+  },
+);
+
+it('carries only the structured Review and Reviewer words in the reviewer tone', () => {
+  expect(
+    deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      suiteStage: { id: 'V1', command: 'npm test', moment: 'pre-review', stageStartedTs: 2000 },
+    })?.parts,
+  ).toEqual([
+    { text: 'Review', tone: 'reviewer' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Reviewer', tone: 'reviewer' },
+    { text: ' check V1', tone: 'textDim' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'npm test', tone: 'textDim' },
+  ]);
+});
+
+it('keeps separators inside a working reviewer identity in the seat tone', () => {
+  resetWorkflow();
+  addEvent(makeRunnerCallStarted({ phase: 'final-review', role: 'review', ts: 60_000 }));
+  expect(
+    deriveLiveStatus({
+      ...base,
+      phase: 'final-review',
+      reviewerLabel: 'Codex CLI · GPT-6 Astra',
+      activeOperation: operationsStore.get().active,
+    })?.parts,
+  ).toEqual([
+    { text: 'Review', tone: 'reviewer' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Codex CLI · GPT-6 Astra', tone: 'reviewer' },
+  ]);
+  resetWorkflow();
+});
+
+it('keeps Implementing in the build seat tone during a planner consult', () => {
+  resetWorkflow();
+  addEvent(makeRunnerCallStarted({ phase: 'implementing', role: 'planner', ts: 60_000 }));
+  expect(
+    deriveLiveStatus({
+      ...base,
+      phase: 'implementing',
+      activeOperation: operationsStore.get().active,
+    }),
+  ).toEqual({
+    parts: [{ text: 'Implementing…', tone: 'implementer' }],
+    stageStart: 0,
+    waitedMs: 0,
+  });
+  resetWorkflow();
+});
+
+it.each(['planner', 'escalation'] as const)(
+  'keeps a running %s consult in the planner tone during Build',
+  (role) => {
+    resetWorkflow();
+    addEvent(
+      makeRunnerCallStarted({ phase: 'escalating', role, taskId: taskId('T013'), ts: 60_000 }),
+    );
+    expect(
+      deriveLiveStatus({
+        ...base,
+        phase: 'escalating',
+        activeOperation: operationsStore.get().active,
+      }),
+    ).toEqual({
+      parts: [{ text: 'Escalating…', tone: 'planner' }],
+      stageStart: 0,
+      waitedMs: 0,
+    });
+    resetWorkflow();
+  },
+);

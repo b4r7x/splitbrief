@@ -142,6 +142,24 @@ function makeFullSuite(
 describe('eventsStore — append via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
+  it.each(['failed', 'cancelled'] as const)(
+    'keeps the %s call outcome in operations, outside the activity batch input',
+    (status) => {
+      addEvent(makeRunnerStarted());
+      addEvent(makeRunnerActivity({ kind: 'read', stage: 'completed', label: 'reading file.ts' }));
+      if (status === 'failed') addEvent(makeRunnerError());
+      else addEvent({ type: 'workflow_cancelled', ts: 2_000, phase: 'implementing' });
+
+      expect(operationsStore.get().byCallId.get('call-1')?.status).toBe(status);
+      expect(eventsStore.get().events.map((event) => event.type)).toEqual(
+        status === 'failed'
+          ? ['runner_call_activity']
+          : ['runner_call_activity', 'workflow_cancelled'],
+      );
+      expect(eventsStore.get().events[0]).toMatchObject({ kind: 'read', stage: 'completed' });
+    },
+  );
+
   it('appends event to events array', () => {
     const event = makePlannerText();
     addEvent(event);

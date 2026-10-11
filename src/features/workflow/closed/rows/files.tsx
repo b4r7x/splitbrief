@@ -4,6 +4,7 @@ import type { Theme } from '../../../../core/theme/palette.js';
 import type { ScrollableDocumentRow } from '../../../../components/scrollable-document.js';
 import type { SummaryView } from '../view-model.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
+import { colorForTone } from '../../../../core/theme/tone-color.js';
 import { configStore } from '../../../../stores/project/config.js';
 import { osc8Hyperlink, terminalSupportsHyperlinks } from '../../../../lib/terminal/hyperlinks.js';
 import {
@@ -12,10 +13,9 @@ import {
 } from '../../../../utils/display-text.js';
 import { filePathUrl } from '../../../../utils/path-links.js';
 import { filesRows } from '../copy.js';
-import { summaryToneColor } from '../tone.js';
 import { LEDGER_LEAD, LEDGER_LEAD_CELLS, LedgerRule } from './lead.js';
 
-const PARTIAL = `${SOFT_SEP}partial`;
+const PARTIAL = 'partial';
 
 /**
  * What the run left on disk. Paths keep both ends when the column is short — the directory says
@@ -33,7 +33,7 @@ export function filesSectionRows(
   for (const file of filesRows(view)) {
     const budget = Math.max(
       0,
-      width - LEDGER_LEAD_CELLS - (file.partial ? getTerminalCellWidth(PARTIAL) : 0),
+      width - LEDGER_LEAD_CELLS - (file.partial ? getTerminalCellWidth(SOFT_SEP + PARTIAL) : 0),
     );
     const label = truncateTerminalDisplayTextMiddle(file.path, budget);
     rows.push({
@@ -41,10 +41,15 @@ export function filesSectionRows(
       node: (
         <Text wrap="truncate-end">
           {LEDGER_LEAD}
-          <Text color={summaryToneColor('link', theme)}>
+          <Text color={colorForTone('link', theme)}>
             {linkText({ label, path: file.path, projectDir })}
           </Text>
-          {file.partial && <Text color={summaryToneColor('warning', theme)}>{PARTIAL}</Text>}
+          {file.partial && (
+            <>
+              <Text color={colorForTone('textDim', theme)}>{SOFT_SEP}</Text>
+              <Text color={colorForTone('warning', theme)}>{PARTIAL}</Text>
+            </>
+          )}
         </Text>
       ),
     });

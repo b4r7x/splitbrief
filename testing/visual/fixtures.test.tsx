@@ -15,6 +15,7 @@ import { findVisualScenario } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId } from './contracts/identifiers.js';
 import type { FixtureContext, FixtureFactory } from './fixtures/common.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { overlayFixtureRegistry } from './fixtures/overlay-fixtures.js';
 import {
   CLAUDE_CODE_OPTION_CACHE,
@@ -90,7 +91,7 @@ async function renderFixture(fixtureCase: FixtureCase): Promise<string> {
     ui = renderFeature(<App workflowDeps={WORKFLOW_DEPS} />, context.viewport);
     await tick(20);
     const frame = ui.lastFrame() ?? '';
-    expect(frame, fixtureCase.scenarioId).toContain(context.checkpoint.marker);
+    expect(stripAnsiStyles(frame), fixtureCase.scenarioId).toContain(context.checkpoint.marker);
     return frame;
   } finally {
     ui?.unmount();

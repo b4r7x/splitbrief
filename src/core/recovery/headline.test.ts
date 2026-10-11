@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import type { RecoveryIssue } from '../schemas/recovery/schemas.js';
 import { taskId } from '../schemas/task.js';
-import { formatRecoveryHeadline, formatRecoveryTitle, retryExhaustedCause } from './headline.js';
+import {
+  formatRecoveryHeadline,
+  formatRecoveryHeadlineSpans,
+  retryExhaustedCause,
+} from './headline.js';
 
 const usageLimitIssue = makeRecoveryIssue({
   reason: 'runner-usage-limit',
@@ -13,6 +17,25 @@ const usageLimitIssue = makeRecoveryIssue({
 });
 
 describe('formatRecoveryHeadline', () => {
+  it.each([
+    ['planner-call-failed', 'review', 'Reviewer', ' call failed'],
+    ['planner-call-failed', 'plan', 'Planner', ' call failed'],
+    ['planner-returned-no-briefs', 'plan', 'Planner', ' returned no briefs'],
+    ['plan-questions-exhausted', 'plan', 'Planner', ' still asks questions after 2 rounds'],
+    ['plan-checks-failed', 'plan', 'Plan', ' still fails its checks after one repair'],
+    ['review-input-too-large', 'review', 'Review', ' input too large for Codex'],
+  ] as const)('carries the %s headline seat before formatting', (reason, seat, word, tail) => {
+    const issue = makeRecoveryIssue({
+      reason,
+      seat,
+      phase: 'implementing',
+      facts: { tool: 'Codex' },
+    });
+    const spans = formatRecoveryHeadlineSpans(issue);
+    expect(spans).toEqual([{ text: word, seat }, { text: tail }]);
+    expect(formatRecoveryHeadline(issue)).toBe(spans.map((span) => span.text).join(''));
+  });
+
   it('names the tool and the clock for a usage limit', () => {
     const headline = formatRecoveryHeadline(usageLimitIssue);
     expect(headline.startsWith('Usage limit on ')).toBe(true);
@@ -173,17 +196,5 @@ describe('formatRecoveryHeadline', () => {
 describe('retryExhaustedCause', () => {
   it('falls back to exhausted retries when neither fact is present', () => {
     expect(retryExhaustedCause({ task: 'T005' })).toBe('T005 failed');
-  });
-});
-
-describe('formatRecoveryTitle', () => {
-  it.each([
-    ['retry-exhausted', 'Needs you'],
-    ['apply-conflict', 'Needs you'],
-    ['constitution-check-failed', 'Needs you'],
-    ['runner-usage-limit', 'Seat down'],
-    ['seat-protocol-error', 'Seat down'],
-  ] as const)('puts the halt a %s cause stops on before the cause', (reason, halt) => {
-    expect(formatRecoveryTitle('the cause', { reason })).toBe(`${halt} · the cause`);
   });
 });

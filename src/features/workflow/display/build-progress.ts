@@ -1,8 +1,15 @@
-import { CREW_SEAT_LABELS, cutSeatIdentity } from '../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, cutSeatIdentity, type CrewSeatId } from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
 import { isImplementerPhase } from '../../../core/phases.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { SOFT_SEP } from '../../../core/separators.js';
-import { getTerminalCellWidth, truncateTerminalDisplayText } from '../../../utils/display-text.js';
+import {
+  getTerminalCellWidth,
+  stripTerminalControls,
+  truncateTerminalDisplayText,
+  segmentsForRowText,
+} from '../../../utils/display-text.js';
 import { formatElapsedClock, formatTime } from '../../../utils/format-time.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { LifecycleState } from '../../../stores/workflow/lifecycle.js';
@@ -12,11 +19,13 @@ import type {
   OperationsState,
 } from '../../../stores/workflow/operations/state.js';
 import { selectTaskListView, type TasksState } from '../../../stores/workflow/tasks.js';
-import { suiteStatusText, reviewActivityText } from './phase-verb.js';
+import { suiteStatusParts, reviewActivityParts, reviewActivitySpans } from './phase-verb.js';
 import { formatRecordedSeatIdentity } from './recorded-seat-identity.js';
 import { stallRunnerHint } from './live-activity.js';
 import { runnerActivityLedgerItem, runnerActivityModelRole } from './runner-activity-display.js';
 import { buildProgressRowCount } from '../layout/chrome-rows.js';
+import type { ConversationRowSegment } from '../conversation-rows/types.js';
+import { separatedSpans } from '../conversation-rows/row-format/text.js';
 
 /**
  * The floor under the silence warning: the block never paints it for a seat quieter than this,
@@ -24,6 +33,8 @@ import { buildProgressRowCount } from '../layout/chrome-rows.js';
  * stands.
  */
 export const UI_IDLE_WARN_MS = 60_000;
+
+type BuildProgressSpan = Readonly<Pick<ConversationRowSegment, 'text' | 'tone'>>;
 
 export interface BuildProgress {
   passed: number;
@@ -37,13 +48,19 @@ export interface BuildProgress {
   attempt: { current: number; max: number } | null;
   /** What the run is doing: the seat and its operation, or the command it is inside. */
   activity: string;
-  activityIdentity: { prefix: string; identity: string; suffix: string } | null;
+  activitySpans: readonly BuildProgressSpan[];
+  activityIdentity: {
+    prefix: readonly BuildProgressSpan[];
+    identity: BuildProgressSpan;
+    suffix: readonly BuildProgressSpan[];
+  } | null;
   /**
    * The proof of life: how long the command in `activity` has run, else the silence warning —
    * `No output for <clock>`, then the open tool or the stream hint — else how long ago a seat
    * last said something.
    */
   freshness: string;
+  freshnessSpans: readonly BuildProgressSpan[];
   /** True when the watchdog's stall makes freshness the silence warning, not the ordinary age. */
   silent: boolean;
 }
@@ -64,9 +81,9 @@ function runnerTool(runnerName: string): string {
 // through `/usage`, and never as a rounded count that reads `0k` until the first report lands.
 function activityLine(
   input: DeriveBuildProgressInput,
-): Pick<BuildProgress, 'activity' | 'activityIdentity'> {
+): Pick<BuildProgress, 'activity' | 'activitySpans' | 'activityIdentity'> {
   const command = runningCommand(input.operations, input.lifecycle.phase);
-  if (command !== null) return { activity: command.label, activityIdentity: null };
+  if (command !== null) return activityResult(command.spans);
   const operation = input.operations.active;
   const identity =
     operation === null
@@ -76,28 +93,25 @@ function activityLine(
     input.lifecycle.phase === 'final-review' ||
     (operation?.role === 'review' && operation.taskId === undefined);
   if (reviewing) {
-    const activity = reviewActivityText(operation, identity);
-    return {
-      activity,
-      activityIdentity:
-        operation?.status === 'running' && operation.role === 'review' && identity !== null
-          ? {
-              prefix: `Review${SOFT_SEP}`,
-              identity,
-              suffix: activity.slice(`Review${SOFT_SEP}`.length + identity.length),
-            }
-          : null,
-    };
+    const parts = reviewActivityParts(operation, identity);
+    return activityResult(
+      reviewActivitySpans(parts),
+      parts.identity === null ? null : { ...parts, identity: parts.identity },
+    );
   }
   if (operation === null) {
-    return {
-      activity:
-        input.lifecycle.phase === 'escalating' ? 'Waiting for the consult answer' : 'Between calls',
-      activityIdentity: null,
-    };
+    return activityResult([
+      {
+        text:
+          input.lifecycle.phase === 'escalating'
+            ? 'Waiting for the consult answer'
+            : 'Between calls',
+        tone: 'textDim',
+      },
+    ]);
   }
   const task = operation.taskId === undefined ? '' : ` on ${operation.taskId}`;
-  let seat: string | undefined;
+  let seat: CrewSeatId | undefined;
   let doing: string;
   switch (operation.role) {
     case 'summary':
@@ -108,30 +122,45 @@ function activityLine(
       doing = `working${task}`;
       break;
     case 'review':
-      seat = CREW_SEAT_LABELS.review;
+      seat = 'review';
       doing = `answering the consult${task}`;
       break;
     case 'planner':
     case 'escalation':
-      seat = CREW_SEAT_LABELS.plan;
+      seat = 'plan';
       doing = `answering the consult${task}`;
       break;
     default:
       return assertNever(operation.role);
   }
-  return {
-    activity: [seat, identity, doing]
-      .filter((part): part is string => part !== undefined && part !== null && part !== '')
-      .join(SOFT_SEP),
-    activityIdentity:
-      identity === null
-        ? null
-        : {
-            prefix: seat === undefined ? '' : `${seat}${SOFT_SEP}`,
-            identity,
-            suffix: `${SOFT_SEP}${doing}`,
-          },
+  const prefix: BuildProgressSpan[] =
+    seat === undefined
+      ? []
+      : [
+          { text: CREW_SEAT_LABELS[seat], tone: CREW_SEAT_ROLES[seat] },
+          { text: SOFT_SEP, tone: 'textDim' },
+        ];
+  if (identity === null) return activityResult([...prefix, { text: doing, tone: 'textDim' }]);
+  const identitySpan: BuildProgressSpan = {
+    text: identity,
+    tone: runnerActivityModelRole(operation.role),
   };
+  const suffix: BuildProgressSpan[] = [
+    { text: SOFT_SEP, tone: 'textDim' },
+    { text: doing, tone: 'textDim' },
+  ];
+  return activityResult([...prefix, identitySpan, ...suffix], {
+    prefix,
+    identity: identitySpan,
+    suffix,
+  });
+}
+
+function activityResult(
+  spans: readonly BuildProgressSpan[],
+  activityIdentity: BuildProgress['activityIdentity'] = null,
+): Pick<BuildProgress, 'activity' | 'activitySpans' | 'activityIdentity'> {
+  return { activity: spansText(spans), activitySpans: spans, activityIdentity };
 }
 
 /**
@@ -142,16 +171,19 @@ function activityLine(
 function runningCommand(
   operations: OperationsState,
   phase: LifecycleState['phase'],
-): { label: string; startedTs: number } | null {
+): { spans: readonly BuildProgressSpan[]; startedTs: number } | null {
   const suite = operations.suiteStage ?? null;
   if (suite !== null)
     return {
-      label: suiteStatusText({ phase, suite, operation: operations.active }),
+      spans: suiteStatusParts(phase, suite, operations.active),
       startedTs: suite.stageStartedTs,
     };
   const stage = operations.validationStage ?? null;
   if (stage === null) return null;
-  return { label: stage.command ?? stage.stage, startedTs: stage.stageStartedTs };
+  return {
+    spans: [{ text: stage.command ?? stage.stage, tone: 'textDim' }],
+    startedTs: stage.stageStartedTs,
+  };
 }
 
 /**
@@ -203,30 +235,48 @@ export function silenceText(silentMs: number, tail: string | null): string {
 // word was. The seat's name is already on the activity line beside this one, so the silence names
 // only what the seat is doing through it. The clock runs on: the watchdog warns and never ends the
 // call, so the line states no stop time.
-function freshnessOf(input: DeriveBuildProgressInput): Pick<BuildProgress, 'freshness' | 'silent'> {
+function freshnessResult(
+  spans: readonly BuildProgressSpan[],
+  silent: boolean,
+): Pick<BuildProgress, 'freshness' | 'freshnessSpans' | 'silent'> {
+  return { freshness: spansText(spans), freshnessSpans: spans, silent };
+}
+
+function freshnessOf(
+  input: DeriveBuildProgressInput,
+): Pick<BuildProgress, 'freshness' | 'freshnessSpans' | 'silent'> {
   const command = runningCommand(input.operations, input.lifecycle.phase);
   if (command !== null) {
-    return {
-      freshness: `running ${formatElapsedClock(input.now - command.startedTs)}`,
-      silent: false,
-    };
+    return freshnessResult(
+      [
+        { text: 'running', tone: stateTone('running') },
+        { text: ` ${formatElapsedClock(input.now - command.startedTs)}`, tone: 'textDim' },
+      ],
+      false,
+    );
   }
   const call = input.operations.active;
   const silentMs = call === null ? null : runnerSilenceMs(input.lifecycle, input.now);
   if (silentMs !== null && silentMs >= UI_IDLE_WARN_MS) {
-    return {
-      freshness: silenceText(silentMs, silenceTail(call, input.lifecycle.stall)),
-      silent: true,
-    };
+    return freshnessResult(
+      separatedSpans(
+        silenceText(silentMs, silenceTail(call, input.lifecycle.stall)),
+        stateTone('attention'),
+      ),
+      true,
+    );
   }
   const lastTs = input.lifecycle.lastRunnerEventTs ?? null;
   if (lastTs === null) {
-    return {
-      freshness: input.lifecycle.phase === 'final-review' ? '' : 'no update yet',
-      silent: false,
-    };
+    return freshnessResult(
+      [{ text: input.lifecycle.phase === 'final-review' ? '' : 'no update yet', tone: 'textDim' }],
+      false,
+    );
   }
-  return { freshness: `last event ${formatTime(input.now - lastTs)} ago`, silent: false };
+  return freshnessResult(
+    [{ text: `last event ${formatTime(input.now - lastTs)} ago`, tone: 'textDim' }],
+    false,
+  );
 }
 
 export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgress {
@@ -245,24 +295,50 @@ export function deriveBuildProgress(input: DeriveBuildProgressInput): BuildProgr
   };
 }
 
-export function taskOutcomeCountsText(
-  passedText: string,
-  counts: Pick<BuildProgress, 'escalated' | 'failed'>,
-): string {
-  const parts = [passedText];
-  if (counts.escalated > 0) parts.push(`${counts.escalated} escalated`);
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`);
-  return parts.join(SOFT_SEP);
+export function passedCountSpans(count: string) {
+  return [
+    { text: `${count} `, tone: 'textDim' },
+    { text: 'passed', tone: stateTone('passed') },
+  ] satisfies BuildProgressSpan[];
 }
 
-function countsText(progress: BuildProgress): string {
-  const parts = [
-    taskOutcomeCountsText(`${progress.passed}/${progress.total} briefs passed`, progress),
-  ];
+export function passedFractionSpans(count: string) {
+  return [{ text: `${count} passed`, tone: 'textDim' }] satisfies BuildProgressSpan[];
+}
+
+export function taskOutcomeCountsSpans(
+  head: readonly BuildProgressSpan[],
+  progress: Pick<BuildProgress, 'escalated' | 'failed'>,
+): BuildProgressSpan[] {
+  const parts: BuildProgressSpan[] = [...head];
+  if (progress.escalated > 0)
+    parts.push(
+      { text: `${SOFT_SEP}${progress.escalated} `, tone: 'textDim' },
+      { text: 'escalated', tone: stateTone('attention') },
+    );
+  if (progress.failed > 0)
+    parts.push(
+      { text: `${SOFT_SEP}${progress.failed} `, tone: 'textDim' },
+      { text: 'failed', tone: stateTone('failed') },
+    );
+  return parts;
+}
+
+function countsSpans(progress: BuildProgress): BuildProgressSpan[] {
+  const parts = taskOutcomeCountsSpans(
+    passedFractionSpans(`${progress.passed}/${progress.total} briefs`),
+    progress,
+  );
   if (progress.attempt !== null) {
-    parts.push(`attempt ${progress.attempt.current} of ${progress.attempt.max}`);
+    parts.push(
+      { text: SOFT_SEP, tone: 'textDim' },
+      {
+        text: `attempt ${progress.attempt.current} of ${progress.attempt.max}`,
+        tone: 'textDim',
+      },
+    );
   }
-  return parts.join(SOFT_SEP);
+  return parts;
 }
 
 /**
@@ -274,12 +350,12 @@ function countsText(progress: BuildProgress): string {
 export function buildProgressRows(
   progress: BuildProgress,
   width: number,
-): { key: string; text: string; silenceStart: number | null }[] {
-  const counts = {
-    key: 'counts',
-    text: truncateTerminalDisplayText(countsText(progress), width),
-    silenceStart: null,
-  };
+): {
+  key: string;
+  text: string;
+  spans: readonly BuildProgressSpan[];
+}[] {
+  const counts = progressRow('counts', countsSpans(progress), width);
   if (buildProgressRowCount(width) === 2) {
     const freshness = progress.silent
       ? fitSilenceTail(
@@ -287,33 +363,50 @@ export function buildProgressRows(
           width - getTerminalCellWidth(progress.activity + SOFT_SEP),
         )
       : progress.freshness;
-    const tail = freshness.length > 0 ? `${SOFT_SEP}${freshness}` : '';
-    const activity = fitActivity(progress, Math.max(0, width - getTerminalCellWidth(tail)));
-    return [
-      counts,
-      {
-        key: 'activity',
-        text: truncateTerminalDisplayText(`${activity}${tail}`, width),
-        silenceStart: progress.silent ? activity.length + SOFT_SEP.length : null,
-      },
-    ];
+    const tail: BuildProgressSpan[] =
+      freshness.length > 0
+        ? [
+            { text: SOFT_SEP, tone: 'textDim' },
+            ...segmentsForRowText(progress.freshnessSpans, freshness),
+          ]
+        : [];
+    const activity = fitActivity(
+      progress,
+      Math.max(0, width - getTerminalCellWidth(spansText(tail))),
+    );
+    return [counts, progressRow('activity', [...activity, ...tail], width)];
   }
   return [
     counts,
-    {
-      key: 'activity',
-      text: truncateTerminalDisplayText(fitActivity(progress, width), width),
-      silenceStart: null,
-    },
-    {
-      key: 'freshness',
-      text: truncateTerminalDisplayText(
+    progressRow('activity', fitActivity(progress, width), width),
+    progressRow(
+      'freshness',
+      segmentsForRowText(
+        progress.freshnessSpans,
         progress.silent ? fitSilenceTail(progress.freshness, width) : progress.freshness,
-        width,
       ),
-      silenceStart: progress.silent ? 0 : null,
-    },
+      width,
+    ),
   ];
+}
+
+function progressRow(key: string, spans: readonly BuildProgressSpan[], width: number) {
+  const fitted = fitProgressSpans(spans, width);
+  return { key, text: spansText(fitted), spans: fitted };
+}
+
+function spansText(spans: readonly BuildProgressSpan[]): string {
+  return spans.map((span) => span.text).join('');
+}
+
+function fitProgressSpans(
+  spans: readonly BuildProgressSpan[],
+  width: number,
+): readonly BuildProgressSpan[] {
+  const clean = spans.map((span) => ({ ...span, text: stripTerminalControls(span.text) }));
+  const text = spansText(clean);
+  const fitted = truncateTerminalDisplayText(text, width);
+  return segmentsForRowText(clean, fitted);
 }
 
 function fitSilenceTail(freshness: string, width: number): string {
@@ -324,20 +417,15 @@ function fitSilenceTail(freshness: string, width: number): string {
     : truncateTerminalDisplayText(freshness, width);
 }
 
-function fitActivity(progress: BuildProgress, width: number): string {
+function fitActivity(progress: BuildProgress, width: number): readonly BuildProgressSpan[] {
   const parts = progress.activityIdentity;
-  if (parts === null) return truncateTerminalDisplayText(progress.activity, width);
-  const budget = Math.max(0, width - getTerminalCellWidth(parts.prefix + parts.suffix));
-  const identity = cutSeatIdentity(parts.identity, budget);
-  const suffix = identity === '' ? parts.suffix.slice(SOFT_SEP.length) : parts.suffix;
-  return `${parts.prefix}${identity}${suffix}`.trimEnd();
-}
-
-/**
- * A line whose head gives way to its tail: the head is cut from its end so the tail — a clock —
- * always fits. A command's label leads its head, so a long command loses only its own last words.
- */
-export function fitBeforeTail(head: string, tail: string, width: number): string {
-  const room = Math.max(1, width - getTerminalCellWidth(tail));
-  return `${truncateTerminalDisplayText(head, room)}${tail}`;
+  if (parts === null) return fitProgressSpans(progress.activitySpans, width);
+  const budget = Math.max(
+    0,
+    width - getTerminalCellWidth(spansText([...parts.prefix, ...parts.suffix])),
+  );
+  const identity = { ...parts.identity, text: cutSeatIdentity(parts.identity.text, budget) };
+  const suffix = identity.text === '' ? parts.suffix.slice(1) : parts.suffix;
+  const spans = [...parts.prefix, identity, ...suffix];
+  return segmentsForRowText(spans, spansText(spans).trimEnd());
 }

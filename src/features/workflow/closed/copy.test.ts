@@ -8,20 +8,30 @@ import type { BriefRow, CostView, SummaryView } from './view-model.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep } from '../../../core/separators.js';
 import type { CopySegment } from './copy.js';
-import { briefRowParts, crewLine, filesRows, runRows } from './copy.js';
+import { briefRowParts, crewLine, factSpans, filesRows, runRows } from './copy.js';
 
 describe('runRows', () => {
   function segmentsFor(view: SummaryView, label: string): readonly CopySegment[] | undefined {
     const row = runRows(view).find((candidate) => candidate.label === label);
-    return row?.segments;
+    return row?.segments.flatMap(factSpans);
   }
+
+  it.each([{ conflicts: [] }, { conflicts: ['src/later-edit.ts'] }])(
+    'keeps the Apply undo state in attention with conflicts $conflicts',
+    ({ conflicts }) => {
+      expect(segmentsFor(makeView({ applyUndo: { conflicts } }), 'Apply')).toEqual([
+        { text: 'undone', tone: 'warning' },
+        ...(conflicts.length === 0 ? [] : [{ text: ', 1 conflict kept', tone: 'textDim' }]),
+      ]);
+    },
+  );
 
   it('states a passing review, its packet and its scope once each', () => {
     const view = makeView();
     expect(segmentsFor(view, 'Review')).toEqual([
       { text: 'pass with notes', tone: 'success' },
-      { text: '0 blocking, 1 advisory', tone: 'text' },
-      { text: '3/3 briefs validated', tone: 'text' },
+      { text: '0 blocking, 1 advisory', tone: 'textDim' },
+      { text: '3/3 briefs validated', tone: 'textDim' },
     ]);
     expect(segmentsFor(view, 'Packet')).toEqual([
       {
@@ -29,7 +39,7 @@ describe('runRows', () => {
         tone: 'link',
       },
     ]);
-    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'text' }]);
+    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
   });
 
   it('names the run.patch a run left its changes in, after the packet', () => {
@@ -57,9 +67,8 @@ describe('runRows', () => {
     const view = makeView({
       review: { ...makeView().review, verdict: 'fail' } as SummaryView['review'],
     });
-    const row = runRows(view).find((candidate) => candidate.label === 'Review');
-    expect(row?.segments[0]).toEqual({ text: 'failed', tone: 'error' });
-    expect(row?.segments[1]?.tone).toBe('text');
+    expect(segmentsFor(view, 'Review')?.[0]).toEqual({ text: 'failed', tone: 'error' });
+    expect(segmentsFor(view, 'Review')?.[1]?.tone).toBe('textDim');
   });
 
   it('flags missing artifacts after the counts', () => {
@@ -88,9 +97,27 @@ describe('runRows', () => {
     });
     const row = runRows(view).find((candidate) => candidate.label === 'Scope');
     expect(row?.segments).toEqual([
-      { text: '1 error', tone: 'warning' },
+      { text: '1 error', tone: 'error' },
       { text: '1 warning', tone: 'warning' },
     ]);
+  });
+
+  it('paints clean scope as passed when the check failed without findings', () => {
+    const view = makeView({
+      scope: { kind: 'checked', passed: false, errors: 0, warnings: 0 },
+    });
+    expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'clean', tone: 'success' }]);
+  });
+
+  it('warns on advisory scope issues even when the scope check passed', () => {
+    expect(
+      segmentsFor(
+        makeView({
+          scope: { kind: 'checked', passed: true, errors: 0, warnings: 1 },
+        }),
+        'Scope',
+      ),
+    ).toEqual([{ text: '1 warning', tone: 'warning' }]);
   });
 
   it('shows brief quality only when the run measured it', () => {
@@ -99,8 +126,50 @@ describe('runRows', () => {
       quality: { score: 0.92, passed: false, errorCount: 0, warningCount: 1 },
     });
     expect(segmentsFor(view, 'Briefs')).toEqual([
-      { text: 'quality 0.92 · 1 warning', tone: 'warning' },
+      { text: 'quality 0.92', tone: 'warning' },
+      { text: ' · ', tone: 'textDim' },
+      { text: '1 warning', tone: 'warning' },
     ]);
+  });
+
+  it.each([true, false])('tones each count inside one quality fact when passed is %s', (passed) => {
+    const view = makeView({
+      quality: { score: 0.92, passed, errorCount: passed ? 0 : 2, warningCount: 3 },
+    });
+    expect(runRows(view).find((row) => row.label === 'Briefs')?.segments).toEqual([
+      {
+        spans: [
+          { text: 'quality 0.92', tone: passed ? 'textDim' : 'warning' },
+          ...(passed
+            ? []
+            : [
+                { text: ' · ', tone: 'textDim' },
+                { text: '2 errors', tone: 'error' },
+              ]),
+          { text: ' · ', tone: 'textDim' },
+          { text: '3 warnings', tone: 'warning' },
+        ],
+      },
+    ]);
+  });
+
+  it('dims a quality score without findings and records the Review label seat', () => {
+    const view = makeView({
+      quality: { score: 1, passed: true, errorCount: 0, warningCount: 0 },
+    });
+    expect(segmentsFor(view, 'Briefs')).toEqual([{ text: 'quality 1.00', tone: 'textDim' }]);
+    expect(runRows(view).find((row) => row.label === 'Review')?.seat).toBe('review');
+  });
+
+  it('warns on a failed quality score even without findings', () => {
+    expect(
+      segmentsFor(
+        makeView({
+          quality: { score: 0.4, passed: false, errorCount: 0, warningCount: 0 },
+        }),
+        'Briefs',
+      ),
+    ).toEqual([{ text: 'quality 0.40', tone: 'warning' }]);
   });
 
   it.each<[string, CostView]>([
@@ -113,7 +182,8 @@ describe('runRows', () => {
     const view = makeView({ cost });
     expect(runRows(view).some((row) => row.label === 'Cost')).toBe(false);
     for (const row of runRows(view)) {
-      for (const segment of row.segments) expect(segment.text).not.toContain('$');
+      for (const segment of row.segments.flatMap(factSpans))
+        expect(segment.text).not.toContain('$');
     }
     // The record keeps what `/usage` reports; only the ledger stopped saying it.
     expect(view.cost).toEqual(cost);
@@ -124,7 +194,7 @@ describe('runRows', () => {
     expect(runRows(view).some((row) => row.label === 'Tokens')).toBe(false);
     for (const row of runRows(view)) {
       expect(row.label).not.toMatch(/token/i);
-      for (const segment of row.segments) {
+      for (const segment of row.segments.flatMap(factSpans)) {
         expect(segment.text).not.toContain('31.2k');
         expect(segment.text).not.toContain('204.5k');
         expect(segment.text).not.toContain('18.7k');
@@ -141,9 +211,9 @@ describe('runRows', () => {
 
   it('shows phase times only when more than one phase booked time', () => {
     expect(segmentsFor(makeView(), 'Phases')).toEqual([
-      { text: 'planning 2m 50s', tone: 'text' },
-      { text: 'implementing 8m 12s', tone: 'text' },
-      { text: 'review 1m 5s', tone: 'text' },
+      { text: 'planning 2m 50s', tone: 'textDim' },
+      { text: 'implementing 8m 12s', tone: 'textDim' },
+      { text: 'review 1m 5s', tone: 'textDim' },
     ]);
     const one = makeView({ phases: [{ phase: 'planning', ms: 170_000 }] });
     expect(runRows(one).some((row) => row.label === 'Phases')).toBe(false);
@@ -151,7 +221,7 @@ describe('runRows', () => {
 
   it('names the session and no mode', () => {
     expect(segmentsFor(makeView(), 'Session')).toEqual([
-      { text: '2026-09-14-add-email-validation-with-tests', tone: 'text' },
+      { text: '2026-09-14-add-email-validation-with-tests', tone: 'textDim' },
     ]);
   });
 
@@ -172,9 +242,13 @@ describe('runRows', () => {
 
 describe('crewLine', () => {
   it('names three seats and marks the inherited one', () => {
-    expect(crewLine(makeView(), 200)).toBe(
-      'PLAN claude-sonnet-4 · BUILD qwen2.5-coder:7b · REVIEW = PLAN',
-    );
+    expect(crewLine(makeView(), 200)).toEqual([
+      { text: 'PLAN claude-sonnet-4', seat: 'plan' },
+      { text: ' · ' },
+      { text: 'BUILD qwen2.5-coder:7b', seat: 'build' },
+      { text: ' · ' },
+      { text: 'REVIEW = PLAN', seat: 'review' },
+    ]);
   });
 
   it('names the reviewer when the run had its own review seat', () => {
@@ -184,14 +258,22 @@ describe('crewLine', () => {
         review: { kind: 'named', identity: 'Codex CLI · gpt-5-codex', short: 'gpt-5-codex' },
       },
     });
-    expect(crewLine(view, 200)).toContain('REVIEW gpt-5-codex');
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('REVIEW gpt-5-codex');
   });
 
   it('names the profiles when the briefs went to more than one implementer', () => {
     const view = makeView({
       seats: { ...makeView().seats, build: { kind: 'mixed', profiles: ['careful', 'quick'] } },
     });
-    expect(crewLine(view, 200)).toContain('BUILD mixed workers (careful, quick)');
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('BUILD mixed workers (careful, quick)');
   });
 
   it('names the tool a seat moved from and the one it moved to', () => {
@@ -208,9 +290,11 @@ describe('crewLine', () => {
         },
       },
     });
-    expect(crewLine(view, 200)).toContain(
-      `BUILD gemini-3.8-flash-high${arrowSep()}deepseek-v4.1-flash`,
-    );
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain(`BUILD gemini-3.8-flash-high${arrowSep()}deepseek-v4.1-flash`);
   });
 
   it('counts the briefs on each tool when the seat did not move once', () => {
@@ -227,22 +311,28 @@ describe('crewLine', () => {
         },
       },
     });
-    expect(crewLine(view, 200)).toContain(
-      'BUILD 15 briefs on gemini-3.8-flash-high, 4 on deepseek-v4.1-flash',
-    );
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toContain('BUILD 15 briefs on gemini-3.8-flash-high, 4 on deepseek-v4.1-flash');
   });
 
   it('says a seat is unrecorded rather than inventing one', () => {
     const view = makeView({
       seats: { plan: { kind: 'unset' }, build: { kind: 'unset' }, review: { kind: 'unset' } },
     });
-    expect(crewLine(view, 200)).toBe(
-      'PLAN not recorded · BUILD not recorded · REVIEW not recorded',
-    );
+    expect(
+      crewLine(view, 200)
+        .map((span) => span.text)
+        .join(''),
+    ).toBe('PLAN not recorded · BUILD not recorded · REVIEW not recorded');
   });
 
   it('drops whole seats rather than half a model name when the budget is short', () => {
-    const line = crewLine(makeView(), 30);
+    const line = crewLine(makeView(), 30)
+      .map((span) => span.text)
+      .join('');
     expect(line).not.toContain('…');
     expect(line.length).toBeLessThanOrEqual(30);
   });

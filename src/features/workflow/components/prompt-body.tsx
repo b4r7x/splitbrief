@@ -8,7 +8,9 @@ import {
   promptBodyRows,
   type PromptBodyLine,
 } from '../prompt-body-rows.js';
-import { passHeadlinePrefix } from '../recovery-prompt.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
+import { passHeadlinePrefix, type PromptRow } from '../recovery-prompt.js';
+import { TextSpans } from '../../../components/text-spans.js';
 
 type Theme = ReturnType<typeof useTheme>;
 
@@ -22,10 +24,17 @@ function renderHeadline(
   key: string,
   t: Theme,
 ): ReactNode {
+  if (row.parts !== undefined) {
+    return (
+      <Text key={key} wrap="truncate">
+        <TextSpans parts={row.parts} />
+      </Text>
+    );
+  }
   if (row.tone === 'pass') {
     return (
       <Text key={key} wrap="truncate">
-        <Text color={t.success}>{passHeadlinePrefix()}</Text>
+        <Text color={t[stateTone('passed')]}>{passHeadlinePrefix()}</Text>
         <Text color={t.text}>{row.text || ' '}</Text>
       </Text>
     );
@@ -35,19 +44,19 @@ function renderHeadline(
       return (
         <Text key={key} wrap="truncate">
           <Text color={t.textDim}>{`${row.text} `}</Text>
-          <Text color={t.dimError}>failed</Text>
+          <Text color={t[stateTone('failed')]}>failed</Text>
           <Text color={t.textDim}>{` review · ${row.detail}`}</Text>
         </Text>
       );
     }
     return (
-      <Text key={key} wrap="truncate" color={t.dimError}>
+      <Text key={key} wrap="truncate" color={t[stateTone('failed')]}>
         {row.text || ' '}
       </Text>
     );
   }
   return (
-    <Text key={key} wrap="truncate" color={t.warning}>
+    <Text key={key} wrap="truncate" color={t.text}>
       {row.text || ' '}
     </Text>
   );
@@ -66,8 +75,14 @@ function renderPromptRows(rows: PromptBodyLine[], width: number, t: Theme): Reac
         break;
       case 'message-line':
         nodes.push(
-          <Text key={key()} wrap="truncate" color={t.warning}>
-            {row.text || ' '}
+          <Text key={key()} wrap="truncate" color={t.text}>
+            {row.text === '' ? (
+              ' '
+            ) : row.parts === undefined ? (
+              row.text
+            ) : (
+              <TextSpans parts={row.parts} />
+            )}
           </Text>,
         );
         break;
@@ -129,7 +144,7 @@ export function PromptBody({
   height,
   width,
 }: {
-  prompt: string;
+  prompt: string | readonly PromptRow[];
   height: number;
   width: number;
 }) {

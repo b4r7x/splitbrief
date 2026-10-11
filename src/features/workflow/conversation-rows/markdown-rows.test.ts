@@ -8,7 +8,7 @@ import { glyph, markdownLayoutGlyphs } from '../../../lib/glyphs.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { parseMarkdownBlocks } from '../../../utils/markdown/block-parser.js';
 import { layoutMarkdown } from '../../../utils/markdown/layout.js';
-import { colorForTone } from '../display/tone-color.js';
+import { colorForTone } from '../../../core/theme/tone-color.js';
 import {
   beginMarkdownConversationRowsProjectionPass,
   markdownConversationRowsCacheKey,
@@ -105,7 +105,7 @@ describe('markdownConversationRows', () => {
     expect(segments).toContainEqual({ text: 'T002', tone: 'text', bold: true });
     expect(segments).toContainEqual({ text: 'src/utils/markdown/layout.ts', tone: 'textDim' });
     expect(segments).toContainEqual({ text: 'HIGH', tone: 'textDim' });
-    expect(segments).toContainEqual({ text: 'VERIFIED', tone: 'textDim' });
+    expect(segments).toContainEqual({ text: 'VERIFIED', tone: 'success' });
     expect(segments).not.toContainEqual({ text: 'T-06', tone: 'text', bold: true });
   });
 

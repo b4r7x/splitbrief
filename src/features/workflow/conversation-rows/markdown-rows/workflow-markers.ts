@@ -5,14 +5,23 @@ import { assertNever } from '../../../../utils/type-guards.js';
 
 export type WorkflowMarkdownMarkerKind = 'taskId' | 'filePath' | 'status' | 'risk';
 
+const WORKFLOW_STATUS_MARKERS = [
+  'NOT VERIFIED',
+  'INCONCLUSIVE',
+  'VERIFIED',
+  'PASSED',
+  'BLOCKED',
+  'FAILED',
+] as const;
+
+export type WorkflowStatusMarker = (typeof WORKFLOW_STATUS_MARKERS)[number];
+
 export type WorkflowMarkdownPart =
   | { kind: 'base'; segment: MarkdownLayoutSegment }
-  | { kind: WorkflowMarkdownMarkerKind; text: string; suppressHref?: boolean };
+  | { kind: 'status'; text: WorkflowStatusMarker }
+  | { kind: Exclude<WorkflowMarkdownMarkerKind, 'status'>; text: string; suppressHref?: boolean };
 
-interface WorkflowMarkerMatch {
-  kind: WorkflowMarkdownMarkerKind;
-  text: string;
-}
+type WorkflowMarkerMatch = Exclude<WorkflowMarkdownPart, { kind: 'base' }>;
 
 const TASK_ID_PATTERN = /^T\d{3}/;
 const FILE_PATH_PATTERN =
@@ -22,7 +31,7 @@ const RISK_MARKERS: readonly string[] = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
 
 export function workflowMarkdownParts(
   segment: MarkdownLayoutSegment,
-  options: { statusMarkers: readonly string[]; previousLineText: string | undefined },
+  options: { previousLineText: string | undefined },
 ): WorkflowMarkdownPart[] {
   const cleanSegment = cloneSegmentWithText(segment, stripTerminalControls(segment.text));
   if (!isWorkflowScannableSegment(cleanSegment)) return [{ kind: 'base', segment: cleanSegment }];
@@ -34,7 +43,7 @@ export function workflowMarkdownParts(
   let index = 0;
 
   while (index < cleanSegment.text.length) {
-    const marker = matchWorkflowMarkerAt(cleanSegment.text, index, options.statusMarkers);
+    const marker = matchWorkflowMarkerAt(cleanSegment.text, index);
     if (!marker) {
       buffer += cleanSegment.text[index] ?? '';
       index += 1;
@@ -91,11 +100,7 @@ function isWorkflowScannableSegment(segment: MarkdownLayoutSegment): boolean {
   }
 }
 
-function matchWorkflowMarkerAt(
-  text: string,
-  index: number,
-  statusMarkers: readonly string[],
-): WorkflowMarkerMatch | undefined {
+function matchWorkflowMarkerAt(text: string, index: number): WorkflowMarkerMatch | undefined {
   const task = matchPatternAt(text, index, TASK_ID_PATTERN);
   if (task && hasWordBoundary(text, index, task.length) && TaskIdSchema.safeParse(task).success) {
     return { kind: 'taskId', text: task };
@@ -106,7 +111,7 @@ function matchWorkflowMarkerAt(
     return { kind: 'filePath', text: path };
   }
 
-  const status = matchKeywordAt(text, index, statusMarkers);
+  const status = matchKeywordAt(text, index, WORKFLOW_STATUS_MARKERS);
   if (status) return { kind: 'status', text: status };
 
   const risk = matchKeywordAt(text, index, RISK_MARKERS);
@@ -124,11 +129,11 @@ function followsUrlScheme(text: string, index: number): boolean {
   return URL_SCHEME_PREFIX.test(text.slice(0, index));
 }
 
-function matchKeywordAt(
+function matchKeywordAt<T extends string>(
   text: string,
   index: number,
-  markers: readonly string[],
-): string | undefined {
+  markers: readonly T[],
+): T | undefined {
   const rest = text.slice(index);
   for (const marker of markers) {
     if (rest.startsWith(marker) && hasWordBoundary(text, index, marker.length)) {

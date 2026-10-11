@@ -1,13 +1,44 @@
-import type { Theme } from '../../../core/theme/palette.js';
-import { assertNever } from '../../../utils/type-guards.js';
-import type { ConversationRowTone } from '../conversation-rows/types.js';
+import type { Theme } from './palette.js';
+import { assertNever } from '../../utils/type-guards.js';
 
-export function colorForTone(
-  tone: ConversationRowTone | undefined,
-  theme: Theme,
-): string | undefined {
+export type TextTone =
+  | 'text'
+  | 'textDim'
+  | 'link'
+  | 'accent'
+  | 'planner'
+  | 'implementer'
+  | 'reviewer'
+  | 'success'
+  | 'warning'
+  | 'error'
+  | 'info'
+  | 'markdownHeading'
+  | 'markdownCode'
+  | 'markdownCodeGutter'
+  | 'markdownItalic'
+  | 'markdownBlockquote'
+  | 'markdownList'
+  | 'markdownRule'
+  | 'markdownLink'
+  | 'markdownStrike'
+  | 'markdownTableBorder'
+  | 'syntaxKeyword'
+  | 'syntaxString'
+  | 'syntaxComment'
+  | 'syntaxNumber'
+  | 'syntaxLiteral'
+  | 'syntaxType'
+  | 'syntaxFunction'
+  | 'syntaxPunctuation'
+  | 'reviewFile'
+  | 'diffAdded'
+  | 'diffRemoved'
+  | 'diffContext'
+  | 'border';
+
+export function colorForTone(tone: TextTone, theme: Theme): string | undefined {
   switch (tone) {
-    case undefined:
     case 'text':
       return theme.text;
     case 'textDim':
@@ -18,8 +49,8 @@ export function colorForTone(
       return theme.planner;
     case 'implementer':
       return theme.implementer;
-    case 'validator':
-      return theme.validator;
+    case 'reviewer':
+      return theme.reviewer;
     case 'success':
       return theme.success;
     case 'warning':
@@ -42,6 +73,7 @@ export function colorForTone(
       return theme.markdown.list;
     case 'markdownRule':
       return theme.markdown.rule;
+    case 'link':
     case 'markdownLink':
       return theme.markdown.link;
     case 'markdownStrike':

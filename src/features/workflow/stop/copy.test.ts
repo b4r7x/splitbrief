@@ -9,6 +9,7 @@ import type { StepRef } from '../../../core/schemas/run-step.js';
 import type { Summary } from '../../../core/schemas/summary.js';
 import { taskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import { buildInputFooterByline } from '../input-footer-byline.js';
 import { stepWord, stopByline, stopPoint, type StopBylineInput } from './copy.js';
 
 function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
@@ -29,6 +30,26 @@ function input(overrides: Partial<StopBylineInput> = {}): StopBylineInput {
 }
 
 const PARKED_HINT = '⏎ resume · /stop options · esc back to sessions · ctrl+c quit';
+
+it('keeps a check seat word and separators distinct during a requested pause', () => {
+  expect(
+    stopByline(
+      input({
+        intent: 'pause-after-brief',
+        phase: 'requested',
+        workflowPhase: 'final-review',
+        suite: { id: 'V1', moment: 'pre-review', command: 'npm test', elapsedMs: 42_000 },
+      }),
+    )?.parts,
+  ).toEqual([
+    { text: 'Review', tone: 'reviewer' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Reviewer', tone: 'reviewer' },
+    { text: ' check V1', tone: 'textDim' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'npm test', tone: 'textDim' },
+  ]);
+});
 
 /** A stop the run settled from: the park names no brief, and the record says where it stopped. */
 function settled(resumeAt: StepRef, at: 'mid-step' | 'boundary' = 'mid-step') {
@@ -69,8 +90,16 @@ describe('stopByline', () => {
 
   it('names the brief it is stopping and how long it has waited', () => {
     expect(stopByline(input({ intent: 'stop-now', phase: 'terminating' }))).toEqual({
-      lead: 'Stopping T002 · Waiting for processes to exit · 0:03',
+      tone: 'warning',
       hint: 'esc back after stop · ctrl+c quit after stop',
+      parts: [
+        { text: 'Stopping', tone: 'warning' },
+        { text: ' T002', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'Waiting for processes to exit', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: '0:03', tone: 'textDim' },
+      ],
     });
   });
 
@@ -78,28 +107,50 @@ describe('stopByline', () => {
     expect(
       stopByline(input({ intent: 'stop-now', phase: 'terminating', elapsedMs: 10_314_000 })),
     ).toEqual({
-      lead: 'Stopping T002 · Waiting for processes to exit · 2:51:54',
+      tone: 'warning',
       hint: 'esc back after stop · ctrl+c quit after stop',
+      parts: [
+        { text: 'Stopping', tone: 'warning' },
+        { text: ' T002', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'Waiting for processes to exit', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: '2:51:54', tone: 'textDim' },
+      ],
     });
   });
 
   it('says it is forcing once the grace is spent', () => {
-    expect(stopByline(input({ intent: 'stop-now', phase: 'forcing' }))?.lead).toBe(
-      'Stopping T002 · Forcing remaining processes to exit',
-    );
+    expect(stopByline(input({ intent: 'stop-now', phase: 'forcing' }))?.parts).toEqual([
+      { text: 'Stopping', tone: 'warning' },
+      { text: ' T002', tone: 'text' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Forcing remaining processes to exit', tone: 'textDim' },
+    ]);
   });
 
   it('reports a boundary pause as a finish rather than a termination', () => {
     expect(stopByline(input({ intent: 'pause-after-brief', phase: 'requested' }))).toEqual({
-      lead: 'Finishing T002',
+      tone: 'warning',
       hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Finishing', tone: 'warning' },
+        { text: ' T002', tone: 'text' },
+      ],
     });
   });
 
   it('asks for the answer the pause is waiting on', () => {
     expect(
       stopByline(input({ intent: 'pause-after-brief', phase: 'requested', questionPending: true })),
-    ).toEqual({ lead: 'Answer needed to finish T002', hint: 'Pause requested' });
+    ).toEqual({
+      tone: 'warning',
+      hint: 'Pause requested',
+      parts: [
+        { text: 'Answer needed', tone: 'warning' },
+        { text: ' to finish T002', tone: 'text' },
+      ],
+    });
   });
 
   it('names the brief the pause outlived, which the run has just finished', () => {
@@ -111,8 +162,12 @@ describe('stopByline', () => {
     });
 
     expect(stopByline(paused)).toEqual({
-      lead: 'Finishing T003',
+      tone: 'warning',
       hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Finishing', tone: 'warning' },
+        { text: ' T003', tone: 'text' },
+      ],
     });
   });
 
@@ -123,7 +178,11 @@ describe('stopByline', () => {
       currentTaskId: null,
     });
 
-    expect(stopByline(paused)?.lead).toBe('Finishing the run');
+    expect(
+      stopByline(paused)
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Finishing the run');
   });
 
   // S8 run 18:06–18:58: with a pause armed, the ten-minute boundary suite read `Finishing the run`.
@@ -137,9 +196,15 @@ describe('stopByline', () => {
     });
 
     expect(stopByline(paused)).toEqual({
-      lead: 'Pre-review suite · npm test',
+      tone: 'warning',
+
       clock: '10:02',
       hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Pre-review suite', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
     });
   });
 
@@ -153,9 +218,15 @@ describe('stopByline', () => {
     });
 
     expect(stopByline(paused)).toEqual({
-      lead: 'Pre-review suite · npm test',
+      tone: 'warning',
+
       clock: '2:51:54',
       hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Pre-review suite', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
     });
   });
 
@@ -168,9 +239,17 @@ describe('stopByline', () => {
       suite: { id: 'V2', moment: 'pre-review', command: 'npm test', elapsedMs: 42_000 },
     });
 
-    expect(stopByline(paused)).toMatchObject({
-      lead: 'Reviewer check V2 · npm test',
+    expect(stopByline(paused)).toEqual({
+      tone: 'warning',
+
       clock: '0:42',
+      hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Reviewer', tone: 'reviewer' },
+        { text: ' check V2', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
     });
   });
 
@@ -183,9 +262,18 @@ describe('stopByline', () => {
       suite: { id: 'V1', moment: 'pre-review', command: 'npm test', elapsedMs: 42_000 },
     });
     expect(stopByline(paused)).toEqual({
-      lead: 'Review · Reviewer check V1 · npm test',
+      tone: 'warning',
+
       clock: '0:42',
       hint: 'Pause requested; no next brief will start',
+      parts: [
+        { text: 'Review', tone: 'reviewer' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'Reviewer', tone: 'reviewer' },
+        { text: ' check V1', tone: 'textDim' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'npm test', tone: 'textDim' },
+      ],
     });
   });
 
@@ -199,8 +287,14 @@ describe('stopByline', () => {
         }),
       ),
     ).toEqual({
-      lead: 'Stopped at T002 · Partial changes kept',
+      tone: 'warning',
       hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
+      parts: [
+        { text: 'Stopped', tone: 'warning' },
+        { text: ' at T002', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'Partial changes kept', tone: 'textDim' },
+      ],
     });
   });
 
@@ -216,8 +310,14 @@ describe('stopByline', () => {
         }),
       ),
     ).toEqual({
-      lead: 'Stopped before T003 · 2 of 5 briefs complete',
+      tone: 'warning',
       hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
+      parts: [
+        { text: 'Stopped', tone: 'warning' },
+        { text: ' before T003', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: '2 of 5 briefs complete', tone: 'textDim' },
+      ],
     });
   });
 
@@ -233,40 +333,58 @@ describe('stopByline', () => {
         }),
       ),
     ).toEqual({
-      lead: 'Stopped before the review · 5 of 5 briefs complete',
+      tone: 'warning',
       hint: '⏎ resume · /stop options · esc back to sessions · ctrl+c quit',
+      parts: [
+        { text: 'Stopped', tone: 'warning' },
+        { text: ' before the review', tone: 'text' },
+        { text: ' · ', tone: 'textDim' },
+        { text: '5 of 5 briefs complete', tone: 'textDim' },
+      ],
     });
   });
 
   it('names the gate a planning stop settled at and claims no changes', () => {
     expect(stopByline(settled({ kind: 'gate', gate: 'plan' }))).toEqual({
-      lead: 'Stopped at the plan',
+      tone: 'warning',
       hint: PARKED_HINT,
+      parts: [
+        { text: 'Stopped', tone: 'warning' },
+        { text: ' at the plan', tone: 'text' },
+      ],
     });
   });
 
   it('names the planner step a stop cut, which changed no files', () => {
-    expect(stopByline(settled({ kind: 'planner', call: 'tasks' }))?.lead).toBe(
-      'Stopped at the plan',
-    );
+    expect(
+      stopByline(settled({ kind: 'planner', call: 'tasks' }))
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Stopped at the plan');
   });
 
   it('keeps the partial-changes claim for a brief the stop cut mid-step', () => {
-    expect(stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }))?.lead).toBe(
-      'Stopped at T003 · Partial changes kept',
-    );
+    expect(
+      stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }))
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Stopped at T003 · Partial changes kept');
   });
 
   it('claims no partial changes for a brief the run stopped before', () => {
     expect(
-      stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'boundary'))?.lead,
+      stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'boundary'))
+        ?.parts.map((part) => part.text)
+        .join(''),
     ).toBe('Stopped before T003');
   });
 
   it('names the review when settled at a boundary before the review', () => {
-    expect(stopByline(settled({ kind: 'review', cycle: 0 }, 'boundary'))?.lead).toBe(
-      'Stopped before the review',
-    );
+    expect(
+      stopByline(settled({ kind: 'review', cycle: 0 }, 'boundary'))
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Stopped before the review');
   });
 
   it('claims kept partial changes only when the cut is mid-step', () => {
@@ -278,7 +396,9 @@ describe('stopByline', () => {
           parked: null,
           currentTaskId: 'T002',
         }),
-      )?.lead,
+      )
+        ?.parts.map((part) => part.text)
+        .join(''),
     ).toBe('Stopped at T002');
   });
 
@@ -291,8 +411,13 @@ describe('stopByline', () => {
           parked: { kind: 'mid-brief', taskId: null },
           currentTaskId: null,
         }),
-      )?.lead,
+      )
+        ?.parts.map((part) => part.text)
+        .join(''),
     ).toBe('Stopped');
+    expect(
+      stopByline(input({ intent: 'stop-now', phase: 'parked', currentTaskId: null }))?.parts,
+    ).toEqual([{ text: 'Stopped', tone: 'warning' }]);
   });
 
   // S11 run, 04:55: after End run the byline called T005 cancelled with its changes kept, while
@@ -327,36 +452,86 @@ describe('stopByline', () => {
   });
 
   it('names the wait while a run is ending', () => {
-    expect(stopByline(input({ intent: 'end-run', phase: 'terminating' }))?.lead).toBe(
-      'Ending run · Waiting for processes to exit · 0:03',
-    );
+    expect(
+      stopByline(input({ intent: 'end-run', phase: 'terminating' }))
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Ending run · Waiting for processes to exit · 0:03');
   });
 
   it('formats the ending run lead clock as h:mm:ss when over an hour', () => {
     expect(
-      stopByline(input({ intent: 'end-run', phase: 'terminating', elapsedMs: 10_314_000 }))?.lead,
+      stopByline(input({ intent: 'end-run', phase: 'terminating', elapsedMs: 10_314_000 }))
+        ?.parts.map((part) => part.text)
+        .join(''),
     ).toBe('Ending run · Waiting for processes to exit · 2:51:54');
   });
 
   it('says it is saving the session on the way out', () => {
     expect(stopByline(input({ intent: 'quit', phase: 'terminating' }))).toEqual({
-      lead: 'Quitting',
+      tone: 'warning',
       hint: 'Stopping processes and saving session',
+      parts: [{ text: 'Quitting', tone: 'warning' }],
     });
   });
 });
 
 it('does not claim a live process during cleanup or persistence', () => {
   const byline = stopByline(input({ intent: 'stop-now', phase: 'settling' }));
-  expect(byline?.lead).toContain('Finishing cleanup and saving');
-  expect(byline?.lead).not.toContain('processes');
+  expect(byline?.parts).toEqual([
+    { text: 'Stopping', tone: 'warning' },
+    { text: ' T002', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Finishing cleanup and saving', tone: 'textDim' },
+    { text: ' · ', tone: 'textDim' },
+    { text: '0:03', tone: 'textDim' },
+  ]);
+  expect(byline?.parts.map((part) => part.text).join('')).toContain('Finishing cleanup and saving');
+  expect(byline?.parts.map((part) => part.text).join('')).not.toContain('processes');
 });
 
 it('reports the actual cleanup failure and the retry action', () => {
   expect(stopByline(input({ intent: 'stop-now', phase: 'failed', error: 'Disk full' }))).toEqual({
-    lead: 'Stop failed · Disk full',
+    tone: 'error',
     hint: '/stop to retry',
+    parts: [
+      { text: 'Stop failed', tone: 'error' },
+      { text: ' · ', tone: 'textDim' },
+      { text: 'Disk full', tone: 'text' },
+    ],
   });
+});
+
+it('keeps separators inside a cleanup failure dim and the cause in text', () => {
+  expect(
+    stopByline(input({ intent: 'stop-now', phase: 'failed', error: 'Disk full · draft.json' }))
+      ?.parts,
+  ).toEqual([
+    { text: 'Stop failed', tone: 'error' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'Disk full', tone: 'text' },
+    { text: ' · ', tone: 'textDim' },
+    { text: 'draft.json', tone: 'text' },
+  ]);
+});
+
+it.each([60, 120])('preserves stop span tones through the footer at %i columns', (cols) => {
+  const byline = stopByline(input({ intent: 'stop-now', phase: 'terminating' }));
+  if (byline === null) throw new Error('Expected a stop byline');
+  const parts = buildInputFooterByline({
+    cols,
+    lead: byline.parts,
+    hintText: byline.hint,
+    queuedText: null,
+  });
+  expect(parts.slice(0, 2)).toEqual([
+    { text: 'Stopping', tone: 'warning' },
+    { text: ' T002', tone: 'text' },
+  ]);
+  expect(parts.find((part) => part.text.startsWith('Waiting for processes'))?.tone).toBe('textDim');
+  expect(parts.filter((part) => part.text === ' · ').every((part) => part.tone === 'textDim')).toBe(
+    true,
+  );
 });
 
 describe('stepWord', () => {

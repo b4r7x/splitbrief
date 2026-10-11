@@ -10,6 +10,7 @@ import {
   ELLIPSIS,
   getTerminalCellWidth,
   truncateTerminalDisplayText,
+  segmentsForRowText,
 } from '../../../utils/display-text.js';
 import {
   buildActivityBatchViewModel,
@@ -18,7 +19,12 @@ import {
 } from './activity-batch-model.js';
 import { row, segmentedRow } from './row-format/rows.js';
 import { rowLeadingCells } from './row-markers.js';
-import type { ConversationRow, ConversationRowBlock, ConversationRowTone } from './types.js';
+import type {
+  ConversationRow,
+  ConversationRowBlock,
+  ConversationRowSegment,
+  ConversationRowTone,
+} from './types.js';
 
 const HEADER_RUNNER_GAP = '  ';
 
@@ -55,14 +61,14 @@ export function runnerActivityBatchRowBlock(
 }
 
 function activityBatchActiveRowKey(model: ActivityBatchViewModel): string | undefined {
-  if (model.headerText !== null) return `${model.batchKey}-header`;
+  if (model.headerSegments.length > 0) return `${model.batchKey}-header`;
   return undefined;
 }
 
 export function runnerActivityBatchRowCount(model: ActivityBatchViewModel): number {
   if (model.visibleItems.length === 0) return 0;
   return (
-    (model.headerText === null ? 0 : 1) +
+    (model.headerSegments.length === 0 ? 0 : 1) +
     model.visibleItems.length +
     (model.hiddenCount > 0 ? 1 : 0)
   );
@@ -88,18 +94,14 @@ export function runnerActivityBatchWindowRows(input: {
     rowIndex += 1;
   };
 
-  const headerText = model.headerText;
-  if (headerText !== null) {
+  if (model.headerSegments.length > 0) {
     const prefixCells = rowLeadingCells('activity');
     appendVisibleRow(() =>
       activityHeaderRow({
         key: `${model.batchKey}-header`,
-        text: fitCompactActivityDisplayLine({
-          label: activityHeaderLabel(headerText, model.headerRunner, width - prefixCells),
-          rowCells: width,
-          prefixCells,
-        }).text,
-        tone: model.tone,
+        model,
+        width,
+        prefixCells,
       }),
     );
   }
@@ -137,20 +139,47 @@ export function runnerActivityBatchWindowRows(input: {
  * The runner closes the header and sheds the way a seat identity does: the model goes before the
  * tool, and a tool name that would be cut leaves the line instead, so no header ends in half a name.
  */
-function activityHeaderLabel(text: string, runner: string | null, cells: number): string {
-  if (runner === null) return text;
+function activityHeaderSegments(
+  model: ActivityBatchViewModel,
+  cells: number,
+): ConversationRowSegment[] {
+  const runner = model.headerRunner;
+  const segments = [...model.headerSegments];
+  const text = segments.map((segment) => segment.text).join('');
+  if (runner === null) return segments;
   const budget = cells - getTerminalCellWidth(`${text}${HEADER_RUNNER_GAP}[]`);
-  if (budget <= 0) return text;
+  if (budget <= 0) return segments;
   const fitted = cutSeatIdentity(runner, budget);
-  return fitted.endsWith(ELLIPSIS) ? text : `${text}${HEADER_RUNNER_GAP}[${fitted}]`;
+  return fitted.endsWith(ELLIPSIS)
+    ? segments
+    : [
+        ...segments,
+        { text: `${HEADER_RUNNER_GAP}[`, tone: 'textDim' },
+        { text: fitted, tone: model.tone },
+        { text: ']', tone: 'textDim' },
+      ];
 }
 
 function activityHeaderRow(input: {
   key: string;
-  text: string;
-  tone: ConversationRowTone;
+  model: ActivityBatchViewModel;
+  width: number;
+  prefixCells: number;
 }): ConversationRow {
-  return row({ key: input.key, text: input.text, tone: input.tone, bold: true, kind: 'activity' });
+  const segments = activityHeaderSegments(input.model, input.width - input.prefixCells);
+  const text = fitCompactActivityDisplayLine({
+    label: segments.map((segment) => segment.text).join(''),
+    rowCells: input.width,
+    prefixCells: input.prefixCells,
+  }).text;
+  return {
+    ...segmentedRow(
+      input.key,
+      segmentsForRowText(segments, text).map((segment) => ({ ...segment, bold: true })),
+      'activity',
+    ),
+    markerTone: input.model.markerTone,
+  };
 }
 
 function activityDisclosureRow(input: {

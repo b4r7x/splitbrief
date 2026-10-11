@@ -5,6 +5,7 @@ import { formatViewport, type Viewport } from '../contracts/geometry.js';
 import type { CheckpointPredicate } from '../fixtures/common.js';
 import { workflowFixtureProjections } from '../fixtures/workflow/projections.js';
 import { workflowCheckpointPredicates } from '../fixtures/workflow/registry.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 export interface WaitForCheckpointOptions {
   readonly scenario: ScenarioDefinition;
@@ -17,7 +18,10 @@ export interface WaitForCheckpointOptions {
 
 export async function waitForCheckpoint(options: WaitForCheckpointOptions): Promise<string> {
   const { scenario, checkpoint, viewport, lastFrame } = options;
-  const predicate = options.predicate ?? checkpointPredicate(scenario, checkpoint);
+  const predicate =
+    options.predicate === undefined
+      ? checkpointPredicate(scenario, checkpoint)
+      : withFrameText(options.predicate);
   const timeoutMs = parseTimeout(options.timeoutMs ?? checkpoint.timeoutMs, checkpoint.timeoutMs);
   const startedAt = performance.now();
 
@@ -37,17 +41,19 @@ export function checkpointPredicate(
   scenario: ScenarioDefinition,
   checkpoint: CheckpointDefinition,
 ): CheckpointPredicate {
-  if (workflowFixtureProjections.has(scenario.id)) {
-    const predicate = workflowCheckpointPredicates.get(checkpoint.id);
-    if (predicate === undefined) {
-      throw new Error(
-        `No workflow checkpoint predicate for scenario ${scenario.id} and checkpoint ${checkpoint.id}`,
-      );
-    }
-    return predicate;
+  const predicate: CheckpointPredicate | undefined = workflowFixtureProjections.has(scenario.id)
+    ? workflowCheckpointPredicates.get(checkpoint.id)
+    : ({ output }) => output.includes(checkpoint.marker);
+  if (predicate === undefined) {
+    throw new Error(
+      `No workflow checkpoint predicate for scenario ${scenario.id} and checkpoint ${checkpoint.id}`,
+    );
   }
+  return withFrameText(predicate);
+}
 
-  return ({ output }) => output.includes(checkpoint.marker);
+function withFrameText(predicate: CheckpointPredicate): CheckpointPredicate {
+  return (context) => predicate({ ...context, output: stripAnsiStyles(context.output) });
 }
 
 function parseTimeout(value: number, declaredTimeoutMs: number): number {

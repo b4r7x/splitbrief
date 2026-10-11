@@ -6,6 +6,7 @@ import {
   normalizeDisplayLabel,
   padTerminalDisplayTextEnd,
   sanitizeTerminalDisplayText,
+  segmentsForRowText,
   sanitizeTerminalDiagnosticText,
   splitTerminalGraphemes,
   stripTerminalControls,
@@ -14,6 +15,35 @@ import {
   truncateTerminalDisplayTextStart,
   wrapTerminalGraphemes,
 } from './display-text.js';
+
+describe('segmentsForRowText', () => {
+  it('keeps the metadata of a truncated segment and its ellipsis', () => {
+    const segments = [
+      { text: 'Review', color: 'seat' },
+      { text: ' T001', color: 'dim' },
+      { text: ' passed', color: 'success' },
+    ];
+    expect(segmentsForRowText(segments, 'Revie…')).toEqual([{ text: 'Revie…', color: 'seat' }]);
+    expect(segmentsForRowText(segments, 'Review T001 pa…')).toEqual([
+      { text: 'Review', color: 'seat' },
+      { text: ' T001', color: 'dim' },
+      { text: ' pa…', color: 'success' },
+    ]);
+  });
+
+  it('keeps Unicode spans intact when a continuation starts inside a segment', () => {
+    expect(
+      segmentsForRowText(
+        [
+          { text: 'Plan ', color: 'seat' },
+          { text: '界👩‍💻 continue', color: 'text' },
+        ],
+        '👩‍💻 continue',
+        'Plan 界'.length,
+      ),
+    ).toEqual([{ text: '👩‍💻 continue', color: 'text' }]);
+  });
+});
 
 describe('stripTerminalControls', () => {
   it('removes ESC, BEL, OSC, CSI, and C0/C1 controls from display text', () => {

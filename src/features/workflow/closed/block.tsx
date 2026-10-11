@@ -1,19 +1,19 @@
 import { ThemeText as Text } from '../../../components/theme.js';
+import { TextSpans } from '../../../components/text-spans.js';
 
 import type { Theme } from '../../../core/theme/palette.js';
 import type { ScrollableDocumentRow } from '../../../components/scrollable-document.js';
-import { SOFT_SEP } from '../../../core/separators.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { colorForTone } from '../../../core/theme/tone-color.js';
 import { glyph } from '../../../lib/glyphs.js';
 import type { ConversationRowBlock } from '../conversation-rows/types.js';
 import type { SummaryView } from './view-model.js';
-import { NO_RECORD_LINE } from './byline.js';
 import { filesRows } from './copy.js';
-import { outcomeLeading, outcomeLine, outcomeMarker } from './outcome.js';
+import { outcomeLeading, outcomeLineSpans, outcomeMarker } from './outcome.js';
 import { briefsSectionRows } from './rows/briefs.js';
 import { filesSectionRows } from './rows/files.js';
 import { LEDGER_LEAD, LedgerRule } from './rows/lead.js';
 import { runSectionRows } from './rows/run.js';
-import { summaryToneColor } from './tone.js';
 
 export interface ClosedBlockInput {
   /** Null when the run closed without leaving a record to read. */
@@ -71,7 +71,7 @@ export function closedBlockRows(input: ClosedBlockInput): ScrollableDocumentRow[
   return rows;
 }
 
-/** The verdict wears the marker's tone; the facts behind it stay plain, one colour per sentence. */
+/** The verdict uses the outcome tone; stage words keep their seat tone. */
 function OutcomeLine({
   view,
   width,
@@ -81,23 +81,21 @@ function OutcomeLine({
   width: number;
   theme: Theme;
 }) {
-  if (view === null) {
-    return (
-      <Text color={summaryToneColor('warning', theme)} wrap="truncate-end">
-        {`${outcomeLeading(glyph('statusCancelled'))}${NO_RECORD_LINE}`}
-      </Text>
-    );
-  }
-  const marker = outcomeMarker(view);
-  const line = outcomeLine(view, width);
-  const at = line.indexOf(SOFT_SEP);
-  const verdict = at === -1 ? line : line.slice(0, at);
+  const marker: ReturnType<typeof outcomeMarker> =
+    view === null ? { glyph: 'statusCancelled', tone: 'warning' } : outcomeMarker(view);
+  const spans = outcomeLineSpans(view, width);
   return (
     <Text wrap="truncate-end">
-      <Text
-        color={summaryToneColor(marker.tone, theme)}
-      >{`${outcomeLeading(glyph(marker.glyph))}${verdict}`}</Text>
-      {at !== -1 && <Text color={theme.text}>{line.slice(at)}</Text>}
+      <Text color={colorForTone(marker.tone, theme)}>{outcomeLeading(glyph(marker.glyph))}</Text>
+      <TextSpans
+        parts={spans.map((span) => ({
+          text: span.text,
+          color:
+            span.seat === undefined
+              ? colorForTone(span.tone, theme)
+              : theme[CREW_SEAT_ROLES[span.seat]],
+        }))}
+      />
     </Text>
   );
 }

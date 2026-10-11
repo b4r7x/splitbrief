@@ -1,4 +1,6 @@
 import type { EngineEventOf } from '../../../engine/events/types.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { stateTone } from '../../../core/theme/state-tone.js';
 import { countNoun } from '../../../utils/pluralize.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import type { ActivityDisplayValueFit } from '../display/activity-display-text.js';
@@ -12,7 +14,7 @@ import {
   type RunnerActivitySeverity,
   type RunnerActivityDisplayInput,
 } from '../display/runner-activity-display.js';
-import type { ConversationRowTone } from './types.js';
+import type { ConversationRowSegment, ConversationRowTone } from './types.js';
 
 export const COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT = 3;
 
@@ -39,8 +41,9 @@ export interface ActivityBatchViewModel {
   expanded: boolean;
   hiddenCount: number;
   headerCount: number;
-  headerText: string | null;
-  /** The tool and model the batch's call ran on; the header row fits it after `headerText`. */
+  headerSegments: readonly ConversationRowSegment[];
+  markerTone: ConversationRowTone;
+  /** The tool and model the batch's call ran on; the header row fits it after the counts. */
   headerRunner: string | null;
   tone: ConversationRowTone;
   renderableUnits: number;
@@ -82,7 +85,11 @@ export function buildActivityBatchViewModel(input: {
     ? expandedActivityItemsProjection(events)
     : collapsedActivityItemsProjection(events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
   const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
-  const headerText = activityBatchHeader(events, projection.headerCount, projection.severityCounts);
+  const headerSegments = activityBatchHeader(
+    events,
+    projection.headerCount,
+    projection.severityCounts,
+  );
   const latest = events.at(-1);
 
   return {
@@ -91,7 +98,13 @@ export function buildActivityBatchViewModel(input: {
     expanded,
     hiddenCount,
     headerCount: projection.headerCount,
-    headerText,
+    headerSegments,
+    markerTone:
+      projection.severityCounts.error > 0
+        ? stateTone('failed')
+        : projection.severityCounts.warning > 0
+          ? stateTone('attention')
+          : activityBatchTone(events),
     headerRunner:
       latest === undefined
         ? null
@@ -178,21 +191,23 @@ function activityBatchHeader(
   events: readonly RunnerActivityEvent[],
   headerCount: number,
   severityCounts: Readonly<Record<RunnerActivitySeverity, number>>,
-): string | null {
+): ConversationRowSegment[] {
   const latest = events.at(-1);
-  if (latest === undefined) return null;
+  if (latest === undefined) return [];
 
   const warnings = severityCounts.warning;
   const errors = severityCounts.error;
   const roleLabel = `${runnerActivityRoleLabel(latest.role)} activity`;
-  return [
-    roleLabel,
-    countNoun(headerCount, 'update'),
-    warnings > 0 ? `${warnings} warn` : null,
-    errors > 0 ? `${errors} err` : null,
-  ]
-    .filter((part): part is string => part !== null)
-    .join('  ');
+  const parts: ConversationRowSegment[] = [
+    { text: roleLabel, tone: runnerActivityModelRole(latest.role) },
+    { text: countNoun(headerCount, 'update'), tone: 'textDim' },
+    ...(warnings > 0 ? [{ text: `${warnings} warn`, tone: stateTone('attention') }] : []),
+    ...(errors > 0 ? [{ text: `${errors} err`, tone: stateTone('failed') }] : []),
+  ];
+  return parts.flatMap((part, index): ConversationRowSegment[] => [
+    ...(index === 0 ? [] : [{ text: '  ', tone: 'textDim' as const }]),
+    part,
+  ]);
 }
 
 function activityItemSummary(item: ActivityItemSummary): ActivityItemSummary {
@@ -259,6 +274,7 @@ function activityLabelTone(
   label: RunnerActivityLedgerLabel,
   severity: RunnerActivitySeverity,
 ): ConversationRowTone {
+  if (label === 'PLAN') return CREW_SEAT_ROLES.plan;
   if (severity === 'error') return 'error';
   if (severity === 'warning') return 'warning';
   switch (label) {
@@ -266,8 +282,6 @@ function activityLabelTone(
     case 'CALL':
     case 'EDIT':
       return 'accent';
-    case 'PLAN':
-      return 'planner';
     case 'ART':
       return 'info';
     case 'READ':
@@ -284,14 +298,6 @@ function activityLabelTone(
 }
 
 export function activityBatchTone(events: readonly RunnerActivityEvent[]): ConversationRowTone {
-  switch (events.at(-1)?.role) {
-    case 'planner':
-      return 'planner';
-    case 'implementer':
-      return 'implementer';
-    case 'review':
-      return 'validator';
-    default:
-      return 'textDim';
-  }
+  const latest = events.at(-1);
+  return latest === undefined ? 'textDim' : runnerActivityModelRole(latest.role);
 }
