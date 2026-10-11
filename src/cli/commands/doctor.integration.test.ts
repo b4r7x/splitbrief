@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
@@ -21,8 +21,6 @@ import {
 } from '../../core/readiness/format.js';
 import type { RunnerAvailabilityFact } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
-import { isCliError } from '../errors.js';
-import { toErrorMessage } from '../../utils/format-errors.js';
 import { CliExecutableReceiptSchema } from '../../core/discovery/detection.js';
 import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import { runnerDiscoveryContextKey } from '../../engine/detection/runner-evidence.js';
@@ -71,12 +69,15 @@ function freshCodexEvidence(
 }
 
 let tmp: string;
+let originalExitCode: typeof process.exitCode;
 
 beforeEach(() => {
+  originalExitCode = process.exitCode;
   tmp = createTempDir('doctor-command-test');
 });
 
 afterEach(() => {
+  process.exitCode = originalExitCode;
   cleanupTempDir(tmp);
   vi.restoreAllMocks();
 });
@@ -264,6 +265,22 @@ describe('readiness diagnostic states', () => {
 });
 
 describe('doctor command', () => {
+  it.each([{ args: [] }, { args: ['--json'] }])(
+    'prints empty-folder blockers once with $args and exits 1',
+    ({ args }) => {
+      const result = spawnSync(
+        process.execPath,
+        ['--import', 'tsx', 'src/cli.ts', 'doctor', '--project', tmp, ...args],
+        { encoding: 'utf8' },
+      );
+
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stdout.match(/config\.missing/g)).toHaveLength(1);
+      expect(result.stdout.match(/repo\.not-git/g)).toHaveLength(1);
+      expect(result.stderr).toBe('');
+    },
+  );
+
   it('prints human readiness without creating workflow artifacts', async () => {
     initGitRepo(tmp);
     const configFile = writeConfig(tmp);
@@ -304,14 +321,14 @@ describe('doctor command', () => {
     writeConfig(tmp);
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const failure = await runDoctor(['--project', tmp], undefined, undefined, async () => [
+    await runDoctor(['--project', tmp], undefined, undefined, async () => [
       {
         slot: { role: 'implementer', profile: 'default' },
         provider: 'ollama',
         endpoint: 'http://localhost:11434/v1',
         verdict: { state: 'unavailable', diagnostic: 'fetch failed' },
       },
-    ]).catch((err: unknown) => err);
+    ]);
 
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(output).toContain(
@@ -320,8 +337,7 @@ describe('doctor command', () => {
     expect(output).toContain(
       'Fix: Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
     );
-    expect(isCliError(failure)).toBe(true);
-    expect(toErrorMessage(failure)).toContain('runners.availability.implementer.default');
+    expect(process.exitCode).toBe(1);
   });
 
   it('runs no validation command', async () => {
@@ -392,48 +408,43 @@ describe('doctor command', () => {
     );
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(
-        ['--project', tmp, '--json'],
-        async () => [
-          deriveCliReadiness({
-            tool: 'codex',
-            enabled: true,
-            installation: 'installed',
-            executable: {
-              path: codexExecutable.path,
-              fingerprint: codexExecutable.fingerprint,
-            },
-            trust: 'trusted',
-            installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-            testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
-            compatibility: 'compatible',
-            auth: 'unknown',
-            probedAt: 1,
-          }),
-        ],
-        async () => null,
-        async () => [],
-        async (input) =>
-          collectRunnerAdmissionChecks({
-            ...input,
-            deps: {
-              detectRunnerEvidence: async ({ context }) =>
-                freshCodexEvidence(context, { auth: 'unknown' }),
-              resolveCliExecutableAliases: async () => ({
-                command: 'codex',
-                executable: codexExecutable,
-                usedFallback: false,
-              }),
-            },
-          }),
-      );
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(
+      ['--project', tmp, '--json'],
+      async () => [
+        deriveCliReadiness({
+          tool: 'codex',
+          enabled: true,
+          installation: 'installed',
+          executable: {
+            path: codexExecutable.path,
+            fingerprint: codexExecutable.fingerprint,
+          },
+          trust: 'trusted',
+          installedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+          testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+          compatibility: 'compatible',
+          auth: 'unknown',
+          probedAt: 1,
+        }),
+      ],
+      async () => null,
+      async () => [],
+      async (input) =>
+        collectRunnerAdmissionChecks({
+          ...input,
+          deps: {
+            detectRunnerEvidence: async ({ context }) =>
+              freshCodexEvidence(context, { auth: 'unknown' }),
+            resolveCliExecutableAliases: async () => ({
+              command: 'codex',
+              executable: codexExecutable,
+              usedFallback: false,
+            }),
+          },
+        }),
+    );
 
-    expect(isCliError(captured)).toBe(true);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: Array<{ id: string; remediation?: string | null }> };
     };
@@ -448,15 +459,9 @@ describe('doctor command', () => {
     initGitRepo(tmp);
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as { exitCode: number }).exitCode).toBe(1);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       type?: string;
       report?: { status?: string; nextAction?: { kind?: string } };
@@ -483,14 +488,9 @@ describe('doctor command', () => {
     const configFile = writeConfig(tmp, badConfig);
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { status?: string; checks?: Array<{ id: string }> };
     };
@@ -504,14 +504,9 @@ describe('doctor command', () => {
     writeConfig(tmp, `${validConfigYaml()}\n  auto_approve_spec: true`);
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: Array<{ id: string; details?: string[] }> };
     };
@@ -521,7 +516,7 @@ describe('doctor command', () => {
     );
   });
 
-  it('renders each blocker on its own line in the CLI error message', async () => {
+  it('renders each blocker on its own line in the readiness report', async () => {
     const badConfig = [
       'version: 3',
       'planner:',
@@ -534,18 +529,13 @@ describe('doctor command', () => {
       '  model: qwen2.5-coder:7b',
     ].join('\n');
     writeConfig(tmp, badConfig);
-    captureStdout();
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp]);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp]);
 
-    expect(isCliError(captured)).toBe(true);
-    const rendered = toErrorMessage(captured, { preserveLineBreaks: true });
-    const lines = rendered.split('\n');
+    expect(process.exitCode).toBe(1);
+    const rendered = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const lines = rendered.split('\n').filter((line) => line.trimStart().startsWith('blocker '));
     expect(lines).toHaveLength(2);
     expect(lines[0]).toContain('config.invalid');
     expect(lines[1]).toContain('repo.not-git');
@@ -555,14 +545,9 @@ describe('doctor command', () => {
     writeConfig(tmp);
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: Array<{ id: string }> };
     };
@@ -574,14 +559,9 @@ describe('doctor command', () => {
     writeConfig(tmp);
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { status?: string; checks?: Array<{ id: string }> };
     };
@@ -607,14 +587,9 @@ describe('doctor command', () => {
     );
     const writes = captureStdout();
 
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
+    expect(process.exitCode).toBe(1);
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: Array<{ stateId?: string; remediation?: string }> };
     };
@@ -656,15 +631,10 @@ describe('doctor command', () => {
         ...overrides,
       });
 
-      let captured: unknown;
-      try {
-        await runDoctor(['--project', tmp, '--json'], async () => [cliResult]);
-      } catch (err) {
-        captured = err;
-      }
+      await runDoctor(['--project', tmp, '--json'], async () => [cliResult]);
 
       if (stateId !== 'auth-unknown') {
-        expect(isCliError(captured)).toBe(true);
+        expect(process.exitCode).toBe(1);
       }
 
       const parsed = JSON.parse(writes.join('').trim()) as {
@@ -684,11 +654,7 @@ describe('doctor command', () => {
 
       writes.length = 0;
       consoleSpy.mockClear();
-      try {
-        await runDoctor(['--project', tmp], async () => [cliResult]);
-      } catch {
-        // blocked readiness exits non-zero after printing human output
-      }
+      await runDoctor(['--project', tmp], async () => [cliResult]);
       const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
       expect(human).toContain('Fix:');
       expect(human).toContain(readinessCheck?.remediation ?? '');
@@ -739,16 +705,11 @@ describe('doctor command', () => {
     writeConfig(tmp);
     const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    let captured: unknown;
-    try {
-      await runDoctor(
-        ['--project', tmp],
-        undefined,
-        async () => CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES,
-      );
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(
+      ['--project', tmp],
+      undefined,
+      async () => CLAUDE_HELP_WITHOUT_PARTIAL_MESSAGES,
+    );
 
     const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     const argVectorLine = human
@@ -756,8 +717,7 @@ describe('doctor command', () => {
       .find((line) => line.includes('runners.cli.claude-code.arg-vector.planner'));
     expect(argVectorLine).toContain('blocker');
     expect(argVectorLine).toContain('does not support: --include-partial-messages.');
-    expect(isCliError(captured)).toBe(true);
-    expect(toErrorMessage(captured)).toContain('runners.cli.claude-code.arg-vector.planner');
+    expect(process.exitCode).toBe(1);
   });
 
   it('checks the opencode vector for the release readiness detected, as dispatch builds it', async () => {
@@ -960,7 +920,8 @@ describe('custom runner consent preflight', () => {
     initGitRepo(tmp);
     writeConfig(tmp, shellPlannerConfigYaml());
     const writes = captureStdout();
-    await expect(runDoctor(['--project', tmp, '--json'])).rejects.toThrow();
+    await runDoctor(['--project', tmp, '--json']);
+    expect(process.exitCode).toBe(1);
 
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: DoctorJsonCheck[] };
@@ -973,15 +934,9 @@ describe('custom runner consent preflight', () => {
     initGitRepo(tmp);
     writeConfig(tmp, shellPlannerConfigYaml());
     captureStdout();
-    let captured: unknown;
-    try {
-      await runDoctor(['--project', tmp, '--json']);
-    } catch (err) {
-      captured = err;
-    }
+    await runDoctor(['--project', tmp, '--json']);
 
-    expect(isCliError(captured)).toBe(true);
-    expect((captured as { exitCode: number }).exitCode).toBe(1);
+    expect(process.exitCode).toBe(1);
   });
 
   it('blocks on a shell reviewer this machine has not trusted', async () => {
@@ -997,7 +952,8 @@ describe('custom runner consent preflight', () => {
       ].join('\n'),
     );
     const writes = captureStdout();
-    await expect(runDoctor(['--project', tmp, '--json'])).rejects.toThrow();
+    await runDoctor(['--project', tmp, '--json']);
+    expect(process.exitCode).toBe(1);
 
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: DoctorJsonCheck[] };
@@ -1010,7 +966,8 @@ describe('custom runner consent preflight', () => {
     initGitRepo(tmp);
     writeConfig(tmp, shellPlannerConfigYaml());
     const writes = captureStdout();
-    await expect(runDoctor(['--project', tmp, '--json'])).rejects.toThrow();
+    await runDoctor(['--project', tmp, '--json']);
+    expect(process.exitCode).toBe(1);
 
     const parsed = JSON.parse(writes.join('').trim()) as {
       report?: { checks?: DoctorJsonCheck[] };

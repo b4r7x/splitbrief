@@ -210,7 +210,7 @@ export function addWorkflowOptions(cmd: Command): Command {
   // At 80 columns the widest term (37) leaves descriptions 39 — one short of commander's
   // default minWidthToWrap of 40, below which it emits every description unwrapped and the
   // terminal breaks them mid-word. 32, not 39, so a term up to 44 columns still wraps.
-  return cmd
+  cmd
     .configureHelp({ minWidthToWrap: 32 })
     .option('--model <model>', 'Override implementer model (alias for --implementer-model)')
     .option('--provider <provider>', 'Override implementer provider (alias for --implementer)')
@@ -218,7 +218,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       '--planner <tool>',
       `Planner tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${PLANNER_TOOL_IDS.join(', ')})`,
     )
-    .option('--planner-model <model>', 'Planner model (for API planners)')
+    .option('--planner-model <model>', 'Planner model (CLI and API planners)')
     .option('--planner-command <cmd>', 'Custom planner command (when --planner=shell)')
     .option('--planner-api-base <url>', 'Planner API base URL for API providers')
     .option(
@@ -268,7 +268,7 @@ export function addWorkflowOptions(cmd: Command): Command {
       '--reviewer <tool>',
       `Reviewer tool or API provider; a CLI tool id always selects the CLI (custom API providers are YAML-only) (${PLANNER_TOOL_IDS.join(', ')})`,
     )
-    .option('--reviewer-model <model>', 'Reviewer model (for API reviewers)')
+    .option('--reviewer-model <model>', 'Reviewer model (CLI and API reviewers)')
     .option('--reviewer-command <cmd>', 'Custom reviewer command (when --reviewer=shell)')
     .option('--reviewer-api-base <url>', 'Reviewer API base URL for API providers')
     .option(
@@ -320,12 +320,15 @@ export function addWorkflowOptions(cmd: Command): Command {
       '--skills <ids>',
       'Attach project/global skills to every seat (comma-separated ids)',
       parseSkillIdsOption,
-    )
-    .option(
+    );
+  if (cmd.name() !== 'start') {
+    cmd.option(
       '--action <action>',
       '`continue` only: skip, retry, restore, switch-seat:<seat> (<tool>[:<model>][@<effort>]), or end-run answer recovery; apply and discard settle a run that is ready to apply',
       parseContinueActionOption,
-    )
+    );
+  }
+  return cmd
     .option(
       '--on-seat-down <policy>',
       "Headless: halt on a seat-down, or switch to the seat's declared fallback (halt|switch)",

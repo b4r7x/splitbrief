@@ -16,7 +16,7 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
   - `0` — success.
   - `1` — generic CLI failure. Almost every command throws via `cliError(message)` which defaults to `exitCode: 1`. The top-level handler in `src/cli.ts` prints `Error: <message>` to stderr and exits with the carried code.
   - `2`: `start` refuses an `@file` input, an empty feature description before `@file` inputs, or a feature description that starts with `@`. Guardrail hooks also use this code.
-- **Error format:** Failures print `Error: <message>` in red on stderr. Programmatic callers should grep stderr, not stdout.
+- **Error format:** Command errors print `Error: <message>` in red on stderr. Blocked `doctor` readiness prints its report on stdout and exits `1` without a repeated error message. Use `doctor --json` to read readiness blockers programmatically.
 
 ## Command index
 
@@ -87,7 +87,7 @@ splitbrief start [feature] [files...] \
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--planner <tool>` | string | from config | Planner tool: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`, `ollama`, `lm-studio`, `llama-cpp`, `shell`, `agent`. The flag's help text is derived from `PLANNER_TOOL_IDS` (`src/core/schemas/enums.ts`), so `splitbrief start --help` always prints the admitted set. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
-| `--planner-model <model>` | string | from config | Planner model identifier (for API planners). |
+| `--planner-model <model>` | string | from config | Planner model (CLI and API planners). |
 | `--planner-command <cmd>` | string | from config | Custom planner command (when `--planner=shell`). |
 | `--planner-api-base <url>` | string | from config | Planner API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
 | `--planner-api-key-env <var>` | string | from config | Environment variable holding the planner API key; stored as an `env:<var>` reference. A bare name is normalized to `env:<var>`. Applies only to `api` runners; ignored (with a stderr warning) otherwise. |
@@ -104,7 +104,7 @@ splitbrief start [feature] [files...] \
 | `--implementer-output-format <format>` | enum | from config | Implementer output format: `stream-json`, `jsonl`, `text`, or `opencode`. Applies to `cli`, `shell`, and `agent` runners. |
 | `--implementer-context-length <tokens>` | number | from config | Implementer context length in tokens. |
 | `--reviewer <tool>` | string | from config | Reviewer tool. Same admitted set as `--planner` — the flag's help text is derived from `PLANNER_TOOL_IDS` too. Without any `--reviewer-*` flag and without a `reviewer` block in config, the planner keeps the review seat. A CLI tool id here always selects the CLI; an API provider that reuses a CLI tool's id is configured in `.splitbrief/config.yaml` (`kind: api`) and cannot be selected by this flag. |
-| `--reviewer-model <model>` | string | from config | Reviewer model identifier (for API reviewers). |
+| `--reviewer-model <model>` | string | from config | Reviewer model (CLI and API reviewers). |
 | `--reviewer-command <cmd>` | string | from config | Custom reviewer command (when `--reviewer=shell`). |
 | `--reviewer-api-base <url>` | string | from config | Reviewer API base URL. Applies only to `api` runners; ignored (with a stderr warning) for other kinds. |
 | `--reviewer-api-key-env <var>` | string | from config | Environment variable holding the reviewer API key; stored as an `env:<var>` reference. Applies only to `api` runners; ignored (with a stderr warning) otherwise. |
@@ -169,6 +169,7 @@ splitbrief start --plain "fix flaky test in user.test.ts"
 
 ### Behavior notes
 
+- `start` does not accept `--action`; use `continue --action` to answer recovery or settle a ready run.
 - `--json` requires a feature where it starts a new workflow.
 - `--plain` and `--json` are two renderings of one headless stream and cannot share stdout; passing both exits `2` with `--plain and --json cannot be combined; choose one output mode.`
 - Before planner or implementer calls, `start` computes Run Readiness. Blockers stop the run; warnings are shown in the TUI or emitted as JSON. The compact session artifact is `.splitbrief/sessions/<id>/readiness.json`. Stable `stateId` values and copyable remediations for missing-binary, untrusted-path, version, authentication, endpoint, credential-family, protocol, quota/rate, and conflicting-argument conditions are documented under `splitbrief doctor --json`.
@@ -425,6 +426,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 
 ### Behavior notes
 
+- A blocked readiness report exits `1`. It prints each blocker once in the report, with no repeated `Error:` message on stderr.
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
 - Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`, `validation.typecheck|lint|test|typecheck_command|lint_command`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `workflow.plan-approval` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
 - On Linux, when an implementer profile is `cli` `claude-code`, the check `runners.sandbox.claude-code` looks for `bwrap` and `socat` on `PATH` and names each missing program. It is a blocker when that profile is the default implementer, and a warning for any other profile. It does not start the sandbox. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#symptom-the-run-halted-with-tool-recipe-rejected-by-claude-code-cli-and-sandbox-required-but-unavailable).

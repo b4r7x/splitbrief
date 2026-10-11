@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
-import { rm, rmdir } from 'node:fs/promises';
+import { realpath, rm, rmdir } from 'node:fs/promises';
 import { basename, dirname, join, relative } from 'node:path';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
+import { isolationTreesRoot } from '../../../core/paths.js';
 import { createGitClient, type GitClient } from '../../../lib/git/client.js';
+import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
 import { clearWorkspaceRecord, stagedWorkspaceRoot, retentionError } from './retention.js';
 import { isInsideRoot } from '../../../lib/path-confinement.js';
@@ -11,7 +13,7 @@ import {
   gitignoreDiffersOnlyBySplitbriefBookkeeping,
   shouldIgnoreWorktreeUncommittedPath,
 } from './cleanliness.js';
-import { resolveConfinedWorktreePath } from './path.js';
+import { resolveConfinedIsolationWorktreePath, resolveConfinedWorktreePath } from './path.js';
 import { findLiveWorktreeSession } from './worktree-status.js';
 
 export type WorktreeWarningPublisher = (message: string) => void;
@@ -47,15 +49,27 @@ export async function removeRunWorkspace(
 ): Promise<void> {
   if (workspace.kind === 'checkout') return;
   if (workspace.kind === 'worktree') {
+    const slug = sessionId.slice(0, 64);
+    const worktreeDir = resolveConfinedIsolationWorktreePath({
+      projectDir,
+      gitCommonDir: await getGitCommonDir(projectDir),
+      slug,
+    });
+    if (workspace.path !== worktreeDir) throw retentionError.unavailable();
+    if (existsSync(worktreeDir)) {
+      const treesRoot = isolationTreesRoot();
+      const canonicalPath = join(await realpath(treesRoot), relative(treesRoot, worktreeDir));
+      if ((await realpath(worktreeDir)) !== canonicalPath) throw retentionError.unavailable();
+    }
     await removeWorktree({
       projectDir,
-      slug: basename(workspace.path),
+      slug,
       git: createGitClient(projectDir),
       deleteBranch: true,
-      worktreeDir: workspace.path,
+      worktreeDir,
       suppressUncommittedWarning: true,
     });
-    await removeEmptyRepositoryRoot(workspace.path);
+    await removeEmptyRepositoryRoot(worktreeDir);
   } else {
     const root = dirname(workspace.path);
     if (
