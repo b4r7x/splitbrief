@@ -1,0 +1,61 @@
+@layer tokens, base, page, accessibility;
+@import url("tokens.css") layer(tokens);
+@import url("base.css") layer(base);
+@import url("header.css") layer(base);
+@import url("motion.css") layer(accessibility);
+
+@layer page {
+  .not-found-page {
+    min-height: 100svh;
+    display: flex;
+    flex-direction: column;
+  }
+  .not-found {
+    width: min(620px, calc(100% - 72px));
+    margin: auto;
+    padding: 48px 0 15svh;
+  }
+  .not-found:focus {
+    outline: 0;
+  }
+  .not-found-eyebrow {
+    margin: 0 0 14px;
+    color: #989898;
+    font: 11px / 1.4 var(--mono);
+    letter-spacing: 0.04em;
+  }
+  .not-found h1 {
+    margin: 0 0 14px;
+    font-size: clamp(27px, 2.35vw, 37px);
+    font-weight: 500;
+    letter-spacing: -1.35px;
+    line-height: 1.15;
+  }
+  .not-found-lead {
+    margin: 0 0 24px;
+    color: #b5b5b2;
+    font-size: 17px;
+    line-height: 1.5;
+    letter-spacing: -0.15px;
+  }
+  .not-found-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 24px;
+  }
+  .not-found-links a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    color: #ccc;
+    font: 12px / 1.5 var(--mono);
+  }
+  .not-found-links a:hover {
+    color: #fff;
+  }
+  @media (max-width: 500px) {
+    .not-found {
+      width: calc(100% - 38px);
+    }
+  }
+}

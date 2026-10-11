@@ -45,7 +45,7 @@ for (const [width, height] of [
     await page.screenshot({ path: `${output}-docs-install.png` });
     await page
       .locator('.docs-table')
-      .filter({ hasText: 'audited work' })
+      .filter({ hasText: 'Find any doc by topic' })
       .screenshot({ path: `${output}-docs-table.png` });
     await page.goto('/docs/');
     await page.screenshot({ path: `${output}-docs-index.png` });
@@ -54,5 +54,7 @@ for (const [width, height] of [
     if (width < 900) await page.locator('.docs-menu > summary').click();
     await page.getByRole('searchbox', { name: 'Find a documentation page' }).fill('workflow');
     await page.screenshot({ path: `${output}-docs-menu.png` });
+    await page.goto('/404.html');
+    await page.screenshot({ path: `${output}-not-found.png` });
   });
 }

@@ -1,4 +1,16 @@
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { Locator, Page } from '@playwright/test';
+
+type Site = {
+  origin: string;
+  repository: string;
+  npm: { package: string; published: boolean };
+};
+
+export const site: Site = JSON.parse(
+  readFileSync(new URL('../../site.json', import.meta.url), 'utf8'),
+);
 
 export async function openPage(page: Page, path = '/') {
   await page.goto(path);
@@ -60,9 +72,31 @@ export async function settleScenes(page: Page) {
   );
 }
 
+// Resolves once the canvas reads the same across several animation frames, twice in a row.
+export async function settleCanvas(page: Page, selector = '[data-ambient]') {
+  await page.locator(selector).evaluate(async (element) => {
+    if (!(element instanceof HTMLCanvasElement)) throw new Error('Expected a canvas');
+    const frames = async (count: number) => {
+      for (let index = 0; index < count; index++)
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+    };
+    let previous = element.toDataURL();
+    let quiet = 0;
+    while (quiet < 2) {
+      await frames(3);
+      const next = element.toDataURL();
+      quiet = next === previous ? quiet + 1 : 0;
+      previous = next;
+    }
+  });
+}
+
+// A fingerprint, not the data URL: a failed toBe on two ~100 KB strings diffs them
+// for seconds, so an expect.poll over it gets no second sample in its budget.
 export async function canvasImage(page: Page, selector = '[data-ambient]') {
-  return page.locator(selector).evaluate((element) => {
+  const dataUrl = await page.locator(selector).evaluate((element) => {
     if (!(element instanceof HTMLCanvasElement)) throw new Error('Expected a canvas');
     return element.toDataURL();
   });
+  return createHash('sha256').update(dataUrl).digest('hex');
 }

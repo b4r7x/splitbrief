@@ -1,4 +1,51 @@
-import { expect, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
+import { site } from './browser.js';
+
+function decodeEntities(text: string) {
+  return text
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&#39;', "'")
+    .replaceAll('&amp;', '&');
+}
+
+// The server-rendered page is the source of truth for what client-side navigation must restore.
+async function expectPageMetadata(page: Page, route: string, title: string) {
+  const path = route ? `/docs/${route}/` : '/docs/';
+  const html = await (await page.request.get(path)).text();
+  const content = /<meta name="description" content="([^"]*)">/.exec(html)?.[1];
+  if (content === undefined) throw new Error(`/docs/${route}/ has no description`);
+  const description = decodeEntities(content);
+  const documentTitle = `${title} · SPLITBRIEF`;
+  const url = `${site.origin}${path}`;
+  const image = `${site.origin}/social.png`;
+  const imageAlt = 'The SPLITBRIEF wordmark above the line: Two tools. One clear handoff.';
+  await expect(page).toHaveTitle(documentTitle);
+  const expected: Array<[string, string, string]> = [
+    ['link[rel="canonical"]', 'href', url],
+    ['meta[property="og:url"]', 'content', url],
+    ['meta[property="og:type"]', 'content', route ? 'article' : 'website'],
+    ['meta[property="og:site_name"]', 'content', 'SPLITBRIEF'],
+    ['meta[name="description"]', 'content', description],
+    ['meta[property="og:title"]', 'content', documentTitle],
+    ['meta[name="twitter:title"]', 'content', documentTitle],
+    ['meta[property="og:description"]', 'content', description],
+    ['meta[name="twitter:description"]', 'content', description],
+    ['meta[name="twitter:card"]', 'content', 'summary_large_image'],
+    ['meta[property="og:image"]', 'content', image],
+    ['meta[property="og:image:width"]', 'content', '1200'],
+    ['meta[property="og:image:height"]', 'content', '630'],
+    ['meta[property="og:image:alt"]', 'content', imageAlt],
+    ['meta[name="twitter:image"]', 'content', image],
+    ['meta[name="twitter:image:alt"]', 'content', imageAlt],
+  ];
+  for (const [selector, attribute, value] of expected) {
+    const element = page.locator(`head ${selector}`);
+    await expect(element, `${route} ${selector}`).toHaveCount(1);
+    await expect(element, `${route} ${selector}`).toHaveAttribute(attribute, value);
+  }
+}
 
 test('the guide has source content, working contents links and copyable npm commands', async ({
   page,
@@ -115,47 +162,69 @@ test('article navigation encodes and decodes while preserving the shared ASCII s
   await expect(page.locator('#guide')).toBeFocused();
 });
 
-test('search, nested routes and history keep local links and restore reading position', async ({
+test('search and history keep local links, page metadata and reading position', async ({
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/docs/getting-started/');
+  await page.goto('/docs/');
   await expect(page.locator('body')).toHaveClass(/docs-enhanced/);
-  await page.evaluate(() => scrollTo({ top: 1300, behavior: 'instant' }));
-  const before = await page.evaluate(() => scrollY);
+  await page.evaluate(() => Object.assign(window, { sameDocument: true }));
+  await expectPageMetadata(page, '', 'Documentation');
   const search = page.getByRole('searchbox', { name: 'Find a documentation page' });
-  await search.fill('TUI visual');
+  await search.fill('Getting started');
   await page
     .getByRole('navigation', { name: 'Documentation' })
-    .getByRole('link', { name: 'TUI visual concepts', exact: true })
+    .getByRole('link', { name: 'Getting started', exact: true })
     .click();
-  await expect(page).toHaveURL(/\/docs\/design\/tui-concepts\/$/);
+  await expect(page).toHaveURL(/\/docs\/getting-started\/$/);
+  await expectPageMetadata(page, 'getting-started', 'Getting started');
+  await page.evaluate(() => scrollTo({ top: 1300, behavior: 'instant' }));
+  const before = await page.evaluate(() => scrollY);
+  await search.fill('Repo-map');
+  await page
+    .getByRole('navigation', { name: 'Documentation' })
+    .getByRole('link', { name: 'Repo-map context', exact: true })
+    .click();
+  await expect(page).toHaveURL(/\/docs\/repomap\/$/);
   await expect(page.locator('.brand')).toHaveAttribute('href', new URL('/', page.url()).href);
+  await expectPageMetadata(page, 'repomap', 'Repo-map context');
   await search.fill('CLI');
   await page
     .getByRole('navigation', { name: 'Documentation' })
     .getByRole('link', { name: 'CLI Reference', exact: true })
     .click();
   await expect(page).toHaveURL(/\/docs\/cli-reference\/$/);
+  await expectPageMetadata(page, 'cli-reference', 'CLI Reference');
   await page.evaluate(() => scrollTo({ top: 1800, behavior: 'instant' }));
   await page.goBack();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('TUI visual concepts');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Repo-map context');
+  await expectPageMetadata(page, 'repomap', 'Repo-map context');
   await page.goBack();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText(
     'Getting started with SPLITBRIEF',
   );
+  await expectPageMetadata(page, 'getting-started', 'Getting started');
   await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(before, 0);
   await expect(page.locator('.is-decoding')).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/docs\/$/);
+  await expectPageMetadata(page, '', 'Documentation');
   await page.goForward();
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('TUI visual concepts');
+  await expect(page).toHaveURL(/\/docs\/getting-started\/$/);
+  await expectPageMetadata(page, 'getting-started', 'Getting started');
+  await page.goForward();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Repo-map context');
+  await expectPageMetadata(page, 'repomap', 'Repo-map context');
   await page.goForward();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('CLI Reference');
+  await expectPageMetadata(page, 'cli-reference', 'CLI Reference');
   await expect.poll(() => page.evaluate(() => scrollY)).toBeCloseTo(1800, 0);
+  expect(await page.evaluate(() => 'sameDocument' in window)).toBe(true);
 });
 
 test('long prose stays within the narrow article while code can scroll', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 740 });
-  for (const path of ['vision', 'implementer-direction']) {
+  for (const path of ['mental-model', 'migration']) {
     await page.goto(`/docs/${path}/`);
     await page.evaluate(() => document.fonts.ready);
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth), path).toBe(

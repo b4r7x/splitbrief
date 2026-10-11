@@ -2,18 +2,21 @@ import { readFile } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vite';
-import { type Guide, loadCatalog, repository, sourceLink } from './catalog.js';
-import { escapeHtml, renderGuide } from './markdown.js';
+import { type Guide, loadCatalog, repository, sourceLink, sources } from './catalog.js';
+import { discoveryFiles } from './discovery.js';
+import { escapeHtml } from './escape.js';
+import { renderGuide } from './markdown.js';
+import { documentTitle, pageMetadata } from './site.js';
 
 const entry = fileURLToPath(new URL('../docs/index.html', import.meta.url));
 type Catalog = Awaited<ReturnType<typeof loadCatalog>>;
 
 function renderPage(template: string, page: Guide, catalog: Catalog) {
-  const { article, contents } = renderGuide(page, catalog.pages);
+  const { article, contents } = renderGuide(page, catalog);
   const base = '../'.repeat(page.route.split('/').length - 1);
   const href = (target: Guide) => `${base}${target.route}`;
   const pageLink = (target: Guide) =>
-    `<a href="${href(target)}"${target === page ? ' aria-current="page"' : ''}>${escapeHtml(target.title)}</a>`;
+    `<a href="${href(target)}"${target === page ? ' aria-current="page"' : ''}>${escapeHtml(target.label)}</a>`;
   const index = catalog.pages.find((page) => page.source === 'docs/README.md');
   const library =
     (index ? `<div class="docs-overview">${pageLink(index)}</div>` : '') +
@@ -30,13 +33,17 @@ function renderPage(template: string, page: Guide, catalog: Catalog) {
   const next = ordered[position + 1];
   const pagination =
     (previous
-      ? `<a href="${href(previous)}"><span>← Previous</span>${escapeHtml(previous.title)}</a>`
+      ? `<a href="${href(previous)}"><span>← Previous</span>${escapeHtml(previous.label)}</a>`
       : '<span></span>') +
-    (next ? `<a href="${href(next)}"><span>Next →</span>${escapeHtml(next.title)}</a>` : '');
+    (next ? `<a href="${href(next)}"><span>Next →</span>${escapeHtml(next.label)}</a>` : '');
   const replacements: Record<string, string> = {
     '{{site-root}}': base,
-    '{{title}}': escapeHtml(page.title),
-    '{{description}}': escapeHtml(page.description),
+    '<!-- page-metadata -->': pageMetadata({
+      route: page.route,
+      title: documentTitle(page.title),
+      description: page.description,
+      type: page.source === 'docs/README.md' ? 'website' : 'article',
+    }),
     '{{group}}': escapeHtml(group?.title ?? 'All documentation'),
     '{{source}}': escapeHtml(sourceLink(page)),
     '<!-- guide-library -->': library,
@@ -45,7 +52,7 @@ function renderPage(template: string, page: Guide, catalog: Catalog) {
     '<!-- guide-pagination -->': pagination,
   };
   // Vite compiles the one-level docs template; emitted routes can be deeper.
-  let html = template.replaceAll('="../assets/', `="${base}assets/`);
+  let html = template.replaceAll('="../', `="${base}`);
   for (const [marker, content] of Object.entries(replacements))
     html = html.replaceAll(marker, () => content);
   return html;
@@ -60,10 +67,7 @@ export function docsSite(): Plugin {
       for (const page of (await readCatalog()).pages) this.addWatchFile(repository + page.source);
     },
     configureServer(server) {
-      server.watcher.add([
-        `${repository}docs`,
-        ...['README.md', 'CONTRIBUTING.md', 'CHANGELOG.md'].map((file) => repository + file),
-      ]);
+      server.watcher.add(sources.map((source) => repository + source));
       const reload = (_event: string, path: string) => {
         if (!path.endsWith('.md') || !path.startsWith(repository)) return;
         catalog = undefined;
@@ -73,10 +77,20 @@ export function docsSite(): Plugin {
       server.httpServer?.once('close', () => server.watcher.off('all', reload));
       server.middlewares.use(async (request, response, next) => {
         const url = new URL(request.url ?? '/', 'http://localhost');
-        if (!url.pathname.startsWith('/docs')) return next();
-        if (url.pathname !== '/docs' && !url.pathname.startsWith('/docs/')) return next();
+        const root = /^\/[\w-]+\.(?:txt|xml)$/.test(url.pathname);
+        if (!root && url.pathname !== '/docs' && !url.pathname.startsWith('/docs/')) return next();
         try {
           const current = await readCatalog();
+          if (root) {
+            const file = Object.entries(discoveryFiles(current)).find(
+              ([name]) => `/${name}` === url.pathname,
+            );
+            if (!file) return next();
+            const type = file[0].endsWith('.xml') ? 'application/xml' : 'text/plain';
+            response.writeHead(200, { 'Content-Type': `${type}; charset=utf-8` });
+            response.end(file[1]);
+            return;
+          }
           const route = url.pathname
             .replace(/\/index\.html$/, '/')
             .replace(/\/?$/, '/')
@@ -118,6 +132,8 @@ export function docsSite(): Plugin {
           if (fileName === entry.fileName) entry.source = source;
           else this.emitFile({ type: 'asset', fileName, source });
         }
+        for (const [fileName, source] of Object.entries(discoveryFiles(current)))
+          this.emitFile({ type: 'asset', fileName, source });
       },
     },
   };

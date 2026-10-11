@@ -143,7 +143,7 @@ test('keeps the full story and installation readable without JavaScript', async 
   await expect(page.locator('.timeline')).toBeHidden();
   await expect(page.locator('.copy-command').first()).toBeHidden();
   await page.getByRole('link', { name: 'Get started', exact: true }).click();
-  await expect(page.locator('#install-command')).toBeInViewport();
+  await expect(page.locator('#install-npm')).toBeInViewport();
   await expect(page.locator('#start-command')).toContainText('splitbrief start "your change"');
   expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
   await context.close();

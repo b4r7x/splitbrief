@@ -13,7 +13,8 @@
       "tests/**",
       "build/**",
       "dependency-cruiser.config.cjs",
-      "knip.json"
+      "knip.json",
+      "site.json"
     ]
   },
   "formatter": {
