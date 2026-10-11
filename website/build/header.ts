@@ -14,11 +14,16 @@ export function siteHeader(): Plugin {
       order: 'pre',
       async handler(html) {
         if (!html.includes('<!-- site-header -->')) return html;
-        const docs = html.includes('class="docs-page"');
+        // The not-found page is served at any depth, so its links start at the site root.
+        const [home, navHref, navLabel] = html.includes('class="docs-page"')
+          ? ['{{site-root}}', '{{site-root}}', 'home']
+          : html.includes('class="not-found-page"')
+            ? ['/', '/docs/', 'docs']
+            : ['#top', './docs/', 'docs'];
         const header = (await readFile(source, 'utf8'))
-          .replace('{{home}}', docs ? '{{site-root}}' : '#top')
-          .replace('{{nav-href}}', docs ? '{{site-root}}' : './docs/')
-          .replace('{{nav-label}}', docs ? 'home' : 'docs');
+          .replace('{{home}}', home)
+          .replace('{{nav-href}}', navHref)
+          .replace('{{nav-label}}', navLabel);
         return html.replace('<!-- site-header -->', header);
       },
     },

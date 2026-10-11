@@ -1,5 +1,26 @@
-import { expect, test } from '@playwright/test';
-import { canvasImage, clickInPlace, openPage, scrollScene } from './browser.js';
+import { expect, type Page, test } from '@playwright/test';
+import { canvasImage, clickInPlace, openPage, scrollScene, site } from './browser.js';
+
+const installCommand = `npm install -g ${site.npm.package}`;
+const startCommand = 'splitbrief doctor\nsplitbrief init\nsplitbrief start "your change"';
+
+async function expectNpmPanel(page: Page) {
+  const panel = page.locator('#install-npm');
+  await expect(panel).toBeVisible();
+  if (site.npm.published) {
+    await expect(panel.locator('#install-command')).toHaveText(installCommand);
+    await expect(panel.locator('[data-copy="install"]')).toBeVisible();
+    await expect(panel).toContainText(`The ${site.npm.package} command is now on your PATH.`);
+    await expect(
+      panel.locator(`a[href="https://www.npmjs.com/package/${site.npm.package}"]`),
+    ).toHaveCount(1);
+  } else {
+    await expect(panel).toContainText('The first npm release is coming.');
+    await expect(panel.locator(`a[href="${site.repository}"]`)).toBeVisible();
+    await expect(page.locator('#install-command')).toHaveCount(0);
+    await expect(page.locator('[data-copy="install"]')).toHaveCount(0);
+  }
+}
 
 test('installation methods encode and decode at their own content height without scrolling', async ({
   page,
@@ -28,7 +49,7 @@ test('installation methods encode and decode at their own content height without
     'aria-selected',
     'true',
   );
-  await expect(page.locator('#install-command')).toBeVisible();
+  await expectNpmPanel(page);
   await expect(page.locator('.install-methods > .decode-layer')).toBeHidden();
   expect(await page.locator('.install-methods').boundingBox()).toEqual(before);
   expect(await page.evaluate(() => scrollY)).toBe(position);
@@ -264,11 +285,14 @@ test('a direct install link is fully readable and copies the exact source comman
   await openPage(page, '/#install');
   await expect(page.getByRole('heading', { name: 'Start your next change.' })).toBeInViewport();
   await expect(page.locator('#install .is-decoding')).toHaveCount(0);
-  const expected = {
-    install: 'npm install -g splitbrief',
-    start: 'splitbrief doctor\nsplitbrief init\nsplitbrief start "your change"',
-  };
-  for (const [name, text] of Object.entries(expected)) {
+  await expectNpmPanel(page);
+  const expected: Array<[string, string]> = site.npm.published
+    ? [
+        ['install', installCommand],
+        ['start', startCommand],
+      ]
+    : [['start', startCommand]];
+  for (const [name, text] of expected) {
     const button = page.locator(`[data-copy="${name}"]`);
     await clickInPlace(page, button);
     await expect(button).toHaveText('[ copied ]');
@@ -297,10 +321,13 @@ for (const failure of ['denied', 'missing']) {
       });
     }, failure);
     await openPage(page, '/#install');
-    await clickInPlace(page, page.locator('[data-copy="install"]'));
+    const [name, command, text] = site.npm.published
+      ? ['install', '#install-command', installCommand]
+      : ['start', '#start-command', 'splitbrief start "your change"'];
+    await clickInPlace(page, page.locator(`[data-copy="${name}"]`));
     await expect(page.getByRole('status')).toHaveText('Select and copy the commands above.');
-    await expect(page.locator('#install-command')).toBeInViewport();
-    await expect(page.locator('#install-command')).toContainText('npm install -g splitbrief');
+    await expect(page.locator(command)).toBeInViewport();
+    await expect(page.locator(command)).toContainText(text);
   });
 }
 
@@ -322,12 +349,18 @@ test('a late clipboard result cannot replace feedback for the latest click', asy
     });
   });
   await openPage(page, '/#install');
-  await clickInPlace(page, page.locator('[data-copy="install"]'));
+  const earlier = page.locator(`[data-copy="${site.npm.published ? 'install' : 'source'}"]`);
+  if (!site.npm.published) {
+    await page.locator('#tab-source').click();
+    await expect(page.locator('#tab-source')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.install-methods > .decode-layer')).toBeHidden();
+  }
+  await clickInPlace(page, earlier);
   await clickInPlace(page, page.locator('[data-copy="start"]'));
   await expect(page.locator('[data-copy="start"]')).toHaveText('[ copied ]');
   await page.waitForTimeout(700);
   await expect(page.getByRole('status')).toHaveText('Commands copied.');
-  await expect(page.locator('[data-copy="install"]')).toHaveText('[ copy ]');
+  await expect(earlier).toHaveText('[ copy ]');
   expect(commands).toHaveLength(2);
-  expect(commands[1]).toBe('splitbrief doctor\nsplitbrief init\nsplitbrief start "your change"');
+  expect(commands[1]).toBe(startCommand);
 });

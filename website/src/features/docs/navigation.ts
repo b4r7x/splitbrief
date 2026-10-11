@@ -4,6 +4,9 @@ import { createSwap } from '../../lib/swap.js';
 
 type Visit = { kind: 'push' } | { kind: 'pop'; key: number; top: number };
 
+const pageMetadata =
+  'meta[name="description"], link[rel="canonical"], meta[property^="og:"], meta[name^="twitter:"]';
+
 function historyEntry(state: unknown) {
   return state &&
     typeof state === 'object' &&
@@ -118,12 +121,8 @@ export function mountDocsNavigation(
           .querySelector('.docs-source')
           ?.setAttribute('href', nextSource.getAttribute('href') ?? '');
         document.title = next.title;
-        document
-          .querySelector('meta[name="description"]')
-          ?.setAttribute(
-            'content',
-            next.querySelector('meta[name="description"]')?.getAttribute('content') ?? '',
-          );
+        for (const element of document.head.querySelectorAll(pageMetadata)) element.remove();
+        document.head.append(...next.head.querySelectorAll(pageMetadata));
         displayedPath = url.pathname;
         decoder = makeDecoder();
         changed();

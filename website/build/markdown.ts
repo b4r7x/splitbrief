@@ -1,19 +1,33 @@
-import { Marked } from 'marked';
-import { type Guide, guideLink } from './catalog.js';
+import { Marked, type Token, type Tokens } from 'marked';
+import { type Guide, guideLink, readableLink, unpublishedLink } from './catalog.js';
+import { escapeHtml } from './escape.js';
 
-export const escapeHtml = (value: string) =>
-  value.replace(
-    /[&<>"']/g,
-    (char) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char,
-  );
+type Catalog = { pages: readonly Guide[]; titles: ReadonlyMap<string, string> };
 
-export function renderGuide(page: Guide, pages: readonly Guide[]) {
+const hrefs = (tokens: readonly Token[]): string[] =>
+  tokens.flatMap((token) => [
+    ...(token.type === 'link' && 'href' in token ? [token.href] : []),
+    ...('tokens' in token && token.tokens ? hrefs(token.tokens) : []),
+  ]);
+const isBlockquote = (token: Token): token is Tokens.Blockquote => token.type === 'blockquote';
+const isOrderedList = (token: Token): token is Tokens.List =>
+  token.type === 'list' && 'ordered' in token && token.ordered === true;
+
+export function renderGuide(page: Guide, { pages, titles }: Catalog) {
   const sections: Array<{ id: string; label: string }> = [];
   const headings = new Map<string, number>();
   let codeIndex = 0;
   let hasTitle = false;
   const parser = new Marked({
+    // The index's reading order keeps a new reader on the site: it lists published guides only.
+    walkTokens(token) {
+      if (page.source !== 'docs/README.md' || !isBlockquote(token)) return;
+      for (const child of token.tokens)
+        if (isOrderedList(child))
+          child.items = child.items.filter(
+            (item) => !hrefs(item.tokens).some((href) => unpublishedLink(href, page, pages)),
+          );
+    },
     renderer: {
       html({ text }) {
         const anchor = text.match(/^<a id="([a-z0-9_-]+)">(?:<\/a>)?\s*$/i);
@@ -37,10 +51,11 @@ export function renderGuide(page: Guide, pages: readonly Guide[]) {
         if (level === 2) sections.push({ id, label: label.replace(/^\d+\.\s*/, '') });
         return `<h${level} id="${id}">${this.parser.parseInline(tokens)}</h${level}>\n`;
       },
-      link({ href, tokens, title }) {
-        const content = this.parser.parseInline(tokens);
+      link({ href, tokens, title, text }) {
         const target = guideLink(href, page, pages);
-        if (!target) return content;
+        if (!target) return this.parser.parseInline(tokens);
+        const label = readableLink(href, text, page, titles);
+        const content = label ? escapeHtml(label) : this.parser.parseInline(tokens);
         return `<a href="${escapeHtml(target)}"${title ? ` title="${escapeHtml(title)}"` : ''}>${content}</a>`;
       },
       image({ href, text }) {

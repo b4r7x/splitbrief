@@ -1,0 +1,33 @@
+# Build context for deploy/website.Dockerfile is the repository root. This is a
+# denylist: website/, docs/ and CHANGELOG.md must stay reachable, and
+# so must website/public/build-id, which the deploy workflow writes before the
+# image build. Do not add a bare `build` pattern: website/build/ is the Vite
+# plugin source.
+.git
+.github
+.claude
+.nuke
+.splitbrief
+.specify
+.worktrees
+.test-artifacts
+notes
+tmp
+node_modules
+**/node_modules
+dist
+**/dist
+website/test-results
+website/playwright-report
+coverage
+**/coverage
+*.tgz
+*.tsbuildinfo
+*.log
+**/*.log
+
+# Secrets and environment files
+.env
+.env.*
+**/.env
+**/.env.*

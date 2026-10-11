@@ -1,0 +1,531 @@
+name: Deploy Website
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_production:
+        description: Type "deploy" to confirm production deployment
+        required: true
+        type: string
+      image_sha:
+        description: >-
+          Optional rollback: full 40-char commit SHA of a previously built and
+          deployed website image. When set, the digest that SHA's newest
+          successful deploy run scanned is re-promoted to :prod instead of
+          building from main HEAD, so the rollback needs that run's digest record
+          to be unexpired.
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-website-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/b4r7x/splitbrief-website
+  IMAGE_NAME: splitbrief-website
+
+jobs:
+  validate-request:
+    name: Validate Manual Request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      # SHA actually deployed: the rollback image_sha when provided, else HEAD.
+      target_sha: ${{ steps.resolve.outputs.target_sha }}
+      # "true" when rolling back to a pre-built image (skips build-scan).
+      rollback: ${{ steps.resolve.outputs.rollback }}
+    steps:
+      - name: Require production confirmation
+        env:
+          CONFIRM_PRODUCTION: ${{ inputs.confirm_production }}
+        run: |
+          if [ "${CONFIRM_PRODUCTION}" != "deploy" ]; then
+            echo "::error::confirm_production must equal 'deploy'."
+            exit 1
+          fi
+
+      - name: Require main branch
+        env:
+          DEPLOY_REF: ${{ github.ref }}
+        run: |
+          if [ "${DEPLOY_REF}" != "refs/heads/main" ]; then
+            echo "::error::Production deploys must run from refs/heads/main."
+            exit 1
+          fi
+
+      - name: Resolve target SHA
+        id: resolve
+        env:
+          IMAGE_SHA: ${{ inputs.image_sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "${IMAGE_SHA}" ]; then
+            if ! printf '%s' "${IMAGE_SHA}" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::image_sha must be a full 40-character lowercase commit SHA."
+              exit 1
+            fi
+            echo "target_sha=${IMAGE_SHA}" >> "$GITHUB_OUTPUT"
+            echo "rollback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "target_sha=${HEAD_SHA}" >> "$GITHUB_OUTPUT"
+            echo "rollback=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require CI success for target SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ steps.resolve.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+
+          run_info="$(gh api \
+            "repos/${GH_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${TARGET_SHA}&per_page=20" \
+            --jq '[.workflow_runs[] | select(.event == "push" and .head_branch == "main" and .status == "completed")] | sort_by(.run_started_at // .created_at) | last | select(. != null) | [.id, .conclusion, .html_url] | @tsv')"
+          if [ -z "${run_info}" ]; then
+            echo "::error::No completed CI push run found on main for ${TARGET_SHA}."
+            exit 1
+          fi
+
+          IFS=$'\t' read -r run_id run_conclusion run_url <<< "${run_info}"
+          if [ "${run_conclusion}" != "success" ]; then
+            echo "::error::CI for ${TARGET_SHA} concluded '${run_conclusion}', not success: ${run_url}"
+            exit 1
+          fi
+
+          # The website job builds and tests the site this workflow ships, so the
+          # deploy refuses a run where it is missing even if the run is green.
+          conclusion="$(gh api \
+            "repos/${GH_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name == "website") | .conclusion' | tail -n 1)"
+          if [ -z "${conclusion}" ]; then
+            echo "::error::CI job 'website' is missing for ${TARGET_SHA}: ${run_url}"
+            exit 1
+          fi
+          if [ "${conclusion}" != "success" ]; then
+            echo "::error::CI job 'website' concluded '${conclusion}', not success: ${run_url}"
+            exit 1
+          fi
+          echo "CI run ${run_id} is green for ${TARGET_SHA}."
+
+  build-scan:
+    name: Build and Scan Website
+    needs: validate-request
+    # Rollback re-promotes a pre-built image, so the build is skipped.
+    if: ${{ needs.validate-request.outputs.rollback != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    env:
+      # Unique to this build, also on a rebuild of the commit that is live, so the
+      # deploy job can prove that the live container runs this image.
+      BUILD_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      # Vite copies website/public/ into the build output, so the live site serves
+      # /build-id.
+      - name: Stamp build identity
+        run: printf '%s\n' "${BUILD_ID}" > website/public/build-id
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push SHA image
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          # The build reads docs/ and CHANGELOG.md, so the context is
+          # the repository root, not website/.
+          context: .
+          file: deploy/website.Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.url=https://github.com/${{ github.repository }}
+            org.opencontainers.image.title=${{ env.IMAGE_NAME }}
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Scan the manifest the build just pushed, addressed by its immutable digest.
+      # Scanning the SHA tag would let anything that moves the tag between the scan
+      # and the promotion put unscanned bytes into production.
+      - name: Scan pushed image digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_REPOSITORY }}@${{ steps.build.outputs.digest }}
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+
+      - name: Record scanned image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${IMAGE_DIGEST}" | grep -Eq '^sha256:[0-9a-f]{64}$'; then
+            echo "::error::The build did not report a manifest digest for ${IMAGE_NAME}."
+            exit 1
+          fi
+          mkdir -p image-digests
+          printf '%s\n' "${IMAGE_DIGEST}" > "image-digests/${IMAGE_NAME}"
+          printf '%s\n' "${BUILD_ID}" > "image-digests/${IMAGE_NAME}.build-id"
+
+      # A later rollback promotes this digest and checks its build identity, so the
+      # record must outlive the images an operator can still roll back to.
+      - name: Upload scanned image digest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-digest-website
+          path: image-digests/
+          retention-days: 90
+
+  promote-deploy:
+    name: Promote and Deploy
+    needs: [validate-request, build-scan]
+    # build-scan is skipped on rollback; require validate-request success and
+    # build-scan to have either succeeded (fresh deploy) or been skipped (rollback).
+    if: >-
+      ${{ always()
+        && needs.validate-request.result == 'success'
+        && (needs.build-scan.result == 'success' || needs.build-scan.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    # Promotion happens inside an armed rollback trap, and the live verification
+    # after it can spend five minutes. The budget must outlast it with room for
+    # the rollback itself: a cancelled runner leaves :prod on an unverified image
+    # with the trap only half run.
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      # actions: read lets a rollback read the digest record of the run that built
+      # and scanned the requested SHA.
+      actions: read
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout deployed SHA
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ needs.validate-request.outputs.target_sha }}
+          persist-credentials: false
+
+      # website/site.json is the one home of the public origin. The deployed SHA's
+      # copy names the origin that build was made for.
+      - name: Read site origin
+        id: origin
+        run: |
+          set -euo pipefail
+          origin="$(jq -r '.origin // empty' website/site.json)"
+          if ! printf '%s' "${origin}" | grep -Eq '^https://[A-Za-z0-9.-]+$'; then
+            echo "::error::website/site.json origin must be https://<host> with no path or trailing slash; got '${origin}'."
+            exit 1
+          fi
+          echo "site_origin=${origin}" >> "$GITHUB_OUTPUT"
+
+      - name: Download scanned image digest
+        if: ${{ needs.validate-request.outputs.rollback != 'true' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-digest-website
+          path: image-digests
+
+      # A rollback promotes bytes an earlier run built and scanned, so it reuses that
+      # run's digest record. Re-resolving the requested SHA tag here would let anyone
+      # who can move a GHCR tag route unscanned bytes into production through an
+      # operator rollback.
+      - name: Restore recorded image digest for rollback
+        if: ${{ needs.validate-request.outputs.rollback == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ needs.validate-request.outputs.target_sha }}
+          IMAGE_DIGEST_DIR: image-digests
+        run: |
+          set -euo pipefail
+
+          # Only a successful manual deploy run from main qualifies, newest first.
+          # Its build-scan uploads the record before promotion, so a failed or
+          # cancelled run can hold a record of bytes that never passed the live
+          # checks; a successful conclusion means promotion and live verification
+          # passed. Rollback runs skip build-scan and upload no record, so the
+          # artifact's presence excludes them.
+          run_ids="$(gh api \
+            "repos/${GH_REPOSITORY}/actions/workflows/deploy-website.yml/runs?head_sha=${TARGET_SHA}&per_page=100" \
+            --jq '[.workflow_runs[] | select(.event == "workflow_dispatch" and .head_branch == "main" and .status == "completed" and .conclusion == "success")] | sort_by(.run_started_at // .created_at) | reverse | .[].id')"
+
+          source_run=""
+          for run_id in ${run_ids}; do
+            record_count="$(gh api \
+              "repos/${GH_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+              --jq '[.artifacts[] | select(.expired == false and .name == "image-digest-website")] | length')"
+            if [ "${record_count}" -gt 0 ]; then
+              source_run="${run_id}"
+              break
+            fi
+          done
+
+          if [ -z "${source_run}" ]; then
+            echo "::error::No successful deploy run of ${TARGET_SHA} on main has an unexpired scanned-digest record; deploy a fresh build instead of rolling back."
+            exit 1
+          fi
+
+          rm -rf "${IMAGE_DIGEST_DIR}"
+          mkdir -p "${IMAGE_DIGEST_DIR}"
+          gh run download "${source_run}" --repo "${GH_REPOSITORY}" \
+            --name image-digest-website --dir "${IMAGE_DIGEST_DIR}"
+
+          record="${IMAGE_DIGEST_DIR}/${IMAGE_NAME}"
+          if [ ! -f "${record}" ]; then
+            echo "::error::Deploy run ${source_run} has no ${IMAGE_NAME} digest in its record."
+            exit 1
+          fi
+          if ! grep -Eqx 'sha256:[0-9a-f]{64}' "${record}"; then
+            echo "::error::Deploy run ${source_run} recorded an invalid digest for ${IMAGE_NAME}."
+            exit 1
+          fi
+          echo "Rolling back to the digest that deploy run ${source_run} scanned and verified."
+
+      # Coolify pulls :prod with no registry credentials, so the package must be
+      # public. This anonymous pull of the digest runs before :prod moves: a
+      # private package stops the run here with production untouched.
+      - name: Require anonymous pull of the image
+        env:
+          IMAGE_DIGEST_DIR: image-digests
+        run: |
+          set -euo pipefail
+          digest="$(cat "${IMAGE_DIGEST_DIR}/${IMAGE_NAME}")"
+          if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Refusing to check ${IMAGE_NAME} with an invalid digest."
+            exit 1
+          fi
+          repository="${IMAGE_REPOSITORY#ghcr.io/}"
+          if token="$(curl -fsS --max-time 15 \
+            "https://ghcr.io/token?scope=repository:${repository}:pull" | jq -er '.token')" \
+            && curl -fsS --max-time 15 -o /dev/null \
+              -H "Authorization: Bearer ${token}" \
+              -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${repository}/manifests/${digest}"; then
+            echo "${IMAGE_REPOSITORY}@${digest} is publicly pullable."
+          else
+            echo "::error::${IMAGE_REPOSITORY} is not publicly pullable, so Coolify cannot pull it. Make the package public in its GitHub package settings, then run the workflow again. :prod did not move."
+            exit 1
+          fi
+
+      # Registry-write and Coolify credentials live on this step alone. At job scope
+      # every action and every process started from the deployed checkout inherits
+      # them, and neither checkout nor the public verification needs them.
+      - name: Promote scanned image and trigger Coolify
+        env:
+          IMAGE_DIGEST_DIR: image-digests
+          SOURCE_SHA: ${{ needs.validate-request.outputs.target_sha }}
+          SITE_ORIGIN: ${{ steps.origin.outputs.site_origin }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ github.actor }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_WEBHOOK_WEBSITE: ${{ secrets.COOLIFY_WEBHOOK_WEBSITE }}
+        run: |
+          set -Eeuo pipefail
+
+          require_env() {
+            name="$1"
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing required environment value: ${name}"
+              exit 1
+            fi
+          }
+
+          # :prod always moves to the immutable digest Trivy scanned, never to a
+          # mutable tag. A fresh deploy reads the record this run's build uploaded
+          # and a rollback reads the record restored from the run that built the SHA.
+          promote() {
+            if ! source_digest="$(cat "${IMAGE_DIGEST_DIR}/${IMAGE_NAME}" 2> /dev/null)"; then
+              echo "::error::No scanned image digest was recorded for ${IMAGE_NAME}."
+              return 1
+            fi
+            if [[ ! "${source_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Refusing to promote ${IMAGE_NAME} from an invalid digest."
+              return 1
+            fi
+            docker buildx imagetools create \
+              --tag "${IMAGE_REPOSITORY}:prod" \
+              "${IMAGE_REPOSITORY}@${source_digest}"
+          }
+
+          trigger() {
+            source_ref="$1"
+            payload="{\"image_tag\":\"prod\",\"surface\":\"website\"}"
+            if [ -n "${source_ref}" ]; then
+              payload="{\"image_tag\":\"prod\",\"source_sha\":\"${source_ref}\",\"surface\":\"website\"}"
+            fi
+            curl -fsS -X POST "${COOLIFY_WEBHOOK_WEBSITE}" \
+              -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${payload}"
+          }
+
+          # The live checks read public endpoints only. They have no need for
+          # registry-write or Coolify credentials, so every curl they start runs
+          # without them; the parent shell keeps them for the bounded rollback path.
+          run_public_check() {
+            env -u GHCR_TOKEN -u COOLIFY_TOKEN -u COOLIFY_WEBHOOK_WEBSITE "$@"
+          }
+
+          # The build identity is unique to one build, so the old container never
+          # satisfies this wait, even when the run rebuilds the live commit.
+          # The budget is wall clock, not attempts: each attempt can wait up to
+          # 10s on a slow origin, and the trap must still have time to roll back.
+          wait_for_build_id() {
+            budget_seconds=300
+            deadline=$((SECONDS + budget_seconds))
+            attempt=1
+            while true; do
+              served="$(run_public_check curl -fsS --max-time 10 -H 'Cache-Control: no-cache' \
+                "${SITE_ORIGIN}/build-id?expected=${build_id}" 2> /dev/null | tr -d '[:space:]' || true)"
+              if [ "${served}" = "${build_id}" ]; then
+                echo "${SITE_ORIGIN} serves build ${build_id}."
+                return 0
+              fi
+              if [ "${SECONDS}" -ge "${deadline}" ]; then
+                echo "::error::${SITE_ORIGIN} did not report build ${build_id} within ${budget_seconds}s (last: '${served}')."
+                return 1
+              fi
+              echo "::notice::${SITE_ORIGIN} does not serve the deployed build yet (attempt ${attempt}); retrying in 15s."
+              attempt=$((attempt + 1))
+              sleep 15
+            done
+          }
+
+          # One request per path, no redirect following. The Location is compared
+          # in its path form: nginx sends it relative, and curl resolves it.
+          expect() {
+            path="$1"
+            want_status="$2"
+            want_location="${3:-}"
+            if ! result="$(run_public_check curl -sS -o /dev/null --max-time 15 \
+              -w '%{http_code} %{redirect_url}' "${SITE_ORIGIN}${path}")"; then
+              echo "::error::GET ${path} failed."
+              return 1
+            fi
+            status="${result%% *}"
+            location="${result#* }"
+            location="${location#"${SITE_ORIGIN}"}"
+            if [ "${status}" != "${want_status}" ]; then
+              echo "::error::GET ${path} returned ${status}, expected ${want_status}."
+              return 1
+            fi
+            if [ -n "${want_location}" ] && [ "${location}" != "${want_location}" ]; then
+              echo "::error::GET ${path} redirected to '${location}', expected '${want_location}'."
+              return 1
+            fi
+            echo "GET ${path} -> ${status}${want_location:+ ${location}}"
+          }
+
+          verify_live_site() {
+            wait_for_build_id || return 1
+            failed=0
+            expect / 200 || failed=1
+            expect /docs 301 /docs/ || failed=1
+            expect /index.html 301 / || failed=1
+            expect /docs/getting-started/ 200 || failed=1
+            expect /docs/getting-started 301 /docs/getting-started/ || failed=1
+            expect /docs/getting-started/index.html 301 /docs/getting-started/ || failed=1
+            expect /this-page-does-not-exist/ 404 || failed=1
+            # An unpublished guide must not reach production.
+            expect /docs/dogfooding/ 404 || failed=1
+            expect /robots.txt 200 || failed=1
+            expect /sitemap.xml 200 || failed=1
+            return "${failed}"
+          }
+
+          require_env GHCR_TOKEN
+          require_env COOLIFY_TOKEN
+          require_env COOLIFY_WEBHOOK_WEBSITE
+          require_env SITE_ORIGIN
+
+          # The record names the build identity of the scanned digest. A fresh
+          # deploy reads this run's record and a rollback reads the restored one.
+          if ! build_id="$(cat "${IMAGE_DIGEST_DIR}/${IMAGE_NAME}.build-id" 2> /dev/null)" \
+            || [[ ! "${build_id}" =~ ^[0-9a-f]{40}-[0-9]+-[0-9]+$ ]]; then
+            echo "::error::The digest record has no valid build identity for ${IMAGE_NAME}. :prod did not move."
+            exit 1
+          fi
+
+          printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USERNAME}" --password-stdin
+
+          # A first deploy has no :prod manifest. There is nothing to restore, so
+          # record an empty digest and let the rollback report it. Any other
+          # failure to read :prod would leave a failed deploy with nothing to
+          # roll back to, so it stops the run before :prod moves.
+          previous_digest=""
+          inspect_errors="${RUNNER_TEMP}/prod-inspect.err"
+          if digest="$(docker buildx imagetools inspect \
+            --format '{{.Manifest.Digest}}' \
+            "${IMAGE_REPOSITORY}:prod" 2> "${inspect_errors}")"; then
+            if [[ ! "${digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Could not capture the current production digest."
+              exit 1
+            fi
+            previous_digest="${digest}"
+          elif grep -qF "${IMAGE_REPOSITORY}:prod: not found" "${inspect_errors}"; then
+            echo "::notice::${IMAGE_REPOSITORY}:prod does not exist yet; this is a first deploy."
+          else
+            cat "${inspect_errors}" >&2
+            echo "::error::Could not read the current ${IMAGE_REPOSITORY}:prod digest, so a failed deploy could not roll back. :prod did not move."
+            exit 1
+          fi
+
+          rollback_deployment() {
+            original_status=$?
+            trap - EXIT
+            trap '' HUP INT TERM
+            set +e
+
+            if [ -z "${previous_digest}" ]; then
+              echo "::error::The website had no production image before this run; :prod now points at the failed first deploy."
+              exit "${original_status}"
+            fi
+            if ! docker buildx imagetools create \
+              --tag "${IMAGE_REPOSITORY}:prod" \
+              "${IMAGE_REPOSITORY}@${previous_digest}"; then
+              echo "::error::Failed to restore the website to ${previous_digest}."
+              exit "${original_status}"
+            fi
+            if ! trigger ""; then
+              echo "::error::Restored the website to ${previous_digest}, but its rollback trigger failed."
+            fi
+            exit "${original_status}"
+          }
+          trap rollback_deployment EXIT
+          trap 'exit 129' HUP
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+
+          promote
+          trigger "${SOURCE_SHA}"
+          verify_live_site
+
+          trap - EXIT HUP INT TERM

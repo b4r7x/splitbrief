@@ -4,9 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#141414">
-  <meta name="description" content="SPLITBRIEF connects a stronger planning tool with a smaller coding tool through self-contained Task Briefs, validation and review.">
-  <title>SPLITBRIEF — two tools, one clear handoff</title>
-  <link rel="icon" href="data:,">
+  <!-- page-metadata -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/src/styles/main.css">
   <script type="module" src="/src/main.ts"></script>
 </head>
@@ -174,9 +173,16 @@
                 </div>
                 <div class="install-methods">
                 <div class="code-sheet install-code install-method" id="install-npm" data-install-method role="tabpanel" aria-labelledby="tab-npm">
+                  <!-- npm:published -->
                   <div class="sheet-label"><span>Terminal / install</span><button class="copy-command" type="button" data-copy="install">[ copy ]</button></div>
                   <pre id="install-command" data-install-decode><code>npm install -g splitbrief</code></pre>
-                  <p class="install-note" data-install-decode>The <code>splitbrief</code> command is now on your PATH.</p>
+                  <p class="install-note" data-install-decode>The <code>splitbrief</code> command is now on your PATH. <a href="{{npm-url}}">[ splitbrief on npm ↗ ]</a></p>
+                  <!-- /npm:published -->
+                  <!-- npm:unpublished -->
+                  <div class="sheet-label"><span>npm / first release</span></div>
+                  <pre class="install-pending" data-install-decode><code>The first npm release is coming.</code></pre>
+                  <p class="install-note" data-install-decode>Until then, use the From source tab. <a href="{{repository}}">[ source on github ↗ ]</a></p>
+                  <!-- /npm:unpublished -->
                 </div>
                 <div class="code-sheet install-code install-method" id="install-source" data-install-method role="tabpanel" aria-labelledby="tab-source">
                   <div class="sheet-label"><span>Terminal / build from source</span><button class="copy-command" type="button" data-copy="source">[ copy ]</button></div>

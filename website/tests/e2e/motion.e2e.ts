@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { canvasImage, clickInPlace, openPage, scrollScene, settleScenes } from './browser.js';
+import {
+  canvasImage,
+  clickInPlace,
+  openPage,
+  scrollScene,
+  settleCanvas,
+  settleScenes,
+} from './browser.js';
 
 test('settled content and artwork stay untouched without scrolling', async ({ page }) => {
   for (const path of ['/', '/#roles', '/docs/getting-started/']) {
@@ -212,7 +219,9 @@ test('compact footers reveal the mark after the pinned text and hold it still', 
   ]) {
     await page.setViewportSize(viewport);
     await openPage(page);
-    await openPage(page, '/#install');
+    await page.goto('/#install');
+    await expect(page.locator('#install')).toHaveAttribute('data-active', 'true');
+    await settleCanvas(page);
     const region = page.locator('[data-footer-art-region]');
     await expect(region).not.toBeInViewport();
     const beforeFooter = await canvasImage(page);

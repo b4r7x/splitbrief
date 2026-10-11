@@ -220,7 +220,12 @@
   color: #a6a6a6;
   font: 11px / 1.65 var(--mono);
 }
+.install-note a {
+  color: #ddd;
+  white-space: nowrap;
+}
 .install-code .sheet-label {
+  min-height: 44px;
   padding-top: 0;
   padding-bottom: 0;
 }
@@ -395,6 +400,9 @@
     padding: 17px 14px;
     font-size: 12px;
   }
+  .install-note {
+    padding-inline: 14px;
+  }
   .sheet-foot {
     padding: 10px 12px;
   }
@@ -533,6 +541,7 @@
   padding-block: 5px;
 }
 .is-tight .install-code .sheet-label {
+  min-height: 44px;
   padding-block: 0;
 }
 .is-tight .install-note {
@@ -573,4 +582,8 @@
     grid-row: 5 / 7;
     align-self: end;
   }
+}
+.install-code pre.install-pending {
+  white-space: pre-wrap;
+  word-break: normal;
 }
