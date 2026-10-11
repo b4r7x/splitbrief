@@ -4,7 +4,6 @@ import {
   easyAssertions,
   liveModelPin,
   liveTierEnabled,
-  liveToolBlocker,
   runLiveScenario,
 } from '../../helpers/live-harness.js';
 
@@ -14,13 +13,12 @@ describe('live easy: codex plans and implements', () => {
   itLive(
     'writes and validates the constant artifact through real codex calls',
     async (ctx) => {
-      const blocker = await liveToolBlocker('codex');
-      if (blocker !== null) return ctx.skip(blocker);
       const model = liveModelPin({ tool: 'codex', fallback: 'gpt-5.6-luna' });
-      await runLiveScenario(
+      const result = await runLiveScenario(
         { ...EASY_TIER, tool: 'codex', model, tempPrefix: 'live-easy-codex' },
         easyAssertions,
       );
+      if (result.kind === 'skip') ctx.skip(result.reason);
     },
     300_000,
   );

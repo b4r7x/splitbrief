@@ -42,7 +42,7 @@ describe('live fixture loop', () => {
           build: seats.build,
           review: seats.review,
         };
-        const gate = await gateLiveMatrixRow([row.plan, row.build, row.review]);
+        const gate = await gateLiveMatrixRow([row.plan, row.build, row.review], ctx.signal);
         if (gate.kind === 'skip') {
           appendLiveManifestRow({
             ...manifestBase,

@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect } from 'vitest';
@@ -6,6 +5,17 @@ import YAML from 'yaml';
 import { evaluateTsArtifact } from './artifact-assertions.js';
 import { blockerLines } from './blockers.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { runApply } from '../../../src/engine/orchestrator/apply/run.js';
+import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
+import { finalizeRunAtRest } from '../../../src/engine/orchestrator/session-lifecycle/finalize.js';
+import { formatRecoveryHeadline } from '../../../src/core/recovery/headline.js';
+import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { loadState } from '../../../src/core/state/persistence.js';
+import type { WorkflowState } from '../../../src/core/schemas/workflow.js';
+import type { SessionRef } from '../../../src/core/types/session-ref.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
+import { toErrorMessage } from '../../../src/utils/format-errors.js';
 import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
@@ -23,7 +33,6 @@ import {
   defaultCliAuthChannel,
 } from '../../../src/core/runners/cli-tool-catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
-import { parseOpenCodeNativeModelCatalog } from '../../../src/engine/providers/cli-model-catalog.js';
 import { includes } from '../../../src/utils/type-guards.js';
 import type { Summary } from '../../../src/core/schemas/summary.js';
 import type { Config } from '../../../src/core/schemas/config.js';
@@ -46,6 +55,7 @@ type LiveScenario = Readonly<{
   validateScript: string;
   implementerContextLength: number;
   tempPrefix: string;
+  timeoutMs: number;
 }>;
 
 /** Everything a tier fixes for every tool that runs it; the scenario adds the tool, pin and prefix. */
@@ -73,12 +83,13 @@ export function liveTierEnabled(tier: 'easy' | 'heavy'): boolean {
   return selected === 'all' || selected === tier;
 }
 
-export async function liveToolBlocker(tool: string): Promise<string | null> {
+async function liveToolBlocker(tool: string, signal: AbortSignal): Promise<string | null> {
   if (!includes(CLI_TOOL_IDS, tool)) return `${tool} is not in the CLI tool catalog`;
   const [detection] = await detectAvailableCliTools({
     tools: [tool],
     projectDir: process.cwd(),
     authChannels: { [tool]: defaultCliAuthChannel(tool).id },
+    signal,
   });
   if (detection === undefined) return `${tool} produced no detection record`;
   if (detection.diagnostic.state !== 'ready') {
@@ -102,33 +113,45 @@ export function liveRowGateDecision(opts: {
   readiness: readonly Readonly<{ tool: string; state: string }>[];
   allowList: ReadonlySet<string>;
 }): LiveRowGate {
-  const notReady = opts.readiness.find((entry) => entry.state !== 'ready');
-  if (notReady === undefined) return { kind: 'run' };
-  if (opts.allowList.has(notReady.tool)) {
+  const skipped = opts.readiness.find((entry) => opts.allowList.has(entry.tool));
+  if (skipped !== undefined) {
     return {
       kind: 'skip',
-      reason: `${notReady.tool} is not ready (${notReady.state}); listed in SPLITBRIEF_LIVE_SKIP`,
+      reason: 'listed in SPLITBRIEF_LIVE_SKIP',
     };
   }
+  const notReady = opts.readiness.find((entry) => entry.state !== 'ready');
+  if (notReady === undefined) return { kind: 'run' };
   throw new Error(
     `${notReady.tool} is not ready (${notReady.state}) and is not in SPLITBRIEF_LIVE_SKIP; release rows fail on unlisted missing tools`,
   );
 }
 
-export async function gateLiveMatrixRow(tools: readonly string[]): Promise<LiveRowGate> {
+export async function gateLiveMatrixRow(
+  tools: readonly string[],
+  signal: AbortSignal,
+): Promise<LiveRowGate> {
   const catalogTools = tools.map((tool) => {
     if (!includes(CLI_TOOL_IDS, tool)) {
       throw new Error(`${tool} is not in the CLI tool catalog`);
     }
     return tool;
   });
+  const allowList = liveSkipAllowList(process.env.SPLITBRIEF_LIVE_SKIP);
+  const skip = liveRowGateDecision({
+    readiness: catalogTools.map((tool) => ({ tool, state: 'ready' })),
+    allowList,
+  });
+  if (skip.kind === 'skip') return skip;
   const records = await detectAvailableCliTools({
     tools: catalogTools,
     projectDir: process.cwd(),
     authChannels: Object.fromEntries(
       catalogTools.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
     ),
+    signal,
   });
+  signal.throwIfAborted();
   const readiness = catalogTools.map((tool, index) => {
     const record = records[index];
     if (record === undefined) return { tool, state: 'no detection record' };
@@ -136,7 +159,7 @@ export async function gateLiveMatrixRow(tools: readonly string[]): Promise<LiveR
   });
   return liveRowGateDecision({
     readiness,
-    allowList: liveSkipAllowList(process.env.SPLITBRIEF_LIVE_SKIP),
+    allowList,
   });
 }
 
@@ -152,26 +175,86 @@ export function liveModelPin(opts: {
   return model;
 }
 
-export function openCodeFreeModelId(): string | undefined {
-  let stdout: string;
+let liveRowSettled: Promise<void> = Promise.resolve();
+
+export async function runLiveRowWithDeadline<T>(opts: {
+  timeoutMs: number;
+  run: (signal: AbortSignal) => Promise<T>;
+}): Promise<T> {
+  const controller = new AbortController();
+  const deadlineMs = opts.timeoutMs - 10_000;
+  const timer = setTimeout(() => {
+    controller.abort(new Error(`Live row timed out after ${deadlineMs}ms.`));
+  }, deadlineMs);
+  const row = liveRowSettled.then(async () => {
+    controller.signal.throwIfAborted();
+    const result = await opts.run(controller.signal);
+    controller.signal.throwIfAborted();
+    return result;
+  });
+  liveRowSettled = row.then(
+    () => undefined,
+    () => undefined,
+  );
   try {
-    stdout = execFileSync('opencode', ['api', 'GET', '/api/model'], {
-      encoding: 'utf-8',
-      timeout: 60_000,
-    });
-  } catch {
-    return undefined;
+    return await row;
+  } finally {
+    clearTimeout(timer);
   }
-  const catalog = parseOpenCodeNativeModelCatalog(stdout);
-  if (catalog === null) return undefined;
-  return catalog.models.find((entry) => entry.selectionId.toLowerCase().includes('free'))
-    ?.selectionId;
+}
+
+export function liveRunFailureReason(opts: {
+  state: WorkflowState | null;
+  events: readonly EngineEvent[];
+}): string | null {
+  const issue = opts.state?.pendingRecovery;
+  if (issue !== undefined) {
+    return [
+      formatRecoveryHeadline(issue),
+      `${issue.reason}: ${issue.message}`,
+      ...issue.details,
+    ].join('\n');
+  }
+  if (opts.state?.lastFailure !== undefined) return opts.state.lastFailure.message;
+  return opts.events.findLast((event) => event.type === 'error')?.message ?? null;
+}
+
+async function liveSessionFailureReason(ref: SessionRef): Promise<string | null> {
+  const { events } = await readRunEvents(ref);
+  return liveRunFailureReason({ state: loadState(ref), events });
+}
+
+export async function applyLiveRun(opts: SessionRef & { config: Config }): Promise<Summary> {
+  const { projectDir, sessionId, config } = opts;
+  const ref = { projectDir, sessionId };
+  const state = loadState(ref);
+  if (state === null) {
+    throw new Error((await liveSessionFailureReason(ref)) ?? 'Live run has no saved state.');
+  }
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  if (status.kind !== 'ready-to-apply') {
+    throw new Error(
+      (await liveSessionFailureReason(ref)) ??
+        `Live run must be ready-to-apply before Apply; status is ${status.kind}.`,
+    );
+  }
+  const bus = createRecoveryBus(ref);
+  const result = await runApply({ wctx: { ...ref, bus }, state });
+  if (result.outcome !== 'applied') {
+    throw new Error(
+      `Live Apply must finish applied; outcome is ${result.outcome}.\n` +
+        ((await liveSessionFailureReason(ref)) ?? ''),
+    );
+  }
+  return finalizeRunAtRest({ ref, config, state: result.state });
 }
 
 async function executeLiveWorkflow(opts: {
   projectDir: string;
   feature: string;
   effectiveConfig: Config;
+  signal: AbortSignal;
+  onSession?: (sessionId: string) => void;
   onPlannerReply?: NonNullable<OrchestratorCallbacks['onPlannerReply']>;
 }): Promise<{ summary: Summary; sessionId: string }> {
   const preparation = await prepareExecution({
@@ -185,7 +268,7 @@ async function executeLiveWorkflow(opts: {
       allowRepoRunners: false,
       allowHooks: false,
     },
-    signal: new AbortController().signal,
+    signal: opts.signal,
   });
   if (preparation.kind === 'failed') throw preparation.error;
   if (preparation.kind === 'blocked') {
@@ -203,12 +286,20 @@ async function executeLiveWorkflow(opts: {
     });
   }
   const sessionId = preparation.execution.session.ref.sessionId;
-  const summary = await runWorkflow({
+  opts.onSession?.(sessionId);
+  await runWorkflow({
     prepared: preparation.execution,
+    signal: opts.signal,
     callbacks: makeCallbacks(
       opts.onPlannerReply === undefined ? {} : { onPlannerReply: opts.onPlannerReply },
     ).callbacks,
     sinks: TEST_WORKFLOW_SINKS,
+  });
+  opts.signal.throwIfAborted();
+  const summary = await applyLiveRun({
+    projectDir: opts.projectDir,
+    sessionId,
+    config: opts.effectiveConfig,
   });
   return { summary, sessionId };
 }
@@ -216,10 +307,7 @@ async function executeLiveWorkflow(opts: {
 export async function runLiveScenario(
   scenario: LiveScenario,
   assertions: (result: LiveRunResult) => void,
-): Promise<void> {
-  if (process.env.SPLITBRIEF_REAL_CLI_E2E !== '1') {
-    throw new Error('Live scenario invoked without SPLITBRIEF_REAL_CLI_E2E=1.');
-  }
+): Promise<LiveRowGate> {
   const tool = scenario.tool;
   if (!includes(CLI_TOOL_IDS, tool)) {
     throw new Error(`${tool} is not in the CLI tool catalog.`);
@@ -231,6 +319,38 @@ export async function runLiveScenario(
     );
   }
   assertModelUnderCostCeiling(tool, model);
+  return runLiveToolRow({
+    tool,
+    timeoutMs: scenario.timeoutMs,
+    run: (signal) => executeLiveScenario({ ...scenario, tool, model }, assertions, signal),
+  });
+}
+
+export async function runLiveToolRow(opts: {
+  tool: string;
+  timeoutMs: number;
+  run: (signal: AbortSignal) => Promise<void>;
+}): Promise<LiveRowGate> {
+  if (process.env.SPLITBRIEF_REAL_CLI_E2E !== '1') {
+    throw new Error('Live scenario invoked without SPLITBRIEF_REAL_CLI_E2E=1.');
+  }
+  return runLiveRowWithDeadline({
+    timeoutMs: opts.timeoutMs,
+    run: async (signal) => {
+      const blocker = await liveToolBlocker(opts.tool, signal);
+      signal.throwIfAborted();
+      if (blocker !== null) return { kind: 'skip', reason: blocker };
+      await opts.run(signal);
+      return { kind: 'run' };
+    },
+  });
+}
+
+async function executeLiveScenario(
+  scenario: LiveScenario & { tool: CliToolId; model: string },
+  assertions: (result: LiveRunResult) => void,
+  signal: AbortSignal,
+): Promise<void> {
   resetAllStores();
   const projectDir = createTempDir(scenario.tempPrefix);
   try {
@@ -238,11 +358,11 @@ export async function runLiveScenario(
     writeFileSync(join(projectDir, 'validate.mjs'), scenario.validateScript, 'utf-8');
 
     const config = makeConfig({
-      planner: { kind: 'cli', tool, model },
+      planner: { kind: 'cli', tool: scenario.tool, model: scenario.model },
       implementer: {
         kind: 'cli',
-        tool,
-        model,
+        tool: scenario.tool,
+        model: scenario.model,
         contextLength: scenario.implementerContextLength,
       },
       validation: {
@@ -265,6 +385,7 @@ export async function runLiveScenario(
       projectDir,
       feature: scenario.feature,
       effectiveConfig: config,
+      signal,
     });
 
     assertions({ summary, projectDir });
@@ -274,6 +395,7 @@ export async function runLiveScenario(
 }
 
 export const EASY_TIER: LiveTier = {
+  timeoutMs: 300_000,
   feature:
     'Create src/live-easy.ts exporting a string constant named liveEasy with value "live-easy".',
   validateScript:
@@ -295,6 +417,7 @@ export function easyAssertions({ summary, projectDir }: LiveRunResult): void {
 }
 
 export const HEAVY_TIER: LiveTier = {
+  timeoutMs: 900_000,
   feature:
     'Add src/live-heavy/value.ts exporting a number constant liveHeavyValue with value 42, and src/live-heavy/double.ts exporting a function doubleLiveHeavy that returns its numeric argument times two.',
   validateScript:
@@ -517,7 +640,74 @@ export function releaseMatrixAssertions(
 
 export type ReleaseMatrixRowResult = Readonly<{ outcome: 'pass' | 'skip'; reason?: string }>;
 
-export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<ReleaseMatrixRowResult> {
+export async function recordLiveMatrixRun(opts: {
+  projectDir: string;
+  row: Pick<LiveManifestRow, 'id' | 'tier' | 'plan' | 'build' | 'review'>;
+  startedAt: number;
+  root?: string;
+  run: (onSession: (sessionId: string) => void) => Promise<Summary>;
+}): Promise<void> {
+  let sessionId: string | undefined;
+  let summary: Summary | undefined;
+  let outcome: 'pass' | 'fail' = 'fail';
+  let reason: string | undefined;
+  try {
+    summary = await opts.run((id) => {
+      sessionId = id;
+    });
+    outcome = 'pass';
+  } catch (cause) {
+    const diagnostic =
+      sessionId === undefined
+        ? null
+        : await liveSessionFailureReason({
+            projectDir: opts.projectDir,
+            sessionId,
+          });
+    reason = toErrorMessage(cause);
+    if (diagnostic !== null && diagnostic !== reason) reason += `\n${diagnostic}`;
+    throw new Error(reason, { cause });
+  } finally {
+    const artifacts =
+      sessionId === undefined
+        ? undefined
+        : copyLiveArtifacts({
+            projectDir: opts.projectDir,
+            sessionId,
+            rowId: opts.row.id,
+            ...(opts.root !== undefined && { root: opts.root }),
+          });
+    appendLiveManifestRow(
+      {
+        ...opts.row,
+        outcome,
+        reason,
+        durationMs: Date.now() - opts.startedAt,
+        totalTasks: summary?.totalTasks,
+        failedTasks: summary?.failed,
+        plannerInputTokens: summary?.tokenUsage.plannerInput,
+        implementerInputTokens: summary?.tokenUsage.implementerInput,
+        artifacts,
+      },
+      opts.root,
+    );
+  }
+}
+
+export async function runReleaseMatrixRow(
+  run: ReleaseMatrixRun,
+  timeoutMs: number,
+): Promise<ReleaseMatrixRowResult> {
+  return runLiveRowWithDeadline({
+    timeoutMs,
+    run: (signal) => executeReleaseMatrixRow(run, signal),
+  });
+}
+
+async function executeReleaseMatrixRow(
+  run: ReleaseMatrixRun,
+  signal: AbortSignal,
+): Promise<ReleaseMatrixRowResult> {
   if (process.env.SPLITBRIEF_REAL_CLI_E2E !== '1') {
     throw new Error('Live scenario invoked without SPLITBRIEF_REAL_CLI_E2E=1.');
   }
@@ -534,11 +724,10 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
   };
   let gate: LiveRowGate;
   try {
-    gate = await gateLiveMatrixRow([
-      run.plan.tool,
-      run.build.tool,
-      ...(run.review === undefined ? [] : [run.review.tool]),
-    ]);
+    gate = await gateLiveMatrixRow(
+      [run.plan.tool, run.build.tool, ...(run.review === undefined ? [] : [run.review.tool])],
+      signal,
+    );
   } catch (error) {
     appendLiveManifestRow({
       ...baseRowFields,
@@ -572,46 +761,36 @@ export async function runReleaseMatrixRow(run: ReleaseMatrixRun): Promise<Releas
   resetAllStores();
   const projectDir = createTempDir(`live-release-${run.id}`);
   try {
-    createTestGitRepo(projectDir);
-    writeFileSync(join(projectDir, 'validate.mjs'), tier.validateScript, 'utf-8');
-    const config = releaseMatrixConfig(run, tier);
-    mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
-    writeFileSync(join(projectDir, '.splitbrief/config.yaml'), YAML.stringify(config), 'utf-8');
-
-    if (!bannerPrinted) {
-      bannerPrinted = true;
-      console.log('LIVE run: real CLI calls — real tokens will be billed.');
-    }
-
-    const { summary, sessionId } = await executeLiveWorkflow({
+    await recordLiveMatrixRun({
       projectDir,
-      feature: run.task,
-      effectiveConfig: config,
-      ...(plannerAnswer !== undefined && {
-        onPlannerReply: async () => plainUserMessage(plannerAnswer),
-      }),
-    });
-    releaseMatrixAssertions(run.tier, { summary, projectDir });
-    const artifacts = copyLiveArtifacts({ projectDir, sessionId, rowId: run.id });
-    appendLiveManifestRow({
-      ...baseRowFields,
-      durationMs: Date.now() - startedAt,
-      outcome: 'pass',
-      totalTasks: summary.totalTasks,
-      failedTasks: summary.failed,
-      plannerInputTokens: summary.tokenUsage.plannerInput,
-      implementerInputTokens: summary.tokenUsage.implementerInput,
-      artifacts,
+      row: baseRowFields,
+      startedAt,
+      run: async (onSession) => {
+        createTestGitRepo(projectDir);
+        writeFileSync(join(projectDir, 'validate.mjs'), tier.validateScript, 'utf-8');
+        const config = releaseMatrixConfig(run, tier);
+        mkdirSync(join(projectDir, '.splitbrief'), { recursive: true });
+        writeFileSync(join(projectDir, '.splitbrief/config.yaml'), YAML.stringify(config), 'utf-8');
+        if (!bannerPrinted) {
+          bannerPrinted = true;
+          console.log('LIVE run: real CLI calls — real tokens will be billed.');
+        }
+        const { summary } = await executeLiveWorkflow({
+          projectDir,
+          feature: run.task,
+          effectiveConfig: config,
+          signal,
+          onSession,
+          ...(plannerAnswer !== undefined && {
+            onPlannerReply: async () => plainUserMessage(plannerAnswer),
+          }),
+        });
+        signal.throwIfAborted();
+        releaseMatrixAssertions(run.tier, { summary, projectDir });
+        return summary;
+      },
     });
     return { outcome: 'pass' };
-  } catch (error) {
-    appendLiveManifestRow({
-      ...baseRowFields,
-      durationMs: Date.now() - startedAt,
-      outcome: 'fail',
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
   } finally {
     cleanupTempDir(projectDir);
   }

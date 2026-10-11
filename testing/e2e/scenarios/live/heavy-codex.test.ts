@@ -4,7 +4,6 @@ import {
   heavyAssertions,
   liveModelPin,
   liveTierEnabled,
-  liveToolBlocker,
   runLiveScenario,
 } from '../../helpers/live-harness.js';
 
@@ -14,13 +13,12 @@ describe('live heavy: codex plans, implements and reviews', () => {
   itLive(
     'drives a standard-mode run with a compiled brief and a final review',
     async (ctx) => {
-      const blocker = await liveToolBlocker('codex');
-      if (blocker !== null) return ctx.skip(blocker);
       const model = liveModelPin({ tool: 'codex', fallback: 'gpt-5.6-luna' });
-      await runLiveScenario(
+      const result = await runLiveScenario(
         { ...HEAVY_TIER, tool: 'codex', model, tempPrefix: 'live-heavy-codex' },
         heavyAssertions,
       );
+      if (result.kind === 'skip') ctx.skip(result.reason);
     },
     900_000,
   );

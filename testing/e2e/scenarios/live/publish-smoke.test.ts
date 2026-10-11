@@ -26,6 +26,7 @@ const PUBLISH_SMOKE: ReleaseMatrixRun = {
 };
 
 const ARTIFACT_DIR = join('.test-artifacts', 'live', PUBLISH_SMOKE.id);
+const timeoutMs = 300_000;
 
 describe('publish smoke: opus plans and reviews, sonnet builds', () => {
   if (publishLiveOn) {
@@ -37,7 +38,7 @@ describe('publish smoke: opus plans and reviews, sonnet builds', () => {
   itPublish(
     'writes the artifact, passes validation and closes on a passing review',
     async (ctx) => {
-      const result = await runReleaseMatrixRow(PUBLISH_SMOKE);
+      const result = await runReleaseMatrixRow(PUBLISH_SMOKE, timeoutMs);
       if (result.outcome === 'skip') return ctx.skip(result.reason ?? 'row skipped');
       const session = SessionSchema.parse(
         JSON.parse(readFileSync(join(ARTIFACT_DIR, SUMMARY_FILE), 'utf-8')),
@@ -45,6 +46,6 @@ describe('publish smoke: opus plans and reviews, sonnet builds', () => {
       if (session.status !== 'complete') throw new Error(`session is ${session.status}`);
       expect(['pass', 'pass_with_notes']).toContain(session.summary.review?.verdict);
     },
-    300_000,
+    timeoutMs,
   );
 });

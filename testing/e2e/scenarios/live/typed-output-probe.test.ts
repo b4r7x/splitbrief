@@ -18,7 +18,7 @@ import { prependPath, trustedShimGate } from '#testing/helpers/command-shim.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { liveToolBlocker } from '../../helpers/live-harness.js';
+import { runLiveToolRow } from '../../helpers/live-harness.js';
 
 const itLive = process.env.SPLITBRIEF_REAL_CLI_E2E === '1' ? it : it.skip;
 
@@ -116,102 +116,108 @@ describe('live typed-output probe', () => {
     itLive(
       `records one ${label} call that answers a schema through requestTyped`,
       async (ctx) => {
-        const blocker = await liveToolBlocker(tool);
-        if (blocker !== null) return ctx.skip(blocker);
+        const row = await runLiveToolRow({
+          tool,
+          timeoutMs: 300_000,
+          run: async (signal) => {
+            const version = firstSemver(
+              execFileSync(command, ['--version'], { encoding: 'utf-8' }),
+            );
 
-        const version = firstSemver(execFileSync(command, ['--version'], { encoding: 'utf-8' }));
+            const tmpDir = createTempDir(`live-typed-output-${label}`);
+            const projectDir = join(tmpDir, 'project');
+            const binDir = join(tmpDir, 'bin');
+            const recordingFile = join(tmpDir, `${label}-${version}.jsonl`);
+            mkdirSync(projectDir, { recursive: true });
+            mkdirSync(binDir, { recursive: true });
+            createTestGitRepo(projectDir);
 
-        const tmpDir = createTempDir(`live-typed-output-${label}`);
-        const projectDir = join(tmpDir, 'project');
-        const binDir = join(tmpDir, 'bin');
-        const recordingFile = join(tmpDir, `${label}-${version}.jsonl`);
-        mkdirSync(projectDir, { recursive: true });
-        mkdirSync(binDir, { recursive: true });
-        createTestGitRepo(projectDir);
-
-        const resolved = await resolveCliExecutable({ command, projectDir });
-        const realBinary = realpathSync(resolved.path);
-        const wrapperPath = join(binDir, command);
-        writeFileSync(
-          wrapperPath,
-          [
-            '#!/bin/bash',
-            `${shellQuoteArg(realBinary)} "$@" | tee -a ${shellQuoteArg(recordingFile)}`,
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: the wrapper must carry a literal shell ${PIPESTATUS[0]}
-            'exit ${PIPESTATUS[0]}',
-            '',
-          ].join('\n'),
-          'utf8',
-        );
-        chmodSync(wrapperPath, 0o755);
-
-        const restorePath = prependPath(binDir);
-        try {
-          const gate = { ...trustedShimGate({ dir: binDir, tool }), installedVersion: version };
-          const planner =
-            tool === 'claude-code'
-              ? createClaudeCodePlanner({ authChannel: undefined, trustedCli: gate })
-              : createCliPlanner({
-                  config: makeConfig({
-                    planner: { kind: 'cli', tool, model },
-                    implementer: { service: 'ollama', offering: 'local' },
-                  }),
-                  trustedCli: gate,
-                });
-
-          const call = planner.typedCall({
-            projectDir,
-            callbacks: { onOutput: () => {} },
-            seat: 'reviewer',
-          });
-          const sentSchema: boolean[] = [];
-          const result = await requestTyped({
-            prompt: probe.prompt,
-            schema: probe.schema,
-            jsonSchema: probe.jsonSchema,
-            schemaName: probe.schemaName,
-            call: {
-              ...call,
-              invoke: (input) => {
-                sentSchema.push(input.schema !== undefined);
-                return call.invoke(input);
-              },
-            },
-          });
-          expect(sentSchema[0]).toBe(transport === 'native');
-          if (!('value' in result)) throw new Error(JSON.stringify(result.error));
-          expect(result.value).toEqual(probe.expected);
-
-          const recorded = readFileSync(recordingFile, 'utf8');
-          expect(recorded.trim().length).toBeGreaterThan(0);
-
-          // A `system` record (Claude's hooks, init and status) carries the recording machine's
-          // hooks, plugins, MCP servers and home paths, and no replay reads it, so a fixture keeps
-          // every other record with the temporary project path normalized.
-          if (process.env.SPLITBRIEF_E2E_RECORD === '1') {
-            const realProjectDir = realpathSync(projectDir);
-            const lines = recorded
-              .split('\n')
-              .filter((line) => line.trim().length > 0)
-              .map((line): unknown => JSON.parse(line))
-              .filter((record) => !isRecord(record) || record.type !== 'system')
-              .map((record) =>
-                JSON.stringify(redactPublicPayload({ payload: record }).payload).replaceAll(
-                  realProjectDir,
-                  '<project>',
-                ),
-              );
-            mkdirSync(FIXTURE_DIR, { recursive: true });
+            const resolved = await resolveCliExecutable({ command, projectDir });
+            const realBinary = realpathSync(resolved.path);
+            const wrapperPath = join(binDir, command);
             writeFileSync(
-              join(FIXTURE_DIR, `${label}-${version}.jsonl`),
-              `${lines.join('\n')}\n`,
+              wrapperPath,
+              [
+                '#!/bin/bash',
+                `${shellQuoteArg(realBinary)} "$@" | tee -a ${shellQuoteArg(recordingFile)}`,
+                // biome-ignore lint/suspicious/noTemplateCurlyInString: the wrapper must carry a literal shell ${PIPESTATUS[0]}
+                'exit ${PIPESTATUS[0]}',
+                '',
+              ].join('\n'),
               'utf8',
             );
-          }
-        } finally {
-          restorePath();
-          cleanupTempDir(tmpDir);
-        }
+            chmodSync(wrapperPath, 0o755);
+
+            const restorePath = prependPath(binDir);
+            try {
+              const gate = { ...trustedShimGate({ dir: binDir, tool }), installedVersion: version };
+              const planner =
+                tool === 'claude-code'
+                  ? createClaudeCodePlanner({ authChannel: undefined, trustedCli: gate })
+                  : createCliPlanner({
+                      config: makeConfig({
+                        planner: { kind: 'cli', tool, model },
+                        implementer: { service: 'ollama', offering: 'local' },
+                      }),
+                      trustedCli: gate,
+                    });
+
+              const call = planner.typedCall({
+                projectDir,
+                callbacks: { onOutput: () => {}, signal },
+                seat: 'reviewer',
+              });
+              const sentSchema: boolean[] = [];
+              const result = await requestTyped({
+                prompt: probe.prompt,
+                schema: probe.schema,
+                jsonSchema: probe.jsonSchema,
+                schemaName: probe.schemaName,
+                call: {
+                  ...call,
+                  invoke: (input) => {
+                    sentSchema.push(input.schema !== undefined);
+                    return call.invoke(input);
+                  },
+                },
+              });
+              expect(sentSchema[0]).toBe(transport === 'native');
+              if (!('value' in result)) throw new Error(JSON.stringify(result.error));
+              expect(result.value).toEqual(probe.expected);
+
+              const recorded = readFileSync(recordingFile, 'utf8');
+              expect(recorded.trim().length).toBeGreaterThan(0);
+
+              // A `system` record (Claude's hooks, init and status) carries the recording machine's
+              // hooks, plugins, MCP servers and home paths, and no replay reads it, so a fixture keeps
+              // every other record with the temporary project path normalized.
+              if (process.env.SPLITBRIEF_E2E_RECORD === '1') {
+                const realProjectDir = realpathSync(projectDir);
+                const lines = recorded
+                  .split('\n')
+                  .filter((line) => line.trim().length > 0)
+                  .map((line): unknown => JSON.parse(line))
+                  .filter((record) => !isRecord(record) || record.type !== 'system')
+                  .map((record) =>
+                    JSON.stringify(redactPublicPayload({ payload: record }).payload).replaceAll(
+                      realProjectDir,
+                      '<project>',
+                    ),
+                  );
+                mkdirSync(FIXTURE_DIR, { recursive: true });
+                writeFileSync(
+                  join(FIXTURE_DIR, `${label}-${version}.jsonl`),
+                  `${lines.join('\n')}\n`,
+                  'utf8',
+                );
+              }
+            } finally {
+              restorePath();
+              cleanupTempDir(tmpDir);
+            }
+          },
+        });
+        if (row.kind === 'skip') ctx.skip(row.reason);
       },
       300_000,
     );
