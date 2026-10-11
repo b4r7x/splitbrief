@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CREW_SEAT_LABELS } from '../../../core/crew/identity.js';
+import { projectRunnerCallActivity } from '../../../engine/calls/activity.js';
 import type { ModelCacheAccessor } from '../../../engine/providers/model/resolution.js';
+import { parseOpencodeLine } from '../../../engine/streaming/parse-opencode.js';
 import {
   cleanRunnerActivityText,
   resolveRunnerActivityModelNames,
@@ -86,6 +88,134 @@ describe('runnerActivityLedgerItem', () => {
         target: 'wc -l CLAUDE.md',
       }),
     ).toMatchObject({ label: 'RUN', value: 'wc -l CLAUDE.md' });
+  });
+
+  it('keeps every glob in a codex command with adjacent quoted segments', () => {
+    const target = `/bin/zsh -lc "rg --files --hidden -g '"'!node_modules'"' -g '"'!.git'"' -g '"'!package-lock.json'"' -g '"'!yarn.lock'"' -g '"'!pnpm-lock.yaml'"'"`;
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'command',
+        label: `running ${target}`,
+        target,
+      }),
+    ).toMatchObject({
+      label: 'RUN',
+      value:
+        "rg --files --hidden -g '!node_modules' -g '!.git' -g '!package-lock.json' -g '!yarn.lock' -g '!pnpm-lock.yaml'",
+      fitMode: 'middle',
+    });
+
+    const quotedPath = String.raw`/bin/zsh -lc 'cat "src/loan'\''s"/renewals.ts'`;
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'command',
+        label: `running ${quotedPath}`,
+        target: quotedPath,
+      }),
+    ).toMatchObject({ label: 'READ', value: "src/loan's/renewals.ts" });
+  });
+
+  it('keeps the full unparseable wrapper as raw RUN', () => {
+    const target = `/bin/zsh -lc "rg --files -g '"'!x`;
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'command',
+        label: `running ${target}`,
+        target,
+      }),
+    ).toMatchObject({ label: 'RUN', value: target, fitMode: 'middle' });
+  });
+
+  it.each([String.raw`bash -lc $'echo hi\nls'`, 'bash -lc $"echo hi"'])(
+    'keeps unsupported wrapper quoting as raw RUN: %s',
+    (target) => {
+      expect(
+        runnerActivityLedgerItem({ stage: 'completed', kind: 'tool', label: 'bash', target }),
+      ).toMatchObject({ label: 'RUN', value: target, fitMode: 'middle' });
+    },
+  );
+
+  it('displays an OpenCode bash tool command with nested quotes from its stream activity', () => {
+    const target = `cat "src/loan's"/renewals.ts`;
+    const parsed = parseOpencodeLine(
+      JSON.stringify({
+        type: 'tool_use',
+        sessionID: 'ses-open',
+        part: {
+          type: 'tool',
+          callID: 'bash_0',
+          tool: 'bash',
+          state: { status: 'completed', input: { command: target }, output: '' },
+        },
+      }),
+    );
+    const toolUse = parsed.toolUseDone?.[0];
+    expect(toolUse).toEqual({ id: 'bash_0', name: 'bash', input: { command: target }, output: '' });
+    if (toolUse === undefined) return;
+
+    const activity = projectRunnerCallActivity(
+      {
+        type: 'call_tool_use_done',
+        channel: 'tool',
+        ts: 1_200,
+        callId: 'call-open',
+        role: 'implementer',
+        backendKind: 'cli',
+        runnerName: 'opencode',
+        model: 'test-model',
+        attempt: 0,
+        toolUse: { ...toolUse, id: toolUse.id ?? null },
+      },
+      1,
+      '/project',
+    );
+    expect(activity).toMatchObject({
+      stage: 'completed',
+      kind: 'command',
+      label: `running ${target}`,
+      target,
+    });
+    if (activity === null) return;
+
+    expect(runnerActivityLedgerItem(activity)).toMatchObject({
+      label: 'READ',
+      value: "src/loan's/renewals.ts",
+      fitMode: 'start',
+    });
+  });
+
+  it('keeps a raw claude-code Bash target intact', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'tool',
+        label: 'bash',
+        target: 'rg -n "foo" src',
+      }),
+    ).toMatchObject({ label: 'CALL', value: 'rg -n "foo" src' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'command',
+        label: 'bash',
+        target: 'rg -n "foo" src',
+      }),
+    ).toMatchObject({ label: 'FIND', value: '"foo"  src' });
+
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'completed',
+        kind: 'command',
+        label: 'bash',
+        target: `cat "src/loan's"/renewals.ts`,
+      }),
+    ).toMatchObject({ label: 'READ', value: "src/loan's/renewals.ts" });
   });
 
   it('keeps real terminal failures distinct from interruption', () => {

@@ -12,6 +12,7 @@ import {
   stripTerminalControls,
   truncateTerminalDisplayText,
   truncateTerminalDisplayTextMiddle,
+  truncateTerminalDisplayTextMiddleAtWords,
   truncateTerminalDisplayTextStart,
   wrapTerminalGraphemes,
 } from './display-text.js';
@@ -291,6 +292,91 @@ describe('truncateTerminalDisplayTextMiddle', () => {
     expect(result.endsWith('mega.ts')).toBe(true);
     expect(result).toContain('…');
     expect(getTerminalCellWidth(result)).toBeLessThanOrEqual(15);
+  });
+});
+
+describe('truncateTerminalDisplayTextMiddleAtWords', () => {
+  it('strips controls and leaves fitting text unchanged', () => {
+    const text = 'rg  --files 界👩‍💻';
+    const width = getTerminalCellWidth(text);
+
+    expect(truncateTerminalDisplayTextMiddleAtWords(text, width)).toBe(text);
+    expect(truncateTerminalDisplayTextMiddleAtWords(`\u001b[31m${text}\u001b[0m`, width)).toBe(
+      text,
+    );
+    expect(truncateTerminalDisplayTextMiddleAtWords(text, width + 1)).toBe(text);
+  });
+
+  it.each([
+    ['abc def ghi jkl', 9, 'abc … jkl'],
+    ['abc def ghi jkl', 10, 'abc … jkl'],
+    ['abc  def ghi  jkl', 12, 'abc … jkl'],
+    ['abc\u00a0def ghi\u2003jkl', 11, 'abc … jkl'],
+  ])(
+    'keeps complete tokens and budgets both ellipsis spaces: %s at %i',
+    (text, budget, expected) => {
+      expect(truncateTerminalDisplayTextMiddleAtWords(text, budget)).toBe(expected);
+    },
+  );
+
+  it.each(['abcdefghijklmnop', 'abcdefghijklmnop end', 'run abcdefghijklmnop'])(
+    'falls back to the plain middle cut when either side has no whole token: %s',
+    (text) => {
+      expect(truncateTerminalDisplayTextMiddleAtWords(text, 11)).toBe(
+        truncateTerminalDisplayTextMiddle(text, 11),
+      );
+    },
+  );
+
+  it.each([
+    [99, 'npm exec vitest run src/engine/calls/activity.test.ts … --reporter=verbose'],
+    [
+      100,
+      'npm exec vitest run … src/features/workflow/display/activity-display-text.test.ts --reporter=verbose',
+    ],
+  ])('reuses the budget around long test paths at %i cells', (budget, expected) => {
+    const text =
+      'npm exec vitest run src/engine/calls/activity.test.ts src/features/workflow/display/activity-display-text.test.ts --reporter=verbose';
+    const result = truncateTerminalDisplayTextMiddleAtWords(text, budget);
+
+    expect(result).toBe(expected);
+    expect(getTerminalCellWidth(result)).toBeLessThanOrEqual(budget);
+  });
+
+  it.each([
+    ['aa bbbbbbb cc dddd ee', 16, 'aa bbbbbbb … ee'],
+    ['aa bbbb cc ddddddd ee', 16, 'aa bbbb cc … ee'],
+    ['  abc  def  ghi  jkl  ', 14, '  abc … jkl  '],
+    [' aa  bb enormous cc\u00a0dd ', 16, ' aa  bb … cc\u00a0dd '],
+  ])('packs whole tokens and preserves their original spacing: %s', (text, budget, expected) => {
+    expect(truncateTerminalDisplayTextMiddleAtWords(text, budget)).toBe(expected);
+  });
+
+  it.each([
+    "rg --files --hidden -g '!node_modules' -g '!.git' -g '!package-lock.json' -g '!yarn.lock' -g '!pnpm-lock.yaml'",
+    'run 界語 👩‍💻 e\u0301cole ❤️ fin',
+    '界語👩‍💻e\u0301❤️終',
+  ])('fits every budget without splitting graphemes: %s', (text) => {
+    const sourceGraphemes = splitTerminalGraphemes(text);
+    for (let budget = 1; budget <= getTerminalCellWidth(text); budget += 1) {
+      const result = truncateTerminalDisplayTextMiddleAtWords(text, budget);
+
+      expect(getTerminalCellWidth(result), `budget ${budget}`).toBeLessThanOrEqual(budget);
+      for (const grapheme of splitTerminalGraphemes(result)) {
+        expect([...sourceGraphemes, '…'], `budget ${budget}`).toContain(grapheme);
+      }
+    }
+    expect(truncateTerminalDisplayTextMiddleAtWords(text, 0)).toBe('');
+    expect(truncateTerminalDisplayTextMiddleAtWords(text, -1)).toBe('');
+  });
+
+  it.each([
+    [17, '界語 … e\u0301cole ❤️'],
+    [18, '界語 👩‍💻 … e\u0301cole ❤️'],
+  ])('keeps whole CJK and emoji tokens at the cut at %i cells', (budget, expected) => {
+    expect(truncateTerminalDisplayTextMiddleAtWords('界語 👩‍💻 middle e\u0301cole ❤️', budget)).toBe(
+      expected,
+    );
   });
 });
 

@@ -2331,6 +2331,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-implementation-shell-wrapper',
+      title: 'Workflow · codex shell commands in the activity rows',
+      surface: screenSurface('workflow'),
+      viewports: REQUIRED_VIEWPORTS,
+      checkpoint: {
+        id: 'implementation-shell-wrapper',
+        title: 'Shell commands in the transcript and build progress',
+        kind: 'implementation',
+        marker: 'pnpm-lock.yaml',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header and build progress' },
+        { id: 'transcript', title: 'Shell command transcript' },
+        { id: 'activity', title: 'Shell command activity block' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-silent-bare',
       title: 'Workflow · a silent seat with no open tool and no stream hint',
       surface: screenSurface('workflow'),
