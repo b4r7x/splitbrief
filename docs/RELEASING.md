@@ -37,7 +37,9 @@ The live fixture row (`npm run test:e2e:live:fixture`, [TESTING.md](./TESTING.md
 
 ## npm release
 
-The owner publishes the npm package with `.github/workflows/release.yml`. The workflow runs only on a manual dispatch from `main`; a dispatch from another ref skips the job. It installs the npm version that `packageManager` in `package.json` names, because trusted publishing needs npm 11.5.1 or later. Then it builds `dist/`, packs one tarball, runs the packed-install gate on that tarball and publishes the same tarball with `npm publish --provenance --access public`.
+The owner publishes the npm package with `.github/workflows/release.yml`. The workflow runs only on a manual dispatch from `main`. A dispatch from another ref skips the job. It installs the npm version that `packageManager` in `package.json` names. Trusted publishing needs npm 11.5.1 or later. Then it installs dependencies, builds `dist/`, packs one tarball, and runs the packed-install gate on that tarball.
+
+The first dispatch of every release is a dry run. The `dry_run` input defaults to `true`. Every step runs, and the publish step runs `npm publish <tarball> --provenance --access public --dry-run`. With `dry_run=false`, it publishes the same tested tarball without `--dry-run`.
 
 `publishConfig` in `package.json` sets `access: public` and `provenance: true`. npm generates provenance only on a CI provider with an OIDC token, so a `npm publish` from a local machine fails. Publish through the workflow only. Trusted publishing on npmjs.com names the workflow file, so a rename of `release.yml` breaks the publish until the setting changes too.
 
@@ -45,7 +47,9 @@ The owner publishes the npm package with `.github/workflows/release.yml`. The wo
 
 `npm run release:smoke` (`scripts/pack-install-smoke.mjs`) runs `npm pack`, installs the tarball into an empty temporary project, and runs the installed `splitbrief --version` and `splitbrief --help`. The gate fails when the install fails or a command exits non-zero. It also fails when `--version` does not print the package version, or when `--help` prints no `Usage: splitbrief` line. With a tarball path as its argument, the script tests that tarball and does not pack; `release.yml` uses this form.
 
-The `files` allowlist in `package.json` decides the package contents: `dist/`, `docs/` without `docs/design/`, `README.md`, `CHANGELOG.md` and `LICENSE`. npm adds `package.json`. Run `npm pack --dry-run` to see the list.
+The `files` allowlist in `package.json` includes `dist/`, 19 explicitly named user docs, `README.md`, `CHANGELOG.md`, and `LICENSE`. It excludes developer docs and `docs/design/`. `docs/CONFIGURATION.md` stays because CLI errors name it.
+
+The README entry uses `./README.md` to avoid packing the developer index at `docs/README.md`. npm adds `package.json`. Run `npm pack --dry-run` to see the list.
 
 ### Procedure
 
@@ -59,23 +63,34 @@ Do these steps on an up-to-date `main` with a clean working tree. `<x>` is the n
 6. Attach the matrix manifest to the `[<x>]` entry, and record each allow-listed row with its reason.
 7. Run `npm run release:smoke`.
 8. Commit the version and changelog change, then push `main`.
-9. Run `gh workflow run release.yml --ref main`, then `gh run watch` until the run ends.
-10. Run `npm view splitbrief@<x> version` to confirm the publish. The npmjs.com page shows the provenance.
-11. Tag the published commit: `git tag splitbrief@<x>` and `git push origin splitbrief@<x>`.
-12. Write the release notes from the changelog: `awk '/^## \[<x>\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md > /tmp/splitbrief-<x>-notes.md`.
-13. Run `gh release create splitbrief@<x> --title "splitbrief <x>" --notes-file /tmp/splitbrief-<x>-notes.md .test-artifacts/live/manifest.json`.
+9. Run `gh workflow run release.yml --ref main`. The default is a dry run. Run `gh run watch` until it passes.
+10. Run `gh workflow run release.yml --ref main -f dry_run=false`. Run `gh run watch` until the publish passes.
+11. Run `npm view splitbrief@<x> version` to confirm the publish. The npmjs.com page shows the provenance.
+12. Tag the published commit: `git tag splitbrief@<x>` and `git push origin splitbrief@<x>`.
+13. Write the release notes from the changelog: `awk '/^## \[<x>\]/{f=1;next} /^## \[/{f=0} f' CHANGELOG.md > /tmp/splitbrief-<x>-notes.md`.
+14. Run `gh release create splitbrief@<x> --title "splitbrief <x>" --notes-file /tmp/splitbrief-<x>-notes.md .test-artifacts/live/manifest.json`.
 
 A failed workflow run publishes nothing when it fails before the publish step. Fix the cause on `main` and dispatch again. npm refuses a second publish of the same version, so a fix after a successful publish needs a new version.
 
 ### First publish (bootstrap)
 
+The first published version is `0.2.0`. The `[0.1.0] - 2026-08-07` changelog entry records work that was never published. `package.json` already has version `0.1.0`, so `npm version 0.1.0` fails with "Version not changed". Keep that historical entry. Bump the version only at procedure step 3.
+
 The name `splitbrief` has no package on the npm registry yet (`npm view splitbrief` returned 404 on 2026-10-11). npm configures a trusted publisher in the settings of an existing package, so the first publish uses a token.
 
 1. On npmjs.com, create a granular access token with read and write permission for all packages and a short expiry. The package does not exist yet, so the token cannot select it. If the account requires two-factor authentication for writes, let the token bypass it, because CI cannot enter a one-time password.
 2. Store the token as the repository secret `NPM_TOKEN`: `gh secret set NPM_TOKEN`.
-3. Do the procedure above. The publish step reads the token from `NODE_AUTH_TOKEN`. The provenance still comes from the GitHub OIDC token (`id-token: write`).
+3. Do the procedure above with version `0.2.0`. The publish step reads `NPM_TOKEN` and exports `NODE_AUTH_TOKEN` only when the secret is non-empty. The provenance still comes from the GitHub OIDC token (`id-token: write`).
 4. On npmjs.com, open the `splitbrief` package settings and add a trusted publisher: GitHub Actions, owner `b4r7x`, repository `splitbrief`, workflow `release.yml`, no environment.
-5. Delete the secret (`gh secret delete NPM_TOKEN`) and revoke the token on npmjs.com.
+5. Delete the secret with `gh secret delete NPM_TOKEN`. Revoke the token on npmjs.com. No workflow edit is needed.
 6. Optional: in the package settings, require two-factor authentication and disallow tokens for publishing.
 
-From then on, npm authenticates each workflow publish through OIDC, and no long-lived token exists.
+After bootstrap, npm authenticates each workflow publish through OIDC. With an empty `NPM_TOKEN`, the publish step leaves `NODE_AUTH_TOKEN` as `actions/setup-node` sets it.
+
+The first dispatch shows:
+
+- The packed-install gate proves the `better-sqlite3` native install on Node 24, including during a dry run.
+- The workflow selects a tarball publish with provenance. Confirm that npm accepts provenance during the real publish. If npm refuses, publish from the checkout in CI. This fallback gives up publishing the exact tested tarball.
+- After you delete the secret, the publish step leaves `NODE_AUTH_TOKEN` unchanged. Confirm that npm chooses OIDC on the first real publish after deletion.
+
+A dry run does not prove registry authentication or a provenance upload.

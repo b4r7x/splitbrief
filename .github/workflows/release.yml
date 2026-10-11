@@ -4,6 +4,11 @@ name: Release
 # docs/RELEASING.md § "npm release".
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run all release steps without publishing'
+        type: boolean
+        default: true
 
 concurrency:
   group: release
@@ -38,6 +43,17 @@ jobs:
       - run: node scripts/pack-install-smoke.mjs "${{ steps.pack.outputs.tarball }}"
       # Publishes the tarball the smoke installed. NPM_TOKEN is only the bootstrap for the
       # first publish; with trusted publishing configured, npm authenticates through OIDC.
-      - run: npm publish "${{ steps.pack.outputs.tarball }}" --provenance --access public
+      - name: Publish
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            export NODE_AUTH_TOKEN="$NPM_TOKEN"
+          fi
+          set -- "$TARBALL" --provenance --access public
+          if [ "$DRY_RUN" = "true" ]; then
+            set -- "$@" --dry-run
+          fi
+          npm publish "$@"
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
