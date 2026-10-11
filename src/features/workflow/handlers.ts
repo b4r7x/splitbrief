@@ -1,9 +1,7 @@
 import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
-import { closeRunIfOpen } from '../../engine/orchestrator/run/close.js';
-import { finalizeRunAtRest } from '../../engine/orchestrator/session-lifecycle/finalize.js';
+import { endRunAtRest } from '../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
-import { WORKFLOW_CANCEL_REASON_USER } from '../../engine/events/workflow-cancel.js';
 import { addTuiEvent } from './tui-sink.js';
 import { hydrateResume } from './resume-hydration.js';
 import { configStore } from '../../stores/project/config.js';
@@ -241,16 +239,7 @@ export function requestEndRun(): boolean {
       stopStore.request('end-run');
       const finish = async (): Promise<void> => {
         const bus = createRecoveryBus({ ...record.ref, sink: addTuiEvent });
-        const closure = await closeRunIfOpen({ ...record.ref, bus }, hydrated.state);
-        if (closure.closedNow) {
-          bus.publish({
-            type: 'workflow_cancelled',
-            ts: Date.now(),
-            phase: closure.state.phase,
-            reason: WORKFLOW_CANCEL_REASON_USER,
-          });
-        }
-        finalizeRunAtRest({ ref: record.ref, config, state: closure.state });
+        await endRunAtRest({ ...record.ref, bus }, hydrated.state, config);
         routerStore.updateRun({ run: readRunRecord(record.ref), execution: { kind: 'at-rest' } });
         stopStore.end();
         sessionsStore.refresh();

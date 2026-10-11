@@ -40,7 +40,7 @@ import {
   publishTaskSkipped,
 } from '../events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
-import { closeRunIfOpen } from '../run/close.js';
+import { endRun } from '../run/close.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { restoreExhaustedTaskFiles } from '../task/rollback.js';
@@ -136,6 +136,11 @@ export async function applyRecoveryAction(
     };
   }
 
+  if (opts.action === 'end-run') {
+    const closure = await endRun(opts, opts.state);
+    return { ok: true, action: opts.action, issue, state: closure.state, status: 'closed' };
+  }
+
   if (!issue.availableActions.includes(opts.action)) {
     return blockRecoveryAction({
       ...opts,
@@ -159,8 +164,6 @@ export async function applyRecoveryAction(
   }
 
   switch (opts.action) {
-    case 'end-run':
-      return applyEndRunRecoveryAction(opts, issue);
     case 'revise':
       return applyReviseRecoveryAction(opts, issue);
     case 'accept-as-is':
@@ -367,29 +370,6 @@ function applyConsultGrantRecoveryAction(
   });
 
   return { ok: true, action: opts.action, issue, state, status: 'retry-current-task' };
-}
-
-/**
- * Recovery's End run uses the stop sheet's close path, which writes the run patch
- * and removes the workspace.
- */
-async function applyEndRunRecoveryAction(
-  opts: ApplyRecoveryActionOptions,
-  issue: RecoveryIssue,
-): Promise<ApplyRecoveryActionResult> {
-  const state = markRecoveryApplying(opts, issue);
-  const closure = await closeRunIfOpen(
-    { projectDir: opts.projectDir, sessionId: opts.sessionId, bus: opts.bus },
-    state,
-  );
-  publishRecoveryResolved({
-    bus: opts.bus,
-    phase: closure.state.phase,
-    issue,
-    action: opts.action,
-    outcome: 'aborted',
-  });
-  return { ok: true, action: opts.action, issue, state: closure.state, status: 'closed' };
 }
 
 /**
