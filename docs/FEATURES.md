@@ -53,6 +53,8 @@ Text must use UTF-8 and contain no control bytes except whitespace. SPLITBRIEF r
 
 Home sends attached text as planner context, like `start`. A mid-run message carries the file text to the seat that receives the message. Attached content is never parsed for more references. The transcript keeps the typed reference and shows `Attached files · n` under the message. Each file row reads `text · <path>` or `image · <path>`. Files inside the project use relative paths. Outside files show their full resolved paths. The transcript contains no file bodies.
 
+A BUILD seat that takes images gets them as images. A vision API model receives `image_url` parts. Codex uses `--image`. Opencode and kilo use `--file`. Copilot uses `--attachment`. Claude-code receives image content blocks through stream-json input. Any other seat gets `[image:<id>] = <path>` lines and an Images transcript row stating that the seat takes no images.
+
 A refused plain send keeps the whole draft, history, and pending images unchanged. Feedback names the reason and fix. `/steer` accepts the same `@` references. A refused `/steer` clears the draft and records the command in history; ↑ recalls it. The refusal sends no correction and leaves pending images unchanged.
 
 **How to use.**

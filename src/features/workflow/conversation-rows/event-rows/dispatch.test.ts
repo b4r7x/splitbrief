@@ -1994,6 +1994,27 @@ describe('event row dispatch', () => {
       .join('\n');
     expect(text).toContain('Delivered 2 messages to BUILD on T003');
   });
+
+  it.each([1, 2])('renders %i BUILD images delivered as paths in a dim card', (count) => {
+    const rows = eventRows({
+      event: {
+        type: 'build_images_as_paths',
+        ts: 0,
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        count,
+      },
+      globalIndex: 0,
+      expanded: false,
+      ctx: { width: 120, viewportRows: 20, streaming },
+    });
+    expect(rows.map(rowText).join('\n')).toContain(
+      `Images ${count} ${count === 1 ? 'image' : 'images'} went to BUILD on T001 as paths · this seat takes no images`,
+    );
+    expect(rows.flatMap((row) => row.segments).every((segment) => segment.tone === 'textDim')).toBe(
+      true,
+    );
+  });
 });
 
 describe('validate failure output', () => {

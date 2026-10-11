@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from '../../../core/runners/cli-version.js';
 import type { EffortLevel } from '../../../core/schemas/enums.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import { contractSha256 } from '../../providers/candidate-contract.js';
 import type {
   CliImplementerAdapter,
+  CliInvocation,
   CliPlannerAdapter,
   CliProtocolEvent,
   CliSchemaInput,
@@ -16,12 +18,14 @@ import { parseStreamLine, type StreamParseResult } from '../../streaming/parse-s
 import { error } from '../../../utils/error.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { createClaudeReplyParser } from './claude-reply-parser.js';
+import { readImagesAsBase64 } from '../../streaming/attachments.js';
 import { spawnPipeError, type SpawnStdinWriter } from '../../../lib/process/spawn/lifecycle.js';
 import type { SteerOutcome } from '../../calls/steering.js';
 
 const CLAUDE_COMMAND = 'claude' as const;
 const CLAUDE_ID = 'claude-code' as const;
 const CLAUDE_PROMPT_TRANSPORT = Object.freeze({ kind: 'stdin' } as const);
+const CLAUDE_STREAM_INPUT_ARGS = ['--input-format', 'stream-json'] as const;
 const CLAUDE_BASE_ARGS = Object.freeze([
   '-p',
   '--output-format',
@@ -54,8 +58,9 @@ const CLAUDE_PROTECTED_FLAGS = new Set([
 
 type ClaudeBuildCommon = Readonly<{
   model: string | undefined;
-  effort: EffortLevel | undefined;
+  effort?: EffortLevel | undefined;
   schema?: CliSchemaInput | undefined;
+  imagePaths?: readonly string[] | undefined;
 }>;
 
 type ClaudePlannerBuild = ClaudeBuildCommon &
@@ -77,6 +82,7 @@ type ClaudeImplementerBuild = Readonly<{
   installedVersion?: string | undefined;
   skillRoots?: readonly string[] | undefined;
   schema?: CliSchemaInput | undefined;
+  imagePaths?: readonly string[] | undefined;
 }>;
 
 function schemaArgs(schema: CliSchemaInput | undefined): string[] {
@@ -88,6 +94,8 @@ function buildBaseArgs(opts: ClaudeBuildCommon): string[] {
   if (opts.model !== undefined) args.push('--model', opts.model);
   if (opts.effort !== undefined) args.push('--effort', opts.effort);
   args.push(...schemaArgs(opts.schema));
+  if (opts.imagePaths !== undefined && opts.imagePaths.length > 0)
+    args.push(...CLAUDE_STREAM_INPUT_ARGS);
   return args;
 }
 
@@ -182,7 +190,7 @@ function linkedNodeModules(projectDir: string): string[] {
 
 function implementerBaseArgs(opts: ClaudeImplementerBuild): string[] {
   return [
-    ...buildBaseArgs({ model: opts.model, effort: opts.effort, schema: opts.schema }),
+    ...buildBaseArgs(opts),
     '--permission-mode',
     'acceptEdits',
     '--settings',
@@ -313,9 +321,13 @@ const CLAUDE_STEERING: CliSteeringTransport = {
     classifyCliAdmittedVersion({ installedVersion, minimumAdmittedVersion: '2.1.296' }) ===
       'compatible',
   open: async ({ invocation, prompt, onReady, onAdmissionClosed }) => {
-    const flags = ['--input-format', 'stream-json', '--replay-user-messages'];
     const baseArgs = invocation.baseArgs ?? invocation.args;
+    const flags = [
+      ...(baseArgs.includes('--input-format') ? [] : CLAUDE_STREAM_INPUT_ARGS),
+      '--replay-user-messages',
+    ];
     let writer: SpawnStdinWriter | undefined;
+    let writes = Promise.resolve();
     let admissionOpen = true;
     let promptEchoPending = true;
     const pending: { text: string; settle: (outcome: SteerOutcome) => void }[] = [];
@@ -334,8 +346,9 @@ const CLAUDE_STEERING: CliSteeringTransport = {
         baseArgs: [...baseArgs, ...flags],
         args: [...baseArgs, ...flags, ...invocation.args.slice(baseArgs.length)],
       },
-      prompt: inputLine(prompt),
+      prompt: await inputLine(prompt, invocation.images),
       parse: createClaudeParser(),
+      onAdmissionClosed: closeAdmission,
       onStdinReady: (value) => {
         writer = value;
         if (!admissionOpen) {
@@ -347,13 +360,16 @@ const CLAUDE_STEERING: CliSteeringTransport = {
           const delivery = Promise.withResolvers<SteerOutcome>();
           const entry = { text: message.text, settle: delivery.resolve };
           pending.push(entry);
-          // Writes enter Node's FIFO immediately; acknowledgements never block the next write.
-          void writer.write(inputLine(message.text)).catch((cause: unknown) => {
-            const index = pending.indexOf(entry);
-            if (index < 0) return;
-            pending.splice(index, 1);
-            entry.settle(spawnPipeError.isStdinClosed(cause) ? 'deferred' : 'uncertain');
-          });
+          writes = writes
+            .then(async () => value.write(await inputLine(message.text, message.images)))
+            .catch((cause: unknown) => {
+              const index = pending.indexOf(entry);
+              if (index < 0) return;
+              pending.splice(index, 1);
+              entry.settle(
+                admissionOpen && spawnPipeError.isStdinClosed(cause) ? 'deferred' : 'uncertain',
+              );
+            });
           return delivery.promise;
         });
       },
@@ -379,13 +395,34 @@ const CLAUDE_STEERING: CliSteeringTransport = {
         } finally {
           for (const entry of pending.splice(0)) entry.settle('uncertain');
         }
+        await writes;
       },
     };
   },
 };
 
-function inputLine(text: string): string {
-  return `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
+async function inputLine(text: string, images?: readonly Attachment[]): Promise<string> {
+  if (images === undefined || images.length === 0)
+    return `${JSON.stringify({ type: 'user', message: { role: 'user', content: text } })}\n`;
+  let encoded: Awaited<ReturnType<typeof readImagesAsBase64>>;
+  try {
+    encoded = await readImagesAsBase64([...images]);
+  } catch (cause) {
+    throw error(
+      'prompt-transport-error',
+      'Claude Code image attachments could not be read',
+      undefined,
+      cause,
+    );
+  }
+  const content = [
+    { type: 'text', text },
+    ...encoded.map(({ mime, data }) => ({
+      type: 'image',
+      source: { type: 'base64', media_type: mime, data },
+    })),
+  ];
+  return `${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`;
 }
 
 function createProbe() {
@@ -414,6 +451,10 @@ function createAdapter(
     descriptor: CLI_TOOL_CATALOG[CLAUDE_ID],
     role,
     promptTransport: CLAUDE_PROMPT_TRANSPORT,
+    encodePrompt: ({ invocation, prompt }: { invocation: CliInvocation; prompt: string }) =>
+      invocation.images !== undefined && invocation.images.length > 0
+        ? inputLine(prompt, invocation.images)
+        : Promise.resolve(prompt),
     steering: CLAUDE_STEERING,
     validateArgs,
     environment: {},

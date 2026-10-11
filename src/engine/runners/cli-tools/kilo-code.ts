@@ -107,6 +107,7 @@ function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
     'json',
     ...(input.mode === 'plan' ? ['--agent', 'plan'] : ['--agent', 'code', '--auto']),
     input.prompt,
+    ...(input.imagePaths ?? []).flatMap((path) => ['--file', path]),
   ];
 }
 
@@ -121,6 +122,7 @@ function implementerBaseArgs(input: KiloImplementerBuildInput): string[] {
     'code',
     '--auto',
     input.prompt,
+    ...(input.imagePaths ?? []).flatMap((path) => ['--file', path]),
   ];
 }
 

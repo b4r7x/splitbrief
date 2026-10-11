@@ -195,8 +195,8 @@ export type TypedOutputSupport =
   | Readonly<{ kind: 'native' | 'strict-native'; since: string }>
   | Readonly<{ kind: 'fallback' }>;
 
-/** How a seat receives an image: a path-taking flag, a prompt text reference, or not at all. */
-export type ImageInputSupport = 'flag' | 'path' | 'none';
+/** How a seat receives an image: a path-taking flag, stdin content blocks, or not at all. */
+export type ImageInputSupport = 'flag' | 'stdin' | 'none';
 
 export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   id: Id;
@@ -397,7 +397,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'native', since: '2.1.287' },
-    imageInput: 'path',
+    imageInput: 'stdin',
     auth: authPolicy('api-key-or-session', [
       authChannel({
         id: 'session',
@@ -482,7 +482,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: false,
     effortChannel: 'variant',
     typedOutput: { kind: 'fallback' },
-    imageInput: 'none',
+    imageInput: 'flag',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',
@@ -521,7 +521,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: true,
     effortChannel: 'effort-flag',
     typedOutput: { kind: 'fallback' },
-    imageInput: 'none',
+    imageInput: 'flag',
     auth: authPolicy('session', [
       authChannel({
         id: 'session',
@@ -556,7 +556,7 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     supportsEffort: false,
     effortChannel: 'variant',
     typedOutput: { kind: 'fallback' },
-    imageInput: 'none',
+    imageInput: 'flag',
     auth: authPolicy('provider-dependent', [
       authChannel({
         id: 'provider-dependent',

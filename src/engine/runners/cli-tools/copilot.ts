@@ -161,6 +161,7 @@ function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
+    ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
     '-p',
     input.prompt,
     ...(input.mode === 'plan'
@@ -175,6 +176,7 @@ function implementerBaseArgs(input: CopilotImplementerBuildInput): string[] {
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
     ...(input.effort === undefined ? [] : ['--effort', input.effort]),
+    ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
     '-p',
     input.prompt,
     '--allow-all',

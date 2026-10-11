@@ -84,7 +84,7 @@ export type SuccessMethod = Exclude<TaskCompletionMethod, 'failed' | 'skipped'>;
 
 /** Where the seat-trouble wrapper parks a wait: the live state and the seat's call site. */
 export type RetrySeatTarget = Readonly<{
-  ref: WorkflowPersistenceContext;
+  ref: WorkflowPersistenceContext & Pick<WorkflowContext, 'modelCache'>;
   state: WorkflowState;
   /** The usage category the tokens of a discarded attempt are recorded under. */
   usageCategory: UsageCategory;

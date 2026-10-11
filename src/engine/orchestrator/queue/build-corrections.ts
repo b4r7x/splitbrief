@@ -6,15 +6,68 @@ import { accumulateTokenUsage } from '../../calls/usage.js';
 import type { EventBus } from '../../events/types.js';
 import type { BundleApplyResult } from '../../implementers/file-bundle.js';
 import { persistApiApplyEvidence } from '../evidence/persistence.js';
-import type { WorkflowPersistenceContext } from '../types.js';
+import type { WorkflowContext, WorkflowPersistenceContext } from '../types.js';
 import { recordBriefCorrection } from '../state-ops.js';
 import { commitQueueMessagesDrained, readQueueForPrompt } from './drain.js';
 import { formatDrainedMessages, imagesFromMessages } from './prompt.js';
 import type { ImplementerOptions } from '../../implementers/types.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { settleMidCallDeliveries } from './mid-call.js';
+import { seatSupportsImages } from '../../../core/runners/capabilities.js';
+import { resolveAutoModel } from '../../../core/providers/model-selection.js';
+import { isProviderId } from '../../../core/schemas/enums.js';
+import {
+  resolveExactRuntimeModel,
+  lookupModelsDevModel,
+} from '../../providers/model/resolution.js';
 
-type BuildCorrectionOptions = {
+type BuildImageContext = Pick<WorkflowContext, 'config' | 'modelCache'>;
+
+export function buildSeatSupportsImages(wctx: BuildImageContext): boolean {
+  const runner = wctx.config.implementer;
+  if (runner.kind !== 'api') return seatSupportsImages({ runner });
+  const modelId = resolveAutoModel(runner.model, runner.provider);
+  if (modelId === undefined || wctx.modelCache === undefined || !isProviderId(runner.provider))
+    return seatSupportsImages({ runner });
+  const lookup = {
+    providerId: runner.provider,
+    modelId,
+    cache: wctx.modelCache,
+    kind: runner.kind,
+  };
+  const runtime = resolveExactRuntimeModel({
+    ...lookup,
+    selectionId: modelId,
+    role: 'implementer',
+  });
+  const supportsImages =
+    (runtime.kind === 'found' ? runtime.model.supportsImages : undefined) ??
+    lookupModelsDevModel(lookup)?.supportsImages;
+  return seatSupportsImages({
+    runner,
+    detected: supportsImages === undefined ? undefined : { supportsImages },
+  });
+}
+
+export function publishBuildImagesAsPaths(
+  opts: BuildImageContext &
+    Pick<WorkflowContext, 'bus'> & {
+      state: WorkflowState;
+      taskId: TaskId;
+      count: number;
+    },
+): void {
+  if (opts.count === 0 || buildSeatSupportsImages(opts)) return;
+  opts.bus.publish({
+    type: 'build_images_as_paths',
+    ts: Date.now(),
+    phase: opts.state.phase,
+    taskId: opts.taskId,
+    count: opts.count,
+  });
+}
+
+type BuildCorrectionOptions = BuildImageContext & {
   projectDir: string;
   sessionId: string;
   state: WorkflowState;
@@ -25,12 +78,13 @@ type BuildCorrectionOptions = {
 export function buildCorrectionInput(
   state: WorkflowState,
   task: Task,
+  wctx: BuildImageContext,
 ): Pick<ImplementerOptions, 'images' | 'continuation'> {
   const lineage = state.lineages?.[lineageIdOf(task)];
   const corrections = lineage?.corrections ?? [];
   const images = lineage?.correctionImages;
   return {
-    ...(images !== undefined && { images }),
+    ...(images !== undefined && buildSeatSupportsImages(wctx) && { images }),
     ...(corrections.length > 0 && { continuation: { steer: corrections.join('\n\n') } }),
   };
 }
@@ -64,14 +118,11 @@ export function absorbBuildCorrectionsById(
     ),
   );
   const text = formatDrainedMessages(delivered).trim();
+  const images = imagesFromMessages(delivered);
+  const state = recordBriefCorrection(opts, drained.state, opts.taskId, text, images);
+  publishBuildImagesAsPaths({ ...opts, state, count: images.length });
   return {
-    state: recordBriefCorrection(
-      opts,
-      drained.state,
-      opts.taskId,
-      text,
-      imagesFromMessages(delivered),
-    ),
+    state,
     count: drained.count,
   };
 }

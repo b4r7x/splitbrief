@@ -5,10 +5,10 @@ import { createQueueHandler } from '../queue/submit.js';
 import { createClearQueueHandler } from '../queue/clear.js';
 import { createWriteSequencer } from '../serial-executor.js';
 import type { Planner } from '../../planners/types.js';
-import type { WorkflowSinks } from '../types.js';
+import type { WorkflowContext, WorkflowSinks } from '../types.js';
 import type { SteeringPort } from '../../calls/steering.js';
 
-export type InstallQueueHandlerOpts = {
+export type InstallQueueHandlerOpts = Pick<WorkflowContext, 'modelCache'> & {
   projectDir: string;
   sessionId: string;
   sinks: WorkflowSinks;
@@ -30,6 +30,8 @@ export function installQueueHandler(opts: InstallQueueHandlerOpts): void {
       getState: opts.getTrackedState,
       setState: opts.setTrackedState,
       bus: opts.bus,
+      config: opts.config,
+      modelCache: opts.modelCache,
       planner: opts.planner,
       serialize,
       steering: opts.steering,

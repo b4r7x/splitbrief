@@ -51,6 +51,50 @@ function terminalInput(
 }
 
 describe('Copilot role adapters', () => {
+  it.each([
+    [
+      'two images',
+      ['/tmp/design one.png', '/tmp/design-two.png'],
+      ['--attachment', '/tmp/design one.png', '--attachment', '/tmp/design-two.png'],
+    ],
+    ['absent images', undefined, []],
+    ['empty images', [], []],
+  ] as const)('passes %s before the prompt in every role', (_label, imagePaths, imageArgs) => {
+    for (const [adapter, mode, approvalArgs] of [
+      [copilotPlannerAdapter, 'plan', ['--plan', '--allow-all-tools', '--no-ask-user']],
+      [copilotPlannerAdapter, 'escalate', ['--allow-all', '--no-ask-user']],
+      [copilotImplementerAdapter, 'plan', ['--allow-all']],
+    ] as const) {
+      const input = {
+        prompt: PROMPT,
+        model: 'gpt-5.2',
+        effort: 'high',
+        projectDir: PROJECT_DIR,
+        configuredArgs: ['--label', 'fixture'],
+        mode,
+        sessionId: null,
+        imagePaths,
+      } as const;
+      const expected = [
+        '--model',
+        'gpt-5.2',
+        '--effort',
+        'high',
+        ...imageArgs,
+        '-p',
+        PROMPT,
+        ...approvalArgs,
+        '--output-format',
+        'json',
+      ];
+      const baseArgs = adapter.baseArgs(input);
+      const invocationArgs = adapter.buildArgs(input);
+      expect(baseArgs).toEqual(expected);
+      expect(invocationArgs).toEqual([...expected, '--label', 'fixture']);
+      expect(adapter.validateArgs({ invocationArgs, baseArgs })).toEqual({ valid: true });
+    }
+  });
+
   it('exports planner then implementer candidates with matching canonical hashes', () => {
     expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
     expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.role)).toEqual([

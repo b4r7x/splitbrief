@@ -1,3 +1,4 @@
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import type { WorkflowState, QueuedMessage } from '../../../core/schemas/workflow.js';
@@ -60,6 +61,7 @@ describe('mid-call delivery', () => {
       const send = vi.fn(async () => 'delivered' as const);
       steering.attach({ callId: 'attached-call', role, taskId, send });
       const handler = createQueueHandler({
+        config: makeConfig(),
         ...ref,
         getState: () => state,
         setState: (next) => {
@@ -111,6 +113,7 @@ describe('mid-call delivery', () => {
       const detach = steering.attach({ callId: 'live-call', role, taskId, send });
       const serialize = createWriteSequencer();
       const handler = createQueueHandler({
+        config: makeConfig(),
         ...ref,
         getState: () => state,
         setState: (next) => {
@@ -209,6 +212,7 @@ describe('mid-call delivery', () => {
     let settling: Promise<void> | undefined;
     let settled = false;
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -254,6 +258,7 @@ describe('mid-call delivery', () => {
         send: async () => 'delivered',
       });
       const handler = createQueueHandler({
+        config: makeConfig(),
         ...ref,
         getState: () => state,
         setState: (next) => {
@@ -295,6 +300,7 @@ describe('mid-call delivery', () => {
     let injecting = true;
     const serialize = createWriteSequencer();
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -344,6 +350,7 @@ describe('mid-call delivery', () => {
       send: async () => 'delivered',
     });
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -374,6 +381,7 @@ describe('mid-call delivery', () => {
     const injectUserTurn = vi.fn(async () => ({ status: 'delivered' as const, usage: null }));
     const serialize = createWriteSequencer();
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -416,6 +424,7 @@ describe('mid-call delivery', () => {
     steering.attach(oldCall);
     const serialize = createWriteSequencer();
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => {
         steering.attach({ ...oldCall, callId: 'new', send: newSend });
@@ -456,6 +465,7 @@ describe('mid-call delivery', () => {
     });
     const injectUserTurn = vi.fn(async () => ({ status: 'delivered' as const, usage: null }));
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -496,6 +506,7 @@ describe('mid-call delivery', () => {
     });
     const serialize = createWriteSequencer();
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -540,6 +551,7 @@ describe('enqueue', () => {
       },
     });
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -567,6 +579,7 @@ describe('enqueue', () => {
     const { bus, events } = makeBusRecorder();
     bus.subscribe(createJsonlSink(ref));
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => createInitialState('feat'),
       setState: () => {},
@@ -600,6 +613,7 @@ describe('enqueue', () => {
     };
     const { bus } = makeBusRecorder();
     const handler = createQueueHandler({
+      config: makeConfig(),
       ...ref,
       getState: () => state,
       setState: (next) => {
@@ -644,6 +658,7 @@ describe('enqueue', () => {
     });
     const serialize = createWriteSequencer();
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -676,6 +691,7 @@ describe('enqueue', () => {
     const planner = makePlanner();
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -704,6 +720,7 @@ describe('enqueue', () => {
     const planner = makePlanner();
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -747,6 +764,7 @@ describe('enqueue', () => {
     });
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -787,6 +805,7 @@ describe('enqueue', () => {
     };
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => undefined,
@@ -820,6 +839,7 @@ describe('enqueue', () => {
     state = { ...state!, messageQueue: fakeMessages };
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -849,6 +869,7 @@ describe('enqueue', () => {
     const planner = makePlanner();
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -881,6 +902,7 @@ describe('enqueue', () => {
     const planner = makePlanner();
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -931,6 +953,7 @@ describe('enqueue', () => {
     });
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -966,6 +989,7 @@ describe('enqueue', () => {
     const serialize = createWriteSequencer();
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,
@@ -1000,6 +1024,7 @@ describe('enqueue', () => {
     const planner = makePlanner();
 
     const handler = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,

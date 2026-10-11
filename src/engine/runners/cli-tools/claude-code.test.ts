@@ -1,6 +1,14 @@
 import type { TokenDelta } from '../../../core/schemas/tokens.js';
 import { accumulateTokenUsage } from '../../calls/usage.js';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +20,8 @@ import {
 } from './claude-code.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import { PLAN_ANSWER_JSON_SCHEMA } from '../../../core/schemas/plan.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
+import type { RunningCall } from '../../calls/steering.js';
 
 const IMPLEMENTER_SANDBOX = {
   sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false },
@@ -868,6 +878,93 @@ describe('Claude Code stream protocol adapter', () => {
 });
 
 describe('Claude steering transport', () => {
+  it('sends initial images and steered images as content blocks and acknowledges their text', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-image-input-'));
+    try {
+      const path = join(dir, 'screenshot.data');
+      const bytes = Buffer.from([137, 80, 78, 71, 0, 255]);
+      writeFileSync(path, bytes);
+      const images: Attachment[] = [
+        { id: 'shot', kind: 'image', path, mimeType: 'image/png', sizeBytes: bytes.length },
+      ];
+      const content = (text: string) => [
+        { type: 'text', text },
+        {
+          type: 'image',
+          source: { type: 'base64', media_type: 'image/png', data: bytes.toString('base64') },
+        },
+      ];
+      const line = (text: string) =>
+        JSON.stringify({ type: 'user', message: { role: 'user', content: content(text) } }) + '\n';
+      const baseArgs = claudeCodeImplementerAdapter.baseArgs({
+        prompt: '',
+        model: undefined,
+        projectDir: dir,
+        configuredArgs: [],
+        imagePaths: [path],
+      });
+      const transport = claudeCodeImplementerAdapter.steering;
+      if (transport === undefined) throw new Error('transport missing');
+      let send: RunningCall['send'] = () => Promise.resolve('deferred');
+      const session = await transport.open({
+        invocation: {
+          executable: { path: '/claude', fingerprint: { dev: 1, ino: 1, size: 1, mtimeMs: 1 } },
+          args: baseArgs,
+          baseArgs,
+          promptTransport: { kind: 'stdin' },
+          environment: {},
+          cwd: dir,
+          signal: undefined,
+          images,
+        },
+        prompt: 'initial\ntext',
+        onReady: (value) => {
+          send = value;
+        },
+        onAdmissionClosed: () => {},
+      });
+      try {
+        expect(session.prompt).toBe(line('initial\ntext'));
+        expect(session.invocation.args.filter((arg) => arg === '--input-format')).toHaveLength(1);
+        expect(session.invocation.args).toContain('--replay-user-messages');
+        const writes: string[] = [];
+        session.onStdinReady?.({
+          write: async (value) => {
+            writes.push(value);
+          },
+          end: () => {},
+        });
+        const echo = (text: string) => {
+          const value = JSON.stringify({
+            type: 'user',
+            parent_tool_use_id: null,
+            message: { role: 'user', content: content(text) },
+          });
+          const events = session.parse(value);
+          expect(events).toEqual([{ type: 'input-ack', text }]);
+          session.onLine(value, events);
+        };
+        echo('initial\ntext');
+        const delivery = send({ id: 'steer', text: 'correction\ntext', images });
+        const next = send({ id: 'next', text: 'next correction' });
+        await expect.poll(() => writes.length).toBe(2);
+        expect(writes[0]).toBe(line('correction\ntext'));
+        expect(writes[1]).toBe(
+          JSON.stringify({ type: 'user', message: { role: 'user', content: 'next correction' } }) +
+            '\n',
+        );
+        echo('correction\ntext');
+        expect(await delivery).toBe('delivered');
+        echo('next correction');
+        expect(await next).toBe('delivered');
+      } finally {
+        await session.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('gates only canonical proven releases', () => {
     const transport = claudeCodeImplementerAdapter.steering;
     expect(transport).toBeDefined();
@@ -886,6 +983,29 @@ describe('Claude steering transport', () => {
       }),
     ).toEqual({ valid: false, conflicts: [flag] });
   });
+
+  it.each([claudeCodeImplementerAdapter, claudeCodePlannerAdapter])(
+    'protects stream-json image input from configured overrides for the $role seat',
+    (adapter) => {
+      const baseArgs = adapter.baseArgs({
+        prompt: '',
+        model: undefined,
+        projectDir: '/project',
+        configuredArgs: [],
+        mode: 'plan',
+        sessionId: null,
+        effort: undefined,
+        imagePaths: ['/outside/shot.png'],
+      });
+      expect(baseArgs).toEqual(expect.arrayContaining(['--input-format', 'stream-json']));
+      expect(adapter.validateArgs({ invocationArgs: baseArgs, baseArgs })).toEqual({ valid: true });
+      for (const configuredArgs of [['--input-format', 'text'], ['--input-format=text']]) {
+        expect(
+          adapter.validateArgs({ invocationArgs: [...baseArgs, ...configuredArgs], baseArgs }),
+        ).toEqual({ valid: false, conflicts: ['--input-format'] });
+      }
+    },
+  );
 
   it('parses input echoes separately from tool results and subagents', () => {
     expect(

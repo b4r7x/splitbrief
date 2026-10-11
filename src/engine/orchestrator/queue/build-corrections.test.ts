@@ -17,6 +17,8 @@ import {
   absorbBuildCorrections,
   absorbBuildCorrectionsById,
   buildCorrectionInput,
+  buildSeatSupportsImages,
+  publishBuildImagesAsPaths,
   runWithCorrectionPasses,
 } from './build-corrections.js';
 import { createSteeringPort, type SteerOutcome } from '../../calls/steering.js';
@@ -24,6 +26,85 @@ import { createQueueHandler } from './submit.js';
 import { createWriteSequencer } from '../serial-executor.js';
 import { makePlanner } from '#testing/helpers/orchestrator-factories.js';
 import { trackMidCallDelivery } from './mid-call.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
+import type { ConfiguredProviderRuntime } from '../../detection/provider-outcomes.js';
+import { resolveAutoModel } from '../../../core/providers/model-selection.js';
+
+describe('buildSeatSupportsImages', () => {
+  const config = makeConfig({
+    implementer: { kind: 'api', provider: 'lm-studio', model: 'fixture' },
+  });
+  const catalog = {
+    lmstudio: {
+      id: 'lmstudio',
+      models: { fixture: { id: 'fixture', modalities: { input: ['text', 'image'] } } },
+    },
+  };
+
+  it.each([true, false])('uses the runtime image fact %s before the catalog', (supportsImages) => {
+    expect(
+      buildSeatSupportsImages({
+        config,
+        modelCache: {
+          getProviderModels: () => [{ id: 'fixture', supportsImages }],
+          getModelsDevCatalog: () => catalog,
+        },
+      }),
+    ).toBe(supportsImages);
+  });
+
+  it.each([null, [{ id: 'fixture' }]])(
+    'uses the catalog when runtime has no image fact: %j',
+    (models) => {
+      expect(
+        buildSeatSupportsImages({
+          config,
+          modelCache: {
+            getProviderModels: () => models,
+            getModelsDevCatalog: () => catalog,
+          },
+        }),
+      ).toBe(true);
+    },
+  );
+
+  it('resolves the automatic model before looking up its image fact', () => {
+    const automatic = makeConfig({
+      implementer: { kind: 'api', provider: 'ollama', model: 'auto' },
+    });
+    const id = resolveAutoModel('auto', 'ollama');
+    if (id === undefined) throw new Error('Fixture provider has no automatic model');
+    expect(
+      buildSeatSupportsImages({
+        config: automatic,
+        modelCache: {
+          getProviderModels: (provider, kind) =>
+            provider === 'ollama' && kind === 'api' ? [{ id, supportsImages: true }] : null,
+          getModelsDevCatalog: () => null,
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('treats a missing cache and a different model as unknown', () => {
+    expect(buildSeatSupportsImages({ config })).toBe(false);
+    expect(
+      buildSeatSupportsImages({
+        config,
+        modelCache: {
+          getProviderModels: () => [{ id: 'other-model', supportsImages: true }],
+          getModelsDevCatalog: () => null,
+        },
+      }),
+    ).toBe(false);
+    expect(
+      buildSeatSupportsImages({
+        config: makeConfig({ implementer: { kind: 'agent', command: 'cat', model: 'fixture' } }),
+      }),
+    ).toBe(false);
+  });
+});
 
 const directories: string[] = [];
 
@@ -32,7 +113,10 @@ afterEach(() => {
 });
 
 function setupBuild() {
-  const ref = setupProject(directories);
+  const ref = {
+    ...setupProject(directories),
+    config: makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'fixture' } }),
+  };
   const task = makeTask();
   const { bus, events } = makeBusRecorder();
   let state = makeImplState([task]);
@@ -71,6 +155,95 @@ function setupBuild() {
   };
 }
 
+describe('buildCorrectionInput', () => {
+  it.each([true, false])(
+    'uses the BUILD runtime image fact %s when two API seats share a provider',
+    (supportsImages) => {
+      const build = setupBuild();
+      const config = makeConfig({
+        planner: {
+          kind: 'api',
+          provider: 'lm-studio',
+          model: 'private-model',
+          apiBase: 'http://localhost:1234/v1',
+        },
+        implementer: { kind: 'api', provider: 'lm-studio', model: 'private-model' },
+      });
+      const configuredProviders: ConfiguredProviderRuntime[] = [
+        {
+          connection: { role: 'planner', provider: 'lm-studio', contextKey: 'planner' },
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'private-model', supportsImages: !supportsImages }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        },
+        {
+          connection: { role: 'implementer', provider: 'lm-studio', contextKey: 'implementer' },
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'private-model', supportsImages }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        },
+      ];
+      const modelCache: ModelCacheAccessor = {
+        getProviderModels: () => null,
+        getModelsDevCatalog: () => ({
+          lmstudio: {
+            id: 'lmstudio',
+            models: { 'public-model': { id: 'public-model' } },
+          },
+        }),
+        getScopedProviderRuntime: ({ role, provider }) =>
+          configuredProviders.find(
+            ({ connection }) => connection.role === role && connection.provider === provider,
+          ) ?? null,
+      };
+      const images = [
+        {
+          id: 'reference',
+          kind: 'image' as const,
+          path: '/reference.png',
+          mimeType: 'image/png',
+          sizeBytes: 12,
+        },
+      ];
+      const state = recordBriefCorrection(
+        build.ref,
+        build.getState(),
+        build.task.id,
+        'use the image',
+        images,
+      );
+      const input = buildCorrectionInput(state, build.task, { config, modelCache });
+      publishBuildImagesAsPaths({
+        config,
+        modelCache,
+        state,
+        taskId: build.task.id,
+        bus: build.bus,
+        count: images.length,
+      });
+
+      expect(input.images).toEqual(supportsImages ? images : undefined);
+      expect(input.continuation).toEqual({ steer: 'use the image' });
+      expect(build.events).toEqual(
+        supportsImages
+          ? []
+          : [
+              expect.objectContaining({
+                type: 'build_images_as_paths',
+                phase: 'implementing',
+                taskId: build.task.id,
+                count: 1,
+              }),
+            ],
+      );
+    },
+  );
+});
+
 describe('recordBriefCorrection', () => {
   it('persists and deduplicates correction images on the task lineage', () => {
     const build = setupBuild();
@@ -94,14 +267,14 @@ describe('recordBriefCorrection', () => {
     expect(duplicate.stateRevision).toBe(first.stateRevision);
     const saved = loadState(build.ref);
     if (saved === null) throw new Error('Correction was not saved');
-    expect(buildCorrectionInput(saved, build.task)).toEqual({
+    expect(buildCorrectionInput(saved, build.task, build.ref)).toEqual({
       images: [image],
       continuation: { steer: 'use the image' },
     });
-    expect(buildCorrectionInput(saved, makeTask({ id: 'T099' }))).toEqual({});
-    expect(buildCorrectionInput(saved, makeTask({ id: 'T002', parentId: build.task.id }))).toEqual(
-      buildCorrectionInput(saved, build.task),
-    );
+    expect(buildCorrectionInput(saved, makeTask({ id: 'T099' }), build.ref)).toEqual({});
+    expect(
+      buildCorrectionInput(saved, makeTask({ id: 'T002', parentId: build.task.id }), build.ref),
+    ).toEqual(buildCorrectionInput(saved, build.task, build.ref));
   });
 
   it('rebases a stale caller before recording a new correction', () => {
@@ -147,6 +320,127 @@ describe('recordBriefCorrection', () => {
 });
 
 describe('absorbBuildCorrections', () => {
+  it('records two deliveries of the same image separately while retaining one correction image', () => {
+    const build = setupBuild();
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'cursor', model: 'fixture' } });
+    const image = {
+      id: 'repeated',
+      kind: 'image' as const,
+      path: '/repeated.png',
+      mimeType: 'image/png',
+      sizeBytes: 12,
+    };
+    let state = build.getState();
+    for (let delivery = 0; delivery < 2; delivery += 1) {
+      state = enqueueUserMessage({
+        ...build.ref,
+        state,
+        message: { ...plainUserMessage('Use the reference'), images: [image] },
+        phase: 'implementing',
+        bus: build.bus,
+      }).state;
+      state = absorbBuildCorrections({
+        ...build.ref,
+        config,
+        state,
+        taskId: build.task.id,
+        bus: build.bus,
+      }).state;
+      expect(buildCorrectionInput(state, build.task, { config }).images).toBeUndefined();
+    }
+    expect(state.lineages?.T001?.correctionImages).toEqual([image]);
+    expect(build.events.filter((event) => event.type === 'build_images_as_paths')).toEqual([
+      expect.objectContaining({ taskId: build.task.id, count: 1 }),
+      expect.objectContaining({ taskId: build.task.id, count: 1 }),
+    ]);
+  });
+
+  it.each([
+    [
+      'vision API',
+      makeConfig({ implementer: { kind: 'api', provider: 'lm-studio', model: 'fixture' } }),
+      true,
+      true,
+    ],
+    [
+      'text API',
+      makeConfig({ implementer: { kind: 'api', provider: 'lm-studio', model: 'fixture' } }),
+      false,
+      false,
+    ],
+    [
+      'unknown API',
+      makeConfig({ implementer: { kind: 'api', provider: 'lm-studio', model: 'fixture' } }),
+      undefined,
+      false,
+    ],
+    [
+      'codex',
+      makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'fixture' } }),
+      undefined,
+      true,
+    ],
+    [
+      'cursor',
+      makeConfig({ implementer: { kind: 'cli', tool: 'cursor', model: 'fixture' } }),
+      undefined,
+      false,
+    ],
+    [
+      'shell',
+      makeConfig({ implementer: { kind: 'shell', command: 'cat', model: 'fixture' } }),
+      undefined,
+      false,
+    ],
+  ] as const)(
+    'gates correction images for %s and records path delivery once',
+    (_name, config, vision, supported) => {
+      const build = setupBuild();
+      const image = {
+        id: 'reference',
+        kind: 'image' as const,
+        path: '/reference.png',
+        mimeType: 'image/png',
+        sizeBytes: 12,
+      };
+      const modelCache: ModelCacheAccessor = {
+        getModelsDevCatalog: () => null,
+        getProviderModels: () =>
+          vision === undefined ? null : [{ id: 'fixture', supportsImages: vision }],
+      };
+      const state = enqueueUserMessage({
+        ...build.ref,
+        state: build.getState(),
+        message: { ...plainUserMessage('CORRECTION'), images: [image] },
+        phase: 'implementing',
+        bus: build.bus,
+      }).state;
+      const opts = {
+        ...build.ref,
+        config,
+        modelCache,
+        state,
+        taskId: build.task.id,
+        bus: build.bus,
+      };
+      const result = absorbBuildCorrections(opts);
+      const input = buildCorrectionInput(result.state, build.task, { config, modelCache });
+      expect(input.images).toEqual(supported ? [image] : undefined);
+      expect(input.continuation?.steer).toContain('CORRECTION');
+      expect(input.continuation?.steer).toContain('[image:reference] = /reference.png');
+      expect(build.events.filter((event) => event.type === 'build_images_as_paths')).toEqual(
+        supported
+          ? []
+          : [expect.objectContaining({ phase: 'implementing', taskId: 'T001', count: 1 })],
+      );
+      expect(absorbBuildCorrections({ ...opts, state: result.state }).count).toBe(0);
+      buildCorrectionInput(result.state, build.task, { config, modelCache });
+      expect(build.events.filter((event) => event.type === 'build_images_as_paths')).toHaveLength(
+        supported ? 0 : 1,
+      );
+    },
+  );
+
   it('retains images from the delivered mid-call message and leaves other images pending', () => {
     const build = setupBuild();
     const messages = ['delivered', 'pending'].map((id) => ({
@@ -178,7 +472,7 @@ describe('absorbBuildCorrections', () => {
     expect(result.count).toBe(1);
     expect(result.state.messageQueue[0]?.deliveredMidCall).toBe(true);
     expect(result.state.messageQueue[1]?.deliveredTo?.implementer).toBeUndefined();
-    const input = buildCorrectionInput(result.state, build.task);
+    const input = buildCorrectionInput(result.state, build.task, build.ref);
     expect(input.images).toEqual(messages[0]?.images);
     expect(input.continuation?.steer).toContain('[image:delivered] = /delivered.png');
     expect(input.continuation?.steer).not.toContain('/pending.png');

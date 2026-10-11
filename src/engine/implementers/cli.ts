@@ -230,6 +230,7 @@ export function createCliImplementer(
             promptTransport: adapter.promptTransport,
             environment: toCliEnvironment(env),
             cwd: projectDir,
+            images: opts.images,
             timeoutMs: deadlineMs,
             signal: composedSignal,
           },

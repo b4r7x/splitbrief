@@ -60,6 +60,58 @@ const AGENT_OVERRIDE_SEATS = ROLE_SEATS.flatMap(([seat, adapter, base]) =>
 );
 
 describe('Kilo Code role adapters', () => {
+  it.each([
+    [
+      'two images',
+      ['/tmp/design one.png', '/tmp/design-two.png'],
+      ['--file', '/tmp/design one.png', '--file', '/tmp/design-two.png'],
+    ],
+    ['absent images', undefined, []],
+    ['empty images', [], []],
+  ] as const)('passes %s after the prompt in every role', (_label, imagePaths, imageArgs) => {
+    for (const [adapter, mode, agent, approvalArgs] of [
+      [kiloPlannerAdapter, 'plan', 'plan', []],
+      [kiloPlannerAdapter, 'escalate', 'code', ['--auto']],
+      [kiloImplementerAdapter, 'plan', 'code', ['--auto']],
+    ] as const) {
+      const input = {
+        prompt: PROMPT,
+        model: 'provider/model',
+        variant: 'high',
+        projectDir: PROJECT_DIR,
+        configuredArgs: ['--verbose'],
+        mode,
+        sessionId: null,
+        effort: undefined,
+        imagePaths,
+      };
+      const expected = [
+        'run',
+        '--model',
+        'provider/model',
+        '--variant',
+        'high',
+        '--format',
+        'json',
+        '--agent',
+        agent,
+        ...approvalArgs,
+        PROMPT,
+        ...imageArgs,
+      ];
+      const baseArgs = adapter.baseArgs(input);
+      const invocationArgs = adapter.buildArgs(input);
+      expect(
+        invocationArgs.every(
+          (arg, index) => arg !== '--file' || invocationArgs.indexOf(PROMPT) < index,
+        ),
+      ).toBe(true);
+      expect(baseArgs).toEqual(expected);
+      expect(invocationArgs).toEqual([...expected, '--verbose']);
+      expect(adapter.validateArgs({ invocationArgs, baseArgs })).toEqual({ valid: true });
+    }
+  });
+
   it('exports planner then implementer candidates with matching hashes', () => {
     expect(CLI_CONFORMANCE_CANDIDATES).toHaveLength(2);
     expect(CLI_CONFORMANCE_CANDIDATES.map((candidate) => candidate.role)).toEqual([

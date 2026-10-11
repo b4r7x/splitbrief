@@ -40,7 +40,10 @@ function createCliImplementer(
   });
 }
 
-function installRecordingClaudeShim(writtenRelPath: string): { argvFile: string } {
+function installRecordingClaudeShim(writtenRelPath: string): {
+  argvFile: string;
+  stdinFile: string;
+} {
   return installClaudeShimWithLines(writtenRelPath, [
     '{"type":"result","result":"done","usage":{"input_tokens":5,"output_tokens":2}}',
   ]);
@@ -49,21 +52,22 @@ function installRecordingClaudeShim(writtenRelPath: string): { argvFile: string 
 function installClaudeShimWithLines(
   writtenRelPath: string,
   terminalLines: readonly string[],
-): { argvFile: string } {
+): { argvFile: string; stdinFile: string } {
   const argvFile = join(shimDir, 'argv.txt');
+  const stdinFile = join(shimDir, 'stdin.txt');
   const target = join(projectDir, writtenRelPath);
   const shimPath = join(shimDir, 'claude');
   const script = [
     '#!/bin/bash',
     `printf '%s\\n' "$@" > '${argvFile}'`,
-    'cat > /dev/null',
+    `cat > '${stdinFile}'`,
     `mkdir -p "$(dirname '${target}')"`,
     `printf '%s' 'generated' > '${target}'`,
     ...terminalLines.map((line) => `printf '%s\\n' '${line}'`),
   ].join('\n');
   writeFileSync(shimPath, `${script}\n`, 'utf8');
   chmodSync(shimPath, 0o755);
-  return { argvFile };
+  return { argvFile, stdinFile };
 }
 
 function installTwoFileClaudeShim(relPaths: readonly string[]): void {
@@ -982,6 +986,57 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
     expect(existsSync(sandboxHomeFile)).toBe(true);
   });
 });
+
+it.each(['implement', 'retry'] as const)(
+  'sends Claude correction images outside the project as content blocks on %s',
+  async (method) => {
+    const { argvFile, stdinFile } = installRecordingClaudeShim('src/hello.ts');
+    const imagePath = join(shimDir, 'reference.data');
+    const bytes = Buffer.from([137, 80, 78, 71, 0, 255]);
+    writeFileSync(imagePath, bytes);
+    const call = {
+      task: makeTask(),
+      projectDir,
+      config: makeClaudeConfig(),
+      context: defaultContext,
+      onOutput: () => {},
+      images: [
+        {
+          id: 'reference',
+          kind: 'image' as const,
+          path: imagePath,
+          mimeType: 'image/png',
+          sizeBytes: bytes.length,
+        },
+      ],
+      continuation: { steer: 'Use the screenshot.' },
+    };
+    const implementer = createCliImplementer(cliClaudeImplementer);
+    const result =
+      method === 'implement'
+        ? await implementer.implement(call)
+        : await implementer.retry({ ...call, kind: 'local', attempt: 1, error: 'fix layout' });
+    expect(result.success).toBe(true);
+    const args = readArgv(argvFile);
+    expect(args.slice(args.indexOf('--input-format'), args.indexOf('--input-format') + 2)).toEqual([
+      '--input-format',
+      'stream-json',
+    ]);
+    const stdin = readFileSync(stdinFile, 'utf8');
+    const content = JSON.parse(stdin).message.content;
+    expect(content[0]).toEqual({
+      type: 'text',
+      text: expect.stringContaining('Use the screenshot.'),
+    });
+    expect(content.slice(1)).toEqual([
+      {
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: bytes.toString('base64') },
+      },
+    ]);
+    expect(stdin).toBe(JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n');
+  },
+);
 
 describe('createCliImplementer (codex usage capture)', () => {
   it.each(['implement', 'retry'] as const)(

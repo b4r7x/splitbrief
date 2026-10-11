@@ -15,7 +15,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { WriteSequencer } from '../serial-executor.js';
 import { formatQueuedMessagePreview } from '../../../core/queue-preview.js';
 import { isQueuedMessagePendingFirstDelivery } from '../../../core/queue-state.js';
-import type { QueueSubmissionResult } from '../types.js';
+import type { QueueSubmissionResult, WorkflowContext } from '../types.js';
 import { deliverToRunningCall } from '../../calls/steering.js';
 import { absorbBuildCorrectionsById } from './build-corrections.js';
 import {
@@ -114,11 +114,12 @@ export function enqueueUserMessage({
 }
 
 export function createQueueHandler(
-  opts: QueueHandlerContext & {
-    planner: Planner;
-    serialize: WriteSequencer;
-    signal?: AbortSignal | undefined;
-  },
+  opts: QueueHandlerContext &
+    Pick<WorkflowContext, 'config' | 'modelCache'> & {
+      planner: Planner;
+      serialize: WriteSequencer;
+      signal?: AbortSignal | undefined;
+    },
 ): (message: UserMessageInput, phase: Phase) => Promise<QueueSubmissionResult> {
   const { projectDir, sessionId, getState, setState, bus, planner, serialize, signal, steering } =
     opts;
@@ -223,6 +224,8 @@ export function createQueueHandler(
                       ids: [enqueuedMessage.id],
                       taskId: buildTask.id,
                       bus,
+                      config: opts.config,
+                      modelCache: opts.modelCache,
                       via: 'mid-call',
                     });
                     setState(correction.state);

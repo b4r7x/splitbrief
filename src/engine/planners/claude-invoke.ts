@@ -90,12 +90,10 @@ export async function invokeClaudePlanner(opts: {
       promptTransport: adapter.promptTransport,
       environment: toCliEnvironment(opts.env),
       cwd: opts.projectDir,
+      images: opts.images,
       signal: opts.signal,
     },
-    prompt:
-      opts.images === undefined || opts.images.length === 0
-        ? opts.prompt
-        : `${opts.images.map((image) => `[image attachment: ${image.path}]`).join('\n')}\n\n${opts.prompt}`,
+    prompt: opts.prompt,
     steering: opts.callbacks.steering,
     installedVersion: opts.trustedCli?.installedVersion,
     callContext: withCliInvocationIdentity({

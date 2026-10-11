@@ -26,6 +26,8 @@ import {
 } from './cli-tool-catalog.js';
 import { classifyCliAdmittedVersion } from './cli-version.js';
 import { CLI_PLANNER_ADAPTERS } from '../../engine/runners/cli-tools/registry.js';
+import { createCliPlanner } from '../../engine/planners/cli.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
 
 const REPO_ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '../../..');
 
@@ -45,6 +47,21 @@ function resolveRepoPath(relativePath: string): string {
 }
 
 describe('CLI tool catalog', () => {
+  it.each([
+    ['claude-code', 'stdin', true],
+    ['codex', 'flag', true],
+    ['opencode', 'flag', true],
+    ['kilo-code', 'flag', true],
+    ['copilot', 'flag', true],
+    ['cursor', 'none', false],
+    ['command-code', 'none', false],
+    ['antigravity', 'none', false],
+  ] as const)('declares %s image input and planner support', (tool, imageInput, supportsImages) => {
+    expect(CLI_TOOL_CATALOG[tool].imageInput).toBe(imageInput);
+    const planner = createCliPlanner({ config: makeConfig({ planner: { kind: 'cli', tool } }) });
+    expect(planner.capabilities.supportsImages).toBe(supportsImages);
+  });
+
   it('admits Cursor, Command Code and Antigravity as active CLI tools', () => {
     expect(CURSOR_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(COMMAND_CODE_CLI_ADMISSION_VERDICT).toBe('PASS');

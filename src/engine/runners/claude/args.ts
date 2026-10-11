@@ -1,4 +1,5 @@
 import type { EffortLevel } from '../../../core/schemas/enums.js';
+import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { CliSchemaInput } from '../cli-tools/contract.js';
 import { CLI_PROMPT_SENTINEL } from '../cli-tools/candidate-contract.js';
 import { claudeCodePlannerAdapter } from '../cli-tools/claude-code.js';
@@ -13,6 +14,7 @@ export interface BuildArgsOpts {
   configuredArgs?: readonly string[] | undefined;
   skillRoots?: readonly string[] | undefined;
   schema?: CliSchemaInput | undefined;
+  images?: readonly Attachment[] | undefined;
 }
 
 /**
@@ -34,6 +36,7 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
       effort: opts.effort,
       skillRoots: opts.skillRoots,
       schema: opts.schema,
+      imagePaths: opts.images?.map((image) => image.path),
     }),
   ];
   const args = [...baseArgs, ...configuredArgs];

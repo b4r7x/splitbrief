@@ -1,3 +1,4 @@
+import { makeConfig } from '#testing/helpers/factories/config.js';
 import { plainUserMessage } from '../../../core/types/user-input.js';
 import { describe, it, expect, afterEach } from 'vitest';
 
@@ -170,6 +171,7 @@ describe('clear', () => {
       });
 
     const enqueue = createQueueHandler({
+      config: makeConfig(),
       projectDir,
       sessionId,
       getState: () => state,

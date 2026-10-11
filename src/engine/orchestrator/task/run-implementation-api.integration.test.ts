@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import {
@@ -99,6 +100,20 @@ it.each(['queue', 'seed', 'parked'] as const)(
     const wctx = makeWctx({
       ...ref,
       config,
+      modelCache: {
+        ...makeModelCacheAccessor(),
+        getScopedProviderRuntime: ({ role, provider }) =>
+          role === 'implementer' && provider === 'ollama'
+            ? {
+                connection: { role, provider, contextKey: 'implementer' },
+                state: 'fresh',
+                catalog: 'populated',
+                models: [{ id: 'qwen2.5-coder:7b', supportsImages: true }],
+                fetchedAt: 1,
+                validatedAt: 1,
+              }
+            : null,
+      },
       bus,
       implementer: createApiImplementer(config),
       isolation: makeCopyingIsolation(ref),

@@ -26,9 +26,9 @@ describe('formatSubmissionFailure', () => {
   });
 
   it('names the configured plan seat in a vision refusal', () => {
-    configStore.__testReset({ config: makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }) });
+    configStore.__testReset({ config: makeConfig({ planner: { kind: 'cli', tool: 'cursor' } }) });
     expect(formatSubmissionFailure({ ok: false, reason: 'no-vision' })).toMatch(
-      /^Cannot attach: PLAN seat OpenCode.* cannot see images — \/crew plan$/,
+      /^Cannot attach: PLAN seat Cursor.* cannot see images — \/crew plan$/,
     );
   });
 });
@@ -82,7 +82,7 @@ describe('deriveHomeHintLines', () => {
     const lines = deriveHomeHintLines({
       active: true,
       homeHint: HINT,
-      feedbackMessage: noVisionFeedbackMessage('claude-code · a-very-long-model-identity'),
+      feedbackMessage: noVisionFeedbackMessage('cursor · a-very-long-model-identity'),
       width: 60,
       dropEnabled: true,
     });

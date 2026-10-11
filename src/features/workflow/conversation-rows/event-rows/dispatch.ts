@@ -352,6 +352,18 @@ export function eventRowBlock(options: {
         }),
       ]);
     }
+    case 'build_images_as_paths': {
+      const copy = queueCopy({ seat: 'build', taskId: event.taskId, count: event.count });
+      return cardRowsBlock({
+        keyPrefix,
+        label: copy.imagesAsPaths.label,
+        labelGap: INLINE_LABEL_GAP,
+        value: copy.imagesAsPaths.value,
+        width: ctx.width,
+        labelTone: 'textDim',
+        valueTone: 'textDim',
+      });
+    }
     case 'planner_attachments_dropped':
       return cardRowsBlock({
         keyPrefix,

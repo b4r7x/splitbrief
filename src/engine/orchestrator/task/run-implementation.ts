@@ -6,7 +6,7 @@ import {
   type ChangedFilesSnapshot,
   type WorkflowState,
 } from '../../../core/schemas/workflow.js';
-import type { Attachment } from '../../../core/schemas/attachment.js';
+import type { UserMessageInput } from '../../../core/types/user-input.js';
 import type { WorkflowContext } from '../types.js';
 import type { ImplementerOptions, ImplementerResult } from '../../implementers/types.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
@@ -31,6 +31,7 @@ import { recordedApiCreatedPaths } from '../evidence/task.js';
 import {
   absorbBuildCorrections,
   buildCorrectionInput,
+  publishBuildImagesAsPaths,
   runWithCorrectionPasses,
 } from '../queue/build-corrections.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
@@ -95,16 +96,18 @@ export async function runImplementation(opts: {
 
   const step = { kind: 'brief' as const, taskId: task.id, attempt: state.attempt };
   const seed = wctx.continuation?.take(step, hashTaskBrief([task]));
-  const recordCorrection = (text: string | undefined, images: readonly Attachment[] = []): void => {
-    if (!text?.trim()) return;
-    state = recordBriefCorrection({ projectDir, sessionId }, state, task.id, text, images);
+  let recordedCorrection: UserMessageInput | undefined;
+  const recordCorrection = (message: UserMessageInput | undefined): void => {
+    if (message === undefined || message === recordedCorrection) return;
+    const text = formatMessageInput(message);
+    if (!text.trim()) return;
+    state = recordBriefCorrection({ projectDir, sessionId }, state, task.id, text, message.images);
+    publishBuildImagesAsPaths({ ...wctx, state, taskId: task.id, count: message.images.length });
+    recordedCorrection = message;
     setTrackedState(state);
   };
   state = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
-  recordCorrection(
-    seed?.steer === undefined ? undefined : formatMessageInput(seed.steer),
-    seed?.steer?.images,
-  );
+  recordCorrection(seed?.steer);
   const workspace: AttemptWorkspace = await wctx.isolation.acquire({
     role: 'implementer',
     config,
@@ -134,10 +137,10 @@ export async function runImplementation(opts: {
       step,
       ...(seed === undefined ? {} : { seed }),
       onStateChange: setTrackedState,
-      body: async ({ signal, partial, steer, steerInput, recordOutput }) => {
+      body: async ({ signal, partial, steerInput, recordOutput }) => {
         // The brief restarts on its own prompt. What the cut attempt already
         // wrote is still on disk, so it is named rather than re-derived.
-        recordCorrection(steer, steerInput?.images);
+        recordCorrection(steerInput);
         const absorb = (): number => {
           const absorbed = absorbBuildCorrections({
             projectDir,
@@ -145,6 +148,8 @@ export async function runImplementation(opts: {
             state,
             taskId: task.id,
             bus: wctx.bus,
+            config,
+            modelCache: wctx.modelCache,
           });
           state = absorbed.state;
           setTrackedState(state);
@@ -214,7 +219,7 @@ export async function runImplementation(opts: {
         const produce = async (attemptSignal: AbortSignal): Promise<ImplementerResult> => {
           await settleMidCallDeliveries({ projectDir, sessionId });
           absorb();
-          const correction = buildCorrectionInput(state, task);
+          const correction = buildCorrectionInput(state, task, wctx);
           const combinedSteer = correction.continuation?.steer;
           const continuation =
             partial === undefined && combinedSteer === undefined
@@ -252,7 +257,7 @@ export async function runImplementation(opts: {
                   });
             },
             pass: async () => {
-              const correction = buildCorrectionInput(state, task);
+              const correction = buildCorrectionInput(state, task, wctx);
               return wctx.implementer.implement({
                 ...call,
                 ...correction,

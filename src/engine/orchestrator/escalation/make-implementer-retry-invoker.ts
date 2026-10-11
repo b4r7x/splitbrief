@@ -45,13 +45,19 @@ export function makeImplementerRetryInvoker(opts: {
   }) => {
     const effectiveConfig = opts.config ?? config;
     const effectiveImplementer = opts.implementer ?? implementer;
+    const imageContext = { config: effectiveConfig, modelCache: seat.ref.modelCache };
     const onOutput = createImplementerTextHandler(
       { bus: seat.ref.bus, phase: opts.phase },
       effectiveImplementer,
     );
     let state = seat.state;
     const absorb = (): number => {
-      const absorbed = absorbBuildCorrections({ ...seat.ref, state, taskId: task.id });
+      const absorbed = absorbBuildCorrections({
+        ...seat.ref,
+        ...imageContext,
+        state,
+        taskId: task.id,
+      });
       state = absorbed.state;
       return absorbed.count;
     };
@@ -78,7 +84,7 @@ export function makeImplementerRetryInvoker(opts: {
         fileIgnoreProjectDir,
         changeDetection,
         plan: state.plan,
-        ...buildCorrectionInput(state, task),
+        ...buildCorrectionInput(state, task, imageContext),
         allowNoChange: task.fix !== undefined || lastError === CORRECTION_AFTER_CHECKS,
         ...creationOwnership(),
       };
@@ -95,7 +101,7 @@ export function makeImplementerRetryInvoker(opts: {
           effectiveImplementer.implement({
             ...call,
             ...creationOwnership(),
-            ...buildCorrectionInput(state, task),
+            ...buildCorrectionInput(state, task, imageContext),
             allowNoChange: true,
           }),
         absorb,
