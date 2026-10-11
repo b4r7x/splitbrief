@@ -20,6 +20,8 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { type ApplyRun, withApplyRun } from '#testing/helpers/apply-run.js';
 import { readSession } from '../../../core/sessions/io.js';
+import { readActive, reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
+import { readRunEvents } from '../../../engine/events/replay.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseContinueActionOption } from '../../options.js';
@@ -450,11 +452,12 @@ describe('continueCommand', () => {
     expect(readFileSync(configFile, 'utf8')).toBe(before);
   });
 
-  it('closes the run on --action end-run and never re-enters it', async () => {
+  it('ends a recovery run even when the halt does not offer end-run', async () => {
     const projectDir = makeTmpProject();
     const sessionId = '2025-04-01-action-end-run';
     const sessDir = makeSessionDir(projectDir, sessionId);
     writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    reactivateExistingSession({ projectDir, sessionId });
     saveState(
       { projectDir, sessionId },
       {
@@ -462,7 +465,7 @@ describe('continueCommand', () => {
         phase: 'implementing',
         tasks: [makeTask({ id: 'T001' })],
         pendingRecovery: makeRecoveryIssue({
-          availableActions: ['retry-same-worker', 'end-run'],
+          availableActions: ['retry-same-worker', 'skip-current-task'],
           recommendedAction: 'retry-same-worker',
         }),
       },
@@ -482,9 +485,102 @@ describe('continueCommand', () => {
     }
 
     expect(headlessRuns).toHaveLength(0);
-    expect(loadState({ projectDir, sessionId })?.closed).toMatchObject({ as: 'ended' });
+    expect(renderRuns).toHaveLength(0);
+    const ref = { projectDir, sessionId };
+    expect(loadState(ref)?.closed).toMatchObject({ as: 'ended' });
+    expect(loadState(ref)?.pendingRecovery).toBeUndefined();
+    expect(readSession(ref)?.status).toBe('ended');
+    expect(readActive(projectDir)).toBeNull();
+    const events = (await readRunEvents(ref)).events;
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'recovery_resolved')).toEqual([
+      expect.objectContaining({ action: 'end-run', outcome: 'aborted' }),
+    ]);
     expect(logged.join('\n')).toContain('The files it wrote are still on disk.');
   });
+
+  it('ends a stopped run without pending recovery and never re-enters it', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-end-stopped-run';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: Date.now(), sessionId });
+    reactivateExistingSession({ projectDir, sessionId });
+    saveState(
+      { projectDir, sessionId },
+      makeWorkflowState({ phase: 'implementing', awaitingContinue: true }),
+    );
+    expect(loadState({ projectDir, sessionId })?.pendingRecovery).toBeUndefined();
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    let logged: string[] = [];
+
+    try {
+      await continueCommand(
+        sessionId,
+        { projectDir, plain: true, action: parseContinueActionOption('end-run') },
+        deps,
+      );
+    } finally {
+      logged = logSpy.mock.calls.map((call) => call.join(' '));
+      logSpy.mockRestore();
+    }
+
+    expect(logged).toEqual([`Run ${sessionId} closed. The files it wrote are still on disk.`]);
+    expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
+    expect(readSession({ projectDir, sessionId })?.status).toBe('ended');
+    expect(readActive(projectDir)).toBeNull();
+    expect(
+      (await readRunEvents({ projectDir, sessionId })).events.filter(
+        (event) => event.type === 'workflow_cancelled',
+      ),
+    ).toHaveLength(1);
+    expect(headlessRuns).toHaveLength(0);
+    expect(renderRuns).toHaveLength(0);
+  });
+
+  it('refuses End run on an already closed run', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = '2025-04-01-end-closed-run';
+    makeSessionDir(projectDir, sessionId);
+    saveState(
+      { projectDir, sessionId },
+      makeWorkflowState({ closed: { as: 'ended', at: '2025-04-01T00:00:00.000Z' } }),
+    );
+
+    await expect(
+      continueCommand(
+        sessionId,
+        { projectDir, plain: true, action: parseContinueActionOption('end-run') },
+        deps,
+      ),
+    ).rejects.toMatchObject({
+      exitCode: 1,
+      message: expect.stringMatching(/is closed \(.*\); nothing to end\./),
+    });
+    expect(headlessRuns).toHaveLength(0);
+  });
+
+  it.each(['skip', 'retry', 'restore', 'switch-seat:codex'])(
+    'still requires pending recovery for --action %s',
+    async (action) => {
+      const projectDir = makeTmpProject();
+      const sessionId = '2025-04-01-retry-without-recovery';
+      makeSessionDir(projectDir, sessionId);
+      saveState({ projectDir, sessionId }, makeWorkflowState({ phase: 'implementing' }));
+
+      await expect(
+        continueCommand(
+          sessionId,
+          { projectDir, plain: true, action: parseContinueActionOption(action) },
+          deps,
+        ),
+      ).rejects.toMatchObject({
+        exitCode: 1,
+        message: 'No pending recovery issue is available.',
+      });
+      expect(loadState({ projectDir, sessionId })?.closed).toBeUndefined();
+      expect(headlessRuns).toHaveLength(0);
+    },
+  );
 
   it('closes a worktree run without saying its files are still on disk', async () => {
     const projectDir = makeTmpProject();
@@ -727,7 +823,7 @@ describe('continueCommand', () => {
   });
 });
 
-describe('continueCommand --action apply|discard', () => {
+describe('continueCommand --action apply|discard|end-run', () => {
   const SESSION_ID = '2026-10-04-ready-run';
   const FIVE = 'one\ntwo\nthree\nfour\nfive\n';
   const read = (root: string, file: string): string => readFileSync(join(root, file), 'utf8');
@@ -827,6 +923,43 @@ describe('continueCommand --action apply|discard', () => {
       expect(readSession({ projectDir: run.dir, sessionId: SESSION_ID })?.apply).toBe('discarded');
       expect(existsSync(run.ws)).toBe(false);
       expect(headlessRuns).toHaveLength(0);
+    });
+  });
+
+  it('ends a ready run as discarded and keeps run.patch', async () => {
+    await withApplyRun({ 'a.txt': FIVE }, { sessionId: SESSION_ID }, async (run) => {
+      writeFileSync(join(run.ws, 'b.txt'), 'created by the run\n');
+      saveReady(run);
+      const output = captureOutput();
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      let logged: string[] = [];
+
+      try {
+        await continueCommand(
+          SESSION_ID,
+          { projectDir: run.dir, plain: true, action: parseContinueActionOption('end-run') },
+          deps,
+        );
+      } finally {
+        logged = logSpy.mock.calls.map((call) => call.join(' '));
+        logSpy.mockRestore();
+        output.restore();
+      }
+
+      const ref = { projectDir: run.dir, sessionId: SESSION_ID };
+      const patch = join(sessionDir(run.dir, SESSION_ID), 'run.patch');
+      expect(logged).toEqual([`Run ${SESSION_ID} closed.`]);
+      expect(output.stderr()).toContain(
+        `Run changes not applied are saved in ${join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')}; apply them with git apply.`,
+      );
+      expect(loadState(ref)?.closed?.as).toBe('discarded');
+      expect(readSession(ref)?.apply).toBe('discarded');
+      expect(readFileSync(patch, 'utf8')).toContain('+created by the run');
+      expect(existsSync(run.ws)).toBe(false);
+      expect(read(run.dir, 'a.txt')).toBe(FIVE);
+      expect(existsSync(join(run.dir, 'b.txt'))).toBe(false);
+      expect(headlessRuns).toHaveLength(0);
+      expect(renderRuns).toHaveLength(0);
     });
   });
 

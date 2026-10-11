@@ -390,7 +390,7 @@ describe('applyRecoveryAction: the run-level answers', () => {
   it('end-run closes the run and refuses every later transition', async () => {
     const { projectDir, sessionId } = setupSession('recovery-end-run');
     const state = plannerHaltState(projectDir, sessionId, reviseIssue('brief-review-no-progress'));
-    const { bus } = makeBusRecorder();
+    const { bus, events } = makeBusRecorder();
 
     const result = await applyRecoveryAction({
       projectDir,
@@ -404,6 +404,10 @@ describe('applyRecoveryAction: the run-level answers', () => {
     expect(result.state.closed?.as).toBe('ended');
     expect(result.state.pendingRecovery).toBeUndefined();
     expect(loadState({ projectDir, sessionId })?.closed?.as).toBe('ended');
+    expect(events.filter((event) => event.type === 'recovery_resolved')).toEqual([
+      expect.objectContaining({ action: 'end-run', outcome: 'aborted' }),
+    ]);
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
   });
 
   it('continue on a task-less planner-calls-spent issue grants five calls without resetting a task', async () => {

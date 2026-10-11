@@ -239,6 +239,7 @@
 
 ### Fixed
 
+- `splitbrief continue <run> --action end-run` closes any open run, as End run does on the run screen. It needs no pending recovery. A ready run closes `discarded` and keeps `run.patch`.
 - Keep the build attempt count in step with the lineage ladder when consult and answer attempts start, without extra Retry rows.
 - Complete the gallery histories for mixed base review, render collection, a paused T003, and answered planner consults; a stopped fix check names its brief.
 - Show every pre-review plan check and render with its own row and clock in Review; render labels use the scenario and the byline starts with `Review ·`.

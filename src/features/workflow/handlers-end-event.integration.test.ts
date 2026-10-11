@@ -4,12 +4,16 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../../core/paths-io.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
+import { readSession } from '../../core/sessions/io.js';
+import { readActive, reactivateExistingSession } from '../../core/sessions/active-pointer.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { readRunEvents } from '../../engine/events/replay.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
@@ -100,10 +104,50 @@ describe('End run at rest', () => {
     expect(requestResume(plainUserMessage(''))).toBe(false);
     expect(resume).not.toHaveBeenCalled();
 
-    await vi.waitFor(() =>
-      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' }),
-    );
-    expect(stopStore.get().phase).toBe('ended');
+    await vi.waitFor(() => {
+      expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
+      expect(stopStore.get().phase).toBe('ended');
+    });
+  });
+
+  it('/end resolves a halted run and finalizes its session', async () => {
+    projectDir = createTempDir('at-rest-end-recovery-');
+    const ref = { projectDir, sessionId: 'halted-at-rest' };
+    reactivateExistingSession(ref);
+    saveState(ref, {
+      ...createInitialState('End a halted run'),
+      phase: 'escalating',
+      tasks: [makeTask({ id: 'T001', status: 'failed' })],
+      pendingRecovery: makeRecoveryIssue({
+        availableActions: ['retry-same-worker', 'skip-current-task'],
+      }),
+    });
+    const record = readRunRecord(ref);
+    if (record === null) throw new Error('missing run record');
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+    configStore.__testReset({ config: makeConfig() });
+    const errors: string[] = [];
+
+    await runCommandInTest({
+      commands: createRuntimeCommands(makeCtx({ endRun: requestEndRun })),
+      raw: '/end',
+      screen: 'workflow',
+      phase: 'escalating',
+      openRunAtRest: isOpenRunAtRest(routerStore.get()),
+      onError: (message) => errors.push(message),
+    });
+
+    expect(errors).toEqual([]);
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('ended'));
+    expect(loadState(ref)?.closed?.as).toBe('ended');
+    expect(loadState(ref)?.pendingRecovery).toBeUndefined();
+    expect(readSession(ref)?.status).toBe('ended');
+    expect(readActive(projectDir)).toBeNull();
+    const events = (await readRunEvents(ref)).events;
+    expect(events.filter((event) => event.type === 'recovery_resolved')).toEqual([
+      expect.objectContaining({ action: 'end-run', outcome: 'aborted' }),
+    ]);
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
   });
 });
 

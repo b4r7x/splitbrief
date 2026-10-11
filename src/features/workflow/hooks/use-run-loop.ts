@@ -24,10 +24,7 @@ import {
 } from '../../../engine/orchestrator/run/seat-swap.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { publishRetainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
-import {
-  WORKFLOW_CANCEL_REASON_USER,
-  WORKFLOW_USER_CANCELLED_ABORT_REASON,
-} from '../../../engine/events/workflow-cancel.js';
+import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../../engine/events/workflow-cancel.js';
 import type { OrchestratorCallbacks, WorkflowSinks } from '../../../engine/orchestrator/types.js';
 import { addTuiEvent } from '../tui-sink.js';
 import { streamingOutputStore } from '../../../stores/workflow/streaming-output.js';
@@ -52,7 +49,7 @@ import {
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
-import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
+import { endRun } from '../../../engine/orchestrator/run/close.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
@@ -214,7 +211,7 @@ export function useRunLoop({
       const intent = stopStore.get().intent;
       const bus = createRecoveryBus({ ...session.ref, sink: addTuiEvent });
       const closure =
-        intent === 'end-run' ? await closeRunIfOpen({ ...session.ref, bus }, current) : undefined;
+        intent === 'end-run' ? await endRun({ ...session.ref, bus }, current) : undefined;
       const status = deriveRunStatus({
         state: current,
         liveness: 'not-alive',
@@ -231,14 +228,6 @@ export function useRunLoop({
                   { ...session.ref, bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }) },
                   current,
                 );
-      if (closure?.closedNow) {
-        bus.publish({
-          type: 'workflow_cancelled',
-          ts: Date.now(),
-          phase: next.phase,
-          reason: WORKFLOW_CANCEL_REASON_USER,
-        });
-      }
       finalizeEndedRun({
         ref: session.ref,
         active: preparedForRun.session.active,

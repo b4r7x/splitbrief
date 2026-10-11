@@ -1,14 +1,21 @@
 import { existsSync } from 'node:fs';
 import { relative } from 'node:path';
+import type { Config } from '../../../core/schemas/config.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { EventBus } from '../../events/types.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
-import { publishWarning } from '../events.js';
+import {
+  publishRecoveryActionSelected,
+  publishRecoveryResolved,
+  publishWarning,
+} from '../events.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';
+import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import {
   commitWorkflowState,
   MAX_STATE_CONFLICT_RETRIES,
@@ -115,4 +122,47 @@ export async function closeRunIfOpen(
       });
     }
   }
+}
+
+export async function endRun(
+  scope: SessionRef & { bus: EventBus },
+  state: WorkflowState,
+): Promise<{ state: WorkflowState; closedNow: boolean }> {
+  const latest = rebaseOnPersistedWorkflowState(scope, state);
+  const issue = latest.pendingRecovery;
+  const closure = await closeRunIfOpen(scope, latest);
+  if (closure.closedNow) {
+    if (issue !== undefined) {
+      publishRecoveryActionSelected({
+        bus: scope.bus,
+        phase: latest.phase,
+        issue,
+        action: 'end-run',
+      });
+      publishRecoveryResolved({
+        bus: scope.bus,
+        phase: closure.state.phase,
+        issue,
+        action: 'end-run',
+        outcome: 'aborted',
+      });
+    }
+    scope.bus.publish({
+      type: 'workflow_cancelled',
+      ts: Date.now(),
+      phase: closure.state.phase,
+      reason: WORKFLOW_CANCEL_REASON_USER,
+    });
+  }
+  return closure;
+}
+
+export async function endRunAtRest(
+  scope: SessionRef & { bus: EventBus },
+  state: WorkflowState,
+  config: Config,
+): Promise<{ state: WorkflowState; closedNow: boolean }> {
+  const closure = await endRun(scope, state);
+  finalizeRunAtRest({ ref: scope, config, state: closure.state });
+  return closure;
 }

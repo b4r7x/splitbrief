@@ -24,7 +24,7 @@ import {
 import { resumeSavedSession } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import { filesStillOnDiskSuffix } from '../../../engine/orchestrator/run/close.js';
+import { endRunAtRest, filesStillOnDiskSuffix } from '../../../engine/orchestrator/run/close.js';
 
 export interface ContinueDeps {
   initStores: typeof initStores;
@@ -163,13 +163,30 @@ export async function continueCommand(
 
   let resumed: { state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat };
   const action = opts.action;
+  if (action?.action === 'end-run' && record.status.kind === 'closed') {
+    throw cliError(`Run ${sessionId} is closed (${record.status.as}); nothing to end.`, 1);
+  }
   // The revision the operator answered the halt on, read before the switch is applied, so a
   // config that changed underneath the halt is not overwritten by the write that follows.
   const expectedRevision =
     action?.action === 'switch-seat'
       ? readConfigDocument(opts.projectDir).revision?.rawSha256
       : undefined;
-  if (action?.action === 'apply' || action?.action === 'discard') {
+  if (action?.action === 'end-run') {
+    const bus = createRecoveryBus({
+      projectDir: opts.projectDir,
+      sessionId,
+      sink: (event) => {
+        if (event.type === 'warning') process.stderr.write(`${event.message}\n`);
+      },
+    });
+    const closure = await endRunAtRest(
+      { projectDir: opts.projectDir, sessionId, bus },
+      hydrated.state,
+      resolveRunConfig({ projectDir: opts.projectDir, opts }),
+    );
+    resumed = { state: closure.state };
+  } else if (action?.action === 'apply' || action?.action === 'discard') {
     if (record.status.kind !== 'ready-to-apply') {
       throw cliError(
         `Run ${sessionId} is not ready to apply; --action ${action.action} settles a run whose review passed in its workspace.`,
