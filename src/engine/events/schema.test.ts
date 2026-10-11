@@ -3,6 +3,21 @@ import { parseEngineEvent } from './schema.js';
 import type { EngineEvent } from './types.js';
 
 describe('EngineEvent alias colocation with EngineEventSchema', () => {
+  it('parses completion files and still reads completions from older logs', () => {
+    const event = {
+      type: 'implementer_generate_done',
+      ts: 1,
+      phase: 'implementing',
+      taskId: 'T001',
+      file: 'src/text.js',
+      duration: 15_400,
+    };
+    expect(parseEngineEvent(event)).toMatchObject(event);
+    const current = { ...event, files: ['src/text.js', 'test/text.test.js'] };
+    expect(parseEngineEvent(current)).toMatchObject(current);
+    expect(parseEngineEvent({ ...event, files: [123] })).toBeNull();
+  });
+
   it('parseEngineEvent (schema.ts) yields a value usable as the EngineEvent alias (types.ts)', () => {
     const parsed = parseEngineEvent({
       type: 'workflow_started',

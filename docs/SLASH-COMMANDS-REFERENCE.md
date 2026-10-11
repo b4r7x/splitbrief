@@ -225,7 +225,7 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Shortcut**: `Ctrl+A` (`src/core/keybindings/registry.ts`); `/activity` is the guaranteed command path.
 - **Example**: `/activity`
 - **Behavior**: Expands the most recent compact activity block with hidden rows, or collapses it if it is already expanded. Collapsed activity blocks show a compact key affordance such as `ctrl+a` when earlier rows are hidden. If no activity block has hidden rows, the feedback line says so.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; command context uses `findLatestExpandableActivityBatchKey()` and `conversationScrollStore.toggleActivityBatch()`.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context selects a target from `readConversationRowActions()` with `findLatestConversationRowAction()`, then calls `conversationScrollStore.toggleActivityBatch()`.
 - **See also**: `/scroll`, `/diff`.
 
 ### `/sidebar`
@@ -265,8 +265,8 @@ Commands that change what the workflow screen shows without touching the run. `c
 - **Args**: none.
 - **Shortcut**: `Ctrl+D` (`src/core/keybindings/registry.ts`).
 - **Example**: `/diff`
-- **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. With no diff to show, the feedback line says why instead. Same phase semantics as the key.
-- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`; toggle wiring in the command context.
+- **Behavior**: Prints `"Expanded latest diff"` or `"Collapsed latest diff"`. Targets include diffs, cut failure causes, drift findings, and automatic Recovery details. The keyboard, palette, and slash command select the same row across the whole transcript. With no expandable target, the feedback line says why.
+- **Implementation**: catalog at `src/core/runtime/commands/defs/view.ts`. The command context uses the same row-action selection as `/activity`, then calls `conversationScrollStore.toggleDiff()`.
 - **See also**: `/activity`, `/copy` (`/copy cost`).
 
 ---

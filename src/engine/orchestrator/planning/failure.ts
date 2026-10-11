@@ -19,6 +19,7 @@ import {
 import { labelError } from '../../../utils/format-errors.js';
 import { isAbortError } from '../../../utils/abort.js';
 import { recoveryActionLabel } from '../../../core/recovery/action-label.js';
+import { runnerHaltRow } from '../recovery/builders/task.js';
 
 export async function handlePlanningFailure(opts: {
   err: unknown;
@@ -82,12 +83,6 @@ export async function handlePlanningFailure(opts: {
     runner: wctx.config.planner,
     seat: 'plan',
   });
-  publishError({
-    bus: wctx.bus,
-    phase: latest.phase,
-    message: diagnosis.message,
-    resetAt: diagnosis.resetsAt?.toISOString(),
-  });
   const issue = await plannerCallHaltIssue({
     projectDir,
     config: wctx.config,
@@ -95,6 +90,15 @@ export async function handlePlanningFailure(opts: {
     phase: latest.phase,
     seatSwitches: latest.seatSwitches,
     swap: { seat: 'plan', runner: wctx.config.planner },
+  });
+  publishError({
+    bus: wctx.bus,
+    phase: latest.phase,
+    message:
+      diagnosis.seatDown === undefined
+        ? diagnosis.message
+        : runnerHaltRow(issue, diagnosis.seatDown.words),
+    resetAt: diagnosis.resetsAt?.toISOString(),
   });
 
   return {

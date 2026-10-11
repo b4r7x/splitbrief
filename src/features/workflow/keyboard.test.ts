@@ -1,14 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import type { Key } from 'ink';
-import type { Section } from '../../core/sections/event-sections.js';
-import type { EngineEvent } from '../../engine/events/types.js';
 import {
   handleConversationScroll,
   handleReviewScroll,
   handleWorkflowCtrlChords,
 } from './keyboard.js';
-
-const sections: Section<EngineEvent>[] = [];
 
 function key(overrides: Partial<Key>): Key {
   return {
@@ -298,9 +294,8 @@ describe('handleWorkflowCtrlChords', () => {
         input: 'a',
         key: key({ ctrl: true }),
         composerFocus: true,
-        sections,
-        findLatestDiff: () => null,
-        findLatestActivityBatch: () => 'activity-batch:0:call-1',
+        getRowActions: () =>
+          new Map([['row', { type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' }]]),
       }),
     ).toEqual({ type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' });
   });
@@ -311,9 +306,8 @@ describe('handleWorkflowCtrlChords', () => {
         input: 'a',
         key: key({ meta: true }),
         composerFocus: true,
-        sections,
-        findLatestDiff: () => null,
-        findLatestActivityBatch: () => 'activity-batch:0:call-1',
+        getRowActions: () =>
+          new Map([['row', { type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' }]]),
       }),
     ).toEqual({ type: 'none' });
   });
@@ -324,9 +318,7 @@ describe('handleWorkflowCtrlChords', () => {
         input: 'e',
         key: key({ ctrl: true }),
         composerFocus: true,
-        sections,
-        findLatestDiff: () => null,
-        findLatestActivityBatch: () => null,
+        getRowActions: () => new Map([]),
       }),
     ).toEqual({ type: 'none' });
   });
@@ -336,9 +328,7 @@ describe('handleWorkflowCtrlChords', () => {
       handleWorkflowCtrlChords({
         input: 'e',
         key: key({ ctrl: true }),
-        sections,
-        findLatestDiff: () => null,
-        findLatestActivityBatch: () => null,
+        getRowActions: () => new Map([]),
       }),
     ).toEqual({ type: 'none' });
   });
@@ -348,9 +338,8 @@ describe('handleWorkflowCtrlChords', () => {
       handleWorkflowCtrlChords({
         input: 'd',
         key: key({ ctrl: true }),
-        sections,
-        findLatestDiff: () => 'implementer_generate_done:1',
-        findLatestActivityBatch: () => null,
+        getRowActions: () =>
+          new Map([['row', { type: 'toggle-diff', key: 'implementer_generate_done:1' }]]),
       }),
     ).toEqual({ type: 'toggle-diff', key: 'implementer_generate_done:1' });
   });
@@ -360,9 +349,7 @@ describe('handleWorkflowCtrlChords', () => {
       handleWorkflowCtrlChords({
         input: 'g',
         key: key({ ctrl: true }),
-        sections,
-        findLatestDiff: () => null,
-        findLatestActivityBatch: () => null,
+        getRowActions: () => new Map([]),
       }),
     ).toEqual({ type: 'none' });
   });
@@ -373,9 +360,8 @@ describe('handleWorkflowCtrlChords', () => {
         handleWorkflowCtrlChords({
           input,
           key: key({}),
-          sections,
-          findLatestDiff: () => null,
-          findLatestActivityBatch: () => 'activity-batch:0:call-1',
+          getRowActions: () =>
+            new Map([['row', { type: 'toggle-activity-batch', key: 'activity-batch:0:call-1' }]]),
         }),
       ).toEqual({ type: 'none' });
     }

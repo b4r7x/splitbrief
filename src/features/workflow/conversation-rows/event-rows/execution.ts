@@ -2,10 +2,11 @@ import type { EngineEvent } from '../../../../engine/events/types.js';
 import { SOFT_SEP } from '../../../../core/separators.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
 import { ValidationStageSchema, type ValidationStage } from '../../../../core/schemas/enums.js';
-import { formatDuration } from '../../../../utils/format-time.js';
-import { implementerExpandedDiffCardBlock } from '../implementer-diff-card-block.js';
+import {
+  implementerDoneFilesBlock,
+  implementerExpandedDiffCardBlock,
+} from '../implementer-diff-card-block.js';
 import type { ConversationRowBlock, RowBuildContext } from '../types.js';
-import { sanitizeRowDisplayText } from '../row-format/text.js';
 import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
 import {
@@ -21,16 +22,6 @@ import {
   wrappedSegmentsBlock,
   wrappedTextBlock,
 } from '../row-block-compose.js';
-
-/** ` (+a -b)` when the call counted its lines; nothing when its baseline could not. */
-function lineCounts(event: {
-  linesAdded?: number | undefined;
-  linesRemoved?: number | undefined;
-}): string {
-  return event.linesAdded === undefined || event.linesRemoved === undefined
-    ? ''
-    : ` (+${event.linesAdded} -${event.linesRemoved})`;
-}
 
 export function runningImplementerRowBlock(
   keyPrefix: string,
@@ -67,49 +58,23 @@ export function implementerDoneRowBlock(
   ctx: RowBuildContext,
   expanded: boolean,
 ): ConversationRowBlock | null {
-  const header = wrappedTextBlock({
-    keyPrefix: `${keyPrefix}-header-0`,
-    text: `${event.file}  ${formatDuration(event.duration)}`,
-    width: ctx.width,
-    tone: 'textDim',
-  });
-
-  if (!event.diff) {
+  const header = implementerDoneFilesBlock(keyPrefix, event, ctx.width, false);
+  if (event.noChange === true) {
     return compositeBlock(keyPrefix, [
       header,
       wrappedSegmentsBlock({
         keyPrefix: `${keyPrefix}-summary-1`,
-        // A review fix that verified the brief and edited nothing never reads as a code change;
-        // the header above already names the file, so the verdict stands alone and never wraps.
-        segments:
-          event.noChange === true
-            ? [
-                { text: 'verified', tone: stateTone('passed') },
-                { text: SOFT_SEP, tone: 'textDim' },
-                { text: 'no change needed', tone: 'textDim' },
-              ]
-            : [{ text: `${event.file}${lineCounts(event)}`, tone: 'textDim' }],
+        segments: [
+          { text: 'verified', tone: stateTone('passed') },
+          { text: SOFT_SEP, tone: 'textDim' },
+          { text: 'no change needed', tone: 'textDim' },
+        ],
         width: ctx.width,
       }),
     ]);
   }
 
-  const diffLines = sanitizeRowDisplayText(event.diff)
-    .split('\n')
-    .filter((line) => line.length > 0);
-  if (!expanded || diffLines.length === 0) {
-    return compositeBlock(keyPrefix, [
-      header,
-      wrappedTextBlock({
-        keyPrefix: `${keyPrefix}-collapsed-1`,
-        text: `${event.file}${lineCounts(event)}  ctrl+d`,
-        width: ctx.width,
-        tone: 'textDim',
-      }),
-    ]);
-  }
-
-  return implementerExpandedDiffCardBlock(keyPrefix, event, ctx);
+  return expanded ? (implementerExpandedDiffCardBlock(keyPrefix, event, ctx) ?? header) : header;
 }
 
 export function validateRowBlock(

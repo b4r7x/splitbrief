@@ -338,7 +338,11 @@ Stopping keeps workspace changes. Closing follows [the Apply close path](./WORKF
 
 When REVIEW follows PLAN, both picker screens show `REVIEW uses PLAN · saving here gives REVIEW its own seat`. Saving, or clearing while PLAN has a fallback, copies PLAN's runner into a new `reviewer` block with the chosen fallback or none. PLAN stays unchanged. Presets keep each seat's fallback; a preset with no reviewer makes REVIEW follow PLAN, fallback and all.
 
-**During a run.** The next halt reads the fallback of record, in any phase. An automatic switch makes the old CLI seat the new fallback. An old non-CLI seat leaves none. A manual switch keeps the fallback. A REVIEW switch creates its own block when it inherited PLAN and leaves PLAN unchanged. The transcript marks an automatic switch as `<SEAT> → <identity> · automatic fallback · <cause>`. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for conditions and detail rows.
+**During a run.** The next halt reads the fallback of record, in any phase. An automatic switch makes the old CLI seat the new fallback. An old non-CLI seat leaves none. A manual switch keeps the fallback. A REVIEW switch creates its own block when it inherited PLAN and leaves PLAN unchanged. A resolved automatic switch shows `Recovery  <cause> → continued on fallback`, with expandable runner words, then `<SEAT>  <from identity> → <to identity> · automatic fallback`. Equal catalog names show both model ids. Manual switches show both endpoints without the automatic marker.
+
+A switch does not write the session's `seats.json`. The next resume reconciles `seats.json` against the config. The engine checks each changed seat against the `seat_switched` events since the last `workflow_started` or `workflow_resumed`. If the latest switch for that seat records the current config, the engine emits no seat-change notice. A config change between runs still emits a notice.
+
+Older logs emitted that notice before `workflow_resumed`. The transcript folds only one matching notice before the resume that follows the switch. It keeps notices for config changes before later resumes. See [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down) for conditions and detail rows.
 
 ### Recovery stops
 

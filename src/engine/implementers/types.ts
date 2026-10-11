@@ -50,6 +50,7 @@ export interface ImplementerPublisher {
     phase: Phase;
     taskId: TaskId;
     file: string;
+    files: string[];
     diff?: string | undefined;
     /** Absent when the call's baseline kept no content to count against (a hash baseline). */
     linesAdded?: number | undefined;

@@ -15,6 +15,8 @@ import {
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { passingReviewVerdict } from '#testing/helpers/typed-planner.js';
+import { writeConfig } from '../../core/config/load/io.js';
+import { cliDetectionsFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { ensureSessionDir, writeSpecFile } from '../../core/paths-io.js';
 import { SPEC_FILE } from '../../core/paths.js';
 import { recoveryActionLabel } from '../../core/recovery/action-label.js';
@@ -125,6 +127,40 @@ async function halt(
 }
 
 describe('a rate-limited codex reviewer', () => {
+  it.each([true, false])(
+    'publishes REVIEW advice only without an automatic intent: %s',
+    async (auto) => {
+      const ref = project();
+      await rememberDetectedTools(
+        ref.projectDir,
+        cliDetectionsFor('ready', ['codex', 'claude-code']),
+      );
+      const config = makeNoValidationConfig({
+        reviewer: {
+          kind: 'cli',
+          tool: 'codex',
+          ...(auto && { fallback: { tool: 'claude-code', model: 'sonnet' } }),
+        },
+      });
+      writeConfig(ref.projectDir, config);
+      const { bus, events } = makeBusRecorder();
+      const failed = await review(
+        ref,
+        doneState(makeTask({ id: 'T001' })),
+        codexReviewer('Insufficient Balance'),
+        bus,
+        config,
+      );
+      const halted = await halt(ref, failed, bus, config);
+      expect(halted.pendingRecovery?.switchSeat?.auto !== undefined).toBe(auto);
+      expect(halted.pendingRecovery?.message).toContain('Add credit');
+      const rows = events.filter((event) => event.type === 'error');
+      expect(rows).toHaveLength(1);
+      if (auto) expect(rows[0]?.message).toBe('Balance spent on OpenAI Codex CLI');
+      else expect(rows[0]?.message).toContain('change the REVIEW tool');
+    },
+  );
+
   it('waits out a reset inside the bound, then reviews again and passes', async () => {
     const ref = project();
     const { bus, events } = makeBusRecorder();
@@ -179,10 +215,10 @@ describe('a rate-limited codex reviewer', () => {
       expect(failed.reviewStatus).toBe('failed');
       expect(failed.failure?.kind).toBe('seat-blocked');
 
+      const halted = await halt(ref, failed, bus, config);
       expect(events.find((event) => event.type === 'error')?.message).toContain(
         'change the REVIEW tool',
       );
-      const halted = await halt(ref, failed, bus, config);
       const issue = halted.pendingRecovery;
       expect(issue).toMatchObject({ seat: 'review', reason: 'runner-usage-limit' });
       expect(issue?.availableActions).toContain('retry-later');

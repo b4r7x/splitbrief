@@ -1,6 +1,8 @@
 import type { Key } from 'ink';
-import type { Section } from '../../core/sections/event-sections.js';
-import type { EngineEvent } from '../../engine/events/types.js';
+import {
+  findLatestConversationRowAction,
+  type ConversationRowAction,
+} from './conversation-rows/row-actions.js';
 import { resolveScrollKey, type ScrollKeyAction } from '../../core/keybindings/scroll.js';
 import type { InputMode, OverlayType } from '../../core/navigation/types.js';
 import { normalizeKeySignature } from '../../core/keybindings/normalize.js';
@@ -29,13 +31,11 @@ export interface WorkflowCtrlChordsInput {
   inputMode?: InputMode | undefined;
   overlay?: OverlayType | undefined;
   composerFocus?: boolean | undefined;
-  sections: Section<EngineEvent>[];
-  findLatestDiff: (sections: Section<EngineEvent>[]) => string | null;
-  findLatestActivityBatch: (sections: Section<EngineEvent>[]) => string | null;
+  getRowActions: () => ReadonlyMap<string, ConversationRowAction>;
 }
 
 export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): WorkflowKeyAction {
-  const { input, key, sections, findLatestDiff, findLatestActivityBatch } = options;
+  const { input, key, getRowActions } = options;
   const owner = resolveKeyOwner({
     screen: 'workflow',
     inputMode: options.inputMode ?? 'normal',
@@ -46,17 +46,9 @@ export function handleWorkflowCtrlChords(options: WorkflowCtrlChordsInput): Work
   });
   if (owner?.owner !== 'workflow') return NONE;
 
-  if (owner.action === 'toggle-activity') {
-    const activityKey = findLatestActivityBatch(sections);
-    if (activityKey != null) return { type: 'toggle-activity-batch', key: activityKey };
-    return NONE;
-  }
-  if (owner.action === 'toggle-diff') {
-    const diffKey = findLatestDiff(sections);
-    if (diffKey != null) return { type: 'toggle-diff', key: diffKey };
-    return NONE;
-  }
-  return NONE;
+  if (owner.action !== 'toggle-activity' && owner.action !== 'toggle-diff') return NONE;
+  const type = owner.action === 'toggle-activity' ? 'toggle-activity-batch' : 'toggle-diff';
+  return findLatestConversationRowAction(getRowActions(), type) ?? NONE;
 }
 
 export interface ReviewScrollInput {

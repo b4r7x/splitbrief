@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { taskId } from '../../../../core/schemas/task.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
 import { getTerminalCellWidth } from '../../../../utils/display-text.js';
 import { rowText } from '../row-format/rows.js';
 import { wrapWidthFor } from '../row-markers.js';
-import { fullSuiteRowBlock } from './execution.js';
+import { fullSuiteRowBlock, implementerDoneRowBlock } from './execution.js';
 
 describe('fullSuiteRowBlock', () => {
   it.each(['pre-review', 'plan', 'brief', 'base'] as const)(
@@ -215,6 +216,103 @@ describe('fullSuiteRowBlock', () => {
       expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(
         wrapWidthFor('message', width),
       );
+    }
+  });
+});
+
+function linesFor(
+  overrides: Partial<EngineEventOf<'implementer_generate_done'>>,
+  width = 120,
+  expanded = false,
+): string[] {
+  const event = {
+    type: 'implementer_generate_done' as const,
+    ts: 0,
+    phase: 'implementing' as const,
+    taskId: taskId('T001'),
+    file: 'src/text.js',
+    duration: 15_400,
+    ...overrides,
+  };
+  const block = implementerDoneRowBlock(
+    'done',
+    event,
+    { width, viewportRows: 24, streaming: { taskId: null, lines: [], active: false } },
+    expanded,
+  );
+  return block?.createRows(0, block.rowCount).map((row) => rowText(row).trimEnd()) ?? [];
+}
+
+describe('implementerDoneRowBlock', () => {
+  it.each([undefined, { linesAdded: 12, linesRemoved: 0 }])(
+    'lists both changed files once with line counts %j',
+    (counts) => {
+      expect(linesFor({ files: ['src/text.js', 'test/text.test.js'], ...counts })).toEqual([
+        `src/text.js · test/text.test.js  15.4s${counts === undefined ? '' : '  +12 -0'}`,
+      ]);
+    },
+  );
+
+  it.each([false, true])('labels the diff with both files when expanded=%s', (expanded) => {
+    const lines = linesFor(
+      {
+        files: ['src/text.js', 'test/text.test.js'],
+        diff: '+ added',
+        linesAdded: 1,
+        linesRemoved: 0,
+      },
+      120,
+      expanded,
+    );
+    expect(lines[0]).toBe(
+      `src/text.js · test/text.test.js  15.4s  +1 -0${expanded ? '' : '  ctrl+d'}`,
+    );
+    const text = lines.join('\n');
+    for (const value of ['src/text.js', 'test/text.test.js', '15.4s', 'ctrl+d']) {
+      expect(text.split(value)).toHaveLength(2);
+    }
+    if (expanded) expect(text).toContain('ctrl+d to collapse');
+  });
+
+  it('keeps the verification verdict under the brief target when no files changed', () => {
+    expect(linesFor({ files: [], noChange: true, linesAdded: 0, linesRemoved: 0 })).toEqual([
+      'src/text.js  15.4s',
+      'verified · no change needed',
+    ]);
+  });
+
+  it('replays an older event with its file once', () => {
+    expect(linesFor({})).toEqual(['src/text.js  15.4s']);
+  });
+
+  it('shows no disclosure hint for an empty diff', () => {
+    expect(linesFor({ files: ['src/text.js', 'test/text.test.js'], diff: '\n\n' })).toEqual([
+      'src/text.js · test/text.test.js  15.4s',
+    ]);
+  });
+
+  it('wraps a path with spaces as one file name', () => {
+    const files = ['src/text.js', 'test/a long directory with spaces/text.test.js'];
+    const lines = linesFor({ files }, 60);
+    expect(lines).toEqual(['src/text.js', 'test/a long directory with spaces/text.test.js  15.4s']);
+  });
+
+  it.each([120, 80, 60])('keeps whole file names at %s columns', (width) => {
+    const files = ['src/features/reporting/text.js', 'test/features/reporting/text.test.js'];
+    for (const expanded of [false, true]) {
+      const lines = linesFor(
+        { files, diff: '+ added', linesAdded: 12, linesRemoved: 0 },
+        width,
+        expanded,
+      );
+      const text = lines.join('\n');
+      for (const file of files) {
+        expect(lines.filter((line) => line.includes(file))).toHaveLength(1);
+        expect(text.split(file)).toHaveLength(2);
+      }
+      expect(text.split('15.4s')).toHaveLength(2);
+      expect(lines.every((line) => getTerminalCellWidth(line) <= width - 3)).toBe(true);
+      expect(lines.every((line) => !/^\s*·|·\s*$/u.test(line))).toBe(true);
     }
   });
 });

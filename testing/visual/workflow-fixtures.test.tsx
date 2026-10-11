@@ -21,6 +21,7 @@ import {
 } from '../../src/stores/workflow/tasks.js';
 import { stripTerminalControls } from '../../src/utils/display-text.js';
 import { EngineEventSchema } from '../../src/engine/events/schema.js';
+import { deriveRunStatus } from '../../src/core/sessions/run-status.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS, WIDE_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId, type ScenarioId } from './contracts/identifiers.js';
@@ -36,6 +37,36 @@ import { mountGalleryScenario, type GalleryCaptureHandle } from './gallery/mount
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 const VIEWPORT = viewport({ cols: 80, rows: 24 });
+
+it.each([
+  'workflow-seat-switched',
+  'workflow-seat-switched-manual',
+  'workflow-seat-switched-balance',
+])('finishes the restarted call and brief in %s', async (id) => {
+  const projection = workflowFixtureProjections.get(scenarioId(id));
+  if (projection === undefined) throw new Error(`Missing switch scenario ${id}`);
+  const events = projection.events;
+  const restart = events.findLastIndex((event) => event.type === 'runner_call_started');
+  expect(events.slice(restart + 1).map((event) => event.type)).toEqual([
+    'runner_call_tool_use',
+    'runner_call_activity',
+    'planner_text',
+    'runner_call_completed',
+    'implementer_generate_done',
+    'task_completed',
+  ]);
+  expect(events.find((event) => event.type === 'implementer_generate_done')).toMatchObject({
+    files: ['src/text.js', 'test/text.test.js'],
+  });
+  const lifecycle = await setupProjection(projection);
+  try {
+    expect(operationsStore.get().active).toBeNull();
+    expect(selectRunningBrief(tasksStore.get(), lifecycleStore.get().phase).current).toBeNull();
+    expect(tasksStore.get().tasks.filter((task) => task.status === 'done')).toHaveLength(1);
+  } finally {
+    await lifecycle.teardown();
+  }
+});
 
 it.each(['queued', 'delivered', 'steerable'])(
   'uses one Claude Code BUILD seat in the %s queue fixture',
@@ -232,12 +263,97 @@ describe('workflow visual fixtures', () => {
       const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
       try {
         const frame = stripTerminalControls(await ui.waitForCheckpoint()).replace(/\s+/g, ' ');
-        expect(frame).toContain('BUILD → OpenCode CLI');
+        expect(frame).toContain('BUILD OpenCode CLI · deepseek/deepseek-flash');
+        expect(frame).toContain('→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high');
         expect(frame.includes('automatic fallback')).toBe(auto);
-        expect(frame).toContain('usage limit');
+        expect(frame).toContain('Balance spent on OpenCode CLI');
+        expect(frame).not.toContain('usage limit');
       } finally {
         await ui.unmount();
       }
+    }
+  });
+
+  it('replays the recorded spent-b2 warning and completions without file lists', async () => {
+    const scenario = findVisualScenario('workflow-spent-b2-replay');
+    const checkpoint = scenario?.checkpoints[0];
+    const projection = workflowFixtureProjections.get(scenarioId('workflow-spent-b2-replay'));
+    if (!scenario || !checkpoint || !projection) throw new Error('Missing spent-b2 replay');
+    const record = projection.atRest?.record;
+    if (record?.hydration.kind !== 'loaded') throw new Error('Missing spent-b2 saved state');
+    expect(record.status).toEqual(
+      deriveRunStatus({ state: record.hydration.state, liveness: 'not-alive' }),
+    );
+    expect(record.status).toMatchObject({
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'boundary' } },
+      resumeAt: { kind: 'review', cycle: 0 },
+    });
+    expect(projection.events).toHaveLength(67);
+    expect(projection.events.filter((event) => event.type === 'implementer_generate_done')).toEqual(
+      [
+        expect.objectContaining({ taskId: 'T001', file: 'src/text.js', duration: 15409 }),
+        expect.objectContaining({ taskId: 'T002', file: 'src/preview.js', duration: 15018 }),
+      ],
+    );
+    for (const event of projection.events.filter(
+      (event) => event.type === 'implementer_generate_done',
+    ))
+      expect(event).not.toHaveProperty('files');
+    expect(projection.events.find((event) => event.type === 'warning')?.message).toBe(
+      'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat',
+    );
+    for (const renderViewport of scenario.viewports) {
+      const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+      try {
+        const frame = stripAnsiStyles(await ui.waitForCheckpoint());
+        const text = workflowTranscriptText();
+        expect(text.match(/BUILD activity {2}4 updates/g)).toHaveLength(2);
+        expect(text.match(/\+1 more · ctrl\+a/g)).toHaveLength(2);
+        expect(frame).toContain('● Plan → × Build → ○ Review');
+        if (renderViewport.cols === 200) expect(frame).toContain('Stopped before the review');
+        expect(text.match(/Recovery {2}/g)).toHaveLength(1);
+        for (const stale of [
+          'Warning',
+          'BUILD seat changed',
+          'Add credit',
+          'Change BUILD tool',
+          'working on',
+        ])
+          expect(text).not.toContain(stale);
+        expect(text.match(/Report {2}done · 2 files · 0 decisions/g)).toHaveLength(2);
+        for (const name of ['text', 'preview']) {
+          const line = text.split('\n').find((row) => row.startsWith(`src/${name}.js ·`));
+          expect(line?.split(`src/${name}.js`)).toHaveLength(2);
+          expect(line?.split(`test/${name}.test.js`)).toHaveLength(2);
+        }
+        expect(operationsStore.get().active).toBeNull();
+        expect(selectTaskListView(tasksStore.get())).toMatchObject({ passed: 2, total: 2 });
+      } finally {
+        await ui.unmount();
+      }
+    }
+  });
+
+  it.each([120, 60])('expands and collapses recovery with ctrl+d at %s columns', async (cols) => {
+    const scenario = findVisualScenario('workflow-seat-switched');
+    const checkpoint = scenario?.checkpoints.find(
+      (value) => value.id === 'seat-switched-expanded-recovery',
+    );
+    const renderViewport = scenario?.viewports.find((value) => value.cols === cols);
+    if (!scenario || !checkpoint || !renderViewport) throw new Error('Missing expanded recovery');
+    const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
+    try {
+      await ui.waitForCheckpoint();
+      expect(workflowTranscriptText()).toContain('provider.quota: Insufficient Balance');
+      expect(workflowTranscriptText()).toContain('ctrl+d to collapse');
+      ui.stdin.write('\u0004');
+      await tick(20);
+      expect(workflowTranscriptText()).not.toContain('provider.quota: Insufficient Balance');
+      expect(workflowTranscriptText()).not.toContain('ctrl+d to collapse');
+      expect(workflowTranscriptText().match(/Recovery {2}/g)).toHaveLength(1);
+    } finally {
+      await ui.unmount();
     }
   });
 
@@ -657,17 +773,18 @@ describe('workflow visual fixtures', () => {
         implementerProfile: 'default',
       }),
     );
-    expect(projection.events).toContainEqual(
-      expect.objectContaining({
-        type: 'warning',
-        message:
-          'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat',
-      }),
-    );
+    expect(projection.events.filter((event) => event.type === 'warning')).toEqual([]);
+    for (const event of projection.events.filter((event) => event.type === 'task_started')) {
+      expect(event.files).toEqual(['src/text.js', 'test/text.test.js']);
+    }
     const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
-    expect(frame).toContain(
-      'BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high · automatic fallback',
-    );
+    expect(frame).toContain('BUILD OpenCode CLI · deepseek/deepseek-flash');
+    expect(frame).toContain('→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high');
+    expect(frame).toContain('automatic fallback');
+    expect(frame).not.toContain('BUILD seat changed');
+    expect(frame).not.toContain('Add credit');
+    expect(frame).not.toContain('Change BUILD tool');
+    expect(frame).not.toContain('BUILD failed');
     expect(frame).toContain('Balance spent on OpenCode CLI');
     expect(frame).not.toContain('usage limit');
     expect(frame).not.toContain('worker ');
@@ -682,22 +799,28 @@ describe('workflow visual fixtures', () => {
       'workflow_started',
       'task_started',
       'runner_call_started',
+      'runner_call_warning',
+      'runner_call_activity',
       'runner_call_error',
       'runner_call_activity',
+      'implementer_generate_failed',
       'error',
       'recovery_prompted',
       'recovery_action_selected',
       'seat_switched',
       'recovery_resolved',
-      'warning',
       'task_started',
       'runner_call_started',
       'runner_call_tool_use',
       'runner_call_activity',
+      'planner_text',
+      'runner_call_completed',
+      'implementer_generate_done',
+      'task_completed',
     ]);
     const calls = events.filter((event) => event.type.startsWith('runner_call_'));
-    expect(calls.slice(0, 3)).toEqual(
-      Array.from({ length: 3 }, () =>
+    expect(calls.slice(0, 5)).toEqual(
+      Array.from({ length: 5 }, () =>
         expect.objectContaining({
           callId: 'visual-opencode-balance-failed',
           role: 'implementer',
@@ -711,8 +834,8 @@ describe('workflow visual fixtures', () => {
         }),
       ),
     );
-    expect(calls.slice(3)).toEqual(
-      Array.from({ length: 3 }, () =>
+    expect(calls.slice(5)).toEqual(
+      Array.from({ length: 4 }, () =>
         expect.objectContaining({
           callId: 'visual-opencode-balance-restarted',
           role: 'implementer',
@@ -726,23 +849,24 @@ describe('workflow visual fixtures', () => {
         }),
       ),
     );
-    expect(calls.at(-2)).toMatchObject({
+    expect(calls.at(-3)).toMatchObject({
       type: 'runner_call_tool_use',
       stage: 'delta',
       name: 'read',
-      inputDelta: JSON.stringify({ path: 'src/endpoint.ts' }),
+      inputDelta: JSON.stringify({ path: 'src/text.js' }),
     });
-    expect(calls.at(-1)).toMatchObject({
+    expect(calls.at(-2)).toMatchObject({
       type: 'runner_call_activity',
       kind: 'read',
-      label: 'reading src/endpoint.ts',
-      target: 'src/endpoint.ts',
+      label: 'reading src/text.js',
+      target: 'src/text.js',
     });
     const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
-    expect(frame).toContain('OpenCode CLI · DeepSeek V4.1 Flash · high · working on T901');
+    expect(calls.at(-1)).toMatchObject({ type: 'runner_call_completed', status: 'completed' });
+    expect(frame).toContain('1/1 briefs passed');
+    expect(frame).not.toContain('working on T901');
     expect(frame).toContain('BUILD activity 1 update [OpenCode CLI · DeepSeek V4.1 Flash · high]');
-    expect(frame).toContain('Read src/endpoint.ts');
-    expect(frame).not.toContain('Between calls');
+    expect(frame).toContain('Read src/text.js');
     expect(frame).not.toContain('attempt 2 of 8');
   });
 
@@ -784,22 +908,22 @@ describe('workflow visual fixtures', () => {
         const frame = stripTerminalControls(await ui.waitForCheckpoint());
         expect(frame).not.toContain('worker ');
         expect(frame).not.toContain('Workspace kept');
-        ui.stdin.write('\u001b[H');
-        await new Promise((resolve) => setTimeout(resolve, 20));
-        const reached: string[] = [];
-        for (let row = 0; row < 12; row++) {
-          reached.push(stripTerminalControls(ui.lastFrame() ?? '').replace(/\s+/g, ' '));
-          ui.stdin.write('\u001b[1;2B');
-          await new Promise((resolve) => setTimeout(resolve, 20));
+        const markers = [
+          'Recovery  Balance spent on OpenCode CLI',
+          'BUILD  OpenCode CLI · deepseek/deepseek-flash',
+          '→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+          'automatic fallback',
+        ];
+        const reached = await scrollTranscript(ui, markers);
+        for (const marker of markers) expect(reached).toContain(marker);
+        for (const stale of [
+          'Add credit',
+          'Change BUILD tool',
+          'BUILD failed',
+          'BUILD seat changed',
+        ]) {
+          expect(reached).not.toContain(stale);
         }
-        expect(
-          reached.some(
-            (frame) =>
-              frame.includes('BUILD → OpenCode CLI · DeepSeek V4.1 Flash · high') &&
-              frame.includes('automatic fallback') &&
-              frame.includes('Balance spent on OpenCode CLI'),
-          ),
-        ).toBe(true);
       } finally {
         await ui.unmount();
       }

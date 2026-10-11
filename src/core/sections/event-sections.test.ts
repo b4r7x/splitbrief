@@ -1,10 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  groupEventsIntoSections,
-  findLatestRenderableDiffKey,
-  diffEventKey,
-  isSettledSection,
-} from './event-sections.js';
+import { groupEventsIntoSections, diffEventKey, isSettledSection } from './event-sections.js';
 import type { Section } from './event-sections.js';
 import type { Phase } from '../schemas/enums.js';
 import type { EngineEvent } from '../../engine/events/types.js';
@@ -1227,72 +1222,5 @@ describe('diffEventKey', () => {
     const second = makeImplementerGenerate({ status: 'done', diff: '+ b', ts });
 
     expect(diffEventKey(first, 0)).not.toBe(diffEventKey(second, 1));
-  });
-});
-
-describe('findLatestRenderableDiffKey', () => {
-  it('selects the latest retained diff inside a settled stage', () => {
-    const live = makeImplementerGenerate({ status: 'done', diff: '+ live' });
-    const sections: Section[] = [
-      { type: 'events', startIndex: 0, items: [live] },
-      {
-        type: 'settled-stage',
-        startIndex: 1,
-        items: [makeImplementerGenerate({ status: 'done', diff: '+ settled' })],
-        summary: {
-          stage: 'review',
-          scope: 'final',
-          outcome: 'failed',
-          ordinal: 1,
-          failedCommands: [],
-          failedChecks: 0,
-          fixes: [],
-          duration: 0,
-        },
-      },
-    ];
-
-    expect(findLatestRenderableDiffKey(sections)).toBe('implementer_generate_done:1');
-  });
-
-  it('returns the latest live diff key after a completed brief', () => {
-    const live = makeImplementerGenerate({ status: 'done', diff: '+ live', ts: 1234 });
-    const sections: Section[] = [
-      {
-        type: 'events',
-        startIndex: 0,
-        items: [makeImplementerGenerate({ status: 'done', diff: '+ old', ts: 1000 })],
-      },
-      {
-        type: 'completed-task',
-        items: [],
-        startIndex: 1,
-        summary: { id: 'T001', title: 'done', method: 'local', retries: 0, duration: 0 },
-      },
-      {
-        type: 'active-task',
-        startIndex: 2,
-        items: [live],
-      },
-    ];
-
-    // The live diff is the only item of the active-task section at startIndex 2, so its global render
-    // index — and therefore its key — is 2.
-    expect(findLatestRenderableDiffKey(sections)).toBe(diffEventKey(live, 2));
-  });
-
-  it('keys the latest diff by its global render index, not its array position', () => {
-    const ts = 42;
-    const earlier = makeImplementerGenerate({ status: 'done', diff: '+ earlier', ts });
-    const latest = makeImplementerGenerate({ status: 'done', diff: '+ latest', ts });
-
-    const sections: Section[] = [
-      { type: 'events', startIndex: 0, items: [makePlannerText(), earlier, latest] },
-    ];
-
-    // Both diffs share a timestamp; the latest renderable one is at global index 2 and gets its own
-    // unique key, so toggling it never collides with the earlier diff at index 1.
-    expect(findLatestRenderableDiffKey(sections)).toBe(diffEventKey(latest, 2));
-    expect(findLatestRenderableDiffKey(sections)).not.toBe(diffEventKey(earlier, 1));
   });
 });

@@ -1,6 +1,10 @@
 import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { formatSeatChangeNotice } from '../../../core/state/seats.js';
+import { formatRecordedSeatChangeIdentities } from '../display/recorded-seat-identity.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 
@@ -14,14 +18,26 @@ export interface RunnerActivityBatch {
 }
 
 /** The halt, the action a person chose, the reset it made and the outcome it reached. */
-export interface RecoveryFold {
+type RecoveryFoldEvents = {
   firstIndex: number;
   issueId: string;
   prompted?: EngineEventOf<'recovery_prompted'>;
   selected?: EngineEventOf<'recovery_action_selected'>;
   reset?: EngineEventOf<'task_reset'>;
   resolved?: EngineEventOf<'recovery_resolved'>;
-}
+  seatSwitch?: EngineEventOf<'seat_switched'>;
+  haltAlreadyShown?: true;
+};
+
+export type RecoveryFold = RecoveryFoldEvents &
+  (
+    | { automaticSwitch?: undefined; diagnostics?: undefined }
+    | {
+        automaticSwitch: EngineEventOf<'seat_switched'>;
+        prompted: EngineEventOf<'recovery_prompted'>;
+        diagnostics: readonly string[];
+      }
+  );
 
 export type SettledTranscriptSection = Extract<
   Section<EngineEvent>,
@@ -44,7 +60,13 @@ export type TranscriptWalkStep =
   | ((
       | { kind: 'activity-batch'; batch: RunnerActivityBatch }
       | { kind: 'recovery'; recovery: RecoveryFold }
-      | { kind: 'event'; event: EngineEvent; globalIndex: number }
+      | {
+          kind: 'event';
+          event: EngineEvent;
+          globalIndex: number;
+          causeInRecovery?: boolean;
+          historicalTaskHeader?: true;
+        }
     ) & { settledSection?: SettledTranscriptSection });
 
 // The single traversal both the projection and the clickable-action builders consume, so the
@@ -56,14 +78,18 @@ export type TranscriptWalkStep =
 // Its seat switch waits for the fold to close, then follows the Recovery row it belongs to.
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
+// A seat switch folds one matching reconciliation notice before the next run starts or resumes.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
+  const automatic = automaticRecoveryFolds(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
   let lastRowEvent: EngineEvent | null = null;
   let openHeader: EngineEventOf<'task_started'> | null = null;
+  let restatedPrompt: EngineEventOf<'recovery_prompted'> | null = null;
+  const seatSwitches = new Map<CrewSeatId, EngineEventOf<'seat_switched'>>();
   let settledContext: { settledSection?: SettledTranscriptSection } = {};
 
   function* flush(): Generator<TranscriptWalkStep> {
@@ -77,6 +103,13 @@ export function* walkTranscript(
   }
 
   for (const section of sections) {
+    const latestHeaders = new Map<string, EngineEventOf<'task_started'>>();
+    for (const event of section.items) {
+      if (event.type !== 'task_started') continue;
+      const header = latestHeaders.get(event.taskId);
+      if (header === undefined || !sameHeader(header, event))
+        latestHeaders.set(event.taskId, event);
+    }
     if (isSettledSection(section)) yield* flush();
     settledContext = isSettledSection(section) ? { settledSection: section } : {};
     const started = isSettledSection(section) ? settledTaskStartedEvent(section) : undefined;
@@ -87,6 +120,26 @@ export function* walkTranscript(
     }
     for (const [index, event] of section.items.entries()) {
       const globalIndex = section.startIndex + index;
+      const folded = automatic.recoveries.get(event);
+      if (folded !== undefined) {
+        yield* flush();
+        yield { kind: 'recovery', recovery: folded, ...settledContext };
+        lastRowEvent = event;
+        continue;
+      }
+      if (automatic.hidden.has(event)) continue;
+      if (event.type === 'workflow_started' || event.type === 'workflow_resumed')
+        seatSwitches.clear();
+      if (event.type === 'seat_switched') seatSwitches.set(event.seat, event);
+      if (event.type === 'warning') {
+        const switched = [...seatSwitches.values()].find((switchEvent) =>
+          restatesSeatSwitch(event, switchEvent),
+        );
+        if (switched !== undefined) {
+          seatSwitches.delete(switched.seat);
+          continue;
+        }
+      }
       if (
         isSettledSection(section) &&
         (event === started ||
@@ -121,20 +174,33 @@ export function* walkTranscript(
         event.type === 'seat_switched' &&
         recovery !== null &&
         recovery.resolved === undefined &&
-        recoverySwitch === null
+        recoverySwitch === null &&
+        recovery.selected?.action === 'switch-seat' &&
+        recovery.selected.seat === event.seat &&
+        recovery.selected.reason === event.cause &&
+        recovery.selected.phase === event.phase
       ) {
+        recovery.seatSwitch = event;
         recoverySwitch = { kind: 'event', event, globalIndex, ...settledContext };
         continue;
       }
       if (recovery !== null && joinsRecovery(recovery, event)) continue;
       yield* flush();
-      if (event.type === 'recovery_prompted' && restatesHalt(lastRowEvent, event)) continue;
+      if (event.type === 'recovery_prompted' && restatesHalt(lastRowEvent, event)) {
+        restatedPrompt = event;
+        continue;
+      }
       if (
         event.type === 'recovery_prompted' ||
         event.type === 'recovery_action_selected' ||
         event.type === 'recovery_resolved'
       ) {
         recovery = { firstIndex: globalIndex, issueId: event.issueId };
+        if (restatedPrompt?.issueId === event.issueId) {
+          recovery.prompted = restatedPrompt;
+          recovery.haltAlreadyShown = true;
+        }
+        restatedPrompt = null;
         joinsRecovery(recovery, event);
         lastRowEvent = event;
         continue;
@@ -144,7 +210,15 @@ export function* walkTranscript(
         openHeader = event;
       }
       lastRowEvent = event;
-      yield { kind: 'event', event, globalIndex, ...settledContext };
+      yield {
+        kind: 'event',
+        event,
+        globalIndex,
+        ...settledContext,
+        ...(automatic.switches.has(event) && { causeInRecovery: true }),
+        ...(event.type === 'task_started' &&
+          latestHeaders.get(event.taskId) !== event && { historicalTaskHeader: true }),
+      };
     }
     if (isSettledSection(section)) {
       yield* flush();
@@ -153,6 +227,166 @@ export function* walkTranscript(
     }
   }
   yield* flush();
+}
+
+function restatesSeatSwitch(
+  warning: EngineEventOf<'warning'>,
+  switched: EngineEventOf<'seat_switched'>,
+): boolean {
+  const prefix = `${CREW_SEAT_LABELS[switched.seat]} seat changed `;
+  if (!warning.message.startsWith(prefix)) return false;
+  const identities = formatRecordedSeatChangeIdentities(
+    switched.from,
+    switched.to,
+    CREW_SEAT_ROLES[switched.seat],
+  );
+  const notice = formatSeatChangeNotice({ seat: switched.seat, before: '', after: identities.to });
+  return warning.message.endsWith(notice.slice(prefix.length));
+}
+
+type FailedCall = {
+  event: EngineEventOf<'runner_call_activity' | 'runner_call_error' | 'runner_call_warning'>;
+  events: EngineEvent[];
+  words: Set<string>;
+};
+
+type RecoveryChain = {
+  recovery: RecoveryFold & { prompted: EngineEventOf<'recovery_prompted'> };
+  events: EngineEvent[];
+  call: FailedCall | undefined;
+  halt: EngineEventOf<'error'> | undefined;
+  failure: EngineEventOf<'implementer_generate_failed'> | undefined;
+  automaticSwitch?: EngineEventOf<'seat_switched'>;
+};
+
+function automaticRecoveryFolds(sections: readonly Section<EngineEvent>[]) {
+  const hidden = new Set<EngineEvent>();
+  const switches = new Set<EngineEvent>();
+  const recoveries = new Map<EngineEvent, RecoveryFold>();
+  const calls = new Map<string, FailedCall>();
+  const latestCalls = new Map<string | undefined, FailedCall>();
+  const issues = new Map<string, RecoveryChain>();
+  let selected: RecoveryChain | undefined;
+  let previous: EngineEvent | undefined;
+  let failure: EngineEventOf<'implementer_generate_failed'> | undefined;
+
+  for (const section of sections) {
+    for (const [index, event] of section.items.entries()) {
+      if (
+        event.type === 'runner_call_error' ||
+        event.type === 'runner_call_warning' ||
+        (event.type === 'runner_call_activity' &&
+          (event.kind === 'warning' || event.kind === 'error'))
+      ) {
+        let call = calls.get(event.callId);
+        if (call === undefined) {
+          call = { event, events: [], words: new Set() };
+          calls.set(event.callId, call);
+        }
+        call.events.push(event);
+        const words =
+          event.type === 'runner_call_activity'
+            ? event.diagnosticPartial
+            : event.type === 'runner_call_error'
+              ? event.error.message
+              : event.warning.message;
+        if (words !== undefined && words !== '') call.words.add(words);
+        latestCalls.set(event.taskId, call);
+      } else if (event.type === 'implementer_generate_failed') {
+        failure = event;
+      } else if (event.type === 'recovery_prompted') {
+        const existing = issues.get(event.issueId);
+        if (existing !== undefined && existing.recovery.selected === undefined) {
+          existing.events.push(event);
+        } else {
+          issues.set(event.issueId, {
+            recovery: {
+              firstIndex: section.startIndex + index,
+              issueId: event.issueId,
+              prompted: event,
+            },
+            events: [event],
+            call: latestCalls.get(event.taskId),
+            halt:
+              previous?.type === 'error' && previous.phase === event.phase ? previous : undefined,
+            failure,
+          });
+        }
+      } else if (event.type === 'recovery_action_selected') {
+        selected = issues.get(event.issueId);
+        if (selected !== undefined) {
+          selected.recovery.selected = event;
+          selected.events.push(event);
+        }
+      } else if (event.type === 'seat_switched') {
+        if (
+          event.auto &&
+          selected?.recovery.selected?.action === 'switch-seat' &&
+          selected.recovery.selected.seat === event.seat &&
+          selected.recovery.prompted.reason === event.cause &&
+          selected.recovery.prompted.phase === event.phase
+        )
+          selected.automaticSwitch = event;
+      } else if (event.type === 'recovery_resolved') {
+        const chain = issues.get(event.issueId);
+        const switched = chain?.automaticSwitch;
+        if (
+          chain !== undefined &&
+          switched !== undefined &&
+          event.action === 'switch-seat' &&
+          event.seat === switched.seat &&
+          event.reason === chain.recovery.prompted.reason &&
+          (event.outcome === 'continued' || event.outcome === 'retry-current-task')
+        ) {
+          const { recovery, halt } = chain;
+          recovery.resolved = event;
+          const call = chain.call;
+          const linkedCall =
+            call !== undefined &&
+            call.event.taskId === recovery.prompted.taskId &&
+            call.event.phase === recovery.prompted.phase &&
+            call.event.runnerName === switched.from.tool &&
+            call.event.model === switched.from.model;
+          const words = new Set<string>();
+          if (linkedCall) {
+            for (const diagnostic of call.events) hidden.add(diagnostic);
+            for (const word of call.words) words.add(word);
+          }
+          if (
+            switched.seat === 'build' &&
+            chain.failure !== undefined &&
+            chain.failure.taskId === recovery.prompted.taskId &&
+            chain.failure.phase === recovery.prompted.phase &&
+            chain.failure.model === switched.from.model
+          ) {
+            hidden.add(chain.failure);
+            if (chain.failure.error !== undefined) words.add(chain.failure.error);
+          }
+          if (
+            halt !== undefined &&
+            (restatesHalt(halt, recovery.prompted) ||
+              [...words].some((word) => halt.message.includes(word)))
+          )
+            hidden.add(halt);
+          for (const folded of chain.events) hidden.add(folded);
+          hidden.add(event);
+          recoveries.set(recovery.prompted, {
+            ...recovery,
+            automaticSwitch: switched,
+            diagnostics: [...words],
+          });
+          switches.add(switched);
+        }
+        if (selected === chain) selected = undefined;
+      } else if (event.type === 'recovery_action_failed') {
+        if (selected?.recovery.issueId === event.issueId) selected = undefined;
+      } else if (event.type === 'task_started') {
+        failure = undefined;
+      }
+      if (!isTranscriptRowlessEvent(event)) previous = event;
+    }
+  }
+  return { hidden, switches, recoveries };
 }
 
 // A restart the recovery made on the same worker restates the header; one on another seat or

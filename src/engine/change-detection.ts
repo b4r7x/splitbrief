@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getCurrentChangedFiles } from '../lib/git/files.js';
-import { showFileAtHead } from '../lib/git/refs.js';
+import { readFileModeAtHead, showFileAtHead } from '../lib/git/refs.js';
+import { isENOENT } from '../lib/process/errors.js';
 import { computeDiff } from '../utils/diff.js';
 import { collectTrackedFiles, hashFile } from './snapshots/files.js';
 
@@ -15,7 +16,8 @@ export type ChangeDetectorBaseline =
       kind: 'git-status';
       files: string[];
       /** What each file already changed at the start held then; null when it was absent. */
-      contents: Record<string, string | null>;
+      contents: Record<string, Buffer | null>;
+      modes: Record<string, number | null>;
     }
   | {
       kind: 'file-hashes';
@@ -62,21 +64,6 @@ async function captureFileHashes(
   return hashFiles(projectDir, await collectTrackedFiles(projectDir, opts));
 }
 
-function hasHashChanges(
-  before: Record<string, string | null>,
-  after: Record<string, string | null>,
-): boolean {
-  const files = new Set([...Object.keys(before), ...Object.keys(after)]);
-  for (const file of files) {
-    if (before[file] !== after[file]) return true;
-  }
-  return false;
-}
-
-// A caller that knows what it handed the runner says so: a linked git worktree
-// carries a `.git` file but its status is seeded with the source's dirty files,
-// and the git-status comparator only sees paths that were not already in it.
-// Only a caller with no such knowledge falls back to sniffing the directory.
 export async function captureChangeDetectorBaseline(
   projectDir: string,
   opts: { kind?: ChangeDetectionKind | undefined; ignoreProjectDir?: string | undefined } = {},
@@ -84,7 +71,11 @@ export async function captureChangeDetectorBaseline(
   const kind = opts.kind ?? (hasGitMetadata(projectDir) ? 'git-status' : 'file-hashes');
   if (kind === 'git-status') {
     const files = await getCurrentChangedFiles(projectDir);
-    return { kind: 'git-status', files, contents: await readContents(projectDir, files) };
+    const [contents, modes] = await Promise.all([
+      readContents(projectDir, files),
+      Promise.all(files.map(async (file) => [file, await readMode(projectDir, file)] as const)),
+    ]);
+    return { kind: 'git-status', files, contents, modes: Object.fromEntries(modes) };
   }
   return {
     kind: 'file-hashes',
@@ -93,11 +84,11 @@ export async function captureChangeDetectorBaseline(
   };
 }
 
-async function readText(projectDir: string, file: string): Promise<string | null> {
+async function readBytes(projectDir: string, file: string): Promise<Buffer | null> {
   try {
-    return await readFile(join(projectDir, file), 'utf8');
+    return await readFile(join(projectDir, file));
   } catch {
-    // Absent, a directory, or unreadable: there is no text to count against.
+    // Absent, a directory, or unreadable: there is no content to compare against.
     return null;
   }
 }
@@ -105,55 +96,79 @@ async function readText(projectDir: string, file: string): Promise<string | null
 async function readContents(
   projectDir: string,
   files: readonly string[],
-): Promise<Record<string, string | null>> {
+): Promise<Record<string, Buffer | null>> {
   const entries = await Promise.all(
-    files.map(async (file) => [file, await readText(projectDir, file)] as const),
+    files.map(async (file) => [file, await readBytes(projectDir, file)] as const),
   );
   return Object.fromEntries(entries);
 }
 
-/**
- * The lines a call added and removed, counted against what each file held when the call started:
- * the content captured then for a file already changed, else its committed version. Only a git
- * baseline can say; a hash baseline kept no content, so it answers undefined.
- */
-export async function countChangedLines(
+async function readMode(projectDir: string, file: string): Promise<number | null> {
+  try {
+    const stats = await lstat(join(projectDir, file));
+    const permissions = stats.isFile() ? (stats.mode & 0o100 ? 0o755 : 0o644) : 0;
+    return (stats.mode & 0o170000) | permissions;
+  } catch (err) {
+    if (isENOENT(err)) return null;
+    throw err;
+  }
+}
+
+export function orderChangedFiles(
+  files: readonly string[],
+  suggestedFiles: readonly string[],
+): string[] {
+  const remaining = new Set(files);
+  const ordered = suggestedFiles.filter((file) => remaining.delete(file));
+  return [...ordered, ...[...remaining].sort()];
+}
+
+export async function summarizeChanges(
   projectDir: string,
   before: ChangeDetectorBaseline,
-): Promise<{ linesAdded: number; linesRemoved: number } | undefined> {
-  if (before.kind !== 'git-status') return undefined;
-  const files = new Set([...before.files, ...(await getCurrentChangedFiles(projectDir))]);
+  suggestedFiles: readonly string[] = [],
+): Promise<{ files: string[]; linesAdded?: number; linesRemoved?: number }> {
+  if (before.kind === 'file-hashes') {
+    const after = await captureFileHashes(projectDir, {
+      ignoreProjectDir: before.ignoreProjectDir,
+    });
+    const files = [...new Set([...Object.keys(before.hashes), ...Object.keys(after)])].filter(
+      (file) => before.hashes[file] !== after[file],
+    );
+    return { files: orderChangedFiles(files, suggestedFiles) };
+  }
+
+  const candidates = new Set([...before.files, ...(await getCurrentChangedFiles(projectDir))]);
+  const files: string[] = [];
   let linesAdded = 0;
   let linesRemoved = 0;
-  for (const file of files) {
+  for (const file of candidates) {
     const start = Object.hasOwn(before.contents, file)
       ? before.contents[file]
       : await showFileAtHead(projectDir, file);
-    const now = await readText(projectDir, file);
-    const counted = computeDiff(start ?? '', now ?? '');
+    const now = await readBytes(projectDir, file);
+    if (start === now || (now !== null && start?.equals(now))) {
+      const startMode = Object.hasOwn(before.modes, file)
+        ? before.modes[file]
+        : start === null
+          ? null
+          : await readFileModeAtHead(projectDir, file);
+      if (startMode === (await readMode(projectDir, file))) continue;
+    }
+    files.push(file);
+    const counted = computeDiff(start?.toString('utf8') ?? '', now?.toString('utf8') ?? '');
     linesAdded += counted.linesAdded;
     linesRemoved += counted.linesRemoved;
   }
-  return { linesAdded, linesRemoved };
+  return { files: orderChangedFiles(files, suggestedFiles), linesAdded, linesRemoved };
 }
 
 export function createChangeDetector(
   label: string,
 ): (projectDir: string, before: ChangeDetectorBaseline) => Promise<ChangeDetectionResult> {
   return async (projectDir: string, before: ChangeDetectorBaseline) => {
-    let changed = false;
-    if (before.kind === 'git-status') {
-      const changedFiles = await getCurrentChangedFiles(projectDir);
-      const beforeSet = new Set(before.files);
-      changed = changedFiles.some((file) => !beforeSet.has(file));
-    } else {
-      changed = hasHashChanges(
-        before.hashes,
-        await captureFileHashes(projectDir, { ignoreProjectDir: before.ignoreProjectDir }),
-      );
-    }
-
-    if (!changed) {
+    const changes = await summarizeChanges(projectDir, before);
+    if (changes.files.length === 0) {
       return {
         changed: false,
         output: `${label} exited without changing any files`,

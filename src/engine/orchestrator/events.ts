@@ -589,15 +589,7 @@ export function publishImplementerGenerateRunning(
 
 export function publishImplementerGenerateDone(
   ctx: BusContext,
-  opts: {
-    taskId: TaskId;
-    file: string;
-    diff?: string | undefined;
-    linesAdded?: number | undefined;
-    linesRemoved?: number | undefined;
-    duration: number;
-    noChange?: boolean | undefined;
-  },
+  opts: Omit<Parameters<ImplementerPublisher['publishDone']>[0], 'phase'>,
 ): void {
   const event: EngineEvent = {
     type: 'implementer_generate_done',
@@ -605,6 +597,7 @@ export function publishImplementerGenerateDone(
     phase: ctx.phase,
     taskId: opts.taskId,
     file: opts.file,
+    files: opts.files,
     ...(opts.linesAdded !== undefined && { linesAdded: opts.linesAdded }),
     ...(opts.linesRemoved !== undefined && { linesRemoved: opts.linesRemoved }),
     duration: opts.duration,

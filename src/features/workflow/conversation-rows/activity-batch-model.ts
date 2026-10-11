@@ -118,11 +118,6 @@ export function buildActivityBatchViewModel(input: {
   };
 }
 
-export function runnerActivityDisplayKey(event: RunnerActivityEvent): string | null {
-  if (event.kind === 'session') return null;
-  return runnerActivityLedgerItem({ ...event, kind: event.kind }).visibleKey;
-}
-
 function activityLedgerItems(
   events: readonly VisibleRunnerActivityEvent[],
 ): RunnerActivityLedgerItem[] {

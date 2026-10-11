@@ -9,6 +9,8 @@ import { cardRowsLayout, cardRowsWindow } from './row-format/label-card.js';
 import { row, segmentedRow } from './row-format/rows.js';
 import { sanitizeRowDisplayText, wrappedProseSegments } from './row-format/text.js';
 import { wrapWidthFor } from './row-markers.js';
+import { getTerminalCellWidth } from '../../../utils/display-text.js';
+import { SOFT_SEP } from '../../../core/separators.js';
 
 export function rowsBlock(
   key: string,
@@ -49,6 +51,48 @@ export function wrappedSegmentsBlock(input: {
       input.indent,
       input.continuationIndent,
     ).map((segments, index) => segmentedRow(`${input.keyPrefix}-${index}`, segments, kind)),
+  );
+}
+
+export function wholeSegmentsBlock(
+  keyPrefix: string,
+  chunks: readonly (readonly ConversationRowSegment[])[],
+  width: number,
+  kind: ConversationRowKind,
+): ConversationRowBlock | null {
+  const budget = wrapWidthFor(kind, width);
+  const lines: ConversationRowSegment[][] = [];
+  let segments: ConversationRowSegment[] = [];
+  let cells = 0;
+  for (const chunk of chunks) {
+    const clean = chunk.map((segment) => ({
+      ...segment,
+      text: sanitizeRowDisplayText(segment.text),
+    }));
+    const size = clean.reduce((total, segment) => total + getTerminalCellWidth(segment.text), 0);
+    if (cells > 0 && cells + size > budget) {
+      lines.push(segments);
+      segments = [];
+      cells = 0;
+    }
+    if (cells === 0) {
+      const first = clean[0];
+      if (first !== undefined) first.text = first.text === SOFT_SEP ? '' : first.text.trimStart();
+    }
+    for (const [index, parts] of wrappedProseSegments(clean, budget).entries()) {
+      if (index > 0) {
+        lines.push(segments);
+        segments = [];
+        cells = 0;
+      }
+      segments.push(...parts);
+      cells += parts.reduce((total, segment) => total + getTerminalCellWidth(segment.text), 0);
+    }
+  }
+  if (segments.length > 0) lines.push(segments);
+  return rowsBlock(
+    keyPrefix,
+    lines.map((parts, index) => segmentedRow(`${keyPrefix}-${index}`, parts, kind)),
   );
 }
 

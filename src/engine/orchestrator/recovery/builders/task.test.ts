@@ -21,10 +21,46 @@ import {
   buildSeatDownIssue,
   buildSnapshotFailedRecoveryIssue,
   recoveryBuilderForRunnerOutcome,
+  runnerHaltRow,
   switchSeatOffer,
 } from './task.js';
 
 const createdAt = '2026-04-28T12:00:00.000Z';
+
+describe('runnerHaltRow', () => {
+  it.each(['plan', 'build', 'review'] as const)(
+    'publishes only the cause for an automatic %s fallback, while keeping panel advice',
+    (seat) => {
+      const candidate = { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' };
+      const issue = buildSeatDownIssue({
+        seat,
+        runner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        classification: { class: 'account', cause: 'balance' },
+        words: 'provider.quota: Insufficient Balance (request_id: smoke-request)',
+        phase: 'implementing',
+        seatSwap: {
+          seat,
+          currentTool: 'opencode',
+          currentModel: 'deepseek/deepseek-flash',
+          fallback: candidate,
+          configRevision: 'revision',
+          detectedTools: [{ ...candidate, ready: true }],
+        },
+        createdAt,
+      });
+
+      expect(issue.switchSeat?.auto).toBeDefined();
+      expect(runnerHaltRow(issue, 'provider.quota: Insufficient Balance')).toBe(
+        'Balance spent on OpenCode CLI',
+      );
+      expect(issue.message).toContain('Add credit');
+      expect(issue.details.join('\n')).toContain('request_id: smoke-request');
+      expect(runnerHaltRow({ ...issue, switchSeat: undefined }, 'raw words')).toBe(
+        `${issue.message} (runner reported: raw words)`,
+      );
+    },
+  );
+});
 
 function expectValidRecoveryIssue(issue: unknown): void {
   const result = RecoveryIssueSchema.safeParse(issue);

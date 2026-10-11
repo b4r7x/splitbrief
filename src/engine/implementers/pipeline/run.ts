@@ -35,7 +35,8 @@ import { DEFAULT_AVAILABILITY } from '../../availability.js';
 import { createTranscriptBuffer } from '../../streaming/transcript-buffer.js';
 import {
   captureChangeDetectorBaseline,
-  countChangedLines,
+  summarizeChanges,
+  orderChangedFiles,
   type ChangeDetector,
   type ChangeDetectorBaseline,
 } from '../../change-detection.js';
@@ -360,6 +361,10 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         phase: opts.phase,
         taskId: opts.task.id,
         file: opts.task.suggestedFiles[0],
+        files: orderChangedFiles(
+          applyResult.applied.map((file) => file.path),
+          opts.task.suggestedFiles,
+        ),
         diff: aggregate.diff,
         linesAdded: aggregate.linesAdded,
         linesRemoved: aggregate.linesRemoved,
@@ -534,7 +539,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
     }
 
     let changeBaseline: ChangeDetectorBaseline | undefined;
-    if (!baseConfig.extractsCode && baseConfig.detectChanges) {
+    if (outputContract === 'direct') {
       changeBaseline = await captureChangeDetectorBaseline(projectDir, {
         kind: opts.changeDetection,
         ignoreProjectDir: opts.fileIgnoreProjectDir,
@@ -750,6 +755,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
             phase,
             taskId: task.id,
             file: task.suggestedFiles[0],
+            files: [task.suggestedFiles[0]],
             diff: result.diff,
             linesAdded: result.linesAdded,
             linesRemoved: result.linesRemoved,
@@ -795,16 +801,13 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
       };
     }
 
-    if (phase) {
-      const lines =
-        changeBaseline === undefined
-          ? undefined
-          : await countChangedLines(projectDir, changeBaseline);
+    if (phase && changeBaseline !== undefined) {
+      const changes = await summarizeChanges(projectDir, changeBaseline, task.suggestedFiles);
       baseConfig.publisher?.publishDone({
         phase,
         taskId: task.id,
         file: task.suggestedFiles[0],
-        ...lines,
+        ...changes,
         duration: Date.now() - startTime,
         ...(noChange && { noChange: true }),
       });

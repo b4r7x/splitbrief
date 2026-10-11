@@ -2,6 +2,9 @@ import type { RunRecord } from '../../core/sessions/run-record.js';
 import { readRunEvents, type RunReplay } from '../../engine/events/replay.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
+import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
+import { extractLastJsonObject } from '../../engine/runners/typed-output.js';
+import { ImplementerReportSchema } from '../../core/schemas/consult.js';
 
 /**
  * A past run, put back on the workflow screen: its session log replayed into the stores, then the
@@ -21,13 +24,50 @@ export async function hydrateRun(record: RunRecord): Promise<void> {
 export async function readRunHistory(record: RunRecord): Promise<() => void> {
   const replay = await readRunEvents(record.ref);
   return () => {
-    loadEvents(replay.events);
+    loadEvents(restoreCompletionFiles(replay.events));
     if (record.hydration.kind !== 'loaded') return;
     const { state } = record.hydration;
     hydrateFromState(state, {
       endedAt: lastRunEventTs(replay) ?? runRecordEnd(record),
     });
   };
+}
+
+function restoreCompletionFiles(events: EngineEvent[]): EngineEvent[] {
+  let started: EngineEventOf<'task_started'> | undefined;
+  let reportedFiles: string[] | undefined;
+  return events.map((event) => {
+    if (event.type === 'task_started') {
+      started = event;
+      reportedFiles = undefined;
+    } else if (event.type === 'implementer_generate_running') {
+      reportedFiles = undefined;
+    } else if (
+      event.type === 'planner_text' &&
+      event.role === 'implementer' &&
+      event.content !== 'plain' &&
+      started !== undefined &&
+      event.phase === started.phase &&
+      (event.taskId === undefined || event.taskId === started.taskId)
+    ) {
+      const extracted = extractLastJsonObject(event.text);
+      if (extracted.kind === 'ok') {
+        const report = ImplementerReportSchema.safeParse(extracted.value);
+        if (report.success && report.data.status === 'done') {
+          reportedFiles = [...new Set(report.data.filesChanged)];
+        }
+      }
+    } else if (
+      event.type === 'implementer_generate_done' &&
+      event.files === undefined &&
+      event.taskId === started?.taskId &&
+      reportedFiles !== undefined &&
+      reportedFiles.length > 0
+    ) {
+      return { ...event, files: reportedFiles };
+    }
+    return event;
+  });
 }
 
 /**
