@@ -284,6 +284,7 @@ describe('handleFailedImplementation — an account the provider refuses is a se
     expect(next.pendingRecovery?.availableActions).toContain('end-run');
     const row = events.find((e) => e.type === 'error');
     expect(row?.type === 'error' && row.message).toContain(OPENCODE_DEEPSEEK_BALANCE);
+    expect(row?.type === 'error' && row.message).toContain('Add credit or change the BUILD tool');
   });
 
   it('halts a refused login at once and offers the seat switch beside it', async () => {
@@ -319,7 +320,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
     await rememberDetectedTools(projectDir, cliDetectionsFor('ready', ['opencode', 'claude-code']));
     const task = makeTask({ id: 'T001' });
     const implementer = makeImplementer({ retry: vi.fn() });
-    const { bus } = makeBusRecorder();
+    const { bus, events } = makeBusRecorder();
     const wctx = makeWorkflowContext({
       projectDir,
       sessionId,
@@ -329,7 +330,7 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
       config,
     });
 
-    return handleFailedImplementation({
+    const next = await handleFailedImplementation({
       wctx,
       task,
       state,
@@ -345,14 +346,19 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
       taskBreakdowns: [],
       setTrackedState: vi.fn(),
     });
+    return { next, events };
   }
 
   it('carries the fallback and config hash when the seat can move itself', async () => {
-    const next = await haltWith(implementingState([makeTask({ id: 'T001' })]));
+    const { next, events } = await haltWith(implementingState([makeTask({ id: 'T001' })]));
 
     const auto = next.pendingRecovery?.switchSeat?.auto;
     expect(auto?.candidate).toEqual({ tool: 'claude-code' });
     expect(auto?.configRevision).toMatch(/^[0-9a-f]{64}$/);
+    expect(events.filter((event) => event.type === 'error').map((event) => event.message)).toEqual([
+      'Balance spent on OpenCode CLI',
+    ]);
+    expect(next.pendingRecovery?.message).toContain('Add credit or change the BUILD tool');
   });
 
   it('offers no automatic switch when this run already switched the seat', async () => {
@@ -371,10 +377,13 @@ describe('handleFailedImplementation — the automatic seat switch intent', () =
       ],
     };
 
-    const next = await haltWith(state);
+    const { next, events } = await haltWith(state);
 
     expect(next.pendingRecovery?.switchSeat?.auto).toBeUndefined();
     expect(next.pendingRecovery?.switchSeat?.candidates).toEqual([{ tool: 'claude-code' }]);
+    expect(events.find((event) => event.type === 'error')?.message).toContain(
+      'Add credit or change the BUILD tool',
+    );
   });
 });
 

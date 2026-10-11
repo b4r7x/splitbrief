@@ -26,6 +26,8 @@ import { activityBatchKey } from './activity-batch-key.js';
 import { resetEventBlockCache } from './block-cache.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRowsProjection } from './build.js';
+import { buildConversationRowActions } from './row-actions.js';
+import { EngineEventSchema } from '../../../engine/events/schema.js';
 import { materializeConversationRowsWindow } from './materialize-window.js';
 import { wrappedTextBlock } from './row-block-compose.js';
 import { rowText } from './row-format/rows.js';
@@ -40,6 +42,519 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 const CODEX_LABEL = 'OpenAI Codex CLI';
+describe('automatic recovery from the spent-balance smoke', () => {
+  const events: EngineEvent[] = [
+    {
+      type: 'runner_call_started',
+      ts: 1791727000961,
+      taskId: 'T001',
+      phase: 'implementing',
+      callId: 'implementer-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      axes: [],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 415,
+    },
+    {
+      type: 'steerable_call',
+      ts: 1791727003321,
+      taskId: 'T001',
+      phase: 'implementing',
+      seat: 'build',
+    },
+    {
+      type: 'runner_call_session_id',
+      ts: 1791727003323,
+      taskId: 'T001',
+      phase: 'implementing',
+      callId: 'implementer-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      axes: [],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 416,
+      nativeSessionId: 'ses_ed4bf9e1dffehEzin1mygGWRGs',
+    },
+    {
+      type: 'runner_call_warning',
+      ts: 1791727003353,
+      taskId: 'T001',
+      phase: 'implementing',
+      callId: 'implementer-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      axes: [],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 417,
+      warning: {
+        code: 'opencode-error',
+        severity: 'warning',
+        source: 'provider',
+        surface: 'activity',
+        fingerprint: 'rw:763c296f02a6f316bfc6ef84',
+        message:
+          'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)',
+      },
+    },
+    {
+      type: 'runner_call_activity',
+      ts: 1791727003353,
+      taskId: 'T001',
+      phase: 'implementing',
+      callId: 'implementer-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      axes: [],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 417,
+      activityId: 'implementer-1:warning:rw:763c296f02a6f316bfc6ef84',
+      stage: 'warning',
+      kind: 'warning',
+      label: 'warning opencode-error',
+      redacted: false,
+      rawAvailable: false,
+      expandId: 'implementer-1:warning:rw:763c296f02a6f316bfc6ef84',
+      diagnosticPartial:
+        'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)',
+    },
+    {
+      type: 'steerable_call',
+      ts: 1791727003363,
+      phase: 'implementing',
+    },
+    {
+      type: 'runner_call_error',
+      ts: 1791727003410,
+      taskId: 'T001',
+      phase: 'implementing',
+      callId: 'implementer-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      axes: [],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 418,
+      status: 'failed',
+      error: {
+        code: 'opencode-error',
+        message:
+          'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)',
+        status: 402,
+        providerType: 'provider.quota',
+      },
+      partial: true,
+      rawTail:
+        'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)',
+      startedAt: 1791727000961,
+      endedAt: 1791727003410,
+      durationMs: 2449,
+      usage: null,
+      nativeSessionId: 'ses_ed4bf9e1dffehEzin1mygGWRGs',
+    },
+    {
+      type: 'runner_call_activity',
+      ts: 1791727003410,
+      taskId: 'T001',
+      phase: 'implementing',
+      callId: 'implementer-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'deepseek/deepseek-flash',
+      axes: [],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 418,
+      activityId: 'implementer-1:terminal',
+      stage: 'failed',
+      kind: 'error',
+      label: 'failed opencode-error',
+      redacted: false,
+      rawAvailable: true,
+      expandId: 'implementer-1:terminal',
+      diagnosticPartial:
+        'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)',
+    },
+    {
+      type: 'implementer_generate_failed',
+      ts: 1791727003462,
+      taskId: 'T001',
+      phase: 'implementing',
+      model: 'deepseek/deepseek-flash',
+      error:
+        'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)',
+    },
+    {
+      type: 'error',
+      ts: 1791727003480,
+      phase: 'implementing',
+      message:
+        'Balance spent on OpenCode CLI. Add credit or change the BUILD tool, then continue. (runner reported: provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569))',
+    },
+    {
+      type: 'recovery_prompted',
+      ts: 1791727003524,
+      taskId: 'T001',
+      phase: 'implementing',
+      issueId: 'rec_20261011135643_runner_usage_limit_implementing_T001',
+      reason: 'runner-usage-limit',
+      files: ['src/text.js'],
+      affectedTaskIds: ['T001'],
+      availableActions: ['retry-same-worker', 'switch-seat', 'skip-current-task', 'end-run'],
+      recommendedAction: 'switch-seat',
+      headline: 'Balance spent on OpenCode CLI',
+      headlineSpans: [
+        {
+          text: 'Balance spent on OpenCode CLI',
+        },
+      ],
+      resumeCommand:
+        'splitbrief continue 2026-10-11-word-counts-and-marked-previews --action switch-seat:opencode:opencode-go/deepseek-v4.1-flash@high',
+    },
+    {
+      type: 'recovery_action_selected',
+      ts: 1791727007504,
+      phase: 'implementing',
+      issueId: 'rec_20261011135643_runner_usage_limit_implementing_T001',
+      reason: 'runner-usage-limit',
+      action: 'switch-seat',
+      seat: 'build',
+    },
+    {
+      type: 'seat_switched',
+      ts: 1791727007552,
+      phase: 'implementing',
+      seat: 'build',
+      from: {
+        tool: 'opencode',
+        model: 'deepseek/deepseek-flash',
+      },
+      to: {
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        variant: 'high',
+      },
+      cause: 'runner-usage-limit',
+      accountCause: 'balance',
+      headline: 'Balance spent on OpenCode CLI',
+      auto: true,
+      configRevision: '643fca0d8c759fc0e3b5b4957fe3e290aaa87a3e309ec98100fa7cfca9db4aa7',
+    },
+    {
+      type: 'recovery_resolved',
+      ts: 1791727007552,
+      phase: 'implementing',
+      issueId: 'rec_20261011135643_runner_usage_limit_implementing_T001',
+      reason: 'runner-usage-limit',
+      action: 'switch-seat',
+      seat: 'build',
+      outcome: 'retry-current-task',
+      implementerProfile: 'default',
+    },
+  ].map((event) => EngineEventSchema.parse(event));
+  const words =
+    'provider.quota: Insufficient Balance (request_id: c69db249-284a-4420-af40-a355af445569)';
+
+  const resumedEvents = [
+    {
+      type: 'warning',
+      ts: 1791727007579,
+      phase: 'implementing',
+      message:
+        'BUILD seat changed OpenCode CLI \u00b7 deepseek/deepseek-flash \u2192 OpenCode CLI \u00b7 opencode-go/deepseek-v4.1-flash \u00b7 high; the rest of the run uses the new seat',
+    },
+    {
+      type: 'workflow_resumed',
+      ts: 1791727007599,
+      phase: 'implementing',
+    },
+    {
+      type: 'workflow_config',
+      ts: 1791727007600,
+      phase: 'implementing',
+      plannerTool: 'claude-code',
+      plannerModel: 'claude-opus-5-5',
+      implementerTool: 'opencode',
+      implementerModel: 'opencode-go/deepseek-v4.1-flash',
+      reviewerTool: 'codex',
+      reviewerModel: 'gpt-6.1-sol',
+    },
+    {
+      type: 'tasks_planned',
+      ts: 1791727007806,
+      phase: 'implementing',
+      tasks: [
+        {
+          id: 'T001',
+          title: 'Add wordCount to src/text.js',
+          index: 0,
+          file: 'src/text.js',
+          action: 'modify',
+        },
+        {
+          id: 'T002',
+          title: 'Add optional suffix to truncate in src/preview.js',
+          index: 1,
+          file: 'src/preview.js',
+          action: 'modify',
+        },
+      ],
+      total: 2,
+    },
+    {
+      type: 'task_started',
+      ts: 1791727007835,
+      phase: 'implementing',
+      taskId: 'T001',
+      title: 'Add wordCount to src/text.js',
+      index: 0,
+      total: 2,
+      lineageAttempt: 1,
+      attemptAllowance: 8,
+      file: 'src/text.js',
+      files: ['src/text.js', 'test/text.test.js'],
+      action: 'modify',
+      tool: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      axes: ['high'],
+      backendKind: 'cli',
+      implementerProfile: 'default',
+      contextFit: 'fits',
+      estimatedTokens: 1573,
+      untruncatedEstimatedTokens: 1573,
+      contextLength: 1000000,
+      currentCodeTruncated: false,
+      currentCodeContextMode: 'none',
+      routingReason: 'Selected profile default (fits, estimated 1573/1000000 tokens)',
+    },
+    {
+      type: 'implementer_generate_running',
+      ts: 1791727008022,
+      phase: 'implementing',
+      taskId: 'T001',
+      file: 'src/text.js',
+      lineageAttempt: 1,
+      attemptAllowance: 8,
+    },
+    {
+      type: 'runner_call_started',
+      ts: 1791727008291,
+      phase: 'implementing',
+      taskId: 'T001',
+      callId: 'implementer-2',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      axes: ['high'],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 419,
+    },
+    {
+      type: 'steerable_call',
+      ts: 1791727013386,
+      phase: 'implementing',
+      taskId: 'T001',
+      seat: 'build',
+    },
+    {
+      type: 'runner_call_session_id',
+      ts: 1791727013387,
+      phase: 'implementing',
+      taskId: 'T001',
+      callId: 'implementer-2',
+      role: 'implementer',
+      backendKind: 'cli',
+      runnerName: 'opencode',
+      model: 'opencode-go/deepseek-v4.1-flash',
+      axes: ['high'],
+      attempt: 0,
+      usageBoundary: 'aggregate',
+      sequence: 420,
+      nativeSessionId: 'ses_ed4bf81f5ffeJnkbVh4fsKPGKi',
+    },
+  ].map((event) => EngineEventSchema.parse(event));
+
+  function project(items = events, cols = 200, expandedDiffs = new Set<string>()) {
+    const inputs = {
+      sections: groupEventsIntoSections(items),
+      cols,
+      viewportHeight: 40,
+      expandedDiffs,
+      expandedActivityBatches: new Set<string>(),
+      streaming,
+    };
+    const projection = buildConversationRowsProjection(inputs);
+    const rows = materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+    return { projection, rows, actions: buildConversationRowActions(inputs) };
+  }
+
+  it.each([60, 80, 120, 160, 200])(
+    'keeps exactly two blocks at %s columns and expands the raw words',
+    (cols) => {
+      const { projection, rows, actions } = project(events, cols);
+      expect(projection.renderableCount).toBe(2);
+      const text = rows.map(rowText).join('\n');
+      expect(text).toContain('Recovery  Balance spent on OpenCode CLI');
+      expect(text.replace(/\s+/gu, ' ')).toContain('continued on fallback');
+      expect(text).toContain('ctrl+d');
+      expect(text).not.toContain('fallback…');
+      expect(text).not.toContain('Add credit');
+      expect(text).not.toContain('Change BUILD tool');
+      expect(text).not.toContain('BUILD failed');
+      expect(text).not.toContain('BUILD activity');
+      expect(text).not.toContain('Error');
+      expect(text.match(/Balance spent on OpenCode CLI/gu)).toHaveLength(1);
+      expect(actions.size).toBeGreaterThan(0);
+      const action = actions.values().next().value;
+      if (action?.type !== 'toggle-diff') throw new Error('Expected recovery detail toggle');
+      expect([...actions.keys()].every((key) => rows.some((row) => row.key === key))).toBe(true);
+      const expanded = project(events, cols, new Set([action.key]));
+      const detail = expanded.rows.map(rowText).join('\n').replace(/\s+/gu, ' ');
+      expect(detail).toContain(words);
+      expect(detail).toContain('ctrl+d to collapse');
+      expect(detail).not.toContain('Add credit');
+      expect(expanded.actions.size).toBeGreaterThan(0);
+    },
+  );
+
+  it('keeps manual failures and a halt awaiting the person', () => {
+    for (const items of [
+      events.map((event) => (event.type === 'seat_switched' ? { ...event, auto: false } : event)),
+      events.filter(
+        (event) => event.type !== 'seat_switched' && event.type !== 'recovery_resolved',
+      ),
+    ]) {
+      const text = project(items).rows.map(rowText).join('\n');
+      expect(text).toContain('BUILD activity');
+      expect(text).toContain('BUILD failed');
+      expect(text).toContain('Add credit');
+      expect(text).not.toContain('continued on fallback');
+    }
+  });
+
+  it('replays the complete spent-b2 switch through the warning and restarted call without a Warning block', () => {
+    const { rows } = project([...events, ...resumedEvents]);
+    expect(rows.map(rowText).filter((text) => text !== '')).toEqual([
+      `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
+      `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI · opencode-go/deepseek-v4.1-flash · high · automatic fallback`,
+      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · high',
+      'working on src/text.js…',
+    ]);
+  });
+
+  it.each([
+    'Unrelated tool warning',
+    'PLAN seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; context will be rebuilt',
+    'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · low; the rest of the run uses the new seat',
+    'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · another/model · high; the rest of the run uses the new seat',
+  ])('keeps the unrelated warning %s on replay', (message) => {
+    const replay = resumedEvents.map((event) =>
+      event.type === 'warning' ? { ...event, message } : event,
+    );
+    const text = project([...events, ...replay])
+      .rows.map(rowText)
+      .join('\n');
+    expect(text).toContain('Warning');
+    expect(text).toContain(message);
+  });
+
+  it.each(['plan', 'review'] as const)('folds a %s seat failure by the issue and call', (seat) => {
+    const items = events
+      .filter((event) => event.type !== 'implementer_generate_failed')
+      .map((event) => {
+        const moved = {
+          ...event,
+          phase: seat === 'review' ? 'final-review' : 'planning',
+          taskId: undefined,
+        };
+        if ('role' in moved) return { ...moved, role: seat === 'review' ? 'review' : 'planner' };
+        if ('seat' in moved) return { ...moved, seat };
+        return moved;
+      })
+      .map((event) => EngineEventSchema.parse(event));
+    expect(project(items).projection.renderableCount).toBe(2);
+    const { actions } = project(items);
+    const action = actions.values().next().value;
+    if (action?.type !== 'toggle-diff') throw new Error('Expected recovery detail toggle');
+    expect(
+      project(items, 200, new Set([action.key]))
+        .rows.map(rowText)
+        .join('\n'),
+    ).toContain(words);
+  });
+
+  it('keeps tool activity and failures from another call', () => {
+    const tool = makeRunnerCallActivity({
+      callId: 'implementer-1',
+      taskId: taskId('T001'),
+      kind: 'read',
+      activityId: 'implementer-1:read',
+      label: 'reading src/text.js',
+      target: 'src/text.js',
+    });
+    const other = {
+      ...tool,
+      callId: 'other-call',
+      kind: 'warning' as const,
+      activityId: 'other-call:warning',
+      label: 'warning unrelated',
+      diagnosticPartial: 'Other call warning',
+    };
+    const { rows } = project([other, tool, ...events]);
+    const text = rows.map(rowText).join('\n');
+    expect(text).toContain('src/text.js');
+    expect(text).toContain('Other call warning');
+    expect(text).not.toContain('1 err');
+    expect(text).toContain('continued on fallback');
+  });
+
+  it('folds a PLAN consult on the same brief by its call id', () => {
+    const items = events
+      .filter((event) => event.type !== 'implementer_generate_failed')
+      .map((event) => {
+        if ('role' in event) return { ...event, role: 'escalation' };
+        if ('seat' in event) return { ...event, seat: 'plan' };
+        return event;
+      })
+      .map((event) => EngineEventSchema.parse(event));
+    expect(project(items).projection.renderableCount).toBe(2);
+  });
+
+  it('keeps an unrelated error and a switch whose resolution failed', () => {
+    const unrelated = events.map((event) =>
+      event.type === 'error' ? { ...event, message: 'Unrelated hook error' } : event,
+    );
+    expect(project(unrelated).rows.map(rowText).join('\n')).toContain('Unrelated hook error');
+    const failed = events.map((event) =>
+      event.type === 'recovery_resolved' ? { ...event, outcome: 'aborted' as const } : event,
+    );
+    const text = project(failed).rows.map(rowText).join('\n');
+    expect(text).toContain('BUILD failed');
+    expect(text).toContain('Add credit');
+    expect(text).not.toContain('continued on fallback');
+  });
+});
 const CLAUDE_CODE_LABEL = 'Claude Code CLI';
 
 function activityLine(label: Parameters<typeof displayActivityLabel>[0], value: string): string {
@@ -2176,8 +2691,8 @@ describe('one recovery reads as one block', () => {
     const headline = 'Balance spent on OpenCode CLI';
     const { lines } = transcript([
       { ...halt, message: headline },
-      { ...prompted, headline, availableActions: ['switch-seat'] },
-      { ...selected, action: 'switch-seat' },
+      { ...prompted, reason: 'runner-usage-limit', headline, availableActions: ['switch-seat'] },
+      { ...selected, reason: 'runner-usage-limit', action: 'switch-seat' },
       {
         ...at,
         type: 'seat_switched',
@@ -2189,15 +2704,19 @@ describe('one recovery reads as one block', () => {
         auto,
         configRevision: 'test-revision',
       },
-      { ...resolved, action: 'switch-seat' },
+      { ...resolved, reason: 'runner-usage-limit', action: 'switch-seat' },
     ]);
 
-    expect(lines).toEqual([
-      'Error',
-      headline,
-      `Recovery  Change BUILD tool${arrowSep()}retried`,
-      `BUILD${arrowSep()}OpenCode CLI${SOFT_SEP}${auto ? `automatic fallback${SOFT_SEP}` : ''}${headline}`,
-    ]);
+    expect(lines.slice(0, auto ? 1 : 3)).toEqual(
+      auto
+        ? [`Recovery  ${headline}${arrowSep()}continued on fallback`]
+        : ['Error', headline, `Recovery  Change BUILD model${arrowSep()}T002 resumed on new seat`],
+    );
+    expect(lines.at(auto ? 1 : 3)).toContain(
+      `BUILD  OpenCode CLI · DeepSeek V4.1 Flash${arrowSep()}OpenCode CLI`,
+    );
+    expect(lines.join(' ').includes('automatic fallback')).toBe(auto);
+    expect(lines.join(' ').match(/Balance spent on OpenCode CLI/gu)).toHaveLength(auto ? 1 : 2);
   });
 
   it('keeps the prompted card as one quiet row when no error before it names the halt', () => {
@@ -2275,6 +2794,52 @@ describe('one recovery reads as one block', () => {
     ]);
 
     expect(lines.filter((line) => line.includes('Wire the login route'))).toHaveLength(2);
+  });
+
+  it('keeps only the resumed brief header active after a seat switch', () => {
+    const start = makeTaskStart({
+      taskId: taskId('T901'),
+      tool: 'opencode',
+      model: 'deepseek/deepseek-flash',
+    });
+    const restarted = { ...start, ts: 5, model: 'opencode-go/deepseek-v4.1-flash', axes: ['high'] };
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections([start, restarted]),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 200,
+      viewportHeight: 40,
+      streaming,
+    });
+    const headers = rows.filter((row) => rowText(row).startsWith('T901'));
+    expect(headers).toHaveLength(2);
+    expect(headers.map((row) => row.kind)).toEqual(['section', 'task-header']);
+    expect(headers[0]?.segments.every((segment) => segment.tone === 'textDim')).toBe(true);
+  });
+
+  it.each([
+    ['opencode', 'opencode-go/deepseek-v4.1-flash', 'model'],
+    ['codex', 'gpt-6.1-sol', 'tool'],
+  ])('describes a manual switch to %s / %s as a change of %s', (tool, model, changed) => {
+    const { lines } = transcript([
+      halt,
+      prompted,
+      { ...selected, action: 'switch-seat' },
+      {
+        ...at,
+        type: 'seat_switched',
+        seat: 'build',
+        from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        to: { tool, model },
+        cause: 'checkout-changed',
+        auto: false,
+        configRevision: 'manual-switch',
+      },
+      { ...resolved, action: 'switch-seat' },
+    ]);
+    expect(lines.filter((line) => line.startsWith('Recovery'))).toEqual([
+      `Recovery  Change BUILD ${changed}${arrowSep()}T002 resumed on new seat`,
+    ]);
   });
 
   it.each([

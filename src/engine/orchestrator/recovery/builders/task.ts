@@ -40,6 +40,7 @@ import { inputTooLargeSentence } from './review-input.js';
 import { usageLimitAdvice } from '../../../runners/usage-limit.js';
 import {
   finalReviewCapCause,
+  formatRecoveryHeadline,
   finalReviewFailedCause,
   finalReviewUnverifiedCause,
   leftIsolationCause,
@@ -359,6 +360,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
  * it from `resetAt`, so one instant is spelled once.
  */
 export function runnerHaltRow(issue: RecoveryIssue, toolMessage: string): string {
+  if (issue.switchSeat?.auto !== undefined) return formatRecoveryHeadline(issue);
   const words = issue.resetAt === undefined ? toolMessage : stripRecoveryResetClause(toolMessage);
   return `${issue.message} (runner reported: ${words})`;
 }

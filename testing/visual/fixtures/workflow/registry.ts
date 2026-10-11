@@ -11,6 +11,7 @@ import {
   getConversationRowsWindowProjection,
 } from '../../../../src/features/workflow/conversation-rows/projection-cache.js';
 import { rowText } from '../../../../src/features/workflow/conversation-rows/row-format/rows.js';
+import type { ConversationRow } from '../../../../src/features/workflow/conversation-rows/types.js';
 import { getSections } from '../../../../src/stores/workflow/actions/sections.js';
 import { conversationScrollStore } from '../../../../src/stores/workflow/conversation-scroll.js';
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
@@ -49,6 +50,65 @@ const CONSULT_BOUND_NOTE = 'run the formatter first';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (
+    projection.scenarioId === 'workflow-seat-switched' ||
+    projection.scenarioId === 'workflow-seat-switched-manual' ||
+    projection.scenarioId === 'workflow-seat-switched-balance' ||
+    projection.scenarioId === 'workflow-spent-b2-replay'
+  ) {
+    return () => {
+      const lifecycle = base();
+      let expandRecovery = false;
+      let checkpoint: CheckpointId;
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          checkpoint = context.checkpoint.id;
+          expandRecovery = context.checkpoint.id === 'seat-switched-expanded-recovery';
+          await lifecycle.setup(context);
+        },
+        afterMount: async (write) => {
+          if (expandRecovery) await write.press('\u0004');
+          const snapshot = readConversationScrollSnapshot();
+          const { expandedDiffs, expandedActivityBatches } = conversationScrollStore.get();
+          const rowsProjection = getConversationRowsProjection({
+            sections: getSections(),
+            expandedDiffs,
+            expandedActivityBatches,
+            cols: snapshot.conversationWidth,
+            viewportHeight: snapshot.transcriptViewportHeight,
+            streaming: streamingOutputStore.get(),
+          });
+          const { rows } = getConversationRowsWindowProjection({
+            projection: rowsProjection,
+            windowStart: 0,
+            windowEnd: rowsProjection.totalRows,
+          });
+          let first = rows.findIndex((row) => rowText(row).startsWith('Recovery'));
+          if (checkpoint !== 'spent-b2-replay' && checkpoint.startsWith('spent-b2-replay-')) {
+            const brief = checkpoint.includes('-t001-') ? 'T001' : 'T002';
+            const start = rows.findIndex((row) =>
+              transcriptRowText(row, snapshot.conversationWidth)
+                .trimStart()
+                .startsWith(`● ${brief}`),
+            );
+            if (start < 0) throw new Error(`Missing replay brief ${brief}`);
+            const marker = checkpoint.endsWith('-activity')
+              ? 'BUILD activity'
+              : brief === 'T001'
+                ? 'src/text.js ·'
+                : 'src/preview.js ·';
+            first = rows.findIndex(
+              (row, index) => index >= start && rowText(row).startsWith(marker),
+            );
+            if (first < 0) throw new Error(`Missing replay scroll target ${checkpoint}`);
+          }
+          const step = snapshot.maxOffset - Math.max(0, first);
+          if (step > 0) conversationScrollStore.scrollUp({ ...snapshot, step });
+        },
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-review-fix-narrow-rail') {
     return () => {
       const lifecycle = base();
@@ -173,6 +233,14 @@ function excludesAll(...markers: readonly string[]): CheckpointPredicate {
   return ({ output }) => markers.every((marker) => !output.includes(marker));
 }
 
+function transcriptRowText(row: ConversationRow, columns: number): string {
+  return stripAnsiStyles(
+    row.node === undefined
+      ? rowText(row)
+      : renderToString(typeof row.node === 'function' ? row.node(false) : row.node, { columns }),
+  );
+}
+
 export function workflowTranscriptText(): string {
   const { conversationWidth, transcriptViewportHeight } = readConversationScrollSnapshot();
   const { expandedDiffs, expandedActivityBatches } = conversationScrollStore.get();
@@ -189,17 +257,7 @@ export function workflowTranscriptText(): string {
     windowStart: 0,
     windowEnd: projection.totalRows,
   });
-  return stripAnsiStyles(
-    rows
-      .map((row) =>
-        row.node === undefined
-          ? rowText(row)
-          : renderToString(typeof row.node === 'function' ? row.node(false) : row.node, {
-              columns: conversationWidth,
-            }),
-      )
-      .join('\n'),
-  );
+  return rows.map((row) => transcriptRowText(row, conversationWidth)).join('\n');
 }
 
 function includesTranscript(...markers: readonly string[]): CheckpointPredicate {
@@ -422,9 +480,61 @@ const checkpointPredicates = [
   [checkpointId('recovery-review'), includesAll()],
   [checkpointId('recovery-hint'), includesAll(WORKFLOW_FIXTURE_TEXT.recoveryPlan)],
   [checkpointId('recovery-plan-swapped'), includesAll()],
-  [checkpointId('seat-switched'), includesAll()],
+  [
+    checkpointId('seat-switched'),
+    (context) =>
+      includesTranscript(
+        'Recovery  Balance spent on OpenCode CLI',
+        'automatic fallback',
+      )(context) &&
+      excludesAll('Add credit', 'Change BUILD tool')(context) &&
+      !workflowTranscriptText().includes('BUILD failed'),
+  ],
   [checkpointId('seat-switched-manual'), excludesAll('automatic fallback')],
   [checkpointId('seat-switched-balance'), includesAll()],
+  [
+    checkpointId('seat-switched-expanded-recovery'),
+    includesTranscript('provider.quota: Insufficient Balance', 'ctrl+d to collapse'),
+  ],
+  [
+    checkpointId('spent-b2-replay'),
+    (context) => {
+      const text = workflowTranscriptText();
+      const fileRows = text.split('\n').filter((row) => /^src\/(text|preview)\.js ·/.test(row));
+      return (
+        includesTranscript(
+          'Recovery  Balance spent on OpenCode CLI',
+          'BUILD  OpenCode CLI · deepseek/deepseek-flash',
+          '→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+          '● T001',
+          '● T002',
+        )(context) &&
+        text.split('Recovery  ').length === 2 &&
+        !['BUILD seat changed', 'Warning', 'Add credit', 'Change BUILD tool'].some((marker) =>
+          text.includes(marker),
+        ) &&
+        fileRows.length === 2 &&
+        ['text', 'preview'].every((name) => {
+          const line = fileRows.find((row) => row.startsWith(`src/${name}.js ·`));
+          return (
+            line !== undefined &&
+            line.split(`src/${name}.js`).length === 2 &&
+            line.split(`test/${name}.test.js`).length === 2
+          );
+        })
+      );
+    },
+  ],
+  [
+    checkpointId('spent-b2-replay-t001-activity'),
+    includesAll('+1 more · ctrl+a', 'Edit    test/text.test.js'),
+  ],
+  [checkpointId('spent-b2-replay-t001-completion'), includesAll()],
+  [
+    checkpointId('spent-b2-replay-t002-activity'),
+    includesAll('+1 more · ctrl+a', 'Edit    test/preview.test.js'),
+  ],
+  [checkpointId('spent-b2-replay-t002-completion'), includesAll()],
   [checkpointId('plan-activity'), includesAll('src/core/crew/identity.ts')],
   [checkpointId('retry-exhausted'), includesAll(WORKFLOW_FIXTURE_TEXT.retryExhausted)],
   [checkpointId('consult-bound'), includesAll(WORKFLOW_FIXTURE_TEXT.consultBound)],

@@ -5,7 +5,7 @@ import { delimiter, dirname, join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
-type RepoFiles = Record<string, string>;
+type RepoFiles = Record<string, string | Buffer>;
 
 function writeObject(dir: string, type: 'blob' | 'tree' | 'commit', body: Buffer | string): string {
   const content = Buffer.isBuffer(body) ? body : Buffer.from(body);

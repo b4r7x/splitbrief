@@ -8,12 +8,14 @@ import {
   requestResume,
   requestSteer,
 } from '../features/workflow/handlers.js';
-import { findLatestExpandableActivityBatchKey } from '../features/workflow/conversation-rows/activity-batch-key.js';
-import { findLatestRenderableDiffKey } from '../core/sections/event-sections.js';
+import {
+  findLatestConversationRowAction,
+  type ConversationRowAction,
+} from '../features/workflow/conversation-rows/row-actions.js';
+import { readConversationRowActions } from '../features/workflow/conversation-rows/read-row-actions.js';
 import { readConversationScrollSnapshot } from '../features/workflow/layout/snapshot.js';
 import { getWorkflowSidebarWidth } from '../features/workflow/layout/rect.js';
 import { resolveCopyValue } from '../features/workflow/copy/resolve.js';
-import { getSections } from '../stores/workflow/actions/sections.js';
 import type { WorkflowState } from '../core/schemas/workflow.js';
 import type { RunRecord } from '../core/sessions/run-record.js';
 import type { SessionRef } from '../core/types/session-ref.js';
@@ -90,8 +92,7 @@ export interface ConversationScrollMetrics {
 // `features/workflow/**` implementations into these ports; the page files never see them.
 export interface WorkflowCommandPorts {
   requestClearQueue: () => QueueClearCommandResult | Promise<QueueClearCommandResult>;
-  findLatestActivityBatchKey: () => string | null;
-  findLatestDiffKey: () => string | null;
+  getRowActions: () => ReadonlyMap<string, ConversationRowAction>;
   readScrollMetrics: () => ConversationScrollMetrics;
   resolveCopyValue: (target: CopyTarget) => string | null;
 }
@@ -274,31 +275,31 @@ function scrollConversation(
 }
 
 function toggleLatestActivityBatch(
-  findLatestActivityBatchKey: WorkflowCommandPorts['findLatestActivityBatchKey'],
+  getRowActions: WorkflowCommandPorts['getRowActions'],
 ): ToggleLatestActivityBatchResult {
-  const key = findLatestActivityBatchKey();
-  if (key === null) {
+  const action = findLatestConversationRowAction(getRowActions(), 'toggle-activity-batch');
+  if (action === null) {
     return {
       status: 'unavailable',
       message: 'No expandable activity batch is available.',
     };
   }
 
-  const expanded = !conversationScrollStore.get().expandedActivityBatches.has(key);
-  conversationScrollStore.toggleActivityBatch(key);
+  const expanded = !conversationScrollStore.get().expandedActivityBatches.has(action.key);
+  conversationScrollStore.toggleActivityBatch(action.key);
   return { status: 'toggled', expanded };
 }
 
 function toggleLatestDiff(
-  findLatestDiffKey: WorkflowCommandPorts['findLatestDiffKey'],
+  getRowActions: WorkflowCommandPorts['getRowActions'],
 ): ToggleLatestDiffResult {
-  const key = findLatestDiffKey();
-  if (key === null) {
+  const action = findLatestConversationRowAction(getRowActions(), 'toggle-diff');
+  if (action === null) {
     return { status: 'unavailable', message: 'No diff is available to expand.' };
   }
 
-  const expanded = !conversationScrollStore.get().expandedDiffs.has(key);
-  conversationScrollStore.toggleDiff(key);
+  const expanded = !conversationScrollStore.get().expandedDiffs.has(action.key);
+  conversationScrollStore.toggleDiff(action.key);
   return { status: 'toggled', expanded };
 }
 
@@ -412,8 +413,8 @@ export function buildCommandContext({
       routerStore.updateRun({ run: readRunRecord(route.run.ref) });
     },
     scrollConversation: (target) => scrollConversation(target, workflow.readScrollMetrics),
-    toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.findLatestActivityBatchKey),
-    toggleLatestDiff: () => toggleLatestDiff(workflow.findLatestDiffKey),
+    toggleLatestActivityBatch: () => toggleLatestActivityBatch(workflow.getRowActions),
+    toggleLatestDiff: () => toggleLatestDiff(workflow.getRowActions),
     listBriefs: () => tasksStore.get().tasks.map(({ id, status }) => ({ id, status })),
     copyTarget: (target) => copyTarget(target, workflow.resolveCopyValue),
     toggleSidebar: () => {
@@ -461,8 +462,7 @@ export function useRuntimeCommands({
           exit,
           workflow: {
             requestClearQueue,
-            findLatestActivityBatchKey: () => findLatestExpandableActivityBatchKey(getSections()),
-            findLatestDiffKey: () => findLatestRenderableDiffKey(getSections()),
+            getRowActions: readConversationRowActions,
             readScrollMetrics: readConversationScrollSnapshot,
             resolveCopyValue,
           },

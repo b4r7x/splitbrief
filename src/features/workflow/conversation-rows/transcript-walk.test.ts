@@ -51,6 +51,18 @@ describe('walkTranscript', () => {
     seat: 'build',
     outcome: 'retry-current-task',
   };
+  const seatChangeWarning: EngineEventOf<'warning'> = {
+    type: 'warning',
+    ts: 5_000,
+    phase: 'implementing',
+    message:
+      'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat',
+  };
+  const resumed: EngineEventOf<'workflow_resumed'> = {
+    type: 'workflow_resumed',
+    ts: 6_000,
+    phase: 'implementing',
+  };
 
   it('keeps one activity batch across steerable call attachment and detachment', () => {
     const first = makeRunnerCallActivity({ ts: 1, callId: 'c1' });
@@ -108,12 +120,130 @@ describe('walkTranscript', () => {
       expect(steps).toEqual([
         {
           kind: 'recovery',
-          recovery: { firstIndex: 0, issueId: prompted.issueId, prompted, selected, resolved },
+          recovery: {
+            firstIndex: 0,
+            issueId: prompted.issueId,
+            prompted,
+            selected,
+            resolved,
+            ...(auto
+              ? { automaticSwitch: switchEvent, diagnostics: [] }
+              : { seatSwitch: switchEvent }),
+          },
         },
-        { kind: 'event', event: switchEvent, globalIndex: 2 },
+        {
+          kind: 'event',
+          event: switchEvent,
+          globalIndex: 2,
+          ...(auto && { causeInRecovery: true }),
+        },
       ]);
     },
   );
+
+  it('folds the matching seat-change warning before the next resume', () => {
+    const steps = [
+      ...walkTranscript(
+        groupEventsIntoSections([
+          prompted,
+          selected,
+          switched,
+          resolved,
+          seatChangeWarning,
+          resumed,
+        ]),
+      ),
+    ];
+
+    expect(steps.filter((step) => step.kind === 'event')).toEqual([
+      { kind: 'event', event: switched, globalIndex: 2, causeInRecovery: true },
+      { kind: 'event', event: resumed, globalIndex: 5 },
+    ]);
+  });
+
+  it('keeps later config changes back to and away from the original seat', () => {
+    const changedBack: EngineEventOf<'warning'> = {
+      ...seatChangeWarning,
+      ts: 7_000,
+      message:
+        'BUILD seat changed OpenCode CLI · opencode-go/deepseek-v4.1-flash · high → OpenCode CLI · deepseek/deepseek-flash; the rest of the run uses the new seat',
+    };
+    const changedAgain = { ...seatChangeWarning, ts: 9_000 };
+    const steps = [
+      ...walkTranscript(
+        groupEventsIntoSections([
+          prompted,
+          selected,
+          switched,
+          resolved,
+          seatChangeWarning,
+          resumed,
+          changedBack,
+          { ...resumed, ts: 8_000 },
+          changedAgain,
+          { ...resumed, ts: 10_000 },
+        ]),
+      ),
+    ];
+
+    expect(steps.filter((step) => step.kind === 'event' && step.event.type === 'warning')).toEqual([
+      { kind: 'event', event: changedBack, globalIndex: 6 },
+      { kind: 'event', event: changedAgain, globalIndex: 8 },
+    ]);
+  });
+
+  it.each([
+    resumed,
+    {
+      type: 'workflow_started',
+      ts: 6_000,
+      phase: 'implementing',
+      feature: 'Test seat changes',
+    } satisfies EngineEventOf<'workflow_started'>,
+  ])(
+    'keeps a later seat-change warning after $type without a reconciliation notice',
+    (boundary) => {
+      const warning = { ...seatChangeWarning, ts: 7_000 };
+      const steps = [
+        ...walkTranscript(
+          groupEventsIntoSections([
+            prompted,
+            selected,
+            switched,
+            resolved,
+            boundary,
+            warning,
+            { ...resumed, ts: 8_000 },
+          ]),
+        ),
+      ];
+
+      expect(
+        steps.filter((step) => step.kind === 'event' && step.event.type === 'warning'),
+      ).toEqual([{ kind: 'event', event: warning, globalIndex: 5 }]);
+    },
+  );
+
+  it('consumes a seat switch after folding one matching warning', () => {
+    const laterWarning = { ...seatChangeWarning, ts: 5_500 };
+    const steps = [
+      ...walkTranscript(
+        groupEventsIntoSections([
+          prompted,
+          selected,
+          switched,
+          resolved,
+          seatChangeWarning,
+          laterWarning,
+          resumed,
+        ]),
+      ),
+    ];
+
+    expect(steps.filter((step) => step.kind === 'event' && step.event.type === 'warning')).toEqual([
+      { kind: 'event', event: laterWarning, globalIndex: 5 },
+    ]);
+  });
 
   it('keeps an unrelated row between recovery groups', () => {
     const message: EngineEvent = {
@@ -129,14 +259,18 @@ describe('walkTranscript', () => {
     expect(steps).toEqual([
       {
         kind: 'recovery',
-        recovery: { firstIndex: 0, issueId: prompted.issueId, prompted, selected },
+        recovery: {
+          firstIndex: 0,
+          issueId: prompted.issueId,
+          prompted,
+          selected,
+          resolved,
+          automaticSwitch: switched,
+          diagnostics: [],
+        },
       },
-      { kind: 'event', event: switched, globalIndex: 2 },
+      { kind: 'event', event: switched, globalIndex: 2, causeInRecovery: true },
       { kind: 'event', event: message, globalIndex: 3 },
-      {
-        kind: 'recovery',
-        recovery: { firstIndex: 4, issueId: resolved.issueId, resolved },
-      },
     ]);
   });
 

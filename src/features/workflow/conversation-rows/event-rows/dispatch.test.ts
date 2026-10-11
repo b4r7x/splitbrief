@@ -22,6 +22,76 @@ import type { ConversationRow } from '../types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
+it('moves the whole destination identity after the arrow at 80 columns', () => {
+  const rows = eventRows({
+    event: {
+      type: 'seat_switched',
+      ts: 0,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'revision',
+    },
+    globalIndex: 0,
+    expanded: false,
+    causeInRecovery: true,
+    ctx: { width: 80, viewportRows: 24, streaming },
+  });
+  expect(rows.map(rowText)).toEqual([
+    'BUILD  OpenCode CLI · deepseek/deepseek-flash',
+    `${glyph('connectorHandoff')} OpenCode CLI · opencode-go/deepseek-v4.1-flash · high · automatic fallback`,
+  ]);
+});
+
+it.each([true, false])('names both same-name switch endpoints with auto=%s', (auto) => {
+  const rows = eventRows({
+    event: {
+      type: 'seat_switched',
+      ts: 0,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      cause: 'runner-usage-limit',
+      auto,
+      configRevision: 'revision',
+    },
+    globalIndex: 0,
+    expanded: false,
+    ctx: { width: 200, viewportRows: 40, streaming },
+  });
+  const text = rows.map(rowText).join('\n');
+  expect(text).toContain(
+    `BUILD  OpenCode CLI · deepseek/deepseek-flash ${glyph('connectorHandoff')} OpenCode CLI · opencode-go/deepseek-v4.1-flash · high`,
+  );
+  expect(text.includes('automatic fallback')).toBe(auto);
+});
+
+it('keeps different catalog words on both switch endpoints', () => {
+  const rows = eventRows({
+    event: {
+      type: 'seat_switched',
+      ts: 0,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'claude-code', model: 'claude-sonnet-4' },
+      to: { tool: 'claude-code', model: 'claude-opus-4' },
+      cause: 'runner-usage-limit',
+      auto: false,
+      configRevision: 'revision',
+    },
+    globalIndex: 0,
+    expanded: false,
+    ctx: { width: 200, viewportRows: 40, streaming },
+  });
+  expect(rows.map(rowText).join('\n')).toContain(
+    `Claude Code CLI · Claude Sonnet 4 ${glyph('connectorHandoff')} Claude Code CLI · Claude Opus 4`,
+  );
+});
+
 const suppressedRunnerCallTypes = [
   'runner_call_started',
   'runner_call_text_delta',
@@ -145,7 +215,7 @@ describe('event row dispatch', () => {
       ctx: { width: 200, viewportRows: 20, streaming },
     });
     expect(rows.map(rowText).join('\n')).toBe(
-      `BUILD ${glyph('connectorHandoff')} Claude Code CLI · ${auto ? 'automatic fallback · ' : ''}usage limit`,
+      `BUILD  OpenAI Codex CLI ${glyph('connectorHandoff')} Claude Code CLI · ${auto ? 'automatic fallback · ' : ''}usage limit`,
     );
   });
   it.each([
@@ -243,8 +313,12 @@ describe('event row dispatch', () => {
       const tone = seat === 'plan' ? 'planner' : seat === 'build' ? 'implementer' : 'reviewer';
       expect(rows[0]?.segments).toEqual([
         { text: CREW_SEAT_LABELS[seat], tone },
+        { text: '  ', tone: 'textDim' },
+        { text: 'OpenCode CLI', tone },
         { text: ` ${glyph('connectorHandoff')} `, tone: 'textDim' },
-        { text: formatSeatCandidateIdentity(to), tone },
+        { text: 'OpenAI Codex CLI', tone },
+        { text: ' · ', tone: 'textDim' },
+        { text: 'GPT-5', tone },
         { text: ' · ', tone: 'textDim' },
         { text: 'automatic fallback', tone: 'textDim' },
         { text: ' · ', tone: 'textDim' },
@@ -1148,13 +1222,19 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      `${CREW_SEAT_LABELS.build} ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
+      `${CREW_SEAT_LABELS.build}  OpenCode CLI · DeepSeek V4.1 Flash ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
     ]);
     expect(
       rows[0]?.segments
         .filter((segment) => segment.tone === 'implementer')
         .map((segment) => segment.text),
-    ).toEqual([CREW_SEAT_LABELS.build, formatSeatCandidateIdentity(to)]);
+    ).toEqual([
+      CREW_SEAT_LABELS.build,
+      'OpenCode CLI',
+      'DeepSeek V4.1 Flash',
+      'Claude Code CLI',
+      'Claude Sonnet 4',
+    ]);
     expect(rows.map(rowText).join('\n')).not.toContain('Balance spent');
   });
 

@@ -120,18 +120,21 @@ describe('implementer_generate_done diff card', () => {
       width,
     );
 
-    const topRow = requireRow(rows, (rowValue) => rowValue.kind === 'card-top');
-    expect(rowText(topRow)).toContain('1.2s');
-    expect(rowText(topRow)).toContain('+1');
-    expect(rowText(topRow)).toContain('-1');
+    const header = rows
+      .filter((rowValue) => rowValue.kind === 'card-top')
+      .map(rowText)
+      .join('\n');
+    expect(header).toContain('1.2s');
+    expect(header).toContain('+1');
+    expect(header).toContain('-1');
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= width)).toBe(true);
   });
 
-  it('renders collapsed diff flat without a card border (byte-identical to pre-change output)', () => {
+  it('renders collapsed diff as one files line without a card border', () => {
     const rows = rowsFor(implementerDoneEvent(), false);
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain('README.md (+1 -1)');
+    expect(text).toBe('README.md  1.2s  +1 -1  ctrl+d');
     expect(text).toContain('ctrl+d');
     expect(text).not.toContain('▸');
     expect(rows.every((rowValue) => rowValue.kind !== 'card-top')).toBe(true);
@@ -233,7 +236,7 @@ describe('implementer_generate_done diff card', () => {
     const event = implementerDoneEvent({ diff: undefined, linesAdded: 0, linesRemoved: 0 });
     const text = rowsFor(event, false).map(rowText).join('\n');
 
-    expect(text).toContain('README.md (+0 -0)');
+    expect(text).toBe('README.md  1.2s  +0 -0');
     expect(text).not.toContain('no change needed');
   });
 });

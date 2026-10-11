@@ -15,6 +15,7 @@ import {
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunnerGate } from '#testing/helpers/runner-gate.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Config } from '../../../core/schemas/config.js';
@@ -33,7 +34,7 @@ import type { SkillMeta } from '../../../core/skills/types.js';
 import type { EngineEvent, EventBus } from '../../events/types.js';
 import { createEventBus } from '../../events/bus.js';
 import { readRunEvents } from '../../events/replay.js';
-import { loadState } from '../../../core/state/persistence.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import { writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -54,6 +55,10 @@ import { createRunIsolation } from '../isolation/create.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { parsePreparedConfig, type PreparedExecution } from '../../runners/prepared-execution.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
+import { configWithSwitchedSeat } from '../recovery/switch-seat.js';
+import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
+import { createRecoveryBus } from '../recovery/bus.js';
 
 vi.mock('./init-seats.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./init-seats.js')>();
@@ -1175,6 +1180,165 @@ describe('initializeWorkflow — a cut step that names a passed brief', () => {
 });
 
 describe('initializeWorkflow — seat record', () => {
+  it('builds the replacement PLAN seat without the primary native session and rebuilds its context', async () => {
+    await withTempDir('splitbrief-init-recorded-plan-switch', async (projectDir) => {
+      const ref = { projectDir, sessionId: 'recorded-plan-switch' };
+      const feature = 'continue planning on the replacement';
+      const config = makeConfig({
+        planner: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol' },
+      });
+      ensureSessionDir(projectDir, ref.sessionId);
+      writeConfig(projectDir, config);
+      writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
+      const candidate = { tool: 'claude-code', model: 'sonnet' };
+      const state = {
+        ...createInitialState(feature),
+        phase: 'planning' as const,
+        plannerSessionId: 'native-session-from-primary',
+        pendingRecovery: makeRecoveryIssue({
+          phase: 'planning',
+          taskId: undefined,
+          reason: 'runner-usage-limit',
+          availableActions: ['switch-seat'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat: 'plan', candidates: [candidate] },
+        }),
+      };
+      saveState(ref, state);
+      appendMessage(ref, { role: 'user', phase: state.phase, text: feature });
+      const events: EngineEvent[] = [];
+      const switched = await switchSeatAndPrepareResume({
+        ...ref,
+        config,
+        state,
+        candidate,
+        bus: createRecoveryBus(ref),
+        signal: new AbortController().signal,
+        policy: {
+          purpose: 'resume',
+          interaction: 'headless',
+          allowRepoRunners: false,
+          allowHooks: false,
+          unverifiedAuth: 'denied',
+        },
+        prepare: async (input) => ({
+          kind: 'prepared',
+          execution: makePreparedExecution({
+            ...ref,
+            feature,
+            config: input.effectiveConfig,
+            purpose: 'resume',
+          }),
+        }),
+      });
+      if (switched.kind !== 'switched') throw new Error('Expected PLAN switch');
+      const planner = makePlanner();
+      planner.capabilities.supportsSessionResume = true;
+      const resumeHolder: ResumeContextHolder = { messages: [] };
+      const { init } = await initializeTestWorkflow({
+        ...ref,
+        feature,
+        savedState: switched.state,
+        configOverrides: { planner: switched.config.planner },
+        reviewer: switched.config.reviewer,
+        plannerRunner: planner,
+        resumeHolder,
+        eventSink: (event) => events.push(event),
+      });
+      if (!init.ok) throw new Error('Expected resume init');
+      expect(init.state.plannerSessionId).toBeNull();
+      expect(createPlannerSeat).toHaveBeenLastCalledWith(
+        expect.objectContaining({ initialSessionId: null }),
+      );
+      expect(resumeHolder.messages).toContainEqual(
+        expect.objectContaining({ role: 'user', content: feature }),
+      );
+      expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(switched.config));
+      expect(
+        events.filter((event) => event.type === 'warning' && /seat changed/.test(event.message)),
+      ).toEqual([]);
+    });
+  });
+
+  it.each([
+    { name: 'a tool default', candidate: { tool: 'opencode' }, warning: false },
+    {
+      name: 'a collision in the model words',
+      candidate: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      warning: false,
+    },
+    { name: 'an unrecorded config edit', candidate: undefined, warning: true },
+    {
+      name: 'a switch on another seat',
+      candidate: { tool: 'opencode' },
+      seat: 'review',
+      warning: true,
+    },
+    {
+      name: 'another destination with the same model words and axis',
+      candidate: { tool: 'opencode', model: 'deepseek/deepseek-flash', variant: 'high' },
+      warning: true,
+    },
+    {
+      name: 'a switch already resumed',
+      candidate: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      resumed: true,
+      warning: true,
+    },
+  ] as const)('reconciles BUILD after $name', async (scenario) => {
+    await withTempDir('splitbrief-init-switch-notice', async (projectDir) => {
+      const ref = { projectDir, sessionId: 'switch-notice' };
+      const feature = 'continue the brief';
+      const config = makeConfig({
+        implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      });
+      const replacement =
+        scenario.candidate === undefined || scenario.warning
+          ? { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' }
+          : scenario.candidate;
+      const current = configWithSwitchedSeat(config, 'build', replacement);
+      if (current === null) throw new Error('Expected switched config');
+      ensureSessionDir(projectDir, ref.sessionId);
+      writeConfig(projectDir, config);
+      writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
+      const state = { ...createInitialState(feature), phase: 'implementing' as const };
+      saveState(ref, state);
+      const bus = createRecoveryBus(ref);
+      if (scenario.candidate !== undefined) {
+        bus.publish({
+          type: 'seat_switched',
+          ts: Date.now(),
+          phase: state.phase,
+          seat: 'seat' in scenario ? scenario.seat : 'build',
+          from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+          to: scenario.candidate,
+          cause: 'runner-usage-limit',
+          auto: true,
+          configRevision: 'recorded-revision',
+        });
+      }
+      if ('resumed' in scenario) {
+        bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
+      }
+      writeConfig(projectDir, current);
+      const events: EngineEvent[] = [];
+      const { init } = await initializeTestWorkflow({
+        ...ref,
+        feature,
+        savedState: state,
+        configOverrides: { implementer: loadConfig(projectDir).config.implementer },
+        eventSink: (event) => events.push(event),
+      });
+      expect(init.ok).toBe(true);
+      const notices = events.filter(
+        (event) => event.type === 'warning' && /BUILD seat changed/.test(event.message),
+      );
+      expect(notices).toHaveLength(scenario.warning ? 1 : 0);
+      expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(current));
+    });
+  });
+
   it('records the seats every run starts on, interactive included', async () => {
     await withTempDir('splitbrief-init-seats', async (projectDir) => {
       const sessionId = 'session-init-seats';

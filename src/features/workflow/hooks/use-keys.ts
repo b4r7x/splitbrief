@@ -2,16 +2,14 @@ import { useInput, type Key } from 'ink';
 import { questionPromptStore } from '../../../stores/question-prompt/prompt.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { completionStore } from '../../../stores/ui/completion.js';
-import { getSections } from '../../../stores/workflow/actions/sections.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
 import { reviewStore } from '../../../stores/workflow/review.js';
 import { conversationScrollStore } from '../../../stores/workflow/conversation-scroll.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { clamp } from '../../../utils/math.js';
-import { findLatestRenderableDiffKey } from '../../../core/sections/event-sections.js';
 import { resolveScrollKey } from '../../../core/keybindings/scroll.js';
-import { findLatestExpandableActivityBatchKey } from '../conversation-rows/activity-batch-key.js';
+import { readConversationRowActions } from '../conversation-rows/read-row-actions.js';
 import {
   handleWorkflowCtrlChords,
   handleReviewScroll,
@@ -122,7 +120,6 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
     (input, key) => {
       const question = questionPromptStore.get();
       if (question.questions?.length && question.focus !== 'composer') return;
-      const sections = getSections();
       const inputMode = controlsStore.get().inputMode;
       const composerFocus = inputMode === 'normal' || inputMode === 'question';
 
@@ -133,9 +130,7 @@ export function useWorkflowKeys({ isActive }: { isActive: boolean }) {
           inputMode,
           overlay: overlayActive,
           composerFocus,
-          sections,
-          findLatestDiff: findLatestRenderableDiffKey,
-          findLatestActivityBatch: findLatestExpandableActivityBatchKey,
+          getRowActions: readConversationRowActions,
         });
         if (chord.type !== 'none') {
           applyAction(chord);

@@ -7,6 +7,7 @@ import {
   orderedDriftFindings,
   implementerFailureCard,
   eventRowBlock,
+  recoveryRowBlock,
 } from './event-rows/dispatch.js';
 import { runnerActivityBatchRowBlock } from './activity-rows.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
@@ -16,6 +17,13 @@ const MIN_ROW_WIDTH = 1;
 export type ConversationRowAction =
   | { type: 'toggle-diff'; key: string }
   | { type: 'toggle-activity-batch'; key: string };
+
+export function findLatestConversationRowAction(
+  actions: ReadonlyMap<string, ConversationRowAction>,
+  type: ConversationRowAction['type'],
+): ConversationRowAction | null {
+  return [...actions.values()].findLast((action) => action.type === type) ?? null;
+}
 
 // Maps each actionable transcript row key to its expand/collapse action so a click on the row can
 // trigger the same toggle as the keyboard. Only the activity disclosure (`+N more` / `collapse`),
@@ -55,7 +63,24 @@ export function buildConversationRowActions(
       flushActivityBatch(step.batch);
       continue;
     }
-    if (step.kind === 'recovery') continue;
+    if (step.kind === 'recovery') {
+      const { recovery } = step;
+      if (recovery.prompted !== undefined && (recovery.diagnostics?.length ?? 0) > 0) {
+        const key = diffEventKey(recovery.prompted, recovery.firstIndex);
+        const block = recoveryRowBlock(
+          `event-${recovery.firstIndex}-recovery`,
+          recovery,
+          ctx.width,
+          inputs.expandedDiffs.has(key),
+        );
+        if (block !== null) {
+          for (const row of block.createRows(0, block.rowCount)) {
+            actions.set(row.key, { type: 'toggle-diff', key });
+          }
+        }
+      }
+      continue;
+    }
     const { event, globalIndex } = step;
     const expandable =
       (event.type === 'implementer_generate_done' && (event.diff ?? '') !== '') ||

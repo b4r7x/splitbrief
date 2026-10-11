@@ -15,7 +15,7 @@ import {
   readRailSnapshot,
   type ConversationHoverSnapshot,
 } from '../layout/snapshot.js';
-import { buildConversationRowActions } from '../conversation-rows/row-actions.js';
+import { readConversationRowActions } from '../conversation-rows/read-row-actions.js';
 import { computeConversationRowScroll } from '../conversation-rows/scroll.js';
 
 const HOVER_THROTTLE_MS = 16;
@@ -99,10 +99,7 @@ function activateConversationRow(windowIndex: number): void {
   });
   const clickedRow = windowIndex >= 0 ? computed.rows[windowIndex] : undefined;
   if (clickedRow === undefined) return;
-  const action = buildConversationRowActions({
-    ...inputs,
-    viewportHeight: computed.viewportHeight,
-  }).get(clickedRow.key);
+  const action = readConversationRowActions().get(clickedRow.key);
   if (action === undefined) return;
   if (action.type === 'toggle-diff') conversationScrollStore.toggleDiff(action.key);
   else conversationScrollStore.toggleActivityBatch(action.key);

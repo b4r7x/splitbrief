@@ -102,7 +102,143 @@ afterEach(() => {
   projectDir = '';
 });
 
+function historyRows(events: EngineEvent[]): string[] {
+  return buildConversationRows({
+    sections: groupEventsIntoSections(events),
+    expandedDiffs: new Set(),
+    expandedActivityBatches: new Set(),
+    cols: 200,
+    viewportHeight: 50,
+    streaming: { taskId: null, lines: [], active: false },
+  }).rows.map(rowText);
+}
+
 describe('hydrateRun', () => {
+  it('restores both historical smoke briefs from their taskless implementer reports', async () => {
+    const briefs = [
+      {
+        id: taskId('T001'),
+        file: 'src/text.js',
+        test: 'test/text.test.js',
+        title: 'Add wordCount to src/text.js',
+        narration:
+          "Added `wordCount(value)` as a named export in `src/text.js`, matching `compactWhitespace`'s validation style, and extended `test/text.test.js` with the required cases.",
+        duration: 15409,
+      },
+      {
+        id: taskId('T002'),
+        file: 'src/preview.js',
+        test: 'test/preview.test.js',
+        title: 'Add optional suffix to truncate in src/preview.js',
+        narration:
+          'I updated `truncate` with the optional `suffix` parameter and added the requested node:test cases.',
+        duration: 15018,
+      },
+    ];
+    const history = briefs.flatMap((brief, index): EngineEvent[] => [
+      {
+        type: 'task_started',
+        ts: 2000 + index * 1000,
+        phase: 'implementing',
+        taskId: brief.id,
+        title: brief.title,
+        index,
+        total: 2,
+        file: brief.file,
+        files: [brief.file, brief.test],
+        action: 'modify',
+      },
+      {
+        type: 'planner_text',
+        ts: 2100 + index * 1000,
+        phase: 'implementing',
+        role: 'implementer',
+        content: 'markdown',
+        text: `${brief.narration}\n\n${JSON.stringify({ status: 'done', filesChanged: [brief.file, brief.test], touchedNotSuggested: [], notes: null, decisions: [] })}`,
+      },
+      {
+        type: 'implementer_generate_done',
+        ts: 2200 + index * 1000,
+        phase: 'implementing',
+        taskId: brief.id,
+        file: brief.file,
+        duration: brief.duration,
+      },
+      {
+        type: 'task_completed',
+        ts: 2300 + index * 1000,
+        phase: 'implementing',
+        taskId: brief.id,
+        title: brief.title,
+        method: 'local',
+        retries: 0,
+        duration: brief.duration,
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+      },
+    ]);
+    writeLog(history);
+    await hydrateRun(makeRunRecord({ ref: { projectDir, sessionId: SESSION_ID } }));
+    const replay = eventsStore.get().events;
+    expect(
+      replay
+        .filter((event) => event.type === 'implementer_generate_done')
+        .map((event) => event.files),
+    ).toEqual(briefs.map((brief) => [brief.file, brief.test]));
+    const replayRows = historyRows(replay);
+    for (const brief of briefs) {
+      const filesLine = replayRows.filter((row) => row.startsWith(`${brief.file} ·`));
+      expect(filesLine).toHaveLength(1);
+      expect(filesLine[0]).toContain(`${brief.file} · ${brief.test}`);
+      expect(filesLine[0]?.split(brief.test)).toHaveLength(2);
+    }
+    expect(replayRows.filter((row) => row === 'Report  done · 2 files · 0 decisions')).toHaveLength(
+      2,
+    );
+    resetWorkflow();
+    for (const event of history) {
+      const brief =
+        event.type === 'implementer_generate_done'
+          ? briefs.find((brief) => brief.id === event.taskId)
+          : undefined;
+      addEvent(
+        event.type === 'implementer_generate_done' && brief !== undefined
+          ? { ...event, files: [brief.file, brief.test] }
+          : event,
+      );
+    }
+    expect(historyRows(eventsStore.get().events)).toEqual(replayRows);
+  });
+
+  it('keeps the recorded target when no report names changed files and clears reports on restart', async () => {
+    const start = RUN[1];
+    if (start?.type !== 'task_started') throw new Error('Missing task start');
+    writeLog([
+      start,
+      {
+        type: 'planner_text',
+        ts: 2100,
+        phase: 'implementing',
+        role: 'implementer',
+        text: '{"status":"done","filesChanged":["src/old.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
+      },
+      { ...start, ts: 2200 },
+      {
+        type: 'implementer_generate_done',
+        ts: 2300,
+        phase: 'implementing',
+        taskId: start.taskId,
+        file: start.file,
+        duration: 100,
+      },
+    ]);
+    await hydrateRun(makeRunRecord({ ref: { projectDir, sessionId: SESSION_ID } }));
+    expect(
+      eventsStore.get().events.find((event) => event.type === 'implementer_generate_done'),
+    ).not.toHaveProperty('files');
+    expect(historyRows(eventsStore.get().events)).toContain('src/validate.ts  0.1s');
+  });
+
   it('settles a truncated review on resume before T002 starts and finishes its call', async () => {
     writeLog([
       ...RUN,
@@ -714,12 +850,20 @@ describe('hydrateRun replaying a seat swap', () => {
           .split('\n')
           .map((line) => line.trim())
           .filter((line) => line !== ''),
-      ).toEqual([
-        'Error',
-        headline,
-        `Recovery  Change BUILD tool${arrowSep()}retried`,
-        `BUILD${arrowSep()}OpenCode CLI · ${auto ? 'automatic fallback · ' : ''}${headline}`,
-      ]);
+      ).toEqual(
+        auto
+          ? [
+              `Recovery  ${headline}${arrowSep()}continued on fallback`,
+              `BUILD  OpenCode CLI · DeepSeek V4.1 Flash${arrowSep()}OpenCode CLI · automatic fallback`,
+            ]
+          : [
+              'Error',
+              headline,
+              `Recovery  Change BUILD model${arrowSep()}continued on new seat`,
+              `BUILD  OpenCode CLI · DeepSeek V4.1 Flash${arrowSep()}OpenCode CLI`,
+              headline,
+            ],
+      );
     },
   );
 

@@ -248,9 +248,13 @@ Settings › Fallback shows the saved fallback after the switch without a restar
 2. **Write.** `recordSeatOfRecord` (`src/core/config/load/record-seat.ts`) patches that one seat in `.splitbrief/config.yaml`. It writes only when the file's `rawSha256` still equals the revision the halt read.
 3. **Resolve.** The state applies `RESTART_ATTEMPT_ON_SEAT`, appends a record to `seatSwitches` (`seat`, `from`, `to`, `cause`, `auto`, `configRevision`, `ts`, optional `accountCause` and `headline`) and publishes `seat_switched` with the same cause details. The broad `cause` stays `runner-usage-limit` for balance, billing and quota refusals; `accountCause` keeps the classification and `headline` keeps the halt's shared wording. Older records retain their broad cause without an inferred account classification.
 
-An automatic switch adds `<SEAT> → <identity> · automatic fallback · <cause>` to the transcript.
-A manual switch keeps `<SEAT> → <identity> · <cause>`.
-History replay reads the recorded `auto` field. Both rows use `formatSeatSwitchCause` in `src/core/recovery/headline.ts`.
+An automatic switch that resolves a recovery shows two transcript blocks. The first reads `Recovery  <cause> → continued on fallback`. It folds the issue's failed call diagnostics, BUILD failure and halt error, while keeping tool activity. Its existing expansion action reveals the runner's words. The second reads `<SEAT>  <from identity> → <to identity> · automatic fallback`, without repeating the cause. Equal catalog names use both model ids through `formatSeatChangeIdentities`; different names keep both catalog names. Manual switches use the same endpoints without `automatic fallback`, and keep the existing recovery rows. Pending or failed automatic switches keep those rows too. With an automatic intent, `runnerHaltRow` publishes cause-only text; the issue keeps its advice for the recovery panel.
+
+A switch does not write the session's `seats.json`. The next resume reconciles `seats.json` against the config before it publishes `workflow_resumed`. The engine checks each changed seat against the `seat_switched` events since the last `workflow_started` or `workflow_resumed`. If the latest switch for that seat records the current config, the engine emits no seat-change notice. A config change between runs still emits a notice.
+
+Older logs emitted that notice before `workflow_resumed`. The transcript folds only one matching notice before the resume that follows the switch. It keeps notices for config changes before later resumes.
+
+History replay reads the recorded `auto` field. Switch rows that still need the cause use `formatSeatSwitchCause` in `src/core/recovery/headline.ts`; folded Recovery rows use the prompted headline.
 
 An abort, a refused admission or a conflict keeps the halt pending. A conflict reads `config changed meanwhile · the halt stays`. A project with no `config.yaml` has no revision to check. Its switch commits with no file write, and the switched config travels in memory.
 

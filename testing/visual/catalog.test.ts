@@ -48,10 +48,15 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-review-task-cadence', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-cadence-settled', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-review-task-out-of-scope', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-review-fix-no-change', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-ready-to-apply', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-continuous-transcript', ['120x40', '80x24', '60x18', '160x45', '200x50']],
   ['workflow-continuous-transcript-ready', ['120x40', '80x24', '60x18', '160x45', '200x50']],
-  ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '200x50']],
+  ['workflow-recovery-balance-spent', ['120x40', '80x24', '60x18', '160x45', '200x50']],
+  ['workflow-seat-switched', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-seat-switched-manual', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-spent-b2-replay', ['200x50', '60x18']],
+  ['workflow-recovery-fallback-used', ['120x40', '80x24', '60x18', '160x45']],
   ['home-recent-sessions', ['120x40', '80x24']],
   ['workflow-implementation', ['120x40', '80x24', '60x18', '160x45', '220x45']],
   ['workflow-implementation-silent', ['120x40', '80x24', '60x18', '160x45', '220x45']],
@@ -78,16 +83,70 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('registers the historical smoke replay and expanded recovery checkpoints', () => {
+    const replay = findVisualScenario('workflow-spent-b2-replay');
+    expect(replay?.viewports.map(formatViewport)).toEqual(['200x50', '60x18']);
+    expect(replay?.checkpoints[0]).toMatchObject({ id: 'spent-b2-replay', kind: 'implementation' });
+    expect(workflowFixtureRegistry.has(scenarioId('workflow-spent-b2-replay'))).toBe(true);
+    expect(workflowCheckpointPredicates.has(checkpointId('spent-b2-replay'))).toBe(true);
+    expect(replay?.checkpoints.map((checkpoint) => checkpoint.id)).toEqual([
+      'spent-b2-replay',
+      'spent-b2-replay-t001-activity',
+      'spent-b2-replay-t001-completion',
+      'spent-b2-replay-t002-activity',
+      'spent-b2-replay-t002-completion',
+    ]);
+    const switched = findVisualScenario('workflow-seat-switched');
+    expect(switched?.checkpoints.map((checkpoint) => checkpoint.id)).toEqual([
+      'seat-switched',
+      'seat-switched-expanded-recovery',
+    ]);
+    expect(workflowCheckpointPredicates.has(checkpointId('seat-switched-expanded-recovery'))).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    [
+      'spent-b2-replay-t001-activity',
+      ['BUILD activity  4 updates', '+1 more · ctrl+a', 'Edit    test/text.test.js'],
+    ],
+    ['spent-b2-replay-t001-completion', ['src/text.js · test/text.test.js']],
+    [
+      'spent-b2-replay-t002-activity',
+      ['BUILD activity  4 updates', '+1 more · ctrl+a', 'Edit    test/preview.test.js'],
+    ],
+    ['spent-b2-replay-t002-completion', ['src/preview.js · test/preview.test.js']],
+  ])('captures visible replay rows at 60x18 for %s', async (id, markers) => {
+    const scenario = findVisualScenario('workflow-spent-b2-replay');
+    const checkpoint = scenario?.checkpoints.find((value) => value.id === id);
+    const narrow = scenario?.viewports.find((value) => value.cols === 60 && value.rows === 18);
+    if (!scenario || !checkpoint || !narrow) throw new Error(`Missing replay checkpoint ${id}`);
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: narrow });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      for (const marker of markers) expect(frame).toContain(marker);
+      const predicate = workflowCheckpointPredicates.get(checkpoint.id);
+      expect(predicate?.({ scenario, checkpoint, viewport: narrow, output: '' })).toBe(false);
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it.each([
     ['workflow-recovery-no-fallback', 'Change BUILD tool'],
     ['workflow-recovery-fallback-used', 'Change BUILD tool'],
     ['workflow-recovery-fallback-not-installed', 'Change BUILD tool'],
-    ['workflow-seat-switched', 'BUILD → OpenCode CLI'],
-    ['workflow-seat-switched-manual', 'BUILD → OpenCode CLI'],
+    ['workflow-seat-switched', 'BUILD  OpenCode CLI'],
+    ['workflow-seat-switched-manual', 'BUILD  OpenCode CLI'],
   ])('registers %s at every required viewport', (id, marker) => {
     const scenario = findVisualScenario(id);
     expect(scenario, id).toBeDefined();
-    expect(scenario?.viewports).toEqual(REQUIRED_VIEWPORTS);
+    expect(scenario?.viewports).toEqual(
+      id === 'workflow-recovery-no-fallback' || id === 'workflow-recovery-fallback-not-installed'
+        ? REQUIRED_VIEWPORTS
+        : WIDE_VIEWPORTS,
+    );
     expect(scenario?.checkpoints[0]?.marker).toBe(marker);
   });
 
@@ -199,7 +258,7 @@ describe('visual catalog', () => {
   it('covers an automatic balance switch and its sidebar at a wide viewport', () => {
     const scenario = findVisualScenario('workflow-seat-switched-balance');
 
-    expect(scenario?.checkpoints[0]?.marker).toBe('OpenCode CLI · DeepSeek V4.1 Flash · high');
+    expect(scenario?.checkpoints[0]?.marker).toBe('BUILD  OpenCode CLI');
     expect(scenario?.viewports.map(formatViewport)).toEqual(['120x40', '80x24', '60x18', '160x45']);
     expect(scenario?.elements.map((element) => element.id)).toContain('sidebar');
   });

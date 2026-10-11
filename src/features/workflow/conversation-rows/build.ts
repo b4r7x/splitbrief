@@ -123,6 +123,8 @@ function buildConversationRowsProjectionWithContext(
         `event-${step.recovery.firstIndex}-recovery`,
         step.recovery,
         ctx.width,
+        step.recovery.prompted !== undefined &&
+          inputs.expandedDiffs.has(diffEventKey(step.recovery.prompted, step.recovery.firstIndex)),
       );
       if (block !== null) appendBlock(block);
       continue;
@@ -142,7 +144,8 @@ function buildConversationRowsProjectionWithContext(
       dedupTitle,
       settled: step.settledSection !== undefined,
     };
-    let block = getCachedEventRowBlock(event, blockKey);
+    const cacheable = event.type !== 'seat_switched';
+    let block = cacheable ? getCachedEventRowBlock(event, blockKey) : undefined;
     if (block === undefined) {
       block = eventRowBlock({
         event,
@@ -151,11 +154,24 @@ function buildConversationRowsProjectionWithContext(
         expanded,
         dedupTitle,
         settledSection: step.settledSection,
+        causeInRecovery: step.causeInRecovery,
       });
       if (step.settledSection !== undefined && block !== null) block = withoutActiveRow(block);
-      rememberEventRowBlock(event, blockKey, block);
+      if (cacheable) rememberEventRowBlock(event, blockKey, block);
     }
     if (block === null) continue;
+    if (step.historicalTaskHeader === true) {
+      const historical = withoutActiveRow(block);
+      block = {
+        ...historical,
+        createRows: (start, end) =>
+          historical.createRows(start, end).map((row) => ({
+            ...row,
+            kind: 'section',
+            segments: row.segments.map((segment) => ({ ...segment, tone: 'textDim', bold: false })),
+          })),
+      };
+    }
     if (event.type === 'task_started' && activeTask?.items.includes(event)) {
       activeTaskHeaderKey = block.activeRowKey ?? null;
     }

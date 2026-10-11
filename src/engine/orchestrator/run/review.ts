@@ -15,7 +15,7 @@ import {
   type FinalReviewFailure,
   type FinalReviewResult,
 } from '../final-review.js';
-import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
+import { buildReviewFailedRecoveryIssue, runnerHaltRow } from '../recovery/builders/task.js';
 import { buildReviewInputTooLargeRecoveryIssue } from '../recovery/builders/review-input.js';
 import { reviewSeatDetails } from '../recovery/builders/details.js';
 import { plannerCallHaltIssue } from '../recovery/planner-call-failure.js';
@@ -165,9 +165,6 @@ export async function haltVerdictlessReview(args: {
     });
     return raisePendingRecovery(ref, state, issue, setTrackedState);
   }
-  // The review publishes the one error row for every failure it caught; the halt
-  // only raises the recovery. A seat out of quota or signed out halts the way a planner
-  // call does.
   if (failure?.kind === 'seat-protocol-error')
     return haltProtocolError({ wctx, state, setTrackedState, error: failure.error });
   if (failure?.kind === 'seat-blocked') {
@@ -182,6 +179,13 @@ export async function haltVerdictlessReview(args: {
       seatSwitches: state.seatSwitches,
       swap: { seat: 'review', runner: reviewer.runner },
       details: reviewSeatDetails(followsPlan),
+    });
+    publishError({
+      bus: wctx.bus,
+      phase: state.phase,
+      message: runnerHaltRow(issue, failure.diagnosis.seatDown?.words ?? failure.diagnosis.message),
+      resetAt: failure.diagnosis.resetsAt?.toISOString(),
+      safety: { category: 'recovery', code: 'review_failed' },
     });
     return raisePendingRecovery(ref, state, issue, setTrackedState);
   }

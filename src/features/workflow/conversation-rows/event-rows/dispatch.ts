@@ -1,5 +1,7 @@
 import { INLINE_LABEL_GAP } from '../row-format/label-card.js';
-import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
+import { formatRecordedSeatChangeIdentities } from '../../display/recorded-seat-identity.js';
+import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
 import { stateTone } from '../../../../core/theme/state-tone.js';
@@ -30,6 +32,7 @@ import {
   promptTextBlock,
   rowsBlock,
   wrappedSegmentsBlock,
+  wholeSegmentsBlock,
   wrappedTextBlock,
 } from '../row-block-compose.js';
 import { artifactWrittenRowBlock } from './artifact-card.js';
@@ -70,6 +73,7 @@ export function eventRowBlock(options: {
   expanded: boolean;
   dedupTitle?: string | undefined;
   settledSection?: SettledTranscriptSection | undefined;
+  causeInRecovery?: boolean | undefined;
 }): ConversationRowBlock | null {
   const { event, globalIndex, ctx, expanded } = options;
   const keyPrefix = `event-${globalIndex}-${event.type}`;
@@ -224,24 +228,75 @@ export function eventRowBlock(options: {
         width: ctx.width,
         tone: 'textDim',
       });
-    case 'seat_switched':
-      return wrappedSegmentsBlock({
+    case 'seat_switched': {
+      const identities = formatRecordedSeatChangeIdentities(
+        event.from,
+        event.to,
+        CREW_SEAT_ROLES[event.seat],
+      );
+      const parts = (
+        identity: string,
+        prefix: ConversationRowSegment[],
+      ): ConversationRowSegment[][] => {
+        const segments: ConversationRowSegment[] = identity
+          .split(SOFT_SEP)
+          .flatMap((text, index) => [
+            ...(index === 0
+              ? []
+              : [{ text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment]),
+            { text, tone: CREW_SEAT_ROLES[event.seat] },
+          ]);
+        const budget = wrapWidthFor('message', ctx.width);
+        if (getTerminalCellWidth(identity) <= budget) {
+          const prefixWidth = prefix.reduce(
+            (total, segment) => total + getTerminalCellWidth(segment.text),
+            0,
+          );
+          return prefixWidth + getTerminalCellWidth(identity) <= budget
+            ? [[...prefix, ...segments]]
+            : [prefix, segments];
+        }
+        return identity
+          .split(SOFT_SEP)
+          .map((text, index) => [
+            ...(index === 0
+              ? prefix
+              : [{ text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment]),
+            { text, tone: CREW_SEAT_ROLES[event.seat] },
+          ]);
+      };
+      return wholeSegmentsBlock(
         keyPrefix,
-        segments: [
-          { text: CREW_SEAT_LABELS[event.seat], tone: CREW_SEAT_ROLES[event.seat] },
-          { text: arrowSep(), tone: 'textDim' },
-          { text: formatSeatCandidateIdentity(event.to), tone: CREW_SEAT_ROLES[event.seat] },
-          { text: SOFT_SEP, tone: 'textDim' },
+        [
+          ...parts(identities.from, [
+            { text: CREW_SEAT_LABELS[event.seat], tone: CREW_SEAT_ROLES[event.seat] },
+            { text: '  ', tone: 'textDim' },
+          ]),
+          ...parts(identities.to, [{ text: arrowSep(), tone: 'textDim' }]),
           ...(event.auto
             ? [
-                { text: 'automatic fallback', tone: 'textDim' } satisfies ConversationRowSegment,
-                { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
+                [
+                  { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
+                  { text: 'automatic fallback', tone: 'textDim' } satisfies ConversationRowSegment,
+                ],
               ]
             : []),
-          { text: formatSeatSwitchCause(event), tone: 'textDim' },
+          ...(options.causeInRecovery
+            ? []
+            : [
+                [
+                  { text: SOFT_SEP, tone: 'textDim' } satisfies ConversationRowSegment,
+                  {
+                    text: formatSeatSwitchCause(event),
+                    tone: 'textDim',
+                  } satisfies ConversationRowSegment,
+                ],
+              ]),
         ],
-        width: ctx.width,
-      });
+        ctx.width,
+        'message',
+      );
+    }
     case 'task_reset':
       return cardRowsBlock({
         keyPrefix,
@@ -583,19 +638,58 @@ export function recoveryRowBlock(
   keyPrefix: string,
   recovery: RecoveryFold,
   width: number,
+  expanded = false,
 ): ConversationRowBlock | null {
+  if (recovery.automaticSwitch !== undefined) {
+    const { diagnostics } = recovery;
+    return compositeBlock(keyPrefix, [
+      wholeSegmentsBlock(
+        keyPrefix,
+        [
+          [
+            { text: 'Recovery  ', tone: stateTone('passed') },
+            ...recoveryHeadlineSegments(recovery.prompted),
+          ],
+          [
+            { text: `${arrowSep()}continued on fallback`, tone: 'textDim' },
+            ...(diagnostics.length === 0
+              ? []
+              : [
+                  {
+                    text: expanded ? '' : '  ctrl+d',
+                    tone: 'textDim',
+                  } satisfies ConversationRowSegment,
+                ]),
+          ],
+        ],
+        width,
+        'card',
+      ),
+      expanded
+        ? wrappedTextBlock({
+            keyPrefix: `${keyPrefix}-details`,
+            text: [...diagnostics, COLLAPSE_HINT].join('\n'),
+            width,
+            tone: 'textDim',
+            kind: 'card',
+            indent: 2,
+          })
+        : null,
+    ]);
+  }
   const { prompted, reset, resolved } = recovery;
   const chosen = recovery.selected ?? resolved;
   const outcome = [
     reset === undefined ? null : `${reset.taskId} back to pending`,
-    resolved === undefined ? null : recoveryOutcomeWords(resolved.outcome),
+    resolved === undefined ? null : recoveryOutcomeWords(resolved.outcome, recovery),
   ].filter((part): part is string => part !== null);
-  const done = chosen === undefined ? [] : recoveryActionSegments(chosen);
+  const done = chosen === undefined ? [] : recoveryActionSegments(chosen, recovery.seatSwitch);
   if (done.length > 0 && outcome.length > 0) {
     done.push({ text: `${arrowSep()}${outcome.join(', ')}`, tone: 'textDim' });
   }
   // The prompt panel carries the clock; the row names what happened, once.
-  const halt = prompted === undefined ? [] : recoveryHeadlineSegments(prompted);
+  const halt =
+    prompted === undefined || recovery.haltAlreadyShown ? [] : recoveryHeadlineSegments(prompted);
   return recoveryCardBlock(
     keyPrefix,
     [
@@ -624,9 +718,15 @@ function recoveryCardBlock(
 
 function recoveryActionSegments(
   event: Pick<EngineEventOf<'recovery_action_selected'>, 'action' | 'seat'>,
+  switched?: EngineEventOf<'seat_switched'>,
 ): ConversationRowSegment[] {
+  const modelChanged =
+    event.action === 'switch-seat' &&
+    switched !== undefined &&
+    switched.from.tool === switched.to.tool &&
+    switched.from.model !== switched.to.model;
   return recoveryActionParts(event.action, { seat: event.seat }).map((part) => ({
-    text: part.text,
+    text: modelChanged ? part.text.replace('tool', 'model') : part.text,
     tone: part.seat === undefined ? 'textDim' : CREW_SEAT_ROLES[part.seat],
   }));
 }
@@ -640,7 +740,18 @@ function recoveryHeadlineSegments(
   }));
 }
 
-function recoveryOutcomeWords(outcome: EngineEventOf<'recovery_resolved'>['outcome']): string {
+function recoveryOutcomeWords(
+  outcome: EngineEventOf<'recovery_resolved'>['outcome'],
+  recovery: RecoveryFold,
+): string {
+  if (
+    recovery.seatSwitch !== undefined &&
+    recovery.resolved?.action === 'switch-seat' &&
+    (outcome === 'continued' || outcome === 'retry-current-task')
+  ) {
+    const taskId = recovery.prompted?.taskId ?? recovery.reset?.taskId;
+    return taskId === undefined ? 'continued on new seat' : `${taskId} resumed on new seat`;
+  }
   switch (outcome) {
     case 'continued':
       return 'continued';

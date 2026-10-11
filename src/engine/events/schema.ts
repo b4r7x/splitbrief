@@ -608,6 +608,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('implementer_generate_done').extend({
     taskId: TaskIdSchema,
     file: z.string(),
+    files: z.array(z.string()).optional(),
     diff: z.string().optional(),
     /** Absent when the call's baseline kept no content to count against. */
     linesAdded: z.number().optional(),

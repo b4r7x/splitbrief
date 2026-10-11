@@ -50,8 +50,7 @@ function build() {
     exit: () => {},
     workflow: {
       requestClearQueue: () => ({ status: 'cleared', count: 0 }),
-      findLatestActivityBatchKey: () => null,
-      findLatestDiffKey: () => null,
+      getRowActions: () => new Map(),
       readScrollMetrics: () => ({
         renderableCount: 0,
         totalHeight: 0,

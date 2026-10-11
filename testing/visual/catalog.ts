@@ -698,6 +698,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-review-fix-no-change',
       title: 'Workflow · a fix brief that needed no change',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'review-fix-no-change',
         title: 'Review fix verified without a change',
@@ -1800,7 +1801,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       id: 'workflow-recovery-balance-spent',
       title: 'Workflow · a spent balance on BUILD',
       surface: screenSurface('workflow'),
-      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
+      viewports: [...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
       checkpoint: {
         id: 'recovery',
         title: 'Balance recovery menu',
@@ -1834,6 +1835,8 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: input.id,
         title: input.title,
         surface: screenSurface('workflow'),
+        viewports:
+          input.id === 'workflow-recovery-fallback-used' ? WIDE_VIEWPORTS : REQUIRED_VIEWPORTS,
         checkpoint: {
           id: input.checkpoint,
           title: input.title,
@@ -1943,19 +1946,25 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
-    // The build seat moved to its declared fallback: the switch is one transcript row, and the
-    // header names the seat it moved to.
     defineScenario({
       id: 'workflow-seat-switched',
       title: 'Workflow · BUILD seat moved automatically to its fallback',
       surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'seat-switched',
-        title: 'Seat switch row in the transcript',
-        kind: 'implementation',
-        // The cause words wrap at 60 columns; the switch arrow and the new seat stay on one line.
-        marker: 'BUILD → OpenCode CLI',
-      },
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: [
+        {
+          id: 'seat-switched',
+          title: 'Seat switch row in the transcript',
+          kind: 'implementation',
+          marker: 'BUILD  OpenCode CLI',
+        },
+        {
+          id: 'seat-switched-expanded-recovery',
+          title: 'Recovery details expanded with ctrl+d',
+          kind: 'implementation',
+          marker: 'ctrl+d to collapse',
+        },
+      ],
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Implementation transcript' },
@@ -1963,14 +1972,58 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-spent-b2-replay',
+      title: 'Workflow · historical spent-balance smoke replay',
+      surface: screenSurface('workflow'),
+      viewports: [viewport({ cols: 200, rows: 50 }), viewport({ cols: 60, rows: 18 })],
+      checkpoint: [
+        {
+          id: 'spent-b2-replay',
+          title: 'Both historical briefs completed after the automatic switch',
+          kind: 'implementation',
+          marker: 'Recovery  Balance spent on OpenCode CLI',
+        },
+        {
+          id: 'spent-b2-replay-t001-activity',
+          title: 'T001 activity and disclosure',
+          kind: 'implementation',
+          marker: 'BUILD activity  4 updates',
+        },
+        {
+          id: 'spent-b2-replay-t001-completion',
+          title: 'T001 completion source and test files',
+          kind: 'implementation',
+          marker: 'src/text.js · test/text.test.js',
+        },
+        {
+          id: 'spent-b2-replay-t002-activity',
+          title: 'T002 activity and disclosure',
+          kind: 'implementation',
+          marker: 'BUILD activity  4 updates',
+        },
+        {
+          id: 'spent-b2-replay-t002-completion',
+          title: 'T002 completion source and test files',
+          kind: 'implementation',
+          marker: 'src/preview.js · test/preview.test.js',
+        },
+      ],
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-seat-switched-manual',
       title: 'Workflow · BUILD seat changed manually',
       surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
       checkpoint: {
         id: 'seat-switched-manual',
         title: 'Manual seat switch row in the transcript',
         kind: 'implementation',
-        marker: 'BUILD → OpenCode CLI',
+        marker: 'BUILD  OpenCode CLI',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1987,7 +2040,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'seat-switched-balance',
         title: 'Automatic balance switch and restarted brief',
         kind: 'implementation',
-        marker: 'OpenCode CLI · DeepSeek V4.1 Flash · high',
+        marker: 'BUILD  OpenCode CLI',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

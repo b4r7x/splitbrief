@@ -29,6 +29,7 @@ import { interruptedError } from '../../planners/claude-invoke.js';
 import type { PlannerCallbacksContext } from '../types.js';
 import { addUsageAndSave } from '../state-ops.js';
 import { handlePlanningFailure } from './failure.js';
+import { writeConfig } from '../../../core/config/load/io.js';
 import { runPlanningSession } from './session.js';
 
 let dirs: string[] = [];
@@ -47,6 +48,39 @@ function setupProject(): { projectDir: string; sessionId: string } {
 }
 
 describe('handlePlanningFailure', () => {
+  it.each([true, false])(
+    'publishes PLAN advice only without an automatic intent: %s',
+    async (auto) => {
+      const ref = setupProject();
+      await rememberDetectedTools(
+        ref.projectDir,
+        cliDetectionsFor('ready', ['opencode', 'claude-code']),
+      );
+      const config = makeConfig({
+        planner: {
+          kind: 'cli',
+          tool: 'opencode',
+          model: 'deepseek/deepseek-flash',
+          ...(auto && { fallback: { tool: 'claude-code', model: 'sonnet' } }),
+        },
+      });
+      writeConfig(ref.projectDir, config);
+      const { bus, events } = makeBusRecorder();
+      const result = await handlePlanningFailure({
+        ...ref,
+        state: { ...createInitialState('feature'), phase: 'planning' },
+        err: new Error('provider.quota: Insufficient Balance'),
+        wctx: makeWctx({ ...ref, bus, config }),
+      });
+      expect(result.state.pendingRecovery?.switchSeat?.auto !== undefined).toBe(auto);
+      expect(result.state.pendingRecovery?.message).toContain('Add credit');
+      const rows = events.filter((event) => event.type === 'error');
+      expect(rows).toHaveLength(1);
+      if (auto) expect(rows[0]?.message).toBe('Balance spent on OpenCode CLI');
+      else expect(rows[0]?.message).toContain('change the PLAN tool');
+    },
+  );
+
   it('offers the prepared planner fallback when no config of record exists', async () => {
     const ref = setupProject();
     await rememberDetectedTools(

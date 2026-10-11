@@ -3,11 +3,59 @@ import { formatDuration } from '../../../utils/format-time.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { getMaxVisibleDiffLines } from '../layout/diff-height.js';
 import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from './types.js';
-import { prepareCardRows, type CardBodyLineInput } from './row-format/card-block.js';
-import { ELLIPSIS } from '../../../utils/display-text.js';
+import { compositeBlock, wholeSegmentsBlock, wrappedSegmentsBlock } from './row-block-compose.js';
+import type { CardBodyLineInput } from './row-format/card-block.js';
+import { ELLIPSIS, truncateTerminalDisplayTextMiddle } from '../../../utils/display-text.js';
 import { sanitizeRowDisplayText } from './row-format/text.js';
+import { wrapWidthFor } from './row-markers.js';
 
-const COLLAPSE_HINT = 'ctrl+d to collapse';
+export const COLLAPSE_HINT = 'ctrl+d to collapse';
+
+export function implementerDoneFilesBlock(
+  keyPrefix: string,
+  event: Extract<EngineEvent, { type: 'implementer_generate_done' }>,
+  width: number,
+  expanded: boolean,
+): ConversationRowBlock | null {
+  const files = event.files !== undefined && event.files.length > 0 ? event.files : [event.file];
+  const kind = expanded ? 'card-top' : 'message';
+  const budget = wrapWidthFor(kind, width);
+  const chunks: ConversationRowSegment[][] = [];
+  const append = (parts: ConversationRowSegment[], separator: string): void => {
+    chunks.push([{ text: separator, tone: 'textDim' }, ...parts]);
+  };
+  for (const file of files) {
+    append(
+      [
+        {
+          text: truncateTerminalDisplayTextMiddle(sanitizeRowDisplayText(file), budget),
+          tone: 'textDim',
+          ...(expanded && { bold: true }),
+        },
+      ],
+      SOFT_SEP,
+    );
+  }
+  append([{ text: formatDuration(event.duration), tone: 'textDim' }], '  ');
+  if (
+    event.noChange !== true &&
+    event.linesAdded !== undefined &&
+    event.linesRemoved !== undefined
+  ) {
+    append(
+      [
+        { text: `+${event.linesAdded}`, tone: 'diffAdded' },
+        { text: ` -${event.linesRemoved}`, tone: 'diffRemoved' },
+      ],
+      '  ',
+    );
+  }
+  const hasDiff = sanitizeRowDisplayText(event.diff ?? '')
+    .split('\n')
+    .some((line) => line.length > 0);
+  if (!expanded && hasDiff) append([{ text: 'ctrl+d', tone: 'textDim' }], '  ');
+  return wholeSegmentsBlock(`${keyPrefix}-files`, chunks, width, kind);
+}
 
 // Polarity, not severity: an added line is not a success and a removed line is not an error, and
 // reusing those tones left a diff unable to say so once the palette gained the distinction.
@@ -50,29 +98,16 @@ export function implementerExpandedDiffCardBlock(
   }
 
   const cardKey = `${keyPrefix}-diff-card`;
-  const card = prepareCardRows({
-    keyPrefix: cardKey,
-    label: event.file,
-    labelTone: 'textDim' as const,
-    metaSegments: [
-      { text: formatDuration(event.duration), tone: 'textDim' as const },
-      ...(event.linesAdded === undefined || event.linesRemoved === undefined
-        ? []
-        : [
-            { text: '  ', tone: 'textDim' as const },
-            { text: `+${event.linesAdded}`, tone: 'diffAdded' as const },
-            { text: ` -${event.linesRemoved}`, tone: 'diffRemoved' as const },
-          ]),
-    ],
-    bodyLines,
-    width: ctx.width,
-  });
-  if (card.rowCount === 0) return null;
-
-  return {
-    key: cardKey,
-    rowCount: card.rowCount,
-    renderableUnits: 1,
-    createRows: card.createRows,
-  };
+  return compositeBlock(cardKey, [
+    implementerDoneFilesBlock(cardKey, event, ctx.width, true),
+    ...bodyLines.map((body, index) =>
+      wrappedSegmentsBlock({
+        keyPrefix: `${cardKey}-body-${index}`,
+        segments: body.segments ?? [{ text: body.text, tone: body.tone ?? 'textDim' }],
+        width: ctx.width,
+        kind: 'card-body',
+        indent: 2,
+      }),
+    ),
+  ]);
 }

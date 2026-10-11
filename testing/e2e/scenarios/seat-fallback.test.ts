@@ -6,6 +6,7 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { configPath } from '../../../src/core/config/load/document.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { loadState } from '../../../src/core/state/persistence.js';
+import { readSeatIdentities, seatIdentitiesFromConfig } from '../../../src/core/state/seats.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
@@ -101,8 +102,9 @@ async function runFixture(target: StopContinueFixture) {
   const run = await cli(target, ['start', 'smoke'], options);
   const sessions = readdirSync(sessionsRoot(target.projectDir));
   expect(sessions).toHaveLength(1);
-  const state = loadState({ projectDir: target.projectDir, sessionId: sessions[0] ?? '' });
-  return { run, state };
+  const ref = { projectDir: target.projectDir, sessionId: sessions[0] ?? '' };
+  const state = loadState(ref);
+  return { run, state, ref };
 }
 
 function recordedCalls(callsPath: string) {
@@ -126,6 +128,7 @@ describe('e2e: declared seat fallback', () => {
   process.exit(1);
 }
 if (model !== ${JSON.stringify(FALLBACK_MODEL)}) throw new Error('Unexpected model: ' + model);
+if (!args.includes('model_reasoning_effort=high')) throw new Error('Expected high effort on the fallback');
 ${BUILD_REPLY}`,
     );
 
@@ -138,11 +141,11 @@ ${BUILD_REPLY}`,
         tool: 'codex',
         model: PRIMARY_MODEL,
         contextLength: 200_000,
-        fallback: { tool: 'codex', model: FALLBACK_MODEL },
+        fallback: { tool: 'codex', model: FALLBACK_MODEL, effort: 'high' },
       },
     });
     expect(readFileSync(join(target.projectDir, '.gitignore'))).toEqual(gitignore);
-    const { run, state } = await runFixture(target);
+    const { run, state, ref } = await runFixture(target);
     expect(
       run.exitCode,
       `${run.stdout}\n${run.stderr}\n${JSON.stringify(state?.pendingRecovery, null, 2)}`,
@@ -151,11 +154,15 @@ ${BUILD_REPLY}`,
     expect(state?.phase).toBe('complete');
     expect(state?.pendingRecovery).toBeUndefined();
     expect(state?.tasks[0]?.status).toBe('done');
+    expect(`${run.stdout}\n${run.stderr}`).not.toMatch(/seat changed/);
+    expect(readSeatIdentities(ref)).toEqual(
+      seatIdentitiesFromConfig(loadConfig(target.projectDir).config),
+    );
     expect(state?.seatSwitches).toEqual([
       expect.objectContaining({
         seat: 'build',
         from: 'OpenAI Codex CLI · GPT-5 Codex',
-        to: 'OpenAI Codex CLI · GPT-6.1-Sol',
+        to: 'OpenAI Codex CLI · GPT-6.1-Sol · high',
         cause: 'runner-usage-limit',
         auto: true,
       }),
@@ -165,8 +172,27 @@ ${BUILD_REPLY}`,
       kind: 'cli',
       tool: 'codex',
       model: FALLBACK_MODEL,
+      effort: 'high',
       fallback: { tool: 'codex', model: PRIMARY_MODEL },
     });
+    const rawYaml = readFileSync(configPath(target.projectDir), 'utf8');
+    const implementer = parseDocument(rawYaml).get('implementer', true);
+    if (!isMap(implementer) || implementer.range == null) {
+      throw new Error('Expected the implementer YAML block');
+    }
+    expect(
+      rawYaml.slice(rawYaml.indexOf('implementer:'), implementer.range[2]).split('\n'),
+    ).toEqual([
+      'implementer:',
+      '  kind: cli',
+      '  tool: codex',
+      `  model: ${FALLBACK_MODEL}`,
+      '  effort: high',
+      '  fallback:',
+      '    tool: codex',
+      `    model: ${PRIMARY_MODEL}`,
+      '',
+    ]);
     expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
     expect(readFileSync(join(target.projectDir, '.gitignore'))).toEqual(gitignore);
   });
@@ -212,10 +238,14 @@ console.log('Implemented the greeting helper.');`,
     const plannerBefore = loadConfig(target.projectDir).config.planner;
     expect(loadConfig(target.projectDir).config.reviewer).toBeUndefined();
 
-    const { run, state } = await runFixture(target);
+    const { run, state, ref } = await runFixture(target);
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
     expect(state?.phase).toBe('complete');
     expect(state?.pendingRecovery).toBeUndefined();
+    expect(`${run.stdout}\n${run.stderr}`).not.toMatch(/seat changed/);
+    expect(readSeatIdentities(ref)).toEqual(
+      seatIdentitiesFromConfig(loadConfig(target.projectDir).config),
+    );
     expect(state?.seatSwitches).toEqual([
       expect.objectContaining({
         seat: 'review',

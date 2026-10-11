@@ -28,6 +28,10 @@ import {
 } from '../layout/rect.js';
 import { handleWorkflowMouseWheel } from './use-mouse-scroll.js';
 import { ReviewView } from '../components/review-view.js';
+import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
+import { getSections } from '../../../stores/workflow/actions/sections.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import { rowText } from '../conversation-rows/row-format/rows.js';
 
 const CTRL_A = '\x01';
 const CTRL_B = '\x02';
@@ -52,6 +56,20 @@ const VIEWPORTS = [
 function Harness({ isActive = true }: { isActive?: boolean }) {
   useWorkflowKeys({ isActive });
   return <Text> </Text>;
+}
+
+function TranscriptHarness() {
+  useWorkflowKeys({ isActive: true });
+  eventsStore.use((state) => state.events);
+  const scroll = conversationScrollStore.use((state) => state);
+  const { rows } = buildConversationRows({
+    sections: getSections(),
+    ...scroll,
+    cols: 120,
+    viewportHeight: 40,
+    streaming: { taskId: null, lines: [], active: false },
+  });
+  return <Text>{rows.map(rowText).join('\n')}</Text>;
 }
 
 function seedLongConversation(): void {
@@ -205,6 +223,104 @@ describe('useWorkflowKeys', () => {
     await tick(1);
 
     expect(conversationScrollStore.get().expandedDiffs.has(key)).toBe(true);
+    ui.unmount();
+  });
+
+  it('Ctrl+D expands and collapses the automatic Recovery row through the real keyboard hook', async () => {
+    const words = 'provider.quota: Insufficient Balance (request_id: spent-b2)';
+    addEvent(
+      makeRunnerCallActivity({
+        callId: 'spent-build',
+        taskId: taskId('T901'),
+        phase: 'implementing',
+        runnerName: 'opencode',
+        model: 'deepseek/deepseek-flash',
+        kind: 'error',
+        diagnosticPartial: words,
+      }),
+    );
+    addEvent(
+      makeImplementerGenerate({
+        status: 'failed',
+        taskId: taskId('T901'),
+        model: 'deepseek/deepseek-flash',
+        error: words,
+      }),
+    );
+    addEvent({
+      type: 'recovery_prompted',
+      ts: 2,
+      phase: 'implementing',
+      taskId: taskId('T901'),
+      issueId: 'spent-b2',
+      reason: 'runner-usage-limit',
+      headline: 'Balance spent on OpenCode CLI',
+      files: [],
+      affectedTaskIds: [taskId('T901')],
+      availableActions: ['switch-seat'],
+      recommendedAction: 'switch-seat',
+      resumeCommand: 'splitbrief continue',
+    });
+    addEvent({
+      type: 'recovery_action_selected',
+      ts: 3,
+      phase: 'implementing',
+      issueId: 'spent-b2',
+      reason: 'runner-usage-limit',
+      action: 'switch-seat',
+      seat: 'build',
+    });
+    addEvent({
+      type: 'seat_switched',
+      ts: 4,
+      phase: 'implementing',
+      seat: 'build',
+      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      to: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+      cause: 'runner-usage-limit',
+      auto: true,
+      configRevision: 'spent-b2',
+    });
+    addEvent({
+      type: 'recovery_resolved',
+      ts: 5,
+      phase: 'implementing',
+      issueId: 'spent-b2',
+      reason: 'runner-usage-limit',
+      action: 'switch-seat',
+      seat: 'build',
+      outcome: 'retry-current-task',
+    });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    const ui = render(<TranscriptHarness />);
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('continued on fallback  ctrl+d');
+    expect(ui.lastFrame()).not.toContain(words);
+
+    ui.stdin.write(CTRL_D);
+    await expect.poll(() => ui.lastFrame()).toContain(words);
+    expect(ui.lastFrame()).toContain('ctrl+d to collapse');
+    expect(conversationScrollStore.get().expandedDiffs).toEqual(new Set(['recovery_prompted:2']));
+
+    ui.stdin.write(CTRL_D);
+    await expect.poll(() => conversationScrollStore.get().expandedDiffs.size).toBe(0);
+    await expect.poll(() => ui.lastFrame()).not.toContain(words);
+    expect(ui.lastFrame()).not.toContain('ctrl+d to collapse');
+    ui.unmount();
+  });
+
+  it('Ctrl+D still expands and collapses a cut failure card', async () => {
+    const words = `Runner failed ${'while applying the brief '.repeat(8)}raw-end`;
+    addEvent(makeImplementerGenerate({ status: 'failed', error: words }));
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    const ui = render(<TranscriptHarness />);
+    await flushEffects();
+    expect(ui.lastFrame()).not.toContain('raw-end');
+    ui.stdin.write(CTRL_D);
+    await expect.poll(() => ui.lastFrame()).toContain('raw-end');
+    ui.stdin.write(CTRL_D);
+    await expect.poll(() => ui.lastFrame()).not.toContain('raw-end');
+    expect(conversationScrollStore.get().expandedDiffs.size).toBe(0);
     ui.unmount();
   });
 

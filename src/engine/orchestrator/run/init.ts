@@ -17,6 +17,9 @@ import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
 import type { RunIsolation } from '../isolation/types.js';
 import { getRunnerDisplayName } from '../../../core/config/accessors/runner-config.js';
+import { readActiveRunner } from '../../../core/config/accessors/active-runner.js';
+import { sameSeatCandidate } from '../../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { resolveApproveLevel } from '../../../core/config/runtime/resolve.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import {
@@ -32,6 +35,8 @@ import {
 } from '../../../core/paths-io.js';
 import { projectName } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
+import { readRunEvents } from '../../events/replay.js';
+import { seatCandidateOfRunner } from '../recovery/switch-seat.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -245,13 +250,31 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   // that cannot resume it.
   let planSeatChanged = false;
   if (savedState) {
-    for (const change of reconcileSeatIdentities({ projectDir, sessionId }, config)) {
+    const changes = reconcileSeatIdentities({ projectDir, sessionId }, config);
+    const events =
+      changes.length === 0 ? [] : (await readRunEvents({ projectDir, sessionId })).events;
+    const lastRun = events.findLastIndex(
+      (event) => event.type === 'workflow_started' || event.type === 'workflow_resumed',
+    );
+    const recordedSwitches = events
+      .slice(lastRun + 1)
+      .filter((event) => event.type === 'seat_switched');
+    for (const change of changes) {
       if (change.seat === 'plan') planSeatChanged = true;
-      publishWarning({
-        bus,
-        phase: savedState.phase,
-        message: formatSeatChangeNotice(labelSeatChange(change, opts.modelCache ?? NULL_CACHE)),
-      });
+      const recordedSwitch = recordedSwitches.findLast((event) => event.seat === change.seat);
+      const recordedChange =
+        recordedSwitch !== undefined &&
+        sameSeatCandidate(
+          recordedSwitch.to,
+          seatCandidateOfRunner(readActiveRunner({ config, role: CREW_SEAT_ROLES[change.seat] })),
+        );
+      if (!recordedChange) {
+        publishWarning({
+          bus,
+          phase: savedState.phase,
+          message: formatSeatChangeNotice(labelSeatChange(change, opts.modelCache ?? NULL_CACHE)),
+        });
+      }
     }
     if (planSeatChanged) {
       savedState = { ...savedState, plannerSessionId: null };

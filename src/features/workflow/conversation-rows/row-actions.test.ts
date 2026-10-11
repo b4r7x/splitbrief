@@ -5,10 +5,10 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
-import { activityBatchKey, findLatestExpandableActivityBatchKey } from './activity-batch-key.js';
+import { activityBatchKey } from './activity-batch-key.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { buildConversationRowsProjection } from './build.js';
-import { buildConversationRowActions } from './row-actions.js';
+import { buildConversationRowActions, findLatestConversationRowAction } from './row-actions.js';
 import { rowText } from './row-format/rows.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
@@ -177,7 +177,7 @@ describe('buildConversationRowActions', () => {
     ).toBe(0);
   });
 
-  it('older disclosures remain clickable; Ctrl+A selects only the latest eligible batch', () => {
+  it('keeps older disclosures clickable and maps every eligible batch', () => {
     const batch = (callId: string) =>
       ['a', 'b', 'c', 'd'].map((name, index) =>
         activity({
@@ -234,7 +234,6 @@ describe('buildConversationRowActions', () => {
       { type: 'toggle-activity-batch', key: activityBatchKey(0, 'older') },
       { type: 'toggle-activity-batch', key: activityBatchKey(6, 'latest') },
     ]);
-    expect(findLatestExpandableActivityBatchKey(sections)).toBe(activityBatchKey(6, 'latest'));
     expect([...actions.values()]).toContainEqual({
       type: 'toggle-diff',
       key: 'implementer_generate_done:4',
@@ -243,6 +242,24 @@ describe('buildConversationRowActions', () => {
       type: 'toggle-diff',
       key: 'implementer_generate_failed:5',
     });
+    const diff = { type: 'toggle-diff', key: 'implementer_generate_failed:5' } as const;
+    const latestActivity = {
+      type: 'toggle-activity-batch',
+      key: activityBatchKey(6, 'latest'),
+    } as const;
+    expect(findLatestConversationRowAction(actions, 'toggle-diff')).toEqual(diff);
+    expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toEqual(
+      latestActivity,
+    );
+    const expanded = buildConversationRowActions({
+      ...inputs,
+      expandedDiffs: new Set([diff.key]),
+      expandedActivityBatches: new Set([latestActivity.key]),
+    });
+    expect(findLatestConversationRowAction(expanded, 'toggle-diff')).toEqual(diff);
+    expect(findLatestConversationRowAction(expanded, 'toggle-activity-batch')).toEqual(
+      latestActivity,
+    );
     for (const row of rows.filter((row) => row.node !== undefined))
       expect(actions.has(row.key)).toBe(false);
     const blocks = buildConversationRowsProjection(inputs).blocks;
@@ -256,6 +273,40 @@ describe('buildConversationRowActions', () => {
       blocks.find((block) => block.key === activityBatchKey(10, 'small'))?.activeRowKey,
     ).toBeDefined();
   });
+  it('selects the latest retained diff across settled sections with same-timestamp events', () => {
+    const sections: Section<EngineEvent>[] = [
+      {
+        type: 'active-task',
+        startIndex: 0,
+        items: [makeImplementerGenerate({ status: 'done', diff: '+ older', ts: 42 })],
+      },
+      {
+        type: 'settled-stage',
+        startIndex: 1,
+        items: [
+          makeImplementerGenerate({ status: 'done', diff: '+ latest', ts: 42 }),
+          makeImplementerGenerate({ status: 'done', diff: '', ts: 42 }),
+          makeImplementerGenerate({ status: 'failed', error: 'Short cause', ts: 42 }),
+        ],
+        summary: { stage: 'plan', feature: 'Settled plan', duration: 0 },
+      },
+    ];
+    const actions = buildConversationRowActions({
+      sections,
+      cols: 88,
+      viewportHeight: 20,
+      streaming,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+    });
+
+    expect(findLatestConversationRowAction(actions, 'toggle-diff')).toEqual({
+      type: 'toggle-diff',
+      key: 'implementer_generate_done:1',
+    });
+    expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toBeNull();
+  });
+
   it('maps the rendered +N more row to a toggle-activity-batch action', () => {
     const sections: Section<EngineEvent>[] = [
       {
@@ -387,6 +438,8 @@ describe('buildConversationRowActions', () => {
     });
 
     expect(actions.size).toBe(0);
+    expect(findLatestConversationRowAction(actions, 'toggle-diff')).toBeNull();
+    expect(findLatestConversationRowAction(actions, 'toggle-activity-batch')).toBeNull();
   });
 
   it('does not map a non-expandable activity batch', () => {

@@ -70,12 +70,28 @@ export async function createBranch(dir: string, desiredName: string): Promise<st
   return name;
 }
 
-export async function showFileAtHead(dir: string, file: string): Promise<string | null> {
+export async function showFileAtHead(dir: string, file: string): Promise<Buffer | null> {
   try {
-    return await getGitForDir(dir).show([`HEAD:${file}`]);
+    return await getGitForDir(dir).showBuffer([`HEAD:${file}`]);
   } catch {
     return null;
   }
+}
+
+async function readTreeEntryAtRef(
+  dir: string,
+  ref: string,
+  file: string,
+): Promise<string | undefined> {
+  const tree = await runGit('ls-tree', () =>
+    getGitForDir(dir).raw(['ls-tree', '-z', ref, '--', `:(literal)${file}`]),
+  );
+  return tree.split('\0').find((entry) => entry.slice(entry.indexOf('\t') + 1) === file);
+}
+
+export async function readFileModeAtHead(dir: string, file: string): Promise<number | null> {
+  const row = await readTreeEntryAtRef(dir, 'HEAD', file);
+  return row === undefined ? null : Number.parseInt(row.slice(0, 6), 8);
 }
 
 /** Read restoration material without checking out or modifying any index. */
@@ -85,17 +101,13 @@ export async function readFileEntryAtRef(
   file: string,
 ): Promise<{ bytes: Buffer; mode: number } | null> {
   if (ref === GIT_EMPTY_TREE_HASH) return null;
-  const git = getGitForDir(dir);
-  const tree = await runGit('ls-tree', () =>
-    git.raw(['ls-tree', '-z', ref, '--', `:(literal)${file}`]),
-  );
-  const row = tree.split('\0').find((entry) => entry.slice(entry.indexOf('\t') + 1) === file);
+  const row = await readTreeEntryAtRef(dir, ref, file);
   if (row === undefined) return null;
   const match = /^(100644|100755) blob ([a-f0-9]+)\t/.exec(row);
   if (match === null || match[1] === undefined || match[2] === undefined) {
     throw gitError.commandFailed('ls-tree', `Cannot restore nonregular file: ${file}`);
   }
   const object = match[2];
-  const bytes = await runGit('show', () => git.showBuffer([object]));
+  const bytes = await runGit('show', () => getGitForDir(dir).showBuffer([object]));
   return { bytes, mode: Number.parseInt(match[1], 8) & 0o777 };
 }

@@ -9,6 +9,10 @@ import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeBaseConfig } from '#testing/helpers/factories/implementer-base.js';
 import { makeRunnerCallResult } from '#testing/helpers/factories/runner-call.js';
+import { createChangeDetector } from '../../change-detection.js';
+import { createEventBus } from '../../events/bus.js';
+import { createImplementerPublisher } from '../../orchestrator/events.js';
+import type { EngineEvent } from '../../events/types.js';
 
 type PublisherEvent =
   | {
@@ -22,6 +26,7 @@ type PublisherEvent =
       phase: string;
       taskId: string;
       file: string;
+      files: string[];
       duration: number;
     }
   | {
@@ -54,6 +59,118 @@ function makePublisher(events: PublisherEvent[]): ImplementerPublisher {
 }
 
 describe('createImplementerBase — bus events', () => {
+  it('publishes only applied bundle files, in brief order', async () => {
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        backendKind: 'api',
+        publisher: makePublisher(events),
+        invoke: async () =>
+          makeRunnerCallResult({
+            status: 'completed',
+            text: JSON.stringify({
+              version: 1,
+              files: [
+                { path: 'test/text.test.js', action: 'create', content: 'new test' },
+                { path: 'src/text.js', action: 'create', content: 'new source' },
+              ],
+            }),
+          }),
+      }),
+    );
+    const result = await implementer.implement({
+      task: makeTask({
+        action: 'create',
+        suggestedFiles: ['src/text.js', 'test/text.test.js', 'src/untouched.js'],
+      }),
+      projectDir,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: () => {},
+      phase: 'implementing',
+    });
+    expect(result.success).toBe(true);
+    expect(events.find((event) => event.type === 'implementer_generate_done')).toMatchObject({
+      file: 'src/text.js',
+      files: ['src/text.js', 'test/text.test.js'],
+      linesAdded: 2,
+      linesRemoved: 0,
+    });
+  });
+
+  it('publishes an empty file list for an allowed no-change verification', async () => {
+    const events: PublisherEvent[] = [];
+    const implementer = createImplementerBase(
+      makeBaseConfig({
+        extractsCode: false,
+        detectChanges: createChangeDetector('Direct implementer'),
+        publisher: makePublisher(events),
+        invoke: async () => makeRunnerCallResult({ status: 'completed', text: 'Already correct' }),
+      }),
+    );
+    const result = await implementer.implement({
+      task: makeTask({ suggestedFiles: ['src/text.js', 'test/text.test.js'] }),
+      projectDir,
+      allowNoChange: true,
+      config: makeConfig(),
+      context: defaultContext,
+      onOutput: () => {},
+      phase: 'implementing',
+    });
+    expect(result.success).toBe(true);
+    expect(events.find((event) => event.type === 'implementer_generate_done')).toMatchObject({
+      file: 'src/text.js',
+      files: [],
+      noChange: true,
+    });
+  });
+
+  it.each(['git-status', 'file-hashes'] as const)(
+    'publishes all direct-writer changes from a %s baseline',
+    async (changeDetection) => {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      mkdirSync(join(projectDir, 'test'), { recursive: true });
+      writeFileSync(join(projectDir, 'src/text.js'), 'dirty source\n');
+      writeFileSync(join(projectDir, 'src/untouched.js'), 'dirty and untouched\n');
+      const bus = createEventBus();
+      const events: EngineEvent[] = [];
+      bus.subscribe((event) => events.push(event));
+      const implementer = createImplementerBase(
+        makeBaseConfig({
+          extractsCode: false,
+          detectChanges: createChangeDetector('Direct implementer'),
+          publisher: createImplementerPublisher(bus),
+          invoke: async () => {
+            writeFileSync(join(projectDir, 'src/text.js'), 'new source\n');
+            writeFileSync(join(projectDir, 'test/text.test.js'), 'new test');
+            return makeRunnerCallResult({ status: 'completed', text: 'done' });
+          },
+        }),
+      );
+      const result = await implementer.implement({
+        task: makeTask({ suggestedFiles: ['src/text.js', 'test/text.test.js'] }),
+        projectDir,
+        changeDetection,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: () => {},
+        phase: 'implementing',
+      });
+
+      expect(result.success).toBe(true);
+      expect(events.find((event) => event.type === 'implementer_generate_done')).toMatchObject({
+        file: 'src/text.js',
+        files: ['src/text.js', 'test/text.test.js'],
+        ...(changeDetection === 'git-status' ? { linesAdded: 2, linesRemoved: 1 } : {}),
+      });
+      if (changeDetection === 'file-hashes') {
+        expect(
+          events.find((event) => event.type === 'implementer_generate_done'),
+        ).not.toHaveProperty('linesAdded');
+      }
+    },
+  );
+
   it('publishes implementer_generate_running then implementer_generate_done on success', async () => {
     mkdirSync(join(projectDir, 'src'), { recursive: true });
     writeFileSync(join(projectDir, 'src/hello.ts'), 'old content\n');
@@ -96,6 +213,7 @@ describe('createImplementerBase — bus events', () => {
       expect(done.phase).toBe('implementing');
       expect(done.taskId).toBe('T001');
       expect(done.file).toBe('src/hello.ts');
+      expect(done.files).toEqual(['src/hello.ts']);
       expect(typeof done.duration).toBe('number');
       expect(done.duration).toBeGreaterThanOrEqual(0);
     }

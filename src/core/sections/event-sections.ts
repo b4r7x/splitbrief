@@ -25,7 +25,6 @@ type TaskCompletedEvent = {
 type TaskSkippedEvent = { type: 'task_skipped'; taskId: string; title: string; reason: string };
 type TaskFullFailEvent = { type: 'task_full_fail'; taskId: string };
 type TaskResetEvent = { type: 'task_reset'; taskId: string };
-type DiffEvent = { type: 'implementer_generate_done'; diff?: string | undefined };
 type TaskEndEvent = TaskCompletedEvent | TaskSkippedEvent | TaskFullFailEvent;
 type WorkflowStartedEvent = { type: 'workflow_started'; feature: string };
 type FullSuiteEvent = {
@@ -84,10 +83,6 @@ function isTaskResetEvent<TEvent extends SectionableEvent>(
   return event.type === 'task_reset';
 }
 
-function isDiffEvent<TEvent extends SectionableEvent>(event: TEvent): event is TEvent & DiffEvent {
-  return event.type === 'implementer_generate_done';
-}
-
 function isWorkflowStartedEvent<TEvent extends SectionableEvent>(
   event: TEvent,
 ): event is TEvent & WorkflowStartedEvent {
@@ -129,23 +124,6 @@ function isReviewCompletedEvent<TEvent extends SectionableEvent>(
 // expand/collapse together. The global index is unique per rendered event and survives appends.
 export function diffEventKey(event: SectionableEvent, globalIndex: number): string {
   return `${event.type}:${globalIndex}`;
-}
-
-export function findLatestRenderableDiffKey<TEvent extends SectionableEvent>(
-  sections: Section<TEvent>[],
-): string | null {
-  for (let sectionIndex = sections.length - 1; sectionIndex >= 0; sectionIndex--) {
-    const section = sections[sectionIndex];
-    if (!section) continue;
-    for (let index = section.items.length - 1; index >= 0; index--) {
-      const event = section.items[index];
-      if (!event) continue;
-      if (isDiffEvent(event) && event.diff) {
-        return diffEventKey(event, section.startIndex + index);
-      }
-    }
-  }
-  return null;
 }
 
 export type StageSummary =
