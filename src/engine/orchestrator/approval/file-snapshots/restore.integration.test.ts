@@ -47,7 +47,10 @@ function createSuperprojectWithSubmodule(root: string): { project: string; submo
 
 function moveSubmoduleHead(project: string): void {
   writeFileSync(join(project, 'sub', 'file.txt'), 'v2\n');
-  execSync('git add file.txt && git commit -qm v2', { cwd: join(project, 'sub'), stdio: 'pipe' });
+  execSync('git add file.txt && git -c user.name=T -c user.email=t@t.com commit -qm v2', {
+    cwd: join(project, 'sub'),
+    stdio: 'pipe',
+  });
 }
 
 describe('submodule (gitlink) handling', () => {

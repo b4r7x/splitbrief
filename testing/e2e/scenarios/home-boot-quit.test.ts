@@ -70,7 +70,7 @@ it('handles the first key and quits the real CLI while the cache parser remains 
     const restorePath = activateSafeCliShimPath(binDir);
     let environment: Readonly<Record<string, string>>;
     try {
-      environment = safeChildEnvironment(home);
+      environment = safeChildEnvironment(home, [binDir]);
     } finally {
       restorePath();
     }

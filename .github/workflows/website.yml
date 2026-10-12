@@ -1,0 +1,57 @@
+name: Website
+
+# The site renders README.md, CONTRIBUTING.md, CHANGELOG.md and the guides under docs/.
+# The website tests load the credential scrub from testing/helpers/ and src/utils/redact.ts.
+# All of those paths trigger it too.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'CHANGELOG.md'
+      - 'testing/helpers/scrub-credentials.ts'
+      - 'testing/helpers/hermetic-env.ts'
+      - 'src/utils/redact.ts'
+      - '.github/workflows/website.yml'
+  pull_request:
+    paths:
+      - 'website/**'
+      - 'docs/**'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'CHANGELOG.md'
+      - 'testing/helpers/scrub-credentials.ts'
+      - 'testing/helpers/hermetic-env.ts'
+      - 'src/utils/redact.ts'
+      - '.github/workflows/website.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            website/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm ci
+        working-directory: website
+      - run: npx playwright install --with-deps chrome
+        working-directory: website
+      - run: npm run check
+        working-directory: website

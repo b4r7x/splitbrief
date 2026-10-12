@@ -171,6 +171,7 @@ describe('a check running beside the composer', () => {
 
       ui.stdin.write(DRAFT);
       await vi.waitFor(() => expect(ui.lastFrame()).toContain(DRAFT));
+      await flushEffects();
       ui.stdin.write(ENTER);
       await vi.waitFor(() => expect(preparationStore.get().kind).toBe('checking'));
       await flushEffects();
@@ -279,6 +280,7 @@ describe('a check running beside the composer', () => {
 
     ui.stdin.write('start from home');
     await vi.waitFor(() => expect(ui.lastFrame()).toContain('start from home'));
+    await flushEffects();
     ui.stdin.write(ENTER);
     await vi.waitFor(() => {
       const state = preparationStore.get();

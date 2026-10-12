@@ -78,6 +78,7 @@ describe('createConfiguredCustomImplementer', () => {
     });
     const childProgram = [
       "const fs = require('node:fs');",
+      'fs.readFileSync(0);',
       "fs.writeFileSync('stage-only-write.txt', 'discard this write');",
       "const selected = process.env.CUSTOM_IMPLEMENTER_MODE === 'runtime-source-canary' ? 'runtime-source' : process.env.CUSTOM_IMPLEMENTER_MODE === 'sandbox-canary' ? 'sandbox' : 'missing';",
       "process.stdout.write('```ts\\nexport const childCwd = ' + JSON.stringify(process.cwd()) + ';\\nexport const selected = ' + JSON.stringify(selected) + ';\\n```\\n');",
@@ -118,6 +119,7 @@ describe('createConfiguredCustomImplementer', () => {
     });
     const childProgram = [
       "const fs = require('node:fs');",
+      'fs.readFileSync(0);',
       "fs.mkdirSync('src', { recursive: true });",
       "const selected = process.env.CUSTOM_DIRECT_MODE === 'runtime-direct-canary' ? 'runtime-source' : process.env.CUSTOM_DIRECT_MODE === 'sandbox-direct-canary' ? 'sandbox' : 'missing';",
       "fs.writeFileSync('src/direct.ts', 'export const direct = ' + JSON.stringify(selected) + ';\\n');",
@@ -296,6 +298,7 @@ describe('createConfiguredCustomImplementer', () => {
         authorizationExecutable,
         [
           '#!/bin/sh',
+          '/bin/cat >/dev/null',
           `printf authorized > ${JSON.stringify(authorizationStarted)}`,
           'printf \'```ts\\nexport const selectedExecutable = "authorization";\\n```\\n\'',
         ].join('\n'),
@@ -304,6 +307,7 @@ describe('createConfiguredCustomImplementer', () => {
         sourceEnvExecutable,
         [
           '#!/bin/sh',
+          '/bin/cat >/dev/null',
           `printf source-env > ${JSON.stringify(sourceEnvStarted)}`,
           'printf \'```ts\\nexport const selectedExecutable = "source-env";\\n```\\n\'',
         ].join('\n'),

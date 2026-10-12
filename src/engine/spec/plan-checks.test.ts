@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
@@ -374,23 +374,35 @@ describe('checkPlan on the files of the checkout', () => {
     ]);
   });
 
-  it.each([
-    ['.github/workflows/*.yml'],
-    ['.github/'],
-    ['.github/workflows'],
-    ['Package.json'],
-    ['package.json/'],
-  ])('refuses the protected operation %s, which names no one exact file', (listed) => {
+  it.each([['.github/workflows/*.yml'], ['.github/'], ['.github/workflows'], ['package.json/']])(
+    'refuses the protected operation %s, which names no one exact file',
+    (listed) => {
+      const dir = checkout();
+      mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
+      writeFileSync(join(dir, '.github', 'workflows', 'ci.yml'), 'on: push\n');
+      writeFileSync(join(dir, 'package.json'), '{}\n');
+      const plan = PlanProposalSchema.parse(
+        makePlanProposal({
+          tasks: [makeTaskSpec({ protectedOperations: [{ path: listed, operation: 'write' }] })],
+        }),
+      );
+      expect(codes(plan, fits, dir)).toEqual(['protected-path-not-file']);
+    },
+  );
+
+  it('checks differently cased protected paths against the checkout filesystem', () => {
     const dir = checkout();
-    mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
-    writeFileSync(join(dir, '.github', 'workflows', 'ci.yml'), 'on: push\n');
     writeFileSync(join(dir, 'package.json'), '{}\n');
     const plan = PlanProposalSchema.parse(
       makePlanProposal({
-        tasks: [makeTaskSpec({ protectedOperations: [{ path: listed, operation: 'write' }] })],
+        tasks: [
+          makeTaskSpec({ protectedOperations: [{ path: 'Package.json', operation: 'write' }] }),
+        ],
       }),
     );
-    expect(codes(plan, fits, dir)).toEqual(['protected-path-not-file']);
+    expect(codes(plan, fits, dir)).toEqual(
+      existsSync(join(dir, 'Package.json')) ? ['protected-path-not-file'] : [],
+    );
   });
 
   it('flags every render check, run-level and task-level, when validation.render is not set', () => {

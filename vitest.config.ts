@@ -1,3 +1,4 @@
+import { availableParallelism } from 'node:os';
 import { defineConfig, type TestProjectInlineConfiguration } from 'vitest/config';
 
 const coverageReportsDirectory = process.env.SPLITBRIEF_COVERAGE_DIR ?? 'coverage/manual';
@@ -25,7 +26,6 @@ const sharedTestSettings = {
   testTimeout: underCoverage ? 40_000 : 30_000,
   hookTimeout: underCoverage ? 60_000 : 30_000,
   pool: 'forks',
-  maxWorkers: 4,
 } satisfies TestProjectInlineConfiguration['test'];
 
 const coverage = {
@@ -49,6 +49,8 @@ const coverage = {
 export default defineConfig({
   test: {
     coverage,
+    // A project without its own maxWorkers takes this one, and --maxWorkers overrides it.
+    maxWorkers: Math.min(4, availableParallelism()),
     projects: [
       {
         test: {

@@ -1,8 +1,6 @@
 name: Nightly coverage
 
 on:
-  schedule:
-    - cron: '0 4 * * *'
   workflow_dispatch:
 
 permissions:
@@ -11,12 +9,19 @@ permissions:
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       # GitHub Actions are pinned to full SHAs; update by resolving the latest release tag before changing these refs.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep bubblewrap socat
       - run: npm run test:coverage
+        env:
+          CI: 'false'
+          NODE_OPTIONS: --max-old-space-size=4096

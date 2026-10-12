@@ -98,7 +98,7 @@ setInterval(() => {}, 1000);
           cols: COLS,
           rows: ROWS,
           cwd: REPO_ROOT,
-          env: { ...safeChildEnvironment(home.home), XDG_STATE_HOME: target.stateHome },
+          env: { ...safeChildEnvironment(home.home, [bin]), XDG_STATE_HOME: target.stateHome },
         },
       },
       async (child) => {

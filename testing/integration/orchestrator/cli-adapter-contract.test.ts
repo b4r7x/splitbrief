@@ -159,9 +159,8 @@ const AUTH_FAILURE_FACTS_BY_PROBE_CONTRACT = {
   'kilo-code': 'authenticated',
   cursor: 'unknown',
   'command-code': 'unknown',
-  // `agy` declares a session channel with no bridgeable credential file, so the
-  // seeded-state home cannot authenticate it however `agy models` exits.
-  antigravity: 'unauthenticated',
+  // The session channel is allowed only on macOS; other platforms deny the probe.
+  antigravity: process.platform === 'darwin' ? 'unauthenticated' : 'unknown',
 } as const satisfies Record<
   ImplementerCliToolId,
   'authenticated' | 'not-checked' | 'unknown' | 'unauthenticated'

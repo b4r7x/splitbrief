@@ -1,4 +1,5 @@
 import { afterAll } from 'vitest';
+import './scrub-credentials.js';
 import { cleanupTempDir, createdTempDirs, createTempDir } from './temp-dir.js';
 
 // Run isolation resolves its worktrees under the user state directory

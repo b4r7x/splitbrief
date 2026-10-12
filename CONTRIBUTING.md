@@ -15,7 +15,7 @@ Read in order:
 
 ## Development setup
 
-Requires **Node.js 22+**. The project is TypeScript 6.x, ESM only.
+Requires **Node.js 22+** and **ripgrep** (`rg`) for the invariant checks and their tests. On Linux, CLI integration and replay tests also require `bubblewrap` and `socat`. The project is TypeScript 6.x, ESM only.
 
 ```bash
 git clone <repo>
@@ -44,7 +44,7 @@ npm run test:e2e:release      # OPT-IN release proof: full live matrix (needs SP
 npm run test-ci               # format -> typecheck -> lint -> test:coverage -> e2e -> invariants -> skills:check
 ```
 
-**Before submitting a PR, `npm run release-check` MUST pass** — it is the fast gate every PR is held to. `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds, which CI also runs nightly.
+**Before submitting a PR, `npm run release-check` MUST pass** — it is the fast gate every PR is held to. `npm run test-ci` is the exhaustive form that additionally enforces the coverage thresholds. The coverage workflow runs only when you start it by hand.
 
 ## Adding a feature
 

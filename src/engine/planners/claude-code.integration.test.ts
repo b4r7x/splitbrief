@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { writeFileSync, chmodSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
-import { SANDBOX_DIR } from '../../core/paths.js';
 import {
   cliAuthChannelHostStateAccess,
   defaultCliAuthChannel,
@@ -17,6 +16,7 @@ import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { resolveCliExecutable } from '../runners/resolve-cli-executable.js';
+import { sandboxRoot } from '../runners/sandbox-state-paths.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 
 let shimDir: string;
@@ -84,6 +84,7 @@ function installAuthRecordingShim(): string {
   const shimPath = join(shimDir, 'claude');
   const script = [
     '#!/bin/bash',
+    'cat >/dev/null',
     `printf '%s|%s\n' "$ANTHROPIC_API_KEY" "$OPENAI_API_KEY" > '${envFile}'`,
     `printf '%s\n' '${JSON.stringify({ type: 'result', result: 'auth-ok' })}'`,
   ].join('\n');
@@ -152,9 +153,7 @@ describe('createClaudeCodePlanner planning', () => {
 
       expect(readFileSync(envFile, 'utf8').trim()).toBe('|');
       const staged = join(
-        projectDir,
-        SANDBOX_DIR,
-        'planner',
+        sandboxRoot(projectDir, 'planner', 'claude-code'),
         'home',
         '.claude',
         '.credentials.json',
@@ -250,6 +249,7 @@ describe('createClaudeCodePlanner planning', () => {
       shimPath,
       [
         '#!/bin/bash',
+        'cat >/dev/null',
         `printf '%s ' "$@" >> '${argvLog}'`,
         `printf '\\n' >> '${argvLog}'`,
         ...(withInit
@@ -315,6 +315,7 @@ Create the stream capture file.
       shimPath,
       [
         '#!/bin/bash',
+        'cat >/dev/null',
         `printf '%s ' "$@" >> '${argvLog}'`,
         `printf '\\n' >> '${argvLog}'`,
         'if printf \'%s\\n\' "$@" | grep -q "^--resume$"; then',
@@ -376,6 +377,7 @@ Create the Claude retry file.
       shimPath,
       [
         '#!/bin/bash',
+        'cat >/dev/null',
         `printf '%s ' "$@" >> '${argvLog}'`,
         `printf '\\n' >> '${argvLog}'`,
         `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-1', result: tasksMarkdown, usage: { input_tokens: 1, output_tokens: 1 } }).replace(/'/g, "'\\''")}'`,
@@ -417,6 +419,7 @@ Create the Claude retry file.
       shimPath,
       [
         '#!/bin/bash',
+        'cat >/dev/null',
         `printf '%s\\n' '${JSON.stringify({ type: 'result', session_id: 'sess-new-unexpected', result: 'stale injected output', usage: { input_tokens: 2, output_tokens: 2 } }).replace(/'/g, "'\\''")}'`,
         '',
       ].join('\n'),
@@ -657,6 +660,7 @@ describe('confirmed Claude resume streaming', () => {
       shim,
       `#!${process.execPath}
 const fs = require('node:fs');
+fs.readFileSync(0);
 ${frames.map((frame) => `console.log(${JSON.stringify(JSON.stringify(frame))});`).join('\n')}
 const deadline = setTimeout(() => process.exit(3), 3000);
 const wait = setInterval(() => {
@@ -734,7 +738,7 @@ const wait = setInterval(() => {
       ];
       writeFileSync(
         shim,
-        `#!${process.execPath}\n${frames.map((frame) => `console.log(${JSON.stringify(JSON.stringify(frame))});`).join('\n')}\n`,
+        `#!${process.execPath}\nrequire('node:fs').readFileSync(0);\n${frames.map((frame) => `console.log(${JSON.stringify(JSON.stringify(frame))});`).join('\n')}\n`,
       );
       chmodSync(shim, 0o755);
       process.env['PATH'] = `${shimDir}:${originalPath ?? ''}`;
@@ -778,6 +782,7 @@ describe('createClaudeCodePlanner typed calls', () => {
         shimPath,
         [
           '#!/bin/bash',
+          'cat >/dev/null',
           `printf '%s\\n' "$@" > '${argvFile}'`,
           `printf '%s\\n' '${JSON.stringify({
             type: 'result',

@@ -53,6 +53,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
       configuredPlanner({
         contract: 'output',
         script: [
+          "require('node:fs').readFileSync(0);",
           "require('node:fs').writeFileSync('discarded-by-output.txt', 'discard me');",
           "process.stdout.write('parsed output only');",
         ].join(''),
@@ -92,7 +93,7 @@ describe('createConfiguredCustomPlanner admission and output behavior', () => {
       const competingSentinel = join(projectDir, 'source-path-child-started');
       const writeRunner = (directory: string, body: string) => {
         const path = join(directory, executable);
-        writeFileSync(path, `#!/bin/sh\n${body}\n`);
+        writeFileSync(path, `#!/bin/sh\n/bin/cat >/dev/null\n${body}\n`);
         chmodSync(path, 0o755);
       };
       writeRunner(

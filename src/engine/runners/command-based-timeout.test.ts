@@ -8,7 +8,7 @@ describe('invokeCommandBasedRunner with timeout', () => {
     const events: RunnerCallEvent[] = [];
     const result = await invokeCommandBasedRunner({
       command: 'sh',
-      args: ['-c', 'echo timeout-branch-progress >&2'],
+      args: ['-c', 'cat >/dev/null; echo timeout-branch-progress >&2'],
       timeout: 30_000,
       prompt: '',
       projectDir: process.cwd(),
@@ -32,7 +32,10 @@ describe('invokeCommandBasedRunner with timeout', () => {
 
     const result = await invokeCommandBasedRunner({
       command: 'sh',
-      args: ['-c', `echo "answer ${credential}"; echo "diagnostic ${credential}" >&2`],
+      args: [
+        '-c',
+        `cat >/dev/null; echo "answer ${credential}"; echo "diagnostic ${credential}" >&2`,
+      ],
       env: { ...process.env, OPENAI_API_KEY: credential },
       timeout: 30_000,
       prompt: '',
@@ -76,8 +79,8 @@ describe('invokeCommandBasedRunner with timeout', () => {
       message: { content: [{ type: 'text', text: 'parsed body' }] },
     });
     const result = await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', line],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
       outputFormat: 'stream-json',
       timeout: 30_000,
       prompt: '',
@@ -94,8 +97,8 @@ describe('invokeCommandBasedRunner with timeout', () => {
       usage: { input_tokens: 11, output_tokens: 7 },
     });
     const result = await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', line],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', line],
       outputFormat: 'stream-json',
       timeout: 30_000,
       prompt: '',
@@ -130,8 +133,8 @@ describe('invokeCommandBasedRunner with timeout', () => {
       }),
     ];
     const result = await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', lines.join('\n')],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
       outputFormat: 'stream-json',
       prompt: '',
       projectDir: process.cwd(),
@@ -155,8 +158,8 @@ describe('invokeCommandBasedRunner with timeout', () => {
       }),
     ];
     const result = await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', lines.join('\n')],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
       outputFormat: 'stream-json',
       prompt: '',
       projectDir: process.cwd(),
@@ -216,8 +219,8 @@ describe('invokeCommandBasedRunner with timeout', () => {
     const events: RunnerCallEvent[] = [];
 
     await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', lines.join('\n')],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
       outputFormat: 'stream-json',
       prompt: '',
       projectDir: process.cwd(),
@@ -264,8 +267,8 @@ describe('invokeCommandBasedRunner with timeout', () => {
     const sessionIds: string[] = [];
 
     const result = await invokeCommandBasedRunner({
-      command: 'printf',
-      args: ['%s\\n', lines.join('\n')],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', lines.join('\n')],
       outputFormat: 'stream-json',
       timeout: 30_000,
       prompt: '',
@@ -287,7 +290,10 @@ describe('invokeCommandBasedRunner with timeout', () => {
     const chunks: string[] = [];
     const result = await invokeCommandBasedRunner({
       command: 'node',
-      args: ['-e', `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`],
+      args: [
+        '-e',
+        `require("node:fs").readFileSync(0);process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}))`,
+      ],
       outputFormat: 'text',
       timeout: 30_000,
       prompt: '',
