@@ -191,6 +191,7 @@ describe('buildSkillsContext', () => {
         projectContext: 'project',
         languageContext: buildLanguageContext(undefined),
         build: { model: undefined, contextTokens: 64_000 },
+        approvesPlan: true,
         skillsContext,
       }),
       brief: formatTaskPrompt({ task, context, writesFiles: 'direct' }),

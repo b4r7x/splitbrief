@@ -207,7 +207,7 @@ describe('independent closed attribution proof', () => {
         state = transition(state, {
           type: 'RECORD_CHECK_RESULTS',
           taskId: task.id,
-          results: [{ id: `K-${task.id}`, passed: true }],
+          results: [{ id: `K-${task.id}`, status: 'pass' }],
         });
         state = transition(state, { type: 'VALIDATION_PASS' });
         await persistTaskEvidence({

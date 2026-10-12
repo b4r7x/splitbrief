@@ -1,6 +1,7 @@
 import { phaseStage } from '../rail-stages.js';
 import type { Phase, TaskCompletionMethod } from '../schemas/enums.js';
 import type { ReviewFindingCounts } from '../schemas/review.js';
+import type { CheckStatus } from '../schemas/task.js';
 
 export interface SectionableEvent {
   type: string;
@@ -37,7 +38,7 @@ type FullSuiteEvent = {
   newFailures?: number;
   notVerified?: number;
 };
-type ChecksRunEvent = { type: 'checks_run'; results: { passed: boolean }[] };
+type ChecksRunEvent = { type: 'checks_run'; results: { status: CheckStatus }[] };
 type ReviewFixStartedEvent = { type: 'review_fix_started'; taskIds: string[] };
 type ReviewCompletedEvent = {
   type: 'review_completed';
@@ -409,7 +410,7 @@ function settledStageSummary<TEvent extends SectionableEvent>(
       }
     }
     if (isChecksRunEvent(event)) {
-      failedChecks += event.results.filter((result) => result.passed === false).length;
+      failedChecks += event.results.filter((result) => result.status === 'fail').length;
     }
     if (isReviewFixStartedEvent(event)) fixes = event.taskIds;
   }

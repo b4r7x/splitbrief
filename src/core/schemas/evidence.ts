@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TaskIdSchema } from './task.js';
+import { CheckStatusSchema, TaskIdSchema } from './task.js';
 import {
   ActionClassSchema,
   TaskStatusSchema,
@@ -47,6 +47,8 @@ const EvidenceValidationEntrySchema = z.object({
 
 const EvidenceCheckEntrySchema = z.object({
   id: z.string(),
+  /** Absent on an older run's entry. */
+  status: CheckStatusSchema.optional(),
   command: z.string().optional(),
   exitCode: z.number().int().optional(),
   output: z.string().optional(),

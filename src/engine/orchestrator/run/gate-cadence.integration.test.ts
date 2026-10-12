@@ -402,8 +402,8 @@ describe("reviewer checks with workflow.review 'task'", { timeout: 120_000 }, ()
     expect(harness.checksPrompts[1]).toContain('- `npm test`');
     expect(result.state.pendingReviewCommands ?? []).toEqual([]);
     expect(result.state.tasks.map((task) => task.checkResults)).toEqual([
-      [{ id: 'V1', passed: true }],
-      [{ id: 'V1', passed: true }],
+      [{ id: 'V1', status: 'pass' }],
+      [{ id: 'V1', status: 'pass' }],
     ]);
   });
 

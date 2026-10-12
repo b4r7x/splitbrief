@@ -731,6 +731,21 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ---
 
+### Symptom: A plan check is `refused`
+
+**Likely cause:** The plan command policy refused the planner's command when the check ran. The row names the rule, for example `Plan check K2 · npm run lint · refused · runs the npm script lint, which package.json does not define`. A package script (`npm run <script>`) runs only under an approved plan and only when `package.json` defines the script. `checkPlan` already sends a plan back to the planner when the command text breaks the policy, so a refusal during Build is usually a script that `package.json` does not define.
+
+A refused check did not run. SPLITBRIEF records it as refused, not as failed, and the reviewer sees it as refused. An optional refused check does not stop the run. A required refused check halts the run before the review with `Required checks cannot run: <id>`.
+
+**Fix:**
+1. Read the reason on the row.
+2. For the next run, to run package scripts as plan checks, set `workflow.approve: plan` and approve the plan card. A halted run keeps the approve level it recorded at planning.
+3. Or end the run and start it again, so the planner names an allowed command, such as `npm test` or a `test` check.
+
+**See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md#reviewer-checks), `src/engine/orchestrator/planning/sanitize-discovered-validation.ts`.
+
+---
+
 ### Symptom: A reviewer check is `refused`
 
 **Likely cause:** The reviewer command policy refused the command. Any installed program of any language can run if it follows the policy. Each `refused` row names the rule.

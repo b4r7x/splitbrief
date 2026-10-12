@@ -16,6 +16,8 @@ export type PlanSessionPromptInput = Readonly<{
   projectContext: string;
   languageContext: LanguageContext;
   build: BuildSeat;
+  /** `workflow.approve: plan`: the user approves the plan before any check runs. */
+  approvesPlan: boolean;
   skillsContext?: string | undefined;
   codebaseContext?: string | undefined;
   /** The documents an earlier multi-step planning chain of this run wrote. */
@@ -27,11 +29,19 @@ function buildSeatText(build: BuildSeat): string {
   return `The tasks are built by ${model}, a weaker model with a measured context of ${build.contextTokens.toLocaleString('en-US')} tokens. Each task reaches it with the current code of its suggested and context files, the instructions and the checks, and the whole prompt must fit well inside that context with room left to work. A task is one verifiable behaviour with its tests and callers. Group by coherent outcome, not by count: every task costs a fixed overhead, and every task boundary is a place where one task can break another.`;
 }
 
-const RULES = `- Research the repository read-only. Do not edit, create or delete any file.
+// A package script runs only after the user approved the plan that names it.
+function packageScriptRule(approvesPlan: boolean): string {
+  return approvesPlan
+    ? 'A `cmd` check runs `npm run <script>` only for a script `package.json` defines; the plan approval confirms it.'
+    : 'This run approves no plan, so SPLITBRIEF refuses a `cmd` check that runs a package script (`npm run <script>`): a package manager runs only as its bare `test` command.';
+}
+
+function planRules(approvesPlan: boolean): string {
+  return `- Research the repository read-only. Do not edit, create or delete any file.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
 - Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique. The ids \`V1\`, \`V2\`, … are the reviewer's: never give a check one of them.
-- A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). A \`cmd\` check runs \`npm run <script>\` only under an approved plan and only for a script \`package.json\` defines; \`npx\` runs only as \`npx --no-install <stack tool>\`.
+- A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). ${packageScriptRule(approvesPlan)} \`npx\` runs only as \`npx --no-install <stack tool>\`.
 - Task ids are \`T001\`, \`T002\`, … in order. Every task serves at least one criterion, every criterion is served by at least one task, and every task has at least one check.
 - Each task completes one verifiable behaviour, including its tests and the caller changes it needs. Its \`intent\` names the behaviour and its expected result, never only files. Never separate implement, test and caller tasks for one behaviour.
 - Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.
@@ -46,6 +56,7 @@ const RULES = `- Research the repository read-only. Do not edit, create or delet
 - A write to a protected path (${PROTECTED_PATHS_TEXT}) waits for the user to confirm it. List every such write the task needs in \`protectedOperations\` as \`{ "path": …, "operation": "write" }\`; the plan approval lists them. Use null when there is none.
 - \`validation\`: the language and test command you found. A \`test\` check runs that command on its file. \`testPattern\` is a file name pattern with one \`*\`, such as \`*.test.js\` or \`test_*.py\`: no \`/\`, no \`\\\` and no \`..\`. SPLITBRIEF searches beside the changed file and in the stack's test folders. Use null for what you did not find.
 - ${GATES_ARE_SPLITBRIEFS}`;
+}
 
 export function buildPlanSessionPrompt(input: PlanSessionPromptInput): string {
   return buildPrompt({
@@ -70,7 +81,7 @@ export function buildPlanSessionPrompt(input: PlanSessionPromptInput): string {
           ]),
       { heading: 'Implementer', body: buildSeatText(input.build) },
       instructionsSection(
-        `${RULES}${input.skillsContext === undefined ? '' : `\n- ${SKILLS_WITH_EVERY_BRIEF}`}`,
+        `${planRules(input.approvesPlan)}${input.skillsContext === undefined ? '' : `\n- ${SKILLS_WITH_EVERY_BRIEF}`}`,
       ),
     ],
     output:

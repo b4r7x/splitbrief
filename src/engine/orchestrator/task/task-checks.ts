@@ -2,11 +2,12 @@ import { fixCheckKeys, fixReviewChecks, judgeFixCheck } from '../../../core/revi
 import type { Task } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
-import { publishChecksRun, publishReviewCheck } from '../events.js';
+import { planCheckRow, publishChecksRun, publishReviewCheck, unranCheckRow } from '../events.js';
 import { transitionAndSave } from '../state-ops.js';
 import { runBaseOf } from '../isolation/base-tree.js';
 import { runReviewCheck } from '../review-checks.js';
 import {
+  checkRegistry,
   planApprovesNpmScripts,
   runChecks,
   type CheckRunResult,
@@ -62,7 +63,8 @@ function taskCheckOptions(opts: {
 }
 
 /**
- * Runs the brief's checks and records them. Each judged fix check gets a verdict row.
+ * Runs the brief's checks and records them. Each judged fix check gets a verdict row, and each
+ * check that did not run gets a refused or not-run row with its reason.
  * Reviewer checks also get a running row and clock, with commands from the fix task's findings.
  * A fix check runs once. `settled` names each red whose carried failures are proven gone.
  */
@@ -87,8 +89,18 @@ export async function runTaskChecks(opts: {
     opts.checkIds.filter((id) => !reviewCommands.has(id)),
     checkOptions,
   );
+  const registry = checkRegistry(checkOptions);
   for (const run of runs) {
-    if (run.status !== 'fail' && run.status !== 'pass') continue;
+    if (run.status !== 'fail' && run.status !== 'pass') {
+      publishReviewCheck(
+        { bus: checkOptions.bus, phase: checkOptions.phase },
+        {
+          ...planCheckRow(run.checkId, run.command ?? '', registry.get(run.checkId)),
+          ...unranCheckRow(run),
+        },
+      );
+      continue;
+    }
     const judged = judgeFixCheck(
       carried.get(run.checkId) ?? { failureKeys: [], redKeys: [] },
       run.status === 'fail' ? run.failure : null,
@@ -158,7 +170,7 @@ export async function recordTaskCheckRuns(opts: {
   const { wctx, task, runs } = opts;
   const checkResults = runs.map((run) => ({
     id: run.checkId,
-    passed: run.status === 'pass' || opts.settled?.has(run.checkId) === true,
+    status: opts.settled?.has(run.checkId) === true ? ('pass' as const) : run.status,
   }));
   const state = transitionAndSave(
     { projectDir: wctx.projectDir, sessionId: wctx.sessionId },

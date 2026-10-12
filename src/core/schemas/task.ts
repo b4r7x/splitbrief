@@ -43,10 +43,27 @@ export const CheckSchema = z.object({
 });
 export type Check = z.infer<typeof CheckSchema>;
 
-export const CheckResultSchema = z.object({
-  id: z.string(),
-  passed: z.boolean(),
-});
+/** A check ran and passed or failed, or it never ran: refused, not runnable, or no such check. */
+export const CHECK_STATUSES = ['pass', 'fail', 'not-runnable', 'refused', 'unknown'] as const;
+export const CheckStatusSchema = z.enum(CHECK_STATUSES);
+export type CheckStatus = z.infer<typeof CheckStatusSchema>;
+
+/** An older run saved `passed`, which only a check that ran could carry. */
+function foldSavedPassed(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || 'status' in value || !('passed' in value)) {
+    return value;
+  }
+  const { passed, ...rest } = value;
+  return { ...rest, status: passed === true ? 'pass' : 'fail' };
+}
+
+export const CheckResultSchema = z.preprocess(
+  foldSavedPassed,
+  z.object({
+    id: z.string(),
+    status: CheckStatusSchema,
+  }),
+);
 export type CheckResult = z.infer<typeof CheckResultSchema>;
 
 /** `write` only: the protected-path confirmation matches `write <path>` (`gateChangedFiles`). */

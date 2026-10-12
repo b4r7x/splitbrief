@@ -960,8 +960,8 @@ describe('groupEventsIntoSections', () => {
       at('checks_run', 'final-review', 31_000, {
         taskId: 'T001',
         results: [
-          { id: 'K-a', passed: false },
-          { id: 'K-b', passed: true },
+          { id: 'K-a', status: 'fail' },
+          { id: 'K-b', status: 'pass' },
         ],
       }),
       at('runner_call_activity', 'final-review', 40_000, { role: 'review', callId: 'review-1' }),
@@ -1090,9 +1090,15 @@ describe('groupEventsIntoSections', () => {
         complete('T001'),
         suite(20_000, 'npm test', false),
         suite(21_000, 'npm test', false),
-        at('checks_run', 'final-review', 22_000, { results: [{ passed: false }] }),
+        at('checks_run', 'final-review', 22_000, { results: [{ status: 'fail' }] }),
         at('checks_run', 'final-review', 23_000, {
-          results: [{ passed: true }, { passed: false }, { passed: false }],
+          results: [
+            { status: 'pass' },
+            { status: 'fail' },
+            { status: 'fail' },
+            { status: 'refused' },
+            { status: 'not-runnable' },
+          ],
         }),
         at('review_fix_started', 'implementing', 24_000, { taskIds: ['T002'] }),
         at('review_fix_started', 'implementing', 25_000, { taskIds: ['T003', 'T004'] }),

@@ -1,6 +1,7 @@
 import { baseSplit } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
+import type { CheckStatus } from '../../../core/schemas/task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
@@ -11,10 +12,20 @@ export interface StdoutTextSinkOptions {
   output?: NodeJS.WritableStream | undefined;
 }
 
+// A check that did not run is counted apart: it is neither a pass nor a failure.
 function checksSummary(event: Extract<EngineEvent, { type: 'checks_run' }>): string {
   if (event.results.length === 0) return 'no checks';
-  const passed = event.results.filter((result) => result.passed).length;
-  return `${passed} of ${event.results.length} checks passed`;
+  const count = (status: CheckStatus) =>
+    event.results.filter((result) => result.status === status).length;
+  const passed = count('pass');
+  const ran = passed + count('fail');
+  const refused = count('refused');
+  const notRun = event.results.length - ran - refused;
+  return [
+    ...(ran > 0 ? [`${passed} of ${ran} checks passed`] : []),
+    ...(refused > 0 ? [`${refused} refused`] : []),
+    ...(notRun > 0 ? [`${notRun} not run`] : []),
+  ].join(', ');
 }
 
 function reviewChecksLines(event: Extract<EngineEvent, { type: 'review_checks' }>): string[] {

@@ -154,7 +154,7 @@ Several sinks can subscribe to the bus. The JSONL, logger and call-evidence sink
 
 Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line.
 
-**Hook sink** (`src/engine/hooks/sink.ts`) maps events to workflow hook triggers and dispatches matching hooks without waiting. Only five event types trigger hooks. `task_completed` maps to `post_task`. `checks_run` maps to `post_validation`. It fires after brief gate checks and after plan and task checks before the final review, once per task that owns them. Its payload has `taskId` and `results` (`{ id, passed }[]`). `recovery_prompted` maps to `on_halt`. `workflow_complete` maps to `on_complete`. `error` maps to `on_error`. The sink ignores all other events.
+**Hook sink** (`src/engine/hooks/sink.ts`) maps events to workflow hook triggers and dispatches matching hooks without waiting. Only five event types trigger hooks. `task_completed` maps to `post_task`. `checks_run` maps to `post_validation`. It fires after brief gate checks and after plan and task checks before the final review, once per task that owns them. Its payload has `taskId` and `results` (`{ id, status }[]`, where `status` is `pass`, `fail`, `not-runnable`, `refused` or `unknown`). `recovery_prompted` maps to `on_halt`. `workflow_complete` maps to `on_complete`. `error` maps to `on_error`. The sink ignores all other events.
 
 `review_started` and `review_completed` never fire a hook. Only run completion fires `on_complete`.
 

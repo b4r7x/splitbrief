@@ -806,7 +806,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
             },
           ],
         },
-        checkResults: [{ id: 'V1', passed: true }],
+        checkResults: [{ id: 'V1', status: 'pass' }],
       });
       expect(events).toContainEqual(
         expect.objectContaining({
@@ -901,7 +901,7 @@ describe('runTasksAndReview', { timeout: 120_000 }, () => {
       expect(reviewPrompts).toHaveLength(1);
       expect(reviewPrompts[0]).toContain(output);
       expect(reviewPrompts[0]).toContain('**P1** (check · defect)');
-      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K1', passed: false });
+      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K1', status: 'fail' });
       expect(result.state.reviewChecks).toMatchObject({ scope: 'final', cycle: 1 });
     },
   );
@@ -1603,6 +1603,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
 
   it('halts every unrunnable required Apply check before review, even with an optional failure', async () => {
     const { projectDir, sessionId, head } = setupProject();
+    writeFileSync(join(projectDir, 'Makefile'), 'lint:\n\t@exit 1\n');
     const tasks = [
       makeTask({
         id: 'T001',
@@ -1610,7 +1611,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         status: 'done',
         checks: [
           { id: 'K-task-refused', kind: 'cmd', value: 'npm run deploy', required: true },
-          { id: 'K-optional-failure', kind: 'cmd', value: 'false', required: false },
+          { id: 'K-optional-failure', kind: 'cmd', value: 'make lint', required: false },
         ],
       }),
     ];
@@ -1657,6 +1658,41 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     }
   });
 
+  it('names an optional refused Apply check as refused, never as a failure the review must answer', async () => {
+    const { projectDir, sessionId, head } = setupProject();
+    const tasks = [
+      makeTask({
+        id: 'T001',
+        suggestedFiles: ['src/alpha.ts'],
+        status: 'done',
+        checks: [{ id: 'K-optional', kind: 'cmd', value: 'npm run lint', required: false }],
+      }),
+    ];
+    const { reviewPrompts, options } = runOptions({
+      projectDir,
+      sessionId,
+      state: integrationReviewState(tasks, head, 0),
+      review: (prompt) => passingReviewVerdict(prompt),
+      onComplete: vi.fn(),
+    });
+
+    try {
+      const result = await runTasksAndReview(options);
+
+      expect(reviewPrompts).toHaveLength(1);
+      expect(reviewPrompts[0]).toContain(
+        '## Checks re-run at Apply\n- T001 check K-optional refused: runs a package script or binary',
+      );
+      expect(reviewPrompts[0]).not.toContain('did not pass (refused)');
+      expect(result.state.reviewStatus).toBe('passed');
+      expect(result.state.tasks[0]?.checkResults).toEqual([
+        { id: 'K-optional', status: 'refused' },
+      ]);
+    } finally {
+      await options.wctx.isolation.dispose();
+    }
+  });
+
   it('non-overlapping edit merges and the whole run diff is re-reviewed', async () => {
     const { projectDir, sessionId, head } = setupProject();
     const tasks = [makeTask({ id: 'T001', suggestedFiles: ['src/alpha.ts'], status: 'done' })];
@@ -1691,7 +1727,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
     const { projectDir, sessionId, head } = setupProject();
     writeFileSync(
       join(projectDir, 'Makefile'),
-      'test:\n\t@echo " FAIL  src/alpha.test.ts > adds"; echo "AssertionError: expected 1 to be 2"; echo " FAIL  src/beta.test.ts > subtracts"; echo "AssertionError: expected 3 to be 4"; exit 1\n',
+      'test:\n\t@echo " FAIL  src/alpha.test.ts > adds"; echo "AssertionError: expected 1 to be 2"; echo " FAIL  src/beta.test.ts > subtracts"; echo "AssertionError: expected 3 to be 4"; exit 1\nlint:\n\t@exit 1\n',
     );
     const tasks = [
       makeTask({
@@ -1699,7 +1735,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
         suggestedFiles: ['src/alpha.ts'],
         status: 'done',
         checks: [{ id: 'C1', kind: 'cmd', value: 'make test', required: false }],
-        checkResults: [{ id: 'C1', passed: true }],
+        checkResults: [{ id: 'C1', status: 'pass' }],
       }),
     ];
     writeEvidenceLedger(
@@ -1725,7 +1761,7 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
           summary: 'Re-check the merged candidate.',
           decisions: [],
           criteria: [],
-          checks: [{ id: 'P1', kind: 'cmd', value: 'false', required: false }],
+          checks: [{ id: 'P1', kind: 'cmd', value: 'make lint', required: false }],
           validation: null,
         },
       },
@@ -1758,8 +1794,8 @@ describe('runTasksAndReview integration review', { timeout: 120_000 }, () => {
       expect(workspacePath).toBeDefined();
       // The re-check ran fresh: the recorded pass is overwritten by the merge's failure.
       expect(result.state.tasks[0]?.checkResults).toEqual([
-        { id: 'C1', passed: false },
-        { id: 'P1', passed: false },
+        { id: 'C1', status: 'fail' },
+        { id: 'P1', status: 'fail' },
       ]);
       expect(reviewPrompts).toHaveLength(1);
       expect(triagePrompts).toHaveLength(1);

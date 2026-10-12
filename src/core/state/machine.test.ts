@@ -1241,23 +1241,23 @@ describe('consult and split state operations', () => {
       type: 'RECORD_CHECK_RESULTS',
       taskId: taskId('T002'),
       results: [
-        { id: 'K1', passed: true },
-        { id: 'K2', passed: false },
+        { id: 'K1', status: 'pass' },
+        { id: 'K2', status: 'fail' },
       ],
     });
     expect(recorded.tasks[0]?.checkResults).toEqual([
-      { id: 'K1', passed: true },
-      { id: 'K2', passed: false },
+      { id: 'K1', status: 'pass' },
+      { id: 'K2', status: 'fail' },
     ]);
 
     const rerun = transition(recorded, {
       type: 'RECORD_CHECK_RESULTS',
       taskId: taskId('T002'),
-      results: [{ id: 'K2', passed: true }],
+      results: [{ id: 'K2', status: 'pass' }],
     });
     expect(rerun.tasks[0]?.checkResults).toEqual([
-      { id: 'K1', passed: true },
-      { id: 'K2', passed: true },
+      { id: 'K1', status: 'pass' },
+      { id: 'K2', status: 'pass' },
     ]);
   });
 

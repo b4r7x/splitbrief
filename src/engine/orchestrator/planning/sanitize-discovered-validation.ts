@@ -49,6 +49,8 @@ const PNPM_SCRIPT_SUBCOMMANDS = new Set(['run', 'exec', 'dlx']);
 
 const YARN_SCRIPT_SUBCOMMANDS = new Set(['run', 'dlx']);
 
+const RUN_TEST_ALIASES = new Set(['npm', 'pnpm', 'yarn']);
+
 const TASK_RUNNERS = new Set(['make', 'just']);
 
 const STAGE_TARGETS = new Set<string>(VALIDATION_STAGES);
@@ -186,8 +188,20 @@ function loadsTestRunnerConfig(tokens: string[]): boolean {
   return false;
 }
 
+// `npm run test`, `pnpm run test` and `yarn run test` run the same scripts as their bare `test`.
+// `bun run test` does not: the bare `bun test` is bun's own runner.
+function asBareTest(tokens: string[]): string[] {
+  const [cmd, run, script, ...rest] = tokens;
+  return cmd !== undefined &&
+    RUN_TEST_ALIASES.has(commandFamily(cmd)) &&
+    run === 'run' &&
+    script === 'test'
+    ? [cmd, 'test', ...rest]
+    : tokens;
+}
+
 export function unsafeCommandReason(raw: string): string | null {
-  const tokens = parseShellCommand(raw);
+  const tokens = asBareTest(parseShellCommand(raw));
   const cmd = tokens[0];
   if (!cmd) return 'names no program';
   if (cmd.includes('/') || cmd.includes('\\')) return 'runs a file by path';
@@ -206,6 +220,34 @@ export function unsafeCommandReason(raw: string): string | null {
   return null;
 }
 
+function isApprovedNpmRun(tokens: string[], npmScriptsApproved: boolean): boolean {
+  return npmScriptsApproved && commandFamily(tokens[0] ?? '') === 'npm' && tokens[1] === 'run';
+}
+
+/**
+ * What the plan command policy refuses from the command text alone. A plan check names it before
+ * any task runs: whether package.json defines an npm script waits for the check, since a task can
+ * add the script.
+ */
+export function commandTextRefusal(command: string, npmScriptsApproved: boolean): string | null {
+  const tokens = parseShellCommand(command);
+  const cmd = tokens[0];
+  if (!cmd) return 'names no program';
+  if (commandFamily(cmd) === 'npx') {
+    const tool = tokens[1] === '--no-install' ? tokens[2] : undefined;
+    if (tool === undefined) return 'runs npx without --no-install';
+    return NPX_STACK_TOOLS.has(commandFamily(tool))
+      ? null
+      : 'runs a program outside the stack tools through npx';
+  }
+  if (isApprovedNpmRun(tokens, npmScriptsApproved)) {
+    if (tokens[2] === undefined) return 'runs npm run without a script name';
+    if (tokens.some((token) => SHELL_OPERATORS.test(token))) return 'contains a shell operator';
+    return null;
+  }
+  return unsafeCommandReason(command);
+}
+
 export function checkCommandRefusal(
   command: string,
   {
@@ -213,30 +255,19 @@ export function checkCommandRefusal(
     packageScripts,
   }: { npmScriptsApproved: boolean; packageScripts: PackageScriptsReadinessInput },
 ): string | null {
+  const refusal = commandTextRefusal(command, npmScriptsApproved);
   const tokens = parseShellCommand(command);
-  const cmd = tokens[0];
-  if (!cmd) return 'names no program';
-  const family = commandFamily(cmd);
-  if (family === 'npx') {
-    const tool = tokens[1] === '--no-install' ? tokens[2] : undefined;
-    if (tool === undefined) return 'runs npx without --no-install';
-    return NPX_STACK_TOOLS.has(commandFamily(tool))
-      ? null
-      : 'runs a program outside the stack tools through npx';
+  const script = tokens[2];
+  if (refusal !== null || !isApprovedNpmRun(tokens, npmScriptsApproved) || script === undefined) {
+    return refusal;
   }
-  if (npmScriptsApproved && family === 'npm' && tokens[1] === 'run') {
-    const script = tokens[2];
-    if (script === undefined) return 'runs npm run without a script name';
-    if (tokens.some((token) => SHELL_OPERATORS.test(token))) return 'contains a shell operator';
-    if (!packageScripts.packageJsonExists) {
-      return 'runs an npm script, but package.json was not found';
-    }
-    if (!Object.hasOwn(packageScripts.scripts, script)) {
-      return `runs the npm script ${script}, which package.json does not define`;
-    }
-    return null;
+  if (!packageScripts.packageJsonExists) {
+    return 'runs an npm script, but package.json was not found';
   }
-  return unsafeCommandReason(command);
+  if (!Object.hasOwn(packageScripts.scripts, script)) {
+    return `runs the npm script ${script}, which package.json does not define`;
+  }
+  return null;
 }
 
 const REFUSED_WARNING = {

@@ -21,7 +21,7 @@ type CheckEntryMeta = {
 };
 
 function runCheckEntry(run: CheckRunResult, meta: CheckEntryMeta, ts: string): EvidenceCheckEntry {
-  const entry: EvidenceCheckEntry = { id: run.checkId, ts };
+  const entry: EvidenceCheckEntry = { id: run.checkId, status: run.status, ts };
   if (run.command !== undefined) entry.command = run.command;
   if (run.exitCode !== undefined) entry.exitCode = run.exitCode;
   if (run.output.trim() !== '') entry.output = run.output;

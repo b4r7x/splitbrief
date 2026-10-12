@@ -85,6 +85,8 @@
 
 ### Fixed
 
+- A plan whose `cmd` check the plan command policy refuses from its text, such as `npm run lint` in a run that approves no plan, goes back to the planner once (`refused-check-command`), so the run no longer halts on it after Build. `npm run test`, `pnpm run test` and `yarn run test` run the same scripts as the bare `test` and pass the policy without a plan approval.
+- A plan check that the plan command policy refuses when it runs, such as an npm script that `package.json` does not define, is recorded and shown as refused, not as a failed check. Its row names the rule it broke. The reviewer sees it as refused, so it is neither a pass nor a failure, and an optional refused check no longer fails a review or an Apply re-check. A required refused check still halts the run as a check that cannot run. A run that approves no plan tells the planner that it refuses `npm run <script>` checks. Check results in `state.json`, in the `checks_run` event and in the `post_validation` hook payload carry `status` (`pass`, `fail`, `refused`, `not-runnable` or `unknown`) in place of `passed`, and an older run's `passed` still loads.
 - Continue or End run on a crashed run records each tool call that the crash cut as interrupted, before it restores, runs or closes anything. The run shows that call once as `current turn interrupted: SPLITBRIEF exited`, at rest, after Continue and after End run.
 - At rest, a brief that a stop or a crash cut shows the stop mark of the rail, not the working mark, and drops its `working on <file>…` row.
 - The final review reads `Final review`, `Final review after 1 fix cycle`, or `Final review re-run` when it ran again with no fix cycle between.

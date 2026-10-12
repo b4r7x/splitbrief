@@ -9,6 +9,7 @@ import { isENOENT } from '../../lib/process/errors.js';
 import { matches } from '../../utils/error.js';
 import { countNoun, pluralize } from '../../utils/pluralize.js';
 import { protectedWriteClass } from '../orchestrator/approval/action-classifier.js';
+import { commandTextRefusal } from '../orchestrator/planning/sanitize-discovered-validation.js';
 
 export type PlanCheckCode =
   | 'empty-plan'
@@ -36,7 +37,8 @@ export type PlanCheckCode =
   | 'dependency-cycle'
   | 'context-overflow'
   | 'no-capable-worker'
-  | 'render-check-unconfigured';
+  | 'render-check-unconfigured'
+  | 'refused-check-command';
 
 /** BUILD's fit for one task, and the routing reason when no implementer can take it. */
 export type PlanTaskFit = Readonly<{ fit: TaskContextFit; blocked?: string | undefined }>;
@@ -212,13 +214,15 @@ export function blocksPlan(error: PlanCheckError): boolean {
 /**
  * The deterministic checks a plan passes before anyone approves it. `taskFits` is BUILD's fit per
  * task id, estimated with the task's fresh code: `overflow` blocks, and so does a task that no
- * implementer can take.
+ * implementer can take. `npmScriptsApproved` is the run's plan approval, under which a `cmd` check
+ * may run an npm script.
  */
 export function checkPlan(
   plan: PlanProposal,
   projectDir: string,
   taskFits: ReadonlyMap<string, PlanTaskFit>,
   renderCommand: string | undefined,
+  npmScriptsApproved: boolean,
 ): PlanCheckError[] {
   const errors: PlanCheckError[] = [];
   const fail = (code: PlanCheckCode, message: string) => errors.push({ code, message });
@@ -226,9 +230,8 @@ export function checkPlan(
   if (plan.tasks.length === 0) fail('empty-plan', 'The plan has no task.');
   if (plan.criteria.length === 0) fail('empty-plan', 'The plan has no criterion.');
 
-  const checkIds = [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)].map(
-    (check) => check.id,
-  );
+  const checks = [...plan.checks, ...plan.tasks.flatMap((task) => task.checks)];
+  const checkIds = checks.map((check) => check.id);
   errors.push(...checkTaskIdentities(plan.tasks));
   for (const id of duplicates(checkIds))
     fail('duplicate-check-id', `Check id ${id} is used twice.`);
@@ -237,6 +240,15 @@ export function checkPlan(
   }
   for (const id of duplicates(plan.criteria.map((criterion) => criterion.id)))
     fail('duplicate-criterion-id', `Criterion id ${id} is used twice.`);
+  for (const check of checks.filter((each) => each.kind === 'cmd')) {
+    const refusal = commandTextRefusal(check.value, npmScriptsApproved);
+    if (refusal !== null) {
+      fail(
+        'refused-check-command',
+        `Check ${check.id} is refused: \`${check.value}\` ${refusal}. Name a command the plan command policy runs, or use a \`test\` check.`,
+      );
+    }
+  }
 
   for (const criterion of plan.criteria) {
     if (criterion.checkIds.length === 0) {

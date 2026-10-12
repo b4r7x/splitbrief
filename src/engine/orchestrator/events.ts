@@ -1,5 +1,5 @@
 import type { ConsultRecord, WorkflowState } from '../../core/schemas/workflow.js';
-import type { CheckResult, Task, TaskId } from '../../core/schemas/task.js';
+import type { Check, CheckResult, CheckStatus, Task, TaskId } from '../../core/schemas/task.js';
 import type {
   RecoveryAction,
   TaskCompletionMethod,
@@ -269,6 +269,24 @@ export function publishReviewCheck(
     ...(opts.detail !== undefined && { detail: opts.detail }),
     ...(opts.duration !== undefined && { duration: opts.duration }),
   });
+}
+
+/** A plan check's row: its id and command, and the scenario a render check names. */
+export function planCheckRow(id: string, command: string, check: Check | undefined) {
+  return {
+    id,
+    command,
+    moment: 'plan' as const,
+    ...(check?.kind === 'render' && { scenario: check.value }),
+  };
+}
+
+/** How the row of a check that did not run settles: refused, or not run, with the reason. */
+export function unranCheckRow(run: { status: CheckStatus; output: string }) {
+  return {
+    status: run.status === 'refused' ? ('refused' as const) : ('not-run' as const),
+    detail: run.output,
+  };
 }
 
 export function publishGitBranchCreated(ctx: BusContext, name: string): void {

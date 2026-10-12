@@ -217,7 +217,7 @@ describe('createHookSink', () => {
       ts: 1,
       phase: 'implementing',
       taskId: taskId('T001'),
-      results: [{ id: 'K1', passed: true }],
+      results: [{ id: 'K1', status: 'pass' }],
     };
     sink(checksEvent);
     await waitForWarnings(warnings, 1);

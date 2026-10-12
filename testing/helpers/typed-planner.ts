@@ -201,7 +201,14 @@ export function planFromTasks(tasks: readonly Task[]): PlanProposal {
         task.checks ??
         (tests.length > 0
           ? tests
-          : [{ id: `${task.id}-K1`, kind: 'cmd' as const, value: 'true', required: false }]),
+          : [
+              {
+                id: `${task.id}-K1`,
+                kind: 'cmd' as const,
+                value: 'node --version',
+                required: false,
+              },
+            ]),
       suggestedFiles: [...task.suggestedFiles],
       contextFiles: task.scope?.inBounds ?? [],
       exclusions: task.scope?.outOfBounds ?? [],

@@ -235,6 +235,30 @@ describe('renderReviewPacketMarkdown checks log', () => {
     expect(rendered).toContain('  time: 2026-01-01T00:00:00.000Z');
   });
 
+  it('marks a refused check as refused and prints why, not as output', () => {
+    const packet = makeReviewPacket({
+      checks: {
+        entries: [
+          {
+            taskId: taskId('T001'),
+            id: 'K2',
+            status: 'refused',
+            command: 'npm run test',
+            output: 'runs a package script or binary',
+            ts: '2026-01-01T00:00:00.000Z',
+          },
+        ],
+        outsideReadPaths: [],
+      },
+    });
+
+    const rendered = renderReviewPacketMarkdown(packet);
+
+    expect(rendered).toContain('- K2 T001 (refused): npm run test');
+    expect(rendered).toContain('  reason: runs a package script or binary');
+    expect(rendered).not.toContain('output: runs a package script or binary');
+  });
+
   it('lists every isolation outside-read warning path, not only their count', () => {
     const packet = makeReviewPacket({
       checks: {

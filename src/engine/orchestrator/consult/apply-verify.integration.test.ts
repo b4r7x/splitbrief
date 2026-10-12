@@ -205,14 +205,14 @@ describe('applyConsultAnswer verify', () => {
       expect.objectContaining({ task, phase: 'escalating', changedFiles: ['src/greet.ts'] }),
     );
     expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
-      { taskId: 'T003', results: [{ id: 'K1', passed: true }] },
+      { taskId: 'T003', results: [{ id: 'K1', status: 'pass' }] },
     ]);
     expect(events.filter((event) => event.type === 'task_completed')).toMatchObject([
       { taskId: 'T003', method: 'consulted' },
     ]);
     const saved = states.at(-1);
     expect(saved?.tasks[0]?.status).toBe('done');
-    expect(saved?.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(saved?.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
   });
 
   it('books the time since the brief started on the completion it publishes', async () => {
@@ -341,7 +341,7 @@ describe('applyConsultAnswer verify', () => {
       reason: expect.stringContaining('K1'),
     });
     expect(events.filter((event) => event.type === 'checks_run')).toMatchObject([
-      { taskId: 'T003', results: [{ id: 'K1', passed: false }] },
+      { taskId: 'T003', results: [{ id: 'K1', status: 'fail' }] },
     ]);
     expect(events.filter((event) => event.type === 'task_completed')).toHaveLength(0);
     expect(states.at(-1)?.tasks[0]?.status).toBe('failed');
@@ -380,8 +380,8 @@ describe('applyConsultAnswer verify', () => {
       {
         taskId: 'T003',
         results: [
-          { id: 'K1', passed: true },
-          { id: 'K2', passed: false },
+          { id: 'K1', status: 'pass' },
+          { id: 'K2', status: 'fail' },
         ],
       },
     ]);
@@ -425,14 +425,14 @@ describe('applyConsultAnswer verify', () => {
       {
         taskId: 'T003',
         results: [
-          { id: 'K1', passed: true },
-          { id: 'K2', passed: true },
+          { id: 'K1', status: 'pass' },
+          { id: 'K2', status: 'pass' },
         ],
       },
     ]);
     expect(states.at(-1)?.tasks[0]?.checkResults).toEqual([
-      { id: 'K1', passed: true },
-      { id: 'K2', passed: true },
+      { id: 'K1', status: 'pass' },
+      { id: 'K2', status: 'pass' },
     ]);
     const checks = readEvidenceLedger({ projectDir, sessionId })?.tasks[0]?.checks ?? [];
     expect(checks.filter((entry) => entry.id === 'K1')).toHaveLength(1);

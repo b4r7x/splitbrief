@@ -217,7 +217,7 @@ function reviewCheckResults(state: WorkflowState): string {
   const lines: string[] = [];
   for (const task of state.tasks) {
     for (const result of task.checkResults ?? []) {
-      lines.push(`- ${task.id} check ${result.id}: ${result.passed ? 'pass' : 'fail'}`);
+      lines.push(`- ${task.id} check ${result.id}: ${result.status}`);
     }
   }
   const recorded = new Map(
@@ -226,7 +226,7 @@ function reviewCheckResults(state: WorkflowState): string {
   for (const check of state.plan?.checks ?? []) {
     const result = recorded.get(check.id);
     lines.push(
-      `- plan check ${check.id}: ${result === undefined ? 'not recorded' : result.passed ? 'pass' : 'fail'}`,
+      `- plan check ${check.id}: ${result === undefined ? 'not recorded' : result.status}`,
     );
   }
   return lines.join('\n');

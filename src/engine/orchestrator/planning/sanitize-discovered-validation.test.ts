@@ -474,6 +474,25 @@ describe('checkCommandRefusal', () => {
     );
   });
 
+  it('admits run test without approval as the bare test it is for npm, pnpm and yarn', () => {
+    const withoutApproval = { npmScriptsApproved: false, packageScripts };
+    for (const command of ['npm test', 'npm run test', 'pnpm run test', 'yarn run test']) {
+      expect(checkCommandRefusal(command, withoutApproval)).toBeNull();
+    }
+    expect(checkCommandRefusal('npm run test', scriptsApproved)).toBeNull();
+    expect(checkCommandRefusal('npm run test -- src/a.test.ts', withoutApproval)).toBe(
+      'passes a path to the test command',
+    );
+    expect(checkCommandRefusal('npm run test:unit', withoutApproval)).toBe(
+      'runs a package script or binary',
+    );
+  });
+
+  it('refuses bun run test without approval: bare bun test is the bun runner, not the script', () => {
+    expect(unsafeCommandReason('bun test')).toBeNull();
+    expect(unsafeCommandReason('bun run test')).toBe('runs a package manager, not as a bare test');
+  });
+
   it('admits an npm run script only when package.json defines it', () => {
     expect(checkCommandRefusal('npm run lint', scriptsApproved)).toBeNull();
     expect(checkCommandRefusal('npm run typecheck', scriptsApproved)).toBeNull();

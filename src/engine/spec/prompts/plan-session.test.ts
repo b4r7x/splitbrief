@@ -15,6 +15,7 @@ const input = {
   projectContext: 'repo facts',
   languageContext: buildLanguageContext('typescript'),
   build: { model: 'deepseek-v4.1-flash', contextTokens: 128000 },
+  approvesPlan: true,
 };
 
 describe('buildPlanSessionPrompt', () => {
@@ -64,6 +65,17 @@ describe('buildPlanSessionPrompt', () => {
     expect(prompt).toContain(
       "Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.",
     );
+  });
+
+  it('offers a package script check only when the run approves its plan', () => {
+    expect(buildPlanSessionPrompt(input)).toContain(
+      'A `cmd` check runs `npm run <script>` only for a script `package.json` defines; the plan approval confirms it.',
+    );
+    const unapproved = buildPlanSessionPrompt({ ...input, approvesPlan: false });
+    expect(unapproved).toContain(
+      'This run approves no plan, so SPLITBRIEF refuses a `cmd` check that runs a package script (`npm run <script>`): a package manager runs only as its bare `test` command.',
+    );
+    expect(unapproved).not.toContain('the plan approval confirms it');
   });
 
   it('explains that a test check runs the discovered command on its file', () => {

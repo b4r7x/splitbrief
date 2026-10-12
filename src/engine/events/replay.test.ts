@@ -301,7 +301,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   task_replaced: { phase: 'escalating', taskId: 'T001', revision: 2 },
   tasks_inserted: { phase: 'escalating', parentId: 'T001', taskIds: ['T011', 'T012'] },
-  checks_run: { phase: 'escalating', taskId: 'T001', results: [{ id: 'C1', passed: true }] },
+  checks_run: { phase: 'escalating', taskId: 'T001', results: [{ id: 'C1', status: 'pass' }] },
   seat_wait_started: {
     phase: 'implementing',
     seat: 'build',
