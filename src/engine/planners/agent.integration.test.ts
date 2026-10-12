@@ -20,7 +20,9 @@ afterEach(() => {
 });
 
 const defaultAgentConfig = () =>
-  makeConfig({ planner: { kind: 'agent', command: 'echo', args: ['test output'] } });
+  makeConfig({
+    planner: { kind: 'agent', command: 'sh', args: ['-c', 'cat >/dev/null; echo test output'] },
+  });
 
 describe('createAgentPlanner', () => {
   it('throws for wrong config kind', () => {
@@ -56,7 +58,7 @@ describe('createAgentPlanner', () => {
 
     const noChangePlanner = createAgentPlanner(
       makeConfig({
-        planner: { kind: 'agent', command: 'echo', args: ['no changes'] },
+        planner: { kind: 'agent', command: 'sh', args: ['-c', 'cat >/dev/null; echo no changes'] },
       }),
     );
 
@@ -70,7 +72,11 @@ describe('createAgentPlanner', () => {
 
     const newFile = join(projectDir, 'new-from-escalation.ts');
     const config = makeConfig({
-      planner: { kind: 'agent', command: 'bash', args: ['-c', `echo "// escalated" > ${newFile}`] },
+      planner: {
+        kind: 'agent',
+        command: 'bash',
+        args: ['-c', `cat >/dev/null; echo "// escalated" > ${newFile}`],
+      },
     });
     const planner = createAgentPlanner(config);
 
@@ -91,7 +97,7 @@ describe('createAgentPlanner', () => {
       planner: {
         kind: 'agent',
         command: 'bash',
-        args: ['-c', 'sleep 0.15'],
+        args: ['-c', 'cat >/dev/null; sleep 0.15'],
         idleWarnMs: 30,
       },
     });

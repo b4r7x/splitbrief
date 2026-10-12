@@ -125,6 +125,7 @@ export function installCompatibleCliShim(
     "  printf 'authenticated\\n'",
     `  exit ${options.authProbe === 'unverified' ? 1 : 0}`,
     'fi',
+    'cat >/dev/null',
     ...markerLines(options.invocation?.marker),
     ...(options.invocation?.stdoutLines ?? []).map(
       (line) => `printf '%s\\n' ${shellQuoteArg(line)}`,

@@ -1,16 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import YAML from 'yaml';
-import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
@@ -62,7 +58,7 @@ const CHANGED_LINE = 'the-line-the-reviewer-must-see';
 let tmp: string;
 let binDir: string;
 let runLogPath: string;
-let restorePath: (() => void) | undefined;
+let restoreCliShim: (() => void) | undefined;
 let priorApiKey: string | undefined;
 
 function writeConfig(dir: string, overrides: Record<string, unknown> = {}): void {
@@ -143,10 +139,15 @@ function configuredAgentReviewer(): Record<string, unknown> {
 /**
  * A physical `claude` that answers the admission probes and records every real
  * call, so the test can assert the spawn count and the argument vector the
- * review seat emitted rather than a mocked factory's promise.
+ * review seat emitted rather than a mocked factory's promise. It replaces the
+ * compatible shim's body and keeps its session credential home.
  */
 function installFakeClaude(): void {
-  const executablePath = join(binDir, 'claude');
+  const shim = installCompatibleCliShim({
+    directory: binDir,
+    tool: 'claude-code',
+    authChannel: 'session',
+  });
   const version = CLI_TOOL_CATALOG['claude-code'].compatibility.testedVersion;
   const script = [
     '#!/usr/bin/env node',
@@ -171,9 +172,8 @@ function installFakeClaude(): void {
     'console.log(JSON.stringify({ type: "assistant", session_id: "fake-review-session", message: { content: [{ type: "text", text: reviewText }] } }));',
     'console.log(JSON.stringify({ type: "result", result: reviewText, session_id: "fake-review-session", usage: { input_tokens: 40, output_tokens: 20 } }));',
   ].join('\n');
-  writeFileSync(executablePath, script + '\n', 'utf-8');
-  chmodSync(executablePath, 0o755);
-  restorePath = activateSafeCliShimPath(binDir);
+  writeFileSync(shim.path, script + '\n', 'utf-8');
+  restoreCliShim = activateCompatibleCliShim(shim);
 }
 
 function readRunLog(): Array<{ args: string[]; prompt: string; cwd?: string }> {
@@ -233,8 +233,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  restorePath?.();
-  restorePath = undefined;
+  restoreCliShim?.();
+  restoreCliShim = undefined;
   if (priorApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
   else process.env.ANTHROPIC_API_KEY = priorApiKey;
   cleanupTempDir(binDir);

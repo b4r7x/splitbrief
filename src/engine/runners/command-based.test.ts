@@ -114,8 +114,8 @@ describe('invokeCommandBasedRunner', () => {
   it('returns stdout without extracting code', async () => {
     const codeBlock = '```js\nconsole.log("hi")\n```';
     const result = await invokeCommandBasedRunner({
-      command: 'echo',
-      args: [codeBlock],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; printf "%s\n" "$1"', 'sh', codeBlock],
       prompt: '',
       projectDir: process.cwd(),
     });
@@ -135,8 +135,8 @@ describe('invokeCommandBasedRunner', () => {
   it('streams stdout chunks to the output subscriber', async () => {
     const chunks: string[] = [];
     await invokeCommandBasedRunner({
-      command: 'echo',
-      args: ['hello'],
+      command: 'sh',
+      args: ['-c', 'cat >/dev/null; echo hello'],
       prompt: '',
       projectDir: process.cwd(),
       onOutput: (text: string) => {
@@ -150,7 +150,7 @@ describe('invokeCommandBasedRunner', () => {
   it('captures stderr', async () => {
     const result = await invokeCommandBasedRunner({
       command: 'sh',
-      args: ['-c', 'echo error >&2'],
+      args: ['-c', 'cat >/dev/null; echo error >&2'],
       prompt: '',
       projectDir: process.cwd(),
     });
@@ -163,6 +163,7 @@ describe('invokeCommandBasedRunner', () => {
       args: [
         '-e',
         [
+          'require("node:fs").readFileSync(0);',
           'process.stderr.write("stderr-head\\n");',
           'process.stderr.write("x".repeat(2 * 1024 * 1024));',
           'process.stderr.write("\\nstderr-tail\\n");',
@@ -190,6 +191,7 @@ describe('invokeCommandBasedRunner', () => {
       args: [
         '-e',
         [
+          'require("node:fs").readFileSync(0);',
           `process.stdout.write("x".repeat(${DEFAULT_PROCESS_LINE_MAX_BYTES + 100}) + "\\n");`,
           'process.stdout.write("after-overflow\\n");',
         ].join(''),
@@ -213,7 +215,7 @@ describe('invokeCommandBasedRunner', () => {
       command: 'node',
       args: [
         '-e',
-        'for (let i = 0; i < 1100; i++) process.stdout.write("y".repeat(65_536));setInterval(() => {}, 1_000);',
+        'require("node:fs").readFileSync(0);for (let i = 0; i < 1100; i++) process.stdout.write("y".repeat(65_536));setInterval(() => {}, 1_000);',
       ],
       prompt: '',
       projectDir: process.cwd(),

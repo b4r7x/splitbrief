@@ -120,7 +120,12 @@ function installRecordingShim(command: string, bodyLines: string[]): { argvFile:
   const shimPath = join(shimDir, command);
   const lines = command === 'codex' ? codexLines(bodyLines) : bodyLines;
   const body = lines.map((line) => `printf '%s\\n' '${line.replace(/'/g, "'\\''")}'`).join('\n');
-  writeFileSync(shimPath, `#!/bin/bash\nprintf '%s\\n' "$@" > '${argvFile}'\n${body}\n`, 'utf8');
+  const readPrompt = command === 'codex' || command === 'claude' ? 'cat >/dev/null\n' : '';
+  writeFileSync(
+    shimPath,
+    `#!/bin/bash\n${readPrompt}printf '%s\\n' "$@" > '${argvFile}'\n${body}\n`,
+    'utf8',
+  );
   chmodSync(shimPath, 0o755);
   return { argvFile };
 }

@@ -169,6 +169,7 @@ afterEach(() => {
 
 describe.runIf(process.platform !== 'win32')('discoverAllCliTools', () => {
   it('shares one catalog connection across seats, model selections, and config generations', async () => {
+    process.env.OPENAI_API_KEY = 'discovery-test-key';
     const logPath = join(shimDir, 'codex.args');
     installCatalogShim('codex', {
       logPath,

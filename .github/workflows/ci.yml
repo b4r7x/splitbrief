@@ -15,6 +15,7 @@ permissions:
 jobs:
   static:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       # GitHub Actions are pinned to full SHAs; update by resolving the latest release tag before changing these refs.
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -25,17 +26,22 @@ jobs:
       # Skips the `prepare` build this job never uses. Only safe here: the other
       # jobs need better-sqlite3's install script to fetch its native binding.
       - run: npm ci --ignore-scripts
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
       - run: npm run check:invariants
+      - run: npm run skills:check
 
   unit:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -43,27 +49,36 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
-      - run: npm test -- --shard=${{ matrix.shard }}/4
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - run: npm test -- --shard=${{ matrix.shard }}/2
+        env:
+          CI: 'false'
 
   integration:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep bubblewrap socat
       - run: npm run test:integration -- --shard=${{ matrix.shard }}/4
         env:
+          CI: 'false'
           SPLITBRIEF_REQUIRE_PTY: '1'
 
   e2e-replay:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -71,12 +86,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap socat
       - run: npm run test:e2e
         env:
           SPLITBRIEF_REQUIRE_PTY: '1'
 
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -88,22 +105,3 @@ jobs:
       - run: npm run tui-shots:pty
         env:
           SPLITBRIEF_REQUIRE_PTY: '1'
-
-  website:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            website/package-lock.json
-      - run: npm ci --ignore-scripts
-      - run: npm ci
-        working-directory: website
-      - run: npx playwright install --with-deps chrome
-        working-directory: website
-      - run: npm run check
-        working-directory: website

@@ -4,6 +4,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { Command } from 'commander';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+import {
+  activateCompatibleCliShim,
+  installCompatibleCliShim,
+} from '#testing/helpers/compatible-cli-shim.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import {
@@ -69,15 +73,23 @@ function freshCodexEvidence(
 }
 
 let tmp: string;
+let shimDir: string;
+let restoreCliShim: () => void;
 let originalExitCode: typeof process.exitCode;
 
 beforeEach(() => {
   originalExitCode = process.exitCode;
   tmp = createTempDir('doctor-command-test');
+  shimDir = createTempDir('doctor-command-shim');
+  restoreCliShim = activateCompatibleCliShim(
+    installCompatibleCliShim({ directory: shimDir, tool: 'claude-code', authChannel: 'session' }),
+  );
 });
 
 afterEach(() => {
   process.exitCode = originalExitCode;
+  restoreCliShim();
+  cleanupTempDir(shimDir);
   cleanupTempDir(tmp);
   vi.restoreAllMocks();
 });

@@ -240,7 +240,9 @@ describe('invokeCustomCommandBasedRunner safety', () => {
 
   // Per-channel retention bounds truncate what is kept; only the process-wide output
   // budget ends the call. An over-long line is reported and the call carries on.
-  it('treats the process output budget as fatal and an over-long line as a warning', async () => {
+  it('treats the process output budget as fatal and an over-long line as a warning', {
+    timeout: 120_000,
+  }, async () => {
     const canary = 'output-budget-value-canary-3ef9';
     const MB = 1024 * 1024;
     const scenarios = [

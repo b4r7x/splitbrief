@@ -408,8 +408,8 @@ describe('shell BUILD — the legacy code grammar is untouched', () => {
     const config = makeConfig({
       implementer: {
         kind: 'shell',
-        command: '/usr/bin/printf',
-        args: ['%s', code],
+        command: 'sh',
+        args: ['-c', 'cat >/dev/null; printf "%s" "$1"', 'sh', code],
         outputFormat: 'text',
         model: 'test',
         contextLength: 8192,

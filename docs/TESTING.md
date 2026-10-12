@@ -20,6 +20,19 @@ Testing in this repo means exercising observable behaviour — rendered output, 
 | Zero failing tests, always | Project policy — enforced on every PR | `npm run release-check` green before merge |
 | Neutral test voice | Tests are observed behaviour, not narration | Zero `// Observable:` prefixes, zero AI-assistant names, no section-divider banners (`// ═══ X ═══`) inside test files — same rule as production (`STRUCTURE.md` §No decorative comments) |
 
+## Hermetic test environment
+
+Unit, integration, workflow-screen, replay e2e and website tests load `testing/helpers/scrub-credentials.ts` before test modules. It removes credential-shaped names, including `*_API_KEY`, `*_TOKEN` and `*_AUTH_TOKEN`, plus provider/tool and AWS prefixes. Tests must set explicit fake credentials and restore them afterward. `state-home.ts` keeps the temporary `XDG_STATE_HOME` isolation. PTY children put temporary shims first and block catalog CLI aliases before the Node directory, preserving Node's trusted executable path.
+
+Only `SPLITBRIEF_REAL_CLI_E2E=1` or `SPLITBRIEF_E2E_RECORD=1` disables the scrub. Live, release and publish scripts use `testing/e2e/vitest.live.config.ts`; recording uses `testing/e2e/vitest.e2e.config.ts` and excludes the guard. `eval:record` runs directly through `evals/cli.ts`, outside Vitest.
+
+Prove the scrub in each project with fake credentials in the parent environment:
+
+```bash
+OPENAI_API_KEY=sk-fake ANTHROPIC_API_KEY=sk-fake npx vitest run --project unit --project integration testing/helpers/hermetic-env
+OPENAI_API_KEY=sk-fake ANTHROPIC_API_KEY=sk-fake npx vitest run --config testing/e2e/vitest.e2e.config.ts testing/helpers/hermetic-env.test.ts
+```
+
 ## Where does this test go?
 
 Placement is mechanical: **count the top-level folders a test imports from.**
@@ -208,11 +221,12 @@ Every row — pass, fail, or skip — is appended to `.test-artifacts/live/manif
 
 Diagnostic checklist:
 - Node version: engines field requires `>=22`. Check `node --version` matches CI.
-- `CI=1` is set in CI → TUI disabled, some tests depend on non-TTY stdout. Run locally with `CI=1 npm test` to reproduce.
+- `CI`: GitHub sets `CI=true`, and Ink paints no frames when `CI` is on. The `unit` and `integration` test steps set `CI=false`. A shell that exports `CI=1` makes Ink tests fail locally; run them with `CI=false npm test`.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
-- API-key env vars from your shell leak into tests. CI runs cleaner. Unset local keys to reproduce CI.
-- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` and `integration` (four vitest shards each), `e2e-replay` and `smoke` as parallel jobs, and coverage nightly.
-- Add the nightly coverage job on top with `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) — the superset of both CI workflows.
+- Credentials: `testing/helpers/scrub-credentials.ts` removes API-key and token env vars from every test process, so no test reads the keys in your shell. A test that needs a key sets a fake one.
+- Workers: vitest runs at most 4 workers, and fewer on a host with fewer cores (`vitest.config.ts`). `--maxWorkers=<n>` overrides it.
+- Reproduce CI's split gate with `npm run release-check` (the same steps minus coverage). CI runs `static`, `unit` (two vitest shards), `integration` (four shards), `e2e-replay` and `smoke` as parallel jobs. The `Website` workflow runs only when `website/`, `docs/`, `README.md`, `CONTRIBUTING.md`, `CHANGELOG.md` or a file that the website tests load (`testing/helpers/scrub-credentials.ts`, `testing/helpers/hermetic-env.ts`, `src/utils/redact.ts`) changes. The coverage workflow (`nightly-coverage.yml`) runs only when you start it by hand.
+- Add the coverage run on top with `npm run test-ci` (format:check → typecheck → lint → test:coverage → e2e → invariants → skills:check) — the superset of the CI and coverage workflows.
 
 ## How to add an integration test
 
@@ -769,7 +783,7 @@ Ask Codex to read the manifest before comparing files. The manifest distinguishe
 
 ## Manual smoke checklist
 
-`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → test → test:integration → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds now also run nightly in `.github/workflows/nightly-coverage.yml`. A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
+`npm run test-ci` covers the vast majority of the surface. `npm run release-check` is the fast pre-PR gate — `format:check → typecheck → lint → test → test:integration → e2e replay → invariants → skills:check` — and `npm run test-ci` is the exhaustive form that additionally runs `test:coverage`, whose thresholds also run in `.github/workflows/nightly-coverage.yml` when you start it by hand (`workflow_dispatch`). A handful of flows need a real TTY, a fresh checkout, or an external process and therefore live outside the automated suite. Run the checks below after a fresh install or any change that touches the CLI entry point, the TUI mount, or hook dispatch.
 
 ### Headless terminal interaction
 

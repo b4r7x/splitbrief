@@ -128,7 +128,9 @@ describe('createSnapshot — first call (baseline)', () => {
     // hex(utf8(path)) doubled the byte count (worse for multi-byte chars), so a
     // deep CJK path blew past the 255-byte filename limit and lost its blob.
     // sha256 blob names are fixed length, so capture stays intact.
-    const longUnicodePath = `${'長い経路名フォルダ'.repeat(20)}.ts`;
+    const directory = '長い経路名フォルダ'.repeat(9);
+    const longUnicodePath = `${directory}/${directory}/${directory}.ts`;
+    await mkdir(join(tmp, directory, directory), { recursive: true });
     await writeFile(join(tmp, longUnicodePath), 'unicode content');
 
     const baseline = await createSnapshot({

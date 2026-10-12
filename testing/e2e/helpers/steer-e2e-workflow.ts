@@ -153,7 +153,7 @@ globalThis.fetch = async (input, options) => {
           cols: 100,
           rows: 30,
           cwd: REPO_ROOT,
-          env: { ...safeChildEnvironment(home.home), XDG_STATE_HOME: target.stateHome },
+          env: { ...safeChildEnvironment(home.home, [bin]), XDG_STATE_HOME: target.stateHome },
         },
       },
       async (child) => {

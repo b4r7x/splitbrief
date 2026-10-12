@@ -117,10 +117,15 @@ test('a scroll burst softens only the terminal and finishes without a long tail'
     return { position, destination: brief.offsetTop, frames };
   });
   expect(new Set(result.frames.map((frame) => frame.y))).toEqual(new Set([result.position]));
-  const intermediate = result.frames.filter(
-    (frame) => frame.offset > 1 && frame.offset < result.destination - 1,
-  );
-  expect(new Set(intermediate.map((frame) => frame.offset)).size).toBeGreaterThan(2);
+  expect(
+    result.frames.some((frame) => frame.offset > 1 && frame.offset < result.destination - 1),
+  ).toBe(true);
+  let previousOffset = 0;
+  for (const frame of result.frames) {
+    expect(frame.offset).toBeGreaterThanOrEqual(previousOffset);
+    expect(frame.offset).toBeLessThanOrEqual(result.destination);
+    previousOffset = frame.offset;
+  }
   const reached = result.frames.find((frame) => Math.abs(frame.offset - result.destination) < 0.01);
   expect(reached?.elapsed).toBeLessThan(200);
   expect(result.frames.at(-1)?.offset).toBe(result.destination);

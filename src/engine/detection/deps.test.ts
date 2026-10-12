@@ -353,10 +353,9 @@ describe('all-admitted-tools auth channels', () => {
               cursor: 'authenticated',
               'command-code': 'authenticated',
               // Antigravity's session is a macOS keychain item, so there `agy models`
-              // runs under the host account and its exit decides. Elsewhere `agy`
-              // documents no credential file to bridge, and the fact stays
-              // unauthenticated no matter what `agy models` answers.
-              antigravity: process.platform === 'darwin' ? 'authenticated' : 'unauthenticated',
+              // runs under the host account and its exit decides. Other platforms
+              // are denied by the channel policy, so authentication stays unknown.
+              antigravity: process.platform === 'darwin' ? 'authenticated' : 'unknown',
             },
           );
           const copilot = result.cliTools.find((detection) => detection.tool === 'copilot');

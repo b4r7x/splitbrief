@@ -95,7 +95,7 @@ process.stdout.write(reply.stdout);
   }
   const restorePath = activateSafeCliShimPath(binDir);
   try {
-    environment = safeChildEnvironment(home);
+    environment = safeChildEnvironment(home, [binDir]);
     for (const [role, runner] of [
       ['planner', planner],
       ['implementer', implementer],
