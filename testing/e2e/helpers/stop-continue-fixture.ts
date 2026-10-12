@@ -47,7 +47,7 @@ export const GREET_SOURCE = `export function greet(name: string): string {
   return name === '' ? 'hello' : \`hello \${name}\`;
 }`;
 
-/** How long the first implementer holds if the continuation never reaps it; a backstop, not a pace. */
+/** How long the first implementer holds if no signal or release ends it; a backstop, not a pace. */
 const IMPLEMENTER_HOLD_MS = 180_000;
 
 /** How long teardown waits for the held implementer to leave, or to die after a signal. */
@@ -113,8 +113,8 @@ process.stdout.write(prompt.includes('Final Implementation Review') ? REVIEW : P
 
 /**
  * The first invocation writes the marker and then holds for the fixture's release file, so the
- * run can be signalled mid-step with the anchor still missing; the continuation's orphan reaper
- * is what ends that hold in the exercised path, and teardown's release bounds it on failure.
+ * run can be signalled mid-step with the anchor still missing. The CLI's abort ends that hold
+ * after a SIGINT and the process watchdog after a SIGKILL; teardown's release bounds it on failure.
  * Every later invocation is a replay: it writes both declared files at once and finishes, which
  * is what lets the same fixture serve the interrupted first attempt and the resumed one.
  */
@@ -171,7 +171,7 @@ export type StopContinueFixture = Readonly<{
   releaseHoldPath: string;
   /** The first implementer's pid, written before its hold begins. */
   implementerPidPath: string;
-  /** Written by the first implementer once it has left its hold, whether reaped or released. */
+  /** Written by the first implementer when a release or its deadline ends its hold, not on a signal. */
   implementerExitPath: string;
   /** Written by a replay before it writes: `true` when the stopped attempt's marker was still there. */
   replaySawPartialPath: string;

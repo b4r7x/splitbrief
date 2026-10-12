@@ -9,7 +9,10 @@ import {
   loadConfigOrExit,
   setupWorkflow,
 } from './setup.js';
-import { SPLITBRIEF_DIR, CONFIG_FILE } from '../core/paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE, LOCKFILE, sessionDir } from '../core/paths.js';
+import { readRunnerPids } from '../core/sessions/runner-pids.js';
+import { canSignalProcess } from '../lib/process/liveness.js';
+import { killOrphanRunner, plantOrphanRunner } from '#testing/helpers/orphan-runner.js';
 import { isCliError } from './errors.js';
 
 let tmp: string;
@@ -114,6 +117,35 @@ describe('setupWorkflow', () => {
     expect(existsSync(join(result.projectDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
     expect(existsSync(join(subdir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
     errorSpy.mockRestore();
+  });
+
+  it('reaps a tool a crashed run of this project left running', async () => {
+    createTestGitRepo(tmp);
+    const projectDir = realpathSync(tmp);
+    const ref = { projectDir, sessionId: 'crashed-session' };
+    mkdirSync(sessionDir(projectDir, ref.sessionId), { recursive: true });
+    // A pid above every kernel's pid_max: the run's owner is dead.
+    writeFileSync(
+      join(sessionDir(projectDir, ref.sessionId), LOCKFILE),
+      JSON.stringify({
+        version: 1,
+        pid: 2_147_483_000,
+        startTimeMs: 1000,
+        lastAliveMs: Date.now(),
+        sessionId: ref.sessionId,
+        feature: 'feature',
+      }),
+    );
+    const orphan = plantOrphanRunner(ref);
+
+    try {
+      await setupWorkflow({ project: tmp, fullscreen: false });
+
+      expect(canSignalProcess(orphan)).toBe(false);
+      expect(readRunnerPids(ref)).toEqual([]);
+    } finally {
+      killOrphanRunner(orphan);
+    }
   });
 });
 

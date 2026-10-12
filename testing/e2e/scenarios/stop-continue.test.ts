@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -11,7 +11,6 @@ import {
   createStopContinueFixture,
   endImplementerHold,
   findMarker,
-  GREET_FILE,
   GREET_SOURCE,
   MARKER_FILE,
   MARKER_SOURCE,
@@ -19,6 +18,9 @@ import {
   startAndSignal,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
+
+/** The watchdog's SIGTERM-to-SIGKILL grace plus a loaded box's start-up. */
+const ORPHAN_EXIT_TIMEOUT_MS = 10_000;
 
 let fixture: StopContinueFixture | undefined;
 
@@ -105,16 +107,15 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
 
     const killed = await startAndSignal(target, 'SIGKILL', target.isolationTreesDir);
     expect(killed.exitCode).toBeNull();
-    // The kill cuts the CLI, not the implementer: the first attempt stays in its hold, holding
-    // the marker as its only partial, until the continuation's boot reaps it. The test reaps
-    // nothing itself — the continuation owning that cleanup is what this case exercises.
+    // The kill cuts the CLI before it can release its runner ledger; the implementer it left in
+    // its hold ends with it, so the marker stays the attempt's only partial.
     const orphans = readRunnerPids({ projectDir: target.projectDir, sessionId: killed.sessionId });
-    expect(orphans, 'the killed run left no runner pid in its ledger to reap').not.toEqual([]);
+    expect(orphans, 'the killed run left no runner pid in its ledger').not.toEqual([]);
     for (const { pid } of orphans) {
-      expect(
-        canSignalProcess(pid),
-        `implementer ${pid} died before the continuation could reap it`,
-      ).toBe(true);
+      await vi.waitFor(
+        () => expect(canSignalProcess(pid), `implementer ${pid} outlived the CLI`).toBe(false),
+        { timeout: ORPHAN_EXIT_TIMEOUT_MS, interval: 50 },
+      );
     }
 
     expectStoppedWorkInWorkspace(target, checkoutAtStart);
@@ -128,13 +129,7 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expectFinishedPlainRun(resumed.stdout);
 
-    // The continuation reaped the orphan and released its ledger entry before it ran the brief.
-    for (const { pid } of orphans) {
-      expect(
-        canSignalProcess(pid),
-        `implementer ${pid} outlived the continuation's reap, so it can still write ${GREET_FILE} into the worktree`,
-      ).toBe(false);
-    }
+    // The continuation released the dead implementer's ledger entry before it ran the brief.
     expect(readRunnerPids({ projectDir: target.projectDir, sessionId: killed.sessionId })).toEqual(
       [],
     );

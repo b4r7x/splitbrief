@@ -1,4 +1,4 @@
-import type { ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { warnError } from '../warn.js';
 import { isNodeError, processError, type ProcessTerminationTarget } from './errors.js';
 import { readProcessStartTimeMs } from './start-time.js';
@@ -24,6 +24,8 @@ type RegisteredProcess = {
 const activeProcesses = new Map<ChildProcess, RegisteredProcess>();
 const processTerminations = new WeakMap<ChildProcess, Promise<void>>();
 let processLedger: ProcessLedger | null = null;
+const watchedGroups = new Set<number>();
+let parentWatchdog: ChildProcess | null = null;
 let allProcessesCleanup: Promise<void> | null = null;
 const registryListeners = new Set<(count: number) => void>();
 
@@ -65,6 +67,57 @@ export function clearProcessLedger(ledger: ProcessLedger): void {
   if (processLedger === ledger) processLedger = null;
 }
 
+// A tool group runs in a session of its own, so nothing ends it when SPLITBRIEF dies. This detached
+// node process holds an IPC channel to SPLITBRIEF that the kernel closes on any death, SIGKILL
+// included; it then ends every group still registered, the way terminateProcess does.
+const PARENT_WATCHDOG_SCRIPT = `const groups = new Set();
+process.on('message', ({ pid, watch }) => {
+  if (watch) groups.add(pid);
+  else groups.delete(pid);
+});
+process.on('disconnect', () => {
+  const signalGroups = (signal) => {
+    for (const pid of groups) {
+      try {
+        process.kill(-pid, signal);
+      } catch {}
+    }
+  };
+  signalGroups('SIGTERM');
+  if (groups.size > 0) setTimeout(() => signalGroups('SIGKILL'), ${SIGKILL_DELAY_MS});
+});
+`;
+
+function startParentWatchdog(): ChildProcess {
+  const watchdog = spawn(process.execPath, ['-e', PARENT_WATCHDOG_SCRIPT], {
+    detached: true,
+    stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+  });
+  const forget = () => {
+    if (parentWatchdog === watchdog) parentWatchdog = null;
+  };
+  watchdog.on('disconnect', forget);
+  watchdog.on('error', (err) => {
+    forget();
+    warnError('process watchdog: tool processes may outlive SPLITBRIEF', err);
+  });
+  watchdog.unref();
+  watchdog.channel?.unref();
+  for (const pid of watchedGroups) watchdog.send({ pid, watch: true });
+  return watchdog;
+}
+
+function watchGroup(pid: number): void {
+  watchedGroups.add(pid);
+  if (parentWatchdog === null) parentWatchdog = startParentWatchdog();
+  else parentWatchdog.send({ pid, watch: true });
+}
+
+function unwatchGroup(pid: number): void {
+  watchedGroups.delete(pid);
+  parentWatchdog?.send({ pid, watch: false });
+}
+
 function groupExists(pid: number): boolean {
   try {
     process.kill(-pid, 0);
@@ -90,6 +143,7 @@ function releaseRegistration(entry: RegisteredProcess): void {
   activeProcesses.delete(entry.proc);
   notifyRegistryChange();
   if (entry.releaseMonitor !== undefined) clearInterval(entry.releaseMonitor);
+  if (usesProcessGroup(entry.group, entry.pid)) unwatchGroup(entry.pid);
   if (!entry.ledgered || entry.ledger === null || entry.pid === undefined) return;
   try {
     entry.ledger.release(entry.pid);
@@ -128,6 +182,7 @@ export function registerProcess(
   };
   activeProcesses.set(proc, entry);
   notifyRegistryChange();
+  if (usesProcessGroup(group, entry.pid)) watchGroup(entry.pid);
   if (ledger !== null && entry.pid !== undefined) {
     try {
       ledger.record(entry.pid, readProcessStartTimeMs(entry.pid));
