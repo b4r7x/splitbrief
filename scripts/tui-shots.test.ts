@@ -213,11 +213,11 @@ describe('tui-shots CLI behavior', () => {
         '--scenario',
         'home-empty',
         '--scenario',
-        'workflow-closed-complete-ready',
+        'workflow-closed-complete',
         '--element',
         'hero',
       ],
-      message: 'Element "hero" is not declared by scenario workflow-closed-complete-ready',
+      message: 'Element "hero" is not declared by scenario workflow-closed-complete',
     },
     {
       name: 'output escape',

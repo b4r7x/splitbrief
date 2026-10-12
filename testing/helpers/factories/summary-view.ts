@@ -52,6 +52,7 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       patch: null,
     },
     checkpoint: null,
+    canUndoApply: overrides.outcome?.kind === 'applied',
     applyUndo: null,
     phases: [
       { phase: 'planning', ms: 170_000 },

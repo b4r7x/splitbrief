@@ -716,7 +716,7 @@ done: 2 tasks
 | `retry` | `retry-same-worker` — resets the brief and reruns it in a fresh worker context |
 | `restore` | `restore-backup` — after a partial Apply (`apply-partial`), puts back the checkout files Apply replaced, from the Apply backup |
 | `switch-seat:<tool>[:<model>]` | Moves the blocked seat to another detected tool, then reruns the brief there — the answer to a quota halt |
-| `end-run` | Closes the run and starts nothing; the files it wrote stay on disk |
+| `end-run` | Closes an open run and starts nothing. Unapplied workspace changes stay in `run.patch`; checkout-mode changes stay on disk. Refuses an unfinished Apply: restore or retry Apply first. |
 
 **Variations:** `--action` is a `continue` flag; `resume` has no equivalent, and a bare `splitbrief resume --plain` on a session with a pending recovery prints the same three lines and exits `1`. An action the issue does not allow exits `1` and names the actions it does allow; a value that is not a continue action exits `2` with `'<value>' is not a continue action. Use skip, retry, restore, switch-seat:<tool>[:<model>], end-run, apply, or discard.` A recovery whose recommended action is a row of the recovery panel prints `Continue with: splitbrief continue <session>, then choose <row> in the recovery panel` instead — `Continue`, for example — with no `[--plain|--json]`, because the panel needs the TUI.
 

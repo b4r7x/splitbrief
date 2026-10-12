@@ -1,6 +1,6 @@
 import { flushSessionDrafts } from '../../stores/ui/session-drafts.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
-import { endRunAtRest } from '../../engine/orchestrator/run/close.js';
+import { assertCanCloseRun, endRunAtRest } from '../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { addTuiEvent } from './tui-sink.js';
 import { hydrateResume } from './resume-hydration.js';
@@ -252,6 +252,15 @@ export function requestEndRun(): boolean {
     } catch (err) {
       feedbackStore.setError(toErrorMessage(err));
       return false;
+    }
+  }
+  if (route.screen === 'workflow') {
+    try {
+      const hydrated = hydrateResume(route.run.ref);
+      if (hydrated.kind === 'loaded') assertCanCloseRun(hydrated.state);
+    } catch (err) {
+      feedbackStore.setError(toErrorMessage(err));
+      return true;
     }
   }
   stopStore.request('end-run');

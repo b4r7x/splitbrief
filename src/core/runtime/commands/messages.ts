@@ -1,4 +1,5 @@
 import type { RejectRunSnapshotResult } from './types.js';
+import { formatTruncatedList } from '../../formatting.js';
 
 export function formatRejectRunMessage(
   result: Extract<RejectRunSnapshotResult, { status: 'rejected' }>,
@@ -12,5 +13,9 @@ export function formatRejectRunMessage(
       : '';
   const savedText =
     result.savedTo === undefined ? '' : ` The replaced bytes are in ${result.savedTo}.`;
-  return `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.${savedText}`;
+  const leftAloneText =
+    result.conflictedPaths.length === 0
+      ? ''
+      : ` Files left as you changed them: ${formatTruncatedList(result.conflictedPaths, 5)}.`;
+  return `Run rejected from snapshot ${result.snapshotId}: ${changedCount} file(s) restored/deleted${conflictText}${missingText}.${leftAloneText}${savedText}`;
 }

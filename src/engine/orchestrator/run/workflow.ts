@@ -38,6 +38,7 @@ import { getIsolationStrategy } from '../../../core/config/accessors/values.js';
 import { reapOrphanRunners } from './orphan-reaper.js';
 import { runPlanningPhases } from './phases.js';
 import { runTasksAndReview } from './task-execution.js';
+import { recordCheckoutRunSnapshot } from './snapshots.js';
 import {
   withPlannerCallPublishing,
   withReviewerCallPublishing,
@@ -467,6 +468,16 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
     await isolation.dispose().catch((err: unknown) => {
       warnError('run isolation disposal', err);
     });
+    // Disposal settles the last attempt revert, so this is the checkout as the run left it.
+    const restingBus = wctx?.bus ?? workflowBus;
+    if (restingBus !== undefined && trackedState !== undefined) {
+      await recordCheckoutRunSnapshot({
+        projectDir,
+        sessionId,
+        bus: restingBus,
+        state: trackedState,
+      });
+    }
     await releaseLiveness();
   }
 }

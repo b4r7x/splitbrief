@@ -51,7 +51,7 @@ export const REQUIRED_WORKFLOW_CHECKPOINT_IDS = [
   'at-rest-paused',
   'at-rest-halted',
   'at-rest-waiting',
-  'closed-ready',
+  'closed-complete',
   'closed-needs-attention',
   'closed-ended',
   'replayed',
@@ -1477,14 +1477,14 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-closed-complete-ready',
-      title: 'Workflow · closed and ready to keep',
+      id: 'workflow-closed-complete',
+      title: 'Workflow · closed after completion',
       surface: screenSurface('workflow'),
       checkpoint: {
-        id: 'closed-ready',
-        title: 'Closed run ready to keep',
+        id: 'closed-complete',
+        title: 'Closed completed run',
         kind: 'success',
-        marker: 'visual-closed-ready',
+        marker: 'visual-closed-complete',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

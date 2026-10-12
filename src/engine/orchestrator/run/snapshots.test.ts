@@ -6,7 +6,13 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { readRunSnapshotLedger } from '../../snapshots/run/ledger.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../../snapshots/run/lifecycle.js';
 import { listSnapshots } from '../../snapshots/manifest.js';
-import { ensureRunBaselineSnapshot, recordRunSnapshotForRun } from './snapshots.js';
+import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import {
+  ensureRunBaselineSnapshot,
+  recordCheckoutRunSnapshot,
+  recordRunSnapshotForRun,
+} from './snapshots.js';
 
 const sessionId = 'sess-run-snapshots';
 let tmp: string;
@@ -122,4 +128,42 @@ describe('recordRunSnapshotForRun', () => {
     expect(result.status).toBe('accepted');
     await expect(readFile(join(tmp, 'edited.ts'), 'utf-8')).resolves.toBe('implementer wrote this');
   });
+});
+
+describe('recordCheckoutRunSnapshot', () => {
+  function runIn(kind: NonNullable<WorkflowState['workspace']>['kind']): WorkflowState {
+    return makeWorkflowState({
+      phase: 'implementing',
+      currentTaskIndex: 1,
+      workspace: { kind, path: tmp, base: { snapshotId: 'base', head: null } },
+    });
+  }
+
+  it('records what a checkout run wrote as a post-task run snapshot', async () => {
+    await writeFile(join(tmp, 'feature.ts'), 'baseline');
+    await captureBaseline();
+    await writeFile(join(tmp, 'feature.ts'), 'implementer wrote this');
+    const { bus } = makeBusRecorder();
+
+    await recordCheckoutRunSnapshot({ projectDir: tmp, sessionId, bus, state: runIn('checkout') });
+
+    const ledger = await readRunSnapshotLedger(tmp, sessionId);
+    const recordedId = ledger?.runSnapshotIds.at(-1) ?? '';
+    expect(ledger?.runSnapshotKinds?.[recordedId]).toBe('post-task');
+    const result = await rejectRunSnapshot(tmp, sessionId);
+    expect(result).toMatchObject({ status: 'rejected', restoredPaths: ['feature.ts'] });
+  });
+
+  it.each(['worktree', 'staged-copy'] as const)(
+    'records nothing for a %s run, which never writes the project',
+    async (kind) => {
+      await writeFile(join(tmp, 'feature.ts'), 'baseline');
+      await captureBaseline();
+      const { bus } = makeBusRecorder();
+
+      await recordCheckoutRunSnapshot({ projectDir: tmp, sessionId, bus, state: runIn(kind) });
+
+      await expect(readRunSnapshotLedger(tmp, sessionId)).resolves.toBeNull();
+    },
+  );
 });

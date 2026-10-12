@@ -449,7 +449,7 @@ const checkpointPredicates = [
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
   [checkpointId('at-rest-waiting'), includesAll()],
-  [checkpointId('closed-ready'), includesAll()],
+  [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],

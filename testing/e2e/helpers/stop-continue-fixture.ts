@@ -244,7 +244,9 @@ const APPLY_TIMEOUT_MS = 60_000;
 export function cli(
   target: StopContinueFixture,
   args: readonly string[],
-  options: Pick<Parameters<typeof spawnCli>[0], 'timeoutMs' | 'onSpawn'> = {
+  options: Pick<Parameters<typeof spawnCli>[0], 'timeoutMs' | 'onSpawn'> & {
+    json?: boolean;
+  } = {
     timeoutMs: RUN_TIMEOUT_MS,
   },
 ): ReturnType<typeof spawnCli> {
@@ -254,7 +256,7 @@ export function cli(
       'tsx',
       'src/cli.ts',
       ...args,
-      '--plain',
+      options.json === true ? '--json' : '--plain',
       '--allow-repo-runners',
       '--project',
       target.projectDir,

@@ -11,9 +11,9 @@ import {
   unlink,
 } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
-import type { Stats } from 'node:fs';
+import { mkdirSync, type Stats } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { ensureSecureDir, fsError } from '../../../../lib/fs.js';
+import { fsError } from '../../../../lib/fs.js';
 import {
   assertExistingPathConfined,
   assertPathConfined,
@@ -226,7 +226,7 @@ function confinedWriteTarget(
 ): { fullPath: string; temporary: string } {
   assertProjectWritablePathConfined(relativePath, projectDir);
   const fullPath = resolve(projectDir, relativePath);
-  ensureSecureDir(dirname(fullPath));
+  mkdirSync(dirname(fullPath), { recursive: true });
   // Re-check after mkdir: creating the parent may have materialized a symlink.
   assertProjectWritablePathConfined(relativePath, projectDir);
   const temporary = join(

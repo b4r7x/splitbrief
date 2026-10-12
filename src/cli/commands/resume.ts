@@ -79,10 +79,10 @@ export async function resumeCommand(
 }
 
 export function registerResumeCommand(program: Command): void {
-  addWorkflowOptions(
-    program.command('resume').description('Resume an interrupted workflow'),
-  ).action(async (opts: WorkflowOpts) => {
-    const projectDir = await canonicalizeProjectDir(opts);
-    await resumeCommand({ ...opts, projectDir });
-  });
+  addWorkflowOptions(program.command('resume').description('Resume the most recent run')).action(
+    async (opts: WorkflowOpts) => {
+      const projectDir = await canonicalizeProjectDir(opts);
+      await resumeCommand({ ...opts, projectDir });
+    },
+  );
 }

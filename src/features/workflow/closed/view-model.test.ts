@@ -176,6 +176,32 @@ function workspaceHydration(
 const CLOSED_AT = '2026-09-14T10:00:00.000Z';
 
 describe('a run with a workspace', () => {
+  it.each(['worktree', 'staged-copy', 'checkout'] as const)(
+    'offers Apply undo only with a backup on a %s run',
+    (kind) => {
+      for (const backedUp of [false, true]) {
+        const view = derive(readySummary({ changedFiles: CHANGED }), {
+          status: { kind: 'closed', as: 'applied' },
+          hydration: {
+            kind: 'loaded',
+            state: makeWorkflowState({
+              phase: 'complete',
+              workspace: { ...WORKSPACE, kind },
+              ...(backedUp
+                ? { applied: { at: CLOSED_AT, backupId: 'apply-1', files: CHANGED } }
+                : {}),
+            }),
+          },
+        });
+        expect(
+          bylineParts(view, 120)
+            .map((part) => part.text)
+            .join(''),
+        ).toBe(backedUp && kind !== 'checkout' ? 'Undo the Apply with /run reject confirm' : '');
+      }
+    },
+  );
+
   it('reads an applied run as applied, with every stage and Apply done', () => {
     const view = derive(readySummary({ changedFiles: CHANGED }), {
       status: { kind: 'closed', as: 'applied' },
@@ -186,7 +212,7 @@ describe('a run with a workspace', () => {
     expect(view.files.patch).toBeNull();
   });
 
-  // `/run reject confirm` on a run whose Apply was already undone refuses ("Apply already undone"):
+  // `/run reject confirm` on a run whose Apply was already undone refuses (`canUndoApply`):
   // the closed block of that run says the undo happened and offers it no second time.
   it('reads an applied run whose Apply was undone as undone, offering no second undo', () => {
     const view = derive(readySummary({ changedFiles: CHANGED }), {

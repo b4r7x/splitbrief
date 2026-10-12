@@ -27,6 +27,12 @@ describe('bylineText', () => {
     );
   });
 
+  it('offers no undo when an applied record has no usable Apply backup', () => {
+    expect(bylineText(makeView({ outcome: { kind: 'applied' }, canUndoApply: false }), WIDE)).toBe(
+      '',
+    );
+  });
+
   it('says how to bring the changes of a discarded run back', () => {
     const view = makeView({
       outcome: { kind: 'discarded' },
@@ -50,7 +56,7 @@ describe('bylineText', () => {
   });
 
   it('offers no git apply for a discarded run that saved no changes', () => {
-    expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe('esc home');
+    expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe('');
   });
 
   // S11 run, 04:55: one ended run was called cancelled at T005 on the byline and `× Ended` on the
@@ -71,10 +77,8 @@ describe('bylineText', () => {
     ).toBe('Ended · bring the changes back with git apply on the Patch file');
   });
 
-  it('offers both choices on a ready run', () => {
-    expect(bylineText(makeView(), WIDE)).toBe(
-      'Keep it with /run accept, or revert it with /run reject confirm',
-    );
+  it('leaves going home to the legend on a completed closed run', () => {
+    expect(bylineText(makeView(), WIDE)).toBe('');
   });
 
   it('points at the blocking findings first', () => {
@@ -91,9 +95,7 @@ describe('bylineText', () => {
       },
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
-    expect(bylineText(view, WIDE)).toBe(
-      'Read the 2 blocking findings in the packet, or revert it with /run reject confirm',
-    );
+    expect(bylineText(view, WIDE)).toBe('Read the 2 blocking findings in the packet');
   });
 
   it('points at the scope deviations when nothing is blocking', () => {
@@ -101,9 +103,7 @@ describe('bylineText', () => {
       outcome: { kind: 'needs-attention' },
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });
-    expect(bylineText(view, WIDE)).toBe(
-      'Check the 2 scope deviations in the packet, or revert it with /run reject confirm',
-    );
+    expect(bylineText(view, WIDE)).toBe('Check the 2 scope deviations in the packet');
   });
 
   it('points at the failed briefs when the review and the scope are clean', () => {
@@ -119,9 +119,7 @@ describe('bylineText', () => {
         earlierRows: [],
       },
     });
-    expect(bylineText(view, WIDE)).toBe(
-      'Fix the failed brief, or revert it with /run reject confirm',
-    );
+    expect(bylineText(view, WIDE)).toBe('Fix the failed brief');
     const two = makeView({
       outcome: { kind: 'needs-attention' },
       briefs: {
@@ -134,16 +132,12 @@ describe('bylineText', () => {
         earlierRows: [],
       },
     });
-    expect(bylineText(two, WIDE)).toBe(
-      'Fix the 2 failed briefs, or revert it with /run reject confirm',
-    );
+    expect(bylineText(two, WIDE)).toBe('Fix the 2 failed briefs');
   });
 
-  it('offers the same two choices when a run needing attention points at nothing specific', () => {
+  it('leaves going home to the legend when a closed run points at nothing specific', () => {
     const view = makeView({ outcome: { kind: 'needs-attention' }, review: { kind: 'not-run' } });
-    expect(bylineText(view, WIDE)).toBe(
-      'Keep it with /run accept, or revert it with /run reject confirm',
-    );
+    expect(bylineText(view, WIDE)).toBe('');
   });
 
   it('sends an ended run home, because there is nothing left to accept', () => {
@@ -159,12 +153,8 @@ describe('bylineText', () => {
     );
   });
 
-  it('drops the alternative before it cuts a word', () => {
-    expect(bylineText(makeView(), 40)).toBe('Keep it with /run accept');
-  });
-
-  it('truncates only when even the first choice will not fit', () => {
-    expect(bylineText(makeView(), 10)).toHaveLength(10);
+  it('truncates the Apply undo command only when it will not fit', () => {
+    expect(bylineText(makeView({ outcome: { kind: 'applied' } }), 10)).toHaveLength(10);
   });
 });
 

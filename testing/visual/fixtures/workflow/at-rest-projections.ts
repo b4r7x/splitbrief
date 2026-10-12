@@ -146,7 +146,7 @@ function legacyReview(packet: ReviewPacketSummary): Summary['review'] {
 }
 
 const INTERRUPTED_BUILD_SESSION = 'visual-closed-ended';
-const READY_SESSION = 'visual-closed-ready';
+const COMPLETE_SESSION = 'visual-closed-complete';
 /**
  * The one crew in the gallery a run can actually be billed for: `resolvePricing` prices API
  * endpoints only, so a CLI seat — subscription or not — can never report a known dollar figure.
@@ -373,7 +373,7 @@ function settledLocalTasks(
 }
 
 const READY_PACKET = reviewPacket({
-  sessionId: READY_SESSION,
+  sessionId: COMPLETE_SESSION,
   verdict: 'pass_with_notes',
   counts: { critical: 0, warning: 1, note: 2 },
   driftPassed: true,
@@ -382,10 +382,10 @@ const READY_PACKET = reviewPacket({
 
 const READY_BRIEFS = settledLocalTasks([84_200, 141_000, 96_300]);
 const READY_LEDGER: EvidenceLedger = ledger({
-  sessionId: READY_SESSION,
+  sessionId: COMPLETE_SESSION,
   tasks: READY_BRIEFS,
   validationSummary: { passed: 9, failed: 0, skipped: 0, escalated: 0 },
-  finalReview: { path: packetMarkdownPath(READY_SESSION), status: 'written' },
+  finalReview: { path: packetMarkdownPath(COMPLETE_SESSION), status: 'written' },
 });
 
 /** The finished run every fact agrees on: packet written, verdict allows it, scope clean. */
@@ -782,8 +782,8 @@ const AT_REST_QUICK = record({
   state: savedState({ phase: 'researching', briefs: [] }),
 });
 
-const CLOSED_READY = record({
-  sessionId: READY_SESSION,
+const CLOSED_COMPLETE = record({
+  sessionId: COMPLETE_SESSION,
   status: { kind: 'closed', as: 'complete' },
   state: savedState({
     phase: 'complete',
@@ -1679,7 +1679,7 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-at-rest-waiting-gate',
     route: { record: AT_REST_WAITING_GATE },
   }),
-  atRestProjection({ id: 'workflow-closed-complete-ready', route: { record: CLOSED_READY } }),
+  atRestProjection({ id: 'workflow-closed-complete', route: { record: CLOSED_COMPLETE } }),
   atRestProjection({
     id: 'workflow-ready-to-apply',
     route: { record: READY_TO_APPLY, log: READY_LOG },

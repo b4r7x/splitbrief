@@ -49,7 +49,8 @@ import {
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
 import { parkStoppedRun } from '../../../engine/orchestrator/state-ops.js';
-import { endRun } from '../../../engine/orchestrator/run/close.js';
+import { endRun, endRunError } from '../../../engine/orchestrator/run/close.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
 import {
@@ -482,6 +483,11 @@ export function useRunLoop({
     } catch (err) {
       if (abortedRef.current) return;
       const message = toErrorMessage(err);
+      if (endRunError.isApplying(err)) {
+        await settleRun(session.ref, true);
+        feedbackStore.setError(message);
+        return;
+      }
       addTuiEvent({ type: 'error', ts: Date.now(), phase: lifecycleStore.get().phase, message });
       if (stopStore.get().intent !== 'none') {
         stopStore.fail(message);

@@ -17,9 +17,6 @@ import { stepWord, stopPoint } from '../stop/copy.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { separatedSpans } from '../conversation-rows/row-format/text.js';
 
-const REVERT = 'revert it with /run reject confirm';
-const ALTERNATIVE = ', or ';
-
 /**
  * What the user can do next, and — when the run needs one — why. The action is held as it reads
  * standing alone; a reason clause leads the line and lowercases the action behind it.
@@ -58,16 +55,12 @@ function fitByline(byline: Byline, width: number): readonly ConversationRowSegme
     }
   }
   if (getTerminalCellWidth(action) <= width) return [{ text: action, tone: 'textDim' }];
-  const at = action.indexOf(ALTERNATIVE);
-  const primary = at === -1 ? action : action.slice(0, at);
-  const fittedAction =
-    getTerminalCellWidth(primary) <= width ? primary : truncateTerminalDisplayText(primary, width);
-  return [{ text: fittedAction, tone: 'textDim' }];
+  return [{ text: truncateTerminalDisplayText(action, width), tone: 'textDim' }];
 }
 
 /**
  * The row under the composer of a closed run: what to do next, never what just happened. A line too
- * narrow for everything sheds the reason first and the alternative second.
+ * narrow for everything sheds the reason first.
  */
 export function bylineParts(view: SummaryView, width: number): readonly ConversationRowSegment[] {
   if (view.applyUndo !== null) {
@@ -116,7 +109,7 @@ function lowercaseLead(sentence: string): string {
 
 function bylineFor(view: SummaryView): Byline {
   const kind = view.outcome.kind;
-  if (kind === 'applied') {
+  if (kind === 'applied' && view.canUndoApply) {
     return { reason: null, action: 'Undo the Apply with /run reject confirm' };
   }
   if (kind === 'ended') {
@@ -126,11 +119,9 @@ function bylineFor(view: SummaryView): Byline {
     };
   }
   if (view.files.patch !== null) return { reason: null, action: BRING_BACK };
-  if (kind === 'complete') {
-    return { reason: null, action: `Keep it with /run accept${ALTERNATIVE}${REVERT}` };
-  }
   if (kind === 'needs-attention') return { reason: null, action: attentionByline(view) };
-  return { reason: null, action: 'esc home' };
+  // Going home is the legend's: a byline that only repeated it would say nothing.
+  return { reason: null, action: '' };
 }
 
 /** The composer placeholder, by what the run on screen will take. */
@@ -245,19 +236,19 @@ function openByline(stop: StopReason, resumeAt: StepRef): Byline {
 function attentionByline(view: SummaryView): string {
   const blocking = view.review.kind === 'written' ? view.review.counts.critical : 0;
   if (blocking > 0) {
-    return `Read the ${countNoun(blocking, 'blocking finding')} in the packet${ALTERNATIVE}${REVERT}`;
+    return `Read the ${countNoun(blocking, 'blocking finding')} in the packet`;
   }
   const scope = view.scope;
   const deviations = scope.kind === 'checked' && !scope.passed ? scope.errors + scope.warnings : 0;
   if (deviations > 0) {
-    return `Check the ${countNoun(deviations, 'scope deviation')} in the packet${ALTERNATIVE}${REVERT}`;
+    return `Check the ${countNoun(deviations, 'scope deviation')} in the packet`;
   }
   const failed = view.briefs.failed;
   if (failed > 0) {
     const briefs = failed === 1 ? 'the failed brief' : `the ${countNoun(failed, 'failed brief')}`;
-    return `Fix ${briefs}${ALTERNATIVE}${REVERT}`;
+    return `Fix ${briefs}`;
   }
-  return `Keep it with /run accept${ALTERNATIVE}${REVERT}`;
+  return '';
 }
 
 const LEGEND_KEYS = ['esc home', 'ctrl+k commands', '/sessions', '/help'] as const;

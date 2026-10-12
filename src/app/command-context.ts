@@ -62,9 +62,9 @@ import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
-import { rejectCheckoutRun } from '../engine/snapshots/run/rollback.js';
 import { runApply } from '../engine/orchestrator/apply/run.js';
 import { undoApply } from '../engine/orchestrator/apply/restore.js';
+import { canUndoApply } from '../core/sessions/run-status.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
 import { closeRunIfOpen } from '../engine/orchestrator/run/close.js';
 import { finalizeRunAtRest } from '../engine/orchestrator/session-lifecycle/finalize.js';
@@ -191,6 +191,9 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   const record = readRunRecord({ projectDir, sessionId });
   const run = runCommandState(record);
   if (run.kind === 'unavailable') return { status: 'unavailable', message: run.message };
+  if (record.status.kind === 'closed' && !(run.kind === 'workspace' && canUndoApply(run.state))) {
+    return { status: 'unavailable', message: `Run is closed (${record.status.as}).` };
+  }
   if (run.kind === 'snapshot') return rejectRunSnapshot(projectDir, sessionId);
   const { state } = run;
   if (!isRunAtRest(record.ref) || record.status.kind === 'running') {
@@ -199,11 +202,8 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
       message: 'Run rejection is unavailable while the run is active.',
     };
   }
-  if (state.workspace?.kind !== 'checkout' && record.status.kind === 'closed') {
-    if (record.status.as === 'applied') {
-      return { status: 'undone', ...(await undoApply(record.ref, state)) };
-    }
-    return { status: 'unavailable', message: `Run is closed (${record.status.as}).` };
+  if (record.status.kind === 'closed') {
+    return { status: 'undone', ...(await undoApply(record.ref, state)) };
   }
   const config = configStore.get().config;
   if (config === null) {
@@ -211,8 +211,12 @@ async function rejectRun(projectDir: string, sessionId: string): Promise<RejectR
   }
   const bus = createRecoveryBus({ projectDir, sessionId, sink: addTuiEvent });
   if (state.workspace?.kind === 'checkout') {
-    const result = await rejectCheckoutRun(projectDir, sessionId);
-    if (result.missingSnapshotFiles.length === 0) {
+    const result = await rejectRunSnapshot(projectDir, sessionId);
+    if (
+      result.status === 'rejected' &&
+      result.conflictedPaths.length === 0 &&
+      result.missingSnapshotFiles.length === 0
+    ) {
       const closure = await closeRunIfOpen({ projectDir, sessionId, bus }, state, 'discarded');
       if (closure.closedNow) {
         finalizeRunAtRest({ ref: record.ref, config, state: closure.state });

@@ -1,4 +1,6 @@
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { RunSnapshotKind } from '../../../core/schemas/snapshot.js';
+import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { EventBus } from '../../events/types.js';
 import { createSnapshot } from '../../snapshots/create.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
@@ -38,24 +40,43 @@ export async function ensureRunBaselineSnapshot(ctx: RunSnapshotContext): Promis
   }
 }
 
-// The "after" state /run reject rolls back from: one ledger entry per run,
-// recorded once the task loop is done and before the reviewer reads the diff.
-export async function recordRunSnapshotForRun(ctx: RunSnapshotContext): Promise<void> {
+// The "after" state /run reject rolls back from. Every run records one once the task loop is
+// done, before the reviewer reads the diff.
+export function recordRunSnapshotForRun(ctx: RunSnapshotContext): Promise<void> {
+  return recordLedgerSnapshot(ctx, RUN_SNAPSHOT_NAME, 'pre-final-review');
+}
+
+// Only a checkout run writes the project itself, so only it records more: after each brief
+// settles, and once more when the run comes to rest, after every write and revert of the run
+// is done. An open checkout run with run writes therefore always has a record of them.
+export function recordCheckoutRunSnapshot(
+  ctx: Omit<RunSnapshotContext, 'phase'> & { state: WorkflowState },
+): Promise<void> {
+  if (ctx.state.workspace?.kind !== 'checkout') return Promise.resolve();
+  const { state, ...rest } = ctx;
+  return recordLedgerSnapshot(
+    { ...rest, phase: state.phase },
+    `post-task-${state.currentTaskIndex}`,
+    'post-task',
+  );
+}
+
+async function recordLedgerSnapshot(
+  ctx: RunSnapshotContext,
+  name: string,
+  kind: RunSnapshotKind,
+): Promise<void> {
   try {
     const result = await createSnapshot({
       projectDir: ctx.projectDir,
       sessionId: ctx.sessionId,
       phase: 'manual',
-      name: RUN_SNAPSHOT_NAME,
+      name,
       bus: ctx.bus,
       eventPhase: ctx.phase,
     });
-    await recordRunSnapshot(ctx.projectDir, ctx.sessionId, result.manifest, RUN_SNAPSHOT_NAME);
+    await recordRunSnapshot(ctx.projectDir, ctx.sessionId, result.manifest, kind);
   } catch (err) {
-    publishWarningFromError(
-      { bus: ctx.bus, phase: ctx.phase },
-      `snapshot (${RUN_SNAPSHOT_NAME}) failed`,
-      err,
-    );
+    publishWarningFromError({ bus: ctx.bus, phase: ctx.phase }, `snapshot (${name}) failed`, err);
   }
 }

@@ -154,7 +154,7 @@ See [Message queue](./docs/ENGINE.md#message-queue) for delivery rules and [Mid-
 | `splitbrief init` | Create config, auto-detect available models |
 | `splitbrief doctor` | Check run readiness — config, runners, credentials, repo — without starting a workflow |
 | `splitbrief review` | Review the working-tree diff in one reviewer call — no session, no planning |
-| `splitbrief resume` | Resume an interrupted workflow |
+| `splitbrief resume` | Resume the most recent run |
 | `splitbrief status` | Show current workflow state |
 
 Those are the ones you need first. The full set — `continue`, `review` — is in [docs/CLI-REFERENCE.md](./docs/CLI-REFERENCE.md).

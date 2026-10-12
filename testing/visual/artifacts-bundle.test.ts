@@ -217,7 +217,7 @@ async function createBundleFixture(profile?: TerminalProfile) {
     timeoutMs: 5_000,
   });
   const scenario = ScenarioDefinitionSchema.parse({
-    id: 'workflow-closed-complete-ready',
+    id: 'workflow-closed-complete',
     title: 'Closed run ready',
     surface: { kind: 'screen', screen: 'workflow' },
     fixtureVersion: 1,
