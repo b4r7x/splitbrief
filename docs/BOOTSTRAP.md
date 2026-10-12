@@ -29,9 +29,15 @@ Two things about this flow are load-bearing:
 
 ---
 
-## `initStores()` — single file, four sections
+## `initStores()` — one folder, four sections
 
-**File:** `src/cli/init-stores.ts`
+**Folder:** `src/cli/bootstrap/`
+
+| File | Holds |
+|---|---|
+| `init.ts` | The entries callers import (`bootstrapStoresSync`, `bootstrapStoresHooks`, `initStoresForTuiMount`, `initStores`, `teardownStores`) and `initUIChrome` |
+| `project.ts` | `loadProjectState` and the input-history teardown |
+| `discovery.ts` | `loadDiscovery` and `awaitBackgroundDiscovery` |
 
 `bootstrapStoresSync()` initializes UI chrome and project state. `initStoresForTuiMount()` then awaits `bootstrapStoresHooks()` and returns the `awaitDiscovery` promise without awaiting it. `runInteractiveStart()` mounts Ink while discovery continues. The separate `initStores()` entry awaits discovery for callers that require it.
 
@@ -79,19 +85,18 @@ Missing or corrupt cache records remain misses; stale catalogs retain the existi
 
 ## Rules for adding bootstrap steps
 
-### 1. One file until it hurts
+### 1. Split a bootstrap file past 150 LOC
 
-`init-stores.ts` stays as a single file until it exceeds **150 LOC**. Past that threshold, split into a folder:
+A bootstrap file stays one file until it exceeds **150 LOC**. Past that threshold, split it along its phases. The bootstrap folder has this shape:
 
 ```
 src/cli/bootstrap/
-├── init.ts          # entry — orchestrates phases
-├── ui-chrome.ts     # internal — UI bootstrap helpers
+├── init.ts          # entry — orchestrates phases; holds the one-line UI chrome step
 ├── project.ts       # internal — project-state loading
 └── discovery.ts     # internal — async discovery
 ```
 
-This mirrors the folder-colocation pattern documented in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation). Do not split pre-emptively. `init-stores.ts` has already passed this threshold.
+This mirrors the folder-colocation pattern documented in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation). Do not split pre-emptively. A phase gets its own file only when it carries real logic. The UI chrome step is one line, so it stays in `init.ts` (rule 2). Callers import the entries from `init.ts` and `awaitBackgroundDiscovery` from `discovery.ts`. There is no barrel.
 
 ### 2. Do not add a bootstrap file for <20 LOC of one-shot code
 
@@ -183,7 +188,7 @@ If a component calls `store.use()` on a field that was never set by `initStores(
 | Load a store inside a React `useEffect` | Causes a no-data render cycle and requires a `loading` flag in the store |
 | Call `store.set()` during React render | Infinite render loop |
 | Put cross-store orchestration inside a store method | The store gains a dependency on the other store — forms a cycle |
-| Create `src/cli/bootstrap/` for <150 LOC of init | Folder indirection without deep modules — just keep `init-stores.ts` flat |
+| Add a `bootstrap/` file for a phase of a few lines | Folder indirection without a deep module — keep the step in `init.ts` or the file of its phase |
 | Put disk I/O for a store in `src/cli/` | Colocation violation — the I/O is a store concern; see §4 |
 | Add a second readiness cache for asynchronous preparation | Read the shared preparation coordinator; config seed is synchronous, discovery is not. |
 

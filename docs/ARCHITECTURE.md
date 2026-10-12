@@ -73,7 +73,7 @@ src/
 │
 ├── cli/                      Non-React CLI logic
 │   ├── commands/             commander handlers (init, start, resume, continue, spec, status, review, doctor)
-│   ├── init-stores.ts        Synchronous seed before render; discovery after mount
+│   ├── bootstrap/            Synchronous seed before render; discovery after mount
 │   └── render/               Ink / fullscreen-ink render setup (`app.ts` entry)
 │
 ├── core/                     Shared domain (no React, no engine-ness)
@@ -335,7 +335,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New provider (for `api` kind) | A descriptor in `API_PROVIDER_CATALOG` (`src/core/providers/api-provider-catalog.ts`) + a factory in `src/engine/providers/<name>.ts` + its entry in `KNOWN_PROVIDERS` (`src/engine/providers/registry.ts`) |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
 | New event type | `src/engine/events/schema.ts` (add a Zod member to the type-dispatched `EngineEventSchema` contract; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows/dispatch.ts` |
-| New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
+| New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/bootstrap/project.ts` if it reads disk |
 | New shared overlay (used by 2+ features) | `src/components/overlays/<name>.tsx` + register via `overlayStore` |
 | New feature overlay | FLAT page in `src/app/overlays/<name>.tsx` (feature internals in `src/features/<feature>/`) + register via `overlayStore` |
 | New feature (new screen / picker / overlay) | feature internals in `src/features/<feature>/`; entry is a FLAT page in `src/app/screens` \| `src/app/overlays`; wire the dispatch in `src/app/router.tsx` (pure-entry surfaces — help/sessions/setup/skills — are the page alone, no `features/` folder) |
@@ -482,7 +482,7 @@ src/
 │   ├── errors.ts                  CliError type + exit-code helpers
 │   ├── headless.ts                runHeadless: --json mode without Ink
 │   ├── hook-trust-prompt.ts       Interactive hook-trust gating
-│   ├── init-stores.ts             Synchronous seed, then asynchronous discovery
+│   ├── bootstrap/                 Synchronous seed, then asynchronous discovery
 │   ├── options.ts                 Shared commander option parsers
 │   ├── render/                    Ink / fullscreen-ink mount (`app.ts` entry)
 │   └── setup.ts                   resolveProjectDir + setup helpers
@@ -772,7 +772,7 @@ src/
 │       ├── hooks/                 use-input-mode, use-keys,
 │       │                          use-mouse-pointer, use-mouse-scroll,
 │       │                          use-review-content, use-run-loop,
-│       │                          use-run-continue,
+│       │                          use-run-continue, use-shared-clock,
 │       │                          workflow-screen/{use-model,
 │       │                          use-inline-edit}
 │       ├── keyboard.ts            Workflow keymap

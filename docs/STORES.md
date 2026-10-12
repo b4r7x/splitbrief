@@ -139,7 +139,7 @@ Stores that need data from disk are loaded **synchronously before React renders*
 
 ```
 CLI (commander parses args)
-  → initStoresForTuiMount(projectDir, opts)   // src/cli/init-stores.ts
+  → initStoresForTuiMount(projectDir, opts)   // src/cli/bootstrap/init.ts
       1. configStore.load(projectDir, overrides)
       2. sessionsStore.load(projectDir)
       3. hook trust check
@@ -215,7 +215,7 @@ routerStore.navigate({ to: 'home' });
 | `feedbackStore` | `ui/feedback.ts` | `{ message: string \| null, isError: boolean }` | `setMessage()`, `setError()`, `setTransientError()`, `reset()` |
 | `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `subscribeToResize()`, `reset()` |
 | `terminalBackgroundStore` | `ui/terminal-background.ts` | `string \| undefined` | `detected(hex)`, `reset()` |
-| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `pushDocumentSubmission()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
+| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `pushDocumentSubmission()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `cli/bootstrap/project.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
 | `commandPaletteMruStore` | `ui/command-palette-mru.ts` | `{ ids: string[] }` | `record()` |
 | `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` invalidation tick; the composer owns file-list reads and local list state | `requestRefresh()` |

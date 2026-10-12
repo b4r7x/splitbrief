@@ -288,7 +288,7 @@ Session lifecycle is a domain concern. Even though today only the CLI start path
 
 A second placement rule: **bootstrap / persistence logic for a store lives next to the store, not next to its CLI caller.**
 
-The `input-history` store in `src/stores/ui/input-history.ts` holds in-memory state. Its disk I/O (hydrate on startup, debounced save on change) lives in `src/stores/ui/persistence.ts`, **not** in `src/cli/`. `cli/init-stores.ts` calls `installHistoryPersistence()` at boot — the CLI layer triggers the wiring, but the logic is a store concern.
+The `input-history` store in `src/stores/ui/input-history.ts` holds in-memory state. Its disk I/O (hydrate on startup, debounced save on change) lives in `src/stores/ui/persistence.ts`, **not** in `src/cli/`. `cli/bootstrap/project.ts` calls `installHistoryPersistence()` at boot — the CLI layer triggers the wiring, but the logic is a store concern.
 
 This mirrors the folder-colocation rule in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation): helpers live with the module they support, not with the caller that happens to drive them.
 

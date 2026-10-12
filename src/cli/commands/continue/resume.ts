@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { App } from '../../../app/root.js';
-import { initStores } from '../../init-stores.js';
+import { initStores } from '../../bootstrap/init.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';

@@ -1,5 +1,5 @@
 import { setupWorkflow } from '../../setup.js';
-import { initStores } from '../../init-stores.js';
+import { initStores } from '../../bootstrap/init.js';
 import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
 import { loadRunRecord } from '../../../core/sessions/run-record.js';

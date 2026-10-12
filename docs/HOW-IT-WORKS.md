@@ -32,7 +32,7 @@ After setup, the handler calls `initStoresForTuiMount()` and then `renderApp()`.
 
 ## Store bootstrap
 
-`initStoresForTuiMount()` in `src/cli/init-stores.ts` prepares the shared state layer on the interactive start path. It runs four phases in order. It awaits the first three and returns the fourth as an `awaitDiscovery` promise, so the TUI mounts without waiting for discovery. `initStores()` runs the same four phases and awaits all of them; `splitbrief init` and the interactive `continue` path use it.
+`initStoresForTuiMount()` in `src/cli/bootstrap/init.ts` prepares the shared state layer on the interactive start path. It runs four phases in order. It awaits the first three and returns the fourth as an `awaitDiscovery` promise, so the TUI mounts without waiting for discovery. `initStores()` runs the same four phases and awaits all of them; `splitbrief init` and the interactive `continue` path use it.
 
 **`initUIChrome()`** subscribes the terminal-size store to resize events so layout reflows when the window changes.
 

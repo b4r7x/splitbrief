@@ -104,7 +104,7 @@ const REMOVED_TOP_LEVEL_KEYS = [
 const REMOVED_TOP_LEVEL_KEY_MESSAGES: Partial<
   Record<(typeof REMOVED_TOP_LEVEL_KEYS)[number], string>
 > = {
-  [RETIRED_BRIEF_KEY]: `Unknown key "${RETIRED_BRIEF_KEY}" — the brief ${RETIRED_BRIEF_KEY} was retired on 2026-09-13; briefs compile from the plan directly.`,
+  [RETIRED_BRIEF_KEY]: `Unknown key "${RETIRED_BRIEF_KEY}" — briefs compile from the plan directly; remove the "${RETIRED_BRIEF_KEY}" block.`,
 };
 
 function removedTopLevelKeyErrors(config: Record<string, unknown>): ConfigError[] {

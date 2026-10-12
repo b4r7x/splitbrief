@@ -484,6 +484,15 @@ describe('reviewer seat', () => {
     );
   });
 
+  it('offers every planner-tier API provider to the reviewer', () => {
+    const apiRows = buildPickerOptions('reviewer', descriptors, detections, undefined)
+      .filter((item) => item.kind === 'api')
+      .map((item) => item.id);
+
+    expect(PLANNER_API_PROVIDER_IDS.length).toBeGreaterThan(0);
+    expect(apiRows.toSorted()).toEqual([...PLANNER_API_PROVIDER_IDS].toSorted());
+  });
+
   it('marks the current reviewer row from the reviewer config, not the planner config', () => {
     const config = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },

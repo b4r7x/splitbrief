@@ -1,6 +1,6 @@
 import type { renderApp } from '../../render/app.js';
 import type { runHeadless } from '../../headless.js';
-import type { initStores } from '../../init-stores.js';
+import type { initStores } from '../../bootstrap/init.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
 import type { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';

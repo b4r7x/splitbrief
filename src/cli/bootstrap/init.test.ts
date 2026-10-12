@@ -5,24 +5,25 @@ import YAML from 'yaml';
 import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import type { CliToolDetection, ProviderDetection } from '../core/discovery/detection.js';
-import { awaitBackgroundDiscovery, initStores } from './init-stores.js';
-import { configStore } from '../stores/project/config.js';
-import { detectionStore } from '../stores/project/detection.js';
-import { sessionsStore } from '../stores/project/sessions.js';
-import { skillsStore } from '../stores/project/skills.js';
-import { controlsStore } from '../stores/ui/controls.js';
-import { SPLITBRIEF_DIR } from '../core/paths.js';
-import { toYaml } from '../core/config/load/transform.js';
-import { createDefaultConfig } from '../core/config/load/defaults.js';
-import { detectCapabilities } from '../engine/providers/capabilities.js';
-import * as capabilitiesModule from '../engine/providers/capabilities.js';
-import { loadDetectionCacheSnapshot, saveDetectionCache } from '../engine/detection/cache.js';
-import * as detectionServiceModule from '../engine/detection/service.js';
-import * as modelsDevCacheModule from '../engine/providers/models-dev-cache.js';
-import type { ModelsDevCatalogSnapshot } from '../engine/providers/models-dev-cache.js';
-import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
-import { detectionContextsForCurrentConfig } from '../engine/detection/store-publication.js';
+import type { CliToolDetection, ProviderDetection } from '../../core/discovery/detection.js';
+import { initStores } from './init.js';
+import { awaitBackgroundDiscovery } from './discovery.js';
+import { configStore } from '../../stores/project/config.js';
+import { detectionStore } from '../../stores/project/detection.js';
+import { sessionsStore } from '../../stores/project/sessions.js';
+import { skillsStore } from '../../stores/project/skills.js';
+import { controlsStore } from '../../stores/ui/controls.js';
+import { SPLITBRIEF_DIR } from '../../core/paths.js';
+import { toYaml } from '../../core/config/load/transform.js';
+import { createDefaultConfig } from '../../core/config/load/defaults.js';
+import { detectCapabilities } from '../../engine/providers/capabilities.js';
+import * as capabilitiesModule from '../../engine/providers/capabilities.js';
+import { loadDetectionCacheSnapshot, saveDetectionCache } from '../../engine/detection/cache.js';
+import * as detectionServiceModule from '../../engine/detection/service.js';
+import * as modelsDevCacheModule from '../../engine/providers/models-dev-cache.js';
+import type { ModelsDevCatalogSnapshot } from '../../engine/providers/models-dev-cache.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { detectionContextsForCurrentConfig } from '../../engine/detection/store-publication.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { makeUsage } from '#testing/helpers/factories/summary.js';
@@ -48,7 +49,7 @@ function makeProjectDir(
     cliTools: [],
   },
 ): string {
-  tmp = createTempDir('init-stores-test');
+  tmp = createTempDir('bootstrap-init-test');
   const splitbriefDir = join(tmp, SPLITBRIEF_DIR);
   mkdirSync(splitbriefDir, { recursive: true });
   writeFileSync(
@@ -78,7 +79,7 @@ Skill body for bootstrap proof.
 // Skill discovery scans global roots under homedir(); a real HOME would pull the
 // developer's own ~/.claude/skills into these assertions.
 beforeEach(() => {
-  fakeHome = createTempDir('init-stores-home');
+  fakeHome = createTempDir('bootstrap-init-home');
   savedHome = process.env.HOME;
   process.env.HOME = fakeHome;
   // Boot starts two lanes it never awaits, both writing caches under HOME. Left

@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { COLD_START_STDERR_LINE } from '../../../core/discovery/copy.js';
 import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
-import { initStoresForTuiMount } from '../../init-stores.js';
+import { initStoresForTuiMount } from '../../bootstrap/init.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
