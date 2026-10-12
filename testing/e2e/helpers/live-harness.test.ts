@@ -1,12 +1,15 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   sessionDir,
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
+  PLAN_JSON_FILE,
   REVIEW_FILE,
+  RUN_PATCH_FILE,
   SESSION_LOG_FILE,
+  STATE_FILE,
   SUMMARY_FILE,
   TASKS_FILE,
 } from '../../../src/core/paths.js';
@@ -94,7 +97,14 @@ describe('live failure evidence', () => {
         const dir = sessionDir(projectDir, ref.sessionId);
         mkdirSync(dir, { recursive: true });
         writeFileSync(join(dir, SUMMARY_FILE), 'saved summary');
-        const otherArtifacts = [TASKS_FILE, EVIDENCE_FILE, DRIFT_REPORT_FILE, REVIEW_FILE];
+        const otherArtifacts = [
+          TASKS_FILE,
+          EVIDENCE_FILE,
+          DRIFT_REPORT_FILE,
+          REVIEW_FILE,
+          PLAN_JSON_FILE,
+          RUN_PATCH_FILE,
+        ];
         for (const file of otherArtifacts) writeFileSync(join(dir, file), `saved ${file}`);
         const issue = makeRecoveryIssue({
           reason: 'planner-call-failed',
@@ -134,6 +144,7 @@ describe('live failure evidence', () => {
           expect(readFileSync(join(artifactsRoot, 'test-row', file), 'utf-8')).toBe(
             `saved ${file}`,
           );
+        expect(existsSync(join(artifactsRoot, 'test-row', STATE_FILE))).toBe(outcome !== 'pass');
         const manifest = JSON.parse(readFileSync(join(artifactsRoot, 'manifest.json'), 'utf-8'));
         expect(manifest.rows).toHaveLength(1);
         expect(manifest.rows[0].outcome).toBe(outcome === 'pass' ? 'pass' : 'fail');

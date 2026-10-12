@@ -2,7 +2,12 @@ import { spawn } from 'node:child_process';
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { isInternalGitStatusPath, sessionDir, SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
+import {
+  isInternalGitStatusPath,
+  RUN_PATCH_FILE,
+  sessionDir,
+  SNAPSHOT_BASELINE_ID,
+} from '../../../core/paths.js';
 import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { gitBinary } from '../../../lib/git/client.js';
@@ -14,8 +19,6 @@ import { collectTrackedFiles, hashFile } from '../../snapshots/files.js';
 import { readManifest } from '../../snapshots/manifest.js';
 import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
-
-const RUN_PATCH_FILE = 'run.patch';
 
 type WorkspaceBase = { path: string; base: { snapshotId: string } };
 

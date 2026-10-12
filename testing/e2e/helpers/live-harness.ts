@@ -16,14 +16,20 @@ import type { SessionRef } from '../../../src/core/types/session-ref.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
 import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { toErrorMessage } from '../../../src/utils/format-errors.js';
-import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
+import type {
+  OrchestratorCallbacks,
+  WorkflowSinks,
+} from '../../../src/engine/orchestrator/types.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import {
   DRIFT_REPORT_FILE,
   EVIDENCE_FILE,
+  PLAN_JSON_FILE,
   REVIEW_FILE,
+  RUN_PATCH_FILE,
   SESSION_LOG_FILE,
+  STATE_FILE,
   SUMMARY_FILE,
   TASKS_FILE,
 } from '../../../src/core/paths.js';
@@ -249,13 +255,15 @@ export async function applyLiveRun(opts: SessionRef & { config: Config }): Promi
   return finalizeRunAtRest({ ref, config, state: result.state });
 }
 
-async function executeLiveWorkflow(opts: {
+export async function executeLiveWorkflow(opts: {
   projectDir: string;
   feature: string;
   effectiveConfig: Config;
   signal: AbortSignal;
   onSession?: (sessionId: string) => void;
   onPlannerReply?: NonNullable<OrchestratorCallbacks['onPlannerReply']>;
+  /** The run's queue and abort handlers go here; a caller that submits a message mid-run passes its own. */
+  sinks?: WorkflowSinks;
 }): Promise<{ summary: Summary; sessionId: string }> {
   const preparation = await prepareExecution({
     projectDir: opts.projectDir,
@@ -293,7 +301,7 @@ async function executeLiveWorkflow(opts: {
     callbacks: makeCallbacks(
       opts.onPlannerReply === undefined ? {} : { onPlannerReply: opts.onPlannerReply },
     ).callbacks,
-    sinks: TEST_WORKFLOW_SINKS,
+    sinks: opts.sinks ?? TEST_WORKFLOW_SINKS,
   });
   opts.signal.throwIfAborted();
   const summary = await applyLiveRun({
@@ -445,6 +453,8 @@ export function heavyAssertions({ summary }: LiveRunResult): void {
 
 export type LiveSeat = Readonly<{ tool: string; model: string | undefined }>;
 
+export type LiveCrew = Readonly<{ plan: LiveSeat; build: LiveSeat; review: LiveSeat }>;
+
 export type ReleaseMatrixRun = Readonly<{
   id: string;
   tier: LiveMatrixTierId;
@@ -525,6 +535,9 @@ export type LiveArtifactPaths = Readonly<{
   evidence: string | null;
   driftReport: string | null;
   review: string | null;
+  state: string | null;
+  plan: string | null;
+  patch: string | null;
 }>;
 
 export type LiveManifestRow = Readonly<{
@@ -587,6 +600,9 @@ export function copyLiveArtifacts(opts: {
     evidence: copyArtifact(sessionDir, rowDir, EVIDENCE_FILE),
     driftReport: copyArtifact(sessionDir, rowDir, DRIFT_REPORT_FILE),
     review: copyArtifact(sessionDir, rowDir, REVIEW_FILE),
+    state: copyArtifact(sessionDir, rowDir, STATE_FILE),
+    plan: copyArtifact(sessionDir, rowDir, PLAN_JSON_FILE),
+    patch: copyArtifact(sessionDir, rowDir, RUN_PATCH_FILE),
   };
 }
 

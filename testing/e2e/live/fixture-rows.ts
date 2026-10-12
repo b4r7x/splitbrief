@@ -1,4 +1,4 @@
-import type { LiveSeat } from '../helpers/live-harness.js';
+import type { LiveCrew } from '../helpers/live-harness.js';
 import { resolveReleaseMatrixSeat } from './matrix.js';
 
 export type FixtureRow = Readonly<{
@@ -28,9 +28,7 @@ export const FIXTURE_ROWS: readonly FixtureRow[] = [
   },
 ];
 
-export type FixtureRowSeats = Readonly<{ plan: LiveSeat; build: LiveSeat; review: LiveSeat }>;
-
-export function resolveFixtureRowSeats(row: FixtureRow): FixtureRowSeats {
+export function resolveFixtureRowSeats(row: FixtureRow): LiveCrew {
   return {
     plan: resolveReleaseMatrixSeat(row.plan),
     build: resolveReleaseMatrixSeat(row.build),

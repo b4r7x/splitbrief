@@ -140,7 +140,7 @@ function readJson(sessionDir: string, file: string): unknown {
   return JSON.parse(readText(sessionDir, file));
 }
 
-function readEventEntries(sessionDir: string): readonly SessionLogEventEntry[] {
+export function readEventEntries(sessionDir: string): readonly SessionLogEventEntry[] {
   const entries: SessionLogEventEntry[] = [];
   for (const line of readText(sessionDir, SESSION_LOG_FILE).split('\n')) {
     if (line.trim() === '') continue;
@@ -150,11 +150,11 @@ function readEventEntries(sessionDir: string): readonly SessionLogEventEntry[] {
   return entries;
 }
 
-function eventField(data: unknown, key: string): unknown {
+export function eventField(data: unknown, key: string): unknown {
   return isRecord(data) ? data[key] : undefined;
 }
 
-function countRunnerCalls(events: readonly SessionLogEventEntry[]): RunnerCallCounts {
+export function countRunnerCalls(events: readonly SessionLogEventEntry[]): RunnerCallCounts {
   let planner = 0;
   let implementer = 0;
   let review = 0;
