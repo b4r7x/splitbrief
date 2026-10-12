@@ -76,7 +76,7 @@ const frozenFilePaths = [
 
 type FrozenFilePath = (typeof frozenFilePaths)[number];
 
-const frozenCommit = '7596ce1b8d3ab81e44b6432fdd3de954e58560f9';
+const frozenCommit = 'a44587540ffeb824ffec34a6def0f0358320e78b';
 const frozenFileSha256: Record<FrozenFilePath, string> = {
   'src/core/config/load/io.ts': '536d1c1d8383cd8720ab41673f2b153434924834a6a15bf15cf70e1d93951468',
   'src/lib/confined-fs.ts': '74717a5e3b4f20a08af549c35bcbd18bc7f0fa56a67b2863ec3e8b454c8f5cb0',
