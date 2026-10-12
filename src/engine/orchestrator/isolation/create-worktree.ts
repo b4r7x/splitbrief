@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../../core/paths.js';
 import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
 import { ensureConfigGitignore } from '../../../core/config/load/document.js';
-import type { GitClient } from '../../../lib/git/client.js';
+import { createGitClient, type GitClient } from '../../../lib/git/client.js';
 import { worktreeError } from './errors.js';
 import { resolveConfinedWorktreePath } from './path.js';
 
@@ -32,13 +32,9 @@ async function propagateSplitbriefState(projectDir: string, wtPath: string): Pro
   }
 }
 
-export async function initWorktreeSubmodules(
-  projectDir: string,
-  wtPath: string,
-  git: GitClient,
-): Promise<void> {
+export async function initWorktreeSubmodules(projectDir: string, wtPath: string): Promise<void> {
   if (!existsSync(join(projectDir, '.gitmodules'))) return;
-  await git.raw(['-C', wtPath, 'submodule', 'update', '--init', '--recursive']);
+  await createGitClient(wtPath).raw(['submodule', 'update', '--init', '--recursive']);
 }
 
 export async function createWorktree(opts: CreateWorktreeOptions): Promise<string> {
@@ -52,7 +48,7 @@ export async function createWorktree(opts: CreateWorktreeOptions): Promise<strin
   }
 
   await git.raw(['worktree', 'add', wtPath, '-b', branch]);
-  await initWorktreeSubmodules(projectDir, wtPath, git);
+  await initWorktreeSubmodules(projectDir, wtPath);
   await propagateSplitbriefState(projectDir, wtPath);
   return wtPath;
 }

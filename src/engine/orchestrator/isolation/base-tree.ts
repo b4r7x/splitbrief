@@ -103,7 +103,7 @@ export async function withRunBaseTree<T>(
     dir = await mkdtemp(join(runBaseTreesRoot(), `base-${process.pid}-`));
     if (base.head !== null) {
       await git.raw(['worktree', 'add', '--quiet', '--detach', dir, base.head]);
-      await initWorktreeSubmodules(base.projectDir, dir, git);
+      await initWorktreeSubmodules(base.projectDir, dir);
     }
     await reconcileWorkspaceToBase({ ...base, workspaceDir: dir, keep: [] });
     await linkProjectNodeModules(base.projectDir, dir);

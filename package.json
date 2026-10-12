@@ -118,7 +118,7 @@
     "lowlight": "^3.3.0",
     "openai": "^6.49.0",
     "react": "^19.0.0",
-    "simple-git": "^3.0.0",
+    "simple-git": "^4.0.2",
     "web-tree-sitter": "^0.26.8",
     "wrap-ansi": "^10.0.0",
     "yaml": "^2.0.0",

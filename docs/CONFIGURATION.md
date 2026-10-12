@@ -1114,6 +1114,21 @@ The three admitted local providers have no default credential environment variab
 
 The commands SPLITBRIEF runs itself get a sanitized environment. [§4 What a check can reach](#what-a-check-can-reach) is its one home: the kept variables, the dropped ones, and what to do when a test needs a variable from your shell.
 
+### What SPLITBRIEF's git calls receive
+
+SPLITBRIEF runs its own git calls through simple-git 4 (`src/lib/git/client.ts`). simple-git removes every `GIT_*` variable and `EDITOR`, `VISUAL`, `PAGER` and `PREFIX` from the environment of each call. It also sets `GIT_TEST_DISALLOW_ABBREVIATED_OPTIONS=true`.
+
+SPLITBRIEF keeps the variables that reach a remote or a checkout filter:
+
+- Protocol: `GIT_ALLOW_PROTOCOL`, `GIT_PROTOCOL_FROM_USER`.
+- SSH and prompts: `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_TERMINAL_PROMPT`.
+- Proxy: `GIT_PROXY_COMMAND`, `GIT_PROXY_SSL_CAINFO`, `GIT_PROXY_SSL_CERT`, `GIT_PROXY_SSL_CERT_PASSWORD_PROTECTED`, `GIT_PROXY_SSL_KEY`.
+- SSL: `GIT_SSL_CAINFO`, `GIT_SSL_CAPATH`, `GIT_SSL_CERT`, `GIT_SSL_CERT_PASSWORD_PROTECTED`, `GIT_SSL_CIPHER_LIST`, `GIT_SSL_KEY`, `GIT_SSL_NO_VERIFY`, `GIT_SSL_VERSION`.
+- HTTP: `GIT_HTTP_LOW_SPEED_LIMIT`, `GIT_HTTP_LOW_SPEED_TIME`, `GIT_HTTP_MAX_REQUESTS`, `GIT_HTTP_PROXY_AUTHMETHOD`, `GIT_HTTP_USER_AGENT`, `GIT_CURL_FTP_NO_EPSV`.
+- Git LFS checkout: `GIT_LFS_SKIP_SMUDGE`, `GIT_LFS_SKIP_DOWNLOAD_ERRORS`.
+
+Every other `GIT_*` variable does not reach git, for example `GIT_CONFIG_GLOBAL`, `GIT_TRACE` or `GIT_EDITOR`. Put a setting that SPLITBRIEF's git calls need in `~/.gitconfig`, `~/.config/git/config` or the repository config.
+
 ### Runtime overrides
 
 | Variable | Purpose |

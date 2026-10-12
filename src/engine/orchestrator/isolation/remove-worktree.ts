@@ -124,7 +124,7 @@ export async function removeWorktree(opts: RemoveWorktreeOptions): Promise<void>
 
   const live = await findLiveWorktreeSession(wtPath);
 
-  const porcelain = await git.raw(['-C', wtPath, 'status', '--porcelain']);
+  const porcelain = await createGitClient(wtPath).raw(['status', '--porcelain']);
   const porcelainPaths = porcelain
     .split('\n')
     .map((line) => line.trim())

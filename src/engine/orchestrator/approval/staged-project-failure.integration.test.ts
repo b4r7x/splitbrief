@@ -28,16 +28,17 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (control.failCp) return Promise.reject(new Error('ENOSPC: simulated copy failure'));
       return actual.copyFile(...args);
     },
-    writeFile: (path: Parameters<typeof actual.writeFile>[0], ...rest: unknown[]) => {
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
       if (
         control.failWriteBasename &&
-        typeof path === 'string' &&
-        (path.endsWith(control.failWriteBasename) ||
-          path.includes(`.${control.failWriteBasename}.tmp.`))
+        String(args[0]).includes(`.${control.failWriteBasename}.tmp.`)
       ) {
-        return Promise.reject(new Error('EIO: simulated write failure'));
+        handle.writeFile = async () => {
+          throw new Error('EIO: simulated write failure');
+        };
       }
-      return (actual.writeFile as (...a: unknown[]) => unknown)(path, ...rest);
+      return handle;
     },
     lstat: (path: Parameters<typeof actual.lstat>[0], ...rest: unknown[]) => {
       if (

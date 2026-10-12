@@ -19,10 +19,43 @@ export function gitBinary(): string {
   return cachedGitBinary.binary;
 }
 
+// The user's own remote access settings; simple-git strips every other guarded variable.
+const REMOTE_ACCESS_ENVIRONMENT = [
+  'GIT_ALLOW_PROTOCOL',
+  'GIT_PROTOCOL_FROM_USER',
+  'GIT_SSH',
+  'GIT_SSH_COMMAND',
+  'GIT_SSH_VARIANT',
+  'GIT_ASKPASS',
+  'SSH_ASKPASS',
+  'GIT_TERMINAL_PROMPT',
+  'GIT_PROXY_COMMAND',
+  'GIT_PROXY_SSL_CAINFO',
+  'GIT_PROXY_SSL_CERT',
+  'GIT_PROXY_SSL_CERT_PASSWORD_PROTECTED',
+  'GIT_PROXY_SSL_KEY',
+  'GIT_SSL_CAINFO',
+  'GIT_SSL_CAPATH',
+  'GIT_SSL_CERT',
+  'GIT_SSL_CERT_PASSWORD_PROTECTED',
+  'GIT_SSL_CIPHER_LIST',
+  'GIT_SSL_KEY',
+  'GIT_SSL_NO_VERIFY',
+  'GIT_SSL_VERSION',
+  'GIT_HTTP_LOW_SPEED_LIMIT',
+  'GIT_HTTP_LOW_SPEED_TIME',
+  'GIT_HTTP_MAX_REQUESTS',
+  'GIT_HTTP_PROXY_AUTHMETHOD',
+  'GIT_HTTP_USER_AGENT',
+  'GIT_CURL_FTP_NO_EPSV',
+  'GIT_LFS_SKIP_SMUDGE',
+  'GIT_LFS_SKIP_DOWNLOAD_ERRORS',
+];
+
 const getGit = (dir: string): SimpleGit => {
   const resolved = gitBinary();
   const binary = SIMPLE_GIT_BINARY_PATTERN.test(resolved) ? resolved : 'git';
-  return simpleGit(dir, { binary });
+  return simpleGit(dir, { binary, allowEnvironment: REMOTE_ACCESS_ENVIRONMENT });
 };
 
 export type GitClient = SimpleGit;
