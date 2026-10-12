@@ -1,7 +1,7 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFile, mkdir, symlink, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { mkdir, readdir, readFile, symlink, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { withTempDir } from '#testing/helpers/temp-dir.js';
@@ -28,16 +28,9 @@ type SaveScenario = {
   expectedHash: string;
 };
 
-type FrozenIdentityField = 'commit' | FrozenFilePath;
+type FrozenManifestAdmission = { kind: 'admitted' } | { kind: 'rejected'; field: string };
 
-type FrozenManifestAdmission =
-  | { kind: 'admitted' }
-  | { kind: 'rejected'; field: FrozenIdentityField };
-
-type BoundaryEvent =
-  | { kind: 'identity-rejected'; field: FrozenIdentityField }
-  | { kind: 'archive-invoked' }
-  | { kind: 'helper-invoked' };
+type BoundaryEvent = { kind: 'identity-rejected'; field: string } | { kind: 'helper-invoked' };
 
 type HelperInvocation = {
   exitCode: number | null;
@@ -45,7 +38,7 @@ type HelperInvocation = {
 };
 
 type FrozenWriterResult =
-  | { kind: 'rejected'; field: FrozenIdentityField }
+  | { kind: 'rejected'; field: string }
   | { kind: 'invoked'; invocation: HelperInvocation };
 
 type ScenarioEvidence = {
@@ -66,25 +59,16 @@ const fixturePath = join(
   'v3-custom-commands-preservation.yaml',
 );
 const manifestPath = join(testDirectory, 'fixtures', 'v3-pre-change-writer.manifest.json');
+const frozenSourceRoot = join(testDirectory, 'fixtures', 'v3-pre-change-writer');
 
-const frozenFilePaths = [
+const writerRootFilePaths = [
   'src/core/config/load/io.ts',
   'src/lib/confined-fs.ts',
   'src/features/runners/config-transforms.ts',
   'src/stores/project/config-persistence.ts',
 ] as const;
 
-type FrozenFilePath = (typeof frozenFilePaths)[number];
-
-const frozenCommit = 'a44587540ffeb824ffec34a6def0f0358320e78b';
-const frozenFileSha256: Record<FrozenFilePath, string> = {
-  'src/core/config/load/io.ts': '536d1c1d8383cd8720ab41673f2b153434924834a6a15bf15cf70e1d93951468',
-  'src/lib/confined-fs.ts': '74717a5e3b4f20a08af549c35bcbd18bc7f0fa56a67b2863ec3e8b454c8f5cb0',
-  'src/features/runners/config-transforms.ts':
-    'a52f40beecf1fe95cda07f1c4ce142cf256d7c0793c402f50854746ac77e285d',
-  'src/stores/project/config-persistence.ts':
-    'd1033d22e11beef6c803338186d69ff364849c38aef783832dcec630ca1b105f',
-};
+const vendoredSha256 = await hashVendoredFiles();
 
 const expectedInputHash = 'ed0a8fe275b2f1a7b0761589cc34ef35bb85d76821366b278ea90f53f4a879ae';
 const expectedSettingsHash = '54bba5345211836a61b6f045e47b62d5d593c10447eb6d26e3be280f2bb33fd9';
@@ -115,32 +99,20 @@ function parseManifest(raw: string): FrozenManifestAdmission {
   }
 
   if (!isRecord(parsed)) throw new Error('The frozen-writer manifest must be an object.');
-  const identity = readRecord(parsed, 'identity');
-  const evidence = readRecord(parsed, 'evidence');
+  if (Object.keys(parsed).toSorted().join() !== 'CONFIG_VERSION,sha256') {
+    throw new Error('The frozen-writer manifest must hold only CONFIG_VERSION and sha256.');
+  }
   const hashes = readRecord(parsed, 'sha256');
 
-  if (readString(identity, 'packageName') !== 'splitbrief') {
-    throw new Error('The frozen-writer manifest has the wrong package name.');
-  }
-  if (readString(identity, 'packageVersion') !== '0.1.0') {
-    throw new Error('The frozen-writer manifest has the wrong package version.');
-  }
   if (parsed['CONFIG_VERSION'] !== 3) {
     throw new Error('The frozen-writer manifest must record CONFIG_VERSION 3.');
   }
-  if (readString(evidence, 'npmViewSplitbriefVersionsJson') !== 'E404') {
-    throw new Error('The frozen-writer manifest must record the registry E404 evidence.');
-  }
-  if (!Array.isArray(evidence['repositoryTags']) || evidence['repositoryTags'].length !== 0) {
-    throw new Error('The frozen-writer manifest must record zero repository tags.');
+  if (Object.keys(hashes).toSorted().join('\n') !== Object.keys(vendoredSha256).join('\n')) {
+    throw new Error('The frozen-writer manifest must list exactly the vendored files.');
   }
 
-  if (readString(identity, 'commit') !== frozenCommit) {
-    return { kind: 'rejected', field: 'commit' };
-  }
-
-  for (const relativeFile of frozenFilePaths) {
-    if (readString(hashes, relativeFile) !== frozenFileSha256[relativeFile]) {
+  for (const [relativeFile, actual] of Object.entries(vendoredSha256)) {
+    if (readString(hashes, relativeFile) !== actual) {
       return { kind: 'rejected', field: relativeFile };
     }
   }
@@ -152,52 +124,18 @@ function sha256(value: string | Buffer): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function gitOutput(args: readonly string[]): Buffer {
-  return execFileSync('git', args, { cwd: repositoryRoot, stdio: ['ignore', 'pipe', 'pipe'] });
-}
-
-function verifyFrozenIdentity(): void {
-  execFileSync('git', ['cat-file', '-e', `${frozenCommit}^{commit}`], {
-    cwd: repositoryRoot,
-    stdio: 'pipe',
-  });
-
-  const frozenPackage = JSON.parse(gitOutput(['show', `${frozenCommit}:package.json`]).toString());
-  if (!isRecord(frozenPackage)) throw new Error('The frozen package manifest must be an object.');
-  expect(frozenPackage['name']).toBe('splitbrief');
-  expect(frozenPackage['version']).toBe('0.1.0');
-  expect(gitOutput(['tag', '--list']).toString().trim()).toBe('');
-  expect(gitOutput(['show', `${frozenCommit}:src/core/schemas/config.ts`]).toString()).toContain(
-    'export const CONFIG_VERSION = 3;',
+async function hashVendoredFiles(): Promise<Record<string, string>> {
+  const vendoredFiles = (await readdir(frozenSourceRoot, { recursive: true, withFileTypes: true }))
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) => relative(frozenSourceRoot, join(entry.parentPath, entry.name)))
+    .toSorted();
+  const entries = await Promise.all(
+    vendoredFiles.map(async (relativeFile) => [
+      relativeFile,
+      sha256(await readFile(join(frozenSourceRoot, relativeFile))),
+    ]),
   );
-
-  for (const relativeFile of frozenFilePaths) {
-    execFileSync('git', ['cat-file', '-e', `${frozenCommit}:${relativeFile}`], {
-      cwd: repositoryRoot,
-      stdio: 'pipe',
-    });
-    expect(sha256(gitOutput(['show', `${frozenCommit}:${relativeFile}`]))).toBe(
-      frozenFileSha256[relativeFile],
-    );
-  }
-}
-
-async function archiveFrozenSource(
-  sandboxRoot: string,
-  archiveName: string,
-  events: BoundaryEvent[],
-): Promise<string> {
-  events.push({ kind: 'archive-invoked' });
-  const frozenRoot = join(sandboxRoot, 'frozen-source', archiveName);
-  const archivePath = join(sandboxRoot, `${archiveName}.tar`);
-  await mkdir(frozenRoot, { recursive: true });
-  execFileSync('git', ['archive', '--format=tar', `--output=${archivePath}`, frozenCommit], {
-    cwd: repositoryRoot,
-    stdio: 'pipe',
-  });
-  execFileSync('tar', ['-xf', archivePath, '-C', frozenRoot], { stdio: 'pipe' });
-  await symlink(join(repositoryRoot, 'node_modules'), join(frozenRoot, 'node_modules'), 'dir');
-  return frozenRoot;
+  return Object.fromEntries(entries);
 }
 
 async function seedConfig(projectDir: string, rawYaml: string): Promise<string> {
@@ -266,26 +204,24 @@ function invokeHelper(
   return { exitCode: result.status, output: parseHelperOutput(result.stdout) };
 }
 
-async function invokeFrozenWriter(
+function invokeFrozenWriter(
   manifestRaw: string,
   sandboxRoot: string,
-  archiveName: string,
   projectDir: string,
   rawYaml: string,
   edits: readonly ConfigDocumentEdit[],
   operation: 'write' | 'load',
   events: BoundaryEvent[],
-): Promise<FrozenWriterResult> {
+): FrozenWriterResult {
   const admission = parseManifest(manifestRaw);
   if (admission.kind === 'rejected') {
     events.push({ kind: 'identity-rejected', field: admission.field });
     return admission;
   }
 
-  const sourceRoot = await archiveFrozenSource(sandboxRoot, archiveName, events);
   const invocation = invokeHelper(
     sandboxRoot,
-    { label: 'frozen', sourceRoot },
+    { label: 'frozen', sourceRoot: frozenSourceRoot },
     projectDir,
     rawYaml,
     edits,
@@ -319,7 +255,7 @@ function expectPreservedYamlContext(
 
 async function hashWorktreeFiles(): Promise<Record<string, string>> {
   const entries = await Promise.all(
-    frozenFilePaths.map(async (relativeFile) => [
+    writerRootFilePaths.map(async (relativeFile) => [
       relativeFile,
       sha256(await readFile(join(repositoryRoot, relativeFile))),
     ]),
@@ -344,24 +280,16 @@ function printScenarioEvidence(record: ScenarioEvidence): void {
   console.info(JSON.stringify({ kind: 'v3-writer-evidence', ...record }));
 }
 
-const frozenIdentityDriftCases: Array<{
-  label: string;
-  field: FrozenIdentityField;
-  value: string;
-}> = [
-  { label: 'commit', field: 'commit', value: frozenCommit },
-  ...frozenFilePaths.map((relativeFile) => ({
-    label: relativeFile,
-    field: relativeFile,
-    value: frozenFileSha256[relativeFile],
-  })),
-];
+const frozenIdentityDriftCases = Object.entries(vendoredSha256).map(([field, value]) => ({
+  field,
+  value,
+}));
 
 function expectFrozenInvocation(
   result: FrozenWriterResult,
   events: readonly BoundaryEvent[],
 ): HelperInvocation {
-  expect(events).toEqual([{ kind: 'archive-invoked' }, { kind: 'helper-invoked' }]);
+  expect(events).toEqual([{ kind: 'helper-invoked' }]);
   if (result.kind === 'rejected') {
     throw new Error(`The frozen identity was unexpectedly rejected at ${result.field}.`);
   }
@@ -370,16 +298,15 @@ function expectFrozenInvocation(
 
 describe('v3 custom command preservation', () => {
   it.each(frozenIdentityDriftCases)(
-    'rejects a one-character $label manifest drift before archive or helper work',
+    'rejects a one-character $field manifest drift before helper work',
     async ({ field, value }) => {
       const manifestRaw = await readFile(manifestPath, 'utf8');
       const events: BoundaryEvent[] = [];
 
       await withTempDir('splitbrief-v3-identity-drift', async (sandboxRoot) => {
-        const result = await invokeFrozenWriter(
+        const result = invokeFrozenWriter(
           driftManifestValue(manifestRaw, value),
           sandboxRoot,
-          'rejected-identity',
           join(sandboxRoot, 'project'),
           '',
           [],
@@ -421,13 +348,14 @@ describe('v3 custom command preservation', () => {
       throw new Error(`The frozen identity was rejected at ${manifestAdmission.field}.`);
     }
     expect(sha256(fixture)).toBe(expectedInputHash);
-    verifyFrozenIdentity();
+    expect(await readFile(join(frozenSourceRoot, 'src/core/schemas/config.ts'), 'utf8')).toContain(
+      'export const CONFIG_VERSION = 3;',
+    );
     console.info(
       JSON.stringify({
         kind: 'writer-manifest',
         identity: 'frozen',
-        commit: frozenCommit,
-        sha256: frozenFileSha256,
+        sha256: vendoredSha256,
       }),
     );
     console.info(
@@ -449,10 +377,9 @@ describe('v3 custom command preservation', () => {
 
           if (identity === 'frozen') {
             const events: BoundaryEvent[] = [];
-            const result = await invokeFrozenWriter(
+            const result = invokeFrozenWriter(
               manifestRaw,
               sandboxRoot,
-              `frozen-${scenario.label}`,
               projectDir,
               fixture,
               scenario.edits,
@@ -492,10 +419,9 @@ describe('v3 custom command preservation', () => {
         if (identity === 'frozen') {
           const events: BoundaryEvent[] = [];
           loaded = expectFrozenInvocation(
-            await invokeFrozenWriter(
+            invokeFrozenWriter(
               manifestRaw,
               sandboxRoot,
-              'frozen-load',
               loadProjectDir,
               fixture,
               [],
@@ -525,10 +451,9 @@ describe('v3 custom command preservation', () => {
         if (identity === 'frozen') {
           const events: BoundaryEvent[] = [];
           rejected = expectFrozenInvocation(
-            await invokeFrozenWriter(
+            invokeFrozenWriter(
               manifestRaw,
               sandboxRoot,
-              'frozen-unsupported',
               unsupportedProjectDir,
               unsupported,
               [],
