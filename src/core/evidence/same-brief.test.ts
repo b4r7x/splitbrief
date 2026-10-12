@@ -33,7 +33,7 @@ describe('sameCurrentBrief', () => {
     const checked = {
       ...brief,
       status: 'done' as const,
-      checkResults: [{ id: 'K1', passed: true }],
+      checkResults: [{ id: 'K1', status: 'pass' as const }],
     };
     expect(sameCurrentBrief(entry(brief, { status: 'done' }), checked)).toBe(true);
   });

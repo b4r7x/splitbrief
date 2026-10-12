@@ -116,8 +116,10 @@ describe('createStdoutTextSink', () => {
         phase: 'implementing',
         taskId: taskId('T001'),
         results: [
-          { id: 'K1', passed: true },
-          { id: 'K2', passed: false },
+          { id: 'K1', status: 'pass' },
+          { id: 'K2', status: 'fail' },
+          { id: 'K3', status: 'refused' },
+          { id: 'K4', status: 'not-runnable' },
         ],
       },
       {
@@ -161,7 +163,7 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: researching',
       'phase: implementing',
-      'task T001: done (1 of 2 checks passed)',
+      'task T001: done (1 of 2 checks passed, 1 refused, 1 not run)',
       'phase: final-review',
       'review: final pass (0 blocking)',
       'phase: complete',

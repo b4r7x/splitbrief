@@ -7,7 +7,7 @@ import type { TriageInput } from '../../../core/schemas/review.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { nowIso } from '../../../utils/format-time.js';
-import { publishError, publishReviewCheck } from '../events.js';
+import { planCheckRow, publishError, publishReviewCheck, unranCheckRow } from '../events.js';
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { recordTaskCheckRuns } from '../task/task-checks.js';
 import {
@@ -141,12 +141,7 @@ export async function runPreReviewChecks(
   for (const check of registry.values()) {
     throwIfAborted(opts.signal);
     const prepared = prepare(check);
-    const identity = {
-      id: check.id,
-      command: prepared.command,
-      moment: 'plan' as const,
-      ...(check.kind === 'render' && { scenario: check.value }),
-    };
+    const identity = planCheckRow(check.id, prepared.command, check);
     const startedAt = Date.now();
     publishReviewCheck(notices, { ...identity, status: 'running' });
     const run = await prepared.run();
@@ -160,10 +155,7 @@ export async function runPreReviewChecks(
             passed: run.status === 'pass',
             duration: Date.now() - startedAt,
           }
-        : {
-            status: run.status === 'refused' ? 'refused' : 'not-run',
-            detail: run.output,
-          }),
+        : unranCheckRow(run)),
     });
   }
   const { failed, unrunnable } = classifyRequiredChecks(

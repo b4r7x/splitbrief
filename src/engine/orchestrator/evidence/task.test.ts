@@ -36,7 +36,7 @@ describe('recordLocalTaskEvidence', () => {
     expect(updated.tasks[0]?.checks).toEqual([]);
   });
 
-  it('records a check run with its command, exit code, artifacts and snapshot', () => {
+  it('records a check run with its status, command, exit code, artifacts and snapshot', () => {
     const entries = checkEntries({
       workspaceSnapshotId: 'snap-1',
       runs: [
@@ -54,6 +54,7 @@ describe('recordLocalTaskEvidence', () => {
     expect(entries).toEqual([
       {
         id: 'K1',
+        status: 'pass',
         command: 'npm test',
         exitCode: 0,
         output: 'ok',
@@ -383,7 +384,7 @@ describe('recordedTargetOutput', () => {
       }),
     );
 
-    const checked = { ...task, checkResults: [{ id: 'K1', passed: true }] };
+    const checked = { ...task, checkResults: [{ id: 'K1', status: 'pass' as const }] };
     expect(recordedTargetOutput(ref, checked).files).toEqual([promoted]);
   });
 

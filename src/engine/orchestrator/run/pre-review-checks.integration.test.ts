@@ -254,8 +254,8 @@ describe('pre-review checks', () => {
     saveState({ projectDir, sessionId: 'sess-pre-review' }, state);
     const result = await runPreReviewChecks(options({ state, runCommand: runner }));
     expect(result.runs.map((run) => run.checkId)).toEqual(['K2', 'K1']);
-    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
-    expect(result.state.tasks[1]?.checkResults).toEqual([{ id: 'K2', passed: false }]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
+    expect(result.state.tasks[1]?.checkResults).toEqual([{ id: 'K2', status: 'fail' }]);
     expect(result.defects).toEqual([]);
     expect(result.unrunnable).toEqual([]);
   });

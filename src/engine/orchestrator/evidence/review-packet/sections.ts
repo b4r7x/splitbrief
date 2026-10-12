@@ -103,6 +103,7 @@ export function buildChecks(opts: {
     (task.checks ?? []).map((entry) => ({
       taskId: task.id,
       id: entry.id,
+      ...(entry.status !== undefined && { status: entry.status }),
       ...(entry.command !== undefined && { command: entry.command }),
       ...(entry.exitCode !== undefined && { exitCode: entry.exitCode }),
       ...(entry.output !== undefined && { output: entry.output }),

@@ -168,7 +168,7 @@ describe('buildSummary session artifact rollups', () => {
       let state = transition(makeImplState([first, stopped]), {
         type: 'RECORD_CHECK_RESULTS',
         taskId: first.id,
-        results: [{ id: 'K1', passed: true }],
+        results: [{ id: 'K1', status: 'pass' }],
       });
       state = transition(state, { type: 'START_TASK', taskId: stopped.id });
       await persistTaskEvidence({

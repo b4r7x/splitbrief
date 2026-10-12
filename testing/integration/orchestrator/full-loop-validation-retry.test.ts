@@ -189,9 +189,9 @@ describe('full workflow validation retry loop', { timeout: 90_000 }, () => {
         (event): event is Extract<EngineEvent, { type: 'checks_run' }> =>
           event.type === 'checks_run',
       );
-    expect(checkResults.flatMap((event) => event.results.map((check) => check.passed))).toEqual([
-      false,
-      true,
+    expect(checkResults.flatMap((event) => event.results.map((check) => check.status))).toEqual([
+      'fail',
+      'pass',
     ]);
 
     // The brief's own check is the gate; a new run records no stage validation.

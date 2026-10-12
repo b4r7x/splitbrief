@@ -60,7 +60,7 @@ describe('standalone babysit watcher', () => {
     expect(first.event.type).toBe('runner_call_error');
     expect(first.event.detail).toContain('adapter failed');
 
-    append('checks_run', { taskId: 'T001', results: [{ id: 'C1', passed: false }] });
+    append('checks_run', { taskId: 'T001', results: [{ id: 'C1', status: 'fail' }] });
     append('task_retry', { attempt: 2 });
     expect((await watch()).event.type).toBe('checks_run');
     expect((await watch()).event.type).toBe('task_retry');

@@ -88,9 +88,57 @@ describe('runTaskChecks', () => {
 
     expect(result.runs).toHaveLength(1);
     expect(result.runs[0]?.status).toBe('pass');
-    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
     expect(events.filter((event) => event.type === 'checks_run')).toHaveLength(1);
     expect(recordedChecks(projectDir, sessionId).map((entry) => entry.id)).toEqual(['K1']);
+  });
+
+  it('records refused and not-run plan checks and shows each row as the pre-review row reads', async () => {
+    const { projectDir, sessionId } = setup('task-checks-refused');
+    const task = makeTask({
+      id: 'T001',
+      checks: [
+        ...versionCheck(),
+        { id: 'K2', kind: 'cmd', value: 'npm run lint', required: true },
+        { id: 'K3', kind: 'render', value: 'home', required: false },
+      ],
+    });
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runTaskChecks({
+      wctx: makeWctx({ projectDir, sessionId, bus }),
+      state: makeImplState([task]),
+      task,
+      checkIds: ['K1', 'K2', 'K3'],
+    });
+
+    expect(result.state.tasks[0]?.checkResults).toEqual([
+      { id: 'K1', status: 'pass' },
+      { id: 'K2', status: 'refused' },
+      { id: 'K3', status: 'not-runnable' },
+    ]);
+    expect(events.find((event) => event.type === 'checks_run')).toMatchObject({
+      results: [
+        { id: 'K1', status: 'pass' },
+        { id: 'K2', status: 'refused' },
+        { id: 'K3', status: 'not-runnable' },
+      ],
+    });
+    expect(
+      events
+        .filter((event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite')
+        .map((row) => [row.id, row.moment, row.status, row.command, row.scenario, row.detail]),
+    ).toEqual([
+      ['K2', 'plan', 'refused', 'npm run lint', undefined, 'runs a package script or binary'],
+      ['K3', 'plan', 'not-run', '', 'home', 'validation.render is not set'],
+    ]);
+    expect(
+      recordedChecks(projectDir, sessionId).map((entry) => [entry.id, entry.status, entry.output]),
+    ).toEqual([
+      ['K1', 'pass', expect.any(String)],
+      ['K2', 'refused', 'runs a package script or binary'],
+      ['K3', 'not-runnable', 'validation.render is not set'],
+    ]);
   });
 
   it('leaves a task without checks unchanged', async () => {
@@ -132,7 +180,7 @@ describe('runTaskChecks', () => {
     });
 
     expect(result.completed).toBe(true);
-    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
     const retryChecks = recordedChecks(projectDir, sessionId).filter((entry) => entry.id === 'K1');
     expect(retryChecks).toHaveLength(1);
   });
@@ -402,14 +450,14 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
       const { result, events } = await fixChecks(run, () => OTHER_RED);
 
       expect(result.state.tasks[0]?.checkResults).toEqual([
-        { id: 'K1', passed: true },
-        { id: 'V1', passed: true },
+        { id: 'K1', status: 'pass' },
+        { id: 'V1', status: 'pass' },
       ]);
       expect(events.filter((event) => event.type === 'checks_run')).toEqual([
         expect.objectContaining({
           results: [
-            { id: 'K1', passed: true },
-            { id: 'V1', passed: true },
+            { id: 'K1', status: 'pass' },
+            { id: 'V1', status: 'pass' },
           ],
         }),
       ]);
@@ -497,7 +545,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
       const fresh = 'src/first.ts(1,1): error TS2322: New first-stage error.';
       const { result, rows } = await fixChecks(run, () => fresh);
       expect(result.settled.has('V1')).toBe(false);
-      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'V1', passed: false });
+      expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'V1', status: 'fail' });
       expect(rows.at(-1)).toMatchObject({
         passed: false,
         own: 1,
@@ -550,7 +598,7 @@ describe('runTaskChecks for a fix task that answers a reviewer check', { timeout
           checkIds: ['K2'],
           runCommand: makeCommandRunner(),
         });
-        expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K2', passed: true });
+        expect(result.state.tasks[0]?.checkResults).toContainEqual({ id: 'K2', status: 'pass' });
         expect(events.filter((event) => event.type === 'full_suite')).toEqual([
           expect.objectContaining({
             id: 'K2',

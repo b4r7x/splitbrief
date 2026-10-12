@@ -46,9 +46,9 @@ describe('substituteEventFields', () => {
       ts: 1,
       phase: 'validating-task',
       taskId: taskId('T001'),
-      results: [{ id: 'K1', passed: true }],
+      results: [{ id: 'K1', status: 'pass' }],
     };
-    expect(substituteEventFields(S('event.results'), event)).toBe('[{"id":"K1","passed":true}]');
+    expect(substituteEventFields(S('event.results'), event)).toBe('[{"id":"K1","status":"pass"}]');
   });
 
   it('leaves non-event-placeholder text unchanged', () => {

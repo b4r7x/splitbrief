@@ -123,6 +123,7 @@ describe('recordCheckRuns', () => {
       ...(ledger.tasks[0]?.checks ?? []),
       {
         id: 'V1',
+        status: 'fail',
         output: 'red',
         preExisting: ['src/old.test.ts > adds'],
         workspaceSnapshotId: expect.any(String),
@@ -130,6 +131,7 @@ describe('recordCheckRuns', () => {
       },
       {
         id: 'K1',
+        status: 'pass',
         command: 'npm test',
         exitCode: 0,
         output: 'ok',

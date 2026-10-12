@@ -134,7 +134,7 @@ The shared selector beside the builder supplies both the input's failure keys an
 
 A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. Keys with no file match exactly. Every unmatched re-run key counts as another failure.
 
-Other failures belong to other fix tasks or the next review. A check with no carried keys must pass. This includes older saved fix tasks. A timeout or a red with no named failure fails the gate. Results of `refused`, `unknown` and `not-runnable` also reject the brief. A settled fix check records `passed: true` in `checkResults`; its command evidence keeps the failure.
+Other failures belong to other fix tasks or the next review. A check with no carried keys must pass. This includes older saved fix tasks. A timeout or a red with no named failure fails the gate. Results of `refused`, `unknown` and `not-runnable` also reject the brief. A settled fix check records `status: 'pass'` in `checkResults`; its command evidence keeps the failure.
 
 The same rule covers carried reviewer, plan and task checks, even when a check is optional. Each judged re-run gets a fix check verdict row. A green re-run shows that all carried failures are gone. A red without proof shows `your N failures not shown · not proven fixed`. Plan and task checks get only a done row, with no duration.
 

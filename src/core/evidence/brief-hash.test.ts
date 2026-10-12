@@ -43,7 +43,7 @@ describe('hashTaskBrief', () => {
     const planned = makeTask({ inputHashes: { 'src/hello.ts': 'a'.repeat(64) } });
     const ran = {
       ...planned,
-      checkResults: [{ id: 'K1', passed: true }],
+      checkResults: [{ id: 'K1', status: 'pass' as const }],
       inputHashes: { 'src/hello.ts': 'b'.repeat(64) },
     };
     expect(hashTaskBrief([ran])).toBe(hashTaskBrief([planned]));

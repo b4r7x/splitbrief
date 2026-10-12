@@ -200,6 +200,7 @@ export async function planTurnText(opts: {
       projectContext,
       languageContext,
       build: buildSeat(wctx),
+      approvesPlan: resolveApproveLevel(config) === 'plan',
       skillsContext: wctx.skillsContext,
       codebaseContext,
       earlierPlanning: opts.earlierPlanning,
@@ -651,6 +652,7 @@ export async function checkFullPlan(
       skillsContext: wctx.skillsContext,
     }),
     wctx.config.validation.render,
+    resolveApproveLevel(wctx.config) === 'plan',
   );
 }
 

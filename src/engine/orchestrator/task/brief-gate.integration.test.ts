@@ -81,7 +81,9 @@ describe('brief gate', () => {
     if (green) expect(result.error).toBe(queued ? CORRECTION_AFTER_CHECKS : '');
     else expect(result.error).toMatch(/^check K1 did not pass \(fail\): broken/);
     expect(result.diagnosis).toBe(green ? '' : 'check K1 failed');
-    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: green }]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([
+      { id: 'K1', status: green ? 'pass' : 'fail' },
+    ]);
     expect(result.state.messageQueue.filter(isQueuedMessagePendingDelivery)).toHaveLength(
       queued ? 1 : 0,
     );
@@ -125,7 +127,7 @@ describe('brief gate', () => {
     expect(result.correction).toBe(true);
     expect(result.acceptance.accepted).toBe(false);
     expect(result.state.messageQueue[0]?.text).toBe('also update the alias');
-    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
   });
 
   it('accepts when a correction is cleared after the checks are recorded', async () => {
@@ -171,7 +173,7 @@ describe('brief gate', () => {
     expect(result.acceptance).toEqual({ accepted: true });
     expect(result.error).toBe('');
     expect(result.state.messageQueue).toEqual([]);
-    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
     expect(loadState(ref)?.messageQueue).toEqual([]);
   });
 
@@ -231,7 +233,7 @@ describe('brief gate', () => {
       runCommand,
     });
     expect(runCommand).toHaveBeenCalledTimes(1);
-    expect(due.state.tasks[1]?.checkResults).toEqual([{ id: 'K1', passed: true }]);
+    expect(due.state.tasks[1]?.checkResults).toEqual([{ id: 'K1', status: 'pass' }]);
   });
 
   it('rejects required due checks and accepts optional failures', async () => {
@@ -261,7 +263,7 @@ describe('brief gate', () => {
       expect(result.acceptance).toEqual({ accepted: !required });
       expect(result.error).toMatch(required ? /^check K1 did not pass \(fail\): .*broken/s : /^$/);
       expect(result.diagnosis).toBe(required ? 'check K1 failed' : '');
-      expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', passed: false }]);
+      expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'K1', status: 'fail' }]);
     }
   });
   // Live run 2026-10-09: the 4k tail of `npm run test-ci` was an event-log line.
@@ -401,8 +403,8 @@ describe('brief gate', () => {
     ]);
     expect(result.acceptance).toEqual({ accepted: true });
     expect(result.state.tasks[0]?.checkResults).toEqual([
-      { id: 'V1', passed: true },
-      { id: 'V2', passed: true },
+      { id: 'V1', status: 'pass' },
+      { id: 'V2', status: 'pass' },
     ]);
   });
 
@@ -505,7 +507,7 @@ describe('brief gate', () => {
         expect(result.error).toContain(
           `your 1\u00a0failure remains\nYour failures that remain:\n- ${NEW_KEY}\nOther failures:\n- ${OLD_RED}\nOutput tail:`,
         );
-        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: false }]);
+        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', status: 'fail' }]);
       });
     });
 
@@ -517,7 +519,7 @@ describe('brief gate', () => {
         expect(places).toEqual(['workspace']);
         expect(result.acceptance.accepted).toBe(true);
         expect(result.error).toBe('');
-        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: true }]);
+        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', status: 'pass' }]);
       });
     });
 
@@ -570,7 +572,7 @@ describe('brief gate', () => {
         expect(places).toEqual([]);
         expect(result.acceptance.accepted).toBe(false);
         expect(result.error).toMatch(/^check V1 did not pass \(refused\): /);
-        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', passed: false }]);
+        expect(result.state.tasks[0]?.checkResults).toEqual([{ id: 'V1', status: 'refused' }]);
       });
     });
   });

@@ -214,12 +214,12 @@ async function recheckMergedCandidate(
       if (unrunnable.has(check.checkId) === false) unrunnable.set(check.checkId, check);
     }
     for (const run of runs) {
-      if (unrunnable.has(run.checkId) || run.status === 'not-runnable') {
-        notRun.push(`${owner} check ${run.checkId} not run: ${run.output}`);
-      } else if (run.status !== 'pass') {
-        const text = `${owner} ${checkFailureText(run)}`;
-        failures.push(text);
+      if (run.status === 'fail') {
+        failures.push(`${owner} ${checkFailureText(run)}`);
         pushRun(run, owner);
+      } else if (run.status !== 'pass') {
+        const outcome = run.status === 'refused' ? 'refused' : 'not run';
+        notRun.push(`${owner} check ${run.checkId} ${outcome}: ${run.output}`);
       }
     }
   };
@@ -240,7 +240,7 @@ async function recheckMergedCandidate(
       state = transitionAndSave(ref, state, {
         type: 'RECORD_CHECK_RESULTS',
         taskId: task.id,
-        results: runs.map((run) => ({ id: run.checkId, passed: run.status === 'pass' })),
+        results: runs.map((run) => ({ id: run.checkId, status: run.status })),
       });
       setTrackedState(state);
     }

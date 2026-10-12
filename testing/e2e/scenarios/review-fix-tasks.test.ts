@@ -353,7 +353,7 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
       failureKeys: [OWN_KEY],
       redKeys: [LEGACY_KEY, OWN_KEY],
     });
-    expect(fixTask.checkResults).toContainEqual({ id: 'V1', passed: true });
+    expect(fixTask.checkResults).toContainEqual({ id: 'V1', status: 'pass' });
     expect(ready.triage).toMatchObject([
       {
         cycle: 1,
@@ -420,9 +420,9 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
     const fixGate = events.find((event) => event.type === 'checks_run' && event.taskId === 'T003');
     expect(fixGate).toMatchObject({
       results: [
-        { id: 'T003-K1', passed: true },
-        { id: 'T001-K1', passed: true },
-        { id: 'V1', passed: true },
+        { id: 'T003-K1', status: 'pass' },
+        { id: 'T001-K1', status: 'pass' },
+        { id: 'V1', status: 'pass' },
       ],
     });
 

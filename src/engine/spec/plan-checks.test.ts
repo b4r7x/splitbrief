@@ -14,7 +14,7 @@ const fits = new Map<string, PlanTaskFit>([
 ]);
 
 function codes(plan: PlanProposal, contextFits = fits, dir = projectDir): string[] {
-  return checkPlan(plan, dir, contextFits, undefined).map((error) => error.code);
+  return checkPlan(plan, dir, contextFits, undefined, false).map((error) => error.code);
 }
 
 describe('planRepairWarning', () => {
@@ -51,7 +51,7 @@ describe('checkPlan', () => {
         }),
       ],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([]);
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([]);
   });
 
   it('names a criterion no task serves and a task reference to an unknown criterion', () => {
@@ -62,7 +62,7 @@ describe('checkPlan', () => {
       ],
       tasks: [makeTaskSpec({ criteria: ['C1', 'C7'] })],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       { code: 'uncovered-criterion', message: 'Criterion C2 is served by no task.' },
       { code: 'unknown-criterion', message: 'Task T001 serves unknown criterion C7.' },
     ]);
@@ -82,7 +82,7 @@ describe('checkPlan', () => {
         makeTaskSpec({ id: 'T002', criteria: [], intent: '  \n ', checks: k2 }),
       ],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       { code: 'task-without-criterion', message: 'Task T002 serves no criterion.' },
       { code: 'task-without-intent', message: 'Task T002 has no intent.' },
     ]);
@@ -114,7 +114,7 @@ describe('checkPlan', () => {
       tasks: [makeTaskSpec({ checks: [{ ...v1, id: 'V2' }] })],
     });
     expect(
-      checkPlan(plan, projectDir, fits, undefined).filter(
+      checkPlan(plan, projectDir, fits, undefined, false).filter(
         (error) => error.code === 'reserved-check-id',
       ),
     ).toEqual([
@@ -146,7 +146,7 @@ describe('checkPlan', () => {
         makeTaskSpec({ id: 'T002', dependsOn: ['T001'], checks: k2 }),
       ],
     });
-    const [cycleError, ...rest] = checkPlan(cycle, projectDir, fits, undefined);
+    const [cycleError, ...rest] = checkPlan(cycle, projectDir, fits, undefined, false);
     expect(rest).toEqual([]);
     expect(cycleError?.code).toBe('dependency-cycle');
     expect(cycleError?.message).toMatch(/T001.*T002.*T001/);
@@ -168,7 +168,7 @@ describe('checkPlan', () => {
         }),
       ],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       {
         code: 'batch-out-of-order',
         message: 'Task T004 (batch 1) comes after T003 (batch 2); list the tasks in batch order.',
@@ -210,7 +210,7 @@ describe('checkPlan', () => {
         ],
       }),
     );
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       {
         code: 'unprotected-operation',
         message:
@@ -223,7 +223,7 @@ describe('checkPlan', () => {
     const plan = makePlanProposal({
       tasks: [makeTaskSpec({ suggestedFiles: ['src/hello.ts', 'package.json'] })],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       {
         code: 'unlisted-protected-operation',
         message:
@@ -241,13 +241,13 @@ describe('checkPlan', () => {
         }),
       ],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([]);
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([]);
   });
 
   it('refuses a task over BUILD’s context and only that label', () => {
     const plan = makePlanProposal();
     const overflow = new Map([['T001', { fit: 'overflow', blocked: 'too big' } as const]]);
-    expect(checkPlan(plan, projectDir, overflow, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, overflow, undefined, false)).toEqual([
       {
         code: 'context-overflow',
         message: 'Task T001 does not fit the BUILD model’s context; split it.',
@@ -258,12 +258,42 @@ describe('checkPlan', () => {
   it('refuses a task that fits but that no implementer can take, with the routing reason', () => {
     const plan = makePlanProposal();
     const blocked = new Map([['T001', { fit: 'fits', blocked: 'No capable profile' } as const]]);
-    expect(checkPlan(plan, projectDir, blocked, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, blocked, undefined, false)).toEqual([
       {
         code: 'no-capable-worker',
         message: 'Task T001 has no implementer that can take it: No capable profile.',
       },
     ]);
+  });
+
+  it('refuses a cmd check the plan command policy refuses at the approve level of the run', () => {
+    const plan = makePlanProposal({
+      checks: [{ id: 'K9', kind: 'cmd', value: 'npm run lint', required: true }],
+      criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K8', 'K9'] }],
+      tasks: [
+        makeTaskSpec({
+          checks: [
+            { id: 'K1', kind: 'test', value: 'src/hello.test.ts', required: true },
+            { id: 'K8', kind: 'cmd', value: 'npx tsc --noEmit', required: false },
+          ],
+        }),
+      ],
+    });
+    const refusedK8 = {
+      code: 'refused-check-command',
+      message:
+        'Check K8 is refused: `npx tsc --noEmit` runs npx without --no-install. Name a command the plan command policy runs, or use a `test` check.',
+    };
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          'Check K9 is refused: `npm run lint` runs a package script or binary. Name a command the plan command policy runs, or use a `test` check.',
+      },
+      refusedK8,
+    ]);
+    // An approved plan may name a script that package.json does not define yet: a task can add it.
+    expect(checkPlan(plan, projectDir, fits, undefined, true)).toEqual([refusedK8]);
   });
 
   it('refuses a criterion id used twice', () => {
@@ -273,7 +303,7 @@ describe('checkPlan', () => {
         { id: 'C1', text: 'y', checkIds: ['K1'] },
       ],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       { code: 'duplicate-criterion-id', message: 'Criterion id C1 is used twice.' },
     ]);
   });
@@ -298,7 +328,7 @@ describe('checkPlan on the files of the checkout', () => {
     const plan = makePlanProposal({
       tasks: [makeTaskSpec({ suggestedFiles: ['src/hello.ts', 'src'], contextFiles: ['src'] })],
     });
-    expect(checkPlan(plan, dir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, dir, fits, undefined, false)).toEqual([
       { code: 'path-not-file', message: 'Task T001 names src, which is not a regular file.' },
       { code: 'path-not-file', message: 'Task T001 names src, which is not a regular file.' },
     ]);
@@ -309,7 +339,7 @@ describe('checkPlan on the files of the checkout', () => {
     const plan = makePlanProposal({
       tasks: [makeTaskSpec({ contextFiles: ['src/a.ts', 'src/gone.ts'] })],
     });
-    expect(checkPlan(plan, dir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, dir, fits, undefined, false)).toEqual([
       {
         code: 'missing-context-file',
         message:
@@ -334,7 +364,7 @@ describe('checkPlan on the files of the checkout', () => {
         }),
       ],
     });
-    expect(checkPlan(plan, dir, fits, undefined)).toEqual([]);
+    expect(checkPlan(plan, dir, fits, undefined, false)).toEqual([]);
   });
 
   it('reads a file an earlier task writes however the plan spells the path', () => {
@@ -354,7 +384,7 @@ describe('checkPlan on the files of the checkout', () => {
         ],
       }),
     );
-    expect(checkPlan(plan, dir, fits, undefined)).toEqual([]);
+    expect(checkPlan(plan, dir, fits, undefined, false)).toEqual([]);
   });
 
   it('names the context files of a task over BUILD’s context and their size', () => {
@@ -364,7 +394,7 @@ describe('checkPlan on the files of the checkout', () => {
       tasks: [makeTaskSpec({ contextFiles: ['src/big.ts', 'src/a.ts'] })],
     });
     expect(
-      checkPlan(plan, dir, new Map([['T001', { fit: 'overflow' } as const]]), undefined),
+      checkPlan(plan, dir, new Map([['T001', { fit: 'overflow' } as const]]), undefined, false),
     ).toEqual([
       {
         code: 'context-overflow',
@@ -418,7 +448,7 @@ describe('checkPlan on the files of the checkout', () => {
         }),
       ],
     });
-    expect(checkPlan(plan, projectDir, fits, undefined)).toEqual([
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       {
         code: 'render-check-unconfigured',
         message:
@@ -426,7 +456,13 @@ describe('checkPlan on the files of the checkout', () => {
       },
     ]);
     expect(
-      checkPlan(plan, projectDir, fits, 'npm run tui-shots -- --scenario {id} --output {out}'),
+      checkPlan(
+        plan,
+        projectDir,
+        fits,
+        'npm run tui-shots -- --scenario {id} --output {out}',
+        false,
+      ),
     ).toEqual([]);
   });
 
@@ -443,7 +479,9 @@ describe('checkPlan on the files of the checkout', () => {
       criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K-a', 'K-b'] }],
     });
 
-    expect(checkPlan(one, projectDir, fits, undefined).map((error) => error.message)).toEqual([
+    expect(
+      checkPlan(one, projectDir, fits, undefined, false).map((error) => error.message),
+    ).toEqual([
       'Render check K-render needs validation.render, which is not set; drop it or ask the user.',
     ]);
     expect(renderCheckNotes(one, undefined)).toEqual([

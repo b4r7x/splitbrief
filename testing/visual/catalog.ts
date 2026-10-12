@@ -982,6 +982,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-plan-check-refused',
+      title: 'Workflow · a plan check the command policy refused',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-check-refused',
+        title: 'A refused plan check row with its reason',
+        kind: 'implementation',
+        marker: 'Plan check K2',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-completed-orphan-rows',
       title: 'Workflow · completed briefs retain run-level and boundary rows',
       surface: screenSurface('workflow'),

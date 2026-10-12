@@ -161,7 +161,7 @@ describe('a correction during first-attempt checks', { timeout: 60_000 }, () => 
         (state) =>
           state.phase === 'implementing' &&
           state.tasks[0]?.status === 'in_progress' &&
-          state.tasks[0]?.checkResults?.[0]?.passed === true,
+          state.tasks[0]?.checkResults?.[0]?.status === 'pass',
       );
       expect(resumed).toMatchObject({ attempt: 0 });
       expect(resumed?.lineages).toBeUndefined();

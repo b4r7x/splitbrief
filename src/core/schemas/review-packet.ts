@@ -25,7 +25,7 @@ import {
   ReviewFindingCountsSchema,
   ReviewVerdictSchema,
 } from './summary.js';
-import { TaskIdSchema } from './task.js';
+import { CheckStatusSchema, TaskIdSchema } from './task.js';
 import { ReviewProvenanceSchema } from './review-changes.js';
 import { TaskTokenUsageSchema, TokenUsageSchema } from './tokens.js';
 import { RunSnapshotKindSchema } from './snapshot.js';
@@ -166,6 +166,7 @@ const ReviewPacketValidationTaskSchema = z.object({
 const ReviewPacketCheckEntrySchema = z.object({
   taskId: TaskIdSchema.optional(),
   id: z.string(),
+  status: CheckStatusSchema.optional(),
   command: z.string().optional(),
   exitCode: z.number().int().optional(),
   output: z.string().optional(),

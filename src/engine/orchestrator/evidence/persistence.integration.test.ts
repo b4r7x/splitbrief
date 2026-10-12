@@ -38,7 +38,7 @@ describe('persistTaskEvidence — brief hash', () => {
     state = transition(state, {
       type: 'RECORD_CHECK_RESULTS',
       taskId: first.id,
-      results: [{ id: 'K1', passed: true }],
+      results: [{ id: 'K1', status: 'pass' }],
     });
     state = transition(state, {
       type: 'REPLACE_TASK',

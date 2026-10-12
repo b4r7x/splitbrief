@@ -1178,7 +1178,10 @@ describe('runFinalReviewPhase', () => {
         criteria: ['C1'],
         suggestedFiles: ['src/alpha.ts'],
         exclusions: ['docs/**'],
-        checkResults: [{ id: 'K1', passed: true }],
+        checkResults: [
+          { id: 'K1', status: 'pass' },
+          { id: 'K2', status: 'refused' },
+        ],
       }),
       makeTask({
         id: 'T002',
@@ -1314,6 +1317,10 @@ describe('runFinalReviewPhase', () => {
     expect(prompt).toContain('## Touched, Not Suggested\n- T001: src/shared.ts');
     expect(prompt).toContain('## Recorded Check Results');
     expect(prompt).toContain('T001 check K1: pass');
+    expect(prompt).toContain('T001 check K2: refused');
+    expect(prompt).toContain(
+      'A check marked refused, not-runnable or unknown did not run: SPLITBRIEF refused its command or could not start it. It is neither a pass nor a failure, so raise no finding for it.',
+    );
     expect(prompt).toContain('## Consult Log');
     expect(prompt).toContain('the greeting handled empty names');
     expect(prompt).toContain('## Planning Answers');

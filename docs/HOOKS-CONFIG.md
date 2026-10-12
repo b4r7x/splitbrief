@@ -33,14 +33,14 @@ Lifecycle events fire during a workflow. Each can have multiple hooks declared.
 | `pre_task`       | Before each implementer task starts         | `taskId`, `title`, `file`, `files`, `action`, `index`, `total`       |
 | `post_task`      | After each implementer task succeeds        | `taskId`, `title`, `method`, `file`, `retries`, `duration`           |
 | `pre_validation` | Before a brief runs its checks              | `taskId`                                                             |
-| `post_validation`| After brief gate checks or plan and task checks before the final review, once per task that owns them (`checks_run` event) | `taskId`, `results` (`{ id, passed }[]`)                         |
+| `post_validation`| After brief gate checks or plan and task checks before the final review, once per task that owns them (`checks_run` event) | `taskId`, `results` (`{ id, status }[]`)                         |
 | `pre_escalation` | Before the planner's consult runs           | `taskId`                                                             |
 | `on_error`       | Any unrecoverable engine error              | `message`                                                            |
 | `on_halt`        | `recovery_prompted` event — the run stopped and is waiting for a decision | `reason`, `taskId`, `headline`, `headlineSpans`, `recommendedAction`, `resumeCommand` (`sessionId` rides in `context`) |
 | `on_complete`    | `workflow_complete` event                   | (none)                                                               |
 
 `pre_validation` fires when a brief gate has checks to run. In `review: task` cadence, the gate runs the task's checks and its due checks. The gate also runs the checks of the red a fix task answers, or the checks a consult `verify` names. In `review: end` cadence, an ordinary brief runs no check. The `pre_validation` payload is a `validate` event with `status: 'running'` and `taskId`, and no stages.
-`post_validation` fires on every `checks_run` event: after a brief gate's checks, and after the plan and task checks that run before the final review, once per task that owns them.
+`post_validation` fires on every `checks_run` event: after a brief gate's checks, and after the plan and task checks that run before the final review, once per task that owns them. Each result's `status` is `pass`, `fail`, `not-runnable`, `refused` or `unknown`. Only `pass` and `fail` mean that the check ran.
 The pre-review run of reviewer checks (`V1`, `V2`, …) fires neither validation hook. It publishes `review_checks` and `full_suite` events.
 
 
@@ -101,7 +101,7 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.title}`     | task_started, task_completed           | Task description                         |
 | `${event.action}`    | task_started                           | `'create'` or `'modify'`                 |
 | `${event.message}`   | error, warning             | String                                   |
-| `${event.results}`   | checks_run                             | JSON-stringified `{ id, passed }[]`      |
+| `${event.results}`   | checks_run                             | JSON-stringified `{ id, status }[]`      |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
 | `${event.duration}`  | task_completed                         | Number (ms)                              |
 | `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'consulted'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'` (older runs), `'failed'`, `'skipped'` |

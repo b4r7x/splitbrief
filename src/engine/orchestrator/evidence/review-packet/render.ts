@@ -41,11 +41,17 @@ function renderReadinessChecks(checks: ReviewPacket['readiness']['checks']): str
 function renderChecksLog(checks: ReviewPacket['checks']): string[] {
   const entryLines = checks.entries.flatMap((entry) => {
     const task = entry.taskId === undefined ? '' : ` ${entry.taskId}`;
-    const exit = entry.exitCode === undefined ? '' : ` (exit ${entry.exitCode})`;
+    // A check that did not run has no exit code and no output: its text is why it did not run.
+    const ran = entry.status === undefined || entry.status === 'pass' || entry.status === 'fail';
+    const outcome = !ran
+      ? ` (${entry.status})`
+      : entry.exitCode === undefined
+        ? ''
+        : ` (exit ${entry.exitCode})`;
     const command = entry.command === undefined ? '' : `: ${entry.command}`;
-    const lines = [`- ${entry.id}${task}${exit}${command}`];
+    const lines = [`- ${entry.id}${task}${outcome}${command}`];
     for (const line of (entry.output ?? '').split('\n')) {
-      if (line.trim() !== '') lines.push(`  output: ${line}`);
+      if (line.trim() !== '') lines.push(`  ${ran ? 'output' : 'reason'}: ${line}`);
     }
     if (entry.preExisting !== undefined && entry.preExisting.length > 0) {
       lines.push(`  pre-existing (also red at the run base): ${entry.preExisting.join(', ')}`);

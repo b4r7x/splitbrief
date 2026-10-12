@@ -81,7 +81,10 @@ import {
 import type { Config } from '../../../../src/core/schemas/config.js';
 import { error } from '../../../../src/utils/error.js';
 import { createEventBus } from '../../../../src/engine/events/bus.js';
-import { sanitizeDiscoveredValidation } from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
+import {
+  checkCommandRefusal,
+  sanitizeDiscoveredValidation,
+} from '../../../../src/engine/orchestrator/planning/sanitize-discovered-validation.js';
 import {
   BASE_IMPLEMENTER,
   BASE_PLANNER,
@@ -826,8 +829,8 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
       phase: 'validating-task',
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       results: [
-        { id: 'C1', passed: true },
-        { id: 'C2', passed: true },
+        { id: 'C1', status: 'pass' },
+        { id: 'C2', status: 'pass' },
       ],
     },
     {
@@ -849,6 +852,47 @@ const touchedNotSuggestedProjection: WorkflowFixtureProjection = {
       taskId: WORKFLOW_FIXTURE_TASK_ID,
       files: ['src/shared/format.ts', 'src/shared/format.test.ts'],
     },
+  ],
+};
+
+// An approved plan names `npm run lint`, but package.json defines no lint script. The plan command
+// policy refuses the check, so the brief's checks show it as a refused row with the rule it broke,
+// and the brief completes on the check that ran.
+const planCheckRefusedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-plan-check-refused'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...touchedNotSuggestedProjection.events.filter(
+      (event) => event.type === 'workflow_started' || event.type === 'tasks_planned',
+    ),
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_started'),
+    {
+      type: 'full_suite',
+      ts: FIXED_TS + 390,
+      phase: 'validating-task',
+      moment: 'plan',
+      id: 'K2',
+      command: 'npm run lint',
+      status: 'refused',
+      detail:
+        checkCommandRefusal('npm run lint', {
+          npmScriptsApproved: true,
+          packageScripts: { packageJsonExists: true, scripts: { test: 'node --test' } },
+        }) ?? '',
+    },
+    {
+      type: 'checks_run',
+      ts: FIXED_TS + 400,
+      phase: 'validating-task',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      results: [
+        { id: 'K1', status: 'pass' },
+        { id: 'K2', status: 'refused' },
+      ],
+    },
+    ...touchedNotSuggestedProjection.events.filter((event) => event.type === 'task_completed'),
   ],
 };
 
@@ -3797,7 +3841,7 @@ const continuousTranscriptProjection: WorkflowFixtureProjection = {
       ts: FIXED_TS + 310,
       phase: 'validating-task',
       taskId: taskId('T001'),
-      results: [{ id: 'C1', passed: true }],
+      results: [{ id: 'C1', status: 'pass' }],
     },
     {
       type: 'full_suite',
@@ -5236,6 +5280,7 @@ const projections = [
   failureProjection,
   plannerCommandsRefusedProjection,
   touchedNotSuggestedProjection,
+  planCheckRefusedProjection,
   completedOrphanRowsProjection,
   usageLimitRecoveryProjection,
   noFallbackRecoveryProjection,

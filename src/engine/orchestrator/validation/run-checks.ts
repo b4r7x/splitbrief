@@ -9,7 +9,7 @@ import type { PackageScriptsReadinessInput } from '../../../core/readiness/check
 import type { Config } from '../../../core/schemas/config.js';
 import type { Phase } from '../../../core/schemas/enums.js';
 import type { Plan } from '../../../core/schemas/plan.js';
-import type { Check, Task } from '../../../core/schemas/task.js';
+import type { Check, CheckStatus, Task } from '../../../core/schemas/task.js';
 import type {
   DiscoveredValidation,
   ReviewChecksRecord,
@@ -36,8 +36,6 @@ import { buildStageContext, planTestCheck } from './run.js';
 import { boundedOutputTail, runValidationStep } from './stage.js';
 import type { ValidationCommandRunner } from './types.js';
 
-export type CheckRunStatus = 'pass' | 'fail' | 'not-runnable' | 'refused' | 'unknown';
-
 export type CheckRunArtifact = {
   path: string;
   sha256: string;
@@ -60,7 +58,7 @@ export type CheckRunResult = {
       /** The failure keys of the red, read from its whole capture; `output` keeps only its tail. */
       failure: FailureKeys;
     }
-  | { status: Exclude<CheckRunStatus, 'fail'> }
+  | { status: Exclude<CheckStatus, 'fail'> }
 );
 
 export type RunChecksOptions = {

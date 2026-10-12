@@ -2986,7 +2986,7 @@ describe('consult answer rows', () => {
         ts: 0,
         phase: 'implementing',
         taskId: taskId('T003'),
-        results: [{ id: 'C1', passed: true }],
+        results: [{ id: 'C1', status: 'pass' }],
       },
       {
         type: 'seat_wait_started',
