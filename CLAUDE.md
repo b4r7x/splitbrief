@@ -12,7 +12,7 @@ The one exception is the orchestrating session, at an agreed checkpoint: after t
 
 ## Stack
 
-- **Runtime:** Node.js 22+, TypeScript 6.x, ESM only (`.js` extension in imports)
+- **Runtime:** Node.js 22 or 24, TypeScript 6.x, ESM only (`.js` extension in imports)
 - **Runner:** `tsx` (dev) / `tsc` → `dist/` (build)
 - **TUI:** Ink 6.x (React 19) + `fullscreen-ink`
 - **Testing:** Vitest 4.x, colocated (`foo.test.ts` next to `foo.ts`)
@@ -31,7 +31,7 @@ npm test                         # unit; no git, no fake CLIs
 npm run test:integration         # git, worktree, run-loop, Apply, fake CLI and node shim tests
 npm run release-check            # PR gate: format:check && typecheck && lint && test && test:integration && test:e2e && invariants && skills:check
 npm run test-ci                  # exhaustive form: same, with test:coverage thresholds
-npm run release:smoke            # npm pack, install the tarball in a temp project, run splitbrief --version and --help
+npm run release:smoke            # npm pack, check the tarball contents, --engine-strict install in a temp project, load native better-sqlite3, run splitbrief --version and --help
 node scripts/dangling-imports.mjs  # audit: relative imports that resolve to nothing (exit 1 on findings)
 ```
 

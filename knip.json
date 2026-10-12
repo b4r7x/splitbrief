@@ -17,6 +17,7 @@
     "!testing/compat/fixtures/v3-pre-change-writer/**",
     "!testing/e2e/*.config.ts"
   ],
+  "ignore": ["website/**"],
   "ignoreExportsUsedInFile": true,
   "includeEntryExports": true
 }

@@ -9,10 +9,6 @@ export function getIsolationStrategy(config: Config): IsolationStrategy {
   return config.workflow.isolation ?? 'worktree';
 }
 
-export function getShowSpend(config: Config): boolean {
-  return config.workflow.showSpend ?? true;
-}
-
 export function getConfigValue(config: Config | Record<string, unknown>, dotPath: string): unknown {
   const parts = dotPath.split('.');
   let current: unknown = config;

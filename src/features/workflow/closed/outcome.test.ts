@@ -196,9 +196,7 @@ describe('outcomeLineSpans', () => {
       briefs: {
         total: 3,
         passed: 3,
-        escalated: 0,
         failed: 1,
-        skipped: 0,
         rows: [],
         earlierRows: [],
       },
@@ -207,7 +205,6 @@ describe('outcomeLineSpans', () => {
         verdict: 'fail',
         counts: { critical: 2, warning: 1, note: 0 },
         markdownPath: 'review-packet.md',
-        driftPassed: false,
         evidence: { validated: 3, total: 3 },
         missingArtifacts: 0,
       },
@@ -273,9 +270,7 @@ describe('outcomeLineSpans', () => {
       briefs: {
         total: 0,
         passed: 0,
-        escalated: 0,
         failed: 0,
-        skipped: 0,
         rows: [],
         earlierRows: [
           {
@@ -305,9 +300,7 @@ describe('outcomeLineSpans', () => {
       briefs: {
         total: 3,
         passed: 0,
-        escalated: 0,
         failed: 0,
-        skipped: 0,
         rows: [],
         earlierRows: [],
       },
@@ -335,9 +328,7 @@ describe('outcomeLineSpans', () => {
       briefs: {
         total: 5,
         passed: 2,
-        escalated: 1,
         failed: 0,
-        skipped: 0,
         rows: [],
         earlierRows: [],
       },
@@ -373,9 +364,7 @@ describe('outcomeLineSpans', () => {
       briefs: {
         total: 0,
         passed: 0,
-        escalated: 0,
         failed: 0,
-        skipped: 0,
         rows: [],
         earlierRows: [],
       },

@@ -89,15 +89,15 @@ Parity with runtime output is enforced by `testing/docs/troubleshooting.test.ts`
 
 ### Symptom: `splitbrief requires Node.js 22 or newer`, `SyntaxError: Unexpected token`, or `engine "node" is incompatible`
 
-**Likely cause:** Node version below the required 22.x. SPLITBRIEF is ESM-only and uses `node:` built-ins, top-level `await`, and runtime features that older Node releases do not ship. The CLI checks `process.versions.node` before it parses any argument and refuses with `splitbrief requires Node.js 22 or newer; this process is Node.js <version>.` rather than running and reporting a wrong diagnosis later — on Node 20 the CLI arg-vector preflight truncates its `--help` capture and reports flags the installed binary does support as unsupported.
+**Likely cause:** The Node major is not 22 or 24. SPLITBRIEF supports Node.js 22 and Node.js 24. It is ESM-only and loads the native `better-sqlite3` module, which needs a supported Node ABI. On a Node older than 22, the CLI checks `process.versions.node` before it parses any argument and refuses with `splitbrief requires Node.js 22 or newer; this process is Node.js <version>.` rather than running and reporting a wrong diagnosis later — on Node 20 the CLI arg-vector preflight truncates its `--help` capture and reports flags the installed binary does support as unsupported.
 
 **Fix:**
-1. Run `node --version` and confirm output starts with `v22.` or higher.
-2. If lower, install Node 22 LTS (`nvm install 22 && nvm use 22`, or use `volta`, `fnm`, or your platform package manager).
+1. Run `node --version` and confirm output starts with `v22.` or `v24.`.
+2. If not, install Node 24 LTS (`nvm install 24 && nvm use 24`) or Node 22 LTS, with `nvm`, `volta`, `fnm`, or your platform package manager.
 3. Re-run `npm install` from a clean tree (`rm -rf node_modules package-lock.json && npm install`) so native bindings (better-sqlite3, etc.) re-resolve against the new ABI.
 4. Re-run `npm run typecheck` to confirm the toolchain works end-to-end.
 
-**Prevention:** Pin the engine in your shell profile via `nvm`/`fnm`. The `package.json` `engines.node` field already declares the minimum; add a `.nvmrc` if you frequently switch projects.
+**Prevention:** Pin the engine in your shell profile via `nvm`/`fnm`. The `package.json` `engines.node` field declares the supported majors; add a `.nvmrc` if you frequently switch projects.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [CONTRIBUTING.md](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md).
 

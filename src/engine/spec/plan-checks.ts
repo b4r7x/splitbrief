@@ -176,7 +176,7 @@ export function checkTaskIdentities(
  * The ids of every `render` check the plan carries, run-level then task-level in plan order, or
  * none when the run sets `validation.render`.
  */
-export function unconfiguredRenderCheckIds(
+function unconfiguredRenderCheckIds(
   plan: PlanProposal,
   renderCommand: string | undefined,
 ): string[] {

@@ -18,7 +18,7 @@ type SeatTokenSplit = {
 
 // The planner holds the review seat until the reviewer has a pricing identity of its own, so
 // reviewer tokens belong to the planner's bucket whenever the reviewer has no seat.
-export function foldReviewerIntoPlanner(opts: {
+function foldReviewerIntoPlanner(opts: {
   base: SeatTokenTotals;
   reviewer: SeatTokenTotals;
   foldReviewerIn: boolean;

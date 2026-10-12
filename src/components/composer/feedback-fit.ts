@@ -1,6 +1,5 @@
+import { ELLIPSIS, graphemes } from '../../utils/display-text.js';
 import { wrapHard } from '../../utils/wrap.js';
-
-const ELLIPSIS = '\u2026';
 
 export interface FeedbackMessageParts {
   prefix: string;
@@ -15,24 +14,34 @@ function fitsDisplayWidth(text: string, maxWidth: number): boolean {
   return !wrapHard(text, maxWidth).includes('\n');
 }
 
-function truncateToDisplayWidth(text: string, maxWidth: number): string {
-  if (maxWidth <= 0) return '';
-  if (fitsDisplayWidth(text, maxWidth)) return text;
-  if (!fitsDisplayWidth(ELLIPSIS, maxWidth)) return '';
-
-  const chars = Array.from(text);
+/**
+ * The longest whole-grapheme head of `text` whose `render` fits `maxWidth`. A cut never splits a
+ * cluster, so each kept unit has a fixed width and the fit grows monotonically with the head.
+ */
+function longestFittingHead(
+  text: string,
+  render: (head: string) => string,
+  maxWidth: number,
+): string {
+  const parts = graphemes(text);
   let low = 0;
-  let high = chars.length;
+  let high = parts.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    const candidate = `${chars.slice(0, mid).join('')}${ELLIPSIS}`;
-    if (fitsDisplayWidth(candidate, maxWidth)) {
+    if (fitsDisplayWidth(render(parts.slice(0, mid).join('')), maxWidth)) {
       low = mid;
     } else {
       high = mid - 1;
     }
   }
-  return `${chars.slice(0, low).join('')}${ELLIPSIS}`;
+  return render(parts.slice(0, low).join(''));
+}
+
+function truncateToDisplayWidth(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return '';
+  if (fitsDisplayWidth(text, maxWidth)) return text;
+  if (!fitsDisplayWidth(ELLIPSIS, maxWidth)) return '';
+  return longestFittingHead(text, (head) => `${head}${ELLIPSIS}`, maxWidth);
 }
 
 export function matchKnownFeedbackMessage(
@@ -63,20 +72,9 @@ export function fitFeedbackMessage(message: FeedbackMessageInput, width: number)
   const ellipsizedTitle = `${message.prefix}${ELLIPSIS}${message.suffix}`;
   if (!fitsDisplayWidth(ellipsizedTitle, max)) return emptyTitle;
 
-  const chars = Array.from(message.title);
-  let low = 0;
-  let high = chars.length;
-  while (low < high) {
-    const mid = Math.ceil((low + high) / 2);
-    const candidate = `${message.prefix}${chars.slice(0, mid).join('')}${ELLIPSIS}${
-      message.suffix
-    }`;
-    if (fitsDisplayWidth(candidate, max)) {
-      low = mid;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return `${message.prefix}${chars.slice(0, low).join('')}${ELLIPSIS}${message.suffix}`;
+  return longestFittingHead(
+    message.title,
+    (head) => `${message.prefix}${head}${ELLIPSIS}${message.suffix}`,
+    max,
+  );
 }

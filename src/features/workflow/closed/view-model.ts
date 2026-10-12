@@ -10,7 +10,6 @@ import { atRestRailStages } from '../at-rest.js';
 import {
   briefRows,
   buildSeatView,
-  costView,
   filesView,
   phaseTimings,
   plannerSeatView,
@@ -18,14 +17,13 @@ import {
   reviewView,
   scopeView,
   stoppedAtForCurrentPlan,
-  tokensView,
 } from './projections.js';
 
 /** How a closed run reads: every check agreed, something needs a look, or it was ended. */
 export type SummaryOutcomeKind = 'complete' | 'needs-attention' | 'ended' | 'applied' | 'discarded';
 
 export type SeatView =
-  | Readonly<{ kind: 'named'; identity: string; short: string }>
+  | Readonly<{ kind: 'named'; short: string }>
   | Readonly<{ kind: 'inherits' }>
   | Readonly<{ kind: 'mixed'; profiles: readonly string[] }>
   | Readonly<{
@@ -60,7 +58,6 @@ export type ReviewView =
       verdict: ReviewVerdict | null;
       counts: Readonly<{ critical: number; warning: number; note: number }>;
       markdownPath: string;
-      driftPassed: boolean | null;
       evidence: Readonly<{ validated: number; total: number }>;
       missingArtifacts: number;
     }>;
@@ -74,18 +71,12 @@ export type ScopeView =
       warnings: number;
     }>;
 
-export type CostView =
-  | Readonly<{ kind: 'unmetered'; label: string }>
-  | Readonly<{ kind: 'unpriced' }>
-  | Readonly<{ kind: 'priced'; actual: number; partial: boolean }>;
-
 export type PhaseTiming = Readonly<{ phase: 'planning' | 'implementing' | 'review'; ms: number }>;
 
 export interface SummaryView {
   outcome: Readonly<{ kind: SummaryOutcomeKind }>;
   run: Readonly<{
     feature: string;
-    totalMs: number;
     sessionId: string;
   }>;
   rail: RailStageState[];
@@ -93,22 +84,17 @@ export interface SummaryView {
   briefs: Readonly<{
     total: number;
     passed: number;
-    escalated: number;
     failed: number;
-    skipped: number;
     rows: BriefRow[];
     earlierRows: BriefRow[];
   }>;
   review: ReviewView;
   scope: ScopeView;
   quality: BriefQualitySummary | null;
-  /** Null when the reader turned the spend display off: the run has no cost row at all. */
-  cost: CostView | null;
-  tokens: Readonly<{ plan: number; build: number; review: number }>;
   files: Readonly<{
     changed: string[] | null;
     partial: ReadonlySet<string>;
-    stoppedAt: Readonly<{ taskId: TaskId; partialFiles: string[] }> | null;
+    stoppedAt: Readonly<{ taskId: TaskId }> | null;
     /** The run.patch an ended or discarded workspace run saved its changes in, project-relative. */
     patch: string | null;
   }>;
@@ -118,14 +104,9 @@ export interface SummaryView {
   phases: PhaseTiming[];
 }
 
-/**
- * The run record, plus the one display preference the screen reads from config: the closed block
- * derives its view from the record navigation carried and nothing else.
- */
+/** The closed block derives its view from the record navigation carried and nothing else. */
 export interface DeriveSummaryViewInput {
   record: RunRecord;
-  /** `workflow.showSpend`; absent reads as on, the way the config default does. */
-  showSpend?: boolean | undefined;
 }
 
 /**
@@ -151,7 +132,6 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     outcome: { kind: outcomeKind },
     run: {
       feature: sanitizeTerminalDisplayText(summary.feature),
-      totalMs: summary.totalTime,
       sessionId,
     },
     rail: atRestRailStages(record),
@@ -163,17 +143,13 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     briefs: {
       total: summary.totalTasks,
       passed: summary.completedByLocal,
-      escalated: summary.escalatedToPlanner,
       failed: summary.failed,
-      skipped: summary.skipped,
       rows: rows.current,
       earlierRows: rows.earlier,
     },
     review: reviewView(summary),
     scope: scopeView(summary),
     quality: summary.briefQuality ?? null,
-    cost: input.showSpend === false ? null : costView(summary.costBreakdown),
-    tokens: tokensView(summary),
     files: { ...files, patch: savedPatch(state, files.changed) },
     checkpoint: record.checkpoint?.kind ?? null,
     canUndoApply: state !== null && canUndoApply(state),

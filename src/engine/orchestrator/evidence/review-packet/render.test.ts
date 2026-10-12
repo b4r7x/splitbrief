@@ -241,7 +241,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
         entries: [],
         outsideReadPaths: [
           'Task T004 searched ~ with run_command: find ~ -name "process-invoke.ts"',
-          'Task T004 read /Users/dev/.ssh/id_ed25519 (outside) with view_file',
+          'Task T004 read /Users/alice/.ssh/id_ed25519 (outside) with view_file',
         ],
       },
     });
@@ -252,7 +252,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
       '- outside read: Task T004 searched ~ with run_command: find ~ -name "process-invoke.ts"',
     );
     expect(rendered).toContain(
-      '- outside read: Task T004 read /Users/dev/.ssh/id_ed25519 (outside) with view_file',
+      '- outside read: Task T004 read /Users/alice/.ssh/id_ed25519 (outside) with view_file',
     );
   });
 

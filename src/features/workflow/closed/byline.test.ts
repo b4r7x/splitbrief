@@ -89,7 +89,6 @@ describe('bylineText', () => {
         verdict: 'fail',
         counts: { critical: 2, warning: 1, note: 0 },
         markdownPath: 'review-packet.md',
-        driftPassed: false,
         evidence: { validated: 3, total: 3 },
         missingArtifacts: 0,
       },
@@ -112,9 +111,7 @@ describe('bylineText', () => {
       briefs: {
         total: 3,
         passed: 2,
-        escalated: 0,
         failed: 1,
-        skipped: 0,
         rows: [],
         earlierRows: [],
       },
@@ -125,9 +122,7 @@ describe('bylineText', () => {
       briefs: {
         total: 3,
         passed: 1,
-        escalated: 0,
         failed: 2,
-        skipped: 0,
         rows: [],
         earlierRows: [],
       },

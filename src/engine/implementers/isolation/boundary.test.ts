@@ -49,9 +49,9 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
   // read from the worktree.
   const boundaryFor = (tool: CliToolId) =>
     createIsolationBoundary({
-      isolationDir: '/Users/dev/.local/state/splitbrief/trees/5b1e0c7d2a94/run-7',
-      checkoutDir: '/Users/dev/Projects/splitbrief',
-      env: { HOME: '/Users/dev', PATH: ENV_PATH },
+      isolationDir: '/Users/alice/.local/state/splitbrief/trees/5b1e0c7d2a94/run-7',
+      checkoutDir: '/Users/alice/Projects/splitbrief',
+      env: { HOME: '/Users/alice', PATH: ENV_PATH },
       tool,
     });
   const boundary = boundaryFor('antigravity');
@@ -81,14 +81,14 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
   it('stops the home-wide find and the projects-wide grep', () => {
     expect(
       breachOf(boundary, 'run_command', {
-        CommandLine: 'find /Users/dev -name "process-invoke.ts" 2>/dev/null',
+        CommandLine: 'find /Users/alice -name "process-invoke.ts" 2>/dev/null',
       }),
     ).toBe(
       'searched ~ (outside the workspace) with run_command: find ~ -name "process-invoke.ts" 2>/dev/null',
     );
     expect(
       breachOf(boundary, 'run_command', {
-        CommandLine: `grep -rn '"name": "splitbrief"' /Users/dev/Projects/ 2>/dev/null`,
+        CommandLine: `grep -rn '"name": "splitbrief"' /Users/alice/Projects/ 2>/dev/null`,
       }),
     ).toBe(
       `searched ~/Projects (outside the workspace) with run_command: grep -rn '"name": "splitbrief"' ~/Projects/ 2>/dev/null`,
@@ -103,9 +103,9 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
 
   it('opens no parent of a PATH entry that is the root or under the home', () => {
     const withLocalBin = createIsolationBoundary({
-      isolationDir: '/Users/dev/.local/state/splitbrief/trees/5b1e0c7d2a94/run-7',
-      checkoutDir: '/Users/dev/Projects/splitbrief',
-      env: { HOME: '/Users/dev', PATH: '/bin:/Users/dev/.local/bin' },
+      isolationDir: '/Users/alice/.local/state/splitbrief/trees/5b1e0c7d2a94/run-7',
+      checkoutDir: '/Users/alice/Projects/splitbrief',
+      env: { HOME: '/Users/alice', PATH: '/bin:/Users/alice/.local/bin' },
       tool: 'antigravity',
     });
     expect(breachOf(withLocalBin, 'list_dir', { DirectoryPath: '/' })).toBe(
@@ -132,17 +132,17 @@ describe('isolation boundary on the 2026-09-23 antigravity trail', () => {
   it('closes the checkout it promotes into and every other place under the home', () => {
     expect(
       breachOf(boundary, 'view_file', {
-        AbsolutePath: '/Users/dev/Projects/splitbrief/src/cli.ts',
+        AbsolutePath: '/Users/alice/Projects/splitbrief/src/cli.ts',
       }),
     ).toBe('read ~/Projects/splitbrief/src/cli.ts (your checkout) with view_file');
-    expect(breachOf(boundary, 'list_dir', { DirectoryPath: '/Users/dev' })).toBe(
+    expect(breachOf(boundary, 'list_dir', { DirectoryPath: '/Users/alice' })).toBe(
       'listed ~ (outside the workspace) with list_dir',
     );
     expect(breachOf(boundary, 'run_command', { CommandLine: 'cat ~/.ssh/id_ed25519' })).toBe(
       'read ~/.ssh/id_ed25519 (outside the workspace) with run_command: cat ~/.ssh/id_ed25519',
     );
-    expect(breachOf(boundary, 'list_dir', { DirectoryPath: '/Users/devel' })).toBe(
-      'listed /Users/devel (outside the workspace) with list_dir',
+    expect(breachOf(boundary, 'list_dir', { DirectoryPath: '/Users/alicent' })).toBe(
+      'listed /Users/alicent (outside the workspace) with list_dir',
     );
   });
 });
@@ -651,11 +651,11 @@ describe('isolation boundary in the checkout itself (workflow.isolation: none)',
 // warning read `Task T003 read ~/.local/state/splitbrief/trees/d4e807f3ded0/2026-07-…/src/core/
 // schemas/runner-fields.ts with read`, as if a read of the brief's own file had gone through.
 describe('the warning a read outside the workspace raises', () => {
-  const TREES = '/Users/dev/.local/state/splitbrief/trees/d4e807f3ded0';
+  const TREES = '/Users/alice/.local/state/splitbrief/trees/d4e807f3ded0';
   const boundary = createIsolationBoundary({
     isolationDir: `${TREES}/2026-10-07-seat-fallback`,
-    checkoutDir: '/Users/dev/Projects/splitbrief',
-    env: { HOME: '/Users/dev', PATH: ENV_PATH },
+    checkoutDir: '/Users/alice/Projects/splitbrief',
+    env: { HOME: '/Users/alice', PATH: ENV_PATH },
     tool: 'opencode',
   });
 
@@ -670,19 +670,19 @@ describe('the warning a read outside the workspace raises', () => {
   });
 
   it('keeps the home spelling for a path that is not beside the workspace', () => {
-    expect(breachOf(boundary, 'read', { filePath: '/Users/dev/.ssh/config' })).toBe(
+    expect(breachOf(boundary, 'read', { filePath: '/Users/alice/.ssh/config' })).toBe(
       'read ~/.ssh/config (outside the workspace) with read',
     );
   });
 
   it('keeps the home spelling when the workspace sits directly in a home', () => {
     const inHome = createIsolationBoundary({
-      isolationDir: '/Users/dev/app',
-      checkoutDir: '/Users/dev/app',
-      env: { HOME: '/Users/dev', PATH: ENV_PATH },
+      isolationDir: '/Users/alice/app',
+      checkoutDir: '/Users/alice/app',
+      env: { HOME: '/Users/alice', PATH: ENV_PATH },
       tool: 'opencode',
     });
-    expect(breachOf(inHome, 'read', { filePath: '/Users/dev/.ssh/config' })).toBe(
+    expect(breachOf(inHome, 'read', { filePath: '/Users/alice/.ssh/config' })).toBe(
       'read ~/.ssh/config (outside the workspace) with read',
     );
   });

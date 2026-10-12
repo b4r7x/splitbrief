@@ -53,7 +53,16 @@ The first dispatch of every release is a dry run. The `dry_run` input defaults t
 
 ### Packed-install gate
 
-`npm run release:smoke` (`scripts/pack-install-smoke.mjs`) runs `npm pack`, installs the tarball into an empty temporary project, and runs the installed `splitbrief --version` and `splitbrief --help`. The gate fails when the install fails or a command exits non-zero. It also fails when `--version` does not print the package version, or when `--help` prints no `Usage: splitbrief` line. With a tarball path as its argument, the script tests that tarball and does not pack; `release.yml` uses this form.
+`npm run release:smoke` (`scripts/pack-install-smoke.mjs`) runs `npm pack`. The `prepare` script rebuilds `dist/` before npm packs. With a tarball path as its argument, the script tests that tarball and does not pack; `release.yml` uses this form. Both forms then do these checks in this order:
+
+1. **Contents.** The script lists the tarball with `tar -tzf` and reads the packed `package.json`. `tarballProblems` (`scripts/pack-contents.mjs`) checks the listing. The tarball must contain `package.json`, `dist/cli.js`, `README.md`, `LICENSE` and `CHANGELOG.md`. Each path in the packed `files` array must be present; a directory such as `dist/` needs at least one file under it. No path may sit under `src/`, `testing/` or `.claude/`, and no file may match `*.test.*`.
+2. **Install.** The script installs the tarball into an empty temporary project with `npm install --no-audit --no-fund --engine-strict`. The install fails when the running Node is outside `engines.node` of SPLITBRIEF or of a dependency, for example `better-sqlite3`. The install does not run the `prepare` script of SPLITBRIEF. It runs the install scripts of the dependencies, so `better-sqlite3` gets its native binary.
+3. **Native load.** A child `node` resolves `better-sqlite3` from the installed `splitbrief` package, opens an in-memory database, runs `select 1 as x` and closes it.
+4. **CLI.** The script runs the installed `splitbrief --version` and `splitbrief --help`. `--version` must print the package version. `--help` must print a `Usage: splitbrief` line.
+
+Any failed check or non-zero exit fails the gate. On success the script prints the Node version and the platform it proved, for example `ok — splitbrief-0.2.0.tgz installs and runs splitbrief 0.2.0 on node v22.22.0 linux-x64 (native better-sqlite3 loads)`.
+
+The supported runtimes are Node 22 and Node 24 (`engines.node` is `^22.0.0 || ^24.0.0`) on `darwin` and `linux` (`os`). The CLI refuses a Node older than 22 at start-up (`src/cli/node-guard.ts`). For any other unsupported major, npm warns at install, and the smoke's `--engine-strict` install fails. `release.yml` proves Node 24 on Linux. The maintainer proves Node 22, and macOS, with `npm run release:smoke` in procedure step 7. A change to `engines.node` needs a smoke on each new major before release.
 
 The `files` allowlist in `package.json` includes `dist/`, 19 explicitly named user docs, `README.md`, `CHANGELOG.md`, and `LICENSE`. It excludes developer docs and `docs/design/`. `docs/CONFIGURATION.md` stays because CLI errors name it.
 
@@ -69,7 +78,7 @@ Do these steps on an up-to-date `main` with a clean working tree. `<x>` is the n
 4. In `CHANGELOG.md`, rename `## [Unreleased]` to `## [<x>] - <YYYY-MM-DD>`.
 5. Add a new empty `## [Unreleased]` section above it.
 6. Copy `.test-artifacts/live/manifest.json` to `.release-records/<x>/manifest.json`. Do not add the manifest, its skipped rows or any test result to the `[<x>]` entry. Run `npm run check:invariants`; gate 59 fails on internal text in the changelog and the user guides.
-7. Run `npm run release:smoke`.
+7. Run `npm run release:smoke` under Node 22. On a macOS machine, run it under Node 22 and Node 24. Each run must print `ok` with the Node version and platform it proved. `release.yml` proves Node 24 on Linux in step 9.
 8. Commit the version and changelog change, then push `main`.
 9. Run `gh workflow run release.yml --ref main`. The default is a dry run. Run `gh run watch` until it passes.
 10. Run `gh workflow run release.yml --ref main -f dry_run=false`. Run `gh run watch` until the publish passes.
@@ -97,7 +106,7 @@ After bootstrap, npm authenticates each workflow publish through OIDC. With an e
 
 The first dispatch shows:
 
-- The packed-install gate proves the `better-sqlite3` native install on Node 24, including during a dry run.
+- The packed-install gate proves the tarball contents, the `--engine-strict` install and the native `better-sqlite3` load on Node 24 on Linux, including during a dry run.
 - The workflow selects a tarball publish with provenance. Confirm that npm accepts provenance during the real publish. If npm refuses, publish from the checkout in CI. This fallback gives up publishing the exact tested tarball.
 - After you delete the secret, the publish step leaves `NODE_AUTH_TOKEN` unchanged. Confirm that npm chooses OIDC on the first real publish after deletion.
 

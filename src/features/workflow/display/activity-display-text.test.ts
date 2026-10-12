@@ -59,7 +59,7 @@ describe('fitCompactActivityDisplayLine', () => {
     const rowCells = 56;
     const line = fitCompactActivityDisplayLine({
       label: 'run',
-      value: "sed -n '1,260p' /Users/dev/.agents/library/codebase-exploration/SKILL.md",
+      value: "sed -n '1,260p' /Users/alice/.agents/library/codebase-exploration/SKILL.md",
       rowCells,
       prefixCells: getTerminalCellWidth('| '),
     });
@@ -122,7 +122,7 @@ describe('fitCompactActivityDisplayLine', () => {
     const rowCells = 42;
     const line = fitCompactActivityDisplayLine({
       label: 'read',
-      value: '/Users/dev/Projects/splitbrief/src/features/workflow/display/package.json',
+      value: '/Users/alice/Projects/splitbrief/src/features/workflow/display/package.json',
       rowCells,
       prefixCells: getTerminalCellWidth('| '),
     });
