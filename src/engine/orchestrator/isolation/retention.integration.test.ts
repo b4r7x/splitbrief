@@ -6,6 +6,7 @@ import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createRunIsolation } from './create.js';
+import { WORKSPACE_KEPT_CODE } from '../../../core/sessions/workspace-notice.js';
 import { publishRetainedWorkspaceNotice, readWorkspaceRecord } from './retention.js';
 
 const dirs: string[] = [];
@@ -51,11 +52,16 @@ describe('retained workspace handoff', () => {
       });
       const { bus, events } = makeBusRecorder();
       await publishRetainedWorkspaceNotice({ ...ref, state, bus });
-      const messages = events.flatMap((event) => (event.type === 'warning' ? [event.message] : []));
-      expect(messages).toEqual(
+      const notices = events.flatMap((event) =>
+        event.type === 'warning' ? [{ message: event.message, code: event.code }] : [],
+      );
+      expect(notices).toEqual(
         outcome === 'stop' || outcome === 'failure'
           ? [
-              `Workspace kept at ${workspace.projectDir} for Continue, with its private CLI state and caches.`,
+              {
+                message: `Workspace kept at ${workspace.projectDir} for Continue, with its private CLI state and caches.`,
+                code: WORKSPACE_KEPT_CODE,
+              },
             ]
           : [],
       );

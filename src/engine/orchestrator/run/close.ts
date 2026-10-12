@@ -10,6 +10,7 @@ import { error, matches } from '../../../utils/error.js';
 import type { EventBus } from '../../events/types.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
+import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
 import {
   publishRecoveryActionSelected,
   publishRecoveryResolved,
@@ -48,6 +49,7 @@ export async function removeClosedRunWorkspace(
       });
     }
   }
+  scope.bus?.publish({ type: 'workspace_closed', ts: Date.now(), phase });
 }
 
 export async function closeRunIfOpen(
@@ -104,6 +106,9 @@ export async function closeRunIfOpen(
       }),
     });
     if (result.kind === 'committed') {
+      if (latest.workspace !== undefined && existsSync(latest.workspace.path)) {
+        await persistStoppedBriefEvidence(scope, latest, latest.workspace.path);
+      }
       if (warning !== undefined) warn(warning, result.state.phase);
       if (workspaceToRemove !== undefined) {
         await removeClosedRunWorkspace(scope, workspaceToRemove, result.state.phase);

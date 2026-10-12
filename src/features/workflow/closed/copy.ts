@@ -120,8 +120,14 @@ export function runRows(view: SummaryView): RunRow[] {
   return rows;
 }
 
+/**
+ * The closed run reads the final review's record. A run that reviewed each task can still end before
+ * its final review, so the absence names that review.
+ */
+export const FINAL_REVIEW_NOT_RUN = 'final review not run';
+
 function reviewSegments(review: ReviewView): CopySegment[] {
-  if (review.kind !== 'written') return [{ text: 'not run', tone: 'textDim' }];
+  if (review.kind !== 'written') return [{ text: FINAL_REVIEW_NOT_RUN, tone: 'textDim' }];
   const segments: CopySegment[] = [];
   const verdict = verdictSegment(review.verdict);
   if (verdict !== null) segments.push(verdict);

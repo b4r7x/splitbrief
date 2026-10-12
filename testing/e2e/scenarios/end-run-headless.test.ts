@@ -2,7 +2,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sessionDir } from '../../../src/core/paths.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
+import { WORKSPACE_KEPT_CODE } from '../../../src/core/sessions/workspace-notice.js';
+import type { SessionRef } from '../../../src/core/types/session-ref.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
+import type { EngineEvent } from '../../../src/engine/events/types.js';
+import { briefRowParts, filesRows } from '../../../src/features/workflow/closed/copy.js';
+import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
+import { walkTranscript } from '../../../src/features/workflow/conversation-rows/transcript-walk.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -10,12 +19,30 @@ import {
   continueRun,
   createStopContinueFixture,
   endImplementerHold,
+  MARKER_FILE,
   readState,
   startAndSignal,
   type StopContinueFixture,
 } from '../helpers/stop-continue-fixture.js';
 
 let fixture: StopContinueFixture | undefined;
+
+/** The warning codes and row-less closes of a run's log, and of the transcript it renders. */
+async function workspaceNotices(ref: SessionRef) {
+  const events = (await readRunEvents(ref)).events;
+  const shown = [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+    step.kind === 'event' ? [step.event] : [],
+  );
+  const notices = (list: readonly EngineEvent[]) =>
+    list.flatMap((event) =>
+      event.type === 'warning'
+        ? [event.code]
+        : event.type === 'workspace_closed'
+          ? [event.type]
+          : [],
+    );
+  return { logged: notices(events), shown: notices(shown) };
+}
 
 afterEach(async () => {
   if (fixture !== undefined) {
@@ -55,6 +82,65 @@ describe('headless End run', { timeout: 240_000 }, () => {
     );
     expect(existsSync(workspace.path)).toBe(false);
     expect(checkoutEntries(target.projectDir)).toEqual(checkoutAtStart);
+  });
+
+  // In a real run, End run during a BUILD call: the closed block listed fewer files than run.patch
+  // held, showed the stopped brief again under Earlier work, and kept offering the removed
+  // workspace for Continue.
+  it('reads a run ended inside its brief the way run.patch and the workspace stand', async () => {
+    fixture = createStopContinueFixture();
+    const target = fixture;
+    const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
+    expect(parked.exitCode).toBe(0);
+
+    const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
+
+    expect(ended.exitCode, ended.stderr).toBe(0);
+    const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+    const patch = readFileSync(
+      join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'),
+      'utf8',
+    );
+    expect(patch).toContain(`diff --git a/${MARKER_FILE} b/${MARKER_FILE}`);
+    const patchFiles = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
+    const view = deriveSummaryView({ record: readRunRecord(ref) });
+    if (view === null) throw new Error('the ended run has no closed view');
+    expect(filesRows(view).map((row) => row.path)).toEqual(patchFiles);
+    expect(view.briefs.rows.map((row) => briefRowParts({ row }))).toMatchObject([
+      { id: 'T001', state: { kind: 'halted', word: 'stopped' }, note: '1 partial file' },
+    ]);
+    expect(view.briefs.earlierRows).toEqual([]);
+    const notices = await workspaceNotices(ref);
+    expect(notices.logged).toContain(WORKSPACE_KEPT_CODE);
+    expect(notices.shown).not.toContain(WORKSPACE_KEPT_CODE);
+    expect(notices.shown).toContain('workspace_closed');
+  });
+
+  // Apply removes the workspace the stop kept, the same as End run and Discard do.
+  it('an applied run no longer offers the workspace its stop kept for Continue', async () => {
+    fixture = createStopContinueFixture();
+    const target = fixture;
+    const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
+    expect(parked.exitCode).toBe(0);
+    const workspace = readState(target, parked.sessionId).workspace;
+    if (workspace === undefined) throw new Error('the parked run has no workspace');
+    const resumed = await continueRun(target);
+    expect(resumed.exitCode, resumed.stderr).toBe(0);
+
+    const applied = await cli(target, ['continue', parked.sessionId, '--action', 'apply']);
+
+    expect(applied.exitCode, applied.stderr).toBe(0);
+    expect(
+      deriveRunStatus({ state: readState(target, parked.sessionId), liveness: 'not-alive' }),
+    ).toEqual({ kind: 'closed', as: 'applied' });
+    expect(existsSync(workspace.path)).toBe(false);
+    const notices = await workspaceNotices({
+      projectDir: target.projectDir,
+      sessionId: parked.sessionId,
+    });
+    expect(notices.logged).toContain(WORKSPACE_KEPT_CODE);
+    expect(notices.shown).not.toContain(WORKSPACE_KEPT_CODE);
+    expect(notices.shown).toContain('workspace_closed');
   });
 
   it('discards a ready run through End run and keeps its files out of the checkout', async () => {

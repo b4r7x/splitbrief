@@ -22,6 +22,8 @@ import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { AttemptWorkspace } from '../isolation/types.js';
 import { revertedDir } from '../isolation/entry-snapshot.js';
+import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { briefInFlight } from '../../../core/state/selectors.js';
 
 export function getOrCreateLedger(opts: { ref: SessionRef; state: WorkflowState }): EvidenceLedger {
   const { ref, state } = opts;
@@ -94,6 +96,30 @@ export async function persistTaskEvidence(opts: {
       err,
     );
   }
+}
+
+/**
+ * A run that closes inside a brief books what the brief left in its workspace: the ledger books a
+ * brief when an attempt ends, and a stop cuts the attempt before that. Without it the record would
+ * name fewer files than the run's changes hold.
+ */
+export async function persistStoppedBriefEvidence(
+  ref: SessionRef,
+  state: WorkflowState,
+  workspaceDir: string,
+): Promise<void> {
+  const task = briefInFlight(state);
+  const taskStart = state.changedFilesBaseline?.activeTaskSnapshot;
+  if (task === undefined || taskStart === undefined) return;
+  const changedFiles = await getChangedFilesSinceSnapshot(workspaceDir, taskStart);
+  mutateEvidenceLedger(ref, (existing) =>
+    recordLocalTaskEvidence({
+      ledger: existing ?? getOrCreateLedger({ ref, state }),
+      task,
+      status: 'in_progress',
+      changedFiles,
+    }),
+  );
 }
 
 /**

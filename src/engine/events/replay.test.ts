@@ -405,6 +405,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   },
   build_images_as_paths: { phase: 'implementing', taskId: 'T001', count: 1 },
   cost_update: { phase: 'implementing', tokenUsage },
+  workspace_closed: { phase: 'implementing' },
   approval_prompted: { phase: 'implementing', tier: 'confirm', actionClass: 'write_in_scope' },
   approval_granted: {
     phase: 'implementing',

@@ -90,6 +90,9 @@
 - Reject on a checkout run restores only the files that still hold what the run wrote, and names the files you changed since. It also works on a run that stopped or halted after a brief passed, and it refuses a closed run.
 - A file that Reject recreates gets its recorded mode, and a folder that Reject, Apply or a restore recreates gets the normal mode, not owner-only.
 - End run refuses an unfinished Apply until you restore or retry it.
+- A run ended inside a brief lists in its `Files` section every file that `run.patch` holds, and it shows the stopped brief once. Its `Review` row reads `final review not run`.
+- A run closed by End run, Discard or Apply no longer offers its removed workspace for Continue in its transcript.
+- `run.patch` names a created or deleted file `a/<path> b/<path>`, the way git writes a patch.
 - A closed run's byline offers only the commands that the run can still take.
 - The `resume` and `continue` help lines tell the most recent run apart from a run named by id.
 - A repository with a large ignored directory, such as a nested `node_modules`, no longer fails every run with `Maximum call stack size exceeded`.

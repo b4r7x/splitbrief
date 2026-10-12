@@ -207,11 +207,18 @@ describe('runApply', { timeout: 60_000 }, () => {
           expect(git('branch', '--list', branch)).toContain(branch);
         }
 
-        const result = await apply(run, await reviewedReadyState(run));
+        const state = await reviewedReadyState(run);
+        const { bus, events } = makeBusRecorder();
+
+        const result = await runApply({
+          wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
+          state,
+        });
 
         expect(result.outcome).toBe('applied');
         expect(read(run.dir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
         expect(existsSync(run.ws)).toBe(false);
+        expect(events.at(-1)?.type).toBe('workspace_closed');
         expect(git('worktree', 'list', '--porcelain')).not.toContain(basename(run.ws));
         expect(git('branch', '--list', branch).trim()).toBe('');
         expect(
@@ -247,6 +254,7 @@ describe('runApply', { timeout: 60_000 }, () => {
             event.message.startsWith(`Could not remove the run workspace at ${run.ws}:`),
         ),
       ).toHaveLength(1);
+      expect(events.at(-1)?.type).toBe('workspace_closed');
       expect(deriveRunStatus({ state: savedState(run), liveness: 'not-alive' })).toEqual({
         kind: 'closed',
         as: 'applied',

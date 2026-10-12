@@ -83,6 +83,33 @@ describe('writeRunPatch', () => {
     );
   });
 
+  it('names both sides a/ and b/ for a created, a deleted and a modified file', async () => {
+    const { ref, workspace } = await baseAndWorkspace({
+      'src/changed.txt': 'before\n',
+      'src/deleted.txt': 'deleted\n',
+    });
+    writeFileSync(join(workspace.path, 'src/changed.txt'), 'after\n');
+    rmSync(join(workspace.path, 'src/deleted.txt'));
+    writeFileSync(join(workspace.path, 'src/created.txt'), 'created\n');
+    writeFileSync(join(workspace.path, 'src/zażółć.txt'), 'quoted\n');
+    const replayDir = createTempDir('run-patch-sides-replay-');
+    dirs.push(replayDir);
+    cpSync(join(ref.projectDir, 'src'), join(replayDir, 'src'), { recursive: true });
+
+    const patchPath = await writeRunPatch(ref, workspace);
+
+    const headers = readFileSync(patchPath, 'utf8')
+      .split('\n')
+      .filter((line) => line.startsWith('diff --git '));
+    expect(headers.slice(0, 3)).toEqual([
+      'diff --git a/src/changed.txt b/src/changed.txt',
+      'diff --git a/src/created.txt b/src/created.txt',
+      'diff --git a/src/deleted.txt b/src/deleted.txt',
+    ]);
+    expect(headers[3]).toMatch(/^diff --git "a\/src\/za\\\d{3}.*" "b\/src\/za\\\d{3}.*"$/);
+    execFileSync('git', ['apply', '--check', patchPath], { cwd: replayDir });
+  });
+
   it('refuses to write a patch when a new workspace file is unreadable', async () => {
     const { ref, workspace } = await baseAndWorkspace({ 'src/base.txt': 'base\n' });
     const unreadablePath = join(workspace.path, 'unreadable.txt');

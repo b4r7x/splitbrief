@@ -333,6 +333,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'user_message':
     case 'planner_attachments_dropped':
     case 'build_images_as_paths':
+    case 'workspace_closed':
     case 'approval_prompted':
     case 'approval_granted':
     case 'approval_rejected':

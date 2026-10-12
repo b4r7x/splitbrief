@@ -3012,6 +3012,7 @@ describe('consult answer rows', () => {
         silentMs: 600_000,
       },
       { type: 'consult_bound_spent', ts: 0, phase: 'implementing' },
+      { type: 'workspace_closed', ts: 0, phase: 'complete' },
     ];
 
     for (const event of events) {
