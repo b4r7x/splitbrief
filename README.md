@@ -72,6 +72,7 @@ The TUI shows planner and implementer working together as a conversation flow â€
 ## Quick start
 
 Needs **Node.js 22+**, **macOS, Linux or inside WSL**, and a **git** repository with at least one commit to work in.
+On Linux and WSL2, a Claude Code implementer also needs `bubblewrap` and `socat` for its sandbox (`sudo apt-get install bubblewrap socat`).
 
 Install from npm:
 

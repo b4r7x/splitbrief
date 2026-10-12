@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { Command } from 'commander';
 import YAML from 'yaml';
@@ -22,6 +29,7 @@ import {
 import { AUTOMATIC_MODEL } from '../../../src/core/providers/automatic-model.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { registerReviewCommand } from '../../../src/cli/commands/review.js';
+import { resolveBareCommandOnPath } from '../../../src/lib/process/command-path.js';
 
 // Runner availability is a live network claim; the shared no-claim mock keeps
 // the verdict off whatever daemon this machine happens to be running.
@@ -329,6 +337,31 @@ describe('CLI integration: splitbrief review', () => {
     expect(stdout).toContain('pass_with_notes');
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
+  });
+
+  it('reviews on Linux without bwrap and socat while claude-code is the default implementer', async () => {
+    writeConfig(tmp, { reviewer: inlineShellReviewer() });
+    writeFileSync(join(tmp, 'init.txt'), `init\n${CHANGED_LINE}\n`, 'utf-8');
+    // Only the implementer starts Claude Code's sandbox; the review calls no implementer.
+    const gitPath = resolveBareCommandOnPath('git', tmp);
+    if (gitPath === null) throw new Error('git is not on PATH');
+    symlinkSync(gitPath, join(binDir, 'git'));
+    const originalPlatform = process.platform;
+    const originalPath = process.env.PATH;
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    process.env.PATH = binDir;
+    let review: Awaited<ReturnType<typeof runReview>>;
+    try {
+      review = await runReview(['--project', tmp, '--allow-repo-runners']);
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+      process.env.PATH = originalPath;
+    }
+
+    expect(review.exitCode, review.stdout).toBe(0);
+    expect(review.stdout).not.toContain('Claude Code sandbox cannot start');
+    expect(readRunLog()).toHaveLength(1);
+    expect(review.stdout).toContain('pass_with_notes');
   });
 
   it('reviews through a configured-custom reviewer seat', { timeout: 60_000 }, async () => {
