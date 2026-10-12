@@ -109,7 +109,8 @@ export function spawnCli(opts: {
   /**
    * The fixture project whose runner-pid ledger belongs to this CLI. A deadline
    * kill takes down the CLI's group only; runner tools start in groups of their
-   * own and outlive it, so once the CLI has closed its ledger is reaped.
+   * own that the process watchdog ends only later, so once the CLI has closed
+   * its ledger is reaped before the run settles.
    */
   reapProjectDir?: string | undefined;
   /**
@@ -125,7 +126,7 @@ export function spawnCli(opts: {
       env: { ...process.env, XDG_STATE_HOME: opts.stateHome },
       stdio: 'pipe',
       // Detached so one signal to the group reaches the CLI and every child that
-      // shares its group. Runner tools start in groups of their own and outlive it.
+      // shares its group. Runner tools start in groups of their own that the watchdog ends later.
       detached: true,
     });
     opts.onSpawn?.(child.pid);

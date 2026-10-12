@@ -84,6 +84,7 @@
 
 ### Fixed
 
+- A tool does not outlive a crashed SPLITBRIEF. A watchdog process ends every tool when SPLITBRIEF dies, also on `kill -9`. A tool that survives is stopped when SPLITBRIEF starts, when a run opens at rest and when a run ends.
 - `splitbrief continue <run> --action end-run` closes any open run; a ready run closes as discarded and keeps `run.patch`.
 - `splitbrief continue` on a closed run exits 1, with a JSON error under `--json`.
 - Reject on a checkout run restores only the files that still hold what the run wrote, and names the files you changed since. It also works on a run that stopped or halted after a brief passed, and it refuses a closed run.

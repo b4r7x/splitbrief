@@ -4,6 +4,7 @@ import { loadConfig, initConfig } from '../core/config/load/io.js';
 import { configPath } from '../core/config/load/document.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../core/paths.js';
+import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
 import { stripTerminalControls } from '../utils/display-text.js';
@@ -91,6 +92,7 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const projectDir = await canonicalizeProjectDir(opts);
 
   await assertGitRepo(projectDir);
+  await reapOrphanRunners(projectDir);
 
   const isInteractive = isInteractiveTty();
   const useFullscreen = opts.fullscreen !== false && isInteractive;

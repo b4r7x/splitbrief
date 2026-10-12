@@ -132,7 +132,7 @@ What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`
 | Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0; its declared files in the run workspace are restored from its task-start snapshot |
 | On a recovery | nothing runs until `--action` or the panel answers it |
 
-Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the maintainer's commit and a rebuild.
+A runner process does not outlive a crash: a watchdog process ends every runner process group when SPLITBRIEF dies, `SIGKILL` included. A runner that still survives is reaped from `runner-pids.jsonl` when SPLITBRIEF starts, when a run opens at rest, when a run ends and when a workflow starts. The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the maintainer's commit and a rebuild.
 
 When the planner's output was lost by the tool, there is no artifact to rebuild by hand: the planning session is one typed call loop. Retry the planning step (`continue --action retry` on its halt); a loss that repeats is a tool defect that blocks the run (§6).
 
@@ -150,7 +150,7 @@ A deterministic failure caused by a tool prompt, adapter flag, gate, or default 
 
 Zero tokens. A throwaway git repo whose planner and implementer are local node scripts (`testing/e2e/helpers/stop-continue-fixture.ts`): the planner is a `kind: shell` script that prints the one Task Brief, then the review reply, branching on the prompt's “Final Implementation Review” title; the implementer is a `kind: agent` script whose first invocation writes the marker file, then holds for the fixture's release file — 180 seconds is the backstop, not the pace. Every later invocation writes both declared files at once and finishes, so the same script serves the cut attempt and the resumed one. Writing directly is what the test needs: it signals the run on the marker the implementer writes into the worktree itself while the call is still open, which a reply extracted after the call returns could not carry. Its seat declares a `contextLength`, because routing refuses a profile whose window it cannot prove the brief fits.
 
-The CLI is spawned from source the way the live harness does it — `node --import tsx src/cli.ts …` through `spawnCli`, detached so the test can signal the CLI's process group — so no build step stands between a fix and the smoke. The engine starts the implementer in a process group of its own, so the signal reaches only the CLI: a `SIGINT` reaches the implementer through the CLI's abort, a `SIGKILL` leaves it running.
+The CLI is spawned from source the way the live harness does it — `node --import tsx src/cli.ts …` through `spawnCli`, detached so the test can signal the CLI's process group — so no build step stands between a fix and the smoke. The engine starts the implementer in a process group of its own, so the signal reaches only the CLI: a `SIGINT` reaches the implementer through the CLI's abort, and after a `SIGKILL` the watchdog ends it.
 
 The brief runs in the run's isolation worktree, so the marker the test waits on appears under the fixture's own state home, not in the project: nothing reaches the project before Apply.
 
@@ -169,7 +169,7 @@ testing/e2e/scenarios/stop-continue.test.ts   (sequential e2e project, 240 s per
 
 Steps 6 and 7 are what a resumable park earns: the same attempt continues in the same worktree, so the marker it left stands and nothing is discarded. The checkout receives the brief's files once, at Apply, and not before.
 
-A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, and the implementer is left running inside its hold. The test reaps nothing itself — the continuation owns that cleanup, which is what this case exercises: it asserts the orphan is still alive after the kill, then that the continued run's boot has reaped it and released its ledger entry before the brief runs. The continued run then starts the brief fresh at attempt 0 in the same worktree, restores the brief's declared files from its task-start snapshot, and still ends on `task T001: done`; Apply then writes both files into the checkout. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
+A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports no exit code and writes no `interruptedStep`, and its runner pid ledger stays on disk. The watchdog ends the implementer in its hold without a continuation; the test asserts that, then that the continued run released the ledger entry before the brief runs. The continued run then starts the brief fresh at attempt 0 in the same worktree, restores the brief's declared files from its task-start snapshot, and still ends on `task T001: done`; Apply then writes both files into the checkout. Both cases run inside `npm run test:e2e`; there is no live-seat tier of this smoke.
 
 ## 8. The `splitbrief-babysit` skill
 

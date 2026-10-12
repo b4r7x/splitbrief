@@ -17,6 +17,7 @@ import {
 } from '../events.js';
 import { removeRunWorkspace } from '../isolation/remove-worktree.js';
 import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
+import { reapOrphanRunners } from './orphan-reaper.js';
 import {
   commitWorkflowState,
   MAX_STATE_CONFLICT_RETRIES,
@@ -61,6 +62,8 @@ export async function closeRunIfOpen(
   let patchHandled = false;
   let patch: string | undefined;
   let warning: string | undefined;
+  // A tool left running by a crashed process still writes into the workspace the patch is cut from.
+  await reapOrphanRunners(scope.projectDir);
 
   for (let attempt = 0; ; attempt += 1) {
     // A run stopped before it ever saved a state still closes: the close then

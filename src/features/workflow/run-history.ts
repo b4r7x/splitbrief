@@ -1,5 +1,6 @@
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import { readRunEvents, type RunReplay } from '../../engine/events/replay.js';
+import { reapOrphanRunners } from '../../engine/orchestrator/run/orphan-reaper.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
@@ -22,6 +23,8 @@ export async function hydrateRun(record: RunRecord): Promise<void> {
  * superseded while it read simply never calls it.
  */
 export async function readRunHistory(record: RunRecord): Promise<() => void> {
+  // A run shown at rest must not change underneath it: a tool its crashed process left running ends first.
+  await reapOrphanRunners(record.ref.projectDir);
   const replay = await readRunEvents(record.ref);
   return () => {
     loadEvents(restoreCompletionFiles(replay.events));
