@@ -92,14 +92,16 @@ npm install -g @openai/codex      # Codex
 npm install -g @github/copilot    # Copilot
 npm install -g @kilocode/cli      # Kilo Code
 npm install -g command-code       # Command Code (binary `cmd`)
-# OpenCode works the same way; any stdin/stdout tool can be a shell planner
+# OpenCode: install from https://opencode.ai
+# Antigravity CLI (binary `agy`): install from https://antigravity.google/docs/cli
+# Any stdin/stdout tool can be a shell planner
 # Or an API planner: any OpenAI-compatible endpoint you point `apiBase` at
 ```
 
 And an implementer — the weaker **model**. It reaches SPLITBRIEF by either transport, and SPLITBRIEF favours neither:
 
 - **A CLI tool running a smaller model.** Any of the tools above, pointed at a smaller model. The tool writes files itself, in an isolated directory.
-- **An API model.** A local Ollama or LM Studio daemon — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio — or any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
+- **An API model.** A local Ollama, LM Studio or llama.cpp server — `ollama pull qwen3-coder:30b`, or a coding model loaded in LM Studio — or any OpenAI-compatible endpoint. The model returns file contents; SPLITBRIEF writes them.
 
 ```bash
 cd your-project
@@ -183,17 +185,17 @@ version: 3
 
 planner:
   kind: cli
-  tool: claude-code          # claude-code | codex | opencode | copilot | kilo-code | cursor | command-code
+  tool: claude-code          # claude-code | codex | opencode | copilot | kilo-code | cursor | command-code | antigravity
 
 implementer:
   kind: api                  # or `kind: cli` with a `tool:`, to run a CLI tool on a smaller model
   provider: ollama           # catalog ID, or any custom name
-  service: ollama            # required on every api runner — nothing is back-filled
+  service: ollama            # write it out on every api runner
   offering: local            # payg | free-quota | coding-subscription | local
   model: qwen3-coder:30b
   apiBase: http://localhost:11434/v1
   contextLength: 32768
-  temperature: 0.3
+  temperature: 0.3           # accepted; SPLITBRIEF does not send it to the server
 
 validation:
   end_checks: true
@@ -209,7 +211,7 @@ SPLITBRIEF leaves Git staging and commits to you.
 
 ### Planner backends
 
-Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
+Eleven planner backends — eight CLI tools, plus `api`, `shell`, and `agent`:
 
 | Tool | Kind | Output Format | Notes |
 |------|------|---------------|-------|
@@ -220,6 +222,7 @@ Ten planner backends — seven CLI tools, plus `api`, `shell`, and `agent`:
 | `kilo-code` | cli | json | Kilo Code CLI |
 | `cursor` | cli | stream-json | Cursor Agent CLI |
 | `command-code` | cli | json | Command Code CLI (binary `cmd`) |
+| `antigravity` | cli | stream-json | Google Antigravity CLI (binary `agy`) |
 | custom | api | — | Any OpenAI-compatible endpoint; declare `apiBase`, `service`, and `offering` |
 | `shell` | shell | configurable | Any stdin/stdout command, see below |
 | `agent` | agent | configurable | Subprocess that writes files directly |
@@ -263,10 +266,11 @@ Anything that speaks the OpenAI chat completions protocol works.
 |----------|-----------------|---------|
 | `ollama` | `http://localhost:11434/v1` | Not needed |
 | `lm-studio` | `http://localhost:1234/v1` | Not needed |
+| `llama-cpp` | `http://localhost:8080/v1` | Not needed |
 
 #### Custom providers
 
-Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`. Nothing is back-filled at load — built-in provider IDs must spell out the catalog's `service`/`offering` too, and a custom name picks its own:
+Any string works as `provider` when you set `service`, `offering`, `apiBase`, and `apiKey`. Built-in provider IDs spell out the catalog's `service`/`offering` too, and a custom name picks its own:
 
 ```yaml
 implementer:
@@ -279,7 +283,7 @@ implementer:
   apiKey: your-key
 ```
 
-Both built-ins are local and keyless; a secured loopback Ollama daemon accepts exactly `apiKey: env:OLLAMA_LOCAL_API_KEY`. Custom providers must set an inline `apiKey` — an `env:` reference is rejected there.
+All three built-ins are local and need no key by default; a secured loopback Ollama daemon accepts exactly `apiKey: env:OLLAMA_LOCAL_API_KEY`. Custom providers must set an inline `apiKey` — an `env:` reference is rejected there.
 
 #### CLI tool implementers
 
@@ -288,7 +292,7 @@ Any planner CLI tool can also be used as an implementer:
 ```yaml
 implementer:
   kind: cli
-  tool: claude-code           # or codex, opencode, copilot, kilo-code, cursor, command-code
+  tool: claude-code           # or codex, opencode, copilot, kilo-code, cursor, command-code, antigravity
                               # omit model to let the tool pick its own default
 ```
 
@@ -344,7 +348,7 @@ Per-token prices are not hardcoded here. They come from models.dev at startup an
 
 SPLITBRIEF reports what a run spent when it knows the prices: token counts per seat always, and a dollar figure whenever every seat the run used is priced in the catalog. A run that recorded unpriced usage says so instead of publishing a figure it cannot stand behind.
 
-The figure is a fact about the run, not a target. You can hide it in Settings.
+The figure is a fact about the run, not a target. Open `/usage` on a run to see it.
 
 ## Use the pipeline as skills
 
@@ -387,7 +391,7 @@ Use macOS, Linux or run inside WSL. Native Windows is not supported: process and
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md) for development setup, conventions, and pre-merge gates.
+See [CONTRIBUTING.md](https://github.com/b4r7x/splitbrief/blob/main/CONTRIBUTING.md) for development setup, conventions, and pre-merge gates. To report a vulnerability, follow [SECURITY.md](https://github.com/b4r7x/splitbrief/blob/main/SECURITY.md).
 
 ## License
 

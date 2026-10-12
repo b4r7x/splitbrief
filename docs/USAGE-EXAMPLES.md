@@ -234,7 +234,7 @@ validate · tsc ✓ lint ✓ test ✓
 
 The planner bills through your Claude Code subscription, so its usage reads `unpriced` — never zero cost and never `local`, which is reserved for local backends. The local implementer reads `local`, and the session total reads `unpriced + local`.
 
-**Variations:** `provider: ollama` with `apiBase: http://localhost:11434/v1` is the other local backend; a remote OpenAI-compatible endpoint works as a custom provider with an inline `apiKey` (see [docs/API-KEYS.md](./API-KEYS.md)), and metered spend then shows in `cost_update`. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
+**Variations:** `provider: ollama` with `apiBase: http://localhost:11434/v1` and `provider: llama-cpp` with `apiBase: http://localhost:8080/v1` are the other local backends; a remote OpenAI-compatible endpoint works as a custom provider with an inline `apiKey` (see [docs/API-KEYS.md](./API-KEYS.md)), and metered spend then shows in `cost_update`. Swap the planner `tool` using the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix).
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md) §implementer / §implementerProfiles, [docs/PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md), [docs/API-KEYS.md](./API-KEYS.md).
 
@@ -557,9 +557,9 @@ Stop options · Changes and draft stay.
 
 No option writes the run's changes into your checkout or reverts it: the briefs build in the run workspace, and only Apply writes the reviewed result into the checkout. In the checkout mode (`workflow.isolation: none`) the briefs build in the checkout itself, so their changes are already there and nothing is applied later. End run on a worktree or staged-copy run keeps the changes in `.splitbrief/sessions/<id>/run.patch`. Opening the menu preserves the draft; `Tab` dismisses it and returns to writing.
 
-**Variations:** `/resume` continues an open run — typed instructions steer it, and a blank Enter resumes a parked run and a continuable run at rest; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, one stopped in its planning session included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused, and a saved state that is not the current version must be migrated before it will resume.
+**Variations:** `/resume` continues an open run — typed instructions steer it, and a blank Enter resumes a parked run and a continuable run at rest; `/end` closes a parked one. From the shell, `splitbrief resume` re-enters the active saved run and `splitbrief continue <session-id>` works when the active pointer is gone. Every open run is continuable, one stopped in its planning session included; a run killed during validation or escalation re-enters at the start of the brief it was on. Only a closed run is refused. A saved v3 state migrates to the current version when it loads; an older state does not resume.
 
-**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/WORKFLOW.md](./WORKFLOW.md) §1.5, §1.6.
+**See also:** [docs/FEATURES.md](./FEATURES.md#stopping-a-run), [docs/WORKFLOW.md § What it continues on](./WORKFLOW.md#what-it-continues-on), [§ Every stop, and what continuing it does](./WORKFLOW.md#every-stop-and-what-continuing-it-does).
 
 ---
 

@@ -16,7 +16,7 @@ How state flows from the engine to the screen. Read this before adding a store, 
 
 Stores are module-scoped singletons. Import the store, call its methods. No providers, no prop drilling.
 
-`storeBase(store)` strips `set` from the public surface, exposing only `use`, `get`, `subscribe`, `reset`. The `set` method is kept in a private `_nameInternal` export so only the store's own actions file can write to it.
+`storeBase(store)` strips `set` from the public surface, exposing only `use`, `get`, `subscribe`, `reset`. The `set` method is kept in a private `_<name>Internal` export (for example `_tasksInternal`) so only the store's own actions file can write to it.
 
 **What the codebase does not use:** No React Context for state (only `ThemeContext` for colours). No `useMemo`, `useCallback`, `React.memo`, `forwardRef`, `useImperativeHandle`. The store pattern makes them unnecessary.
 
@@ -53,7 +53,7 @@ flowchart LR
 
 The engine publishes events through the EventBus. `addTuiEvent` in `src/features/workflow/tui-sink.ts` bounds each event and hands it to `addEvent` in `src/stores/workflow/actions/event.ts`, which dispatches each event synchronously to workflow sub-stores in a fixed order: safe event log, tasks, tokens, lifecycle, and operations. React 19 + Ink batch these synchronous updates into one commit, so subscribers see a consistent snapshot.
 
-This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useWorkflowRunner()` starts `runWorkflow()`, and command-context wiring can invoke snapshot functions — but engine events still flow into render state through stores, not direct component imports.
+This is the only event path from engine to UI. UI composition boundaries may call engine read/run APIs explicitly — for example `useRunLoop()` (`src/features/workflow/hooks/use-run-loop.ts`) starts `runWorkflow()`, and command-context wiring can invoke snapshot functions — but engine events still flow into render state through stores, not direct component imports.
 
 Store modules may import engine types with `import type` (`EngineEvent`, detection service types), but they must not import engine values. Engine modules do not import store values; they publish events and receive explicit inputs.
 
@@ -160,7 +160,7 @@ Features are vertical slices. Each `src/features/<name>/` owns its screen (or ov
 
 The main screen during execution. Key hooks:
 
-- **`useWorkflowRunner()`** -- starts the engine via `runWorkflow()`, passing `tuiSink: addTuiEvent` and managing the run lifecycle via an `AbortController`. The EventBus is created inside the engine (`runWorkflow` init wires the `tuiSink` to it). Returns `startedAt` and `handleResume`.
+- **`useRunLoop()`** (`src/features/workflow/hooks/use-run-loop.ts`) -- starts the engine via `runWorkflow()`, passing `tuiSink: addTuiEvent` and managing the run lifecycle via an `AbortController`. The EventBus is created inside the engine (`runWorkflow` init wires the `tuiSink` to it). Returns `startedAt` and `sessionId`. Re-entering a run (`handleResume`) lives in `useRunContinue()` (`src/features/workflow/hooks/use-run-continue.ts`).
 - **`useInputMode()`** -- manages three input modes: `normal` (typing), `review` (approve/reject), `question` (answering planner). `setReviewMode()` and `setQuestionMode()` return promises -- the engine blocks until the user acts, then the promise resolves.
 - **`useWorkflowKeys()`** -- workflow-local keyboard shortcuts: Ctrl-D toggles the latest diff locally, plus review/conversation arrow navigation. Stop now (`ctrl+c`) and the `esc` that opens the stop sheet live in `src/app/keys.ts`.
 
@@ -326,7 +326,7 @@ The workflow screen takes no density, live or at rest: its rail, dividers, trans
 1. Create `src/stores/<group>/<name>.ts`.
 2. Call `createStore(initialState)`.
 3. Export the public API via `storeBase(store)` -- this gives consumers `use`, `get`, `subscribe`, `reset`.
-4. Export `_nameInternal = { set: store.set }` for the actions file that needs write access.
+4. Export `_<name>Internal = { set: store.set }` for the actions file that needs write access.
 5. If the store reads disk on startup: add an init call in `src/cli/init-stores.ts`.
 6. Reset in tests: `beforeEach(() => store.reset())`.
 

@@ -76,34 +76,34 @@ Moral: validators (pure) split from error factories (domain). If a "validator" a
 - Survives without the rest of the codebase (the wrapper is reusable)
 
 **What lives here:**
-- `lib/git/` — `simple-git` boundary in `client.ts` (commit, diff, status helpers in sibling modules)
+- `lib/git/` — `simple-git` boundary in `client.ts` (diff, file, ref, repository and entry-merge helpers in sibling modules)
 - `lib/fs.ts` — security-aware filesystem helpers (`ensureSecureDir`, `writeSecureFile`)
 - `lib/warn.ts` — `stderr` formatter
 - `lib/process/` — subprocess lifecycle (`spawn`, `errors`, `registry`, `line-buffer`, `command-path`)
-- `lib/terminal/` — terminal I/O (`mouse` events, `kitty-keyboard` protocol)
+- `lib/terminal/` — terminal I/O (`filtered-stdin/`, `mouse-zones`, `kitty-keyboard` protocol, `hyperlinks`, `background`)
 - `lib/http/policy-fetch.ts` — manual-redirect `fetch` transport; the caller supplies the initial endpoint and the rejection factory, so the module carries no provider knowledge
 
 **Prohibited imports:** `core/`, `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `lib/` may import other `lib/` siblings and `utils/`.
 
 **Why `lib/` is not `utils/`:** these modules depend on Node APIs, external packages, or protocol specifics. They are reusable, but not as drop-in primitives. `utils/` is for things you could copy-paste into any TypeScript project; `lib/` is for things that only make sense in a Node + terminal context.
 
-**Why `lib/` is not `core/`:** these modules don't know anything about SPLITBRIEF. A workflow runner, a `.splitbrief/` session store, a cost calculation — all domain. A git-commit wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git/client.ts` changes; `core/` doesn't.
+**Why `lib/` is not `core/`:** these modules don't know anything about SPLITBRIEF. A workflow runner, a `.splitbrief/` session store, a cost calculation — all domain. A git wrapper, a process spawner, a terminal mouse parser — all infrastructure. Swap `simple-git` for another implementation, `lib/git/client.ts` changes; `core/` doesn't.
 
 **Nesting rule:** create a sub-folder under `lib/` only when you have ≥3 closely-coupled files for a single subsystem (`lib/process/` has `spawn`, `errors`, `registry`, `line-buffer`, `command-path`). Git helpers live under `lib/git/` (`client.ts` owns the `simple-git` boundary).
 
 **Single-source rules for wrapped subsystems:**
 - **No `simple-git` imports outside `src/lib/git/client.ts`** (and colocated test files). Every git operation routes through named exports under `lib/git/`. Engine, core, and features import named helpers only.
-- `lib/git/client.ts` contains no orchestrator convention knowledge. Staging is explicit: `commitChanges(dir, msg)` commits the current index; callers call `stageAll(dir)` first when they mean "stage everything then commit". Convenience coupling ("commit auto-stages") belongs in the caller, not the wrapper.
+- `lib/git/client.ts` contains no orchestrator convention knowledge. It exposes `createGitClient(dir)`, `runGit(intent, fn)` — which runs one git call and rethrows a failure as a `gitError.commandFailed` naming the intent — and the `gitError` factories. Convenience coupling belongs in the caller, not the wrapper.
 - **`ensureGitignore` lives in `lib/fs.ts`, not `lib/git/`.** It uses only `node:fs` (no `simple-git` call) — placement follows runtime dependency, not subject matter.
 
 **Good / bad examples:**
 
 ```ts
 // GOOD — lib/git/client.ts: pure simple-git boundary
-export async function commitChanges(dir: string, message: string) { ... }
+export async function runGit<T>(intent: string, fn: () => Promise<T>): Promise<T> { ... }
 
 // BAD — lib/git/client.ts knowing a workflow naming convention
-export async function commitTaskResult(taskId: TaskId) { ... }
+export async function diffTaskResult(taskId: TaskId) { ... }
 //     ^ TaskId is a core/ concept; this belongs in engine/
 ```
 
@@ -123,7 +123,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 **What lives here:**
 - `core/config/` — YAML config loading and validation
 - `core/schemas/` — Zod schemas + their inferred TS types (the source of truth for `Config`, `Task`, `WorkflowState`, `Session`, token/summary shapes, etc.)
-- `core/types/` — cross-cutting TS-only types that have no runtime schema (`StateAction`, `TokenBudget`, `ProjectContext`, `WorkflowOpts`, etc.). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
+- `core/types/` — cross-cutting TS-only types that have no runtime schema (`WorkflowOpts`, `SessionRef`, `UserMessageInput`). `z.infer` is forbidden here — inferred types live in `core/schemas/`. See [`docs/TYPES.md`](./TYPES.md).
 - `core/state/` — workflow state machine, transitions, persistence shape
 - `core/sessions/` — session metadata, analytics, ID generation
 - `core/formatting.ts` — LLM-specific formatters (`formatCost`, `formatContextLength`)
@@ -135,7 +135,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `core/pipeline-spec/` — the typed pipeline contract: retry ladder, test check narrowing rule, capture limits, halt signatures, brief body order and the brief grouping rule, scope and baseline rules, timeouts. Pure data read by the engine and rendered into `skills/` by `scripts/skill-blocks.ts`
 - `core/scope/` — `declared-set.ts`, the one matcher that decides whether a changed path is inside a brief's declared set
 - `core/validation/stacks/` — the five validation stacks (TypeScript, JavaScript, Python, Go, Rust) and their registry: markers, the test command a planner `test` check runs, test patterns, narrowing, allowed commands
-- `core/recovery/` — how a pending recovery reads and what it offers: the headline, the action labels, the pasteable resume command, and the words a saved user-edit conflict from an older run still reads with
+- `core/recovery/` — how a pending recovery reads and what it offers: the halt of each reason and the actions it allows (`halt.ts`), the headline, the action labels, the pasteable resume command, the reset clock, the account cause, and the words a saved user-edit conflict from an older run still reads with
 
 **Prohibited imports:** `engine/`, `stores/`, `features/`, `components/`, `hooks/`, `cli/`. `core/` may import `utils/`, `lib/`, and other `core/` siblings.
 
@@ -159,9 +159,13 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 - `engine/orchestrator/` — the main loop and its decomposed modules
 - `engine/planners/` — four planner backends (cli, api, shell, agent)
 - `engine/implementers/` — mirror for implementers
+- `engine/reviewers/` — the reviewer port
+- `engine/runners/` — the runner factory, CLI tool adapters, execution preparation and the runner sandbox environment
+- `engine/calls/` — normalized runner-call events and results
 - `engine/providers/` — HTTP clients, pricing, streaming
-- `engine/spec/` — spec parsing, prompt templates
-- `engine/parsers/` — response parsers (question, code extraction)
+- `engine/snapshots/` — content-addressed run snapshots
+- `engine/spec/` — plan checks, plan rendering (`plan-markdown.ts`, `plan-tasks.ts`), prompt templates
+- `engine/parsers/` — response parsers (code extraction, scope extraction, final-review verdict)
 - `engine/streaming/` — streaming transport layer
 - `engine/detection/` — auto-detect installed tools
 - `engine/skill-discovery.ts` — skill source discovery over the roots in `core/skills/scan-paths.ts`
@@ -172,8 +176,9 @@ export async function commitTaskResult(taskId: TaskId) { ... }
   - `sinks/jsonl.ts` — appends every event to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent`
   - `sinks/logger.ts` — always-on sink writing every event through the process logger
   - `sinks/stdout-json.ts` — public NDJSON emitter for `splitbrief start --json` / headless mode (`event` envelope plus bounded/redacted payload policy)
+  - `sinks/stdout-text.ts` — plain-line emitter for `splitbrief start --plain`
 - `engine/hooks/` — workflow hook runtime: `dispatch.ts` (subprocess `command` hooks; inserts a `--` end-of-options guard before any arg whose leading characters come from an interpolated `${event.*}` value, so untrusted event fields cannot inject flags into the trusted command's argv), `substitute.ts` (safe `${event.*}` regex substitution — values are emitted verbatim as distinct argv elements, never shell-evaluated), `run-pre.ts` (sequential `pre_*` runner with deny short-circuit), `sink.ts` (bus sink for `post_*`/`on_*` fire-and-forget), `types.ts`
-- `engine/codebase/` — repo-map pipeline (`parse`, `cache`, `graph`, `pagerank`, `format`, `budget`, `rebuild`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
+- `engine/codebase/` — repo-map pipeline (`discover-files`, `languages`, `parse`, `cache`, `cache-path`, `graph`, `pagerank`, `format`, `budget`, `extract-mentioned-filenames`, `repomap.ts` entry, `types.ts`) — produces the token-budgeted codebase summary injected into the planner prompt. See [REPOMAP.md](./REPOMAP.md).
 
 **Prohibited imports:** `features/`, `components/`, `hooks/`, `cli/`, `react`, `ink`. Grep gate in [`INVARIANTS.md`](./INVARIANTS.md).
 
@@ -183,7 +188,7 @@ export async function commitTaskResult(taskId: TaskId) { ... }
 
 See [`STORES.md`](./STORES.md) for full architecture. In layer terms: stores are the sanctioned cross-boundary channel between `engine/` (writes) and `features/` (reads). They depend on `utils/`, `core/`, and optionally `lib/`. They never import React (only `use-stores.ts` consumers do, and those are hook-level).
 
-Stores may import engine **types only** (`import type`) — `EngineEvent` from `engine/events/types.ts` and the detection service types from `engine/detection/service.ts`. No engine values cross into `stores/`.
+Stores may import engine **types only** (`import type`) — for example `EngineEvent` from `engine/events/types.ts`, the detection types under `engine/detection/`, and the prepared-execution types from `engine/runners/prepared-execution.ts`. No engine values cross into `stores/`.
 
 ---
 
@@ -256,7 +261,7 @@ The demotions cost one import-path rewrite each; the benefit is that `src/compon
 ```
 src/cli/setup.ts
   setupWorkflow(opts)          # git check + config presence + fullscreen detect
-  resolveProjectDir(dir?)      # resolve --project flag
+  canonicalizeProjectDir(opts) # resolve the --project flag to a canonical directory
   ensureGitAndConfig(dir)      # fallback init when config missing
 ```
 
@@ -269,7 +274,7 @@ src/core/sessions/guards.ts
   clearStaleSession(projectDir)   # session-state predicate + cleanup
 ```
 
-Session lifecycle is a domain concern. Even though today only `cli/commands/resume.ts` calls it, putting it in `cli/` would mean moving it later when (not if) another code path needs the same predicate. When the producer naturally belongs to a domain, start in that domain.
+Session lifecycle is a domain concern. Even though today only the CLI start path (`cli/commands/start/readiness.ts`) calls it, putting it in `cli/` would mean moving it later when (not if) another code path needs the same predicate. When the producer naturally belongs to a domain, start in that domain.
 
 **Decision heuristic:**
 
@@ -295,9 +300,10 @@ Canonical examples in this codebase:
 
 ```
 engine/planners/
-├── types.ts          # PORT — declares Planner, PlannerBackend, PlannerCapabilities
+├── types.ts          # PORT — declares Planner, PlannerCapabilities
 ├── base.ts           # shared scaffolding used by adapters
-├── cli.ts            # ADAPTER — Claude Code / Codex / OpenCode subprocess
+├── claude-code.ts    # ADAPTER — Claude Code subprocess
+├── cli.ts            # ADAPTER — every other CLI tool, through the CLI adapter registry
 ├── api.ts            # ADAPTER — OpenAI-compatible HTTP
 ├── shell.ts          # ADAPTER — arbitrary shell command
 └── agent.ts          # ADAPTER — file-writing agent

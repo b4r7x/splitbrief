@@ -72,14 +72,14 @@ SPLITBRIEF reads and attaches text files when you put `@` before the path. An `a
 
 ### Runner kinds (cli / api / shell / agent)
 
-**What it does.** Both planner and implementer dispatch on a `kind` discriminant. Four kinds cover every backend SPLITBRIEF supports.
+**What it does.** The planner, the implementer and the optional reviewer dispatch on a `kind` discriminant. Four kinds cover every backend SPLITBRIEF supports.
 
-**How to use.** Set `kind:` plus the kind-specific fields under `planner:` and `implementer:` in `.splitbrief/config.yaml`.
+**How to use.** Set `kind:` plus the kind-specific fields under `planner:`, `implementer:` and `reviewer:` in `.splitbrief/config.yaml`.
 
 | `kind` | What it is | Example |
 |---|---|---|
-| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code` |
-| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint |
+| `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` |
+| `api` | OpenAI-compatible HTTP endpoint | Ollama, LM Studio, llama.cpp, custom endpoint |
 | `shell` | Arbitrary stdin → stdout subprocess; no shell/network sandbox | Custom scripts |
 | `agent` | Subprocess that writes files directly; no shell/network sandbox | File-writing tools (no stdout extraction) |
 
@@ -114,11 +114,14 @@ Full schema: [CONFIGURATION.md §planner](./CONFIGURATION.md#2-planner) and [CON
 ```bash
 splitbrief doctor
 splitbrief doctor --json
+splitbrief doctor --probe-seat build
 splitbrief start "add profile settings"
 splitbrief start --json "fix parser edge case"
 ```
 
-`splitbrief doctor` is strictly read-only and writes no config, sessions, worktrees, snapshots, or model calls. It runs no validation subprocess. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
+The `splitbrief doctor` readiness report is read-only. It makes no model call and writes nothing: no config, sessions, worktrees or snapshots. It runs no validation subprocess. Its one network call is the runner availability probe: a model-list request to the `api` endpoint each configured runner already targets, so an unreachable planner or default implementer is a blocker here instead of a `fetch failed` after the planning phase has been paid for. A local workflow start prepares every runner context it may select and persists that attempt's compact `.splitbrief/sessions/<id>/readiness.json` before execution begins. If fresh preparation is blocked, cached success cannot create a session or start a process. In headless mode the readiness report is emitted as the first structured JSON line.
+
+`splitbrief doctor --probe-seat <plan|build|review>` is the one paid form. It sends one short prompt through that seat's CLI adapter, with the seat's own model and effort, in a temporary empty git repository. The call has a 60-second limit and a 64 KiB output limit. The command prints `Seat probe <seat>: <class>`: `passed`, or the failure class and the first error line. It appends one record to `.splitbrief/probes/<tool>-<date>.jsonl` and runs no readiness report. See [CLI-REFERENCE.md §Seat probe](./CLI-REFERENCE.md#seat-probe---probe-seat).
 
 **Isolation recommendation.** Some stacks only work in the checkout: linked Node workspace packages, a Python editable install in a virtualenv under the project, `go.work`, or a Cargo workspace with `target/` in the checkout. When readiness finds one and `workflow.isolation` is not set in `.splitbrief/config.yaml`, it raises a blocker that recommends the checkout. Set `workflow.isolation: none` (recommended) or `workflow.isolation: worktree` to keep the worktree. Writing the key is the one-time confirmation. An explicit `worktree` or `staged-copy` keeps the finding as a warning; `none` raises nothing.
 
@@ -414,7 +417,7 @@ An older event without findings shows only the headline. A closed run's `Run` bl
 
 ### Slash commands palette
 
-**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker; the dispatcher resolves names by exact match (including aliases) then by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output — and the palette and help overlay render those as section headers when no query is typed. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
+**What it does.** Runtime commands use slash names (`/help`, `/usage`, etc.), but the same registry backs composer `/` input and the command palette. Type `/` to open the inline picker. It lists the commands whose names start with the typed word, and `⏎` runs the highlighted row. A typed line runs only on an exact command name, ignoring case; there are no aliases. An unknown name runs nothing: the error suggests a close name (`Did you mean /usage?`). The command palette ranks commands by fuzzy match. Every one of the 23 commands carries exactly one of five categories — Navigate, Crew, Workflow, View, Input & output. The palette and the help overlay group their rows by category and show the category headers when the panel has room for at least 12 rows. Commands that take an argument prefill `/<name> ` in the composer instead of running bare, so no row errors on Enter.
 
 **Navigate**
 
@@ -464,7 +467,17 @@ An older event without findings shows only the headline. A closed run's `Run` bl
 | `/copy [message\|brief\|path\|command\|cost]` | Copy to clipboard |
 | `/image <path> \| list \| remove <index-or-id>` | Attach, list or remove images for the next planner call |
 
-**Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images — `cli` seats can, an `api` seat depends on its model, `shell` and `agent` never can. On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
+**Capability-aware `/image`.** The command is offered only when the PLAN seat can actually receive images:
+
+| PLAN seat | Images |
+|---|---|
+| `cli` Claude Code | yes, on stdin |
+| `cli` Codex, OpenCode, Copilot, Kilo Code | yes, by a file flag |
+| `cli` Cursor, Command Code, Antigravity | no |
+| `api` | only when detection reports the model as vision-capable |
+| `shell`, `agent` | no |
+
+On a seat without vision the row is hidden and typing the command answers `PLAN seat cannot see images — pick a vision model with /crew plan`, instead of dropping the attachment silently at call time.
 
 `/mode`, `/revise-spec`, `/revise-plan` and `/approval` were removed; typing one prints `<name> was removed: <pointer>` (`REMOVED_COMMANDS`). A change to the plan is requested on the plan card.
 
@@ -488,7 +501,7 @@ palette:
 
 ### Help overlay (`Ctrl+/`)
 
-**What it does.** Shows key bindings and slash commands valid for the current screen. Press `Ctrl+/` from any screen.
+**What it does.** Shows the slash commands you can run now, grouped by category, then the key bindings for the current screen. Help uses the same filter as the command palette: it leaves out hidden commands, commands for another screen and commands that cannot run in the current state. Press `Ctrl+/` from any screen.
 
 ### Sessions picker
 
@@ -522,7 +535,7 @@ Start the local server yourself, configure its address, and use Retry to check t
 
 **What it does.** One two-column tool/model picker serves PLAN, BUILD and REVIEW in two slots. Enter on a Crew row opens the `seat` slot. Enter on a Fallback row opens the `fallback` slot, with only CLI tools the seat can host. See [Seat fallback](#seat-fallback) for the None row, custom models and inheritance notice.
 
-**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor` and `command-code` render their own `--list-models`-style native output as `Detected` rows. Rows remembered from an earlier run render as `Stale`. A successful read that omits cached rows also makes the catalog `Stale` while it retains those rows. New rows appear at once. A row disappears only after two consecutive successful reads omit its id. See the [CLI catalog cache rules](./SUBSYSTEMS.md#5-detection) and [CLI runner configuration](./CONFIGURATION.md#kind-cli). `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled in Claude's own vocabulary (`Sonnet 5`, `Opus 5.5 Plan Mode`, `Fable 5.1 (1M)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` lists its own models non-interactively, so the picker renders the quoted ids `copilot help config` prints under its `model` key (25 on 1.0.77), enriched from models.dev `github-copilot`, with the tools-column byline `not verified for your plan`; the bundled rows stand in only when that listing is unavailable. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows, as for a local `api` provider with no inventory of its own — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
+**Model rows.** One authoritative lane per tool renders the model rows. models.dev is metadata-only enrichment (context window, pricing, release date, display name) and never creates a row for a tool that has an authoritative lane of its own. `codex`, `opencode`, `kilo-code`, `cursor`, `command-code` and `antigravity` (`agy models`) render their own `--list-models`-style native output as `Detected` rows. Rows remembered from an earlier run render as `Stale`. A successful read that omits cached rows also makes the catalog `Stale` while it retains those rows. New rows appear at once. A row disappears only after two consecutive successful reads omit its id. See the [CLI catalog cache rules](./SUBSYSTEMS.md#5-detection) and [CLI runner configuration](./CONFIGURATION.md#kind-cli). `claude-code` has no listing command, so it renders one row per shipped alias — `sonnet`, `opus`, `fable`, `haiku`, `opusplan`, `best`, `sonnet[1m]`, `opus[1m]`, `fable[1m]` — each labelled in Claude's own vocabulary (`Sonnet 5`, `Opus 5.5 Plan Mode`, `Fable 5.1 (1M)`); `default` is not one of them, it is the Auto row; the local `~/.claude.json` `additionalModelOptionsCache` folds in by a specific rule — an entry merges into the one alias row whose resolved catalog id plus that alias's own bracket suffix it equals, case-insensitively, and whose key is already among the shipped aliases, lending its `description` to that row as `detail`; otherwise it renders as its own row under the cache's own label or, failing that, its id; and an unknown id you type through is passed to the CLI unvalidated, because Claude Code does not validate it either. `copilot` lists its own models non-interactively, so the picker renders the quoted ids `copilot help config` prints under its `model` key (25 on 1.0.77), enriched from models.dev `github-copilot`, with the tools-column byline `not verified for your plan`; the bundled rows stand in only when that listing is unavailable. Confirmed rows keep the tool's own order and are not re-sorted by release date. Dedup is by a suffix-aware canonical id, so a `:free` catalog twin folds into its provider-qualified runtime row; a display name is never a dedup key, so two genuinely different ids are never collapsed for printing the same. Context windows are floored and never carry an empty decimal: a 1,048,576-token window reads `1M`, 1,100,000 reads `1.1M`, 262,144 reads `262K`. When the configured model is absent from the authoritative list the picker keeps a recovery row for it. The one explicit "Browse the full catalog" row is offered only where browsing actually widens the list — where the authoritative lane hid bundled rows, as for a local `api` provider with no inventory of its own — never beside a recovery row the escape cannot help; nothing speculative appears otherwise.
 
 **Option families.** Detected models whose ids differ only by effort, speed or thinking fold into one row that expands into an axis row per axis. Suffix peeling is provider-aware, so a provider-routed (`provider/model`) id folds into its family per route instead of keeping a row of its own, and a family that also spans providers expands into one provider route row per route, each followed by that route's own axis rows — so every spelling of every route stays reachable. A genuinely branded id with no sibling to fold with (`opencode/grok-code-fast`) stays flat, spelled exactly as the tool listed it. Only custom models keep their own rows. `space` cycles the axis under the cursor in place, moving the draft onto that axis's route, and `⏎` confirms the drafted id: its own route's from a route or axis row, the family's from the parent.
 
@@ -701,7 +714,7 @@ splitbrief start --json --allow-hooks "add lint rule for empty catch" > events.n
 - A protected write fails fast. Set `workflow.approve: none` to skip the plan card instead of approving it.
 - All other behavior matches an interactive run.
 
-The first line is `{ type: "readiness_report", report: ... }`. After that, `stdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one `EngineEvent` JSON object per line.
+The first line is `{ type: "readiness_report", report: ... }`. After that, `createStdoutJsonSink` in `src/engine/events/sinks/stdout-json.ts` emits one JSON record per line; each engine event arrives as `{ type: "event", data: ... }`.
 
 ---
 
@@ -714,7 +727,7 @@ The first line is `{ type: "readiness_report", report: ... }`. After that, `stdo
 ```bash
 splitbrief init [--reconfigure]
 splitbrief status
-splitbrief doctor [--json]
+splitbrief doctor [--json] [--probe-seat <plan|build|review>]
 ```
 
 ### `splitbrief resume` / `splitbrief continue`
@@ -792,7 +805,7 @@ Dragging a file onto the terminal also inserts it at the caret. The home compose
 
 Quoted drag paths and backslash-escaped paths such as `/Users/me/design\ notes/mock.png` resolve to the same image. A dropped non-image path stays text. Use `@` to attach that file's text.
 
-Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time.
+Offered only when the PLAN seat can receive images; on a seat without vision the command answers with the reason instead of dropping the attachment at call time. Claude Code takes images on stdin; Codex, OpenCode, Copilot and Kilo Code take them by a file flag; Cursor, Command Code and Antigravity take none. An `api` seat takes them only when detection reports its model as vision-capable, and a `shell` or `agent` seat takes none. See the per-seat table under [Slash commands palette](#slash-commands-palette).
 
 ### Skills
 

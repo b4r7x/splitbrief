@@ -413,7 +413,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 3. A `shell` or `agent` reviewer needs its own trust grant on this machine, exactly like a `shell` planner.
 4. If you do not need a separate reviewer right now, delete the `reviewer` block. The planner takes the seat back and the run behaves as it did before the seat was assignable.
 
-**Prevention:** Run `splitbrief doctor` after changing the reviewer through `/reviewer` or `/crew`. The picker writes config; it does not prove the tool will start.
+**Prevention:** Run `splitbrief doctor` after changing the reviewer through `/crew review` or Settings › Crew. The picker writes config; it does not prove the tool will start.
 
 **See also:** [docs/CONFIGURATION.md](./CONFIGURATION.md), [docs/CLI-REFERENCE.md](./CLI-REFERENCE.md).
 
@@ -428,7 +428,7 @@ A REVIEW account refusal or long-reset limit raises a Seat down halt. Its config
 **Fix:**
 1. Read the error on the run screen or in `session.jsonl` — it names the reviewer seat, so you can tell a reviewer failure apart from a planner failure at a glance.
 2. Fix the underlying runner (see the readiness families above), then re-run the review by continuing the run: it picks up at the review it reached.
-3. To get the review from the planner instead, remove the `reviewer` block (or point `/reviewer` at the planner's tool) and resume. That is a decision you make, not one SPLITBRIEF makes for you.
+3. To get the review from the planner instead, remove the `reviewer` block (or point `/crew review` at the planner's tool) and resume. That is a decision you make, not one SPLITBRIEF makes for you.
 
 **Prevention:** Give a metered reviewer a `timeout` that fits a diff-sized read, and prefer a reviewer whose credentials do not expire mid-run.
 
@@ -652,11 +652,11 @@ A related case does not halt at startup. When SPLITBRIEF itself runs inside anot
 
 ### Symptom: I want to stop a run and I am not sure which key does what
 
-**Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window, and quitting was a ladder of its own. The interrupt ladder is gone: `esc` opens the **Stop options** sheet, and `ctrl+c` stops a live run in one press. Quitting still asks once: from home or on a run at rest, the first `ctrl+c` shows `Press ctrl+c again to quit` and the second press within two seconds exits.
+**Likely cause:** Older builds spent `esc esc` on an interrupt ladder with a 2-second armed window, and quitting was a ladder of its own. The interrupt ladder is gone: `esc` opens the **Stop options** sheet, and `ctrl+c` stops a live run in one press. Quitting still asks once: every first `ctrl+c` shows `Press ctrl+c again to quit`, and a second press within two seconds quits after cleanup and saving. On a live run, that first press is also Stop now.
 
 **Fix:**
 1. `esc` opens the **Stop options** sheet, with or without a draft (on the plan card, the first `esc` clears a comment draft and returns the keys to the card rows): `Stop now` (stop execution; keep partial changes — they stay in the run workspace), `Pause after this brief` (finish `T<id>` including checks and review; start no next brief), `End run` (stop execution; close this run; keep changes — a worktree or staged-copy run saves them in `run.patch` before its workspace goes). `↑↓ · ⏎ · esc`, no letter keys. `esc` from the sheet is Stop now — it goes back to sessions once the run is parked or at rest — and `Tab` dismisses the sheet without stopping. No option writes the run's changes into your checkout; only Apply does.
-2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Stopped at T<id> · Partial changes kept`.
+2. `ctrl+c` is Stop now, immediately, one press. It aborts the in-flight call along with any retry, consult or per-task review call, and parks the run as `Stopped at T<id> · Partial changes kept`. The same press arms a two-second quit confirmation (`Press ctrl+c again to quit`). A second press within two seconds, or while the stop is still running, quits after cleanup and saving. Once the run is stopping or parked, the next `esc` goes home instead.
 3. `ctrl+q` or `/quit` stops safely, saves the session, then exits.
 4. With text in the composer, `esc` opens the same sheet and leaves the draft in place — the composer swallows no part of the key.
 5. Restart with `/resume` (type instructions first if you want to steer) or from the shell with `splitbrief continue <session-id>`; a continuable run at rest continues on a bare `⏎`, and a blank `⏎` resumes a run parked in this process exactly as `/resume` does; typed text steers it. `/end` closes a parked run; after that nothing picks it up.

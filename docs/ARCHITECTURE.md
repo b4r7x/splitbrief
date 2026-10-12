@@ -56,7 +56,7 @@ These rules are what let us run the full workflow under Vitest without bringing 
 
 ## Directory map (top level)
 
-Only directories with meaningful responsibility — see `CLAUDE.md` for the full file-by-file index.
+Only directories with meaningful responsibility — see [§2](#2-directory-tree-of-src) and [`STRUCTURE.md`](./STRUCTURE.md) for the file-level tree.
 
 ```
 src/
@@ -69,25 +69,24 @@ src/
 │   ├── keys.ts               App-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts    Runtime-command wiring (useRuntimeCommands)
 │   ├── screens/              FLAT page entries: home, workflow, setup
-│   └── overlays/             FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
+│   └── overlays/             FLAT pages: help, palette, skills, sessions, settings, runners, usage, editor
 │
 ├── cli/                      Non-React CLI logic
-│   ├── commands/             commander handlers (init, start, resume, spec, status)
+│   ├── commands/             commander handlers (init, start, resume, continue, spec, status, review, doctor)
 │   ├── init-stores.ts        Synchronous seed before render; discovery after mount
 │   └── render/               Ink / fullscreen-ink render setup (`app.ts` entry)
 │
 ├── core/                     Shared domain (no React, no engine-ness)
 │   ├── config/               YAML load + validation
 │   ├── pipeline-spec/        The countable pipeline rules (brief, retries, ladder,
-│   │                         timeouts, gates, halts, review,
-│   │                         planner-documents)
+│   │                         timeouts, gates, halts, review)
 │   ├── recovery/             Halt headline, action labels + resume-command formatting
 │   ├── scope/                declared-set matching (files + Scope bullets)
 │   ├── state/                Workflow state machine + disk persistence
 │   ├── phases.ts             Phase taxonomy (role, cancellable, resumable)
 │   ├── runtime/commands/     Runtime command registry, dispatch, lookup
 │   ├── schemas/              Zod schemas and inferred schema-owned types
-│   ├── sessions/             Per-run summary persistence
+│   ├── sessions/             Active pointer, lockfile, run status, run record, summary
 │   ├── settings/             Setting definitions catalog (for the /settings overlay)
 │   ├── types/                TypeScript-only shared types
 │   └── validation/stacks/    The five validation stacks and their command registry
@@ -96,11 +95,12 @@ src/
 │   ├── orchestrator/         Main run loop (runWorkflow, planning, task loop, …)
 │   ├── planners/             Four runner kinds implementing Planner interface
 │   ├── implementers/         Four runner kinds implementing Implementer interface
+│   ├── reviewers/            The Reviewer interface (the review seat)
 │   ├── runners/              Factory dispatching on config.kind
 │   ├── providers/            Model catalog, pricing, HTTP clients
 │   ├── spec/                 Task Brief templates + tasks.md writer
 │   ├── streaming/            Subprocess spawn + output parsers (stream-json, jsonl)
-│   ├── parsers/              Question/code/scope extractors
+│   ├── parsers/              Final-review/code/scope extractors
 │   ├── detection/            Auto-detect available tools on startup
 │   ├── skill-discovery.ts    Skill source discovery
 │   └── availability.ts       Tool-availability probe
@@ -130,43 +130,51 @@ UI code is organized by **business feature**, not technical layer — see [`STRU
 
 ## Entry points
 
-Each CLI subcommand has its own handler in `src/cli/commands/`. They all follow the same pattern:
+Each CLI subcommand has its own handler in `src/cli/commands/`. The commands that mount the TUI follow the same pattern:
 
 1. Parse CLI flags via commander.
 2. Resolve project dir; load config from `.splitbrief/config.yaml`.
 3. `initStoresForTuiMount()` seeds config, sessions and UI state synchronously, awaits hook trust, then starts asynchronous discovery. The TUI mounts before discovery finishes; the input remains editable during preparation. Explicit execution still waits for admission and ownership checks. Read-only discovery observations are distinct from current execution admission.
-4. Initialise the router store (`routerStore.init({ screen, feature?, resumeState? })`).
+4. Initialise the router store (`routerStore.init(route: RouteData)`, `src/stores/navigation/router.ts`). A `workflow` route carries the `RunRecord` and its `execution`; a `setup` route carries what to open when setup completes.
 5. Call `renderApp(<App/>)`, which hands off to Ink.
+
+`spec`, `status`, `review` and `doctor` mount no TUI. `start`, `resume` and `continue` mount none under `--json` or `--plain`.
 
 | Command | Screen entered | Active pointer / saved state |
 |---------|---------------|-------------------------------|
-| `splitbrief start "feature"` | `workflow` or `setup` | Creates a new session folder and writes `.splitbrief/active`. |
-| `splitbrief resume` | `workflow` with `resumeState` | Reads `.splitbrief/active`, loads `sessions/<id>/state.json`; fails if missing or version mismatched |
-| `splitbrief spec "feature"` | `workflow` (engine returns after planning artifacts) | Runs the planning session and exits; writes `plan.json`, `plan.md` and `tasks.md` |
+| `splitbrief start "feature"` | `home`, then `workflow` with a `local` execution when preparation completes; `setup` when no config exists and no seat flag is given | Creates a new session folder and writes the `.splitbrief/active` receipt. |
+| `splitbrief resume` | `workflow` with the run record and a `local` execution | Reads `.splitbrief/active`, loads `sessions/<id>/state.json`; fails if it is missing or its version is refused |
+| `splitbrief continue [session-id]` | `workflow` with the run record and a `local` execution | Loads the named run's `state.json`; `--action` answers a pending recovery first |
+| `splitbrief spec "feature"` | No TUI. Runs the planning session (`runPlanSession`) on the terminal; a planner question waits for a line on a TTY and takes its defaults without one | Writes `plan.json`, `plan.md` and `tasks.md`, then exits |
 | `splitbrief init` | `setup` (interactive config builder) | No session created |
-| `splitbrief status` | Prints active session's `state.json` to stdout, no TUI | Read-only; doesn't claim the lock |
+| `splitbrief status` | No TUI. Prints a summary of the active run's state: feature, phase, brief position, start time, session, seats and brief counts | Read-only; doesn't claim the lock |
+| `splitbrief review` | No TUI. One reviewer call over the working-tree diff, or the diff against `--base <ref>` | No session. Writes `review.json` and `review.md` to `.splitbrief/reviews/<stamp>/` |
+| `splitbrief doctor` | No TUI. Prints readiness checks; `--probe-seat <seat>` makes one paid call through that seat | No session. A probe appends one record to `.splitbrief/probes/<tool>-<date>.jsonl` |
 
 ---
 
 ## Data flow, one task
 
 1. **User** runs `splitbrief start "add JWT auth"`.
-2. `cli/commands/start/register.ts` boots stores, initialises router with the feature, renders `<App/>`.
-3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>`.
-4. `useWorkflowRunner()` is triggered in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks). The bus is threaded through `WorkflowContext.bus`.
+2. `cli/commands/start/register.ts` sends `--json` and `--plain` to the headless path (`start/streaming.ts`). Otherwise `runInteractiveStart` (`cli/commands/start/interactive.ts`) boots stores, initialises the router and renders `<App/>`.
+3. `<App/>` reads `routerStore` and mounts `<WorkflowScreen/>` when preparation completes.
+4. `useRunLoop()` (`src/features/workflow/hooks/use-run-loop.ts`) runs in the workflow screen. It calls `runWorkflow(opts)` from `src/engine/orchestrator/run/workflow.ts`. `initializeWorkflow` builds an `EventBus` and subscribes the sinks described in [Event bus + sinks](#5-event-bus--sinks) through `attachRunSinks` (`run/init-sinks.ts`). The bus is threaded through `WorkflowContext.bus`.
 5. `runWorkflow` creates planner and implementer runners, compiles the typed plan, then opens one workspace for execution. Every writer, task validation and code review uses it. [Apply](./WORKFLOW.md#apply) writes the assessed result into the checkout once.
 6. During each phase, the engine emits via `wctx.bus.publish(EngineEvent)`. The bus fans out synchronously to all subscribed sinks:
-   - `tuiSink` (`src/features/workflow/tui-sink.ts`) — pass-through to `workflow/actions.addEvent(event)`; workflow sub-stores consume `EngineEvent` directly, so the sink is a named wiring point, not a mapper (UI re-renders).
-   - `jsonlSink` (`src/engine/events/sinks/jsonl.ts`) — appends to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
-   - `stdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) — opt-in under `--json` / `splitbrief start --json`; writes NDJSON events on stdout for headless integration (see `src/cli/headless.ts`).
-   - Hook sink (`src/engine/hooks/sink.ts`) — dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre.ts`.
+   - The `tuiSink` option (`addTuiEvent`, `src/features/workflow/tui-sink.ts`) bounds each event for the TUI and passes it to `workflow/actions.addEvent(event)`. Workflow sub-stores consume `EngineEvent` directly, so the sink maps nothing (UI re-renders).
+   - `createJsonlSink` (`src/engine/events/sinks/jsonl.ts`) appends to `.splitbrief/sessions/<id>/session.jsonl` via `appendEngineEvent` in `src/core/sessions/log-writer.ts`.
+   - `createLoggerSink` (`src/engine/events/sinks/logger.ts`) writes each event through the process logger.
+   - `createCallEvidenceSink` (`src/engine/orchestrator/summary/call-evidence.ts`) keeps the run's per-call usage record in memory for the summary.
+   - `createStdoutJsonSink` (`src/engine/events/sinks/stdout-json.ts`) is opt-in under `--json`. It writes each event as an NDJSON record `{ "type": "event", "data": ... }` on stdout for headless integration (see `src/cli/headless.ts`). `createStdoutTextSink` (`src/engine/events/sinks/stdout-text.ts`) takes its place under `--plain`.
+   - The `_eventSink` option subscribes an observer sink.
+   - `createHookSink` (`src/engine/hooks/sink.ts`) dispatches matching `post_*`/`on_*` workflow hooks fire-and-forget. `pre_*` hooks are run synchronously at the orchestrator call site via `run-pre.ts`.
 
    `saveState()` writes to `.splitbrief/sessions/<id>/state.json` on every phase transition.
 7. TUI components subscribe to slices of workflow stores via `store.use(selector)` and re-render only when their slice changes.
-8. For user-gated moments (approval, clarification, continuation, edit conflicts, and protected-write confirmations), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onPlannerReply(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onUserEditConflict(…)`, and `callbacks.onTieredApproval(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
+8. For user-gated moments (approval, clarification, continuation, protected-write confirmations, and the reviewer checks card), the engine `await`s callbacks such as `callbacks.onApprovalNeeded(…)`, `callbacks.onPlannerReply(…)`, `callbacks.onContinuationNeeded(…)`, `callbacks.onTieredApproval(…)`, and `callbacks.onReviewChecksApproval(…)`. These gating callbacks are **not** the same channel as event emission — events fan out through the `EventBus` (pub/sub, fire-and-forget); gates remain discrete async request/response pairs supplied by the workflow caller (CLI TUI for interactive runs, `runHeadless` stubs for `--json`). The UI fulfils gates by switching input mode and resolving the awaited promise.
 9. **Queue**: Enter with text appends a message to `WorkflowState.messageQueue` during a live run. `phaseStage(phase)` names its seat: PLAN, BUILD, or REVIEW. The lifecycle store counts message ids until their first delivery to any seat. `ctrl+⏎` with text stops now and continues with the text, like `/steer <text>`. See [Message queue](./ENGINE.md#message-queue) for delivery rules, corrections, retries, and verdicts.
 10. **Stop**: `ctrl+c` stops active work; another press quits after cleanup. `esc` opens the inline stop menu; another `esc` stops resumably. The state records `interruptedStep`, including whether the stop cut a call or landed at a boundary. `/resume` continues it. `/end` uses the shared close path, preserving unapplied workspace work first. See [WORKFLOW.md](./WORKFLOW.md#4-abort--continue--queue) and [Global keys](./SLASH-COMMANDS-REFERENCE.md#global-any-screen).
-11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` derives the run's status, writes `summary.json`, and releases `.splitbrief/active` only if the run closed. The UI does not unmount: the run settles at rest on the screen it was already on, and the route's `execution` flips to `at-rest`.
+11. When the last task passes validation, `runFinalReviewPhase` runs; then `saveFinalSession()` derives the run's status, writes `summary.json`, and releases `.splitbrief/active` only if the run closed. Every run pass ends with this write. When a resumed pass starts, `reopenSessionRecord` (`src/engine/orchestrator/session-lifecycle/finalize.ts`) drops the stop that the last pass wrote. The UI does not unmount: the run settles at rest on the screen it was already on, and the route's `execution` flips to `at-rest`.
 
 TUI quit tears down stores and cancels the current preparation. Detection shutdown refuses new cache saves and refreshes, cancels refresh lanes, and waits for accepted saves. Cleanup then drains registered processes, waits for workflow shutdown, and restores the terminal. `renderApp()` then ends the process with the selected exit code. A caller-requested unmount returns after cleanup so the caller can report an error. The process registry owns child termination timing.
 
@@ -227,14 +235,14 @@ One session = one folder. All per-session state lives inside it. See `docs/CONCE
 
 | What | Where | When | Lifecycle |
 |------|-------|------|-----------|
-| `active` pointer | `.splitbrief/active` | On `start`, cleared by `saveFinalSession()` unless active state must be preserved for pending recovery or rewind | Plain text, single session-id; acts as a foreground lock. |
+| `active` pointer | `.splitbrief/active` | On `start` and on resume; cleared by `saveFinalSession()` only when the run closes | A JSON receipt `{ "version": 1, "sessionId", "generation" }` (`src/core/sessions/active-pointer.ts`); acts as a foreground lock. An older plain-text session id still reads and clears; no current path writes one. |
 | `state.json` | `.splitbrief/sessions/<id>/` | On every phase transition | Mutable — overwritten |
 | `session.jsonl` | `.splitbrief/sessions/<id>/` | Append-only, on every event and (unless disabled) every message chunk | Grows over the run |
 | `plan.json` / `plan.md` / `tasks.md` | `.splitbrief/sessions/<id>/` | When the planning session compiles a plan that passed its checks | `plan.json` is the plan; `plan.md` and `tasks.md` are its renderings. An older run also holds `research.md`, `spec.md` and the other documents of the retired chain |
-| `summary.json` | `.splitbrief/sessions/<id>/` | Exactly once at end-of-run | Final aggregates — tokens, cost, timings, task outcomes |
+| `summary.json` | `.splitbrief/sessions/<id>/` | At the end of every run pass; `reopenSessionRecord` drops the old stop when a resumed pass starts | Aggregates — tokens, cost, timings, task outcomes, the derived run status |
 | Skills metadata | `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `AGENTS.md` | Read-only; never written by SPLITBRIEF | Per-project or global, cross-session; roots listed in precedence order (`src/core/skills/scan-paths.ts`) |
 
-Single source of truth for `resume`: `state.json` + the session folder it lives in. If `state.json` is missing, corrupt, or from an older `stateVersion`, resume refuses. `session.jsonl` is consulted as a fallback context source when the stored `plannerSessionId` is rejected by the backend (see `docs/WORKFLOW.md` §1.5).
+Single source of truth for `resume`: `state.json` + the session folder it lives in. A version 3 state migrates to version 4 through `mapV3StateToV4` (`src/core/state/migration/map-v3.ts`). If `state.json` is missing, corrupt, or has any other `stateVersion`, resume refuses. `session.jsonl` is consulted as a fallback context source when the stored `plannerSessionId` is rejected by the backend (see [WORKFLOW.md § What it continues on](./WORKFLOW.md#what-it-continues-on)).
 
 The run workspace holds implementation files; session state records its identity and base snapshot. State and evidence stay under `.splitbrief/sessions/<id>/`. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply) for the worktree location and Apply inputs.
 
@@ -259,9 +267,11 @@ type PlannerCapabilities = {
 | Backend | Conv. planning | Session resume | Effort | Images | Self-summary |
 |---------|:---:|:---:|:---:|:---:|:---:|
 | `cli` claude-code | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `cli` codex | ✗ | ✓ | ✗ | ✗ | ✓ |
-| `cli` opencode / copilot / kilo-code / cursor | ✗ | ✗ | ✗ | ✗ | ✓ |
-| `cli` command-code | ✗ | ✗ | ✓ | ✗ | ✓ |
+| `cli` codex | ✗ | ✓ | ✓ | ✓ | ✓ |
+| `cli` copilot | ✗ | ✗ | ✓ | ✓ | ✓ |
+| `cli` opencode / kilo-code | ✗ | ✗ | ✗ | ✓ | ✓ |
+| `cli` cursor | ✗ | ✗ | ✗ | ✗ | ✓ |
+| `cli` command-code / antigravity | ✗ | ✗ | ✓ | ✗ | ✓ |
 | `api` (any OAI-compat) | ✗ | ✗ | ✗ | ✗ | ✓ |
 | `shell` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
 | `agent` (default) | ✗ | ✗ | ✗ | ✗ | ✗ |
@@ -322,7 +332,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 | New runtime command | `src/core/runtime/commands/defs/<category>.ts` |
 | New planner backend | `src/engine/planners/<name>.ts` + `runners/factory.ts` switch + planner-config schema variant + declare `capabilities` struct |
 | New implementer backend | Mirror of above under `src/engine/implementers/` |
-| New provider (for `api` kind) | `src/engine/providers/<name>.ts` + register in `providers/registry.ts` |
+| New provider (for `api` kind) | A descriptor in `API_PROVIDER_CATALOG` (`src/core/providers/api-provider-catalog.ts`) + a factory in `src/engine/providers/<name>.ts` + its entry in `KNOWN_PROVIDERS` (`src/engine/providers/registry.ts`) |
 | New phase | `src/core/state/machine.ts` (+ update `core/phases.ts` sets) — **read `docs/WORKFLOW.md` first**, phases are load-bearing |
 | New event type | `src/engine/events/schema.ts` (add a Zod member to the type-dispatched `EngineEventSchema` contract; the `EngineEvent` alias in `types.ts` infers it) + row renderer in `src/features/workflow/conversation-rows/event-rows/dispatch.ts` |
 | New store | `src/stores/<group>/<name>.ts` using `createStore` from `create-store.ts`; init in `cli/init-stores.ts` if it reads disk |
@@ -335,7 +345,7 @@ See [Part 2 §12](#12-test-suite-shape) for current test counts.
 
 ## EventBus
 
-The engine emits **EngineEvent** values through a single `EventBus` port. Sinks (TUI store writer, JSONL persister, hooks dispatcher) subscribe to the bus and observe every event in synchronous fan-out order. This decouples event producers (planner adapters, implementer base, orchestrator phases) from consumers (UI, audit log, hooks system).
+The engine emits **EngineEvent** values through a single `EventBus` port. Sinks (TUI store writer, JSONL persister, logger, call-evidence record, stdout writer, hooks dispatcher) subscribe to the bus and observe every event in synchronous fan-out order. This decouples event producers (planner adapters, implementer base, orchestrator phases) from consumers (UI, audit log, hooks system).
 
 ```
                  ┌──────────────────────────────────────────┐
@@ -356,12 +366,12 @@ The engine emits **EngineEvent** values through a single `EventBus` port. Sinks 
 - **`EngineEvent`** is a type-dispatched event contract with snake_case `type`, mandatory `ts`, and usually `phase` — defined as `EngineEventSchema` in `src/engine/events/schema.ts`, with the `EngineEvent` alias (`z.infer`) re-exported from `src/engine/events/types.ts`. The single source of truth for all engine events. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. The legacy `TuiEvent` / `OrchestratorEvent` types are removed.
 - **`createEventBus`** is a sync pub/sub with crash isolation per sink (`src/engine/events/bus.ts`)
 - **`publish*` helpers** (e.g. `publishTaskStart`, `publishPlannerStatus`) wrap `bus.publish` with typed signatures (`src/engine/orchestrator/events.ts`)
-- **`tuiSink`** (`src/features/workflow/tui-sink.ts`) forwards `EngineEvent` straight into `workflow/actions.addEvent` — no mapping, because workflow sub-stores now consume `EngineEvent` directly.
-- **`jsonlSink`** (`src/engine/events/sinks/jsonl.ts`) appends events to `.splitbrief/sessions/<id>/session.jsonl`.
-- **`stdoutJsonSink`** (`src/engine/events/sinks/stdout-json.ts`) emits NDJSON to stdout for headless / `--json` mode (see `src/cli/headless.ts`).
+- **`tuiSink`** (`addTuiEvent`, `src/features/workflow/tui-sink.ts`) bounds each `EngineEvent` for the TUI and forwards it into `workflow/actions.addEvent`. It maps nothing, because workflow sub-stores consume `EngineEvent` directly.
+- **`createJsonlSink`** (`src/engine/events/sinks/jsonl.ts`) appends events to `.splitbrief/sessions/<id>/session.jsonl`.
+- **`createStdoutJsonSink`** (`src/engine/events/sinks/stdout-json.ts`) emits NDJSON records to stdout for `--json` mode; **`createStdoutTextSink`** (`src/engine/events/sinks/stdout-text.ts`) emits plain lines for `--plain` (see `src/cli/headless.ts`). [§5](#5-event-bus--sinks) lists every sink.
 - **Event sinks are synchronous.** Each `publish()` runs all subscribed sinks in registration order, inline. A throw inside one sink is caught per-sink and does not break fan-out to the others.
 
-Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onPlannerReply` / `onContinuationNeeded` / `onUserEditConflict` / `onTieredApproval` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onComplete(summary)` is a synchronous completion notification.
+Events and gating callbacks are separate mechanisms. `bus.publish` is pub/sub (broadcast, fire-and-forget, no return value). `callbacks.onApprovalNeeded` / `onPlannerReply` / `onContinuationNeeded` / `onTieredApproval` / `onReviewChecksApproval` stay as discrete `await`-able request/response pairs supplied by the workflow host — CLI TUI for interactive runs, stubs from `runHeadless` for `--json`. `onComplete(summary)` is a synchronous completion notification.
 
 ### Design decisions — Why EventBus
 
@@ -382,10 +392,10 @@ The bus is synchronous by design so fan-out order matches the pre-bus `addEvent`
 
 ### Headless mode (--json)
 
-`splitbrief start --json` skips the Ink render entirely and attaches `stdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON line to stdout, one object per line, snake_case `type` field, monotonic `ts`. Non-interactive stubs in `src/cli/headless.ts` approve the plan card unattended (confirming none of its protected writes), stop on planner questions with `input_required`, and exit non-zero for recovery. A write to a protected path is denied with `APPROVAL_REQUIRED`. `jsonlSink` still writes the normal structured `session.jsonl` log for the run.
+`splitbrief start --json` skips the Ink render entirely and attaches `createStdoutJsonSink` instead of `tuiSink`. Every published `EngineEvent` is written as one NDJSON record `{ "type": "event", "data": <event> }` on stdout, one object per line. The event in `data` has a snake_case `type` field and a monotonic `ts`. The other record types (`input_required`, `recovery_required`, `ready_to_apply` and more) are in `HeadlessJsonRecordSchema` (`src/engine/events/public-json.ts`). `splitbrief start --plain` attaches `createStdoutTextSink` instead and writes one plain line per phase, task, review and completion. Non-interactive stubs in `src/cli/headless.ts` approve the plan card unattended (confirming none of its protected writes), stop on planner questions (with an `input_required` record under `--json`), and exit non-zero for recovery. A write to a protected path is denied with `APPROVAL_REQUIRED`. `createJsonlSink` still writes the normal structured `session.jsonl` log for the run.
 
 ```bash
-splitbrief start --json "add endpoint" | jq -c 'select(.type == "task_completed")'
+splitbrief start --json "add endpoint" | jq -c 'select(.type == "event" and .data.type == "task_completed")'
 ```
 
 ---
@@ -412,7 +422,7 @@ See [CHANGELOG.md](../CHANGELOG.md) for release history and amendments.
 - Steering for every runner. See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for tool support and transport details.
 - A SPLITBRIEF-defined tool-call protocol for the implementer — an `extracted-code` implementer answers with the file body in plain text; a `direct` implementer uses whatever tools its own harness already gives it. We do not define a third calling convention in between.
 - Full message-level rewind (Claude Code "double-Esc" style) and Cursor-style code snapshot undo — see `docs/FUTURE.md`.
-- Anything Windows-specific — not tested there.
+- Anything Windows-specific. SPLITBRIEF supports macOS and Linux.
 - ~~Non-TypeScript language support~~ — implemented via polyglot validation, polyglot codebase analysis (tree-sitter grammars for Python, Go, Rust, JavaScript), and language-aware planner/implementer prompts. See `docs/FUTURE.md`.
 
 ---
@@ -432,12 +442,14 @@ SPLITBRIEF is an orchestrator of two coding tools: one plans and reviews, the ot
 1. **Planner** — an expensive, capable model (Claude / GPT / Codex / Claude-Code CLI / etc.) that ingests the feature request, explores the repo, and compiles a Task Brief: a structured list of `Task` objects, one per slice, each naming the files it writes plus scope, validation, and evidence.
 2. **Implementer** — the weaker model of the pair, carried either by a tool CLI configured with a cheap model or by a model behind an OpenAI-compatible API. Both transports are first-class. It executes one task at a time against its self-contained brief; the checks that judge the result are SPLITBRIEF's: the plan's checks, and the reviewer checks that the review seat chooses from the project and SPLITBRIEF runs under the reviewer command policy.
 
+The review seat (`Reviewer`, `src/engine/reviewers/types.ts`) is the optional `reviewer:` runner; with none configured the planner holds it (`resolveReviewerRunner`). It reviews the run diff in stateless calls. It also plans the reviewer checks before each review (`src/engine/orchestrator/review-checks.ts`) and answers the consult of a fix task (`src/engine/orchestrator/consult/request.ts`).
+
 The repository layers many supporting subsystems on top of that core loop:
 
 - **One planning session** — every run plans in one typed session (`src/engine/orchestrator/planning/session.ts`) that answers a plan `checkPlan` validates, and goes through a shared `runWorkflow` orchestrator (`src/engine/orchestrator/run/workflow.ts`). There are no workflow modes.
-- **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, an opt-in NDJSON-on-stdout sink for `--json` headless runs, and a workflow-hook dispatcher.
+- **EventBus** (`src/engine/events/bus.ts`) — single pub/sub port; sinks include the TUI store, an append-only JSONL log, the logger, the in-memory call-evidence record, an NDJSON-on-stdout sink for `--json` or a plain-text stdout sink for `--plain`, an observer sink (`_eventSink`), and a workflow-hook dispatcher.
 - **Plan checks** — `checkPlan` (`src/engine/spec/plan-checks.ts`) plus the context fit admit a plan; a failing plan goes back to the planner once, and one plan card (`reviewing-plan`) asks for human approval unless `workflow.approve: none`. The final deterministic `drift-report.json` / `drift_report` event is produced during final review; there is no per-task drift-chain accumulation.
-- **Snapshots** (`src/engine/snapshots/`) — content-addressed working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. The run ledger under `src/engine/snapshots/run/` is what `/run accept` and `/run reject confirm` operate on for a run without a workspace; a workspace run uses Apply and its backup instead ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
+- **Snapshots** (`src/engine/snapshots/`) — working-tree snapshots stored under `.splitbrief/sessions/<id>/snapshots/` with a baseline + delta layout. A blob name is the SHA-256 of the file's relative path (`src/engine/snapshots/path-codec.ts`). The run ledger, `snapshots/run-ledger.json` (`src/engine/snapshots/run/`), is what `/run accept` and `/run reject confirm` operate on for a run without a workspace; a workspace run uses Apply and its backup instead ([SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject)).
 - **Run workspace and Apply** (`src/engine/orchestrator/isolation/`, `src/engine/orchestrator/apply/`) create and retain one run directory. `apply/` contains `states.ts`, `merge.ts`, `backup.ts`, `write.ts`, `restore.ts`, `patch.ts` and the `run.ts` driver. [HOW-IT-WORKS.md](./HOW-IT-WORKS.md#run-workspace-and-apply) owns the data flow; [WORKFLOW.md](./WORKFLOW.md#apply) owns the Apply sequence. The implementer boundary and audit remain under `src/engine/implementers/isolation/`.
 - **Protected-path confirmation** (`src/engine/orchestrator/task/attempt-gate.ts`, `src/engine/orchestrator/approval/`) checks attempt changes inside the workspace. `tiered-approval.ts`, `types.ts`, `confirm.ts` and `events.ts` own confirmation. See [APPROVAL-AND-RECOVERY.md](./APPROVAL-AND-RECOVERY.md#protected-path-confirmation).
 - **Repo-map context** (`src/engine/codebase/`) — token-budgeted PageRank-based codebase summary fed to every planner call.
@@ -449,7 +461,7 @@ The original layering rules still hold: engine never imports React, features nev
 
 ## 2. Directory tree of `src/`
 
-Generated via `find src -type f \( -name '*.ts' -o -name '*.tsx' \) | sort`. The tree below groups by responsibility; test files (`*.test.ts` / `*.test.tsx`) are colocated with their source and not listed individually.
+The tree below groups by responsibility and is not exhaustive; test files (`*.test.ts` / `*.test.tsx`) are colocated with their source and not listed individually.
 
 ```
 src/
@@ -461,11 +473,11 @@ src/
 │   ├── keys.ts                    App-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts         Runtime-command wiring (useRuntimeCommands)
 │   ├── screens/                   FLAT page entries: home, workflow, setup
-│   └── overlays/                  FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
+│   └── overlays/                  FLAT pages: help, palette, skills, sessions, settings, runners, usage, editor
 ├── cli.ts                         Top-level entry; registers workflow + utility subcommands
 │
 ├── cli/                           Non-React CLI handlers
-│   ├── commands/                  approval, continue, doctor, init,
+│   ├── commands/                  continue, doctor, init,
 │   │                              resume, review, spec, start, status
 │   ├── errors.ts                  CliError type + exit-code helpers
 │   ├── headless.ts                runHeadless: --json mode without Ink
@@ -478,10 +490,11 @@ src/
 ├── core/                          SPLITBRIEF-domain (no React, no engine)
 │   ├── approval/                  Approval tier and action-class types
 │   ├── config/
-│   │   ├── accessors/             runner-config, state accessors
-│   │   ├── load/                  load, transform, validate
+│   │   ├── accessors/             runner-config, reviewer-runner, reviewer-seat,
+│   │   │                          active-runner, values
+│   │   ├── load/                  io, document, defaults, transform, validation/
 │   │   ├── runtime/               build-runner, overrides, resolve
-│   │   └── errors.ts              ConfigError types
+│   │   └── errors.ts              configError factories
 │   ├── crew/                      identity (seat ids + seat identity
 │   │                              strings), rows, seats, presets, labs
 │   ├── evidence/brief-hash.ts     hashTaskBrief(tasks) — sha256 of the
@@ -507,10 +520,9 @@ src/
 │   ├── pipeline-spec/             The pipeline's countable rules, imported by the
 │   │                              orchestrator and rendered into the skills:
 │   │                              brief, retries, ladder, timeouts, gates,
-│   │                              halts, review, baseline, scope,
-│   │                              planner-documents,
+│   │                              halts, review, baseline, scope, bounds,
 │   │                              steps (older runs' step table)
-│   ├── recovery/                  headline, action-label, resume-command
+│   ├── recovery/                  halt, headline, action-label, resume-command
 │   ├── scope/                     declared-set: a brief's files plus its Scope
 │   │                              bullets, and the one matcher over them
 │   ├── project-meta.ts            Project name / git origin discovery
@@ -525,33 +537,34 @@ src/
 │   │                              plan, planner-config, question, runner-fields,
 │   │                              session, session-log, snapshot, summary,
 │   │                              task, tokens, workflow
-│   ├── sessions/                  analytics, display, errors, guards, io,
-│   │                              lifecycle (active lock + session-id
-│   │                              generation), log-reader, run-status
+│   ├── sessions/                  active-pointer (the active receipt), display,
+│   │                              errors, guards, io, lockfile, session-id,
+│   │                              log-reader, log-writer, run-status
 │   │                              (deriveRunStatus + resumeStep — the one
 │   │                              answer for how a run stands), run-record +
 │   │                              run-record-io (the RunRecord every screen,
 │   │                              listing and CLI guard reads, complete before
 │   │                              the route changes so no screen does IO)
-│   ├── settings/                  catalog (settings registry),
-│   │                              presentation (UI labels)
+│   ├── settings/                  catalog (settings registry)
 │   ├── theme/                     palette, state-tone, resolve, paint
 │   ├── runtime/commands/          registry, dispatch, lookup, types
 │   ├── keybindings/registry.ts    Keyboard shortcut table (Ctrl+K, Ctrl+/, …)
 │   ├── state/                     machine (reducer), persistence (state.json
-│   │                              IO), selectors, topo-sort (task ordering)
+│   │                              IO), selectors, topo-sort (task ordering),
+│   │                              migration/ (map-v3: a version 3 state to 4)
 │   ├── tokens/estimate.ts         Token estimation (model-family lookup:
 │   │                              Claude=3.5, GPT=4.0, DeepSeek=3.8, …)
-│   ├── types/                     config-options, state-actions (branded),
-│   │                              summary
+│   ├── types/                     config-options, session-ref, user-input
 │   ├── validation/stacks/         typescript, javascript, python, go, rust +
 │   │                              registry, types
 │   └── validation/test-discovery  Test-command auto-detection
 │
 ├── engine/                        Workflow logic — zero React imports
 │   ├── change-detection.ts        External-change detection (git status)
+│   ├── calls/                     Per-call records and the runner_call_*
+│   │                              event projection (event-projection)
 │   ├── codebase/                  Repo-map: budget, cache, format, graph,
-│   │                              pagerank, parse, rebuild, repomap, types,
+│   │                              pagerank, parse, repomap, types,
 │   │                              extract-mentioned-filenames
 │   ├── config-assertions.ts       Runtime config invariants
 │   ├── constants.ts               Engine-wide constants
@@ -562,7 +575,9 @@ src/
 │   │   ├── bus.ts                 createEventBus (sync pub/sub)
 │   │   ├── schema.ts              EngineEventSchema union +
 │   │   │                          parseEngineEvent
-│   │   ├── sinks/                 jsonl, logger, stdout-json
+│   │   ├── sinks/                 jsonl, logger, stdout-json, stdout-text
+│   │   ├── public-json.ts         HeadlessJsonRecordSchema (--json records)
+│   │   ├── replay.ts              readRunEvents (session.jsonl replay)
 │   │   └── types.ts               EngineEvent alias (z.infer),
 │   │                              EventSink, EventBus
 │   ├── hooks/
@@ -571,7 +586,7 @@ src/
 │   │   ├── sink.ts                EventBus sink that fans events into
 │   │   │                          post_* / on_* hook dispatch
 │   │   ├── substitute.ts          ${event.field} substitution
-│   │   └── types.ts               HookConfig types
+│   │   └── types.ts               HookPayload, HookContext
 │   ├── implementers/              4 backends: agent, api, cli,
 │   │                              shell + apply (file-write helpers),
 │   │                              pipeline/ (shared pipeline: run,
@@ -608,15 +623,21 @@ src/
 │   │   ├── planning/              run, session (planning session, plan
 │   │   │                          card), plan-session, plan-context-fit,
 │   │   │                          api-packet, call-loop, queue-drain, failure
+│   │   ├── recovery/              halt builders, recovery actions, the
+│   │   │                          recovery bus, seat switch
 │   │   ├── resume-context.ts      ResumeContextHolder
-│   │   ├── run/                   init, phases, workflow (top-level runWorkflow)
+│   │   ├── run/                   init, init-sinks (attachRunSinks), phases,
+│   │   │                          pre-review-checks, workflow (top-level
+│   │   │                          runWorkflow)
 │   │   ├── session-lifecycle/     finalize + shutdown + queue install
 │   │   ├── signals.ts             SIGINT/SIGTERM handler wiring
 │   │   ├── state-ops.ts           transitionAndSave, addUsageAndSave,
-│   │   │                          refreshAndPersistCode
-│   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics
+│   │   │                          parkStoppedRun
+│   │   ├── summary/               buildSummary (build.ts), artifact rollups, task metrics,
+│   │   │                          call-evidence (createCallEvidenceSink)
 │   │   ├── task/                  loop, step, retry, stale-inputs,
 │   │   │                          attempt-gate, rollback, commit, routing,
+│   │   │                          refresh-code (refreshAndPersistCode),
 │   │   │                          pre-task helpers
 │   │   ├── tokens.ts              Token-usage accumulation
 │   │   ├── transcript/            Fallback resume context + compaction
@@ -627,7 +648,7 @@ src/
 │   │                              changed-script (refuses a script the run changed),
 │   │                              formatter pass, planner `test` check command
 │   ├── parsers/                   code-detection, code-patterns,
-│   │                              question, response-extractor,
+│   │                              final-review, response-extractor,
 │   │                              scope-extractor
 │   ├── planners/                  4 backends: agent, api,
 │   │                              claude-code (cli specialization), cli,
@@ -639,19 +660,20 @@ src/
 │   │                              cli-model-catalog, client, conformance,
 │   │                              constants, cost, cost-math, discovery,
 │   │                              dispatch-stream, errors, image-attach,
-│   │                              lm-studio, metadata,
+│   │                              llama-cpp, lm-studio, metadata,
 │   │                              model/{catalog,parsing,resolution},
 │   │                              models-dev, models-dev-cache, ollama,
 │   │                              openai-compat, openai-compat-policy,
 │   │                              openai-stream, pricing-resolver,
 │   │                              registry, types
+│   ├── reviewers/                 types (Reviewer: the review seat)
 │   ├── runners/                   command-based, errors, factory
 │   │                              (createPlanner, createReviewer,
 │   │                              createImplementer), typed-output,
 │   │                              schema-file, types,
 │   │                              claude/ (Claude-Code CLI
-│   │                              subprocess: invoke, stream), cli-tools (CLI-tool
-│   │                              spawn helpers), sandbox-env (HOME/XDG/cache
+│   │                              subprocess: args, child-env), cli-tools (one
+│   │                              adapter per CLI tool + spawn helpers), sandbox-env (HOME/XDG/cache
 │   │                              env redirect, host HOME/USER kept for an OS-keychain
 │   │                              channel; not shell/network sandbox), trust (runner trust
 │   │                              prompts)
@@ -666,7 +688,9 @@ src/
 │   │   ├── files.ts               hashFile, collectTrackedFiles,
 │   │   │                          ALWAYS_EXCLUDED
 │   │   ├── lock.ts                acquireSnapshotLock
-│   │   └── create.ts              createSnapshot
+│   │   ├── create.ts              createSnapshot
+│   │   └── run/                   the run ledger (run-ledger.json),
+│   │                              lifecycle, rollback
 │   ├── spec/
 │   │   ├── brief-quality.ts       Older runs' brief-quality report reader
 │   │   ├── plan-checks.ts         checkPlan — the deterministic plan checks
@@ -691,7 +715,7 @@ src/
 ├── stores/                        useSyncExternalStore module-state
 │   ├── create-store.ts            ~45-LOC factory
 │   ├── use-stores.ts              Cross-store React aggregator
-│   ├── approval-prompt/           actions, store
+│   ├── approval-prompt/           prompt
 │   ├── review-checks-prompt/      reviewer checks card (approve_checks: ask)
 │   ├── discovery/model-cache/     CLI catalogs and models.dev cache (entry state.ts)
 │   ├── navigation/router.ts       Active screen + overlay
@@ -714,13 +738,13 @@ src/
 │   ├── home/                      components (recent-sessions list/shell,
 │   │                              seat-block) + layout + logo +
 │   │                              use-recent-sessions-focus
-│   ├── palette/                   sources + results (command-palette source
-│   │                              assembly + cross-store result aggregator)
+│   ├── palette/                   sources + results + fuzzy-match (command-palette
+│   │                              source assembly + cross-store result aggregator)
 │   ├── runners/                   picker-view, tool-row, picker-format,
 │   │                              config-transforms (seat commits),
 │   │                              use-picker-actions,
 │   │                              use-picker-catalog, contract-chip,
-│   │                              contract-choice-overlay,
+│   │                              contract-choice-overlay, text-input-overlay,
 │   │                              model-catalog/{catalog, options, posture,
 │   │                              recency, rows, status},
 │   │                              two-column-picker/{picker, keyboard,
@@ -734,7 +758,7 @@ src/
 │       ├── conversation-rows/     row-based conversation renderer
 │       ├── components/            approval-prompt, body,
 │       │                          chrome, conversation-flow/,
-│       │                          divider, feedback-row, frame-panel, header,
+│       │                          feedback-row, frame-panel, header,
 │       │                          input-footer, prompt-body, question-prompt,
 │       │                          rail, review-view.tsx, sidebar
 │       ├── display/               activity-display-text,
@@ -744,7 +768,7 @@ src/
 │       ├── at-rest.ts             Rail + composer contract when nothing runs
 │       ├── closed/                A closed run's ledger: view-model,
 │       │                          projections, outcome, byline, copy, rows,
-│       │                          block, header, tone
+│       │                          block, header
 │       ├── hooks/                 use-input-mode, use-keys,
 │       │                          use-mouse-pointer, use-mouse-scroll,
 │       │                          use-review-content, use-run-loop,
@@ -768,13 +792,13 @@ src/
 │   ├── input/                     controlled-multiline-input,
 │   │                              measure-box, multiline-input, segments,
 │   │                              text-editing, viewport-scroll
-│   ├── composer/                  composer, attachments, history,
+│   ├── composer/                  composer, history,
 │   │                              use-history, completion/{layout,
 │   │                              command/{hook, menu},
 │   │                              reference/{hook, menu}}
-│   ├── labeled-row.tsx
+│   ├── divider.tsx
 │   ├── markdown.tsx               theme-colored markdown renderer
-│   ├── overlays/                  overlay-panel, text-input-overlay
+│   ├── overlays/                  overlay-panel
 │   ├── pickers/
 │   │                              filtering, scroll-window,
 │   │                              list-viewport,
@@ -782,7 +806,6 @@ src/
 │   ├── screen-shell.tsx
 │   ├── scroll-indicator.tsx
 │   ├── session-row.tsx
-│   ├── spinner.tsx
 │   └── theme.tsx
 │
 ├── hooks/                         Shared React hooks (cross-feature)
@@ -796,7 +819,7 @@ src/
 │   ├── file-listing.ts            listProjectFiles, MAX_PROJECT_FILES
 │   ├── fs.ts                      ensureSecureDir, SECURE_FILE_MODE (0o600)
 │   ├── git/                       simple-git boundary in client.ts;
-│   │                              diff, files, refs, repository, staging
+│   │                              diff, files, refs, repository
 │   ├── path-confinement.ts        isPathConfined, assertPathConfined
 │   ├── process/                   command-path, errors, line-buffer, registry, spawn
 │   ├── terminal/                  background, kitty-keyboard, escape-debounce, filtered-stdin, key-debug, editor-handover
@@ -804,7 +827,7 @@ src/
 │
 └── utils/                         Pure helpers (no domain)
     canonical-json, color, diff, error, format-errors, format-time, frontmatter,
-    fuzzy-match, parse-shell-command, redact, slugify,
+    parse-shell-command, redact, sha256, slugify,
     truncate, type-guards, validate-identifier, with-timeout
 ```
 
@@ -854,15 +877,18 @@ There is no brief-quality pass, no brief-readiness gate and no briefs gate: the 
 
 ## 5. Event bus + sinks
 
-Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-sink crash isolation. Five possible sinks exist: two unconditional engine sinks (`jsonlSink`, `loggerSink`) plus gated sinks for UI, headless JSON, and hooks. Wiring lives in `src/engine/orchestrator/run/init-sinks.ts`.
+Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-sink crash isolation. Three engine sinks are always on; the others depend on how the run starts. `attachRunSinks` (`src/engine/orchestrator/run/init-sinks.ts`) wires them.
 
 | Sink | File | Trigger | Purpose |
 |---|---|---|---|
-| `jsonlSink` | `events/sinks/jsonl.ts` | always | appends to `.splitbrief/sessions/<id>/session.jsonl` |
-| `loggerSink` | `events/sinks/logger.ts` | always | writes each event through the process logger |
-| `tuiSink` | `features/workflow/tui-sink.ts` | interactive runs | forwards every event to `workflow/actions.addEvent` |
-| `stdoutJsonSink` | `events/sinks/stdout-json.ts` | `--json` headless | NDJSON line per event on stdout |
-| Hook sink | `hooks/sink.ts` | `config.hooks` declared | dispatches matching `post_*` / `on_*` hooks, `on_halt` among them (`recovery_prompted`) |
+| `createJsonlSink` | `events/sinks/jsonl.ts` | always | appends to `.splitbrief/sessions/<id>/session.jsonl` |
+| `createLoggerSink` | `events/sinks/logger.ts` | always | writes each event through the process logger |
+| `createCallEvidenceSink` | `orchestrator/summary/call-evidence.ts` | always | keeps the run's per-call usage record in memory, so the summary reads what the run observed |
+| `tuiSink` option (`addTuiEvent`) | `features/workflow/tui-sink.ts` | interactive runs | bounds every event for the TUI and forwards it to `workflow/actions.addEvent` |
+| `createStdoutJsonSink` | `events/sinks/stdout-json.ts` | `--json` headless | one NDJSON record `{ "type": "event", "data": <event> }` per event on stdout |
+| `createStdoutTextSink` | `events/sinks/stdout-text.ts` | `--plain` headless | one plain line per phase, task, review and completion on stdout; `warning` events also go to stderr |
+| `_eventSink` option | `orchestrator/run/init.ts` | a caller passes it | an observer sink for the caller |
+| `createHookSink` | `hooks/sink.ts` | `config.hooks` declared | dispatches matching `post_*` / `on_*` hooks, `on_halt` among them (`recovery_prompted`) |
 
 Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orchestrator call site via `src/engine/hooks/run-pre.ts` so they can block the action.
 
@@ -870,7 +896,7 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 `src/engine/events/schema.ts` defines the type-dispatched event contract as `EngineEventSchema` (the `EngineEvent` alias is `z.infer`d in `src/engine/events/types.ts`). Every `EngineEvent` carries `ts: number`; most carry `phase: Phase`. The phase-less variants are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`. The grouped summary below is a navigation aid; use the source contract for the exact, exhaustive event list and field shapes. For key event shapes with full field definitions, see [ENGINE.md](./ENGINE.md).
 
-**Workflow lifecycle (7):**
+**Workflow lifecycle (6):**
 `workflow_started`, `workflow_resumed`, `workflow_complete`, `workflow_cancelled`, `workflow_config`, `turn_interrupted` — the pause event. It carries `source` (`user` | `watchdog`), `at`, where the stop landed — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and `step`, the step the stop parked, as `interruptedStep.step` records it. Every park publishes it: a stop from the stop sheet (`parkStoppedRun`, `src/engine/orchestrator/state-ops.ts`), a stop inside a planner call, a park in place and a pause between briefs. The transcript uses one warning callout label: `Stopped at T003`, `Stopped at the plan`, or `Stopped before T004` for a boundary stop. An unknown step reads `Stopped mid-turn`. The callout has no body line. The live and at-rest bylines use the same words, from `stopPoint` (`src/features/workflow/stop/copy.ts`). The byline under the composer says what continues it.
 
 `paused_external_changes` no longer replays. Older sessions lose that detail; their state and evidence still open at rest.
@@ -881,7 +907,8 @@ Pre-hooks (`pre_*`) are *not* sink-driven — they run synchronously at the orch
 
 The state actions are `RECORD_WORKSPACE`, `ACCEPT_AS_IS`, `APPLY_REVIEW_START`, `APPLY_START`, `APPLY_DONE` and `APPLY_RESTORED`. `CLOSE_RUN` also accepts `as: 'discarded'`. Their effects are in [WORKFLOW.md](./WORKFLOW.md#apply).
 
-The old file-halt modules (`orchestrator/user-edit/`, `approval/gate-and-promote.ts`, `task/apply-changed-files.ts`, `escalation/approval-conflict.ts` and `core/recovery/user-edit-actions.ts`) are gone. The old halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
+The old file-halt enums and event schemas remain readers for saved sessions. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) describes continuation.
+
 `recovery_prompted`, `recovery_action_selected`, `recovery_action_failed`, `recovery_resolved`. The selected, failed and resolved events carry an optional `seat` (`plan` | `build` | `review`), the seat the halt stopped. A prompt carries no top-level `seat`. Its optional `headlineSpans` record each span's text and optional seat, formatted from the complete issue at publication. The transcript replays those spans without rebuilding the issue or finding seat words inside formatted text. Older prompts without spans keep their recorded headline in the secondary text tone.
 
 **Planner stream:**
@@ -893,11 +920,11 @@ The old file-halt modules (`orchestrator/user-edit/`, `approval/gate-and-promote
 
 `review_completed` carries `duration` in milliseconds and a verdict: `pass`, `pass-with-notes`, `fail`, `no-verdict`, or `stopped`. The first three carry `findings`, with `blocking`, `minor`, and `outOfScope` counts from the derived outcome. Failed calls use `no-verdict`; stops use `stopped`; both omit findings. Neither review event fires a hook. The review seat publishes no `planner_status`.
 
-**Planning milestones (19):**
-`spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`. The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/session.ts`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `mode_resolved`, `mode_advice`, `instant_plan_received` and `drift_chain_detected` have no producer now and stay so older logs replay. The `brief_quality_*` and `brief_readiness_*` events no longer replay. Older sessions lose that detail.
+**Planning milestones (20):**
+`spec_approved`, `spec_rejected`, `spec_regenerated`, `plan_approved`, `plan_rejected`, `plan_regenerated`, `briefs_approved`, `briefs_rejected`, `rewind_to_spec`, `rewind_to_plan`, `all_tasks_done`, `drift_report`, `drift_chain_detected`, `snapshot_created`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received`, `artifact_written`. The plan card publishes `plan_approved` when it is approved, `plan_regenerated` when it sends a correction back to the planner, and `plan_rejected` when End run closes the run there (`runPlanApproval`, `planning/session.ts`). `artifact_written` announces `plan.md` and `tasks.md` as one card each, with the file's path, line count and an excerpt (`publishArtifactWritten`, `src/engine/orchestrator/artifact-card.ts`). Replay only: `spec_*`, `briefs_*`, `rewind_to_*`, `snapshot_restored`, `snapshot_restore_conflict`, `mode_resolved`, `mode_advice`, `instant_plan_received` and `drift_chain_detected` have no producer now and stay so older logs replay. The `brief_quality_*` and `brief_readiness_*` events no longer replay. Older sessions lose that detail.
 
 **Task lifecycle:**
-`task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
+`tasks_planned` (the ordered brief list, published at loop entry and after each structural change: `tasks` with `id`, `title`, `index`, `file`, `action`, and `total`), `task_started`, `task_completed`, `task_skipped`, `task_retry`, `task_escalating`, `task_replaced`, `tasks_inserted`, `task_touched_not_suggested` (the files a completed brief changed that no brief suggested), `task_reset`, `task_tokens`, `task_review_needed` (replay only: the per-task review gate is deleted), `review_fix_started`. Replay only: `task_scope_widened`, `hint_failed`, `task_full_fail`
 
 **Consult / seat:**
 `consult_answered` (one row per answer: the task, reason, action, diagnosis and any new ids, revision or check ids), `consult_bound_spent`, `seat_retry`, `seat_wait_started`, `no_progress_cut`, `seat_switched` (published when a seat switch commits: `seat`, `from`, `to`, `cause`, `auto`, `configRevision`)
@@ -906,14 +933,14 @@ The old file-halt modules (`orchestrator/user-edit/`, `approval/gate-and-promote
 `implementer_generate_running`, `implementer_generate_done`, `implementer_generate_failed`
 
 **Validation / escalation / git (8):**
-`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` | `skipped` — the chosen `commands`, the `declined` tests and the `reason`; `skipped` follows `planned` when `validation.approve_checks: ask` ran none of the commands), `full_suite` (one event per reviewer check state: its `id`, `command`, `moment` — `pre-review` | `base` | `brief`, where `brief` is a fix brief's check, run once per brief gate with no base re-run — and `status` `running` | `done` | `not-run` | `refused`, with pass/fail and duration on done, the `own`, `ownLeft` and `others` counts on a judged brief done event, the `newFailures`, `preExisting` and `notVerified` counts on a red base done, and a `detail` on not-run and refused or, on a red base done, the reason a failure is not verified at the run base; an event without `id` is an older session's full-suite `stage`), `checks_run` (the per-check results of a brief gate, a consult `verify` included, and of the plan and task checks before the final review, once per task that owns them; it fires `post_validation` with `taskId` and `results`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
+`review_checks` (the answer of the reviewer's plan call before a review: `scope`, `status` — `planned` | `off` | `skipped` — the chosen `commands`, the `declined` tests and the `reason`; `skipped` follows `planned` when `validation.approve_checks: ask` ran none of the commands), `full_suite` (one event per check state: its `id`, `command`, `moment` — `pre-review` | `base` | `brief` | `plan`, where `brief` is a fix brief's check, run once per brief gate with no base re-run, and `plan` is a plan or task check run before the final review (`src/engine/orchestrator/run/pre-review-checks.ts`) — an optional `scenario` on a render check, and `status` `running` | `done` | `not-run` | `refused` | `stopped`, with pass/fail and duration on done, the `own`, `ownLeft` and `others` counts on a judged brief done event, the `newFailures`, `preExisting` and `notVerified` counts on a red base done, and a `detail` on not-run and refused or, on a red base done, the reason a failure is not verified at the run base; an event without `id` is an older session's full-suite `stage`; the engine never publishes `stopped`: it is the transcript's own settle for a command that a stop cut), `checks_run` (the per-check results of a brief gate, a consult `verify` included, and of the plan and task checks before the final review, once per task that owns them; it fires `post_validation` with `taskId` and `results`), `git_branch_created`. Replay only: `validate`, `escalate`; historical `git_commit` and `git_checkpoint` events remain readable, and current execution never publishes them
 
 A judged plan or task check in a fix brief also emits a `full_suite` done event. It has no running event or duration. Its `own` count names the carried failures. Its `ownLeft` count names those still present. Its `others` count names every unmatched re-run key. Its `proven` flag states whether the re-run proved the same failure source ran, or the command passed. A green re-run shows the ownership verdict too.
 
 A diagnostic key includes its path, position and message. Match exact keys first, then pair unmatched diagnostics by message identity, with only the position removed. Pair each key once. Test failures match by name. A red passes only when no carried failure remains and the re-run still shows a key the original red showed that is not the task's own. Otherwise, the command must pass. Keys come from the full process capture. An incomplete capture gives one placeholder key. The command must pass.
 
 **Clarifications / queue / messages (8):**
-`clarifications_collected`, `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`, `steerable_call`
+`clarifications_collected` and `clarification_answered` (replay only: no producer now), `message_queued`, `message_injected_native`, `queue_drained`, `queue_cleared`, `user_message`, `steerable_call`
 
 `message_queued` and `queue_drained` carry optional `seat` and `taskId` fields. `seat` is a `CrewSeatId`: `plan`, `build`, or `review`. BUILD events name the running brief with `taskId`. `commitQueueMessagesDrained` and `drainQueue` include these fields when callers supply them. `drainQueueForReview` publishes `queue_drained` with seat `review` when it drains messages.
 
@@ -930,13 +957,16 @@ Older logs without these fields still render. `message_injected_native` keeps it
 `cost_update`
 
 **Protected-write approval:**
-`approval_prompted`, `approval_granted`, `approval_rejected`, `approval_mode_changed`, `approval_sticky_recorded` (replay only: sticky grants are deleted)
+`approval_prompted`, `approval_granted`, `approval_rejected`. Replay only: `approval_mode_changed` (no producer now) and `approval_sticky_recorded` (sticky grants are deleted)
+
+**Runner calls (14):**
+`runner_call_started`, `runner_call_runtime_status`, `runner_call_text_delta`, `runner_call_usage`, `runner_call_tool_use`, `runner_call_activity`, `runner_call_session_id`, `runner_call_artifact`, `runner_call_warning`, `runner_call_error`, `runner_call_completed`, `runner_call_stalled`, `runner_call_stall_cleared`, `runner_call_heartbeat`. Each carries the call's context fields and a `sequence` number. `src/engine/calls/event-projection.ts` projects a seat call's stream into them. The summary reads its per-call usage from them (`src/engine/orchestrator/summary/call-evidence.ts`).
 
 **Session replay (2):**
 `replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
 **Generic (2):**
-`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them: `recovery` / `retry_exhausted` · `review_failed` · `recovery_pending_unresolved`, `planner` / `planner_returned_zero_tasks` (the `tasks` call returned no parsable Task Brief) · `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `validation_format_failed` (the formatting of the brief's changed files failed; the checks ran anyway) · `validation_formatted` (the formatting before a brief's checks rewrote files of the brief; the message names them). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
+`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them. Each `publishWarning` / `publishError` call site sets its pair; examples: `recovery` / `retry_exhausted` · `review_failed` · `review_input_too_large` · `recovery_pending_unresolved`, `planner` / `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `validation_format_failed` (the formatting of the brief's changed files failed; the checks ran anyway) · `validation_formatted` (the formatting before a brief's checks rewrote files of the brief; the message names them). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
 
 ### Exhaustive switch in conversation row rendering
 
@@ -948,7 +978,7 @@ Adding a new EngineEvent variant without adding it to this switch is a compile e
 
 ### Headless mode
 
-`splitbrief start --json` skips Ink, replaces `tuiSink` with `stdoutJsonSink`, and stubs workflow host callbacks non-interactively: the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, and recovery exits non-zero. A write to a protected path is denied with `APPROVAL_REQUIRED`. `jsonlSink` still writes the normal structured `session.jsonl` log. See `src/cli/headless.ts`.
+`splitbrief start --json` skips Ink, replaces `tuiSink` with `createStdoutJsonSink`, and stubs workflow host callbacks non-interactively. Each event reaches stdout as `{ "type": "event", "data": <event> }`, so a consumer selects `.type == "event"` and reads `.data.type`. `--plain` uses `createStdoutTextSink` instead. In both modes the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run (with an `input_required` record under `--json`), and recovery exits non-zero. A write to a protected path is denied with `APPROVAL_REQUIRED`. `createJsonlSink` still writes the normal structured `session.jsonl` log. See `src/cli/headless.ts`.
 
 ---
 
@@ -958,8 +988,10 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
 
 ```
 .splitbrief/
-├── active                          plain text — single session-id (the lock)
+├── active                          JSON receipt {version: 1, sessionId, generation} (the lock)
 ├── config.yaml                     Project config (version: 3 — the only accepted version)
+├── reviews/<stamp>/                `splitbrief review` output: review.json + review.md (no session)
+├── probes/<tool>-<date>.jsonl      `splitbrief doctor --probe-seat` records
 └── sessions/
     └── <session-id>/
         ├── state.json              Mutable WorkflowState (overwritten every transition)
@@ -981,9 +1013,13 @@ All per-session state lives under `.splitbrief/sessions/<session-id>/`. Path con
         ├── summary.json            Final aggregates (written at the end of each pass, carrying the
         │                            derived run status and phase; a resume drops the old stop)
         ├── seats.json               The crew the run last ran with
-        ├── run-ledger.json          Run snapshot + accept/reject decision
+        ├── readiness.json          The start readiness report
+        ├── review-packet.json/.md  The run's evidence summary, written after the final review
+        ├── draft.json              The unsent composer draft
+        ├── renders/<check-id>/     Render check output
         └── snapshots/
             ├── .lock               Per-session snapshot lock (~60s stale TTL)
+            ├── run-ledger.json     Run snapshot ids + accept/reject decision
             ├── baseline/           Full-tree copy on first snapshot
             │   ├── manifest.json
             │   └── files/<encoded-path>
@@ -997,11 +1033,11 @@ Also relative to project root, **outside** `.splitbrief/`:
 - `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` is the run worktree. See [workspace data flow](./HOW-IT-WORKS.md#run-workspace-and-apply) for its location rules.
 - `./.splitbrief/skills/`, `./.claude/skills/`, `./.agents/skills/`, `~/.splitbrief/skills/`, `~/.claude/skills/`, `~/.agents/skills/`, `~/.codex/skills/`, `~/.config/opencode/skills/`, `AGENTS.md` — skill sources, read-only to SPLITBRIEF. The order is the discovery precedence order (project before global, first root wins per skill id); the list lives in `src/core/skills/scan-paths.ts`.
 
-Single source of truth for continuing a run: `state.json` + the session folder it lives in. If `state.json` is missing or stateVersion-mismatched, `resume` refuses; so does a run whose `state.json` records `closed`. Everything else is picked up at `resumeStep`. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
+Single source of truth for continuing a run: `state.json` + the session folder it lives in. A version 3 state migrates to version 4 through `mapV3StateToV4` (`src/core/state/migration/map-v3.ts`). If `state.json` is missing or has any other `stateVersion`, `resume` refuses; so does a run whose `state.json` records `closed`. Everything else is picked up at `resumeStep`. `session.jsonl` is the fallback context source for backends without native session resume (`src/engine/orchestrator/transcript/rebuild.ts`).
 
-**Concurrency:** at most one foreground active session per project directory; the presence of `.splitbrief/active` is the foreground lock. Each session also writes a `lockfile.json` carrying its pid and heartbeat, which is how a stale `active` pointer is detected — and how `deriveRunStatus` tells a `running` run from one at rest. The pointer is released when the run **closes**, not when it stops: a run that parked or halted keeps it, because it is still continuable.
+**Concurrency:** at most one foreground active session per project directory; the presence of `.splitbrief/active` is the foreground lock. Each session also writes a `lockfile.json` carrying its pid and heartbeat, which is how a stale `active` pointer is detected — and how `deriveRunStatus` tells a `running` run from one at rest. The pointer is released when the run **closes**, not when it stops: a run that parked or halted keeps it, because it is still continuable. The pointer is a JSON receipt (`src/core/sessions/active-pointer.ts`). An older plain-text session id still reads and clears; no current path writes one.
 
-Path encoding: snapshots URL-encode each path segment then join with `__` to flatten to a single filename per file (`encodeSnapshotPath` in `engine/snapshots/path-codec.ts`).
+Path encoding: a snapshot blob name is the SHA-256 hex of the file's relative path (`encodeSnapshotPath` in `engine/snapshots/path-codec.ts`). The encoding is one-way; the manifest's `fileEntries[].path` holds the original path.
 
 ---
 
@@ -1011,8 +1047,8 @@ The `kind` discriminant is required in every planner / reviewer / implementer co
 
 | `kind` | Planner file | Implementer file | Implementer write mode | Examples |
 |---|---|---|---|---|
-| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, copilot, kilo-code, cursor, command-code |
-| `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | ollama, lm-studio (any OpenAI-compatible) |
+| `cli` | `planners/cli.ts` (+ specialization in `claude-code.ts`) | `implementers/cli.ts` | `direct` | claude-code, codex, opencode, copilot, kilo-code, cursor, command-code, antigravity |
+| `api` | `planners/api.ts` | `implementers/api.ts` | `extracted-code` | ollama, lm-studio, llama-cpp (any OpenAI-compatible) |
 | `shell` | `planners/shell.ts` | `implementers/shell.ts` | `extracted-code` | arbitrary subprocess, stdin-prompt → stdout-response, no shell/network sandbox |
 | `agent` | `planners/agent.ts` | `implementers/agent.ts` | `direct` | subprocess that writes files directly, no stdout extraction or shell/network sandbox |
 
@@ -1041,7 +1077,7 @@ export const SnapshotPhaseSchema: z.ZodEnum<['planning', 'implementing', 'review
 export type SnapshotPhase
 
 export const SnapshotFileEntrySchema: z.ZodObject<{
-  path: string; hash: string; encodedName: string; sizeBytes: number;
+  path: string; hash: string; encodedName: string; mode?: number;
 }>
 export type SnapshotFileEntry
 
@@ -1053,7 +1089,17 @@ export const SnapshotManifestSchema: z.ZodObject<{
   trackedFileCount: number;
 }>
 export type SnapshotManifest
+
+export const RunSnapshotKindSchema: z.ZodEnum<['pre-task', 'post-task', 'pre-final-review', 'accepted-run']>
+export const RunSnapshotLedgerSchema: z.ZodObject<{
+  version: 1; sessionId: string; runSnapshotIds: string[];
+  runSnapshotKinds?: Record<string, RunSnapshotKind>;
+  accepted: boolean; rejected: boolean; createdAt: string; updatedAt: string;
+}>
+export type RunSnapshotLedger
 ```
+
+A manifest written before file modes were recorded has no `mode`. `RunSnapshotLedgerSchema` is the shape of `snapshots/run-ledger.json`.
 
 ### `engine/snapshots/` (path-codec, manifest, files, lock, create)
 
@@ -1066,7 +1112,7 @@ export async function writeManifest(projectDir, sessionId, manifest): Promise<vo
 export async function readManifest(projectDir, sessionId, snapshotId): Promise<SnapshotManifest>
 export async function listSnapshotIds(projectDir, sessionId): Promise<string[]>
 export async function hasBaseline(projectDir, sessionId): Promise<boolean>
-export async function listSnapshots(projectDir, sessionId): Promise<{ manifests: SnapshotManifest[] }>
+export async function listSnapshots(projectDir, sessionId): Promise<{ manifests: SnapshotManifest[]; corruptedIds: string[] }>
 // files.ts
 export async function hashFile(filePath): Promise<string | null>      // sha256 hex; null on read error
 export async function collectTrackedFiles(projectDir): Promise<string[]>  // honours .gitignore + ALWAYS_EXCLUDED
@@ -1134,7 +1180,7 @@ export function buildEvidenceSummary(ledger): NonNullable<Summary['evidenceSumma
 
 // persistence.ts
 export function getOrCreateLedger(input): EvidenceLedger
-export function persistTaskEvidence(input): void
+export async function persistTaskEvidence(input): Promise<void>
 export function persistRejectionEvidence(input): void
 export function persistApprovalEvidence(input): void
 ```
@@ -1149,20 +1195,20 @@ Registered in `src/cli.ts`. [`CLI-REFERENCE.md`](./CLI-REFERENCE.md) is the cano
 
 | Command | Subcommands | Purpose |
 |---|---|---|
-| `splitbrief start` | — | Begin a new workflow. Args: `[feature] [files...]`. Flags: `--planner`, `--implementer`, `--json`. `--mode` and `--approve` are removed and fail with a pointer. Writes `.splitbrief/active`. |
+| `splitbrief start` | — | Begin a new workflow. Args: `[feature] [files...]`. Flags: `--planner`, `--implementer`, `--reviewer`, `--json`, `--plain`. `--mode` and `--approve` are removed and fail with a pointer. Writes the `.splitbrief/active` receipt `{ "version": 1, "sessionId", "generation" }`. |
 | `splitbrief spec` | — | Runs the planning session and exits; writes `plan.json`, `plan.md` and `tasks.md`. |
 | `splitbrief init` | — | Interactive setup; writes `.splitbrief/config.yaml`. |
-| `splitbrief status` | — | Print active session state to stdout. Read-only; doesn't acquire the lock. |
-| `splitbrief resume` | — | Continue the most recent run at `resumeStep`. Refuses a missing or version-mismatched `state.json`, and a closed run. |
-| `splitbrief doctor` | — | Run readiness checks for config, tools, models, hooks, and project state. |
-| `splitbrief continue [session-id]` | — | Continue a named run from its saved state. `--action <skip\|retry\|switch-seat:…\|end-run>` answers its pending recovery first; `end-run` closes the run and stops there. |
-| `splitbrief review` | — | Review an existing session's diff without running the workflow. |
+| `splitbrief status` | — | Print a summary of the active run's state: feature, phase, brief position, start time, session, seats and brief counts. Read-only; doesn't acquire the lock. |
+| `splitbrief resume` | — | Continue the most recent run at `resumeStep`. A version 3 `state.json` migrates to version 4 (`mapV3StateToV4`). Refuses a missing `state.json`, any other version, and a closed run. |
+| `splitbrief doctor` | — | Run readiness checks for config, tools, models, hooks, and project state. `--probe-seat <seat>` makes one paid call through the plan, build or review seat and appends a record to `.splitbrief/probes/<tool>-<date>.jsonl`. |
+| `splitbrief continue [session-id]` | — | Continue a named run from its saved state. `--action <skip\|retry\|restore\|switch-seat:…\|end-run>` answers its pending recovery first; `end-run` closes the run and stops there. `--action <apply\|discard>` settles a run that is ready to apply. |
+| `splitbrief review` | — | One reviewer call over the working-tree diff, or over the diff against `--base <ref>`. It opens no session and runs no planning. Writes `review.json` and `review.md` to `.splitbrief/reviews/<stamp>/`. |
 
 ---
 
 ## 10. Runtime commands (full list, 23)
 
-The registry holds 23 commands in five categories. `/mode`, `/revise-spec`, `/revise-plan` and `/approval` are removed: typing one prints a one-line pointer (`REMOVED_COMMANDS`, `src/core/runtime/commands/types.ts`). Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
+The registry holds 23 commands in five categories. A removed command, such as `/mode`, `/revise-spec`, `/revise-plan` or `/approval`, prints a one-line pointer when typed (`REMOVED_COMMANDS`, `src/core/runtime/commands/types.ts`, lists them all). Defined in `src/core/runtime/commands/defs/`, one module per category, concatenated by `createRuntimeCommands` in `src/core/runtime/commands/registry.ts`. The `kind` field is `'noarg'` (no args) or `'arg'` (positional input); every command declares a `category` from `COMMAND_CATEGORIES` (`src/core/runtime/commands/types.ts`), which is the order the command palette groups them in. Commands are callable from composer `/` input and the command palette. Aliases resolve to their canonical command and may pin an argument; no command declares one today.
 
 **Navigate**
 
@@ -1187,11 +1233,11 @@ The registry holds 23 commands in five categories. `/mode`, `/revise-spec`, `/re
 
 | Runtime command | Description |
 |---|---|
-| `/run <accept\|reject>` | Accept or reject what this run wrote |
+| `/run <accept\|reject>` | Apply or discard this run, or undo its Apply |
 | `/queue [show\|clear]` | Show or clear the message queue |
 | `/stop` | Open stop and session options |
 | `/resume` | Continue a paused or stopped run |
-| `/steer <text>` | Stop now and continue with the text |
+| `/steer <text>` | Stop now and continue with your correction |
 | `/end` | Close the run, keeping every change on disk |
 
 **View**
@@ -1203,7 +1249,7 @@ The registry holds 23 commands in five categories. `/mode`, `/revise-spec`, `/re
 | `/diff` | Expand or collapse the latest diff |
 | `/sidebar` | Show or hide the workflow sidebar |
 | `/tasks` | Show the brief list |
-| `/usage` | Open token usage and monetary estimates for the current workflow |
+| `/usage` | Show tokens, estimate and rates |
 
 **Input & output**
 
@@ -1227,7 +1273,7 @@ palette:
       command: /usage          # runtime command to invoke (must start with '/')
 ```
 
-All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, `validation`, `workflow.{approve,git,isolation,...}`, `codebase`, `hooks`, `approval`) are unchanged in shape. The retired `workflow.max_retries` and `escalation` keys still load with one notice each and are ignored.
+All sections are optional; absence means the documented default is used. The `palette.customActions` array is empty by default. Existing config sections (`planner`, `implementer`, the optional `reviewer`, `validation`, `workflow.{approve,git,isolation,...}`, `codebase`, `hooks`, `approval`) are unchanged in shape. The retired `workflow.max_retries` and `escalation` keys still load with one notice each and are ignored.
 
 ---
 
@@ -1266,7 +1312,7 @@ Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breakin
 Quickest path for a fresh agent:
 
 1. `src/cli.ts` — see what commands exist.
-2. `src/cli/commands/start/register.ts` — see the bootstrap flow.
+2. `src/cli/commands/start/register.ts` → `start/interactive.ts` — see the bootstrap flow.
 3. `src/engine/orchestrator/run/workflow.ts` → `run/init.ts` → `run/phases.ts` — see the top-level loop.
 4. `src/engine/orchestrator/planning/session.ts` — see the planning session and the plan card.
 5. `src/engine/orchestrator/task/loop.ts` and `src/engine/orchestrator/task/step.ts` (entry) with internal helpers such as `attempt-gate.ts` and `rollback.ts` — see the per-task loop with auto-snapshot and evidence integration.

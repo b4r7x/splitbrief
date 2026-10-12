@@ -36,6 +36,7 @@ The `api-key` channel rows describe what that channel stages. Selecting it expli
 | Cursor Agent CLI (`api-key` channel) | `CURSOR_API_KEY` | — | Passed to the `cursor-agent` subprocess |
 | Local Ollama | `OLLAMA_LOCAL_API_KEY` | — | Optional only for a secured loopback daemon; configure `apiKey: env:OLLAMA_LOCAL_API_KEY`. `OLLAMA_API_KEY` is never accepted or sent locally. |
 | LM Studio | Not inferred | — | Local provider; no key required. A daemon you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
+| llama.cpp | Not inferred | — | Local provider; no key required. A server you put behind one takes it inline or as `apiKey: env:YOUR_VAR` |
 | Custom remote provider | Not inferred | — | Carries an inline `apiKey`, accepted only when you accept **normalized-origin trust** for the declared `apiBase` |
 
 A provider descriptor may declare a `credentialPrefix`; a mismatch fails closed before network access (`provider-credential-prefix-mismatch`), and offering selection never follows from the prefix alone. None of the three admitted providers (Ollama, LM Studio and llama.cpp) declares one. All three connect to local servers and accept an optional credential for a secured daemon.
@@ -55,7 +56,7 @@ implementer:
   model: qwen2.5-coder-7b
 ```
 
-The key must be inline. An `env:` reference on a custom provider is rejected at load (`API key exfiltration risk`) so a key you exported for one host is never sent to another; keep it inline only when you accept **normalized-origin trust** for that `apiBase`. `apiKey: env:VAR` is accepted only for a catalog provider: local `ollama` takes exactly one reference, `apiKey: env:OLLAMA_LOCAL_API_KEY`, and `lm-studio` takes any variable you name.
+The key must be inline. An `env:` reference on a custom provider is rejected at load (`API key exfiltration risk`) so a key you exported for one host is never sent to another; keep it inline only when you accept **normalized-origin trust** for that `apiBase`. `apiKey: env:VAR` is accepted only for a catalog provider: local `ollama` takes exactly one reference, `apiKey: env:OLLAMA_LOCAL_API_KEY`, and `lm-studio` and `llama-cpp` take any variable you name.
 
 Never paste real or placeholder secrets (`sk-ant-…`, `sk-or-…`, `gsk_…`) into committed YAML examples.
 

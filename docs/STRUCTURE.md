@@ -28,9 +28,12 @@ src/
 │   ├── layout.tsx                           # structural shell (header + body + footer)
 │   ├── keys.ts                              # app-wide keyboard dispatch (useAppKeys)
 │   ├── command-context.ts                   # runtime-command wiring (useRuntimeCommands)
+│   ├── mouse.ts                             # app-wide mouse wiring (useAppMouse, wireAppMouse)
 │   ├── refresh-skills.ts                    # helper: re-run skill discovery when the skills overlay opens
+│   ├── prepare-resume.ts                    # prepareSessionResume: the readiness check before a run continues
+│   ├── session-preparation.tsx              # SessionPreparation: the continuation's readiness page
 │   ├── screens/                             # FLAT page entries: home, workflow, setup
-│   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners, editor, stop
+│   └── overlays/                            # FLAT pages: help, palette, skills, sessions, settings, runners, usage, editor
 ├── cli/                                     # CLI subcommand handlers
 ├── core/                                    # domain logic (config, types, state, formatting)
 ├── engine/                                  # workflow orchestrator (zero React)
@@ -43,10 +46,11 @@ src/
     ├── workflow/
     ├── home/
     ├── palette/
-    ├── settings/                            # retains items.ts + presentation.ts + hooks/
+    ├── settings/                            # items.ts + presentation.ts + focus.ts + help.ts + hooks/
     ├── crew/                                # seat rows + renderers (no page of its own)
     ├── runners/
-    └── editor/                              # inline spec/plan/brief editor (overlay entry: app/overlays/editor.tsx)
+    ├── start-preparation/                   # the start readiness panel (no page of its own)
+    └── editor/                              # inline plan.json editor (overlay entry: app/overlays/editor.tsx)
 ```
 
 Outside `src/`, the repo root also carries `skills/` — the pipeline packaged as agent skills for skills.sh (`skills/splitbrief/` is canonical; its `references/` library and the four `SKILL.md` files carry `<!-- generated -->` blocks rendered from `src/core/pipeline-spec/`, the prompt builders and the CLI adapters by `scripts/skill-blocks.ts`, and are mirrored into the `splitbrief-brief`, `splitbrief-run`, and `splitbrief-review` siblings by `scripts/sync-skills.ts`, both gated by `npm run skills:check`), and `.claude-plugin/marketplace.json`, which declares the four as one Claude Code plugin and gives the skills.sh picker its group row. Executable helpers live in `skills/*/scripts/` (`wait-attempt.sh`, `splitbrief-gate.sh`), sourced from `skills/splitbrief-run/scripts/` and mirrored byte-identically by the same script; their tests are `testing/integration/skills/`. See [`SKILLS.md`](./SKILLS.md).
@@ -67,16 +71,16 @@ Representative contents of the non-feature folders that have more than a handful
 
 ```
 src/cli/
-├── init-stores.ts     # whole bootstrap in one file; 3 internal helpers; see BOOTSTRAP.md
+├── init-stores.ts     # store bootstrap (initStoresForTuiMount, initStores); see BOOTSTRAP.md
 ├── options.ts         # commander option builder (addWorkflowOptions)
-├── setup.ts           # bootstrap prep (resolveProjectDir, ensureGitAndConfig, setupWorkflow)
+├── setup.ts           # bootstrap prep (canonicalizeProjectDir, ensureGitAndConfig, setupWorkflow)
 ├── render/            # Ink / fullscreen render setup (app.ts is the production entry)
 │   ├── app.ts
 │   ├── input-config.ts
 │   ├── process-lifecycle.ts
 │   └── terminal-handover.ts
 ├── errors.ts          # cliError() factory + isCliError predicate — see ERRORS.md
-├── headless.ts        # runHeadless(feature, dir, opts) — no-TUI workflow driver for `--json`
+├── headless.ts        # runHeadless(options) — no-TUI workflow driver for `--json` and `--plain`
 ├── hook-trust-prompt.ts  # TTY hook disclosure + trust prompt (executable, resolved path, argv); refuses in non-TTY unless --allow-hooks
 ├── …                  # plus leaf modules (unknown-command, parse-at-files, …) — `rg --files src/cli` for the full set
 ├── commands/          # commander subcommand handlers — one file per subcommand, registered in cli.ts (thin — delegate to core). Listing is representative; `rg --files src/cli/commands` for the full set
@@ -87,9 +91,8 @@ src/cli/
 │   ├── status.ts
 │   └── …              # plus continue, doctor, review, and more — see the rg pointer above
 └── sessions/          # session-id resolution for subcommands
-    ├── resolve.ts          # assertSessionExists and session-id resolution
-    ├── aliases.ts          # numeric alias ↔ session-id mapping from lockfiles
-    └── single-running.ts   # findSingleRunningSession scan (single | none | multiple)
+    ├── resolve.ts          # assertSessionExists, assertResumableState, Apply / Discard command hints
+    └── aliases.ts          # numeric alias ↔ session-id mapping from lockfiles
 ```
 
 `cli/input-history-persistence.ts` moved to `stores/ui/persistence.ts`.
@@ -105,6 +108,16 @@ src/stores/ui/
 ├── feedback.ts        # feedback/error message state
 ├── input-history.ts   # command input history (in-memory)
 ├── input-height.ts    # composer rendered height (cross-tree)
+├── completion.ts      # whether the composer's completion list is open
+├── composer-draft.ts  # one-shot requests that place a document or an image in the composer draft
+├── composer-live.ts   # the composer's live draft (empty flag, text, document)
+├── session-drafts.ts  # per-session draft.json load, save and flush
+├── review-keys.ts     # whether the keys belong to a comment on a review gate
+├── command-palette-mru.ts # most-recently-used palette commands
+├── picker-view.ts     # the runner picker's sub-view, expanded model row and option draft
+├── hover.ts           # the hovered row index
+├── project-files.ts   # refresh epoch for the project file listing
+├── editor.ts          # editorStore singleton (openRaw, owner-token write gate)
 ├── external-edit-request.ts # one-shot Ctrl+O intent bridge (features/editor → store ← workflow effect); carries the CAS ownerToken, non-gated neutral vocabulary
 └── persistence.ts     # disk I/O for inputHistoryStore (hydrate + debounced save)
 ```
@@ -118,6 +131,10 @@ src/engine/events/
 ├── bus.ts             # createEventBus() — sync pub/sub with per-sink crash isolation
 ├── schema.ts          # EngineEventSchema type-dispatched schema + parseEngineEvent
 ├── replay.ts          # readRunEvents(ref) — the inverse of the JSONL writer, for reading a run back
+├── bound.ts           # boundEngineEventForConsumer — bounds an event for the TUI or a stdout sink
+├── public-json.ts     # HeadlessJsonRecordSchema — the public `--json` record shape
+├── workflow-cancel.ts # the workflow cancel reasons and the user-cancel abort reason
+├── workflow-events.ts # TASK_REVIEW_COMMANDS — the task-review command vocabulary
 ├── types.ts           # EngineEvent alias (z.infer of EngineEventSchema) + EventSink + EventBus ports
 └── sinks/
     ├── jsonl.ts       # appends every event to sessions/<id>/session.jsonl
@@ -143,13 +160,15 @@ src/engine/hooks/
 ```
 src/engine/codebase/
 ├── repomap.ts                       # entry; composes the pipeline into a budgeted summary
+├── discover-files.ts                # file walk with the default and configured excludes
+├── languages.ts                     # LanguageConfig registry + ALL_KNOWN_EXTENSIONS
 ├── parse.ts                         # tree-sitter symbol extraction
-├── cache.ts                         # per-project SQLite cache of parsed symbols
-├── graph.ts                         # symbol → file edge graph
-├── pagerank.ts                      # rank files by reference density
-├── format.ts                        # render the ranked graph into the planner-facing section
-├── budget.ts                        # token-aware truncation
-├── rebuild.ts                       # rebuild the parsed-symbol cache from scratch
+├── cache.ts                         # per-project SQLite cache of parsed symbols and imports
+├── cache-path.ts                    # cache folder + repomap.sqlite path
+├── graph.ts                         # file → file import graph (relative imports only)
+├── pagerank.ts                      # rank files by import references
+├── format.ts                        # render one file's block of signature lines
+├── budget.ts                        # token-aware selection of the ranked blocks
 ├── extract-mentioned-filenames.ts   # pulls filenames out of user feature prompt for seeding
 └── types.ts
 ```
@@ -160,10 +179,10 @@ src/engine/codebase/
 src/core/pipeline-spec/      # the typed pipeline contract: ladder.ts, retries.ts, gates.ts, halts.ts,
                              #   steps.ts (older runs' step table, read by run-status), review.ts,
                              #   brief.ts, scope.ts, baseline.ts, timeouts.ts,
-                             #   planner-documents.ts — pure data and readers, no I/O
+                             #   bounds.ts — pure data and readers, no I/O
 src/core/scope/              # declared-set.ts — the one path ↔ Scope matcher every consumer calls
 src/core/validation/stacks/  # typescript · javascript · python · go · rust rows + registry.ts
-src/core/recovery/           # halt.ts, headline.ts, action-label.ts, resume-command.ts, reset-clock.ts
+src/core/recovery/           # halt.ts, headline.ts, action-label.ts, resume-command.ts, reset-clock.ts, account-cause.ts
 ```
 
 `pipeline-spec/` is read by the orchestrator instead of literals, and `scripts/skill-blocks.ts` renders the skills' countable rules from the same modules — see [CONTRIBUTING.md](../CONTRIBUTING.md#maintaining-the-agent-skills).
@@ -188,6 +207,7 @@ src/core/hooks/
 
 ```
 src/core/tokens/
+├── context-length.ts  # DEFAULT_UNKNOWN_CONTEXT_LENGTH — the context window of an unknown model
 └── estimate.ts        # shared token estimator (planner base + repo-map budget)
 ```
 
@@ -204,7 +224,9 @@ src/core/runtime/commands/
 ├── registry.ts        # createRuntimeCommands(ctx): concatenates defs/
 ├── dispatch.ts        # parses /name args, validates screen/phase, executes
 ├── lookup.ts          # exact, alias, and fuzzy command lookup
-└── types.ts           # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
+├── context-factory.ts # createCommandContext — builds the RuntimeCommandContext
+├── messages.ts        # formatRejectRunMessage
+└── types.ts           # RuntimeCommandDef, RuntimeCommandContext
 ```
 
 These are runtime commands, not a slash-only subsystem: the same registry backs composer `/` input and the command palette. `defs/` is split by `category`, and `registry.ts` concatenates the five modules in `COMMAND_CATEGORIES` order — the order `/help` and the palette already render. Colocated tests include `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (for example `registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`) covering the phase / screen / arg matrix.
@@ -229,6 +251,13 @@ src/core/sessions/
 ├── compaction.ts      # session-log compaction
 ├── display.ts         # session display formatting
 ├── errors.ts          # session error factory + predicates — see ERRORS.md
+├── confinement.ts     # keeps session file paths inside the session folder
+├── prepare.ts         # new-session preparation and its rollback
+├── plan-file.ts       # writePlanJson / parsePlanJson — the session's plan.json
+├── draft.ts           # readSessionDraft / writeSessionDraft — the session's draft.json
+├── runner-pids.ts     # the runner pid ledger of a session
+├── search.ts          # filterSession — session list search
+├── summary-parser.ts  # parsePersistedSession — validates a saved session record
 └── find-unused-id.ts  # findUnusedId(input) — first free session id (flat, not under id/)
 ```
 
@@ -290,6 +319,8 @@ The page `app/screens/workflow.tsx` holds the composition (layout math + `Screen
 features/settings/
 ├── items.ts                  # builds the one settings list: crew rows first, then the settings defs by section
 ├── presentation.ts           # pure formatters on SettingDef (value color, filter match, validate, display) — feature-local
+├── focus.ts                  # parseSettingsFocus — the overlay focus key (a row or a typed filter)
+├── help.ts                   # settingsHelpLines — the help text under the selected row
 └── hooks/
     ├── buffer.ts             # useEditBuffer — feature-local
     └── editor.ts             # useSettingsEditor — feature-local
@@ -371,7 +402,7 @@ Am I about to create an `index.ts` that only re-exports?
 | `src/engine/` | `utils/`, `lib/`, `core/`, `engine/` siblings | `cli/`, `app/`, `features/workflow/`, `features/runners/` |
 | `src/stores/` | `utils/`, `core/`, `lib/`, `engine/` (type-only) | anyone |
 | `src/features/{f}/` | everything below + shared `components/`, `hooks/` | only the `app/` shell (pages in `app/screens\|overlays` + `app/router.tsx`) |
-| `src/app/screens\|overlays/` (pages) | features + shared `components/`, `hooks/`, stores; `app/keys.ts`, `app/command-context.ts` | only `app/router.tsx` |
+| `src/app/screens\|overlays/` (pages) | features + shared `components/`, `hooks/`, stores; `app/keys.ts`, `app/command-context.ts`, `app/prepare-resume.ts`, `app/refresh-skills.ts` | only `app/router.tsx` |
 
 Violations are blockers: `utils/ → core/`, `lib/ → engine/`, `core/ → features/`, `features/A → features/B`, page → page, and page → app shell (`app/{root,router,provider,layout}`).
 
@@ -396,10 +427,12 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 
 `src/components/` holds UI that is not tied to any single feature:
 
-- **Primitives** — `theme.tsx`, `spinner.tsx`, `scroll-indicator.tsx`, `labeled-row.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `session-row.tsx`.
+- **Primitives** — `theme.tsx`, `divider.tsx`, `rule-header.tsx`, `scroll-indicator.tsx`, `scrollbar.ts`, `scrollable-document.tsx`, `screen-shell.tsx`, `filter-input.tsx`, `markdown.tsx`, `list-row.tsx`, `list-columns.ts`, `row-leading.ts`, `session-row.tsx`, `task-summary.tsx`. The spinner is a shared hook, `src/hooks/use-spinner-frame.ts`, not a component.
 - **Input subsystem** — `input/` (multiline input primitive), `composer/` (composite used on every screen).
-- **Shared overlays** — `overlays/overlay-panel.tsx`, `overlays/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
-- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/single-column.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
+- **Shared overlays** — `overlays/overlay-panel.tsx`. The runner picker's text input overlay has one consumer, so it lives in its feature: `src/features/runners/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
+- **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/filtering.ts`, `pickers/single-column.tsx`, `pickers/aligned-option-row.tsx`, `pickers/row-zone.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
+
+`src/hooks/` holds the shared hooks: `use-spinner-frame.ts` (`useSpinnerFrame`), `use-shared-clock.ts` (`useSharedClock`), `use-static-selector.ts` (`useStaticSelector`), `use-filterable-list.ts` (`useFilterableList`) and `use-crew-display-names.ts` (`useCrewDisplayNames`). See [`HOOKS.md`](./HOOKS.md).
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 
@@ -412,9 +445,11 @@ The `src/app/` shell is the composition layer. It has two parts:
 - **Shell modules** — `app/root.tsx` (composition root), `app/router.tsx` (dispatch), `app/provider.tsx` (`AppProvider`, today only `<ThemeProvider>`), `app/layout.tsx` (header + body + footer), `app/keys.ts` (`useAppKeys`), `app/command-context.ts` (`useRuntimeCommands`).
 - **FLAT pages** — one file per surface under `app/screens/` (full screens) and `app/overlays/` (overlays). Each page is the surface's entry point and *composes* its feature's internals.
 
+`app/mouse.ts` (`useAppMouse`) sits beside `app/keys.ts`. `app/prepare-resume.ts` (the readiness check before a run continues, imported by the home, setup, workflow, sessions and palette pages) and `app/session-preparation.tsx` (the continuation's readiness page, rendered by `app/router.tsx`) are app-level helpers too. Gate 9's shell guard covers only `root`, `router`, `provider` and `layout`.
+
 `app/refresh-skills.ts` is a plain helper, not a shell module: it re-runs `discoverSkills(projectDir)` into `skillsStore` and is called from the two sites that open the skills overlay (`app/keys.ts` for `Ctrl+S`, `app/command-context.ts` for the `/skills` command's `refreshSkills` port). The page→shell guard does not cover it, so a page may import it.
 
-`app/root.tsx` is the composition root: it reads `routerStore`/`overlayStore`/`lifecycleStore`, wires runtime commands via `useRuntimeCommands()` (`app/command-context.ts`) and app-wide keys via `useAppKeys()` (`app/keys.ts`), and renders `<AppProvider>` wrapping `<Router/>`.
+`app/root.tsx` is the composition root: it reads `routerStore`/`overlayStore`/`lifecycleStore`, wires runtime commands via `useRuntimeCommands()` (`app/command-context.ts`), app-wide keys via `useAppKeys()` (`app/keys.ts`) and app-wide mouse input via `useAppMouse()` (`app/mouse.ts`), and renders `<AppProvider>` wrapping `<Router/>`.
 
 `app/router.tsx` dispatches by reading `routerStore.screen` and importing each page directly:
 
@@ -466,14 +501,14 @@ Tests follow a hybrid layout driven by **blast radius** — how many top-level f
 | ≤ 1 top-level folder, integration test | Colocated next to source (`<name>.integration.test.ts` by `<name>.ts`) | `src/engine/orchestrator/drift/analyze.integration.test.ts` |
 | ≥ 2 top-level folders | `testing/integration/<layer>/` | `testing/integration/cli/`, `testing/integration/orchestrator/`, `testing/integration/ui/` |
 
-The three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`).
+Three `testing/integration/` subfolders align with the three stable seams: commander (`cli/`), `runWorkflow()` (`orchestrator/`), and Ink screen + engine-written stores (`ui/`). Two more hold other suites: `skills/` tests the skill helper scripts, and `performance/` holds the `*.perf.test.*` suites.
 
 `scripts/` is the second sanctioned colocated-test home alongside `src/`: tooling like `scripts/check-invariants.ts`, `scripts/import-boundaries.ts`, `scripts/sync-skills.ts`, and `scripts/skill-blocks.ts` keep their tests next to source (`check-invariants.test.ts`, `import-boundaries.test.ts`, `sync-skills.test.ts`, `skill-blocks.test.ts`), which is why `vitest.config.ts` includes a `scripts/**/*.test.{ts,tsx}` glob.
 
 **Companion rules:**
 
 - **Pure helpers get colocated tests.** `keyboard.ts`, `layout.ts`, `handlers.ts`, `core/state/machine.ts`, parsers, pricing math — inputs → outputs, zero I/O.
-- **Ink tested at behavior seams.** Page entries (`app/screens/<x>.tsx`, `app/overlays/<x>.tsx`) and behavior-heavy feature sub-components get tests. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`, `TwoColumnPicker`) earn dedicated tests because their cost amortises across consumers.
+- **Ink tested at behavior seams.** Page entries (`app/screens/<x>.tsx`, `app/overlays/<x>.tsx`) and behavior-heavy feature sub-components get tests. Shared primitives in `src/components/` (`FilterableList`, `MultilineInput`) and the runner feature's `TwoColumnPicker` earn dedicated tests because their cost amortises across consumers.
 - **Engine tested by blast radius.** Pure decision modules and narrow orchestrator control-flow modules get colocated units; cross-module workflow behavior is covered through integration tests at the `runWorkflow()` seam with fakes from `testing/helpers/`.
 - **Trivial hooks (≤30 LOC, no branching) do not need tests.** Covered through the component that uses them. See [`HOOKS.md`](./HOOKS.md).
 - **Fixtures vs factories split by kind.** `testing/fixtures/<domain>/` = read-only bytes on disk; `testing/helpers/factories/<domain>.ts` = pure TS constructors. Rule of two: inline until the second consumer appears.
@@ -541,6 +576,8 @@ Features are small and irregular. A template would over-prescribe (minimal featu
 | `help` | Global help overlay — keyboard and command reference | `app/overlays/help.tsx` | dissolved (page only) |
 | `sessions` | Sessions picker — select a past session to resume | `app/overlays/sessions.tsx` | dissolved (page only) |
 | `skills` | Skills picker — toggle available skills for a workflow | `app/overlays/skills.tsx` | dissolved (page only) |
+| `usage` | Token and cost details of a run (`/usage`) | `app/overlays/usage.tsx` | `features/workflow/` (`usage-details.tsx`, `usage-details-model.ts`) |
+| `start-preparation` | No page of its own — the readiness panel shown while a run starts, used by the home and setup pages and `app/session-preparation.tsx` | — | `features/start-preparation/` |
 | `stop` | Inline stop menu above the workflow composer | `app/screens/workflow.tsx` | `features/workflow/stop/` |
 | `review-checks` | Inline reviewer checks card above the workflow composer (`validation.approve_checks: ask`): Run all or Skip all | `app/screens/workflow.tsx` | `features/workflow/review-checks/` |
 
@@ -553,7 +590,7 @@ The `editor` surface is a headless pure editing kernel feeding one thin Ink surf
 ```
 src/features/editor/                  # feature internals (imported by app/overlays/editor.tsx)
 ├── editor-buffer-view.tsx            # full-surface exclusive-overlay editor
-├── plan-save.ts                      # plan.json save check: JSON + PlanProposalSchema + checkPlan
+├── plan-save.ts                      # plan.json save check: parsePlanJson + checkPlan
 ├── editor-line-segments.ts          # visual-row segmentation for rendering
 ├── editor-viewport.ts               # viewport-scroll math for the editor surface
 └── use-editor-keys.ts               # useInput wiring over resolveEditorKeyAction
@@ -570,11 +607,11 @@ src/core/keybindings/editor.ts        # resolveEditorKeyAction — the single-ow
 src/features/workflow/components/frame-panel.tsx  # shared single-line-border frame (border + ◇ dir/base title + top Divider); one shape for the raw editor overlay and ReviewView
 ```
 
-The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`, beside `divider.tsx` — so it can use the sibling `Divider` without a components→features boundary violation). The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
+The raw editor overlay and `ReviewView` share `FramePanel` (in `features/workflow/components/`). It draws its top rule with the shared `Divider` from `src/components/divider.tsx`, a features→components import that the boundaries allow. The overlay consumes it page→feature (`app/overlays/editor.tsx → features/workflow/components/frame-panel`); `ReviewView` consumes it same-slice. The `Ctrl+O` external-editor escape hatch never lets `features/editor` import `features/workflow`: `features/editor` emits an intent into `stores/ui/external-edit-request.ts` and the workflow effect in `features/workflow/hooks/workflow-screen/use-inline-edit.ts` consumes it and runs the existing `review-parser` handoff (`features/editor → store ← workflow effect`, gate 9 clean).
 
 Colocated tests sit next to each source file (`editor-state.test.ts`, `grapheme-motions.test.ts`, `editor.test.ts`, `editor-line-segments.test.ts`, `editor-buffer-view.test.tsx`, `external-edit-request.test.ts`, `frame-panel.test.tsx`, `src/stores/ui/editor.test.ts`). The keymap in `src/core/keybindings/editor.ts` is the single source of truth for editor chords; the documented keymap in [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md#inline-editor-planjson) is asserted against it by `src/core/keybindings/editor.test.ts` so the two cannot drift. `Ctrl+O` maps to `{ kind: 'open-external' }` (open the file in the external editor): the overlay pre-saves the buffer (owner-token guarded) then hands off.
 
-**Ratified kernel-contract amendments** (recorded as intentional): (1) `EditorState.affinity: 'upstream' | 'downstream'` — a 1-bit field so a caret on a soft-wrap seam resolves to the correct visual row (`'upstream'` is the default and reproduces prior behavior everywhere except exactly on a seam); (2) `EditorKeyAction` gains `{ kind: 'open-external' }` for the `Ctrl+O` escape hatch; (3) `followCaretScroll` (`src/core/editor/editor-state.ts:264`) reads `state.affinity` instead of the `upstream` default so a downstream seam's painted lower-row caret is not clipped at the viewport's bottom edge (model ≡ paint). The two delete-line reads (`editor-state.ts:137,143`) keep the `upstream` default.
+**Ratified kernel-contract amendments** (recorded as intentional): (1) `EditorState.affinity: 'upstream' | 'downstream'` — a 1-bit field so a caret on a soft-wrap seam resolves to the correct visual row (`'upstream'` is the default and reproduces prior behavior everywhere except exactly on a seam); (2) `EditorKeyAction` gains `{ kind: 'open-external' }` for the `Ctrl+O` escape hatch; (3) `followCaretScroll` (`src/core/editor/editor-state.ts`) reads `state.affinity` instead of the `upstream` default so a downstream seam's painted lower-row caret is not clipped at the viewport's bottom edge (model ≡ paint). The two delete-line reads in `deleteRange` (`editor-state.ts`) keep the `upstream` default.
 
 ## Screaming folders
 
@@ -606,17 +643,22 @@ orchestrator/
 │   ├── call-loop.ts  # internal — waits for the user's answers to planner questions
 │   ├── queue-drain.ts # internal — drain queued messages into the planner
 │   ├── failure.ts    # internal — planner failure handling
+│   ├── heartbeat.ts  # internal — planner_heartbeat events during long waits
+│   ├── sanitize-discovered-validation.ts # the plan command allowlist (also imported by `validation/`)
+│   ├── types.ts      # internal — PlanningPhaseResult and the phase options
 │   └── mutation-guard.ts # internal — refuses a read-only call that changed the project
 ├── task/
-│   ├── step.ts              # entry — single-task execution
+│   ├── loop.ts              # entry — runTaskLoop, the task loop
+│   ├── step.ts              # internal — single-task execution
 │   ├── pre-task.ts          # internal — pre-hook dispatch, task-start event, snapshot
 │   ├── run-implementation.ts # internal — continuation loop, streaming, staging
 │   ├── attempt-gate.ts      # internal — protected-write gate over an attempt's workspace changes
 │   ├── rollback.ts          # internal — restore task files after denied validation or exhausted retries
-│   └── resolve-deps.ts     # internal — dependency resolution
+│   ├── resolve-deps.ts      # internal — dependency resolution
+│   └── …                    # brief-gate, task-checks, retry, routing, refresh-code and more — `rg --files src/engine/orchestrator/task`
 ```
 
-Callers import from `./planning/run.js` or `./task/step.js`. Files other than the entry are **considered internal to the folder** — the folder boundary is the privacy boundary. There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
+Callers import from `./planning/run.js` or `./task/loop.js`. Files other than the entry are **considered internal to the folder** — the folder boundary is the privacy boundary. A few narrow helpers are also imported from outside the folder (for example `task/refresh-code.ts`, `task/attempt-gate.ts` and `planning/call-loop.ts`). There is no `_prefix.ts` convention, no linter-enforced "private" — the convention is structural: if it's not the entry file, it's an internal helper of that folder.
 
 **No underscore prefix** (`_run-init.ts`, `_escalation-step.ts`). Google TypeScript Style Guide, Microsoft, and AWS all advise against it in 2025+. Use folder colocation instead.
 

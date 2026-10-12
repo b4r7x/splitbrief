@@ -27,7 +27,7 @@ The "smart" side. Its responsibilities, in order:
 
 1. **Research** the project (read files, understand existing patterns).
 2. **Answer one typed plan** (`PlanAnswerSchema`) — acceptance criteria, checks, validation commands and tasks. SPLITBRIEF validates it, writes `plan.json`, and renders `plan.md` and `tasks.md` from it; each task is one Task Brief, the durable execution contract for its part of the change.
-3. **Review** the entire diff at the end against the plan and its Task Briefs (when no reviewer is configured, the planner holds the review seat).
+3. **Review** the entire diff at the end against the plan and its Task Briefs (when no reviewer is configured, the planner holds the review seat). The review seat makes three kinds of call: the plan call that chooses the reviewer checks (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`), the verdict call, and the consult of a fix task.
 4. **Consult** — when the implementer fails a task's attempt and its one retry (or reports `blocked`, or its inputs turn stale), one seat answers one read-only typed consult (the planner for a plan task, the review seat for a fix task the reviewer wrote): guidance, a rewritten brief, a split into subtasks, a re-run of the named checks, or one question for the user. A spent bound enters explicit recovery.
 
 The planner also supports **clarifying questions**: it can ask the user questions before it answers the plan. The questions are part of the typed answer (`PlanResultSchema`), so every planner can ask them.
@@ -52,7 +52,7 @@ The middle layer. Zero React, zero Ink — pure logic in `src/engine/orchestrato
 - Disk writes (`plan.json`, `plan.md` and `tasks.md` as the plan and its renderings, `sessions/<id>/state.json`, `sessions/<id>/session.jsonl`).
 - Validation pipeline (plan checks, then the reviewer checks).
 - Filesystem snapshots and manual Git review. An index checkpoint is a retired Git feature; filesystem snapshots remain supported.
-- Event emission through the EventBus to subscribed sinks: TUI, JSONL, logger, stdout JSON, and hooks.
+- Event emission through the EventBus to subscribed sinks: TUI, JSONL, logger, call evidence, stdout JSON or stdout text, and hooks. See [ENGINE.md §Sinks](./ENGINE.md#sinks).
 
 ---
 
@@ -62,7 +62,7 @@ Both the planner and the implementer are configured with a `kind` field. There a
 
 | Kind | What it is | Example | Write mode as implementer | When to use |
 |------|-----------|---------|---------------------------|-------------|
-| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a smaller model |
+| `cli` | A known CLI tool invoked as a subprocess (stream-json or jsonl parsed) | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` | `direct` | Default planner path; uses existing subscriptions. As an implementer, one of the two first-class transports — a known tool pointed at a smaller model |
 | `api` | Any OpenAI-compatible HTTP endpoint | Ollama, LM Studio, custom endpoint | `extracted-code` | The other first-class implementer transport — a weaker model behind an endpoint, local or remote |
 | `shell` | An arbitrary command. Prompt → stdin, code → stdout. No shell/network sandbox | Any custom script | `extracted-code` | Users who want to plug in a tool we don't know |
 | `agent` | A command that writes files directly to disk. No stdout extraction or shell/network sandbox | A complete coding agent used as an implementer | `direct` | When the tool handles file writing itself |
@@ -89,7 +89,7 @@ idle
  │   └─► reviewing-plan   (the plan card waits for the user; skipped with approve: none)
  ├─► implementing      (implementer is working on current task)
  │   └─► validating-task  (the brief's checks running)
- │       └─► escalating   (retry spent → the planner's consult, then recovery)
+ │       └─► escalating   (retry spent → the consult, then recovery)
  ├─► final-review      (review seat reads the whole diff against the briefs and the request)
  └─► complete
 ```
@@ -223,9 +223,9 @@ The implementer still never sees the planner's prompt: it gets the skills throug
 
 A **SPLITBRIEF session** is one self-contained piece of work from initial feature prompt to final summary. Every session lives in its own folder under `.splitbrief/sessions/<session-id>/`, where `<session-id>` has the form `<ISO-date>-<slug>` (e.g. `2026-04-14-add-email-validator`). Same-day slug collisions get a `-N` suffix (`2026-04-14-add-email-validator-2`).
 
-The active session is pointed to by `.splitbrief/active`, a plain text file containing the session-id. Only **one session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
+The active session is pointed to by `.splitbrief/active`, a JSON receipt `{ "version": 1, "sessionId": …, "generation": … }` (`writeActiveReceiptLocked`, `src/core/sessions/active-pointer.ts`). An older file that holds a bare session-id still reads. Only **one session can be active at a time** in a given project directory — `splitbrief start` fails if `.splitbrief/active` already points at a live session, and clears a pointer whose run is no longer alive. Users who want to run truly parallel workflows should use separate git worktrees, which naturally isolate `.splitbrief/` per working directory.
 
-This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see `docs/WORKFLOW.md` §1.5). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened in its place).
+This is distinct from a **planner session** — e.g. the `session_id` Claude Code stream-json emits — which is a backend-specific conversation handle. Planner session ids are persisted inside `state.json` so they can be reused on resume (see [WORKFLOW.md §What it continues on](./WORKFLOW.md#what-it-continues-on)). One SPLITBRIEF session may own several planner session ids over its lifetime (e.g. if the first expired and a fresh one was opened in its place).
 
 ## Message queue
 
@@ -279,20 +279,20 @@ The engine publishes every observable step as an `EngineEvent` on a single `Even
 
 - **EngineEvent** — the type-dispatched event contract (snake_case `type`, mandatory `ts: number`, usually `phase: Phase`) defined as `EngineEventSchema` in `src/engine/events/schema.ts`; the `EngineEvent` alias (`z.infer`) is re-exported from `src/engine/events/types.ts`. `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed` are phase-less. Single source of truth for every workflow event that crosses the engine boundary. Extended by adding a new Zod member to the contract — no separate registration step. The legacy `TuiEvent` / `OrchestratorEvent` types were removed in the 2026-04-20 release.
 - **EventBus** — synchronous pub/sub port declared in `src/engine/events/types.ts`, created by `createEventBus()`. `publish(event)` fans out to every subscribed sink inline, in registration order; a throw in one sink is caught and swallowed so it does not break fan-out to the others. Sinks that want operator-visible failures must publish their own warning before throwing.
-- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. Shipped sinks: `jsonlSink`, `loggerSink`, optional `tuiSink`, optional `stdoutJsonSink`, and optional hook sink.
+- **EventSink** — any subscriber that matches `(event: EngineEvent) => void`. Synchronous by contract, so ordering is preserved and a slow sink can delay later sinks. `attachRunSinks` (`src/engine/orchestrator/run/init-sinks.ts`) registers the shipped sinks in this order: the optional TUI sink (`tuiSink`), the JSONL sink (`createJsonlSink`), the logger sink (`createLoggerSink`), the call-evidence sink (`createCallEvidenceSink`, `src/engine/orchestrator/summary/call-evidence.ts`), in headless mode one stdout sink (`createStdoutJsonSink` for `--json`, `createStdoutTextSink` for `--plain`), the test-only observer `_eventSink`, and the hook sink when hooks are configured.
 - **Phase** — `'idle' | 'researching' | 'specifying' | 'reviewing-spec' | 'clarifying' | 'constitution-check' | 'planning' | 'reviewing-plan' | 'reviewing-briefs' | 'analyzing' | 'implementing' | 'validating-task' | 'escalating' | 'final-review' | 'complete'` (`src/core/schemas/enums.ts`). Phase-bearing `EngineEvent` variants carry the current `phase` so sinks (hook dispatcher, TUI router) can filter and group without having to reconstruct workflow position from event type alone.
 
-Gating callbacks (`onApprovalNeeded`, `onPlannerReply`, `onContinuationNeeded`, `onUserEditConflict`, `onTieredApproval`, `onReviewChecksApproval`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
+Gating callbacks (`onApprovalNeeded`, `onPlannerReply`, `onContinuationNeeded`, `onTieredApproval`, `onReviewChecksApproval`) are a **separate** mechanism — they are discrete `await`-able request/response pairs supplied by the workflow host. `onComplete(summary)` is a synchronous completion notification. Use the bus for broadcast; use callbacks for gates.
 
 ## Headless mode
 
-`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, and continuations answer empty. A write to a protected path is denied with `APPROVAL_REQUIRED`; no other write asks. Events stream as NDJSON on stdout via `stdoutJsonSink` — one JSON-encoded `EngineEvent` per line, parseable by `jq` or any NDJSON consumer. Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
+`splitbrief start --json "feature"` runs the workflow without the Ink TUI. Workflow host callbacks are stubbed: the plan card is approved unattended (it confirms none of the plan's protected writes), planner questions stop the run with `input_required`, and continuations answer empty. A write to a protected path is denied with `APPROVAL_REQUIRED`; no other write asks. Events stream as NDJSON on stdout via the stdout JSON sink (`createStdoutJsonSink`) — one JSON record per line, parseable by `jq` or any NDJSON consumer. An engine event arrives as `{ "type": "event", "data": <event> }`; other record types (`input_required`, `ready_to_apply`, `warning`, `error` and more) report the run's outcome (`HeadlessJsonRecordSchema`, `src/engine/events/public-json.ts`). Driver: `src/cli/headless.ts` → `runWorkflow({ headless: true })`. Intended for CI, logging pipelines, and programmatic integration. See [MIGRATION.md §Headless mode](./MIGRATION.md).
 
 ## Hooks (workflow)
 
 Workflow lifecycle hooks let users run custom commands at well-known moments (pre/post task and validation, etc.). Built on top of the EventBus — `post_*`/`on_*` are a fire-and-forget sink; `pre_*` hooks run sequentially at the orchestrator call site and a `deny` outcome short-circuits the upcoming action. Hooks are declared under `hooks:` in `.splitbrief/config.yaml`. See [HOOKS-CONFIG.md](./HOOKS-CONFIG.md) — **not** to be confused with React hooks ([HOOKS.md](./HOOKS.md)).
 
-- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_escalation' | 'on_error' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink.
+- **HookEvent** — the lifecycle trigger keys (`src/core/schemas/hooks.ts`): `'pre_planning' | 'pre_task' | 'post_task' | 'pre_validation' | 'post_validation' | 'pre_escalation' | 'on_error' | 'on_halt' | 'on_complete'`. `pre_*` hooks block the upcoming action (a `deny` outcome short-circuits it); `post_*` and `on_*` hooks are fire-and-forget through the EventBus sink. The retired keys `pre_commit` and `post_commit` never fire: an empty list loads and is dropped, and a list with entries fails the config load.
 - **HookEntry** — one configured hook, `kind: 'command'`, carrying `{ command, args, timeout_ms, on_failure }`. `on_failure` is one of `'block' | 'warn' | 'ignore'`. `timeout_ms` is bounded at 300_000 ms with a 30_000 ms default.
 - **HooksConfig** — the `hooks:` section of `.splitbrief/config.yaml`: a map from `HookEvent` to `HookEntry[]`.
 
@@ -304,7 +304,7 @@ First-time trust gate for hook configs. `src/core/hooks/trust-digest.ts` compute
 
 Token-budgeted codebase summary injected into the planner prompt at workflow start. Pipeline: tree-sitter parse → SQLite cache → symbol graph → PageRank → token-aware format. Lives in `src/engine/codebase/`. Opt-out via `codebase.enabled: false`. The map rebuilds itself on each planning run when the cache is stale; there is no manual rebuild step. See [REPOMAP.md](./REPOMAP.md).
 
-- **RepoMapOptions** — options to `buildRepoMap(projectDir, opts)` in `src/engine/codebase/repomap.ts`: `{ projectDir, tokenBudget?, include?, exclude?, focusFiles? }`. `tokenBudget` defaults to 4000. `include`/`exclude` default to `['src/**/*.ts', 'src/**/*.tsx']` minus tests, `dist/`, and `node_modules/`. `focusFiles` boosts the PageRank personalization vector for files the planner already knows are relevant.
+- **RepoMapOptions** — options to `buildRepoMap(projectDir, opts)` in `src/engine/codebase/repomap.ts`: `{ focusFiles?, featureText?, tokenBudget?, include?, exclude?, onWarn? }`. `tokenBudget` defaults to 4000. With no `include`, discovery walks every known language extension. The default excludes are test files (`\.test\.tsx?$`), `.git/`, `.splitbrief/`, `.trees/`, `node_modules/` and `dist/`; an `exclude` entry adds to them. `focusFiles` and the files `featureText` names boost the PageRank personalization vector for files the planner already knows are relevant.
 
 ---
 
@@ -315,12 +315,12 @@ All workflow state lives under `.splitbrief/` in the target project. Each sessio
 ```
 .splitbrief/
 ├── config.yaml                             # user config (version: 3)
-├── active                                  # plain text: session-id of the currently-active run (or absent)
+├── active                                  # JSON receipt of the currently-active run (or absent)
 └── sessions/
     ├── 2026-04-14-add-email-validator/
     │   ├── state.json                      # mutable: phase, tasks, currentTaskIndex, tokenUsage, plannerSessionId
     │   ├── session.jsonl                   # append-only log: type-tagged events + messages
-    │   ├── summary.json                    # written once at end of run (Summary: tokens, cost, timings, outcomes)
+    │   ├── summary.json                    # the session row, saved at the end of every run pass (status, stop, apply, Summary)
     │   ├── plan.json                       # the checked plan the planning session answered
     │   ├── plan.md                         # the plan card's body, rendered from plan.json
     │   └── tasks.md                        # Task Brief transport, rendered from plan.json
@@ -332,10 +332,10 @@ Key rules:
 
 - One session = one folder. The folder name is the session-id.
 - `state.json` is what `splitbrief resume` reads to rebuild the in-memory `WorkflowState`. It is overwritten on every phase transition.
-- `summary.json` is written exactly once, at end-of-run.
+- `summary.json` is saved at the end of every run pass (`saveFinalSession`, `src/engine/orchestrator/session-lifecycle/finalize.ts`). A resumed pass drops the stop the last pass wrote as it starts (`reopenSessionRecord`).
 - `session.jsonl` is append-only and the single source of truth for history (see "Events & messages" below).
 - `plan.json` is the plan; `plan.md` and `tasks.md` are rendered from it when it compiles. A run planned by an older engine also holds `research.md`, `spec.md`, `clarifications.md`, `constitution-check.json` or `analyze.json`; a new run writes none of them.
-- `.splitbrief/active` holds the session-id of the session that should block another same-directory `splitbrief start`.
+- `.splitbrief/active` holds the receipt (`version`, `sessionId`, `generation`) of the session that blocks another same-directory `splitbrief start` while it is live. A closed run releases it; a stopped run keeps it, because it is still continuable. An older bare session-id file still reads.
 
 ---
 

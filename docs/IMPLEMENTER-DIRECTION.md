@@ -1,7 +1,7 @@
 # Implementer direction
 
 > Status: product direction, implementation guidance.
-> Last updated: 2026-08-04. Realigned to ADR-1 through ADR-4 in `.nuke/2026-08-04-decisions.md`.
+> Last updated: 2026-08-04. Realigned to ADR-1 through ADR-4, which are folded into [the constitution](../.specify/memory/constitution.md).
 
 This document is the source of truth for implementer direction. Other docs should describe the same product boundary in local terms, not redefine it.
 

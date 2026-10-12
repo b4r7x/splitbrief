@@ -8,7 +8,7 @@ How to add things. Each section is a recipe: what you're adding, what files to t
 
 1. Create `src/cli/commands/<name>.ts`
 2. Export a `register<Name>Command(program: Command)` function
-3. Inside the handler, follow the pattern: parse flags, `resolveProjectDir()`, load config, optionally `initStores()`, optionally `renderApp()` or run headless
+3. Inside the handler, follow the pattern: parse flags, `canonicalizeProjectDir()` (`src/cli/setup.ts`), load config, optionally `initStores()`, optionally `renderApp()` or run headless
 4. In `src/cli.ts`: import and call `register<Name>Command(program)`
 5. Document in `docs/CLI-REFERENCE.md`
 
@@ -29,7 +29,7 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
    - `handler` — sync or async; an `'arg'` command receives the raw argument string
    - `args` — `'arg'` commands only: `{ kind: 'closed', options, optional? }` when the argument set is fixed (the completion menu offers exactly those — `/crew` closes over `CREW_COMMAND_SEATS`), or `{ kind: 'free', hint }`
    - Optional: `label` (for the command palette), `shortcut`, `hidden`
-4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `{ phase, plannerSupportsImages }`; phase predicates live in `src/core/phases.ts` (`isLivePhase`)
+4. Guards: add `guard: (ctx) => string | undefined` when the command is only valid in some phases or states. A returned string is the reason — it blocks the command *and* hides its row, so no listed command errors on Enter. The context is `CommandGuardContext` (`src/core/runtime/commands/types.ts`): `{ phase, plannerSupportsImages, openRunAtRest }`, where `openRunAtRest` is true when the screen shows a run read back from disk that is not closed; phase predicates live in `src/core/phases.ts` (`isLivePhase`)
 5. One name, one command: there is no alias mechanism, so a second spelling means a second row. A name that is gone for good belongs in `REMOVED_COMMANDS` (`src/core/runtime/commands/types.ts`) with the sentence that tells the user where it went, never as a row that errors
 6. Document in `docs/SLASH-COMMANDS-REFERENCE.md`
 
@@ -38,12 +38,12 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
 ## 3. New EngineEvent type
 
 1. Add a Zod member to the type-dispatched `EngineEventSchema` contract in `src/engine/events/schema.ts`
-   - Use the `phaseEvent('my_event')` helper (it supplies `type`, `ts: number`, and `phase: Phase`) and chain `.extend({ … }).passthrough()` for variant fields; use `noPhaseEvent('my_event')` for intentionally global or snapshot-resolution metadata. Current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
+   - Use the `phaseEvent('my_event')` helper (a `z.looseObject` that supplies `type`, `ts: number`, and `phase: Phase`) and chain `.extend({ … })` for variant fields; use `noPhaseEvent('my_event')` for intentionally global or snapshot-resolution metadata. Current phase-less events are `snapshot_restored`, `snapshot_restore_conflict`, and `approval_mode_changed`
    - The `EngineEvent` TS alias in `src/engine/events/types.ts` is `z.infer<typeof EngineEventSchema>`, so the new variant flows into every consumer automatically — no separate type edit
 2. Add a typed publish helper in `src/engine/orchestrator/events.ts`
    - Pattern: `export function publishMyEvent(bus: EventBus, phase: Phase, payload): void { bus.publish({ type: 'my_event', ts: Date.now(), phase, ...payload }); }`
 3. If the event should update UI state: handle it in `src/stores/workflow/actions/event.ts` inside `addEvent()`
-   - The ordering invariant is: events store, then tasks store, then tokens store, then lifecycle store (all synchronous)
+   - The ordering invariant is: events store, then tasks store, then tokens store, then lifecycle store, then operations store (all synchronous)
 4. If the event should appear in the workflow conversation: add a case in `src/features/workflow/conversation-rows/event-rows/dispatch.ts`
 
 ---
@@ -67,7 +67,7 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
 6. If the store reads disk on startup: add the init call in `src/cli/init-stores.ts`
 7. Tests: call `myStore.reset()` in `beforeEach`
 
-Factory: `src/stores/create-store.ts` (~45 LOC).
+Factory: `src/stores/create-store.ts`.
 
 ---
 
@@ -104,7 +104,7 @@ A *seat* is a place in the run where a runner is called. Adding one is not the s
 3. **Role union.** If the seat is user-selectable, add it to `ActiveRunnerRole` in `src/core/runners/seat-roles.ts`. That is the single role union; do not introduce a second one.
 4. **Slot and admission.** Add the slot variant to `RunnerConfigSlot` (`src/core/config/accessors/runner-config.ts`), then push the seat as a candidate in `prepareExecution()` (`src/engine/runners/prepare-execution/prepare-execution.ts`) *only when it is configured*. Add the slot to `RunnerAvailabilitySlot` in `src/core/readiness/checks/availability.ts` — it is an explicit `Extract<…>` and does not widen on its own — and to the readiness checks that report per-seat availability and trust.
 5. **The port.** Define the narrowest interface the seat actually needs in `src/engine/<seat>s/types.ts`. Narrower is better: it lets an existing runner satisfy the seat structurally and hold it unadapted. Do not put tool or model fields on the port — identity for user-facing messages comes from the config accessor that resolved the seat.
-6. **The factory.** Add `create<Seat>()` to `src/engine/runners/factory.ts`, reusing the existing lazy backend loaders. Create the seat in `src/engine/orchestrator/run/init.ts`, reusing an already-built runner when the resolver says the seat falls back.
+6. **The factory.** Add `create<Seat>()` to `src/engine/runners/factory.ts`, reusing the existing lazy backend loaders. Create the seat in `src/engine/orchestrator/run/init-seats.ts` (the reviewer is built in `createPlannerSeat()`), reusing an already-built runner when the resolver says the seat falls back.
 7. **The call.** Give the seat its own call module (`src/engine/orchestrator/<seat>-call.ts`) rather than repointing an existing helper. Repointing a shared helper silently moves every other call site with it — count them first.
 8. **Token accounting.** Add the seat's fields to `TokenUsageSchema` (`src/core/schemas/tokens.ts`) with `.default(0)` so older session state still loads, add the category to `categoryFields` and `usageCategoryForRunnerCallRole()` in `src/engine/orchestrator/tokens.ts`, and check `attributePhaseTokenDelta` (`src/core/state/token-attribution.ts`) — moving tokens out of a bucket a phase's delta is computed from silently zeroes that phase in the recorded per-phase totals.
 9. **Pricing and summary.** Price the new bucket at the seat's own rates when configured and fold it into the fallback seat's line when not. The run's own rollup is `summary.json`, built by `buildSummary()` (`src/engine/orchestrator/summary/build.ts`) from the state's `tokenUsage` and `calculateCostBreakdown()` (`src/engine/providers/cost/breakdown.ts`) — the bucket has to reach both or the seat's spend is dropped from the summary.
@@ -136,13 +136,13 @@ The rule that made the review seat cheap: **no automatic fallback at call time.*
 ### Screen
 
 1. Create `src/app/screens/<name>.tsx` — a FLAT page that composes the feature. Feature components/hooks live in `src/features/<name>/`; for a pure-entry surface, the page is the whole surface and no `features/<name>/` folder is created.
-2. Add the screen name to the `Screen` type in `src/core/navigation/types.ts`
+2. Add the screen name to `ALL_SCREENS` in `src/core/navigation/types.ts`; the `Screen` type derives from it
 3. Add a `case` to `renderScreen()` in `src/app/router.tsx`, importing the page via `./screens/<name>.js`
 
 ### Overlay
 
 1. Create `src/app/overlays/<name>.tsx` — same shape as a screen (FLAT page composing the feature, or the whole surface for a pure-entry overlay)
-2. Add the overlay name to the `OverlayType` union in `src/core/navigation/types.ts`
+2. Add the overlay name to `ACTIVE_OVERLAYS` in `src/core/navigation/types.ts`; the `OverlayType` union derives from it
 3. Add a `case` to `renderOverlay()` in `src/app/router.tsx`, importing the page via `./overlays/<name>.js`
 
 ### Both
@@ -158,12 +158,11 @@ The rule that made the review seat cheap: **no automatic fallback at call time.*
 
 Complete the [provider admission checklist](#provider-admission-checklist) before touching the registry.
 
-1. Create `src/engine/providers/<name>.ts`
+1. Add an `ApiProviderDescriptor` entry to `API_PROVIDER_CATALOG` in `src/core/providers/api-provider-catalog.ts`: `id`, display name, `service`, `offering`, `endpointPolicy`, credential fields, billing and privacy facts, and `asOf`. `ApiProviderId` derives from the catalog keys.
+2. Create `src/engine/providers/<name>.ts`
    - Export a factory function: `createMyProvider(overrides?: ProviderOverrides): ProviderDef`
-2. Register in `src/engine/providers/registry.ts`
-   - If bespoke: add to the `BESPOKE_PROVIDERS` map
-   - If OpenAI-compatible: add an entry in `src/core/providers/catalog.ts` with `baseURL` and `apiKeyEnv` — the `buildOpenAICompatFactories()` loop picks it up automatically
-3. Add bundled model pricing in `src/core/providers/known-models.ts` when a fallback is needed. Runtime/model catalog pricing is resolved through `src/engine/providers/models-dev.ts`, `src/engine/providers/model/`, and `src/engine/providers/pricing-resolver.ts`.
+3. Register the factory in `KNOWN_PROVIDERS` (`src/engine/providers/registry.ts`). The map is typed `Record<ApiProviderId, …>`, so a catalog entry without a factory fails the type check. `getProvider()` resolves the descriptor's endpoint policy and calls the factory with the normalized `apiBase`.
+4. Add bundled model pricing in `src/core/providers/known-models.ts` when a fallback is needed. Runtime/model catalog pricing is resolved through `src/engine/providers/models-dev.ts`, `src/engine/providers/model/`, and `src/engine/providers/pricing-resolver.ts`.
 
 ---
 
@@ -187,7 +186,7 @@ The `assertNever(event)` default case ensures the compiler catches missing event
 4. Wire into `buildSections()` in `src/core/readiness/checks/build.ts`:
    - Import your builder
    - Add a `{ id, title, checks: build<Name>Checks(input.config) }` entry to the sections array
-5. Existing sections: `config`, `repo`, `workflow` (`approval.ts`), `runners`, `context`, `validation`
+5. Existing sections: `config`, `repo`, `workflow` (`plan-approval.ts`), `runners`, `context`, `validation`
 
 Follow the `runners.ts` pattern: return an array of checks, use `metadata` for machine-readable details, use `fix` for actionable suggestions.
 
@@ -207,7 +206,7 @@ Follow the `runners.ts` pattern: return an array of checks, use `metadata` for m
 
 `src/core/validation/stacks/` is the only place a validation command literal may live — invariant gate 48 fails the build when `npx tsc`, `npm test`, or a `.test.ts` literal appears in production `src/` outside it. A stack row resolves the planner's `test` checks. Its `allowedCommands` put the stack's tools on the plan command policy's allowlist. The reviewer chooses the reviewer checks from the project itself. The reviewer command policy admits any installed program that follows its danger rules. Each refused command gets a named row. To add a sixth stack:
 
-1. Create `src/core/validation/stacks/<language>.ts` exporting one `Stack` (shape in `types.ts`): `id`, `language` (the `LanguageContext` key), `markers` (project-relative filenames, or a predicate for a "the manifest mentions X" sniff), `test` — `(projectDir) => string | null`, returning `null` when the project has no test tool configured — plus `testFilePatterns` (single-`*` globs), `testDirs`, optional `inlineTests`, `narrowing`, `allowedCommands`, and optional `missingSubcommand`
+1. Create `src/core/validation/stacks/<language>.ts` exporting one `Stack` (shape in `types.ts`): `id`, `language` (the `LanguageContext` key), `markers` (project-relative filenames, or a predicate for a "the manifest mentions X" sniff), `test` — `(projectDir) => string | null`, returning `null` when the project has no test tool configured — plus `testFilePatterns` (single-`*` globs), `testDirs`, optional `inlineTests`, `narrowing`, and `allowedCommands`
 2. Add the id to `StackId` in `types.ts` and to the `validation.stack` enum in `src/core/schemas/config.ts`
 3. Register the row in `STACKS` (`src/core/validation/stacks/registry.ts`). **Array order is detection order** — `detectStack` takes the first row whose marker matches, so a narrow marker set goes above a broad one (`Cargo.toml` before `package.json`)
 4. `allowedCommands` is the allowlist of the plan command policy: `sanitize-discovered-validation.ts` builds its allowed programs from it, so a plan `cmd` check that starts a program no stack lists is refused (a reviewer check is not: the reviewer command policy, `src/engine/orchestrator/validation/reviewer-command-policy.ts`, has no allowlist), and it drops any discovered command no stack lists, so a stack whose runner is missing there is disarmed; the run records a `validation` warning for each dropped command (`it runs a program outside the allowlist`), but nothing fails
@@ -281,7 +280,7 @@ Complete in order before registering in `src/engine/providers/registry.ts`:
 5. **Policy** — `OpenAICompatPolicy` in `src/engine/providers/openai-compat-policy.ts` enables provider-specific request fields only when exact conformance fixtures prove them.
 6. **Production conformance** — credentialed harness in `src/engine/providers/conformance-production.ts` via `npx tsx scripts/provider-conformance.ts production …` reusing the same record as raw capture.
 7. **Eval** — implementation-quality/privacy evaluation verdict is applied to runtime recommendation state before docs label a model recommended.
-8. **Late registration** — register through `createUnregisteredOpenAICompatProvider` / `src/engine/providers/registry.ts` and document in [CONFIGURATION.md](./CONFIGURATION.md) and [API-KEYS.md](./API-KEYS.md) only after every gate above passes.
+8. **Late registration** — until then, the conformance harness runs the candidate unregistered through `createUnregisteredOpenAICompatProvider()` (`src/engine/providers/unregistered-provider.ts`). Add it to `API_PROVIDER_CATALOG` and `KNOWN_PROVIDERS` and document it in [CONFIGURATION.md](./CONFIGURATION.md) and [API-KEYS.md](./API-KEYS.md) only after every gate above passes.
 
 #### Raw/production transaction (provider)
 

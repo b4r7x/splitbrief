@@ -44,24 +44,26 @@ Entry points express policy differences while sharing this boundary. Interactive
 Defined in `src/engine/planners/types.ts`. Every planner implements:
 
 ```typescript
-interface Planner extends RunnerRuntime {
+interface Planner extends RunnerRuntime {          // RunnerRuntime: isAvailable(), getVersion()
   typedCall(ctx: TypedCallContext): TypedSeatCall   // the binding requestTyped calls, the consult included
   escalateFull(opts: EscalateOptions): Promise<EscalationResult> // legacy interface; no rung dispatches it
   review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
-  summarize(messages, projectDir?): Promise<string>
-  summarizeStructured?(messages, previousSummary?, projectDir?): Promise<{ text: string; structured: StructuredSummary | null }>
-  injectUserTurn?(options): Promise<PlannerUserTurnResult>
+  summarize(messages, opts?): Promise<{ text: string; usage: TokenDelta | null }>
+  summarizeStructured?(messages, opts?): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>
+  injectUserTurn?(opts): Promise<PlannerUserTurnResult>
+  resolvePlanningContext?(signal?): Promise<ApiRuntimeContext> // a seat that reads no files of its own
+  unavailabilityReason?(): string | undefined
   readonly capabilities: PlannerCapabilities
 }
 ```
 
 `typedCall()` is the planner's only planning entry. The planning session (`src/engine/orchestrator/planning/session.ts`) calls it through `requestTyped` with `PlanAnswerSchema`, so each turn returns typed questions or a typed plan; `requestTyped` uses the tool's native schema flag (`--json-schema`, `--output-schema`, `response_format`) where it has one, and repairs a malformed answer once. `runPhase()` and `regenerate()` are deleted: there is no per-document planner call and no artifact regeneration.
 
-The consult of a plan task is a typed call on this same interface: `askPlannerSession` (`src/engine/orchestrator/planner-session.ts`) sends `buildConsultPrompt` (`src/engine/spec/prompts/consult.ts`) through `typedCall` with the `ConsultAnswer` schema, read-only, and the answer moves the task on. The consult of a fix task (`task.fix`) goes to the review seat instead (see [Which calls the reviewer makes](#which-calls-the-reviewer-makes)); `consultSeat` (`src/engine/orchestrator/consult/request.ts`) chooses the seat. The legacy `escalateFull()` interface remains available to old integrations, but no rung dispatches it; historical full-escalation records stay readable. `review()` performs the final review.
+The consult of a plan task is a typed call on this same interface: `askPlannerSession` (`src/engine/orchestrator/planner-session.ts`) sends `buildConsultPrompt` (`src/engine/spec/prompts/consult.ts`) through `typedCall` with the `ConsultAnswer` schema, read-only, and the answer moves the task on. The consult of a fix task (`task.fix`) goes to the review seat instead (see [Which calls the reviewer makes](#which-calls-the-reviewer-makes)); `consultSeat` (`src/engine/orchestrator/consult/request.ts`) chooses the seat. The legacy `escalateFull()` interface remains available to old integrations, but no rung dispatches it; historical full-escalation records stay readable. The review is a typed call too: `runReviewerCall` (`src/engine/orchestrator/review-call.ts`) sends it through `requestTyped` and the seat's `typedCall`. The untyped `review()` call remains for the conformance harness (`src/engine/runners/cli-tools/contract-harness-effects.ts`).
 
 `PlannerUserTurnResult` distinguishes `{ status: 'delivered', usage }` from `{ status: 'not-delivered', reason: 'not-ready' }`. Usage may be null after successful delivery. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
 
-The planning prompt is built by `buildPlanSessionPrompt` (`src/engine/spec/prompts/plan-session.ts`) from the feature, the project context, the language and skills context, and any earlier planning of an older run; `planFullTurn` restates it for a planner without a native session.
+The planning prompt follows one chain. `planTurnText` (`src/engine/orchestrator/planning/session.ts`) builds the repo map and composes `buildPlanSessionPrompt` (`src/engine/spec/prompts/plan-session.ts`) from the feature, the project context, the language and skills context, and any earlier planning of an older run. `planFullTurn` restates that prompt for a turn that is not on a native session. The session sends each turn through `requestTyped` (`src/engine/runners/typed-output.ts`), which calls the seat's `typedCall`.
 
 **Continuation per seat.** A step cut by Stop now is continued, not restarted from a blob. The step's own prompt is always stated. For the reviewer and the implementer the continuation trails it (`composeContinuation`, `src/engine/spec/prompts/continuation.ts`). The planning session issues its call again: the plan prompt in full (`planFullTurn`), with the operator's steer as a note, on the native session where the tool has one (`claude-code`, `codex` after its own thread id is captured). A cut typed answer leaves no partial to carry, and an unanswered question round takes the steer as its answer. The reviewer re-issues its whole deterministic prompt, rebuilt from disk, with the note appended; it is one shot by constitution and never resumes or keeps a session, whichever seat holds it. A plan-task consult resumes the planner's saved thread where the tool supports it, exactly as a planning turn does. A review-seat consult is one stateless call, so it sends its full prompt again. The implementer restarts the brief on `buildPrompt`, with the partial and a line naming the declared files that already changed since the task started; the attempt count does not move.
 
@@ -76,12 +78,11 @@ Defined in `src/engine/reviewers/types.ts`. The review seat is one stateless, re
 ```typescript
 interface Reviewer {
   review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
-  isAvailable(): Promise<boolean>
-  unavailabilityReason?(): string | undefined
+  typedCall(ctx: TypedCallContext): TypedSeatCall   // the binding a typed review call reaches this seat through
 }
 ```
 
-It is deliberately narrower than `Planner` — a reviewer cannot run the planning session, escalate, summarize, resume a session, or write files. It returns the verdict and the implementer fix work in one answer. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
+It is deliberately narrower than `Planner` — a reviewer cannot run the planning session, escalate, resume a session, or write files. It returns the verdict and the implementer fix work in one answer. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
 
 The port carries no identity fields on purpose. No runner backend knows its own tool or model, so the identity in a failed-review message comes from the config accessor that resolved the seat (`resolveReviewerRunner`), not from the runner object.
 
@@ -91,7 +92,7 @@ The port carries no identity fields on purpose. No runner backend knows its own 
 
 BUILD repair cycles after final review use the selected implementer. These bounded repairs are distinct from planner takeover.
 
-The review seat has two call types. The first is the review of the run diff at the configured cadence. `runFinalReviewPhase()` dispatches it through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). The answer returns the verdict, fix tasks, rejections, verification requests and question. The final review makes no planner call. The second is the consult of a fix task. When a fix task stays red after its local retry, is `blocked` or is stale, the review seat answers its consult, because the reviewer judged the change and wrote the fix. This repair consult runs on the review seat through `runReviewerCall()`: one stateless call with the full consult prompt and the findings' `failureKeys` and `redKeys`. Its usage goes to the reviewer bucket, and it spends from the one run consult allowance (`plannerCalls`). With no `reviewer:` block the planner holds the review seat. Planning, the consults of plan tasks, every decision-confirm, summarization and injected user turns stay on the planner.
+The review seat has three call types. The first is the plan call before each review: the reviewer reads the project and chooses the reviewer checks that verify the change (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`). The second is the review of the run diff at the configured cadence. `runFinalReviewPhase()` dispatches it through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). The answer returns the verdict, fix tasks, rejections, verification requests and question. The final review makes no planner call. The third is the consult of a fix task. When a fix task stays red after its local retry, is `blocked` or is stale, the review seat answers its consult, because the reviewer judged the change and wrote the fix. This repair consult runs on the review seat through `runReviewerCall()`: one stateless call with the full consult prompt and the findings' `failureKeys` and `redKeys`. Its usage goes to the reviewer bucket, and it spends from the one run consult allowance (`plannerCalls`). With no `reviewer:` block the planner holds the review seat. Planning, the consults of plan tasks, every decision-confirm, summarization and injected user turns stay on the planner.
 
 When the plan has render checks and the review seat accepts images, the review call attaches at most 4 PNGs of each render check: every `frame.png` first, then the other PNGs, each group in path order (`reviewRenders`, `src/engine/orchestrator/review-renders.ts`). The cap applies to each check, so a scenario that writes many PNGs does not stop the images of the other checks. The prompt names each PNG it does not attach. A render criterion stays unverified only when no image of its check reached the reviewer.
 
@@ -454,7 +455,7 @@ Only calls with a steering port and a supported tool version change transport (`
 
 Runtime source of truth: `src/core/runners/cli-tool-catalog.ts` (`CLI_TOOL_CATALOG`, `CLI_TOOL_TRUST`). This section is the canonical support matrix for admitted CLI runners. Parity is enforced by `testing/docs/planners-and-implementers.test.ts`.
 
-Each admitted tool carries a `testedVersion` and a `minimumAdmittedVersion` — the upstream CLI release the flag, subcommand, and output contract were last verified against, and the oldest release admitted. `detectAvailablePlanners` (`src/engine/detection/detect.ts`) probes the installed version via the adapter-declared version command. Admission is forward-compatible: only versions below the minimum are incompatible; newer releases are admitted, and malformed or unproven versions remain unverified. It does not print a startup stderr warning for unselected tools.
+Each admitted tool carries a `testedVersion` and a `minimumAdmittedVersion` — the upstream CLI release the flag, subcommand, and output contract were last verified against, and the oldest release admitted. `detectAvailableCliTools` (`src/engine/detection/detect.ts`) probes the installed version via the adapter-declared version command. Admission is forward-compatible: only versions below the minimum are incompatible; newer releases are admitted, and malformed or unproven versions remain unverified. It does not print a startup stderr warning for unselected tools.
 
 When you adjust a tool's adapter to track an upstream CLI change, bump that tool's `testedVersion` in the catalog and update this matrix.
 
@@ -572,11 +573,11 @@ No CLI candidate currently sits on an OMIT verdict. `CURSOR_CLI_ADMISSION_VERDIC
 
 ##### Excluded researched candidates
 
-These candidates have **dated blocked verdicts** — no first-class ID, descriptor, adapter, or picker row.
+These candidates have **dated blocked verdicts** — no first-class ID, descriptor, adapter, or picker row. `EXCLUDED_CLI_TOOL_IDS` (`src/core/runners/cli-tool-catalog.ts`) lists them all. `kiro`, `gemini`, `cline` and `qwen` are the custom-only tools (`CUSTOM_ONLY_CLI_TOOL_IDS`): run them as a `shell` or `agent` runner. `auggie` and `junie` are excluded with no catalog entry.
 
 | candidate | verdict | as-of | reason |
 |---|---|---|---|
-| `kiro` | DEFER | 2026-07-31 | Blocker 1: written Kiro/AWS permission confirming official-CLI orchestration is permitted for paid individual subscriptions. Blocker 2: credentialed stable-2.x staged fixture (target 2.16.0) proving prompt transport, scoped direct writes, text parsing, auth isolation, exit behavior, cancellation, and model-selection boundary. See `.nuke/.../research-kiro.md`. |
+| `kiro` | DEFER | 2026-07-31 | Blocker 1: written Kiro/AWS permission confirming official-CLI orchestration is permitted for paid individual subscriptions. Blocker 2: credentialed stable-2.x staged fixture (target 2.16.0) proving prompt transport, scoped direct writes, text parsing, auth isolation, exit behavior, cancellation, and model-selection boundary. Catalog reason: SPLITBRIEF has no structured session-scoped model and output adapter for it. |
 | `gemini` | REJECT | 2026-06-18 | Legacy consumer Gemini CLI entitlement ended 2026-06-18 for free, Google AI Pro, and Google AI Ultra accounts. Consumer-plan users should use the conditional Antigravity route. Enterprise licenses and paid API keys remain on the separate Gemini API provider path — not this legacy CLI. |
 | `auggie` | DEFER | 2026-07-31 | Indie plan exists, but official docs state non-interactive mode may be disabled by customer agreement; unattended entitlement smoke test required. |
 | `junie` | DEFER | 2026-07-31 | Headless flow documents `JUNIE_API_KEY` on usage-based billing; paid-plan subscription entitlement for headless tasks is not explicitly documented. |
@@ -609,17 +610,17 @@ Availability is probed, not assumed. An api-kind implementer's `isAvailable()` c
 
 Arbitrary command run via `createCommandBasedPlanner()` / `createCommandBasedImplementer()`. The prompt is piped to stdin, output read from stdout. Config provides `command`, `args`, and `outputFormat`.
 
-The implementer extracts code from stdout (`writesFiles: 'extracted-code'`). The planner detects artifact changes via git diff.
+The implementer extracts code from stdout (`writesFiles: 'extracted-code'`). The planner reads its answer from stdout.
 
 ### agent
 
 `src/engine/planners/agent.ts`, `src/engine/implementers/agent.ts`
 
-Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. Change detection via `createChangeDetector()` (git diff before/after).
+Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. `createChangeDetector()` (`src/engine/change-detection.ts`) compares the workspace after the call with a baseline captured before it (`captureChangeDetectorBaseline`): the changed files with their contents and modes when the directory has `.git`, else a hash of every tracked file. A call that changed nothing fails with `no-files-changed`.
 
-The planner reads phase artifacts from the session directory. Historical full-escalation records remain readable; the workflow no longer dispatches planner code-writing takeover.
+The planner reads its answer from stdout, like the shell planner. A saved custom command (`customCommands`) with `contract: direct` writes its answer to one declared file instead (see [Planner artifact ownership](#planner-artifact-ownership)). Historical full-escalation records remain readable; the workflow no longer dispatches planner code-writing takeover.
 
-The implementer uses `writesFiles: 'direct'` with git-based change detection.
+The implementer uses `writesFiles: 'direct'` with that change detection.
 
 ---
 
@@ -826,7 +827,7 @@ Versions are the build on this host; the parenthesised value is `compatibility.t
 | `command-code` | `…/node/v22.22.2/bin/cmd` — 1.54.1 (1.39.2) | `session` | no | host-configured |
 | `antigravity` | `~/.local/bin/agy` — 1.2.4 (1.2.2) | `session` | no | host-configured |
 
-Every tool declares `roles: ['planner', 'implementer']`; the reviewer seat reuses the planner runner (`resolveReviewerRunner`). The channel set is the tool's `auth.channels` in `cli-tool-catalog.ts`; "method choice offered" requires invocation-enforcement evidence, not merely multiple declared channels. The custom-only exclusions (`kiro`, `gemini`, `cline`, `qwen`, `auggie`, `junie`) are not admitted and have no row.
+Every tool declares `roles: ['planner', 'implementer']`; the reviewer seat reuses the planner runner (`resolveReviewerRunner`). The channel set is the tool's `auth.channels` in `cli-tool-catalog.ts`; "method choice offered" requires invocation-enforcement evidence, not merely multiple declared channels. The custom-only tools (`kiro`, `gemini`, `cline`, `qwen`) and the other excluded candidates (`auggie`, `junie`) are not admitted and have no row.
 
 ### Follow-up: per-provider key narrowing for OpenCode 2
 

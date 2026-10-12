@@ -83,7 +83,8 @@ Two exports: `error()` builds, `matches(kind)` returns a typed predicate. No sub
 A domain bag is a single `as const` object colocated with the module that produces the errors. It lives in the file that owns the domain — not in a central registry.
 
 ```ts
-// src/lib/process/errors.ts
+// src/lib/process/errors.ts (simplified: the real bag also sanitizes terminal text and carries
+// idleTimeout, platformLimitation and isIdleTimeout)
 import { error, matches } from '../../utils/error.js';
 import { redactSecrets } from '../../utils/redact.js';
 
@@ -288,7 +289,7 @@ export async function withCliErrors<T>(fn: () => Promise<T> | T): Promise<T> {
 }
 ```
 
-`rethrowAsCli` passes a `CliError` through untouched and converts anything else into `cliError(message, 1)`. `withCliErrors(fn)` wraps a subcommand body so every escaping error reaches the top-level handler as a `CliError` with a clean message — this is the standard way commands such as `start`, `resume`, and `approval` map failures to exit codes.
+`rethrowAsCli` passes a `CliError` through untouched and converts anything else into `cliError(message, 1)`. `withCliErrors(fn)` wraps a subcommand body so every escaping error reaches the top-level handler as a `CliError` with a clean message — this is the standard way commands such as `spec` and `review` map failures to exit codes.
 
 ---
 
@@ -297,7 +298,7 @@ export async function withCliErrors<T>(fn: () => Promise<T> | T): Promise<T> {
 1. **New code uses the factory + bag.** No new `Error` subclasses.
 2. **When touching old `Error` subclass code**, migrate it in the same change. Do not leave a half-migrated file.
 
-Old `Error` subclasses migrate to domain bags such as `processError` in `src/lib/process/errors.ts` and `timeoutError` in `src/utils/with-timeout.ts`. `instanceof` call sites become bag predicates such as `processError.isNotFound(err)` or `timeoutError.isIdle(err)`.
+Old `Error` subclasses migrate to domain bags such as `processError` in `src/lib/process/errors.ts` and `timeoutError` in `src/utils/with-timeout.ts`. `instanceof` call sites become bag predicates such as `processError.isNotFound(err)` or `processError.isIdleTimeout(err)`.
 
 ---
 

@@ -10,10 +10,10 @@ Preparation does not reuse completed execution-admission or session-ownership ch
 
 Entry point: `runWorkflow()` in `src/engine/orchestrator/run/workflow.ts`. It builds a `WorkflowContext`, runs the planner, runs the implementer on each task, reviews the result, and writes a summary. The top-level sequence:
 
-1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner and implementer, bootstraps initial state or loads saved state for resume.
+1. `initializeWorkflow()` (`run/init.ts`) — creates the EventBus, subscribes all sinks, spawns the planner, reviewer and implementer, bootstraps initial state or loads saved state for resume.
 2. `runPlanningPhases()` (`run/phases.ts`) — decides what this entry runs. A run whose resume step is a brief or a review is past planning and returns ready-for-tasks; a run parked at the plan card re-opens it (`resumeParkedApproval`); everything else runs the one planning session (`planning/session.ts`): typed questions or a typed plan, `checkPlan` with one repair, `plan.json` compiled into tasks, then the plan card.
-3. `runTasksAndReview()` — runs the task loop (implementer writes code, validation runs), then calls the planner for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief) — and only `complete` runs the review. A `paused` loop does not end the run: `runTasksAndReview` parks it in place, recording the brief it stopped before and awaiting a continuation exactly as a mid-call park does, then re-enters the loop when the operator continues. A host with no prompt surface records the park and returns, so the run resumes at that brief later.
-4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — persists the summary and updates stats. It does not take a status from its caller: it derives the run's status with `deriveRunStatus` from the tracked state, the lockfile and the artifacts on disk, writes that into `summary.json` alongside the run's phase and mode, and releases the active-session receipt **only when the run is closed**. A run that merely stopped keeps its pointer, because it is still continuable. A resumed pass drops the stop the last pass wrote as it starts (`reopenSessionRecord`), so `summary.json` never reports a stop the running run has left behind.
+3. `runTasksAndReview()` — runs the task loop (implementer writes code, validation runs), then calls the review seat for a final review. `runTaskLoop()` returns one of four statuses — `complete`, `stopped` (a recovery or a reconciled halt), `cancelled`, or `paused` (the operator asked for a pause after the current brief) — and only `complete` runs the review. A `paused` loop does not end the run: `runTasksAndReview` parks it in place, recording the brief it stopped before and awaiting a continuation exactly as a mid-call park does, then re-enters the loop when the operator continues. A host with no prompt surface records the park and returns, so the run resumes at that brief later.
+4. `saveFinalSession()` (`session-lifecycle/finalize.ts`) — saves `summary.json` at the end of every run pass. It does not take a status from its caller: it derives the run's status with `deriveRunStatus` from the tracked state, writes that into `summary.json` alongside the run's phase and summary, and releases the active-session receipt (`.splitbrief/active`, a JSON `{ version, sessionId, generation }` written by `writeActiveReceiptLocked`, `src/core/sessions/active-pointer.ts`) **only when the run is closed**. A run that merely stopped keeps its pointer, because it is still continuable. A resumed pass drops the stop the last pass wrote as it starts (`reopenSessionRecord`), so `summary.json` never reports a stop the running run has left behind.
 
 If any step throws, the catch block records the error on the state as `lastFailure: { step, message, at }`, saves state to disk, kills all subprocesses, publishes an error event, and returns a partial summary. The run is not marked failed — there is no such status. `deriveRunStatus` reads `lastFailure` and reports the run as `open`, stopped for reason `failed`, and continuing it retries the step it died on. Re-entering the run clears `lastFailure` (`RESUME_STEP`, dispatched by `runPlanningPhases`), so a later stop that records nothing reads `interrupted`, never the old error.
 
@@ -35,7 +35,7 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 - **`planning/`** — The planning session. `run.ts` is the entry (`runPlanningPhase`): it takes a saved rewind, runs the session, then the plan card. `session.ts` builds the repo map, runs the session (`runPlanningSession`), compiles the plan and owns the plan card (`runPlanApproval`); `plan-session.ts` is the pure question/plan/repair loop; `plan-context-fit.ts` estimates each task's context fit.
 - **`task/`** — The task loop. `loop.ts` iterates tasks, `step.ts` runs a single task (call implementer, validate, retry), `commit.ts` advances validated tasks without Git writes, `pre-task.ts` runs pre-task setup.
 - **`run/`** — The run's own entry and exit. `workflow.ts` is `runWorkflow`, `init.ts` builds the context, `phases.ts` decides what a re-entry runs, and `continue.ts` is `continueRun` — the one path that picks a run up: it settles a park this process holds, re-enters a run at rest on its saved state with the operator's steer, or refuses a run that is missing, unreadable or closed, with the reason.
-- **`escalation/`** — The retry ladder when the implementer fails: one local retry (`local-retries.ts`), then the consult loop in `handle.ts` and the seat-trouble rules (`seat-wait.ts` for a ≤10-minute rate-limit wait, `transient.ts` for backoff retries). A spent bound opens recovery; the planner does not take over writing the code.
+- **`escalation/`** — The retry ladder when the implementer fails: one local retry (`local-retries.ts`), then the consult loop in `handle.ts` and the seat-trouble rules (`seat-wait.ts` for a ≤10-minute rate-limit wait, `src/engine/runners/transient.ts` for backoff retries). A spent bound opens recovery; the planner does not take over writing the code.
 - **`consult/`** — The read-only typed consult (`request.ts`). `consultSeat` sends a plan task's consult to the planner's session and a fix task's consult to the review seat. `apply.ts` applies the six answers to the task or the run: guidance, rewrite-task, split-task, verify, ask-user and confirm.
 - **`recovery/`** — User-facing recovery flow for anything a turn cannot decide alone: the ladder or a consult bound running out, and the planner-seat halts in `builders/planner.ts`. Presents the user with one of two halts, *Needs you* or *Seat down* (`src/core/recovery/halt.ts`), and the choices that halt allows: continue, retry the same worker, switch the seat, revise, accept as is, restore the backup, skip, or end the run. `bus.ts` builds the bus a recovery answered between two turns publishes on, so a host that holds no live orchestrator still records the prompt and the decision.
 - **`approval/`** — The write gate for declared file writes. Classifies changed paths by risk (in-scope, out-of-scope, control-plane, package change, CI or secret file) and asks only for a write to a protected path; `confirm.ts` also turns an approved plan's `protectedOperations` into confirmations (`planConfirmations`).
@@ -50,11 +50,16 @@ The orchestrator is split by concern under `src/engine/orchestrator/`:
 Every orchestrator function receives a `WorkflowContext` (`src/engine/orchestrator/types.ts`). It carries everything the workflow needs:
 
 ```
-projectDir, sessionId     — where we are, which session
+projectDir, sessionId      — where we are, which session
+workspaceDir               — the run workspace the writers and checks use
 config                     — full resolved Config
 callbacks                  — OrchestratorCallbacks (see "Events vs callbacks")
 bus                        — the EventBus
-planner, implementer       — the active runner instances
+planner, reviewer, implementer — the active runner instances (reviewer is the planner when no reviewer block is configured)
+createImplementer          — builds another implementer for a profile switch
+implementerProfile, retryProfileOverride, retryProfileOverrideTaskId, routingDecision
+                           — the selected implementer profile and the router's decision
+steering                   — the SteeringPort for mid-call delivery
 context                    — ProjectContext (name, dir, skillsContext — the run's skills block, built once for every seat)
 signal                     — optional AbortSignal for cancellation
 metadata                   — SpecMetadata for written artifacts
@@ -64,7 +69,11 @@ isolation                  — run-scoped isolation handle (worktree default, st
 resumeHolder               — prior messages for stateless resume
 modelCache                 — pricing/cost lookups
 drainPendingAttachments    — pulls attachments from store
+streamingSink              — a short live preview of an extracted-code implementer's output
+plannerContext             — the `@file` context the request carries to the planner
 detectedContextLength      — boot-probed implementer context window
+continuation               — the partial and steer the step the run stopped at takes
+allowRepoRunners           — whether repository-defined runners may run
 ```
 
 This is the "god object" of the orchestrator. It's created once in `initializeWorkflow()` and threaded through every function call. Functions that need a subset of it use `Pick<WorkflowContext, ...>` or narrower types like `PlannerCallbacksContext`, which carries the routing inputs (`modelCache`, `detectedContextLength`) so the readiness gate and the task-loop router resolve context from the same sources.
@@ -133,7 +142,7 @@ Warnings are explicit, not a side effect of benign stderr. `call_stderr_delta` i
 
 ## Sinks
 
-Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditional; the rest are gated by config or runtime mode. All are registered by `attachRunSinks()` (`run/init-sinks.ts`), which `initializeWorkflow()` (`run/init.ts`) calls — a bus reused by a second run has the first run's sinks unsubscribed before the new ones attach:
+Several sinks can subscribe to the bus. The JSONL, logger and call-evidence sinks are unconditional; the rest are gated by config or runtime mode. All are registered by `attachRunSinks()` (`run/init-sinks.ts`), which `initializeWorkflow()` (`run/init.ts`) calls — a bus reused by a second run has the first run's sinks unsubscribed before the new ones attach. The registration order is the fan-out order: TUI (when supplied), JSONL, logger, call evidence, the one stdout sink of a headless run (plus the `--plain` stderr warning sink), the test-only `_eventSink`, then hooks (when configured).
 
 **TUI sink** (`src/features/workflow/tui-sink.ts`) — calls `addEvent()` from `src/stores/workflow/actions/event.ts`. This is the bridge between engine and UI. It lives in `src/features/`, not `src/engine/`, because the engine layer must not import from React or stores. The sink is passed in as `opts.tuiSink` — the engine never constructs it.
 
@@ -141,7 +150,7 @@ Several sinks can subscribe to the bus. The JSONL and logger sinks are unconditi
 
 **Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events pass the same payload bounds as every other external consumer before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
-**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`.
+**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` event's bounded message to stderr.
 
 Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line.
 
@@ -151,13 +160,19 @@ Each `review_completed` prints one `review:` line with its scope, task anchor wh
 
 **Logger sink** (`src/engine/events/sinks/logger.ts`) — mirrors bounded events into the debug log at a level per event type. Writes nothing when the logger is disabled.
 
+**Call-evidence sink** (`createCallEvidenceSink`, `src/engine/orchestrator/summary/call-evidence.ts`) — keeps the run's `runner_call_started`, `runner_call_usage`, `runner_call_completed` and `runner_call_error` events in memory, seeded from what the session already logged. The summary reads per-call usage from it (`resolveCallUsageEvidence`), so a call that completed a moment ago counts before its record reaches `session.jsonl`.
+
+**Test observer** (`_eventSink` on `RunWorkflowOptions`, `run/init.ts`) — a test-only extra sink that integration tests subscribe to record the stream. No shipped entry point sets it.
+
 ```mermaid
 flowchart LR
   E[Engine: bus.publish] --> T[TUI sink → stores → React]
   E --> J[JSONL sink → session.jsonl]
-  E --> S["Stdout sink → NDJSON (--json) or plain lines (--plain)"]
-  E --> H[Hook sink → post_task, on_halt, on_error, ...]
   E --> L[Logger sink → debug.log]
+  E --> C[Call-evidence sink → summary usage]
+  E --> S["Stdout sink → NDJSON (--json) or plain lines (--plain)"]
+  E --> O[_eventSink → test recording]
+  E --> H[Hook sink → post_task, on_halt, on_error, ...]
 ```
 
 ---
@@ -170,9 +185,9 @@ Two separate communication mechanisms serve different purposes.
 
 **Callbacks** — Await-able request/response pairs on `WorkflowContext.callbacks` (`OrchestratorCallbacks` in `src/engine/orchestrator/types.ts`). For moments where the workflow must stop and wait for the user:
 
-- `onApprovalNeeded(type, filePath)` — the plan card (`'plan'`, over `plan.md`)
+- `onApprovalNeeded(type, input, confirms)` — the plan card (`'plan'`, over the card's `plan.md`) or a custom planner's artifact review (`'artifact'`); `confirms` lists the protected operations that approving confirms in advance (`planConfirmations`; empty for an artifact review)
 - `onPlannerReply(reply)` — the planner asked a round of typed questions; the session waits for the answers
-- `onContinuationNeeded(partialResponse)` — planner call was interrupted, should we continue?
+- `onContinuationNeeded(partialResponse, at)` — a stop parked the run; `at` (`StepCut`) says whether it cut a call mid-step or landed on a boundary. The promise resolves with the operator's steer
 - `onTieredApproval(request)` — a declared implementer write to a protected path needs confirmation
 - `onReviewChecksApproval(request)` — with `validation.approve_checks: ask`, the reviewer checks wait for Run all (`'run'`) or Skip all (`'skip'`); `undefined` is a card closed without an answer
 - `onComplete(summary)` — workflow finished
@@ -225,7 +240,7 @@ A persisted changed-files baseline has two provenance states: `head: null` recor
 
 `runStartChangedFiles` is immutable run-start provenance, while rolling fingerprints retain absorbed `"missing"` tombstones. A symlink that stays inside the project is recorded by its target (`"symlink:<target>"`), the way git records it. An entry SPLITBRIEF refuses to read — any other symlink, a directory, an unreadable file — is recorded as `"unreadable"` rather than thrown. Right after changed-files baseline capture, the task loop publishes one warning naming those project-relative paths (code `unreadable_changed_files`); the entries are never opened.
 
-**`jsonlSink`** — appends bounded events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
+**`createJsonlSink`** — appends bounded events to `session.jsonl` via `src/core/sessions/log-writer.ts`. This is the audit log and transcript source. Stateless backends (those that don't support session resume natively) rebuild planner context from the JSONL log on resume.
 
 Session directory confinement for state and log writes is shared via `assertSessionDirConfined` in `src/core/sessions/confinement.ts`.
 
@@ -235,7 +250,7 @@ The two serve different consumers: `state.json` is for the state machine (small,
 
 `session.jsonl` contains three record types interleaved chronologically. Every record is a JSON object with a `kind` discriminant and a `ts` timestamp.
 
-**Event records** (`kind: 'event'`). Written by `jsonlSink` after payload bounding. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay.
+**Event records** (`kind: 'event'`). Written by `createJsonlSink` after payload bounding. Fields: `kind`, `ts`, `type` (the `EngineEvent` type name), optional `phase`, optional `taskId`, and a `data` object with event-specific fields. Known event payloads are validated before replay.
 
 **Message records** (`kind: 'message'`). Written by the transcript buffer (`src/engine/streaming/transcript-buffer.ts`) from planner and implementer streaming output. A planner call's text is written when the call settles: as a reply, or as the partial of a call that was cut or failed before it completed. A document the call lands is not written: it is the step's artifact, and the later step prompts carry it as an input. Fields: `kind`, `ts`, `role` (`'user'` or `'assistant'`), `text`, optional `phase`, and optional `interrupted`. The buffer accumulates streaming chunks and flushes above 16 KB or when the call ends. If the call is aborted, `flushInterrupted()` writes a final marker with `interrupted: true`, including an empty marker when the call printed nothing or its text was already flushed. `readInterruptedPartial` (`src/engine/orchestrator/continuation.ts`) reconstructs that call's assistant stream after the last `runner_call_started`, retaining the last 8,000 characters for the continuation prompt. An earlier call's text never supplies the next call's partial. The implementer buffer takes normal, retry and consult-guided output, including a direct writer's narration, and writes it to the checkout's log, not to the isolation directory the writer works in. In-process steers use that same checkout log. Context rebuild on resume reads these records to reconstruct the planner conversation: user turns and planner replies, without the implementer's output.
 
@@ -340,7 +355,7 @@ See [Mid-call steering](./PLANNERS-AND-IMPLEMENTERS.md#mid-call-steering) for to
 
 Summary usage data remains persisted for explicitly opened `/usage` details. It is not a main-screen cost counter.
 
-Source: `src/core/schemas/summary.ts`. Written to `summary.json` at workflow end by `saveFinalSession()`.
+Source: `src/core/schemas/summary.ts`. `saveFinalSession()` saves it to `summary.json` at the end of every run pass, inside the session row (`SessionSchema`, `src/core/schemas/session.ts`: `id`, `feature`, `status`, `phase`, `stop`, `apply` and `summary`).
 
 ```typescript
 type Summary = {
@@ -359,6 +374,8 @@ type Summary = {
   plannerModel?: string
   implementerTool?: string
   implementerModel?: string
+  reviewerTool?: string
+  reviewerModel?: string
   mode?: WorkflowMode                     // older summaries only; a new run writes none
 
   // Per-task breakdown
@@ -393,13 +410,16 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 ```ts
 // Task lifecycle
 { type: 'task_started'; taskId: TaskId; title: string; index: number; total: number;
-  file: string; action: 'create' | 'modify'; tool?: string; model?: string;
+  lineageAttempt?: number; attemptAllowance?: number;
+  file: string; files?: string[]; action: 'create' | 'modify'; tool?: string; model?: string;
   axes?: readonly string[]; backendKind?: 'cli' | 'api' | 'shell' | 'agent';
   implementerProfile?: string; contextFit?: TaskContextFit;
   estimatedTokens?: number; untruncatedEstimatedTokens?: number;
   contextLength?: number; currentCodeTruncated?: boolean;
   currentCodeContextMode?: CurrentCodeContextMode;
-  costPosture?: string; routingReason?: string }
+  routingReason?: string }
+// `lineageAttempt` and `attemptAllowance` are the attempt the brief's lineage is on and its
+// allowance; older logs omit them.
 
 { type: 'task_completed'; taskId: TaskId; title: string;
   method: TaskCompletionMethod; retries: number; duration: number;
@@ -422,10 +442,11 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'review_fix_started'; cycle: number; taskIds: TaskId[] }
 
 // Validation
-{ type: 'validate'; taskId: TaskId; status: 'running' | 'done';
+{ type: 'validate'; taskId: TaskId; status: 'running' | 'done' | 'stopped';
   passed: boolean; stages: ValidationStages; error?: string; duration?: number }
 // No live run publishes it on the bus; sessions saved before the reviewer checks keep it.
 // The pre_validation hook payload takes this shape without `stages`.
+// `stopped` is never published: the events store settles a running row that a stop cut.
 
 { type: 'review_checks'; scope: 'final' | 'task'; status: 'planned' | 'off' | 'skipped';
   commands?: { id: string; command: string; reason: string }[];
@@ -438,9 +459,9 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // validation.approve_checks is ask and none of the chosen commands ran: it carries
 // the commands and the reason (Skip all, a card closed without an answer, or no screen).
 
-{ type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused';
+{ type: 'full_suite'; status: 'running' | 'done' | 'not-run' | 'refused' | 'stopped';
   id?: string; stage?: 'typecheck' | 'lint' | 'test'; command: string;
-  moment: 'pre-review' | 'base' | 'brief';
+  moment: 'pre-review' | 'base' | 'brief' | 'plan'; scenario?: string;
   passed?: boolean; detail?: string; duration?: number;
   newFailures?: number; preExisting?: number; notVerified?: number;
   own?: number; ownLeft?: number; others?: number; proven?: boolean }
@@ -453,7 +474,10 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // command at the run base with the same command text; its done event counts the
 // failures that are new, pre-existing and not verified at the run base, and a red
 // base done event's `detail` says why a failure is not verified. `moment: 'brief'`
-// is a fix brief's check, run once per brief gate with no base re-run.
+// is a fix brief's check, run once per brief gate with no base re-run. `moment: 'plan'`
+// is a plan or task check run before the review; a render check also carries its
+// `scenario`. `stopped` is never published: the events store settles a running
+// command that a stop cut.
 // A reviewer check uses the command the finding carries, under the reviewer
 // command policy. A fix check
 // done event counts `own` carried failures, `ownLeft` failures still present and
@@ -484,9 +508,11 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 //   plannerInput: number; plannerOutput: number;
 //   implementerInput: number; implementerOutput: number;
 //   escalationInput: number; escalationOutput: number;
+//   reviewerInput: number; reviewerOutput: number;
 //   plannerCacheRead?: number; plannerCacheCreate?: number;
 //   implementerCacheRead?: number; implementerCacheCreate?: number;
-// }
+//   ...the reviewer and escalation cache, reasoning and coverage counters
+// }   (TokenUsageSchema, src/core/schemas/tokens.ts)
 
 // Planner heartbeat (emitted while the planner is running)
 { type: 'planner_heartbeat'; phase: Phase; elapsedMs: number; callId?: string }
@@ -495,13 +521,20 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'workflow_config'; mode?: WorkflowMode;   // older logs only; a new run writes none
   plannerTool: string; plannerModel?: string;
   implementerTool: string; implementerModel?: string;
+  reviewerTool?: string; reviewerModel?: string;
   skills?: string[] }
+
+// A resumable stop parked the run
+{ type: 'turn_interrupted'; source?: 'user' | 'watchdog';
+  at?: StepCut; step?: StepRef }
+// `at` says where the stop landed: inside the call, or on a boundary (between two briefs,
+// or at a gate). `step` is the step the stop parked. Older logs omit both.
 
 // Operational message — `warning` has the same shape without `resetAt`;
 // `resetAt` is the ISO instant a usage-limit halt's quota comes back
 { type: 'error'; message: string; category?: string; code?: string; resetAt?: string }
 ```
 
-**Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. Two codes sit under `category: 'recovery'`: `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`) and `review_failed` (the final review still reported blocking findings after the last fix cycle, `run/task-execution.ts`). The two other halts that stop the run mid-task — an approval gate denial (`approval-denied`) and a task-start snapshot that could not be captured (`snapshot-failed`) — raise their recovery issue without an `error` event: they reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
+**Where an `error` comes from.** The generic `error` event carries an optional `category`/`code` pair naming the halt that produced it. The codes under `category: 'recovery'` include `retry_exhausted` (the retry ladder ran out for a task, `task/retry.ts`), `consult_bound_spent` and `planner_calls_spent` (a spent bound, `escalation/handle.ts` and `escalation/local-retries.ts`), `review_failed` (the review failed after the last fix cycle, or its call failed, `run/review.ts` and `final-review.ts`) and `required_checks_unrunnable` (`run/pre-review-checks.ts`); a `category: 'recovery'` search of `src/engine/orchestrator/` lists every code. An approval gate denial (`approval-denied`) raises its recovery issue without an `error` event. A task-start snapshot that could not be captured (`snapshot-failed`) publishes a plain `error` with no `category`/`code` (`task/pre-task.ts`). Both reach consumers as `recovery_prompted`, which is also what fires the `on_halt` hook. Re-entering the task loop over an unresolved recovery publishes the matching `warning` (`recovery_pending_unresolved`) instead.
 
 `routingReason` on `task_started` is the router's sentence, for example `Selected profile default (fits, estimated 5075/1000000 tokens)`. The run log and the review packet keep it. The task-start row does not print it. The row names the worker from `implementerProfile`, and only a `tight` or `overflow` fit adds the estimate against the window (`~24,310 of 32K context tokens (tight)`). Fuller context-fit and per-task routing metadata is also retained in the run record; the engine emits it as plain event data and does not import UI code.

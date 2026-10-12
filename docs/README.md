@@ -38,6 +38,7 @@ Read these to learn how SPLITBRIEF works. Each doc builds on the previous one.
 | Fix something | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) |
 | See recipes and examples | [USAGE-EXAMPLES.md](./USAGE-EXAMPLES.md) |
 | Write or run tests | [TESTING.md](./TESTING.md) |
+| Install the pipeline as agent skills | [SKILLS.md](./SKILLS.md) |
 | Develop SPLITBRIEF with SPLITBRIEF itself | [DOGFOODING.md](./DOGFOODING.md) |
 | Cut a release | [RELEASING.md](./RELEASING.md) |
 
@@ -67,6 +68,7 @@ Specialized subsystem docs linked from the main chapters above.
 - [TASK-CONTRACT.md](./TASK-CONTRACT.md) — Plan contract, Task Brief schema, plan checks, evidence
 - [BOOTSTRAP.md](./BOOTSTRAP.md) — Startup steps and ordering
 - [API-KEYS.md](./API-KEYS.md) — Provider keys and secret hygiene
+- [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md) — Which authentication method SPLITBRIEF can enforce, per CLI tool
 - [DEBUGGING.md](./DEBUGGING.md) — Diagnosing failures, log locations
 - [WORKFLOW-CONVERSATION-SCROLL.md](./WORKFLOW-CONVERSATION-SCROLL.md) — Row-based scroll model for the workflow conversation
 
