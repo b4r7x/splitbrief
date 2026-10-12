@@ -766,6 +766,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     count: z.number().int().positive(),
   }),
   phaseEvent('cost_update').extend({ tokenUsage: TokenUsageSchema }),
+  phaseEvent('workspace_closed'),
   phaseEvent('approval_prompted').extend({
     tier: ApprovalTierSchema,
     actionClass: ActionClassSchema,

@@ -5,6 +5,7 @@ import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.j
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { formatSeatChangeNotice } from '../../../core/state/seats.js';
 import { formatRecordedSeatChangeIdentities } from '../display/recorded-seat-identity.js';
+import { WORKSPACE_KEPT_CODE } from '../../../core/sessions/workspace-notice.js';
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 
@@ -79,10 +80,14 @@ export type TranscriptWalkStep =
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
+// A workspace kept for Continue drops out once a close (End run, Discard or Apply) let it go.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
   const automatic = automaticRecoveryFolds(sections);
+  const workspaceClosed = sections.some((section) =>
+    section.items.some((event) => event.type === 'workspace_closed'),
+  );
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
@@ -132,6 +137,7 @@ export function* walkTranscript(
         seatSwitches.clear();
       if (event.type === 'seat_switched') seatSwitches.set(event.seat, event);
       if (event.type === 'warning') {
+        if (workspaceClosed && event.code === WORKSPACE_KEPT_CODE) continue;
         const switched = [...seatSwitches.values()].find((switchEvent) =>
           restatesSeatSwitch(event, switchEvent),
         );

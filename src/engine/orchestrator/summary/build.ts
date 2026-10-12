@@ -16,7 +16,11 @@ import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
 import { calculateCostBreakdown } from '../../providers/cost/breakdown.js';
 import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
-import { getFailedTaskIds, getSkippedTaskIds } from '../../../core/state/selectors.js';
+import {
+  briefInFlight,
+  getFailedTaskIds,
+  getSkippedTaskIds,
+} from '../../../core/state/selectors.js';
 import { loadSessionArtifactRollups } from './artifact-rollups.js';
 import { resolveCallUsageEvidence } from './call-evidence.js';
 import { reconcileTokenUsageWithSessionLog } from './usage-reconcile.js';
@@ -100,8 +104,8 @@ function readFileAttribution(
   const ledger = readEvidenceLedger({ projectDir, sessionId });
   if (ledger === null) return {};
   const changedFiles = [...new Set(ledger.tasks.flatMap((task) => task.changedFiles))].sort();
-  const current = state.phase === 'complete' ? undefined : state.tasks[state.currentTaskIndex];
-  if (current?.status !== 'in_progress') return { changedFiles };
+  const current = briefInFlight(state);
+  if (current === undefined) return { changedFiles };
   const booked = ledger.tasks.find(
     (task) => task.id === current.id && sameCurrentBrief(task, current),
   );

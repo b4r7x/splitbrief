@@ -238,7 +238,7 @@ describe('outcomeLineSpans', () => {
       outcomeLineSpans(view, WIDE)
         .map((span) => span.text)
         .join(''),
-    ).toContain('review not run · scope not checked');
+    ).toContain('final review not run · scope not checked');
   });
 
   it('reads a run stopped inside a brief as a fraction, a brief and what survived', () => {

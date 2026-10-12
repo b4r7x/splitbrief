@@ -893,6 +893,52 @@ describe('brief rows', () => {
     expect(view.files.stoppedAt?.partialFiles).toEqual(['src/b.ts']);
   });
 
+  // In a real run, End run during the BUILD call of T003: the ledger still held the pending seed
+  // of T003, so `Briefs ─` said T003 stopped and `Earlier work ─` listed T003 a second time.
+  it('joins the pending seed of a brief the run stopped in before the ledger booked it', () => {
+    const first = makeTask({ id: 'T001', title: 'First', suggestedFiles: ['src/a.ts'] });
+    const second = makeTask({ id: 'T002', title: 'Second', suggestedFiles: ['src/b.ts'] });
+    const tasks = [
+      { ...first, status: 'done' as const },
+      { ...second, status: 'in_progress' as const },
+    ];
+    const view = derive(
+      makeSummary({
+        totalTasks: 2,
+        completedByLocal: 1,
+        changedFiles: ['src/a.ts'],
+        stoppedAt: { taskId: taskId('T002'), partialFiles: [] },
+      }),
+      {
+        status: ENDED,
+        hydration: {
+          kind: 'loaded',
+          state: makeWorkflowState({ phase: 'implementing', tasks, currentTaskIndex: 1 }),
+        },
+        ledger: makeLedger([
+          ledgerTask({
+            id: taskId('T001'),
+            title: 'First',
+            changedFiles: ['src/a.ts'],
+            briefHash: hashTaskBrief([first]),
+          }),
+          ledgerTask({
+            id: taskId('T002'),
+            title: 'Second',
+            file: 'src/b.ts',
+            status: 'pending',
+            briefHash: null,
+          }),
+        ]),
+      },
+    );
+    expect(view.briefs.rows.map((row) => [row.id, row.state])).toEqual([
+      ['T001', 'local'],
+      ['T002', 'stopped'],
+    ]);
+    expect(view.briefs.earlierRows).toEqual([]);
+  });
+
   it.each([
     ['failed', 'failed'],
     ['skipped', 'skipped'],

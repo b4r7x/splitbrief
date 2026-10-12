@@ -1622,6 +1622,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-ended-workspace',
+      title: 'Workflow · a worktree run ended inside a brief',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended-workspace',
+        title: 'Ended mid-brief with its changes in run.patch',
+        kind: 'failure',
+        marker: 'visual-closed-ended-workspace',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stop notices and closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-queued',
       title: 'Workflow · ended with a pending BUILD message',
       surface: screenSurface('workflow'),

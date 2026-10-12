@@ -29,6 +29,7 @@ import { classifyTaskCompletionMethod } from '../../../core/task-completion.js';
 import { uniqueSorted } from '../../../utils/collections.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import { sameCurrentBrief } from '../../../core/evidence/same-brief.js';
+import { briefInFlight } from '../../../core/state/selectors.js';
 import { taskTargetParts } from '../../../stores/workflow/tasks.js';
 
 /** A seat the run recorded, spelled by the same formatters the live crew surfaces use. */
@@ -293,13 +294,8 @@ export function stoppedAtForCurrentPlan(input: {
   const { summary, ledger, state } = input;
   const stopped = summary.stoppedAt;
   if (state === null || stopped === undefined) return stopped;
-  const current = state.tasks[state.currentTaskIndex];
-  if (
-    state.phase === 'complete' ||
-    current?.status !== 'in_progress' ||
-    current.id !== stopped.taskId
-  )
-    return undefined;
+  const current = briefInFlight(state);
+  if (current?.id !== stopped.taskId) return undefined;
   const booked = ledger?.tasks.find(
     (task) => task.id === current.id && sameCurrentBrief(task, current),
   );

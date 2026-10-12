@@ -21,6 +21,12 @@ import {
 } from '../../../../src/engine/providers/cost/breakdown.js';
 import { makeUsage } from '../../../helpers/factories/summary.js';
 import { buildSeatDownIssue } from '../../../../src/engine/orchestrator/recovery/builders/task.js';
+import { WORKFLOW_CANCEL_REASON_USER } from '../../../../src/engine/events/workflow-cancel.js';
+import {
+  WORKSPACE_KEPT_CODE,
+  WORKSPACE_NOTICE_CATEGORY,
+} from '../../../../src/core/sessions/workspace-notice.js';
+import { retainedWorkspaceNotice } from '../../../../src/engine/orchestrator/isolation/retention.js';
 import { scenarioId } from '../../contracts/identifiers.js';
 import { VISUAL_FIXTURE_EPOCH } from '../common.js';
 import { VISUAL_FIXTURE_PROJECT_DIR, visualConfig } from '../screen-fixtures.js';
@@ -1244,6 +1250,60 @@ const CLOSED_ENDED = record({
   ledger: INTERRUPTED_BUILD_LEDGER,
 });
 
+/**
+ * A real run's close: a worktree run ended inside a brief. The run.patch holds the stopped brief's
+ * partial files, and its log kept the workspace for Continue before the close let it go.
+ */
+const ENDED_WORKSPACE_SESSION = 'visual-closed-ended-workspace';
+const ENDED_WORKSPACE_AT = Date.parse(STARTED_AT_ISO) + INTERRUPTED_BUILD_SUMMARY.totalTime;
+const ENDED_WORKSPACE_PATCH = `.splitbrief/sessions/${ENDED_WORKSPACE_SESSION}/run.patch`;
+const CLOSED_ENDED_WORKSPACE = record({
+  sessionId: ENDED_WORKSPACE_SESSION,
+  status: { kind: 'closed', as: 'ended' },
+  state: {
+    ...CLOSED_ENDED.hydration.state,
+    workspace: RUN_WORKSPACE,
+    closed: {
+      at: new Date(ENDED_WORKSPACE_AT).toISOString(),
+      as: 'ended',
+      patch: ENDED_WORKSPACE_PATCH,
+    },
+  },
+  summary: INTERRUPTED_BUILD_SUMMARY,
+  ledger: { ...INTERRUPTED_BUILD_LEDGER, sessionId: ENDED_WORKSPACE_SESSION },
+});
+const ENDED_WORKSPACE_LOG: readonly EngineEvent[] = [
+  {
+    type: 'turn_interrupted',
+    ts: ENDED_WORKSPACE_AT - 3_000,
+    phase: 'implementing',
+    source: 'user',
+    at: 'mid-step',
+    step: { kind: 'brief', taskId: BRIEFS.routeTests.id, attempt: 0 },
+  },
+  {
+    type: 'warning',
+    ts: ENDED_WORKSPACE_AT - 2_000,
+    phase: 'implementing',
+    message: retainedWorkspaceNotice(RUN_WORKSPACE.path),
+    category: WORKSPACE_NOTICE_CATEGORY,
+    code: WORKSPACE_KEPT_CODE,
+  },
+  {
+    type: 'warning',
+    ts: ENDED_WORKSPACE_AT - 1_000,
+    phase: 'implementing',
+    message: `Run changes not applied are saved in ${ENDED_WORKSPACE_PATCH}; apply them with git apply.`,
+  },
+  { type: 'workspace_closed', ts: ENDED_WORKSPACE_AT - 1_000, phase: 'implementing' },
+  {
+    type: 'workflow_cancelled',
+    ts: ENDED_WORKSPACE_AT,
+    phase: 'implementing',
+    reason: WORKFLOW_CANCEL_REASON_USER,
+  },
+];
+
 const ENDED_REVIEW_SESSION = 'visual-ended-review';
 const ENDED_REVIEW_AT = new Date(
   Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime,
@@ -1709,6 +1769,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: CLOSED_NEEDS_ATTENTION },
   }),
   atRestProjection({ id: 'workflow-closed-ended', route: { record: CLOSED_ENDED } }),
+  atRestProjection({
+    id: 'workflow-closed-ended-workspace',
+    route: { record: CLOSED_ENDED_WORKSPACE, log: ENDED_WORKSPACE_LOG },
+  }),
   atRestProjection({ id: 'workflow-closed-ended-review', route: { record: CLOSED_ENDED_REVIEW } }),
   atRestProjection({
     id: 'workflow-closed-ended-review-workspace',

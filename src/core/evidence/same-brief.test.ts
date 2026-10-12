@@ -17,6 +17,7 @@ describe('sameCurrentBrief', () => {
     ['done', 'done', true],
     ['in_progress', 'in_progress', true],
     ['in_progress', 'failed', true],
+    ['in_progress', 'pending', true],
     ['in_progress', 'done', false],
     ['pending', 'pending', true],
     ['pending', 'failed', false],

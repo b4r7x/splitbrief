@@ -43,6 +43,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'no_progress_cut',
   'consult_bound_spent',
   'cost_update',
+  'workspace_closed',
   'approval_prompted',
   'approval_granted',
   'approval_rejected',

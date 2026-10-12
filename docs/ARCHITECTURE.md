@@ -956,6 +956,9 @@ Older logs without these fields still render. `message_injected_native` keeps it
 **Cost (1):**
 `cost_update`
 
+**Workspace (1):**
+`workspace_closed` — row-less. `removeClosedRunWorkspace` (`src/engine/orchestrator/run/close.ts`) publishes it when End run, Discard or Apply closes a workspace run, also when the removal fails. Once a run's log holds it, the transcript drops the earlier `workspace_kept` warning.
+
 **Protected-write approval:**
 `approval_prompted`, `approval_granted`, `approval_rejected`. Replay only: `approval_mode_changed` (no producer now) and `approval_sticky_recorded` (sticky grants are deleted)
 
@@ -966,7 +969,7 @@ Older logs without these fields still render. `message_injected_native` keeps it
 `replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
 **Generic (2):**
-`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them. Each `publishWarning` / `publishError` call site sets its pair; examples: `recovery` / `retry_exhausted` · `review_failed` · `review_input_too_large` · `recovery_pending_unresolved`, `planner` / `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `validation_format_failed` (the formatting of the brief's changed files failed; the checks ran anyway) · `validation_formatted` (the formatting before a brief's checks rewrote files of the brief; the message names them). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
+`warning`, `error` — both carry an optional `category` / `code` pair naming what produced them. Each `publishWarning` / `publishError` call site sets its pair; examples: `recovery` / `retry_exhausted` · `review_failed` · `review_input_too_large` · `recovery_pending_unresolved`, `planner` / `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `validation_format_failed` (the formatting of the brief's changed files failed; the checks ran anyway) · `validation_formatted` (the formatting before a brief's checks rewrote files of the brief; the message names them), `workspace` / `workspace_kept` (a stopped run kept its workspace for Continue; `src/core/sessions/workspace-notice.ts`). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
 
 ### Exhaustive switch in conversation row rendering
 
@@ -1289,7 +1292,7 @@ Full verification: `npm run test-ci` (format:check, typecheck, lint, test:covera
 
 Enforced by hooks, type system, exhaustive switches, or pre-merge greps. Breaking any of these silently corrupts state or causes exponential I/O.
 
-1. **NEVER commit, NEVER stage** — `.claude/hooks/block-git-commits.sh` (`PreToolUse` hook, exit code 2) blocks `git add` / `git stage` / `git commit` (and `git -c …` variants). The user reviews and commits.
+1. **NEVER commit, NEVER stage** — `.claude/hooks/block-git-commits.sh` (`PreToolUse` hook, exit code 2) blocks `git add` / `git stage` / `git commit` (and `git -c …` variants) on any line of a multi-line command. The user reviews and commits.
 2. **`.git/`, `.splitbrief/`, `node_modules/`, `.trees/` MUST be excluded from snapshots / drift / file collection, at any depth, and a directory the project ignores is never entered.** `INTERNAL_SKIP_DIRS` (`core/paths.ts`), re-exported as `ALWAYS_EXCLUDED` from `engine/snapshots/files.ts` and honoured by `collectTrackedFiles`. Including `.splitbrief/` causes exponential snapshot growth (snapshots-of-snapshots); including `.trees/` pulls any user-created worktree checkout into the project's snapshots and diffs. The run's own isolation worktree needs no exclusion entry at all: it lives outside the project root entirely, under `$XDG_STATE_HOME/splitbrief/trees/<hash>/<slug>/` (default `~/.local/state/splitbrief/trees/...`), where a project-rooted walker never reaches it.
 3. **`findOrSeed` stamps each ledger entry with its own brief's hash.** Every `record*` call routes through `findOrSeed` (`core/evidence/ledger-state.ts`), which writes `hashTaskBrief([task])` onto the entry it returns. No caller threads a hash into a `record*` call. A seed records no work, so it carries `briefHash: null`.
 4. **`TaskStatus` value is `'done'` NOT `'completed'`.** The enum is `['pending', 'in_progress', 'done', 'failed', 'escalated', 'skipped']` (`core/schemas/enums.ts`). `task_completed` is the *event* name; the *status* string is `'done'`.

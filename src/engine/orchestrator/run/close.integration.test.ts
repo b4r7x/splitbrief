@@ -24,9 +24,15 @@ import {
   makeWctx,
 } from '#testing/helpers/orchestrator-factories.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { makeTask } from '#testing/helpers/factories/task.js';
+import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
+import { readEvidenceLedger, writeEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import { createSnapshot } from '../../snapshots/create.js';
+import { recordLocalTaskEvidence } from '../evidence/task.js';
 import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 import { createRunIsolation } from '../isolation/create.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import { finalizeRunAtRest } from '../session-lifecycle/finalize.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { buildReviewFailedRecoveryIssue } from '../recovery/builders/task.js';
 import { runPlanApproval } from '../planning/session.js';
@@ -217,6 +223,7 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
           event.message.includes(join(SPLITBRIEF_DIR, 'sessions', SESSION_ID, 'run.patch')),
       ),
     ).toBe(true);
+    expect(events.map((event) => event.type)).toContain('workspace_closed');
   });
 
   it('End run on the plan card of a run that kept its workspace writes run.patch and removes it', {
@@ -256,6 +263,74 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(loadState(ref)?.closed).toBeUndefined();
     expect(existsSync(workspaceDir)).toBe(true);
     expect(removal.patchExisted).toEqual([]);
+  });
+
+  it('a close that fails inside a brief books nothing, so a Continue restarts that brief clean', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const brief = makeTask({ id: 'T001', title: 'First', suggestedFiles: ['src/partial.ts'] });
+    const taskStart = await captureWorkspaceSnapshot(workspaceDir, ref);
+    writeFileSync(join(workspaceDir, 'src/partial.ts'), 'export const partial = true;\n');
+    const stopped: WorkflowState = {
+      ...state,
+      tasks: [{ ...brief, status: 'in_progress' }],
+      currentTaskIndex: 0,
+      changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: taskStart },
+    };
+    saveState(ref, stopped);
+    mkdirSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'));
+
+    await expect(closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, stopped)).rejects.toThrow();
+
+    expect(loadState(ref)?.closed).toBeUndefined();
+    expect(readEvidenceLedger(ref)).toBeNull();
+  });
+
+  // In a real run, End run during the BUILD call of T003: run.patch held the files T003 had
+  // written, and the closed block's Files list left them out.
+  it('End run inside a brief books what that brief left, so the record lists the patch files', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir } = await openWorkspaceRun('worktree');
+    const first = makeTask({ id: 'T001', title: 'First', suggestedFiles: ['src/keep.ts'] });
+    const second = makeTask({ id: 'T002', title: 'Second', suggestedFiles: ['src/partial.ts'] });
+    writeEvidenceLedger(
+      ref,
+      recordLocalTaskEvidence({
+        ledger: createEvidenceLedger({
+          sessionId: SESSION_ID,
+          feature: state.feature,
+          tasks: [first, second],
+        }),
+        task: first,
+        status: 'done',
+        changedFiles: ['assets/logo.bin', 'src/gone.ts', 'src/keep.ts', 'src/new.ts'],
+      }),
+    );
+    const secondStart = await captureWorkspaceSnapshot(workspaceDir, ref);
+    writeFileSync(join(workspaceDir, 'src/partial.ts'), 'export const partial = true;\n');
+    const stopped: WorkflowState = {
+      ...state,
+      tasks: [
+        { ...first, status: 'done' },
+        { ...second, status: 'in_progress' },
+      ],
+      currentTaskIndex: 1,
+      changedFilesBaseline: { head: null, fingerprints: {}, activeTaskSnapshot: secondStart },
+    };
+    saveState(ref, stopped);
+
+    const closure = await closeRunIfOpen({ ...ref, bus: makeBusRecorder().bus }, stopped);
+    const summary = finalizeRunAtRest({ ref, config: createDefaultConfig(), state: closure.state });
+
+    const patch = readFileSync(
+      join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'),
+      'utf8',
+    );
+    const patchFiles = [...patch.matchAll(/^diff --git a\/(\S+) b\//gm)].map((match) => match[1]);
+    expect(summary.changedFiles).toEqual(patchFiles);
+    expect(summary.stoppedAt).toEqual({ taskId: 'T002', partialFiles: ['src/partial.ts'] });
   });
 
   it('closes a run whose workspace is already gone and says no patch was written', {
@@ -311,6 +386,7 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
       events.some(
         (event) =>
           event.type === 'warning' &&
+          event.code === undefined &&
           event.message.includes('nothing is unapplied and no run patch was written'),
       ),
     ).toBe(true);

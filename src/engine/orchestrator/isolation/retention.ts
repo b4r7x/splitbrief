@@ -13,6 +13,10 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import {
+  WORKSPACE_KEPT_CODE,
+  WORKSPACE_NOTICE_CATEGORY,
+} from '../../../core/sessions/workspace-notice.js';
+import {
   assertSessionConfinement,
   assertSessionDirConfined,
 } from '../../../core/sessions/confinement.js';
@@ -225,6 +229,11 @@ export async function publishRetainedWorkspaceNotice(
     publishError({ bus, phase: state.phase, message: toErrorMessage(err) });
     return false;
   }
-  publishWarning({ bus, phase: state.phase, message: retainedWorkspaceNotice(workspace.path) });
+  publishWarning({
+    bus,
+    phase: state.phase,
+    message: retainedWorkspaceNotice(workspace.path),
+    safety: { category: WORKSPACE_NOTICE_CATEGORY, code: WORKSPACE_KEPT_CODE },
+  });
   return true;
 }

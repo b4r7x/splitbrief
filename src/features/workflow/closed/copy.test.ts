@@ -81,13 +81,17 @@ describe('runRows', () => {
 
   it('reads a packet that was never written as a review that never ran', () => {
     const view = makeView({ review: { kind: 'missing' } });
-    expect(segmentsFor(view, 'Review')).toEqual([{ text: 'not run', tone: 'textDim' }]);
+    expect(segmentsFor(view, 'Review')).toEqual([
+      { text: 'final review not run', tone: 'textDim' },
+    ]);
     expect(segmentsFor(view, 'Packet')).toBeUndefined();
   });
 
   it('spells absence with one word each', () => {
     const view = endedInPlanning();
-    expect(segmentsFor(view, 'Review')).toEqual([{ text: 'not run', tone: 'textDim' }]);
+    expect(segmentsFor(view, 'Review')).toEqual([
+      { text: 'final review not run', tone: 'textDim' },
+    ]);
     expect(segmentsFor(view, 'Scope')).toEqual([{ text: 'not checked', tone: 'textDim' }]);
   });
 

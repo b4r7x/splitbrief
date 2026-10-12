@@ -458,6 +458,7 @@ const checkpointPredicates = [
   [checkpointId('closed-discarded'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
   [checkpointId('closed-ended'), includesAll()],
+  [checkpointId('closed-ended-workspace'), includesAll('run.patch')],
   [checkpointId('closed-ended-review'), includesAll()],
   [checkpointId('closed-ended-review-workspace'), includesAll('run.patch')],
   [checkpointId('closed-seat-moved'), includesAll()],

@@ -26,7 +26,11 @@ case "$COMMAND" in
   "SPLITBRIEF_OWNER_COMMIT=1 "*) exit 0 ;;
 esac
 
-read -r -a TOKENS <<< "$COMMAND"
+# `read` stops at the first newline, so the lines are joined first: a commit on any
+# line is caught, and a backslash-newline continuation joins its line as the shell does.
+JOINED=${COMMAND//$'\\\n'/}
+JOINED=${JOINED//$'\n'/ }
+read -r -a TOKENS <<< "$JOINED"
 N=${#TOKENS[@]}
 i=0
 

@@ -466,7 +466,7 @@ describe('the workflow screen showing a closed run', () => {
 
     // The ledger paints, and the facts it does account for still spell absence as a word.
     expect(frame).toMatch(/^Run /m);
-    expect(frame).toMatch(/^Review\s+not run\b/m);
+    expect(frame).toMatch(/^Review\s+final review not run\b/m);
     // Money is not one of those facts any more: `/usage` is where an unpriced run is reported.
     expect(frame).not.toContain('not estimated');
     expect(frame).not.toContain('$0.00');

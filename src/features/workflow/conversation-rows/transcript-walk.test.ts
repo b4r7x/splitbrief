@@ -5,6 +5,11 @@ import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js
 import { makeImplementerGenerate } from '#testing/helpers/events/implementer.js';
 import { makeTaskComplete, makeTaskStart } from '#testing/helpers/events/task.js';
 import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
+import {
+  WORKSPACE_KEPT_CODE,
+  WORKSPACE_NOTICE_CATEGORY,
+} from '../../../core/sessions/workspace-notice.js';
+import { retainedWorkspaceNotice } from '../../../engine/orchestrator/isolation/retention.js';
 import { walkTranscript } from './transcript-walk.js';
 
 describe('walkTranscript', () => {
@@ -451,5 +456,44 @@ describe('walkTranscript', () => {
     expect(steps.find((step) => step.kind === 'recovery')).toMatchObject({
       recovery: { firstIndex: 4, prompted, selected, resolved },
     });
+  });
+});
+
+describe('walkTranscript on a stopped run’s workspace', () => {
+  const kept: EngineEventOf<'warning'> = {
+    type: 'warning',
+    ts: 1_000,
+    phase: 'implementing',
+    message: retainedWorkspaceNotice('/trees/run'),
+    category: WORKSPACE_NOTICE_CATEGORY,
+    code: WORKSPACE_KEPT_CODE,
+  };
+  const patchSaved: EngineEventOf<'warning'> = {
+    type: 'warning',
+    ts: 2_000,
+    phase: 'implementing',
+    message: 'Run changes not applied are saved in run.patch; apply them with git apply.',
+  };
+  const closed: EngineEventOf<'workspace_closed'> = {
+    type: 'workspace_closed',
+    ts: 2_001,
+    phase: 'implementing',
+  };
+  const eventsOf = (events: EngineEvent[]) =>
+    [...walkTranscript(groupEventsIntoSections(events))].flatMap((step) =>
+      step.kind === 'event' ? [step.event] : [],
+    );
+
+  it('keeps the kept-workspace notice while the run is open', () => {
+    expect(eventsOf([kept])).toEqual([kept]);
+  });
+
+  // In a real run, End run removed the workspace, and the transcript still offered it for Continue.
+  it('drops the kept-workspace notice once End run or Discard let the workspace go', () => {
+    expect(eventsOf([kept, patchSaved, closed])).toEqual([patchSaved, closed]);
+  });
+
+  it('drops the kept-workspace notice once Apply let the workspace go', () => {
+    expect(eventsOf([kept, closed])).toEqual([closed]);
   });
 });

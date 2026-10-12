@@ -42,6 +42,13 @@ describe('block-git-commits hook', () => {
     expect(runHook('git -C /tmp commit -m z')).toBe(BLOCK);
   });
 
+  it('blocks a commit on any line of a multi-line command', () => {
+    expect(runHook('cd /tmp\ngit commit -m x')).toBe(BLOCK);
+    expect(runHook('git status\n\ngit add .')).toBe(BLOCK);
+    expect(runHook('git \\\ncommit -m x')).toBe(BLOCK);
+    expect(runHook('git status\ngit log --oneline')).toBe(ALLOW);
+  });
+
   it('allows read-only git commands and unrelated tooling', () => {
     expect(runHook('git status')).toBe(ALLOW);
     expect(runHook('git log --oneline')).toBe(ALLOW);

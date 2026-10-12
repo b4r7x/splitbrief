@@ -91,9 +91,18 @@ function runGitDiff(root: string): Promise<string> {
         );
         return;
       }
-      resolve(Buffer.concat(stdout).toString('utf8'));
+      resolve(withStandardSides(Buffer.concat(stdout).toString('utf8')));
     });
   });
+}
+
+/**
+ * `git diff --no-index` names a file that one side lacks after the side that holds it: `b/x b/x`
+ * for a created file, `a/x a/x` for a deleted one. A patch names its sides `a/` and `b/`, the way
+ * git writes them for a commit; a quoted path keeps its quotes.
+ */
+function withStandardSides(diff: string): string {
+  return diff.replace(/^diff --git ("?)[ab]\/(.*) \1[ab]\/\2$/gm, 'diff --git $1a/$2 $1b/$2');
 }
 
 /**
