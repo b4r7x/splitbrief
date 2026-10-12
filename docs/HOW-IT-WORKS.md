@@ -19,28 +19,28 @@ graph TD
     CLI["splitbrief start 'feature'"] --> Validate[Parse @files]
     Validate --> JSON{"--json or --plain?"}
     JSON -->|yes| Headless["runHeadless() — NDJSON or plain lines to stdout"]
-    JSON -->|no| Interactive["setupWorkflow() → initStores() → renderApp()"]
+    JSON -->|no| Interactive["setupWorkflow() → initStoresForTuiMount() → renderApp()"]
 ```
 
 **`--json`** runs the workflow headless via `runHeadless()` (`src/cli/headless.ts`). Events stream as NDJSON to stdout. The plan card is approved unattended, and an unattended approval confirms none of the plan's protected writes. A write to a protected path (dependency manifests and lockfiles, `.git`, `.splitbrief`, CI configuration, env and key files) always asks, and no other write does, so a headless run denies a protected write with `APPROVAL_REQUIRED`. **`--plain`** is the same headless run with the text rendering of that stream (`phase:`, `task <id>:`, `review:`, `done:`); the two cannot share stdout, so passing both exits `2`.
 
 **Interactive** (the default) is the path most users take. It calls `setupWorkflow()` (`src/cli/setup.ts`) to resolve the project directory, check for a git repo, and create a default config if none exists. If no config exists and no CLI overrides were provided, it returns `needsSetup: true` and the router opens the setup screen instead of the workflow.
 
-After setup, the handler calls `initStores()` and then `renderApp()`.
+After setup, the handler calls `initStoresForTuiMount()` and then `renderApp()`. Discovery continues while Ink mounts, so the first screen paints before the runner refresh ends.
 
 ---
 
 ## Store bootstrap
 
-`initStores()` in `src/cli/init-stores.ts` prepares the shared state layer. It runs four phases in order:
+`initStoresForTuiMount()` in `src/cli/init-stores.ts` prepares the shared state layer on the interactive start path. It runs four phases in order. It awaits the first three and returns the fourth as an `awaitDiscovery` promise, so the TUI mounts without waiting for discovery. `initStores()` runs the same four phases and awaits all of them; `splitbrief init` and the interactive `continue` path use it.
 
 **`initUIChrome()`** subscribes the terminal-size store to resize events so layout reflows when the window changes.
 
-**`loadProjectState()`** loads configuration from `.splitbrief/config.yaml` via `configStore.load()`, loads session history via `sessionsStore.load()`, and installs history persistence. Config must load before sessions — session display depends on config state.
+**`loadProjectState()`** loads configuration from `.splitbrief/config.yaml` via `configStore.load()`, loads session history via `sessionsStore.load()`, installs history persistence, and restores the sidebar preference. Config must load before sessions — session display depends on config state.
 
 **`ensureHooksTrusted()`** (`src/cli/hook-trust-prompt.ts`) checks whether the project's configured hooks have been approved. If not, it prompts the user before continuing. This runs after config is loaded (hooks come from config) but before discovery (discovery shouldn't run under untrusted hooks).
 
-**`loadDiscovery()`** runs last because it's async and independent of config/session state. It detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), then hydrates the detection stores from the on-disk cache snapshot via `hydrateDetectionIntoStores()` (`src/stores/discovery/detection-adapter.ts`) so a cold start shows remembered runners immediately, and kicks off the live runner/model refresh in the background via `loadDetectionForCurrentConfig()` (`src/engine/detection/store-publication.ts`).
+**`loadDiscovery()`** runs last because it's async and independent of session state. It detects provider capabilities via `detectCapabilities()` (`src/engine/providers/capabilities.ts`), then hydrates the detection stores from the on-disk cache snapshot via `hydrateDetectionIntoStores()` (`src/stores/discovery/detection-adapter.ts`) so a cold start shows remembered runners immediately, and kicks off two background tasks: the remembered models.dev catalog seed and the live runner/model refresh via `loadDetectionForCurrentConfig()` (`src/engine/detection/store-publication.ts`).
 
 It finishes by awaiting skill discovery via `discoverSkills(projectDir)` (`src/engine/skill-discovery.ts`). The sources are a fixed union that does not depend on the planner — the project and global roots listed in `src/core/skills/scan-paths.ts`, plus `<project>/AGENTS.md`. Discovery also re-runs whenever the skills overlay opens (`src/app/refresh-skills.ts`).
 
@@ -50,9 +50,9 @@ It finishes by awaiting skill discovery via `discoverSkills(projectDir)` (`src/e
 
 `renderApp()` in `src/cli/render/app.ts` mounts the Ink app. It tries fullscreen mode via `withFullScreen()` from `fullscreen-ink` — if that fails (unsupported terminal, broken escape codes), it falls back to inline rendering. Mouse input is wired through a filtered stdin that strips mouse escape sequences before they reach Ink's input handler.
 
-**`src/app/root.tsx`** is the root component. It reads `routerStore` for the current screen and `overlayStore` for any active overlay, wires runtime commands via `useRuntimeCommands()` (`src/app/command-context.ts`), binds app-wide keys via `useAppKeys()` (`src/app/keys.ts`), and renders `<AppProvider>` (`app/provider.tsx`, today only `<ThemeProvider>`) wrapping `<Router/>` (`app/router.tsx`), which composes the page files and returns `<Layout screen={…} overlay={…}/>`.
+**`src/app/root.tsx`** is the root component. It reads `routerStore` for the current screen and `overlayStore` for any active overlay, wires runtime commands via `useRuntimeCommands()` (`src/app/command-context.ts`), binds app-wide keys via `useAppKeys()` (`src/app/keys.ts`) and mouse input via `useAppMouse()` (`src/app/mouse.ts`), and renders `<AppProvider>` (`app/provider.tsx`, today only `<ThemeProvider>`) wrapping `<Router/>` (`app/router.tsx`), which composes the page files and returns `<Layout screen={…} overlay={…}/>`.
 
-Screen selection is a switch on `routerStore`'s `screen` field:
+Screen selection is a switch on `routerStore`'s `screen` field (`ALL_SCREENS`, `src/core/navigation/types.ts`):
 
 - **home** — `<HomeScreen/>` — the landing screen when no feature was provided
 - **workflow** — `<WorkflowScreen/>` — the run's home, whether something is running on it or not
@@ -68,24 +68,25 @@ The callbacks are how the engine asks for human decisions without importing Reac
 
 ## Workflow initialization
 
-`runWorkflow()` (`src/engine/orchestrator/run/workflow.ts`) is the top-level engine entry. It takes the already-prepared execution (project dir, session ID, admitted config), builds a summary base with planner/implementer metadata, acquires the session liveness lockfile so a concurrent resume refuses to double-run the session, wraps the entire run in `withShutdownHandlers()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts` — the SIGINT/SIGTERM handler that saves state on interrupt), and delegates to `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`).
+`runWorkflow()` (`src/engine/orchestrator/run/workflow.ts`) is the top-level engine entry. It takes the already-prepared execution (project dir, session ID, admitted config), builds a summary base with planner/implementer metadata, acquires the session liveness lockfile so a concurrent resume refuses to double-run the session, wraps the entire run in `withShutdownHandlers()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts` — the SIGINT/SIGTERM/SIGHUP handler that saves state on interrupt), and delegates to `initializeWorkflow()` (`src/engine/orchestrator/run/init.ts`).
 
 `initializeWorkflow()` does the following, in order:
 
 **Creates the EventBus** — `createEventBus()` in `src/engine/events/bus.ts`. The bus is a synchronous fan-out dispatcher: `publish(event)` iterates all subscribed sinks and calls each one. A throw in one sink is caught and swallowed — a crashing sink cannot tear down the engine mid-task.
 
-**Subscribes sinks** to the bus:
+**Subscribes sinks** to the bus through `attachRunSinks()` (`src/engine/orchestrator/run/init-sinks.ts`):
 - The TUI sink (`opts.tuiSink`) if provided — this is `addTuiEvent` from `src/features/workflow/tui-sink.ts`, which forwards events to `addEvent()` in the workflow store. The engine doesn't import it — it receives it as an opaque `EventSink` via the options, which is how the engine/UI boundary stays clean.
 - The JSONL sink (`createJsonlSink()`) appends every event to `session.jsonl`.
 - The logger sink (`createLoggerSink()`) writes every event through the process logger.
-- The stdout-JSON sink (headless only) writes NDJSON to stdout.
+- The call-evidence sink (`createCallEvidenceSink()`) keeps the run's per-call usage record in memory for the summary.
+- One stdout sink (headless only): the stdout-JSON sink writes NDJSON, or under `--plain` the stdout-text sink writes text lines.
 - The hook sink (`createHookSink()`) dispatches user-configured hooks on matching events.
 
-**Creates the planner** via `createPlanner()` in `src/engine/runners/factory.ts`. The factory switches on `config.planner.kind` and lazy-loads the appropriate backend module. Backend modules are loaded with dynamic `import()` behind a memoizing `lazy()` wrapper — the module is only loaded when first needed, and subsequent calls return the same promise.
+**Creates the planner** via `createPlannerSeat()` (`src/engine/orchestrator/run/init-seats.ts`), which calls `createPlanner()` in `src/engine/runners/factory.ts`. The factory switches on `config.planner.kind` and lazy-loads the appropriate backend module. Backend modules are loaded with dynamic `import()` behind a memoizing `lazy()` wrapper — the module is only loaded when first needed, and subsequent calls return the same promise.
 
-**Creates the implementer** via `createImplementer()` using the same factory pattern.
+**Creates the implementer** via `createImplementerSeat()`, which calls `createImplementer()` from the same factory.
 
-**Resolves the reviewer.** `resolveReviewerRunner()` (`src/core/config/accessors/reviewer-runner.ts`) decides who holds the review seat. With no `reviewer` block the planner instance is reused as the reviewer and nothing else happens. With one, `createReviewer()` builds a separate runner from the same factory and the same lazy planner backends (`src/engine/orchestrator/run/init.ts`). A configured reviewer is a candidate in `prepareExecution()` under slot `{ role: 'reviewer' }` and goes through the same fresh admission as the other seats — one that fails admission blocks the run start with a readiness blocker naming the Reviewer.
+**Resolves the reviewer.** `resolveReviewerRunner()` (`src/core/config/accessors/reviewer-runner.ts`) decides who holds the review seat. With no `reviewer` block the planner instance is reused as the reviewer and nothing else happens. With one, `createPlannerSeat()` calls `createReviewer()`, which builds a separate runner from the same factory and the same lazy planner backends (`src/engine/orchestrator/run/init-seats.ts`). A configured reviewer is a candidate in `prepareExecution()` under slot `{ role: 'reviewer' }` and goes through the same fresh admission as the other seats — one that fails admission blocks the run start with a readiness blocker naming the Reviewer.
 
 **Handles resume** — if `savedState` exists and there's no pending recovery, it auto-compacts the JSONL log and rebuilds context for stateless backends (those that don't support session persistence natively).
 
@@ -110,7 +111,7 @@ The queue handler shares one run-scoped `SteeringPort` with foreground BUILD, pl
 
 An older run parked in a retired planning phase or at an older gate continues as this one session; the session reads the run's earlier research, spec, plan and `tasks.md` as "Earlier Planning".
 
-Before the session starts, `openingPlanPrompt` (`src/engine/orchestrator/planning/session.ts`) builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on files relevant to the feature. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase.
+Each planning turn takes its prompt from `planTurnText()` (`src/engine/orchestrator/planning/session.ts`). It builds a repo map via `buildRepoMap()` (`src/engine/codebase/repomap.ts`) — a PageRank-weighted summary of the codebase focused on the files the feature names — and `buildPlanSessionPrompt()` puts it in a `## Repository Map` section. It does this for every planning session, `splitbrief spec` included. This gives the planner structural context without sending the entire codebase. See [REPOMAP.md](./REPOMAP.md#integration).
 
 PLAN reads pending messages at its next planner call. A Claude Code planner can also receive them in its native session when no call is attached or the offer is deferred. Native injection runs only in plan phases. An uncertain offer skips native injection. See [Message queue](./ENGINE.md#message-queue) for delivery rules.
 
@@ -174,7 +175,7 @@ See [Message queue](./ENGINE.md#message-queue) for BUILD corrections before call
 
 ## Run workspace and Apply
 
-Before execution, `runTasksAndReview()` captures a snapshot named `workspace-base` and opens one workspace through `createRunIsolation()`. `RECORD_WORKSPACE` saves its kind, path, base snapshot id and starting HEAD. Every task, retry, validation and code review reads that workspace. Attempt cleanup restores only the current attempt's changes. Earlier tasks remain available to later tasks.
+`runWorkflow()` builds one run-scoped isolation with `createRunIsolation()` (`src/engine/orchestrator/isolation/create.ts`) before initialization. Before execution, `runTasksAndReview()` captures a snapshot named `workspace-base` and opens one workspace through that isolation's `open()`. `RECORD_WORKSPACE` saves its kind, path, base snapshot id and starting HEAD. Every task, retry, validation and code review reads that workspace. Attempt cleanup restores only the current attempt's changes. Earlier tasks remain available to later tasks.
 
 The checkout receives no run result until Apply. The planner's cwd stays in the checkout to preserve its native session. Brief refresh, consult snapshots and review packets read the workspace. Consult and planner-review prompts name that path. A separate reviewer runs with the workspace as its cwd. Session state and evidence remain under the project checkout.
 
@@ -205,25 +206,27 @@ When the engine publishes an event through the bus, every subscribed sink receiv
 ```mermaid
 graph LR
     Engine["Engine publishes event"] --> Bus["EventBus.publish()"]
-    Bus --> TUI["tuiSink → addEvent()"]
-    Bus --> JSONL["jsonlSink → session.jsonl"]
-    Bus --> Log["loggerSink"]
+    Bus --> TUI["tuiSink → addTuiEvent() → addEvent()"]
+    Bus --> JSONL["createJsonlSink → session.jsonl"]
+    Bus --> Log["createLoggerSink"]
     Bus --> Hook["hookSink → user hooks"]
     TUI --> Events["eventsStore"]
     TUI --> Tasks["tasksStore"]
     TUI --> Tokens["tokensStore"]
     TUI --> Lifecycle["lifecycleStore"]
+    TUI --> Operations["operationsStore"]
     Events --> React["React re-renders"]
     Tasks --> React
     Tokens --> React
     Lifecycle --> React
+    Operations --> React
 ```
 
-**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates four stores in a fixed order: events, tasks, tokens, lifecycle. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all four stores updated.
+**`addEvent()`** in `src/stores/workflow/actions/event.ts` is the bridge between engine events and React state. It updates five stores in a fixed order: events, tasks, tokens, lifecycle, operations. This ordering is strictly synchronous — no `await`, no `setTimeout`, no microtask scheduling. React 19 with Ink batches synchronous store updates so subscribers observe one consistent commit with all five stores updated.
 
-One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the events/tasks/lifecycle writes.
+One optimization: `cost_update` events take a fast path that only touches the tokens store, skipping the other writes.
 
-If the lifecycle store's `cancelled` flag is set, `addEvent()` returns immediately — no stores are updated. This prevents late-arriving events from a cancelled workflow from polluting the display.
+If the lifecycle store's `cancelled` flag is set, `addEvent()` drops every event that `acceptsEventAfterCancellation()` does not admit. That function admits `workflow_cancelled`, `turn_interrupted`, `review_completed`, and the `runner_call_*` events that settle a call (completion, error, warning, usage, session id and artifact), so a call cut by the stop still settles. This prevents other late-arriving events from a cancelled workflow from polluting the display.
 
 React components subscribe to individual store slices via `store.use(selector)`. A component that only reads `tasksStore.use(s => s.currentTask)` won't re-render when the token count changes. The store system makes selector-based subscriptions automatic — no `useMemo` or `useCallback` needed.
 
@@ -247,7 +250,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`reverted/<stamp>/`** — the bytes SPLITBRIEF replaced when it reverted files in the checkout in checkout mode: a failed attempt's rollback, a denied protected write, an exhausted brief or an interrupted brief on restart. A symlink is saved as a link. The revert's warning names the folder.
 
-**On interrupt** (SIGINT/SIGTERM), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes and saves the current state to `state.json`. It does not touch the `.splitbrief/active` marker: `saveFinalSession()` clears that only once the run is closed. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
+**On interrupt** (SIGINT, SIGTERM or SIGHUP), `withSignalHandlers()` (`src/engine/orchestrator/signals.ts`) runs `shutdownWorkflow()` (`src/engine/orchestrator/session-lifecycle/shutdown.ts`): it kills all child processes and saves the current state to `state.json`. It does not touch the `.splitbrief/active` marker: `saveFinalSession()` clears that only once the run is closed. Continue later with `splitbrief continue <session-id>` when the saved state is resumable.
 
 **Collectable orphan directories.** A session directory that never started — a crash or abort after `readiness.json` landed and before the run wrote its lockfile — holds nothing but `readiness.json`, or nothing at all. A directory with exactly that content (or empty) is **collectable**; `src/core/sessions/orphans.ts` is where the recognition rule lives. A directory holding any other artifact — a lockfile, an ownership marker, or anything else — is never collectable.
 

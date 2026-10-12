@@ -34,7 +34,7 @@ workflow: { approve: plan }
 
 Model ids come from the tool (`agy models`, `claude --model` aliases `opus`, `sonnet`, `fable`). No `reviewer:` block means the planner holds the review seat.
 
-The task is a file attached with `@`, for example `.nuke/<date>-<topic>/tasks/<id>.md` or `.splitbrief/inbox/<date>-<slug>/tasks.md` (both gitignored). If the task file's first line gives the exact launch command, use it without its seat flags; seats come from `.splitbrief/config.yaml`. Write the task for the planner: the goal, the invariants, what is out of scope, and the sizing rule that keeps briefs inside the implementer's limits:
+The task is a file attached with `@`, for example `.splitbrief/inbox/<date>-<slug>/tasks.md` (gitignored). If the task file's first line gives the exact launch command, use it without its seat flags; seats come from `.splitbrief/config.yaml`. Write the task for the planner: the goal, the invariants, what is out of scope, and the sizing rule that keeps briefs inside the implementer's limits:
 
 - one module group per brief (a source file plus its colocated test), never two large modules in one brief;
 - a brief must leave typecheck, lint and tests green on its own, so name every call site a deletion touches;
@@ -173,7 +173,7 @@ A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports 
 
 ## 8. The `splitbrief-babysit` skill
 
-`skills/splitbrief-babysit/` packages this procedure as an agent skill. It is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the maintainer `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
+`skills/splitbrief-babysit/` packages this procedure as an agent skill. It is self-contained when copied or installed alone. It needs no other skill, no private local files, no `jq`, and no fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the maintainer `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
 
 The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. A tool defect that blocks the run, including a false tripwire alarm, ends the run: End run, fix, verify with the gates, rebuild, let the maintainer commit, then start a new run. A cosmetic defect goes to the debt list and the run goes on. A weak seat output is corrected in the composer, not in code. Model mistakes and correctly reported provider limits retain normal CLI recovery.
 
@@ -181,4 +181,4 @@ The watcher source follows the existing script library convention in `skills/spl
 
 ## 9. Record of the 2026-09-21 run
 
-Found and fixed in-session: React ran its development build because the CLI never set `NODE_ENV` (4 GB heap in 23 minutes, `src/node-env.ts`); a planner reply split across messages lost everything but its last message (`reconcileFinalText`); the 96 KB declared-artifact bound rejected a 140 KB `tasks.md` after the call had finished. Found and deferred: a stop inside `validating-task` or `escalating` restarts the brief; the crash-restore snapshot is never persisted; the `--plain` `done:` line no longer matches `assertPlainStdout`; `splitbrief ps` is referenced but not registered; the help example names a removed `anthropic` planner. Details in `.nuke/2026-09-21-session-handoff.md`.
+Found and fixed in-session: React ran its development build because the CLI never set `NODE_ENV` (4 GB heap in 23 minutes, `src/node-env.ts`); a planner reply split across messages lost everything but its last message (`reconcileFinalText`); the 96 KB declared-artifact bound rejected a 140 KB `tasks.md` after the call had finished.

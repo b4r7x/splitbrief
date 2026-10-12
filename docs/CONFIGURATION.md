@@ -14,6 +14,13 @@ This document is a field-by-field reference. For the planning session and plan a
 
 - The file is created on first `splitbrief init` (or implicitly on first `splitbrief start`). Missing file → SPLITBRIEF runs with `createDefaultConfig()` (`src/core/config/load/defaults.ts`).
 - **Schema version:** `version: 3`, required and exact. Any other value (or a missing one) fails the load with `config-unsupported-version`; run `splitbrief init --reconfigure` to write a current config.
+- **Defaults filled at load:** `mergeWithDefaults` (`src/core/config/load/defaults.ts`) fills these values before validation, and only these:
+  - no `planner` block: `kind: cli`, `tool: claude-code`.
+  - no `implementer` block: the local Ollama implementer (`kind: api`, `provider: ollama`, `service: ollama`, `offering: local`, `apiBase: http://localhost:11434/v1`, `model: qwen3-coder:30b`, `temperature: 0.3`).
+  - a top-level `implementer` whose `kind` is `api` or omitted and whose `provider` is `ollama` or omitted: each of those Ollama fields that the block omits.
+  - `validation.endChecks: true`, `workflow.approve: plan`, `workflow.review: end`, `workflow.compactionFormat: auto`, when the file omits them.
+
+  The loader fills no field in a `planner` or `reviewer` block, in an `implementerProfiles` profile, or in an `implementer` with another `kind` or `provider`.
 - **Key style:** the loader transforms `snake_case` YAML into `camelCase` before validation (`src/core/config/load/transform.ts`), so both styles work. This document uses `camelCase`. Where one map spells a key both ways, the later line wins. A save from the TUI edits the key in the spelling your file already uses, removes an earlier twin spelling of it, and writes a key the file does not carry yet in `snake_case` (`src/core/config/load/document.ts`).
 - **Permissions:** Configuration files with group- or other-writable bits (mode & 0o022) trigger a security warning. On POSIX, the loader emits this via `warnStderr` when `checkConfigPermissions` fails (`src/lib/fs.ts`). `init` writes the file at `0600` via `writeSecureFile`.
 - **`.gitignore`:** CLI init/setup and the first successful interactive Setup save initialize ignore rules for `.splitbrief/` and `.trees/`. Worktree initialization adds these rules inside the worktree. Existing directory-content rules and config exceptions stay intact. Ordinary config saves, including Settings and seat switches, leave `.gitignore` unchanged.
@@ -40,7 +47,7 @@ approval:       { feedRejectionsToPlanner, allowedPaths }
 customCommands: { <id>: { label, contract, executable, argv, ... } }
 ```
 
-Top-level keys are **not** strict at the root — an unknown key is ignored — except the five keys this release removed (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review`, `workflow.max_retries`, the `escalation` block, `approval.tiers` and `validation.typecheck`, `lint`, `test`, `typecheck_command`, `lint_command` still load, with one notice each, and are ignored (§16).
+Top-level keys are **not** strict at the root — an unknown key is ignored — except the removed root keys (`otel`, `snapshots`, `trust`, `plannerEstimateReview`, `autoSplitOverflow`, `compiler`), which are named as load errors like any other removed key (§16). Most nested objects (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config) are strict and will reject unknown fields. The retired keys `workflow.mode`, `workflow.speckit`, `workflow.brief_review`, `workflow.task_review`, `workflow.max_retries`, the `escalation` block, `approval.tiers` and `validation.typecheck`, `lint`, `test`, `typecheck_command`, `lint_command` still load, with one notice each, and are ignored (§16).
 
 ---
 
@@ -71,12 +78,12 @@ Every variant is `.strict()` — unknown fields fail validation with a `ConfigEr
 |---|---|---|---|
 | `model` | string | — | Model identifier, or `auto`. Planner: optional. Implementer: required for `api`, `shell`, and `agent`; optional for `cli`, where omitting `model` and writing `model: auto` are equivalent — both mean the model the tool itself has selected on this machine, read at preparation (see `kind: cli` below). |
 | `customModels` | string[] | — | Extra model IDs merged into the provider catalog so they appear in pickers. Pricing remains unknown unless models.dev, runtime provider metadata, or the bundled catalog supplies rates. |
-| `contextLength` | int > 0 | kind-dependent | Application budget override. Built-in local API calls use configured context, observed active context, then 8192; maximum model capacity is separate. CLI/legacy routing can use the 32768 conservative fallback. This field never changes the server. |
-| `temperature` | 0..2 | provider default | Sampling temperature. Honored only by the `api` kind (planner, reviewer, and implementer); the `cli`, `shell`, and `agent` kinds cannot pass it to their backend and drop it with a stderr warning. Implementers usually want `0.2`-`0.4`; planners can run hotter. |
+| `contextLength` | int > 0 | kind-dependent | Application budget override. Every kind keeps the value. A planner or reviewer uses it only on the `api` kind, as the application context that its PLAN or REVIEW packet is measured against. An implementer of any kind uses it to route a Task Brief. Readiness reports the planner value on every kind. Built-in local API calls use configured context, observed active context, then 8192; maximum model capacity is separate. CLI/legacy routing can use the 32768 conservative fallback. This field never changes the server. |
+| `temperature` | 0..2 | unset (`0.3` on a filled Ollama implementer, §1) | Sampling temperature. Every kind accepts the field, but SPLITBRIEF does not send it. The `api` kind omits it from every request for every provider (`resolveOpenAICompatPolicy`, `src/engine/providers/openai-compat-policy.ts`), so the server's own default applies. The `cli`, `shell` and `agent` kinds drop it with a stderr warning. |
 | `timeout` | ms | API BUILD: 20 min; API PLAN/REVIEW: 10 min. `cli`, `shell` and `agent`: none. | Total wall-clock budget for a call. On an `api` seat, the first-response and stream-idle deadlines also apply, and this total bounds each of them; the API defaults come from `TIMEOUTS.implementerMs` / `TIMEOUTS.reviewerMs` (`src/core/pipeline-spec/timeouts.ts`). A subprocess seat call (`cli`, `shell`, `agent`; planner, implementer and reviewer) has no default total, interactive or headless. A set `timeout` is an opt-in limit, and it applies on every subprocess path. Two timeouts or idle cuts in a row halt the run as `runner-timeout-repeated` (*Seat down*). Readiness warns about the `timeout` / `idleKillMs` pair only when both are set. |
 | `idleWarnMs` | ms | `300000` | Inactivity watchdog warn threshold: after this much output silence on a running call, the byline shows a "still working" warning; any stdout/stderr output clears it and resets the timer. The warn never ends the call. From 60 s of silence, the build block's freshness line reads `No output for m:ss · running <command>` when the tool stream reports an open tool, `No output for m:ss · tools report when done` for `opencode` and `kilo-code`, and `No output for m:ss` otherwise. The clock continues to count until output arrives. Press Esc to stop the call resumably; Resume runs the seat again. A lone `idleWarnMs` of any size is valid. |
 | `idleKillMs` | ms | none | Opt-in watchdog cut: at this much output silence, SPLITBRIEF stops the runner's process group (SIGTERM, then SIGKILL after a grace window) and marks the call failed. It applies on every subprocess path, `shell` and `agent` planners and reviewers included. Only byte silence counts: a running child process (a test, a build or another command) is not progress. The transcript shows one error row, for example `<tool> sent no output for 30:00; SPLITBRIEF stopped it`, and the retry ladder continues. Two cuts or timeouts in a row halt the run as `runner-timeout-repeated` (*Seat down*). A lone `idleKillMs` must be at least the effective warn: `idleWarnMs` when set, else `300000`. Set `idleKillMs` or `timeout` for an unattended run. |
-| `effort` | `none\|minimal\|low\|medium\|high\|xhigh\|max` | unset | Reasoning-effort hint. The union above is what config accepts; the levels a seat may actually use are the selected model's own ladder, not a fixed list per tool — the seat's tool accepts a subset and reports what it rejects. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code`, `codex`, `copilot` and `command-code` are channel `effort-flag`: they deliver this `EffortLevel` verbatim on the tool's own effort argument, on the planner, reviewer, and implementer seats — `claude-code`, `copilot` and `command-code` emit `--effort <level>`, `codex` emits `-c model_reasoning_effort=<level>`. `cli` `opencode` and `kilo-code` are channel `variant`: they have a real effort channel, but it is a named preset delivered through the separate `variant` field — kilo's `--variant`, opencode's model suffix from 2.0.0 on — not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. Only the `api`, `shell`, and `agent` kinds are channel `none`. `seatSupportsEffort` is now `seatEffortChannel(...) !== 'none'`; a caller that means "takes the `effort` field" tests for `effort-flag`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
+| `effort` | `none\|minimal\|low\|medium\|high\|xhigh\|max` | unset | Reasoning-effort hint. The union above is what config accepts; the levels a seat may actually use are the selected model's own ladder, not a fixed list per tool — the seat's tool accepts a subset and reports what it rejects. How a seat's effort intent reaches its tool is the seat's channel — `CliEffortChannel` (`src/core/runners/effort-channel.ts`), resolved by `seatEffortChannel` (`src/core/runners/capabilities.ts`) — and only one of the four channels carries this field. `cli` `claude-code`, `codex`, `copilot`, `command-code` and `antigravity` are channel `effort-flag`: they deliver this `EffortLevel` verbatim on the tool's own effort argument, on the planner, reviewer, and implementer seats — `claude-code`, `copilot`, `command-code` and `antigravity` emit `--effort <level>`, `codex` emits `-c model_reasoning_effort=<level>`. `cli` `opencode` and `kilo-code` are channel `variant`: they have a real effort channel, but it is a named preset delivered through the separate `variant` field — kilo's `--variant`, opencode's model suffix from 2.0.0 on — not through `effort`. `cli` `cursor` is channel `model-id`: effort is encoded in the selected model id's suffix, so there is no separate field to set — choose it in the model picker. Only the `api`, `shell`, and `agent` kinds are channel `none`. An undeliverable value is not sent: changing a seat in the TUI clears it and says so (`Effort <level> cleared: <tool> has no effort channel`) on every seat whose channel is not `effort-flag`, and a headless run drops it, with a `planner-effort`/`reviewer-effort: dropped` stderr warning on the planner and review seats, silently on the implementer seat. The same clearing and dropping applies to `variant` on a seat whose channel is not `variant`. |
 | `variant` | string | unset | The named execution preset of the `variant` channel — today `cli` `opencode` and `kilo-code`, delivered on `kilo run --variant <name>` and, for opencode, on the model itself: `opencode run --model <provider/model>#<name>` from 2.0.0 on, which rejects `--variant`, and `opencode run --variant <name>` below 2.0.0. The release the start gate admitted picks the form, and the arg-vector preflight checks the same one. Free-form and persisted verbatim, because an opencode user can declare custom variants in `opencode.json` that no static enum could know. The presets are per model, not per provider: the picker offers the ladder the model itself publishes (`opencode api GET /api/model`, or `opencode models --verbose` below 2.0.0, and `kilo models --verbose` for a detected route), so `openai/gpt-5.6-luna` offers `none\|low\|medium\|high\|xhigh\|max` and a model that publishes none offers no presets, though a hand-written value is still sent. `--variant` is a protected flag: configuring it through `args` is refused before spawn. |
 
 `idleWarnMs` and `idleKillMs` apply to the `cli`, `shell`, and `agent` kinds only — `api` runners keep the 60s stream-idle guard, and their strict schema rejects both fields. An `api` seat keeps its own deadlines: 120 s to the first response, 60 s of stream idle, and the role total (BUILD 20 min, PLAN and REVIEW 10 min). The Settings label of an `api` seat shows that total, not an idle cut. The watchdog never touches the commands SPLITBRIEF runs itself (plan checks, reviewer checks, renders and base re-runs): only `validation.timeoutMs` limits them.
@@ -177,6 +184,7 @@ CLI model pickers can show stale cached rows after a shorter successful read. Th
 | `tool` | enum | yes | `claude-code` \| `codex` \| `opencode` \| `copilot` \| `kilo-code` \| `cursor` \| `command-code` \| `antigravity` |
 | `model` | string | no | A model ID, or `auto`. Omitting `model` and writing `model: auto` are equivalent: both mean the model the tool itself has selected on this machine, which SPLITBRIEF reads at preparation and passes as `--model`. |
 | `args` | string[] | no | Extra argv appended to the tool invocation. Every token is validated against the adapter-owned authority set: a flag that would override role, permissions, sandbox, cwd or added roots, config sources, tools, hooks/plugins/MCP, session selection, prompt transport, output format, terminal protocol, final-output path, updates, or approval behavior is refused before spawn. |
+| `authChannel` | enum | no | `api-key` \| `session` \| `provider-dependent`. The value must be a channel the tool declares, else the load fails: `claude-code`, `codex` and `cursor` declare `session` and `api-key`; `copilot`, `command-code` and `antigravity` declare `session`; `opencode` and `kilo-code` declare `provider-dependent` (`CLI_TOOL_CATALOG`, `src/core/runners/cli-tool-catalog.ts`). Omitted or `provider-dependent`: the host CLI's own configuration and login decide. An explicit `session` or `api-key` is refused before dispatch, because no tool has enforcement evidence for a method choice. Omit the field and the host CLI's own login decides. See [Provider authentication](#provider-authentication) and [AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#per-channel-facts). |
 | `outputFormat` | enum | no | `stream-json` \| `jsonl` \| `text` \| `opencode`. Selects the parser for the configured-command and legacy command paths. An admitted CLI's parser and terminal protocol are adapter-owned: the backend's native parser stays authoritative, and an implementer `outputFormat` that would replace a structured terminal contract refuses before spawn. |
 
 **What `model: auto` resolves to.** At preparation SPLITBRIEF reads the model the tool itself has selected on this host and starts the seat on it explicitly (`readHostModelSelection`, `src/engine/runners/host-model-selection.ts`), passing it as `--model`. The YAML is never rewritten: it keeps `auto`, which is the operator's intent, while the run's own record — `workflow_config`, `seats.json` and each task start — names the model that was resolved. A missing or unparseable file is not an error: the seat keeps automatic selection, no `--model` flag is passed, and readiness carries a warning saying the tool's own default applies.
@@ -223,7 +231,7 @@ planner:
   variant: high
 ```
 
-**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Cursor and Command Code plan with their `--mode plan`/read-only recipes like every other CLI planner.
+**When to use:** you already pay for a Claude Code / Codex / OpenCode license and want SPLITBRIEF to drive it as a planner without separate API billing. Copilot, Cursor, Command Code and Antigravity plan with their own read-only plan recipes like every other CLI planner.
 
 ### `kind: api`
 
@@ -231,9 +239,9 @@ OpenAI-compatible HTTP endpoint.
 
 | Field | Type | Required | Description |
 |---|---|:---:|---|
-| `provider` | non-empty string | yes | `ollama` \| `lm-studio` \| any custom name |
-| `service` | non-empty string | yes | Billing/identity service behind the provider. Never inferred — write it out. For an admitted provider ID it must equal that ID's `API_PROVIDER_CATALOG` service (see the provider matrix in §18); a mismatch is a validation error. |
-| `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. Never inferred — write it out. For an admitted provider ID it must equal that ID's catalog offering. |
+| `provider` | non-empty string | yes | `ollama` \| `lm-studio` \| `llama-cpp` \| any custom name |
+| `service` | non-empty string | yes | Billing/identity service behind the provider. The loader fills it only on a top-level Ollama `implementer` (§1); write it out in every other block. For an admitted provider ID it must equal that ID's `API_PROVIDER_CATALOG` service (see the provider matrix in §18); a mismatch is a validation error. |
+| `offering` | enum | yes | `payg` \| `free-quota` \| `coding-subscription` \| `local`. The loader fills it only on a top-level Ollama `implementer` (§1); write it out in every other block. For an admitted provider ID it must equal that ID's catalog offering. |
 | `apiBase` | non-empty string | yes | Base URL. For known providers, see "Default API base URLs" below. |
 | `apiKey` | string | no | Optional for local providers. When authentication is enabled, `ollama` accepts only `env:OLLAMA_LOCAL_API_KEY`; `lm-studio` and `llama-cpp` accept an environment-variable reference such as `env:MY_TOKEN`. The local connection form stores references, not secret values. A custom provider must carry an **inline** key: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know (see [API-KEYS.md](./API-KEYS.md)). |
 
@@ -266,7 +274,7 @@ planner:
   customModels:
     - your-secondary-model
   contextLength: 200000
-  temperature: 0.5
+  temperature: 0.5   # accepted, but SPLITBRIEF does not send it
   timeout: 300000
 ```
 
@@ -284,7 +292,7 @@ Arbitrary `stdin → stdout` command. SPLITBRIEF writes the prompt to stdin and 
 | `args` | string[] | no | Argv |
 | `outputFormat` | enum | no | Same values as `cli` |
 | `env` | string[] | no | Uppercase names of the environment variables the command needs, for example `['MY_AGENT_TOKEN']`. The command runs in its staged runner environment: a private `HOME` and `TMPDIR`, your `PATH` without the project's own directories, the locale and terminal keys, and these names. No other variable of your shell reaches it ([AUTH-METHOD-MATRIX.md](./AUTH-METHOD-MATRIX.md#child-environment)). |
-| `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api` planner or reviewer instead). Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
+| `capabilities` | partial object | no | **Planner and reviewer only.** Declares optional planner features such as `supportsConversationalPlanning`, `supportsSessionResume`, and `supportsSelfSummarisation` so the orchestrator skips features the wrapper cannot provide. `supportsSessionResume: true`, `supportsEffort: true` and `supportsImages: true` are rejected on `shell`/`agent` planners and reviewers — the command-based adapter has no session-handle contract and no channel to deliver an effort hint or image attachments to the subprocess (use a `cli`/`api` planner or reviewer instead). The value `false` is accepted for each of them. Ignored (and rejected) on `implementer` — implementer write behavior is set via profile `capabilities.writesFiles`. |
 
 ```yaml
 planner:
@@ -347,10 +355,11 @@ Source: `src/core/providers/catalog.ts`.
 |---|---|
 | `ollama` | `http://localhost:11434/v1` |
 | `lm-studio` | `http://localhost:1234/v1` |
+| `llama-cpp` | `http://localhost:8080/v1` |
 
 **See also:** §3 `implementer`, §13 environment variables, [API-KEYS.md](./API-KEYS.md).
 
-Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set — the same three fields every admitted provider ID also has to spell out, because nothing is back-filled at load. Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly and inline: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know, so a config cannot point an unrecognized endpoint at one of your environment credentials.
+Custom OpenAI-compatible API providers are allowed when `service`, `offering`, and `apiBase` are all set. The loader fills no field of a custom provider block (§1). Because SPLITBRIEF cannot infer a safe environment variable name for unknown providers, custom providers must set `apiKey` explicitly and inline: an `apiKey: env:VAR` reference is refused for a provider the catalog does not know, so a config cannot point an unrecognized endpoint at one of your environment credentials.
 
 ---
 
@@ -366,12 +375,12 @@ Same discriminated union as `planner` — the four kinds, the same [common gener
 
 | `kind` | Write the same fields as | Notes |
 |---|---|---|
-| `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`. |
+| `cli` | [`kind: cli`](#kind-cli) | `tool` must be a planner-side CLI: `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity`. |
 | `api` | [`kind: api`](#kind-api) | Built-in local providers support the review seat through the planner role. Declare `service`, `offering`, `apiBase` and the exact model independently for this seat. Custom remote providers require their own inline credential. |
 | `shell` | [`kind: shell`](#kind-shell) | Needs the same [runner command trust](#runner-command-trust) grant as a `shell` planner. |
 | `agent` | [`kind: agent`](#kind-agent) | Same trust grant. |
 
-The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so effort follows the same channel matrix as on the planner: `cli` `claude-code`, `codex`, `copilot` and `command-code` take the `effort` field on the tool's own effort argument, `cli` `opencode` and `kilo-code` take a named preset in `variant` instead, `cli` `cursor` reads its effort out of the selected model id, and only the `api`, `shell` and `agent` kinds have no channel at all. An `effort` or `variant` the backend cannot deliver is cleared with a toast when the seat is changed in the TUI and dropped with a stderr warning headless; a `temperature` outside the `api` kind is likewise dropped with a stderr warning headless, but is carried forward untouched in the TUI. With no `reviewer` block the review seat inherits the planner's effort and shows it read-only; make the seat independent before changing it.
+The reviewer is a planner-tier seat and shares the planner's admission set, so a provider or tool that the planner may not use is rejected in this block too. The seat is built on the planner backends (`createReviewer`, `src/engine/runners/factory.ts`), so effort follows the same channel matrix as on the planner: `cli` `claude-code`, `codex`, `copilot`, `command-code` and `antigravity` take the `effort` field on the tool's own effort argument, `cli` `opencode` and `kilo-code` take a named preset in `variant` instead, `cli` `cursor` reads its effort out of the selected model id, and only the `api`, `shell` and `agent` kinds have no channel at all. An `effort` or `variant` the backend cannot deliver is cleared with a toast when the seat is changed in the TUI and dropped with a stderr warning headless; a `temperature` outside the `api` kind is likewise dropped with a stderr warning headless, but is carried forward untouched in the TUI. With no `reviewer` block the review seat inherits the planner's effort and shows it read-only; make the seat independent before changing it.
 
 ### Falling back to the planner
 
@@ -451,7 +460,7 @@ implementer:
   apiKey: <paste-your-endpoint-key>
   model: your-implementer-model
   contextLength: 200000
-  temperature: 0.3
+  temperature: 0.3   # accepted, but SPLITBRIEF does not send it
   timeout: 240000
 ```
 
@@ -465,7 +474,7 @@ The first-response deadline defaults to 120000 ms and stream-idle to 60000 ms. `
 
 **When to use:**
 - *Coding-agent CLI on a smaller model* — you already pay for a Claude Code / Codex / Copilot subscription and want the implementer step to run there on a smaller model than the planner uses.
-- *Cheap local API* — Ollama or LM Studio for cost-free iteration on small tasks.
+- *Cheap local API* — Ollama, LM Studio or llama.cpp for cost-free iteration on small tasks.
 - *Mid-tier API* — a below-frontier model behind your own custom endpoint.
 - *Frontier* — the same model class as the planner when you want its quality for the implementer step too.
 
@@ -713,7 +722,7 @@ workflow: {
 
   // Git
   git?: {
-    commitStrategy?:      'none'; // deprecated input, stripped on load
+    commitStrategy?:      'none'; // retired input, removed on load with no notice
     createBranch?:        boolean;
   };
 
@@ -744,7 +753,7 @@ workflow: {
 | `approve` | enum | `plan` | `plan`: the plan card waits for your approval before the build starts. `none`: the plan goes straight to the build. The retired values `all`, `spec` and `default` load as `plan` with one notice (§16). Approving the plan never overrides a failed plan check, and a write to a protected path still asks during the build under either value. |
 | `review` | `end` \| `task` | `end` | `end`: an ordinary brief runs no check. It runs only the checks a caller names, such as a consult `verify`. The final review runs the reviewer checks (`validation.end_checks`). The first reviewer check with new failures stops the list, and the reviewer turns its failures into fix work. `task`: each task runs its own checks and its due checks, then its review. That review runs the reviewer checks scoped to the related tests of the task's changed files. The final review then runs the reviewer checks for the whole run. |
 | `maxRetries` (`max_retries`) | retired | absent | Loads with one notice and changes nothing: `workflow.max_retries was retired and is ignored: the lineage attempt allowance bounds the ladder now. Delete workflow.max_retries.` The ladder is one local retry then the planner's consult; the lineage's bounds and grant live in `BOUNDS` (`src/core/pipeline-spec/bounds.ts`). |
-| `git.commitStrategy` | retired | absent | Legacy `none` is accepted with a deprecation warning and removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
+| `git.commitStrategy` | retired | absent | Legacy `none` loads with no notice and is removed from the loaded config; `checkpoint` and `per-task` are rejected. Omit the field. |
 | `git.createBranch` | boolean | `false` | Auto-create `splitbrief/<slug>` branch at workflow start. |
 | `isolation` | enum | `worktree` | Where every writer works: one linked git `worktree` or one `staged-copy` per run, used by tasks, retries, validation and code review until [Apply](./WORKFLOW.md#apply); or `none`, your checkout itself, with no Apply. Unset reads `worktree`. `splitbrief init` does not write this key. |
 | `driftChainThreshold` (`drift_chain_threshold`) | retired | absent | Loads with one notice and changes nothing: SPLITBRIEF no longer scores drift chains. Delete it. |
@@ -859,8 +868,8 @@ codebase: {
 |---|---|---|---|
 | `enabled` | boolean | `true` | Emit `<repo-map>` block to planner |
 | `tokenBudget` | int 1..50000 | `4000` | Tokens reserved for the block. PageRank picks the top N symbols that fit. |
-| `include` | string[] | walks `.ts`/`.tsx` | Glob patterns relative to project root |
-| `exclude` | string[] | test files + `dist/` + `node_modules/` | **Regex strings** (note: not globs) |
+| `include` | string[] | every TypeScript, JavaScript, Python, Go and Rust file (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs`, `.py`, `.go`, `.rs`; `ALL_KNOWN_EXTENSIONS`, `src/engine/codebase/languages.ts`) | Glob patterns relative to project root |
+| `exclude` | string[] | the directories `.git`, `.splitbrief`, `node_modules`, `.trees` and `dist` at any depth, and files that match `\.test\.tsx?$` | **Regex strings** (note: not globs), matched against project-relative file and directory paths. Your patterns add to the defaults; they do not replace them (`src/engine/codebase/discover-files.ts`). |
 
 YAML:
 
@@ -1140,7 +1149,6 @@ Every other `GIT_*` variable does not reach git, for example `GIT_CONFIG_GLOBAL`
 | Variable | Purpose |
 |---|---|
 | `CI` | If truthy, suppress fullscreen/alternate-screen rendering. Use `--json` or `--plain` when stdout must be machine-readable. |
-| `SHELL` | Shell detection for spawn fallback (`src/lib/process/spawn/progress.ts`). |
 | `TERM_PROGRAM` | Kitty keyboard-protocol detection for advanced key bindings. |
 | `FORCE_HYPERLINK` | `1` (or any non-empty value other than `0`/`false`) forces OSC 8 hyperlink emission for markdown links; `0`/`false` forces plain styled labels; otherwise SPLITBRIEF sniffs `TERM_PROGRAM`/`VTE_VERSION`/`KITTY_WINDOW_ID`/`WT_SESSION`/`TERM` (Apple Terminal is excluded from auto-detection). The only configuration-surface change of the file-link feature — no YAML key (`src/lib/terminal/hyperlinks.ts`). |
 | `SPLITBRIEF_REDUCE_MOTION` / `REDUCE_MOTION` | Set to `1` to pin TUI spinner frames and slow status ticks to 1s (`src/lib/terminal/reduce-motion.ts`). |
@@ -1164,7 +1172,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--planner-api-key-env <var>` | Planner API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
 | `--planner-args <arg>` | Append a planner CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue |
 | `--planner-output-format <format>` | Planner output format (`stream-json` \| `jsonl` \| `text` \| `opencode`); an admitted CLI keeps its own native parser and terminal protocol | start, resume, continue |
-| `--planner-context-length <tokens>` | Planner context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue |
+| `--planner-context-length <tokens>` | Planner context length in tokens. Every kind keeps the value; only the `api` kind uses it, as the application context its PLAN packet is measured against | start, resume, continue |
 | `--planner-effort <level>` | Planner effort hint (`none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`). The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. | start, resume, continue |
 | `--implementer <p>` | Implementer provider override | start, resume, continue |
 | `--implementer-model <m>` | Implementer model override | start, resume, continue |
@@ -1181,7 +1189,7 @@ Declared in `src/cli/options.ts` for workflow commands (`start`, `resume`, `cont
 | `--reviewer-api-key-env <var>` | Reviewer API key env var, stored as `env:<var>` (kind=api only; warns + ignored otherwise) | start, resume, continue |
 | `--reviewer-args <arg>` | Append a reviewer CLI/shell arg (repeatable; kind=cli/shell/agent); authority-bearing flags are refused before spawn | start, resume, continue |
 | `--reviewer-output-format <format>` | Reviewer output format (`stream-json` \| `jsonl` \| `text` \| `opencode`) | start, resume, continue |
-| `--reviewer-context-length <tokens>` | Reviewer context length in tokens (kind=api only; sizes the request `max_tokens`, ignored by other kinds) | start, resume, continue |
+| `--reviewer-context-length <tokens>` | Reviewer context length in tokens. Every kind keeps the value; only the `api` kind uses it, as the application context its REVIEW packet is measured against | start, resume, continue |
 | `--reviewer-effort <level>` | Reviewer effort hint (`none` \| `minimal` \| `low` \| `medium` \| `high` \| `xhigh` \| `max`). The seat's tool accepts a subset and reports what it rejects; dropped with a warning on seats that cannot send it. | start, resume, continue |
 | `--project <dir>` | Project directory (default cwd) | most commands |
 | `--no-fullscreen` | Disable alt-screen buffer | start, resume, continue |
@@ -1211,7 +1219,7 @@ Config is validated on every load (`src/core/config/load/io.ts:loadConfig`).
   - Config file permission warning on POSIX (`config-file-permissions`; see §1 **Permissions**).
   - A `shell` or `agent` runner passing `{prompt}` through argv instead of stdin (`securityWarnings`, `src/core/config/load/validation/warnings.ts`).
 
-Unknown top-level keys are tolerated, apart from the five removed ones named in §16, which fail the load; unknown nested keys in strict blocks (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config, `PlannerCapabilities`) fail validation. The retired keys of §16 are not unknown: each loads with one notice. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow` — and every error found in one load is reported together, one line per path, so a config with several problems is not corrected one attempt at a time.
+Unknown top-level keys are tolerated, apart from the removed root keys named in §16, which fail the load; unknown nested keys in strict blocks (`workflow` and its `git` block, `hooks`, `codebase`, `approval`, every runner config, `PlannerCapabilities`) fail validation. The retired keys of §16 are not unknown: each loads with one notice. Each unrecognized key is reported at its own dotted path — `workflow.autoApproveSpec: Unknown config key …`, not just `workflow` — and every error found in one load is reported together, one line per path, so a config with several problems is not corrected one attempt at a time.
 
 ---
 
@@ -1219,11 +1227,11 @@ Unknown top-level keys are tolerated, apart from the five removed ones named in 
 
 `version: 3` is the only accepted schema version. A config carrying any other version — or none at all — is rejected at load with `Unsupported config version: <value>. Supported: 3.` Run `splitbrief init --reconfigure` to write a current config; there is no in-memory upgrade path.
 
-Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, and `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with a deprecation warning and is removed from the resolved config. Delete the retired field when updating your config.
+Fields that older shapes used are gone rather than aliased — `workflow.autoApproveSpec` / `workflow.autoApprovePlan` are replaced by `workflow.approve`, and `workflow.commitStrategy` and `workflow.git.commitStrategy` by manual commits. These old fields and values fail validation with the offending path named, except `workflow.git.commitStrategy: none`: it loads with no notice and is removed from the resolved config. Delete the retired field when updating your config.
 
 ### Retired keys that still load
 
-The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. The reviewer-checks release retired the five validation stage keys. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
+The one-planning-session release retired the workflow modes, the extra gates and the tier overrides. The reviewer-checks release retired the validation stage keys. Their keys do not fail the load: each one loads with exactly one notice and is ignored, so an existing config keeps working until you delete the key (`RETIRED_CONFIG_VALUES`, `src/core/config/load/validation/config.ts`). A config that carries several prints one notice per key. The readiness report that `splitbrief start` and `splitbrief doctor` print lists every load-time notice.
 
 | You had | Notice | What to do |
 |---|---|---|
@@ -1254,15 +1262,15 @@ Runner identities that a `version: 3` config once accepted are rejected by name,
 
 ### Removed config keys
 
-Eighteen shapes that a `version: 3` config once carried are gone: sixteen removed keys, plus two
-removed **values** of keys that still exist (a hook entry's `kind: module`, `sessions.scope: global`). There is no version bump and no migration pass — every
-one of them fails the load. One load names them all: `validateConfig`
+The keys in the table below, and two removed **values** of keys that still exist (a hook entry's
+`kind: module`, `sessions.scope: global`), are gone from a `version: 3` config. There is no version
+bump and no migration pass — every one of them fails the load. One load names them all: `validateConfig`
 (`src/core/config/load/validation/config.ts`) collects every error and the thrown message carries one
 `  <path>: <message>` line per offending path, so a config carrying several is told about all of them
 in a single run rather than one per attempt. That holds for a removed **top-level** key as well: the
-root object is not strict (§15), so an unrelated stale root key is still tolerated, but the five
-removed root keys are named explicitly (`REMOVED_TOP_LEVEL_KEYS`), so a stale `otel:` block has to be
-deleted rather than left to rot. Every replacement below is the whole migration; nothing reads the old
+root object is not strict (§15), so an unrelated stale root key is still tolerated, but the removed
+root keys are named explicitly (`REMOVED_TOP_LEVEL_KEYS`), so a stale `otel:` block has to be
+deleted rather than left in place. Every replacement below is the whole migration; nothing reads the old
 key.
 
 | You had | On load | Replacement |
@@ -1279,12 +1287,14 @@ key.
 | `snapshots` (the whole block, including `snapshots.auto.*`) | rejected — `snapshots: Unknown config key …` | None. Snapshots are still taken as the baseline for change detection and for `/run reject`; the trigger points are fixed, not configurable, and there is no `splitbrief snapshot` command. Checkout rejection compares the baseline, the recorded run snapshot and the current files. It restores only recorded run changes that still match the run snapshot and leaves later user edits intact (see [`SLASH-COMMANDS-REFERENCE.md`](./SLASH-COMMANDS-REFERENCE.md)). |
 | `plannerEstimateReview` | rejected — `plannerEstimateReview: Unknown config key …` | None. The estimate-review gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `autoSplitOverflow` | rejected — `autoSplitOverflow: Unknown config key …` | None. An overflowing task is reported rather than split automatically; re-plan or narrow the feature description. |
+| `compiler` (the whole block) | rejected — `compiler: Unknown key "compiler" — the brief compiler was retired …` | None. Briefs compile from the plan directly. |
 | `workflow.maxBudget` (`max_budget`) | rejected — `workflow.maxBudget: Unknown config key …` | None. Budget gates are gone; a run reports what it spent and stops when you stop it. |
 | `workflow.budgetPauseThreshold` (`budget_pause_threshold`) | rejected — `workflow.budgetPauseThreshold: Unknown config key …` | None. There is no budget pause to threshold. |
 | `workflow.costGate` (`cost_gate`) | rejected — `workflow.costGate: Unknown config key …` | None. The cost-approval gate is gone; the plan card (§5 `approve`) is the remaining stop before implementation. |
 | `implementerProfiles.profiles.*.costTier` (`cost_tier`) | rejected — `cost_tier: Unknown config key …` | None. Routing is by capability — context window, then name — never by price. |
 | `implementerProfiles.profiles.*.pricePer1M` (`price_per1_m`) | rejected — `price_per1_m: Unknown config key …` | None. Profiles carry no price. |
-| `implementer.model: auto:cheapest` | rejected — `Unknown model …` from the runner, since the marker is no longer parsed | Name a concrete model, or `auto` to delegate to the tool's own default. |
+
+`implementer.model: auto:cheapest` does not fail the load. Nothing parses the marker any more, so the loader keeps `auto:cheapest` as a literal model id. The run then asks the tool or the endpoint for a model with that id. Name a concrete model, or write `auto` to use the tool's own selection.
 
 ---
 
@@ -1320,7 +1330,7 @@ implementer:
   apiBase: http://localhost:1234/v1
   model: qwen2.5-coder-7b
   contextLength: 32768
-  temperature: 0.3
+  temperature: 0.3   # accepted, but SPLITBRIEF does not send it
   timeout: 240000
 
 # ---------- Validation: reviewer checks on, pinned test command ----------
@@ -1416,7 +1426,7 @@ Credential prefix or env presence validates the configured offering but **never 
 
 ### Provider matrix
 
-`asOf` for every row: **2026-07-31**. SPLITBRIEF does not fetch terms or pricing pages at runtime.
+`asOf`: **2026-07-31** for `ollama` and `lm-studio`, **2026-09-16** for `llama-cpp` (`src/core/providers/api-provider-catalog.ts`). SPLITBRIEF does not fetch terms or pricing pages at runtime.
 
 <!-- api-provider-matrix -->
 | Provider | Service | Offering | Normalized endpoint | Credential env | Prefix validation | Roles | Billing |
@@ -1532,13 +1542,13 @@ implementer:
   model: hosted-model
 ```
 
-Loopback-only local stacks (`ollama`, `lm-studio`) use the `loopback` endpoint policy; do not point them at arbitrary remote hosts without treating the run as a custom remote provider with explicit trust.
+Loopback-only local stacks (`ollama`, `lm-studio`, `llama-cpp`) use the `loopback` endpoint policy; do not point them at arbitrary remote hosts without treating the run as a custom remote provider with explicit trust.
 
 ### Required API identity triple
 
-Every `kind: api` block declares all three of `provider`, `service`, and `offering`. Nothing is inferred at load time:
+Every `kind: api` block declares all three of `provider`, `service`, and `offering`. The loader fills `service` and `offering` only on a top-level `implementer` with `provider: ollama` or no `provider` (§1):
 
-- A provider-only block fails validation with `implementer.service` / `implementer.offering` named in the error.
+- Any other provider-only block fails validation with the missing `service` / `offering` path named in the error, for example `planner.service`.
 - Known catalog IDs must match their `API_PROVIDER_CATALOG` service and offering; a mismatch is a validation error, not a silent rewrite.
 - Custom providers declare their own `service` and `offering` alongside an explicit `apiBase`.
 
@@ -1584,4 +1594,3 @@ These offerings have no built-in provider ID, descriptor, endpoint policy or pic
 - [SLASH-COMMANDS-REFERENCE.md](./SLASH-COMMANDS-REFERENCE.md) — runtime overrides and palette commands
 - [DEBUGGING.md](./DEBUGGING.md) — diagnosing config load failures
 - [ERRORS.md](./ERRORS.md) — `ConfigError` shape and exit codes
-- [WORKFLOW.md](./WORKFLOW.md) — workflow modes and approval semantics

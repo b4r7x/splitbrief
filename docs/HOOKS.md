@@ -1,6 +1,6 @@
 # Hook Architecture
 
-> **This document is about React hooks.** It is not the same as the workflow lifecycle hook system (user-declared `pre_task` / `post_commit` / etc. commands fired on engine events). For that, see [`docs/HOOKS-CONFIG.md`](./HOOKS-CONFIG.md). The two concepts share the word "hook" and nothing else.
+> **This document is about React hooks.** It is not the same as the workflow lifecycle hook system (user-declared `pre_task` / `post_task` / `on_complete` / etc. commands fired on engine events). For that, see [`docs/HOOKS-CONFIG.md`](./HOOKS-CONFIG.md). The two concepts share the word "hook" and nothing else.
 
 SPLITBRIEF organizes React hooks by the **scope of consumption**, not by "what kind of hook it is". The same principle that shapes [`docs/STORES.md`](./STORES.md) and [`docs/NO-BARRELS.md`](./NO-BARRELS.md) applies here: put code where its consumers live, avoid flat dumping grounds, avoid fake hooks.
 
@@ -43,6 +43,9 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 |---|---|
 | `use-filterable-list.ts` | Filterable, searchable picker state (arrow-nav, filter, selection). Used by every feature-level picker. |
 | `use-static-selector.ts` | Fixed-list keyboard selector (no filter). Peer of `use-filterable-list` for simpler cases. |
+| `use-spinner-frame.ts` | `useSpinnerFrame(active)` — the spinner glyph frame, slowed under reduced motion. Used by home, setup, the runner picker and the workflow screen. |
+| `use-crew-display-names.ts` | `useCrewDisplayNames(config)` — each seat's display name, re-read when the model cache refreshes. Used by home, Settings, crew, the runner picker and the workflow screen. |
+| `use-shared-clock.ts` | `useSharedClock({ active })` — one shared ticking `now` for every surface that states elapsed run time, so no two surfaces sample a different second. |
 
 App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. App-wide mouse dispatch (`useAppMouse`) lives next to it at `src/app/mouse.ts`. These bind to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort, and terminal mouse subscription) and are composed once by `src/app/root.tsx`, so they sit next to the shell they serve.
 
@@ -59,6 +62,8 @@ Hooks whose sole consumer is inside one feature folder. Example from `features/w
 | `use-mouse-scroll.ts` | Workflow-owned mouse-wheel handlers for conversation/review scroll. App-level dispatch decides when workflow may receive wheel events. |
 | `use-mouse-pointer.ts` | Workflow-owned hit testing for rail, brief, and conversation rows. App-level dispatch owns overlays, non-workflow screens, and prompt gating. |
 | `use-keys.ts` | Workflow-only keyboard: conversation/review scroll and diff/activity expansion. Mounted only when `screen === 'workflow'`. |
+| `workflow-screen/use-model.ts` | `useWorkflowScreen()` and `WorkflowScreenDeps` — the screen model the page `app/screens/workflow.tsx` reads. |
+| `workflow-screen/use-inline-edit.ts` | `useWorkflowInlineEdit()` — the external-edit handoff: consumes the Ctrl+O request and runs the review-parser handoff. |
 
 ## Pure helpers that are not hooks
 

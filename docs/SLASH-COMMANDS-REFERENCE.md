@@ -6,15 +6,17 @@ If you only want a short overview, see [`FEATURES.md`](./FEATURES.md#slash-comma
 
 ## How dispatch works
 
-Type `/` in the TUI to open the command picker. Dispatch inside `src/core/runtime/commands/dispatch.ts` resolves commands in three steps:
+Type `/` in the TUI to open the command picker. The picker lists the commands whose names start with the typed word, and `Enter` runs the highlighted row. When no name starts with the typed word, the picker shows one close command as a suggestion. The command palette (`Ctrl+K`) ranks commands by fuzzy match instead.
 
-1. Exact match on `name`.
-2. If no exact match, a removed name gets a pointer to its replacement (`removedCommandPointer`, `src/core/runtime/commands/lookup.ts`) instead of `Unknown command`.
+Dispatch inside `src/core/runtime/commands/dispatch.ts` resolves a typed line in three steps:
+
+1. Exact match on `name`, ignoring case (`findRuntimeCommand`, `src/core/runtime/commands/lookup.ts`). There are no aliases and no prefix match.
+2. If no exact match, a removed name gets a pointer to its replacement (`removedCommandPointer`, same module) instead of `Unknown command`.
 3. Otherwise `suggestRuntimeCommand` in the same module may suggest a close command in the error message — it does not auto-execute. Example: `/usge` returns `Unknown command: /usge. Did you mean /usage?` without running `/usage`.
 
 Each command declares `validScreens`. The screens are `home`, `workflow`, and `setup` (`src/core/navigation/types.ts`). Invoking a command on the wrong screen surfaces an error through the `feedbackStore`. The constant `ALL_SCREENS` (`src/core/navigation/types.ts`) is shorthand for "available everywhere".
 
-Each command may also declare a `guard`, which returns one true sentence when the command cannot run right now (wrong phase, no vision on the PLAN seat) and `undefined` otherwise. The command palette and the composer `/` picker hide guarded-out rows; help lists every command valid for the screen. A change to the plan is requested on the plan card, not with a command.
+Each command may also declare a `guard`, which returns one true sentence when the command cannot run right now (wrong phase, no vision on the PLAN seat) and `undefined` otherwise. The command palette, the composer `/` picker and the help overlay hide guarded-out rows. A change to the plan is requested on the plan card, not with a command.
 
 Handlers reach the engine and stores through the `RuntimeCommandContext` interface in `src/core/runtime/commands/types.ts`, assembled by `createCommandContext` in `src/core/runtime/commands/context-factory.ts`; the TUI (`src/app/command-context.ts`) only supplies the callbacks. The registry itself never imports stores directly; this keeps the command list testable in isolation (see `src/core/runtime/commands/dispatch.test.ts`).
 
@@ -30,12 +32,12 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 ### `/help`
 
-- **Purpose**: Open the help overlay — key bindings and every slash command valid for the current screen, in one flat list.
+- **Purpose**: Open the help overlay — the slash commands you can run now, grouped by category, then the key bindings for the current screen.
 - **Screens**: all.
 - **Args**: none.
 - **Shortcut**: `Ctrl+/` (`src/core/keybindings/registry.ts`).
 - **Example**: `/help`
-- **Behavior**: Opens the `help` overlay. Command rows are filtered by `validScreens` only, so a command that is guarded out in the current phase is still listed. Press `Esc` to close.
+- **Behavior**: Opens the `help` overlay. Help uses the same filter as the command palette (`buildCommandItems`, `src/features/palette/sources.ts`). It leaves out `hidden` commands, commands for another screen and commands that a `guard` blocks now. Command rows follow the five categories, and a **Keyboard shortcuts** section follows them. Category headers appear when the panel has room for at least 12 rows (`SECTION_HEADER_MIN_ROWS`, `src/app/overlays/help.tsx`); a smaller panel keeps the order without headers. Press `Esc` to close.
 - **Implementation**: catalog at `src/core/runtime/commands/defs/navigate.ts`; opens overlay via `overlayStore.open`.
 - **See also**: `/palette`.
 
@@ -97,7 +99,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 - **Purpose**: Stop the run safely, save the session, then exit. The TUI tears down and any in-flight subprocesses are killed via the process registry.
 - **Screens**: all.
 - **Args**: none.
-- **Shortcut**: `Ctrl+Q` (`src/core/keybindings/registry.ts`). `Ctrl+C` is a separate key with its own meaning — Stop now on the workflow screen, exit elsewhere — and never needs a second press.
+- **Shortcut**: `Ctrl+Q` (`src/core/keybindings/registry.ts`). `Ctrl+C` quits only on a second press: on a live run the first press is Stop now and arms a two-second quit confirmation, and on other screens the first press only arms it. See [Global keys](#global-any-screen).
 - **Example**: `/quit`
 - **Behavior**: Routes through `requestQuit` (`src/features/workflow/handlers.ts`), which waits for the run to park or end before calling the `exit` callback wired in `src/app/command-context.ts`, so the session is saved rather than truncated; the byline reads `Quitting · Stopping processes and saving session` while it waits. No confirmation prompt — use `/home` if you only want to leave the workflow screen, or `esc` for the stop sheet if you want to stop the run without exiting.
 - **Implementation**: catalog in `src/core/runtime/commands/defs/navigate.ts`.
@@ -121,7 +123,7 @@ Commands that decide who does the work and how: the three seats and tool detecti
 
 ### `/refresh`
 
-- **Purpose**: Re-run tool detection — probes the system for the catalog's installed CLIs (`CLI_TOOL_IDS`: claude-code, codex, opencode, copilot, kilo-code, cursor, command-code), reachable API endpoints (Ollama, LM Studio), and refreshes the availability cache so newly installed tools become selectable in the seat pickers.
+- **Purpose**: Re-run tool detection — probes the system for the catalog's installed CLIs (`CLI_TOOL_IDS` in `src/core/runners/cli-tool-catalog.ts`: claude-code, codex, opencode, copilot, kilo-code, cursor, command-code, antigravity), reachable API endpoints (Ollama, LM Studio, llama.cpp), and refreshes the availability cache so newly installed tools become selectable in the seat pickers.
 - **Screens**: all.
 - **Args**: none.
 - **Example**: `/refresh`
@@ -294,7 +296,16 @@ Commands that move data in or out: clipboard copies and image attachments. `cate
 
 - **Purpose**: Attach, list, or remove images (PNG, JPG, etc.) for the next planner call. Useful for "here is a screenshot of the bug" workflows.
 - **Screens**: `home`, `workflow`.
-- **Guard**: the PLAN seat must be able to see images. Without vision, the dispatcher refuses `/image` before its handler runs. It reports `"PLAN seat cannot see images — pick a vision model with /crew plan"`. CLI seats can; an `api` seat depends on the model; `shell` and `agent` seats never can.
+- **Guard**: the PLAN seat must be able to see images. Without vision, the dispatcher refuses `/image` before its handler runs. It reports `"PLAN seat cannot see images — pick a vision model with /crew plan"`. Whether a seat can see images depends on its runner (`seatSupportsImages`, `src/core/runners/capabilities.ts`, and `imageInput` in `src/core/runners/cli-tool-catalog.ts`):
+
+  | PLAN seat | Images |
+  |---|---|
+  | `cli` Claude Code | yes, as image content blocks on stdin |
+  | `cli` Codex, OpenCode, Copilot, Kilo Code | yes, as a file flag |
+  | `cli` Cursor, Command Code, Antigravity | no |
+  | `api` | only when detection reports the model as vision-capable; a model that detection did not report cannot |
+  | `shell`, `agent` | no |
+
 - **Composer feedback**: Drop, paste, and sending a resolved `@x.png` use the composer's vision check. With a loaded configuration, each reports `"Cannot attach: PLAN seat <seat identity> cannot see images — /crew plan"`. Without a loaded configuration, drop and paste report `"Cannot attach image: the planner cannot see images. Choose a vision model with /crew plan."`. Without a loaded configuration, sending `@x.png` reports `"Cannot send image: the planner cannot see images. Choose a vision model with /crew plan."`.
 - **Args**: a file path, or one of `list` / `remove` (the `IMAGE_ACTIONS` tuple in `src/core/runtime/commands/types.ts`). No argument behaves like `list`; `remove` takes a 1-based index or the attachment's ID.
 - **Example**: `/image ./screenshots/bug.png`, `/image list`, `/image remove 1`, `/image remove att_a8f3c2`
@@ -355,12 +366,12 @@ Most slash commands have no dedicated keybinding — open the command palette wi
 | `Ctrl+/` | Open help overlay (sent as control character `\x1f`) | `src/app/keys.ts` |
 | `Ctrl+,` | Open settings overlay | `src/app/keys.ts` |
 | `Ctrl+Q` | Stop the run safely, save the session, exit | `src/app/keys.ts` |
-| `Ctrl+C` | Stop now on a live workflow; from home or a run at rest, the first press arms a two-second quit confirmation and the second exits | `src/app/keys.ts` |
-| `Esc` | Open the stop menu (live workflow); a second Escape stops now; go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
+| `Ctrl+C` | On a live run, the first press is Stop now and arms a two-second quit confirmation; on other screens it only arms the confirmation. A second press within two seconds, or while the stop still runs, quits after cleanup and saving | `src/app/keys.ts` |
+| `Esc` | Open the stop menu (live workflow); a second Escape stops now; once the run is stopping or parked, the next Escape goes home; go home on a run at rest; otherwise close the topmost overlay | `src/app/keys.ts` |
 
-`Ctrl+C` is Stop now while a run can still be stopped: one press performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`), aborting the in-flight call along with any retry, consult or per-task review call, scheduling no new brief, and parking the run as `Stopped at T<id> · Partial changes kept`. It is also how you quit, and that press is confirmed: the first press arms a two-second `Press ctrl+c again to quit` confirmation — on a live run, the press that stops it is the one that arms it — and the next press within the window exits, while any other interaction clears the confirmation.
+`Ctrl+C` is Stop now while a run can still be stopped: one press performs **Stop now** (`requestStopNow` in `src/features/workflow/handlers.ts`), aborting the in-flight call along with any retry, consult or per-task review call, scheduling no new brief, and parking the run as `Stopped at T<id> · Partial changes kept`. It is also how you quit, and that press is confirmed: the first press arms a two-second `Press ctrl+c again to quit` confirmation — on a live run, the press that stops it is the one that arms it. The next press within the window quits, and so does a press while the stop is still running. Quit waits for cleanup and saving before it exits (`requestQuit`). Any other interaction clears the confirmation.
 
-`Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. The title line promises `Changes and draft stay.` once a brief has run and `Draft stays.` before that; every row shows its consequence in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling, and so does a comment typed on the plan card: the first `Esc` clears it and returns the keys to the card rows. On an inactive run, Escape goes home, draft or no draft.
+`Esc` during a live workflow opens the **Stop options** menu immediately above the composer (`src/features/workflow/stop/menu.tsx`), with or without a draft. The transcript stays visible and updates. `↑↓` selects, `Enter` executes, a second `Esc` performs resumable **Stop now**, and `Tab` dismisses. Once the run is stopping or parked, the next `Esc` goes home after cleanup and saving, so a fast `esc esc esc` stops the run and leaves it. **End run** stays an explicit selection. The pause row appears while a brief is running and becomes **Keep running** when a pause is pending. The title line promises `Changes and draft stay.` once a brief has run and `Draft stays.` before that; every row shows its consequence in full. `Ctrl+C` remains immediate Stop now. Completion, editor and permission dialogs retain their own Escape handling, and so does a comment typed on the plan card: the first `Esc` clears it and returns the keys to the card rows. On an inactive run, Escape goes home, draft or no draft.
 
 ### Home screen only
 
@@ -380,7 +391,7 @@ macOS terminals do not always forward physical `PageUp`, `PageDown`, `Home`, or 
 | `Enter` with text | Queue a message for the active stage's seat while the run is live | composer submit handler |
 | `ctrl+⏎` with text | Stop now and continue with the text, like `/steer <text>` | composer submit handler, `requestSteer` |
 | `Ctrl+D` | Toggle the most recent diff in the conversation | `keyboard.ts` `handleWorkflowCtrlChords` |
-| `Esc` | Open the stop menu while a run is live; go home on a run at rest | `src/app/keys.ts` |
+| `Esc` | Open the stop menu while a run is live; go home once the run is stopping or parked, and on a run at rest | `src/app/keys.ts` |
 | `Shift+↑` | Scroll conversation up by one line | `keyboard.ts` `handleConversationScroll` |
 | `Shift+↓` | Scroll conversation down by one line | `keyboard.ts` `handleConversationScroll` |
 | `PageUp` | Scroll conversation up by one page | `keyboard.ts` `handleConversationScroll` |
@@ -476,7 +487,6 @@ The `SHORTCUTS` table in `src/core/keybindings/registry.ts` is the single source
 | `scroll` | `shift+↑/↓, pgup/pgdn, home/end` | Scroll; PageUp/PageDown; /scroll top\|bottom | workflow |
 | `review-edit` | `ctrl+e` | Open editor in review mode only | workflow |
 | `activity` | `/activity, ctrl+a` | Expand activity rows | workflow |
-| `continue` | `enter` | Continue | summary |
 
 ---
 
@@ -517,4 +527,4 @@ Alphabetical, for fast lookup.
 - [`docs/CONCEPTS.md`](./CONCEPTS.md) — shared vocabulary (phase, queue, run status, stop reason, step, etc.).
 - [`docs/ARCHITECTURE.md`](./ARCHITECTURE.md) — how the TUI, stores, engine, and runners are layered.
 - [`docs/STORES.md`](./STORES.md) — `configStore`, `overlayStore`, `feedbackStore`, `lifecycleStore`, `routerStore`, `attachmentsStore`.
-- [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-session.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.
+- [`src/core/runtime/commands/`](https://github.com/b4r7x/splitbrief/tree/main/src/core/runtime/commands) — `dispatch.test.ts`, `lookup.test.ts`, and split `registry-*.test.ts` suites (`registry-configuration.test.ts`, `registry-recovery.test.ts`, `registry-conversation.test.ts`, `registry-copy.test.ts`, `registry-snapshots.test.ts`, …) cover the phase / screen / arg matrix.

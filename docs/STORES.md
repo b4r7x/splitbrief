@@ -1,6 +1,6 @@
 # Store Architecture
 
-SPLITBRIEF uses a DIY external store system built on React's `useSyncExternalStore`. The entire framework is 42 lines. It provides the same core capabilities as Zustand with zero dependencies.
+SPLITBRIEF uses a DIY external store system built on React's `useSyncExternalStore`. The entire framework is one short file, `src/stores/create-store.ts`. It provides the same core capabilities as Zustand with zero dependencies.
 
 ## Why DIY
 
@@ -22,14 +22,14 @@ Returns a `Store<T>` with five methods:
 | `set()` | `(updater: T \| (prev: T) => T) => void` | Replace state. Skips notify if `Object.is(state, next)` |
 | `subscribe()` | `(listener: () => void) => () => void` | Register listener, returns unsubscribe |
 | `use()` | `<S>(selector: (s: T) => S) => S` | React hook via `useSyncExternalStore` |
-| `reset()` | `(state?: T) => void` | Reset to initial or provided state. Same `Object.is` bailout as `set()` |
+| `reset()` | `() => void` | Reset to the initial state (a factory initial runs again). Same `Object.is` bailout as `set()` |
 
 **Key semantics:**
 - State is a closure variable, not React state. Changes are synchronous.
 - Listeners are stored in a `Set<Listener>` — no duplicates, O(1) add/remove.
 - `set()` accepts either a value or an updater function `(prev) => next`.
 - Both `set()` and `reset()` bail out via `Object.is` when the value hasn't changed.
-- `use()` wraps `useSyncExternalStore(subscribe, () => selector(get()))` — concurrent-mode safe, no tearing.
+- `use()` wraps `useSyncExternalStore(subscribe, getSnapshot)`, where `getSnapshot` caches the selected value per state and selector — concurrent-mode safe, no tearing.
 
 ## Domain Store Pattern
 
@@ -53,6 +53,13 @@ src/stores/
 │   ├── project-files.ts      # Project-file picker refresh invalidation tick
 │   ├── completion.ts         # Completion popup open/closed flag
 │   ├── hover.ts              # Hovered conversation row index
+│   ├── composer-draft.ts     # One-shot requests that place a document or an image in the composer draft
+│   ├── composer-live.ts      # The composer's live draft (empty flag, text, document)
+│   ├── session-drafts.ts     # Per-session draft.json load, save and flush (functions, no store)
+│   ├── review-keys.ts        # Whether the keys belong to a comment on a review gate
+│   ├── picker-view.ts        # Runner picker sub-view, expanded model row and option drafts
+│   ├── editor.ts             # Inline editor session (openRaw, owner-token write gate)
+│   ├── external-edit-request.ts # One-shot Ctrl+O intent bridge to the workflow effect
 │   └── persistence.ts        # Disk I/O for inputHistoryStore (hydrate + debounced save)
 ├── workflow/                 # State that only exists during a workflow run
 │   ├── events.ts             # Event log (mergeEvent + MAX_EVENTS)
@@ -60,7 +67,7 @@ src/stores/
 │   ├── tokens.ts             # Token usage + completion count
 │   ├── lifecycle.ts          # Phase, cancelled, queued ids and count
 │   ├── operations/           # Active / last runner operation (state.ts, reducer.ts, …)
-│   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections)
+│   ├── actions/              # Composite writes across sub-stores (event, load, hydrate, interrupt, resume, pause, reset, sections, wait)
 │   ├── stop.ts               # Stop/quit intent + termination phase (stopStore)
 │   ├── attachments.ts        # Pending prompt attachments
 │   ├── conversation-scroll.ts # Scroll position + expanded diffs
@@ -69,6 +76,8 @@ src/stores/
 │   ├── result-menu.ts        # Measured result menu rows, including Apply confirmation
 │   ├── recovery-notice.ts    # The seat a halt stopped + its quota reset, for the header
 │   └── review.ts             # Review file path + scroll
+├── question-prompt/          # Planner questions waiting for answers
+│   └── prompt.ts             # questionPromptStore
 ├── approval-prompt/          # Confirmation prompt (protected writes, custom-runner admission)
 │   └── prompt.ts             # approvalPromptStore (via channels/prompt)
 ├── review-checks-prompt/     # Reviewer checks card (validation.approve_checks: ask)
@@ -78,13 +87,15 @@ src/stores/
 │   └── feedback.ts           # Feedback error publish/subscribe
 ├── navigation/               # Screen routing
 │   ├── router.ts             # Route state + transition guards
-│   └── session-select.ts     # Session-picker selection state
+│   ├── preparation.ts        # The readiness check before a run starts or continues
+│   └── session-select.ts     # Session-picker selection state + continueRunInPlace
 ├── project/                  # Loaded-from-disk state tied to projectDir
 │   ├── config.ts
 │   ├── config-persistence.ts
 │   ├── sessions.ts
 │   ├── skills.ts
-│   └── detection.ts
+│   ├── save-feedback.ts      # Config save failure reporting
+│   └── detection.ts          # View over the model cache's detection slice
 └── discovery/                # External-world reads with TTL cache
     ├── model-cache/           # store entry state.ts + reconcile/lane helpers
     └── detection-adapter.ts
@@ -113,7 +124,7 @@ function doSomething(arg: string) {
   store.set(s => ({ ...s, field: arg }));
 }
 
-// 3. Export facade — storeBase (use, get, reset) + domain actions
+// 3. Export facade — storeBase (use, get, subscribe, reset) + domain actions
 export const domainStore = { ...storeBase(store), doSomething };
 ```
 
@@ -128,19 +139,23 @@ Stores that need data from disk are loaded **synchronously before React renders*
 
 ```
 CLI (commander parses args)
-  → initStores(projectDir, opts)
+  → initStoresForTuiMount(projectDir, opts)   // src/cli/init-stores.ts
       1. configStore.load(projectDir, overrides)
-      2. sessionsStore.load(scope, projectDir)
-      3. discoverSkills(projectDir) → skillsStore.setAvailable(skills)
+      2. sessionsStore.load(projectDir)
+      3. hook trust check
+      4. discovery, returned as awaitDiscovery and not awaited:
+         detection hydrate + refresh, then discoverSkills(projectDir) → skillsStore.setAvailable(skills)
   → routerStore.init(route)           // set initial screen
-  → render(<App />)                   // React starts here
+  → render(<App />)                   // React starts here, while discovery continues
 ```
+
+`initStores()` runs the same steps and awaits discovery too; `splitbrief init` and the interactive `continue` path use it.
 
 **Why this matters:** If stores were loaded inside React hooks (e.g., in a `useEffect`), there would be a render cycle where the store is empty, requiring loading flags and conditional rendering. By loading before React boots, components always see initialized data.
 
 `configStore.useConfig()` includes a guard that throws if config is null — a fail-fast safety net for this contract.
 
-Step 3 also runs again after boot: both sites that open the skills overlay (`Ctrl+S` in `src/app/keys.ts`, and the `/skills` command through `ctx.refreshSkills()`) call `refreshSkills()` from `src/app/refresh-skills.ts`, which re-runs `discoverSkills(projectDir)` and feeds `skillsStore.setAvailable()`. It is a helper called from the open sites, not a mount-time effect inside the overlay.
+Skill discovery also runs again after boot: both sites that open the skills overlay (`Ctrl+S` in `src/app/keys.ts`, and the `/skills` command through `ctx.refreshSkills()`) call `refreshSkills()` from `src/app/refresh-skills.ts`, which re-runs `discoverSkills(projectDir)` and feeds `skillsStore.setAvailable()`. It is a helper called from the open sites, not a mount-time effect inside the overlay.
 
 ## Consumption Patterns
 
@@ -188,7 +203,7 @@ const { projectDir } = configStore.get();
 // Named actions — the only way to mutate state
 overlayStore.open('help');
 addEvent(event);
-routerStore.navigate('workflow', { feature: 'auth' });
+routerStore.navigate({ to: 'home' });
 ```
 
 ## Store Inventory
@@ -198,33 +213,44 @@ routerStore.navigate('workflow', { feature: 'auth' });
 | `controlsStore` | `ui/controls.ts` | `{ sidebarVisible: boolean, inputMode: 'normal' \| 'review' \| 'question' }` | `toggleSidebar()`, `setSidebar()`, `setInputMode()`, `clearInputMode()` |
 | `overlayStore` | `ui/overlay.ts` | `{ active, exclusive, focus?, stack[] }` | `open()`, `close()`, `setExclusive()` |
 | `feedbackStore` | `ui/feedback.ts` | `{ message: string \| null, isError: boolean }` | `setMessage()`, `setError()`, `setTransientError()`, `reset()` |
-| `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `set()`, `subscribeToResize()` |
+| `terminalSizeStore` | `ui/terminal-size.ts` | `{ cols, rows, isSmall }` | `subscribeToResize()`, `reset()` |
 | `terminalBackgroundStore` | `ui/terminal-background.ts` | `string \| undefined` | `detected(hex)`, `reset()` |
-| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
+| `inputHistoryStore` | `ui/input-history.ts` | `{ entries: string[] }` | `push()`, `pushDocumentSubmission()`, `hydrate()` — disk I/O lives in `stores/ui/persistence.ts` wired from `init-stores.ts` |
 | `inputHeightStore` | `ui/input-height.ts` | `{ rows: number }` | `setRows()` |
 | `commandPaletteMruStore` | `ui/command-palette-mru.ts` | `{ ids: string[] }` | `record()` |
 | `projectFilesStore` | `ui/project-files.ts` | `{ refreshEpoch: number }` invalidation tick; the composer owns file-list reads and local list state | `requestRefresh()` |
+| `completionStore` | `ui/completion.ts` | `{ open: boolean }` | `setOpen()` |
+| `hoverStore` | `ui/hover.ts` | `number \| null` — the hovered row index | `set()`, `clear()` |
+| `composerDraftStore` | `ui/composer-draft.ts` | the pending draft request (a document or an image) | `request()`, `requestDocument()`, `requestImage()`, `clear()` |
+| `composerLiveStore` | `ui/composer-live.ts` | `{ empty, text, document }` | `setDraft()` |
+| `reviewKeysStore` | `ui/review-keys.ts` | `{ commenting: boolean }` | `setCommenting()` |
+| `pickerViewStore` | `ui/picker-view.ts` | `{ view, preservedLeftIndex, expandedModelId, optionDraftId, … }` | `open()`, `close()`, `expand()`, `collapse()`, `setOptionDraftId()`, `setEffortDraft()`, `setAuthDraft()`, `setDraft()`, `setBrowseCatalog()` |
+| `editorStore` | `ui/editor.ts` | `{ status: 'closed' }` or an open editor session | `openRaw()`, `dispatch()`, `setLayout()`, `scrollBy()`, `beginSubmit()`, `close()` |
+| `externalEditRequestStore` | `ui/external-edit-request.ts` | the one pending Ctrl+O request | `request()`, `requestApply()`, `consume()` |
 | `eventsStore` | `workflow/events.ts` | `{ events: EngineEvent[] }` | internal writes via `actions.addEvent` |
 | `tasksStore` | `workflow/tasks.ts` | `{ currentTask, currentAttempt, attemptAllowance, totalTasks, taskMap, tasks }` | internal writes via `actions.addEvent` |
 | `tokensStore` | `workflow/tokens.ts` | `{ tokenUsage, perPhase, perTask, completedTaskCount, pricingContext }` | internal writes via `actions.addEvent` |
 | `lifecycleStore` | `workflow/lifecycle.ts` | `{ phase, status, cancelled, queueDepth, queuedMessageIds, steerableCall, startedAt, endedAt, durationMs, reason, plannerCall, plannerCallStartedTs, waitingSince, waitedMs, resumedAt, bankedRunMs }` — `plannerCall` is the call the phase is on when the engine names one, `plannerCallStartedTs` is where the byline clock of that call starts, `waitingSince` / `waitedMs` keep time spent waiting on the user out of the stage clock, `resumedAt` keeps a resumed run's park out of it, `bankedRunMs` is the run time of the stretches before the last resume, so the header clock (`runElapsedMs`) leaves parks out | internal writes via `actions.addEvent` / local cancel intent |
 | `operationsStore` | `workflow/operations/state.ts` | `{ active, last, byCallId }` compact runner lifecycle/status | internal writes via `actions.addEvent` / local cancel intent |
 | `stopStore` | `workflow/stop.ts` | `{ intent, phase, requestedAt, parked, error? }` — the run's stop intent and where its termination stands | `request(intent)`, phase marks (`markTerminating()`, `markSettling()`, `markForcing()`), `park()`, `resume(steer)`, `end()`, `fail()` |
-| `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()` |
-| `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount }` | `setReviewFile()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()` |
-| `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
+| `conversationScrollStore` | `workflow/conversation-scroll.ts` | `{ scrollOffset, expandedDiffs, ... }` | `scrollUp()`, `scrollDown()`, `scrollToBottom()`, `toggleDiff()`, `toggleActivityBatch()` |
+| `reviewStore` | `workflow/review.ts` | `{ filePath, scrollOffset, renderedLineCount, … }` | `setReviewFile()`, `setReviewArtifact()`, `setScrollOffset()`, `setRenderedLineCount()`, `clearReview()`, `clearReviewIfOwner()`, plus brief source, path and confirm setters |
+| `attachmentsStore` | `workflow/attachments.ts` | `{ pending: Attachment[] }` | `add()`, `remove()`, `replacePendingImages()`, `drain()`, `peek()` — `attachImage()` / `detachImage()` / `listAttachments()` helpers |
 | `streamingOutputStore` | `workflow/streaming-output.ts` | `{ taskId, lines, active }` | `startStreaming()`, `replaceLines()`, `stopStreaming()` |
 | `transcriptTailStore` | `workflow/transcript-tail.ts` | `{ rowCount, renderableUnits }` — what a closed run's ledger adds after the run's own events | `setMetrics()` — written by the transcript, read by the keyboard so both measure one document |
 | `resultMenuStore` | `workflow/result-menu.ts` | `number \| null` — measured result menu height, including Apply confirmation | `setHeight()`, `reset()` — written by the workflow screen, read by the scroll snapshot |
 | `recoveryNoticeStore` | `workflow/recovery-notice.ts` | `{ seat, resetAt }` — the seat an open halt stopped on and the clock its quota returns on | `open({ seat, resetAt })`, `clear()` — written by the TUI recovery driver |
+| `questionPromptStore` | `question-prompt/prompt.ts` | `{ hint, index, drafts, answers, focus, openedAt, complete }` — the planner questions on screen and the answers so far | `setHint()`, `setQuestions()`, `select()`, `setFocus()`, `previous()`, `answer()`, `takeAnswerBatch()`, `clearHint()` |
 | `approvalPromptStore` | `approval-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` | `openApprovalPrompt()`, `closeApprovalPrompt()` (via `channels/prompt`) |
 | `reviewChecksPromptStore` | `review-checks-prompt/prompt.ts` | `{ status: 'idle' } \| { status: 'pending', request, resolve }` — the reviewer's chosen commands waiting for Run all or Skip all | `openReviewChecksPrompt()`, `closeReviewChecksPrompt(answer?)` (via `channels/prompt`); a superseded or cancelled card resolves `undefined`, which the engine never reads as Run all |
-| `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate()`, `init()` — with transition guards |
-| `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `save()`, `useConfig()` |
+| `routerStore` | `navigation/router.ts` | `RouteData` (discriminated union on `screen`) | `navigate({ to, … })`, `init()` — with transition guards |
+| `preparationStore` | `navigation/preparation.ts` | `{ kind: 'idle' \| 'checking' \| 'blocked' \| 'failed', … }` — the readiness check before a run starts or continues | `submit()`, `cancel()`, `reset()` |
+| `sessionSelectStore` | `navigation/session-select.ts` | the session picker's selection and its error | `clearError()`, `reset()` — `handleSessionSelect()` and `continueRunInPlace()` drive it |
+| `configStore` | `project/config.ts` | `{ config: Config \| null, projectDir, overrides }` | `load()`, `refreshFromExecution()`, `save()`, `useConfig()`, `setContextLength()` |
 | `sessionsStore` | `project/sessions.ts` | `{ sessions, totalCount, projectDir }` | `load()`, `refresh()` |
 | `skillsStore` | `project/skills.ts` | `{ available: SkillMeta[], selected: Set<string> }` | `setAvailable()`, `setSelected()`, `toggleSelected()` |
-| `detectionStore` | `project/detection.ts` | `{ cliTools, implementers }` | `setDetection()` |
-| `modelCacheStore` | `discovery/model-cache/state.ts` | `{ providers: Map, modelsDevCatalog, ... }` | `setProviderModels()`, `invalidateAll()` |
+| `detectionStore` | `project/detection.ts` | a view over the model cache's `detection` slice: `{ providers, cliTools, providerOutcomes, cliCatalogOutcomes, refresh }`. It has no state of its own | `setDetection()`, `beginRefresh()`, `hydrate()`, `publishLane()`, `publish()`, `reset()` — each forwards to `modelCacheStore` |
+| `modelCacheStore` | `discovery/model-cache/state.ts` | `{ detection, providers, configuredProviders, cliCatalogs, modelsDevCatalog, refresh, … }` | `setDetection()`, `beginRefresh()`, `hydrateDetection()`, `publishLane()`, `publish()`, `setProviderModels()`, `hydrateModelsDevCatalog()`, `reset()` |
 
 ### Workflow actions module
 
@@ -232,14 +258,14 @@ routerStore.navigate('workflow', { feature: 'auth' });
 
 | Export | Purpose |
 |---|---|
-| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `tuiSink` (registered on the engine `EventBus`), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. Normal fan-out order is events → tasks → tokens → lifecycle → operations. Strictly synchronous. |
+| `addEvent(event: EngineEvent)` | Single ingress for engine events. Called by `addTuiEvent` (`src/features/workflow/tui-sink.ts`, registered on the engine `EventBus` as the TUI sink), **not** directly by the orchestrator. `cost_update` still updates tokens after cancellation. After local cancel, terminal runner events and final telemetry are accepted while UI noise is ignored. Normal fan-out order is events → tasks → tokens → lifecycle → operations. Strictly synchronous. |
 | `markCancellationRequested(intent?)` | Local UI intent for immediate feedback. Terminalizes lifecycle and running operations with frozen duration, but does **not** append a fake event or rewrite `planner_status` to success. The canonical history event is still engine-published `workflow_cancelled`. |
-| `resetWorkflow()` | Resets the workflow sub-stores **and invalidates the memo caches** (`cachedEvents`, `cachedSections`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
+| `resetWorkflow()` | Resets the workflow sub-stores (plus the stop, recovery-notice and streaming-output stores, and closes the approval and reviewer-checks prompts) **and invalidates the memo caches** (`cachedEvents`, `cachedSections`, through `clearSectionsCache()`) so subscribers observe a clean slate. It only clears: nothing is synthesized here. Cache invalidation is symmetric with sub-store reset — missing it leaks pre-reset sections into the first post-reset `useSections()` call. |
 | `loadEvents(events)` (`load.ts`) | The hydration counterpart of `addEvent`: resets first, then folds a whole replayed log through the same reducers and commits each store once. |
 | `hydrateFromState(state, { endedAt? })` (`hydrate.ts`) | Lays the saved state over whatever the replay rebuilt — the phase, the brief list, the spend and the queued count. It never claims a run read back from disk is running: an open run hydrates as `paused`, a finished one as `complete`, and the header clock freezes at the last event the log carries, without the parks the log records. |
 | `getSections()` / `useSections()` | Memoized derivation of conversation sections from `eventsStore.events`. Cache lives file-local. |
 
-**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth`, and `operations/reducer.ts` exports `updateOperations`. They are pure functions and can be tested directly.
+**Reducers live with their owner sub-store** — `events.ts` exports `mergeEvent` + `MAX_EVENTS`, `tasks.ts` exports `updateTaskMap` + `updateTaskCounts`, `tokens.ts` exports `updateTokens`, `lifecycle.ts` exports `updatePhase` + `updateQueueDepth` + `updateStall`, and `operations/reducer.ts` exports `updateOperations`. They are pure functions and can be tested directly.
 
 `lifecycle.ts` derives the queued count, `queueDepth`, from `queuedMessageIds`. `message_queued` adds its id. `message_injected_native` or `queue_drained` removes that id at its first delivery to any seat. A repeated delivery id changes nothing and cannot lower another message's count. `queue_cleared` removes cleared entries from the set. Older drain events without ids retain count-based replay compatibility.
 
@@ -302,7 +328,7 @@ A small number of stores ship test-only exports so tests and visual fixtures can
 
 ## Engine Write Pattern
 
-Since the 2026-04-20 release the engine no longer writes workflow stores directly or imports `workflow/actions.addEvent`. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the `tuiSink` (`src/features/workflow/tui-sink.ts`) is subscribed at workflow init and forwards each `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React, UI, or store imports):
+Since the 2026-04-20 release the engine no longer writes workflow stores directly or imports `workflow/actions.addEvent`. Events are published on the `EventBus` (`wctx.bus.publish(event)`); the TUI sink, `addTuiEvent` (`src/features/workflow/tui-sink.ts`), is subscribed at workflow init and forwards each bounded `EngineEvent` to `workflow/actions.addEvent`. This keeps the intended **engine → bus → sink → store → UI** direction and preserves the layer rule (engine has zero React, UI, or store imports):
 
 - Engine code publishes events; sinks write to stores; UI components subscribe reactively and re-render only when their selected slice changes.
 - Non-event cross-cutting writes (abort / queue handler registration) go through the `sinks` surface on the workflow context. The engine does not import stores to observe cancellation; it receives an `AbortSignal` from the caller.

@@ -1,6 +1,6 @@
 # Task Contract
 
-> **Status:** stable (state/config v4).
+> **Status:** stable (state v4, config v3).
 > **Audience:** implementer runners, reviewers, and advanced read-only integrations inspecting Task Brief state.
 
 A brief that fails after its one retry, reports `blocked`, or is stale goes to a consult, not to a fixed tier chain. A plan task consults the planner; a fix task (`task.fix`) consults the review seat. The old `escalated-hint` / `escalated-intermediate` / `escalated-full` completion values and the old `escalate`, `hint_failed` and `task_scope_widened` events stay parseable so a saved `state.json` and `session.jsonl` still load.
@@ -363,9 +363,9 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 
 - **Non-breaking changes** (new optional fields, new status values that are ignored by old consumers) can happen in any minor release.
 - **Breaking changes** (field rename, status removal, type change) trigger a `stateVersion` bump. Consumers should check `state.stateVersion` and refuse to read unfamiliar versions.
-- The current persisted `stateVersion` is `4`. A v3 state is promoted only by the fenced owner during resume; malformed or future state is refusal/read-only state. Future bumps are documented in `CHANGELOG.md`.
+- The current persisted `stateVersion` is `4`. A v3 state migrates to v4 when it loads (`mapV3StateToV4`, `src/core/state/migration/map-v3.ts`). An older, malformed or future-versioned state does not load. Future bumps are documented in `CHANGELOG.md`.
 
-**v4 additive fields (2026-09-13).** These fields were added without a `stateVersion` bump; each is optional, and a state written before them reads identically:
+**v4 additive fields.** These fields were added without a `stateVersion` bump; each is optional, and a state written before them reads identically:
 
 | Field | Meaning when absent |
 |---|---|
@@ -381,15 +381,15 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |
 | `WorkflowState.lastFailure` | the run recorded no failure; it stopped for some other reason |
-| `WorkflowState.reviewChecks.skipped` | added 2026-10-09. Every chosen reviewer check ran or was refused. Present (`{ reason }`) when none of them ran: `validation.approve_checks: ask` and Skip all, a card closed without an answer, or a headless run. The `review_checks` event then has `status: 'skipped'` with the commands and the reason; SPLITBRIEF registers none of the skipped commands as a check, and the review never counts them as a pass |
+| `WorkflowState.reviewChecks.skipped` | every chosen reviewer check ran or was refused. Present (`{ reason }`) when none of them ran: `validation.approve_checks: ask` and Skip all, a card closed without an answer, or a headless run. The `review_checks` event then has `status: 'skipped'` with the commands and the reason; SPLITBRIEF registers none of the skipped commands as a check, and the review never counts them as a pass |
 | `WorkflowState.seatSwitches` | no seat moved in this run. Each record holds `seat`, `from`, `to`, `cause`, `auto`, `configRevision` and `ts`. `auto` marks a switch the declared `fallback` applied; a run applies at most one per seat |
 | evidence `skipped` / `skippedReason` | the stage ran; only an older ledger carries a skipped stage, and a planner `test` check with no command is now `not-runnable` |
 
-**`Session.status` (2026-09-15).** The session record's status is now `open` \| `complete` \| `ended`, derived from the state by `deriveRunStatus` rather than from the exit path the run happened to take. The legacy literals `interrupted`, `failed` and `cancelled` still parse: they map to `open`, and `failed` additionally sets `stop: 'stopped'`. The row also carries optional `phase`, `mode` and `stop` (`waiting-for-you` \| `stopped`); an absent `stop` on an open row means the run is still going. An older row's `stop` of `input-required`, `waiting` or `halted` reads as `waiting-for-you`, and `paused`, `failed` or `interrupted` reads as `stopped` (`StopKindSchema`, `src/core/schemas/run-step.ts`).
+**`Session.status`.** The session record's status is `open` \| `complete` \| `ended`, derived from the state by `deriveRunStatus` rather than from the exit path the run happened to take. The legacy literals `interrupted`, `failed` and `cancelled` still parse: they map to `open`, and `failed` additionally sets `stop: 'stopped'`. The row also carries optional `phase`, `mode`, `stop` (`waiting-for-you` \| `stopped`) and `apply` (`ready` \| `applied` \| `discarded`) (`SessionSchema`, `src/core/schemas/session.ts`). On an open row, `apply: 'ready'` marks a run that is ready to apply, and a row with neither `stop` nor `apply` is a run that is still going. An older row's `stop` of `input-required`, `waiting` or `halted` reads as `waiting-for-you`, and `paused`, `failed` or `interrupted` reads as `stopped` (`StopKindSchema`, `src/core/schemas/run-step.ts`).
 
 ## What is NOT stable
 
-- `summary.json` shape — still evolving.
+- `summary.json` shape — the session row and its `Summary` can gain or change fields in any release (`SessionSchema`, `src/core/schemas/session.ts`). SPLITBRIEF saves it at the end of every run pass.
 - `session.jsonl` event variants — we add new types regularly; consumers MUST tolerate unknown `type` values.
 - `tasks.md` markdown structure — transport format; use `state.json` for machine consumption.
 - Internal plan / spec artifact formats — change based on prompt evolution.

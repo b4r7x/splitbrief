@@ -258,7 +258,7 @@ Continuation takes an open run. A ready run takes Apply or Discard, and a closed
 
 Older runs without `state.workspace` keep their status rules. A passed run stays closed; a stopped run, or a run that waits for you at a halt, stays open. Continuing an old open run creates its workspace at first acquisition. Its base captures the checkout then, including tasks already written there. A retained task workspace keeps its partial files.
 
-The "Workspace kept at … for Continue" notice appears only when an open run returns control to you after successful retention. Recovery publishes it immediately before opening its panel, after automatic switches, replayed actions and supplied corrections have had their turn. Headless continuation of an answered partial Apply publishes no notice before execution. If the retention record cannot be verified, the diagnostic is reported and the handoff still finishes without a successful-retention notice. Automatic seat switches and automatic continuation after a settings boundary publish no retention notice. After a successful seat switch, the workflow refreshes its displayed crew from the admitted execution and its saved config metadata, without saving the config again; a memory-only switch stays visible when no config file exists.
+The "Workspace kept at … for Continue" notice appears only when an open run returns control to you after successful retention. Recovery publishes it immediately before opening its panel, after automatic switches, replayed actions and supplied corrections have had their turn. Headless continuation of an answered partial Apply publishes no notice before execution. If the retention record cannot be verified, SPLITBRIEF reports the diagnostic and returns control to you without a successful-retention notice. Automatic seat switches and automatic continuation after a settings boundary publish no retention notice. After a successful seat switch, the workflow refreshes its displayed crew from the admitted execution and its saved config metadata, without saving the config again; a memory-only switch stays visible when no config file exists.
 
 **Closing a checkout run.** With `workflow.isolation: none` the implementer edits your checkout itself. The run records `workspace.kind: 'checkout'` once, so a later config change does not move it. There is no Apply step: a passing review or an Accept as is override closes the run as `closed complete`. An override preserves the failed or unverified verdict; the closed block shows needs attention. End run, Discard and `CLOSE_RUN` write no `run.patch`, because nothing is unapplied. The close notice reads: "This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written."
 
@@ -270,7 +270,7 @@ A rejection with no conflicts or missing snapshot files closes the checkout run 
 
 **`resumeAt`** — the step it picks up at, from `resumeStep(state)`: the gate it is parked at, the brief it was building, the review it reached, or the planner call its saved phase names (`plan` for a run in `planning`). The engine reads it to decide what runs, not how: every planner call continues as the one planning session. `resumeStep` reads the saved state only; first match wins: an open planner conversation, a ready Apply, a parked gate, the brief, the review, else the planning session.
 
-**Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). It is the only call the reviewer makes; every other model call in this state machine, escalation included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseTokenRole()` is still `implementer` — those classifications did not move, so per-phase token attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
+**Who runs `final-review`** — the review seat, which is the `reviewer` runner from `.splitbrief/config.yaml` when one is configured and the planner's own runner when none is (`resolveReviewerRunner`, `src/core/config/accessors/reviewer-runner.ts`). The review seat makes three kinds of call: the plan call that chooses the reviewer checks before each review (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`), the verdict call, and the consult of a fix task (`consultSeat`, `src/engine/orchestrator/consult/request.ts`). Every other model call in this state machine, the consult of a plan task included, stays on the planner. The phase's `phaseRole()` is still `planner` and `phaseTokenRole()` is still `implementer` — those classifications did not move, so per-phase token attribution is unchanged. During the phase the transcript and the composer live status name the seat actually running — the reviewer's tool and model when one is configured, today's wording when none is — and the sidebar carries a reviewer row whenever one is configured. A reviewer that fails does not hand the review back to the planner — the phase records a failed review, stays in `final-review` instead of transitioning `REVIEW_DONE`, and still builds the run summary.
 
 **Planner markdown headers** — only `escalating` planner markdown gets a header (`Escalation`, `plannerPhaseHeader`). No other phase, live or replayed, gets a phase label. The planning session streams no narration of its own, because its answer is typed JSON; its question rounds and warnings show as plain rows.
 
@@ -552,9 +552,11 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
  1. splitbrief start "add email validator"
  2. CLI loads .splitbrief/config.yaml → configStore.
     A retired key (workflow.mode, an old approve value, task_review, ...) prints one notice.
- 3. CLI checks .splitbrief/active → error if present.
-    Generate session ID, create .splitbrief/sessions/<id>/, write .splitbrief/active.
- 4. routerStore → screen: workflow. useWorkflow starts.
+ 3. CLI checks .splitbrief/active → error if it names a live run;
+    a pointer whose run is no longer alive is cleared.
+    Generate session ID, create .splitbrief/sessions/<id>/, write the
+    .splitbrief/active receipt { version, sessionId, generation }.
+ 4. routerStore → screen: workflow. useRunLoop starts.
 
  5. runWorkflow() begins. initializeWorkflow emits workflow_started.
     Repo map built from codebase config.
@@ -697,7 +699,8 @@ Recovery statuses: `awaiting-user` → `applying` (via `MARK_RECOVERY_APPLYING`)
 
 13. final-review → REVIEW_DONE → complete
     The review seat returns a typed verdict and fix work; SPLITBRIEF derives pass,
-    pass-with-notes or fail. summary.json written. A passing workspace review
+    pass-with-notes or fail. summary.json is saved at the end of this run
+    pass, as at the end of every pass. A passing workspace review
     makes the run ready to apply.
     Apply or Discard closes it. An older run without a workspace closes on pass.
     The same review answer supplies the fix tasks. They are appended

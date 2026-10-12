@@ -18,6 +18,16 @@ SPLITBRIEF — an orchestrator of two coding tools: one plans and reviews, the o
   - `2`: `start` refuses an `@file` input, an empty feature description before `@file` inputs, or a feature description that starts with `@`. Guardrail hooks also use this code.
 - **Error format:** Command errors print `Error: <message>` in red on stderr. Blocked `doctor` readiness prints its report on stdout and exits `1` without a repeated error message. Use `doctor --json` to read readiness blockers programmatically.
 
+### Global options
+
+`splitbrief --help` lists these entries next to the eight commands in the [Command index](#command-index).
+
+| Option or command | Description |
+|---|---|
+| `-V, --version` | Print the version number and exit. |
+| `-h, --help` | Print help and exit. After a command name, it prints the help for that command. |
+| `help [command]` | Print the top-level help, or the help for `command`. |
+
 ## Command index
 
 | # | Command | Purpose |
@@ -257,7 +267,9 @@ splitbrief spec --allow-hooks "tighten zod schemas"
 splitbrief review [options]
 ```
 
-One reviewer call over the current diff. No session is created, no planning phase runs, and no state machine is entered: the command collects the diff, hands it to the review seat with the same review prompt a full run uses, prints the verdict and findings, and writes the review to `.splitbrief/reviews/<timestamp>/review.md`.
+One reviewer call over the current diff. The command needs no session: it creates none, runs no planning phase and enters no state machine. It collects the diff, hands it to the review seat with the same review prompt a full run uses, and writes the review to `.splitbrief/reviews/<timestamp>/review.json` and `review.md`. Then it prints the rendered review, the verdict and the findings.
+
+Without `--base`, the diff is the staged changes, the unstaged changes and the untracked files. With `--base <ref>`, it is `git diff <ref>` plus the untracked files. Untracked files under `.splitbrief/` and `.trees/` are left out.
 
 The specification line in that prompt reads `none — review for correctness, scope creep, and test coverage of the diff`, because a one-shot review has no spec and no Task Briefs to check against.
 
@@ -298,7 +310,7 @@ splitbrief review --project ../service-a
 ### Files affected
 
 - **Reads:** `.splitbrief/config.yaml`, the git diff, repo files the reviewer opens itself.
-- **Writes:** `.splitbrief/reviews/<YYYY-MM-DD-HHMMSS>/review.md`. Nothing under `.splitbrief/sessions/`, and the `.splitbrief/active` pointer is never touched.
+- **Writes:** `.splitbrief/reviews/<YYYY-MM-DD-HHMMSS>/review.json` (the verdict record) and `review.md` (the rendered review) next to it. Nothing under `.splitbrief/sessions/`, and the `.splitbrief/active` pointer is never touched.
 
 ### See also
 
@@ -310,7 +322,8 @@ splitbrief review --project ../service-a
 - The review seat resolves exactly once, through `resolveReviewerRunner`: a configured `reviewer:` block, or the planner holding the seat. `--reviewer` overrides that seat for this call only; nothing is written back to the config.
 - The reviewer runs in its tool's read-only mode (for Claude Code, `--permission-mode plan`).
 - A clean tree prints `nothing to review` and exits `0` before any runner is constructed — the command never spawns a tool with nothing to say.
-- Reviewer output streams to stdout with terminal control sequences stripped, then the verdict, findings and the review path are printed.
+- Before the call the command prints one line that names the subject and the seat: `Reviewing the working tree (reviewer: <seat>)`, or `Reviewing changes since <ref> (reviewer: <seat>)` with `--base`.
+- The reviewer's live output is not printed. After the call, the rendered review prints with terminal control sequences stripped, then the verdict, each finding by severity (`critical`, `warning`, `note`) and the path of `review.md`.
 
 ---
 
@@ -322,7 +335,7 @@ splitbrief review --project ../service-a
 splitbrief doctor [--project <dir>] [--json] [--probe-seat <plan|build|review>]
 ```
 
-Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. `doctor` is read-only: it does not create `.splitbrief/active`, session folders, worktrees, snapshots, config rewrites, planner calls, or implementer calls. It probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocess.
+Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. The readiness report is read-only. It makes no model call and writes nothing: no `.splitbrief/active`, session folders, worktrees, snapshots or config rewrites. With `--probe-seat`, `doctor` makes one paid call instead of the report; see [Seat probe](#seat-probe---probe-seat). The readiness report probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocess.
 
 ### Usage
 
@@ -336,7 +349,7 @@ splitbrief doctor [--project <dir>] [--json] [--probe-seat <plan|build|review>]
 |---|---|---|---|
 | `--project <dir>` | path | cwd | Project directory. |
 | `--json` | boolean | `false` | Emit one stable JSON readiness object to stdout for automation (`doctor --json`). |
-| `--probe-seat <seat>` | string | — | Make one paid call through the `plan`, `build` or `review` seat's CLI adapter, read its terminal result, and print `Seat probe <seat>: <class>`: `passed` for a completed call, else the failure class. CLI seats only: an `api`, `shell` or `agent` seat exits `1`. Runs only the probe: the readiness report and the preparation preflights do not run. The record is appended to `.splitbrief/probes/<tool>-<date>.jsonl`. |
+| `--probe-seat <seat>` | string | — | Make one paid call through the `plan`, `build` or `review` seat's CLI adapter instead of the readiness report. See [Seat probe](#seat-probe---probe-seat). |
 
 ### Examples
 
@@ -353,13 +366,24 @@ splitbrief doctor --probe-seat build
 
 ### Exit codes
 
-- `0` — ready or ready with warnings.
-- `1` — blocked by a hard local precondition such as no git repo, invalid config, missing config, or a live same-checkout session. With `--json`, the report is still written to stdout before exit.
+- `0` — ready or ready with warnings. With `--probe-seat`: the call ran, whatever its result, so a failed call also exits `0`.
+- `1` — blocked by a hard local precondition such as no git repo, invalid config, missing config, or a live same-checkout session. With `--json`, the report is still written to stdout before exit. With `--probe-seat`: a seat value other than `plan`, `build` or `review`, a seat that is not a `cli` runner, or an error before the call starts, such as a missing config or executable.
 
 ### Files affected
 
 - **Reads:** git status, `.splitbrief/config.yaml` when present, `.splitbrief/active` when present, `package.json` when present, and each configured CLI runner's own version, auth, and `--help` output (read-only probes of the trusted executable identity).
-- **Writes:** none.
+- **Writes:** none for the readiness report. `--probe-seat` appends one record to `.splitbrief/probes/<tool>-<date>.jsonl`.
+
+### Seat probe (`--probe-seat`)
+
+`splitbrief doctor --probe-seat <plan|build|review>` makes one paid call through that seat's CLI adapter. Use it to learn whether the seat's sign-in and quota work before a run spends a planning phase.
+
+- **What it runs:** the prompt `Reply with the word ok.`, with the seat's own tool, model, effort, variant and args. The call runs in a temporary empty git repository, in the same sandbox environment a run uses, and the repository is deleted after the call.
+- **Limits:** the call has a 60-second time limit and a 64 KiB output limit.
+- **Only the probe runs:** the readiness report and the preparation preflights do not run, so a readiness blocker does not stop the probe. `--json` has no effect on it.
+- **Output:** one line, `Seat probe <seat>: <class>`. The class is `passed` when the call completed with exit status `0`; otherwise it is the failure class, and a second line prints `First error: <line>`.
+- **Record:** the probe appends one JSON line to `.splitbrief/probes/<tool>-<date>.jsonl` (file mode `0600`). It holds the time, seat, tool, class, exit status, the time-limit and output-limit flags, and the stdout and stderr with the seat's credential values removed.
+- **Exit codes:** `0` whenever the call ran, also when it failed. `1` for a bad seat value, a seat that is not a `cli` runner (`api`, `shell` or `agent`), or an error before the call starts, such as a missing config or executable.
 
 ### JSON output (`doctor --json`)
 
@@ -831,7 +855,7 @@ There are no workflow modes. Every run plans in one session: one typed planner c
 | `kind` | What it is | Examples |
 |---|---|---|
 | `cli` | Known tool subprocess | `claude-code`, `codex`, `opencode`, `copilot`, `kilo-code`, `cursor`, `command-code`, `antigravity` (binary `agy`) |
-| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio` |
+| `api` | OpenAI-compatible HTTP endpoint | `ollama`, `lm-studio`, `llama-cpp` |
 | `shell` | Arbitrary command (stdin → stdout), no shell/network sandbox | Custom scripts via `--planner-command` / `--implementer-command` |
 | `agent` | Subprocess that writes files directly, no stdout extraction or shell/network sandbox | Custom file-writing tools |
 
@@ -842,6 +866,10 @@ Schemas and YAML shape live in [ARCHITECTURE.md](./ARCHITECTURE.md) and [CONFIGU
 ```bash
 splitbrief --help                     # top-level help
 splitbrief <command> --help           # command help (Commander-generated)
+splitbrief help <command>             # the same command help
+splitbrief --version                  # the installed version
 ```
+
+The [Global options](#global-options) table lists `-V, --version`, `-h, --help` and `help [command]`.
 
 Commander emits a usage banner, the description string, and the option table verbatim — this reference document expands the same surface with examples, exit codes, files, and behavior notes.

@@ -48,9 +48,9 @@ initStores(projectDir, opts)
 | Phase | What it does | Sync/async |
 |---|---|---|
 | `initUIChrome` | Subscribe to terminal resize | sync |
-| `loadProjectState` | `configStore.load()`, `sessionsStore.load()`, `installHistoryPersistence()` | sync |
+| `loadProjectState` | `configStore.load()`, `sessionsStore.load()`, `installHistoryPersistence()`, the saved sidebar preference | sync |
 | `ensureHooksTrusted` | reads `config.hooks` from `configStore` → prompts for hook trust before any subprocess discovery | async |
-| `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, skills + detection + catalog in parallel | async |
+| `loadDiscovery` | `detectCapabilities()` → `configStore.setContextLength()`, the remembered detection snapshot, then the model-catalog seed and the live detection refresh in the background while skill discovery is awaited | async |
 
 `detectCapabilities → setContextLength` is the canonical example of **cross-store orchestration**: reads from `configStore`, awaits a provider probe (`src/engine/providers/capabilities.ts`), writes back to `configStore`. This wiring has no natural home inside any single store — it lives in `initStores()`.
 
@@ -91,7 +91,7 @@ src/cli/bootstrap/
 └── discovery.ts     # internal — async discovery
 ```
 
-This mirrors the folder-colocation pattern documented in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation). Do not split pre-emptively — the current file is short enough that three section-like helpers keep the flow readable without folder indirection.
+This mirrors the folder-colocation pattern documented in [`STRUCTURE.md`](./STRUCTURE.md#deep-modules-and-folder-colocation). Do not split pre-emptively. `init-stores.ts` has already passed this threshold.
 
 ### 2. Do not add a bootstrap file for <20 LOC of one-shot code
 
@@ -153,12 +153,12 @@ A bootstrap step that reaches detection after shutdown cannot start a refresh la
 
 `setupWorkflow()` (in `src/cli/setup.ts`) runs **before** `initStores()`. It is prep logic:
 
-- Resolves `projectDir` from `--project` flag
+- Resolves `projectDir` from the `--project` flag through `canonicalizeProjectDir()` (a path inside a git repository resolves to the repository root)
 - Asserts the directory is a git repo (hard exit otherwise)
-- Detects TTY and `CI` env to compute `useFullscreen` / `useMouse`
-- Creates a default config if none exists
+- Detects TTY and `CI` env to compute `useFullscreen` / `useMouse` / `useHover`
+- With no config: creates a default config when CLI runner overrides were given, else returns `needsSetup: true` so the router opens the setup screen
 
-It does **not** touch stores. Stores know nothing about TTY flags or the git check result. `setupWorkflow()` returns a `SetupResult` that the subcommand handler passes to `renderApp()` and `initStores()`.
+It does **not** touch stores. Stores know nothing about TTY flags or the git check result. `setupWorkflow()` returns a `SetupResult` whose render flags the subcommand handler passes to `renderApp()`.
 
 `addWorkflowOptions` (commander flags) and `setupWorkflow` (bootstrap prep) are split into two files because they have different change rates: flags are rewritten when the commander surface changes; setup is rewritten when the bootstrap prerequisites change.
 

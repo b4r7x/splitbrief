@@ -138,7 +138,7 @@ When a function immediately fans its positional args into an options object for 
 - **No two sibling exports sharing a name with different signatures.** Two `formatContextFit` / two `buildSelectionKey` in one feature force readers to disambiguate by file — rename to distinct intent names.
 - **No misleading directory placement.** Terminal-display helpers (theme colors, glyphs) do not belong in `core/` (React-free domain) just because one feature consumes them; move to the feature.
 - **Banned type-file names:** `*-types.ts` suffix, top-level `src/types.ts`, kitchen-sink `core/types/app.ts`. See [TYPES.md §Banned file names](./TYPES.md#banned-file-names-for-types).
-- **Single-quote strings** project-wide (Biome `quoteStyle: single`); JSX attributes are double-quoted. The formatter is disabled, so quote-style and tab-vs-space drift are caught here, by review — keep new files consistent with the 2-space, single-quote norm.
+- **Single-quote strings** project-wide (Biome `quoteStyle: single`); JSX attributes are double-quoted. The Biome formatter is enabled (2-space indent), and `npm run format:check` gates it in `release-check`; run `npm run format` before you hand back.
 
 ---
 

@@ -327,7 +327,7 @@ it('start --json emits NDJSON and exits 0', async () => {
   });
 });
 ```
-The headless driver (`src/cli/headless.ts`) wires `stdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. The plan card is approved unattended; a write to a protected path has no one to confirm it headlessly, so it fails closed. No Ink mount, no TTY detection.
+The headless driver (`src/cli/headless.ts`) wires `createStdoutJsonSink` to the bus and stubs workflow host callbacks so integration tests can drive `splitbrief start --json` end-to-end and assert on the event sequence plus exit code. The plan card is approved unattended; a write to a protected path has no one to confirm it headlessly, so it fails closed. No Ink mount, no TTY detection.
 
 **UI flow — render a feature + drive engine events through stores** (`testing/helpers/ink.ts`):
 
@@ -674,7 +674,7 @@ Repeat `--scenario`, `--viewport`, or `--element` to select more than one value.
 
 The run directory is content-addressed from the normalized selection. Repeating the same command replaces that run atomically, so a failed or narrower rerun cannot leave stale success records in its manifest.
 
-**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. Nine scenarios cover the run screen when nothing is running on it, all under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`:
+**The run screen's own scenarios.** There is no summary screen, so the four `summary-*` scenarios are gone. The scenarios whose ids start with `workflow-at-rest-`, `workflow-closed-` or `workflow-replayed-` cover the run screen when nothing is running on it. `npm run tui-shots -- --list` prints them all; `testing/visual/catalog.ts` is their one source. They all run under the `workflow` screen with the standard viewport matrix and the elements `header` / `transcript` / `composer`. The table names the main ones:
 
 | Scenario | What it shows |
 |---|---|

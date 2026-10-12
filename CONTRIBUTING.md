@@ -206,3 +206,4 @@ Version lives in [`package.json`](./package.json); notable changes are recorded 
 
 - [docs/DEBUGGING.md](./docs/DEBUGGING.md) for common issues and diagnostic flags.
 - When opening an issue, include the session id and, if possible, `.splitbrief/sessions/<id>/session.jsonl`.
+- Do not open a public issue for a vulnerability. Report it privately as [SECURITY.md](./SECURITY.md) describes.

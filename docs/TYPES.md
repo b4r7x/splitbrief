@@ -47,7 +47,8 @@ For any TS-only type (not a Zod schema), the placement depends on who uses it.
 
 ```ts
 // src/core/navigation/types.ts
-export type Screen = 'home' | 'workflow' | 'setup';
+export const ALL_SCREENS = ['home', 'workflow', 'setup'] as const;
+export type Screen = (typeof ALL_SCREENS)[number];
 export type InputMode = 'normal' | 'review' | 'question';
 // ... types used only by this file live here, not in a separate *-types.ts
 ```
@@ -63,7 +64,7 @@ src/core/runtime/commands/
 ├── registry.ts         # defines available runtime commands
 ├── dispatch.ts         # runs them
 ├── lookup.ts           # exact + fuzzy lookup
-└── types.ts            # RuntimeCommandDef, RuntimeCommandContext, CommandPaletteItem
+└── types.ts            # RuntimeCommandDef, RuntimeCommandContext
                           — used by registry.ts, dispatch.ts, lookup.ts
 ```
 
@@ -98,6 +99,7 @@ The current residents (TS-only, no Zod schema):
 
 - `core/types/config-options.ts` — `WorkflowOpts`, the CLI/run option bag (many consumers under `cli/`; carve-out — no single folder owns the option contract). The detection types `DetectedModel` / `CliToolDetection` / `ProviderDetection` live in the domain module `core/discovery/detection.ts`, not here.
 - `core/types/session-ref.ts` — `SessionRef`, the `{ projectDir, sessionId }` handle threaded across `cli/` + `engine/` (carve-out — a cross-folder reference with no producer folder).
+- `core/types/user-input.ts` — `UserMessageInput` (text, display text, images and attached inputs) plus its `plainUserMessage()` constructor, the user-message shape that the CLI, the composer, the stores and the engine all pass along (cross-cutting bar).
 
 Inferred counterparts (`Config`, `Task`, `WorkflowState`, `Summary`, `TokenUsage`, etc.) live beside their Zod schema in `core/schemas/`. `z.infer` is forbidden inside `core/types/`.
 
@@ -118,8 +120,9 @@ Types should live where their domain meaning is created — not in a central `ty
 | `RunnerCallEventSchema`, `RunnerCallResultSchema` | n/a (new) | `engine/calls/schema.ts` | Source of truth for normalized runner/backend call values crossing parser, provider, persistence, replay, hooks, and explicit `InvokeResult` projections |
 | `RunnerRuntime`, `ToolUseInfo`, `ParsedLine`, `InvokeResult` | `core/types/runner.ts` | `engine/runners/types.ts` | Created by the runner factory — runner-domain |
 | `SkillMeta` | `core/types/app.ts` | `core/skills/types.ts` | Produced by `engine/skill-discovery.ts`, consumed by stores/features without importing `engine/` |
-| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime value `ALL_SCREENS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
-| `RuntimeCommandDef`, `RuntimeCommandContext`, `CommandPaletteItem` | `core/types/app.ts` | `core/runtime/commands/types.ts` | Multiple files in one folder |
+| `Screen`, `InputMode`, `OverlayType` | `core/types/app.ts` | `core/navigation/types.ts` | Cross-cutting: many consumers across `app/` + `components/` + `core/` + `features/` + `stores/`. Also exports the runtime values `ALL_SCREENS` and `ACTIVE_OVERLAYS` (tolerated under Case B — a folder `types.ts` co-located with the screaming type) |
+| `RuntimeCommandDef`, `RuntimeCommandContext` | `core/types/app.ts` | `core/runtime/commands/types.ts` | Multiple files in one folder |
+| `PaletteCommandItem` (formerly `CommandPaletteItem`) | `core/types/app.ts` | `features/palette/results.ts` | Produced and ranked by the palette feature |
 
 **Banned anti-patterns:**
 
@@ -139,10 +142,10 @@ Types should live where their domain meaning is created — not in a central `ty
 
 ## Schemas — `src/core/schemas/`
 
-`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schema, policy, and fact helpers together. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
+`core/schemas/` is the home for **cross-cutting** boundary shapes — the validators that many folders consume (`Config`, `Task`, `Session`, `WorkflowState`, and friends). Its root is intentionally mostly flat because the folder is itself cohesive: "runtime data shapes." The sole current folder exception is `src/core/schemas/recovery/`, which keeps the coupled recovery schemas and fact helpers together. The recovery action policy (`allowedActionsForHalt`, `haltOf`) lives in `src/core/recovery/halt.ts`. A narrowly-scoped schema used by exactly one folder may instead colocate with that folder (e.g. `core/config/runtime/overrides/schema.ts`) rather than being hoisted here.
 
 ```
-src/core/schemas/          # ~30 flat leaves plus the intentional recovery/ exception
+src/core/schemas/          # flat leaves plus the intentional recovery/ exception
 ├── config.ts              # ConfigSchema + Config type
 ├── enums.ts               # Phase, ApproveLevel, recovery enums; WorkflowMode (older runs only)
 ├── implementer-config.ts
@@ -158,7 +161,6 @@ src/core/schemas/          # ~30 flat leaves plus the intentional recovery/ exce
 ├── models-dev.ts          # models.dev catalog — remote JSON boundary
 ├── recovery/              # recovery's cohesive multi-module boundary; no recovery.ts facade
 │   ├── facts.ts           # RecoveryFact accessors
-│   ├── policy.ts          # legal recovery actions and selection checks
 │   └── schemas.ts         # recovery Zod schemas + inferred types
 └── …                      # plan, drift, evidence, snapshot, hooks, … (flat leaves)
 ```
@@ -181,9 +183,9 @@ export type Task = z.infer<typeof TaskSchema>;
 
 Consumers import whichever they need (or both). They do **not** import `Task` from one place and `TaskSchema` from another.
 
-**Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `StateAction`, `ProjectContext`, `WorkflowOpts`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
+**Enforcement — `core/types/` MUST NOT contain `z.infer`.** Inferred types live next to their schema in `core/schemas/`. `core/types/` is only for TS-only types with no runtime schema backing (e.g., `WorkflowOpts`, `SessionRef`, `UserMessageInput`). Anything derived from a Zod schema via `z.infer<>` belongs in the schema file.
 
-**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating them — every consumer of one schema tends to consume others. `src/core/schemas/recovery/` is the intentional exception because its schema, action policy, and fact helpers form one coupled recovery boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
+**Why the root is mostly flat**: schemas are a cohesive cross-cutting concern. Grouping unrelated domains further (e.g., `schemas/config/` vs `schemas/workflow/`) adds depth without separating them — every consumer of one schema tends to consume others. `src/core/schemas/recovery/` is the intentional exception because its schemas and fact helpers form one coupled recovery boundary. Keep other schema leaves flat unless they earn the same cohesive boundary.
 
 ---
 
@@ -212,8 +214,8 @@ This matters in this project because:
 
 Example from this codebase:
 ```ts
-// features/workflow/components/event-cards/operation-status.tsx renders operation state derived from engine events
-import type { EngineEvent } from '../../../../engine/events/types.js';
+// features/workflow/components/rail.tsx summarizes the header rail from engine events
+import type { EngineEvent } from '../../../engine/events/types.js';
 ```
 
 This UI import is allowed because:

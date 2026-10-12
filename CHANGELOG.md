@@ -37,6 +37,7 @@
 - **`@file` inputs may name a file anywhere:** an absolute path, a path relative to the project, or `~/…`. A missing, oversized or unreadable input stops `start` with one error that names every refused input and its fix.
 - **Stack detection** for TypeScript, JavaScript, Python, Go and Rust. `validation.stack` pins a stack.
 - **Typed seat answers.** Plans, reviews, consults and implementer reports are JSON answers that SPLITBRIEF validates, through each tool's native schema flag where it has one.
+- **Private vulnerability reports.** The security policy describes how to report a vulnerability privately through GitHub.
 
 ### Changed
 
@@ -126,6 +127,11 @@
 - The slash-completion menu reads as one table, and a recovery menu row keeps its words whole on a narrow panel.
 - File snapshots are flushed to disk before they replace the old file, and worktree removal checks that the path is the run's own.
 - `--plain` no longer prints a `phase:` line for each streamed chunk of the final review, and review usage is counted on the reviewer.
+- The guides now state the configuration that takes effect: `temperature` is accepted but not sent to the server, a `shell` or `agent` runner cannot declare session resume, and the loader fills the stated defaults.
+- The guides list all eight supported CLI tools, Antigravity included, and the llama.cpp endpoint default `http://localhost:8080/v1`.
+- The guides state which seats take images: Cursor, Command Code and Antigravity take none.
+- The guides describe the second `ctrl+c` press that quits within two seconds, exact slash-command names, and help that shows only the commands available on the current screen.
+- The guides state that `splitbrief doctor --probe-seat` makes one paid call and records its result, and that `splitbrief review` needs no run.
 
 ## [0.1.0] - 2026-08-07
 
