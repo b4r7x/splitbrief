@@ -1285,7 +1285,7 @@ const CLOSED_ENDED_REVIEW = record({
   },
 });
 
-/** The S9 run's close: a worktree run ended on its failed-review halt, the result in run.patch. */
+/** A real run's close: a worktree run ended on its failed-review halt, the result in run.patch. */
 const ENDED_REVIEW_WORKSPACE_SESSION = 'visual-ended-review-workspace';
 const CLOSED_ENDED_REVIEW_WORKSPACE = record({
   sessionId: ENDED_REVIEW_WORKSPACE_SESSION,

@@ -198,7 +198,7 @@ describe('fullSuiteRow', () => {
     ).toBe(`Pre-review suite · ${stage === 'lint' ? 'npm run lint' : 'npm test'} · not\u00a0run`);
   });
 
-  // S8 run 18:06–18:58: the transcript read `Suite test (npm test) running` beside a block and a
+  // In a real run, the transcript read `Suite test (npm test) running` beside a block and a
   // byline that name the suite by its moment.
   it('names the suite stage the way the build block and the byline do', () => {
     const suite = {

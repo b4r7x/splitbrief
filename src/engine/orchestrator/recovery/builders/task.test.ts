@@ -918,7 +918,7 @@ describe('buildCheckoutChangedRecoveryIssue', () => {
     expectValidRecoveryIssue(issue);
   });
 
-  // S11 run 2, 07:54: another session created a worktree on a new branch during T004's call. The
+  // In a real run, another session created a worktree on a new branch during T004's call. The
   // checkout's HEAD, branch and files stayed as they were, and final-group.ts is only T004's file.
   it('names the branch another session created, not the brief file, in its headline', () => {
     const issue = buildCheckoutChangedRecoveryIssue({

@@ -141,20 +141,20 @@ Labels are opinions, not contracts. Contributors can argue for re-labeling via P
 
 ## **[Won't]** Confinement for checks and seats, and per-action approval
 
-Owner decision, 2026-10-09. Today a check runs the project's own code with your user's permissions in the run workspace. SPLITBRIEF isolates its working directory, its environment (secrets dropped), its time, its output and its process group, but not the file system, the network or other processes ([CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach)). The `claude-code` implementer runs its shell in Claude Code's own sandbox and stops when that sandbox cannot start. The other seats are as [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth) says.
+Today a check runs the project's own code with your user's permissions in the run workspace. SPLITBRIEF isolates its working directory, its environment (secrets dropped), its time, its output and its process group, but not the file system, the network or other processes ([CONFIGURATION.md §What a check can reach](./CONFIGURATION.md#what-a-check-can-reach)). The `claude-code` implementer runs its shell in Claude Code's own sandbox and stops when that sandbox cannot start. The other seats are as [PLANNERS-AND-IMPLEMENTERS.md §Posture, trust, and auth](./PLANNERS-AND-IMPLEMENTERS.md#posture-trust-and-auth) says.
 
 **Why we want it.** A reviewer check, a base re-run or a fix check runs test files and scripts the implementer wrote. Only an OS boundary stops such code from reading `~/.ssh` or calling the network.
 
 **What it would look like.** These items are out of scope for now:
 
-- An OS sandbox or confinement for checks or seats (research report R3, B-1 and B-2): for example bubblewrap or Seatbelt around each check, or a container per run.
-- A network proxy that limits what checks and seats can reach (R3, B-3).
-- `workflow.approve: each` or `yolo` (R3, A-1): an approval for each brief, or none at all.
+- An OS sandbox or confinement for checks or seats: for example bubblewrap or Seatbelt around each check, or a container per run.
+- A network proxy that limits what checks and seats can reach.
+- `workflow.approve: each` or `yolo`: an approval for each brief, or none at all.
 - Per-action approval inside a seat: the Agent Client Protocol (ACP), a bridge to Claude Code's permission prompts, or the Codex app-server.
 
 **Why deferred.** The minimal leak fixes shipped first: a sanitized environment for every command SPLITBRIEF runs itself, `sandbox.failIfUnavailable: true` for the `claude-code` implementer, and `validation.approve_checks: ask`. A sandbox for checks must keep every language's toolchain, cache and registry working; that needs its own design and measurements on macOS and Linux.
 
-Decided 2026-10-09: checks inherit defined environment variables and drop credential names, selectors and helpers. No pass-through option is needed.
+Checks inherit defined environment variables and drop credential names, selectors and helpers. No pass-through option is needed.
 
 The changed-definition refusal compares these definitions with the run base: the scripts in every `package.json`, the `scripts` and `scripts-aliases` of `composer.json`, `Makefile`, `justfile`, `Rakefile` and `rakelib`, the Gradle and Maven wrappers, and interpreter scripts. SPLITBRIEF does not compare build manifests (`pom.xml`, `build.gradle`, `composer.json` as a dependency manifest, `Gemfile`, `mix.exs`, `build.rs`). A dependency change edits these files, and a refusal would block the check that verifies it. The refusal guards against a swapped check definition. It does not establish trusted execution.
 

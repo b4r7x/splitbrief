@@ -2432,7 +2432,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Review stage, render scenario and clock' },
       ],
     }),
-    // S8 run 18:06–18:58: the ten-minute pre-review `npm test` read `Implementing… 10:02`.
+    // In a real run, the ten-minute pre-review `npm test` read `Implementing… 10:02`.
     defineScenario({
       id: 'workflow-review-check-running',
       title: 'Workflow · a reviewer check ten minutes in',

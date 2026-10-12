@@ -647,13 +647,13 @@ describe('isolation boundary in the checkout itself (workflow.isolation: none)',
   });
 });
 
-// S11 run 3, T003: DeepSeek mistyped the worktree's date and read a sibling of the worktree. The
-// warning read `Task T003 read ~/.local/state/splitbrief/trees/d4e807f3ded0/2026-07-s11-…/src/core/
+// In a real run, T003's seat mistyped the worktree's date and read a sibling of the worktree. The
+// warning read `Task T003 read ~/.local/state/splitbrief/trees/d4e807f3ded0/2026-07-…/src/core/
 // schemas/runner-fields.ts with read`, as if a read of the brief's own file had gone through.
 describe('the warning a read outside the workspace raises', () => {
   const TREES = '/Users/dev/.local/state/splitbrief/trees/d4e807f3ded0';
   const boundary = createIsolationBoundary({
-    isolationDir: `${TREES}/2026-10-07-s11-seat-down-seat-switching-declared-fallback-3`,
+    isolationDir: `${TREES}/2026-10-07-seat-fallback`,
     checkoutDir: '/Users/dev/Projects/splitbrief',
     env: { HOME: '/Users/dev', PATH: ENV_PATH },
     tool: 'opencode',
@@ -661,11 +661,11 @@ describe('the warning a read outside the workspace raises', () => {
 
   it('says the path is outside the workspace and spells a sibling of it from the workspace', () => {
     const { guard, reads } = loggingGuard(boundary);
-    const mistyped = `${TREES}/2026-07-s11-seat-down-seat-switching-declared-fallback-3/src/core/schemas/runner-fields.ts`;
+    const mistyped = `${TREES}/2026-07-seat-fallback/src/core/schemas/runner-fields.ts`;
 
     expect(guard({ name: 'read', input: { filePath: mistyped } })).toBeNull();
     expect(reads).toEqual([
-      'read ../2026-07-s11-seat-down-seat-switching-declared-fallback-3/src/core/schemas/runner-fields.ts (outside the workspace) with read',
+      'read ../2026-07-seat-fallback/src/core/schemas/runner-fields.ts (outside the workspace) with read',
     ]);
   });
 

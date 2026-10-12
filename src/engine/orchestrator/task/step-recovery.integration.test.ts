@@ -313,7 +313,7 @@ const CODEX_BURNED_REFRESH =
   'Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.';
 
 // A Biome run whose output opens with a config notice before the brief's own diagnostic,
-// the shape the S11 run's consult-bound panel truncated (babysit #54).
+// the shape a real run's consult-bound panel truncated.
 const BIOME_NOTICE_THEN_FORMAT = [
   'biome.json:38:13 deserialize  DEPRECATED  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
   '',
@@ -472,7 +472,7 @@ describe('runSingleTask — a layout-only lint failure', () => {
       ],
     });
     // Attempt 1 writes an unformatted test and leaves a type error in src/b.ts; the
-    // local retry fixes src/b.ts only, as T008's attempts 8 to 10 did in the S11 run.
+    // local retry fixes src/b.ts only, as T008's attempts 8 to 10 did in a real run.
     const implementer = makeImplementer({
       implement: vi.fn().mockImplementation(async ({ projectDir: runDir }: ImplementerOptions) => {
         writeFileSync(join(runDir, 'src/a.ts'), 'export const a = 1;\n');

@@ -302,7 +302,7 @@ describe('planner text rows', () => {
     });
   });
 
-  // S11 run 2, 08:49: T005 fenced its report, and a bare ```json row stood above `Report  done`.
+  // In a real run, T005 fenced its report, and a bare ```json row stood above `Report  done`.
   it.each([
     ['```json', '```'],
     ['````json', '````'],

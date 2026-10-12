@@ -2,7 +2,7 @@
 
 This runbook deploys the SPLITBRIEF website to production at
 `https://splitbrief.b4r7.dev`. The website is a static Vite build. Only the
-owner runs the deploy.
+maintainer runs the deploy.
 
 ## What is deployed and how
 
@@ -49,7 +49,7 @@ and names no domain.
 - Firewall: allow `80/tcp` and `443/tcp` from the internet. Keep SSH for
   management only. Do not publish container port 8080 on the host.
 
-## Owner setup, in order
+## Maintainer setup, in order
 
 1. **GitHub environment.** Create the environment `production` in the
    repository settings. Add yourself as a required reviewer.
@@ -219,7 +219,7 @@ curl -s $O/build-id                                                            #
 
 ## Search engines
 
-The owner does these steps once, after the first deploy:
+The maintainer does these steps once, after the first deploy:
 
 1. Verify the domain in Google Search Console. Use the DNS TXT method, so no
    verification file goes into the image.

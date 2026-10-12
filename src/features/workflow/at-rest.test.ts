@@ -167,7 +167,7 @@ describe('atRestRailStages on a run with a workspace', () => {
     ]);
   });
 
-  // S9 run, 01:11: End run on the failed-review halt read `● Plan → ● Build → ● Review → ○ Apply`.
+  // In a real run, End run on the failed-review halt read `● Plan → ● Build → ● Review → ○ Apply`.
   it('stops an ended run on the review that failed, with no Apply stage', () => {
     const stages = atRestRailStages(
       makeRunRecord({

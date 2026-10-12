@@ -4,9 +4,9 @@ The built CLI runs on its own repository. A stronger tool plans and reviews, a w
 
 Four rules, in force for every dogfooding run:
 
-1. **Never commit or stage.** The operator leaves every change in the working tree; the owner commits between runs.
+1. **Never commit or stage.** The operator leaves every change in the working tree; the maintainer commits between runs.
 2. **Run the build you just made.** `npm run build` then `node dist/cli.js …`. The global `splitbrief` on PATH is whatever was installed last and is usually stale.
-3. **A tool defect that blocks the run ends the run.** Choose End run, so the run closes and keeps every file it wrote and its ledger. Then fix the cause in the checkout, verify it with the gates, rebuild, let the owner commit, and start a **new** run. Nobody edits the checkout and nobody rebuilds while a run lives: `npm run build` deletes `dist/` under the running CLI. A cosmetic defect goes to the debt list (a `Debt` section in `babysit.md`) and the run goes on. A weak seat output is corrected in the composer, not in code. A brief or model mistake handled correctly by the tool remains the run's business.
+3. **A tool defect that blocks the run ends the run.** Choose End run, so the run closes and keeps every file it wrote and its ledger. Then fix the cause in the checkout, verify it with the gates, rebuild, let the maintainer commit, and start a **new** run. Nobody edits the checkout and nobody rebuilds while a run lives: `npm run build` deletes `dist/` under the running CLI. A cosmetic defect goes to the debt list (a `Debt` section in `babysit.md`) and the run goes on. A weak seat output is corrected in the composer, not in code. A brief or model mistake handled correctly by the tool remains the run's business.
 4. **Every run leaves a record.** Append each defect, repair, and verification result to `.splitbrief/sessions/<id>/babysit.md`. The next supervisor reads that record first.
 
 ## 1. Preflight
@@ -67,7 +67,7 @@ tmux set-option -t sb window-size manual
 
 Redirecting stderr matters: the TUI runs on the alternate screen, and a fatal error printed there is gone once the screen restores.
 
-The owner watches live with `tmux attach -r -t sb`. A read-only attach never resizes the window; `window-size manual` keeps 140x45 when the owner attaches without `-r`. Read-only attach cannot scroll, because the TUI runs on the alternate screen. To scroll, the owner attaches without `-r` and uses the TUI's own keys (`shift+↑↓`, `pgup`/`pgdn`), only when the operator agrees, because a writable client sends keys to the run. Otherwise the owner reads `babysit.md`.
+The maintainer watches live with `tmux attach -r -t sb`. A read-only attach never resizes the window; `window-size manual` keeps 140x45 when the maintainer attaches without `-r`. Read-only attach cannot scroll, because the TUI runs on the alternate screen. To scroll, the maintainer attaches without `-r` and uses the TUI's own keys (`shift+↑↓`, `pgup`/`pgdn`), only when the operator agrees, because a writable client sends keys to the run. Otherwise the maintainer reads `babysit.md`.
 
 | Moment | Read first | Then |
 |---|---|---|
@@ -108,7 +108,7 @@ An uncertain cause needs a resumable stop for diagnosis, without code edits. Exp
 # 1. end the run: esc, then End run (or /end); a run parked on a recovery: $SB continue $ID --action end-run
 # 2. confirm cleanup and process exit; record the defect in babysit.md
 # 3. fix the cause in the checkout; run regression tests, affected suites and typecheck; npm run release-check
-# 4. rebuild; the owner commits
+# 4. rebuild; the maintainer commits
 npm run build
 # 5. start a new run on the new build
 $SB start "<one sentence>" @<task file>
@@ -132,7 +132,7 @@ What `continue` does with the saved state (`src/engine/orchestrator/run/init.ts`
 | Crashed mid-brief (no `interruptedStep`) | the brief restarts at attempt 0; its declared files in the run workspace are restored from its task-start snapshot |
 | On a recovery | nothing runs until `--action` or the panel answers it |
 
-Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the owner's commit and a rebuild.
+Orphaned runner processes from a crash are reaped at the next start (`runner-pids.jsonl`). The code the run builds stays in its run workspace until Apply, and never reaches the running orchestrator: a fix the run built for its own benefit takes effect in the next run, after Apply, the maintainer's commit and a rebuild.
 
 When the planner's output was lost by the tool, there is no artifact to rebuild by hand: the planning session is one typed call loop. Retry the planning step (`continue --action retry` on its halt); a loss that repeats is a tool defect that blocks the run (§6).
 
@@ -144,7 +144,7 @@ From the shell, `continue --implementer <tool> --implementer-model <id>` or `--p
 
 ## 6. Deterministic failures and blocked repairs
 
-A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect that blocks the run. End the run when it is detected, diagnose the cause, fix it, and start a new run (§4). Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run parked and edit nothing. Report the concrete blocker and the saved run ID. Record the options in the defect record and ask the owner. Do not invent the decision. The code change that the decision brings follows the §4 path.
+A deterministic failure caused by a tool prompt, adapter flag, gate, or default is a tool defect that blocks the run. End the run when it is detected, diagnose the cause, fix it, and start a new run (§4). Do not let the run finish through repeated identical failures. If a repair needs an unauthorized product decision or unavailable credentials, keep the run parked and edit nothing. Report the concrete blocker and the saved run ID. Record the options in the defect record and ask the maintainer. Do not invent the decision. The code change that the decision brings follows the §4 path.
 
 ## 7. Smoke test: stop, continue, finish
 
@@ -173,9 +173,9 @@ A second case sends `SIGKILL` to the group instead of `SIGINT`: the CLI reports 
 
 ## 8. The `splitbrief-babysit` skill
 
-`skills/splitbrief-babysit/` packages this procedure as an agent skill. It is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the owner `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
+`skills/splitbrief-babysit/` packages this procedure as an agent skill. It is self-contained when copied or installed alone. It needs no other skill, private `.nuke/` files, `jq`, or fixed agent model. It uses the repository's Node.js runtime. When tmux is on PATH, it always launches the run in a named tmux session and gives the maintainer `tmux attach -r -t <session>` to watch it live; without tmux, it uses the host's interactive terminal. The configured coding tools remain prerequisites for the CLI run.
 
-The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. A tool defect that blocks the run, including a false tripwire alarm, ends the run: End run, fix, verify with the gates, rebuild, let the owner commit, then start a new run. A cosmetic defect goes to the debt list and the run goes on. A weak seat output is corrected in the composer, not in code. Model mistakes and correctly reported provider limits retain normal CLI recovery.
+The bundled `scripts/watch-run.mjs` polls the session log once per second and preserves its byte cursor between calls. Errors, failed validation, retries, warnings, and recovery events wake the supervisor. The supervisor stops the run; the watcher does not enforce an engine-level barrier. A tool defect that blocks the run, including a false tripwire alarm, ends the run: End run, fix, verify with the gates, rebuild, let the maintainer commit, then start a new run. A cosmetic defect goes to the debt list and the run goes on. A weak seat output is corrected in the composer, not in code. Model mistakes and correctly reported provider limits retain normal CLI recovery.
 
 The watcher source follows the existing script library convention in `skills/splitbrief-run/scripts/`; `skills:sync` copies it into the installed babysit skill. No source-library path is needed at runtime. The four pipeline skills still use generated contract blocks; the babysit procedure is handwritten and its frontmatter and script mirror are checked by `skills:check`.
 

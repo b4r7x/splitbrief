@@ -197,7 +197,7 @@ describe('independent closed attribution proof', () => {
     expect(result?.briefs.earlierRows).toEqual([]);
   });
 
-  // S9 run: 12 briefs passed and each one also read under `Earlier work ─`.
+  // In a real run, 12 briefs passed and each one also read under `Earlier work ─`.
   it('joins each passed brief to its current row after the run wrote check results onto the plan', async () => {
     const wctx = makeTaskWorkflowContext();
     try {

@@ -80,7 +80,7 @@ Prior pass — 2.4.0 → 2.5.0 (MINOR: V and VI change mechanism, not
   final review. Same precedent as 2.4.0)
 - Modified principles (2.5.0):
   - V. Validate Before Checkpoint (worktree and staged-copy runs validate
-    in the run workspace; a passed final review or owner-accepted
+    in the run workspace; a passed final review or user-accepted
     override makes the run ready to apply; Apply confirms open findings
     for an override and preserves failed and unverified verdicts; Apply,
     Discard or ending the run close it; unapplied work is written to a
@@ -197,7 +197,7 @@ Prior pass — 1.3.3 → 2.0.0 (MAJOR: I, III and VI redefined):
     implementer self-verification is a bonus, not a requirement. Final review
     attributed to the planner, not to Opus specifically. The stop rule is
     qualified to the first failure *attributable to the task*, matching the
-    owner-accepted glossary amendment and the baseline-relative pipeline in
+    maintainer-accepted glossary amendment and the baseline-relative pipeline in
     `src/engine/orchestrator/validation/run.ts`: a stage already red at the
     run's baseline continues instead of stopping, so the stages behind it
     still get a verdict)
@@ -375,7 +375,7 @@ A formatter failure MUST record a warning and MUST NOT reject the brief.
 
 Product-level git commit strategies are optional run-safety and review
 features. Agents working in this repository MUST NOT stage or commit;
-the owner reviews and commits manually.
+the maintainer reviews and commits manually.
 
 After all tasks complete, a final review MUST compare the full diff
 against the original specification before the workflow is marked
@@ -386,11 +386,11 @@ A run is a durable, continuable record until the user closes it. Stopping
 one — a park, a gate, a halt, an error, or a killed process — MUST NOT
 discard it: the run keeps its place and picks up at the first step it has
 not finished. In worktree and staged-copy runs, an assessed result is one
-whose final review passed or whose open review findings the owner
+whose final review passed or whose open review findings the user
 accepted as an override with "Accept as is". An assessed result makes
 the run ready to apply. The override MUST preserve failed and unverified
 verdicts and MUST NOT claim that verification passed. Apply MUST list
-the open findings and require the owner's confirmation before writing
+the open findings and require the user's confirmation before writing
 an override. Three things close the run: Apply, which writes the assessed
 result to the user's real project directory once; Discard; and the user
 explicitly ending it with `CLOSE_RUN`. Before Apply writes, it merges

@@ -113,7 +113,7 @@ Text a user can read must not show how SPLITBRIEF is built. This covers the ship
 Never write these there:
 
 - **Admissions.** Do not say that something is untested, unverified, not verified live, not captured live or not checked on a platform, and do not list such tools or "known gaps". State what is supported. Say "not supported" only where the user needs it to act.
-- **Internal process.** No "owner" or "owner decision", no agent or model names used to build the project (Sol, Astra, Opus, codex lanes), no workflows, lanes, smoke runs, review verdicts or handoffs, no dates of internal passes, no `.nuke/` paths, and no finding, task, issue or lane ids (`N-7`, `DOC-2`, `REL-04`, `S11`, `T-080`, `#67`).
+- **Internal process.** No notes about how the project is built: no review rounds, verdicts or handoffs, no agent or model names used to build it, no work lanes or internal decisions, and no dates of internal passes. No finding, task or issue ids (`N-7`, `DOC-2`, `REL-04`, `S11`, `T-080`, `#67`) and no private paths.
 - **Implementation detail in the changelog.** No function names, file paths, gate numbers, internal types or state-machine events. Write what the user gets or what changed for the user, grouped as Added, Changed, Fixed and Removed.
 - **Unfinished or apologetic words.** No "for now", "hack", "TODO", "temporary", "we hope" or "should work".
 
