@@ -10,12 +10,8 @@ import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { reapOrphanRunners } from '../../../src/engine/orchestrator/run/orphan-reaper.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
-import { catalogTool } from './live-harness.js';
-import {
-  type FixtureRow,
-  type FixtureRowSeats,
-  resolveFixtureRowSeats,
-} from '../live/fixture-rows.js';
+import { catalogTool, type LiveCrew } from './live-harness.js';
+import { type FixtureRow, resolveFixtureRowSeats } from '../live/fixture-rows.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 
@@ -35,22 +31,13 @@ export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> 
   if (process.env.SPLITBRIEF_REAL_CLI_E2E !== '1') {
     throw new Error('Live fixture row invoked without SPLITBRIEF_REAL_CLI_E2E=1.');
   }
-  const seats = resolveFixtureRowSeats(row);
   const { tmpDir, projectDir } = copyScenarioFixture(addEndpointScenario, 'baseline');
-  // No trailing slash: `copyScenarioFixture` links node_modules, and git reads a
-  // symlink as a file, which a directory-only pattern never matches.
-  createTestGitRepo(projectDir, {
-    '.gitignore': 'node_modules\n',
-    ...collectRepoFiles(projectDir),
+  const { stateHome } = seedLiveProject({
+    tmpDir,
+    projectDir,
+    files: collectRepoFiles(projectDir),
+    crew: resolveFixtureRowSeats(row),
   });
-  mkdirSync(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
-  writeFileSync(
-    join(projectDir, SPLITBRIEF_DIR, 'config.yaml'),
-    YAML.stringify(fixtureConfig(seats)),
-    'utf-8',
-  );
-  const stateHome = join(tmpDir, 'state');
-  mkdirSync(stateHome, { recursive: true });
 
   const startedAt = Date.now();
   const outcome = await spawnCli({
@@ -79,16 +66,37 @@ export async function runFixtureRow(row: FixtureRow): Promise<FixtureRunResult> 
   };
 }
 
-function fixtureConfig(seats: FixtureRowSeats): Config {
-  return makeConfig({
-    planner: { kind: 'cli', tool: catalogTool(seats.plan.tool), model: seats.plan.model },
-    implementer: { kind: 'cli', tool: catalogTool(seats.build.tool), model: seats.build.model },
-    reviewer: { kind: 'cli', tool: catalogTool(seats.review.tool), model: seats.review.model },
+/**
+ * Commits `files` with a `.gitignore` for node_modules, writes the crew's `npm test` config, and
+ * makes the CLI's state home under `tmpDir`.
+ */
+export function seedLiveProject(opts: {
+  tmpDir: string;
+  projectDir: string;
+  files: Readonly<Record<string, string>>;
+  crew: LiveCrew;
+  workflow?: Partial<Config['workflow']> | undefined;
+}): { stateHome: string; config: Config } {
+  const { crew } = opts;
+  // No trailing slash: `copyScenarioFixture` links node_modules, and git reads a
+  // symlink as a file, which a directory-only pattern never matches.
+  createTestGitRepo(opts.projectDir, { '.gitignore': 'node_modules\n', ...opts.files });
+  const config = makeConfig({
+    planner: { kind: 'cli', tool: catalogTool(crew.plan.tool), model: crew.plan.model },
+    implementer: { kind: 'cli', tool: catalogTool(crew.build.tool), model: crew.build.model },
+    reviewer: { kind: 'cli', tool: catalogTool(crew.review.tool), model: crew.review.model },
     validation: { endChecks: true, testCommand: 'npm test' },
-    workflow: {
-      approve: 'none',
-    },
+    workflow: { approve: 'none', ...opts.workflow },
   });
+  mkdirSync(join(opts.projectDir, SPLITBRIEF_DIR), { recursive: true });
+  writeFileSync(
+    join(opts.projectDir, SPLITBRIEF_DIR, 'config.yaml'),
+    YAML.stringify(config),
+    'utf-8',
+  );
+  const stateHome = join(opts.tmpDir, 'state');
+  mkdirSync(stateHome, { recursive: true });
+  return { stateHome, config };
 }
 
 function collectRepoFiles(root: string, prefix = ''): Record<string, string> {
@@ -108,7 +116,7 @@ export function spawnCli(opts: {
   timeoutMs: number;
   /**
    * The fixture project whose runner-pid ledger belongs to this CLI. A deadline
-   * kill takes down the CLI's group only; runner tools start in groups of their
+   * or abort kill takes down the CLI's group only; runner tools start in groups of their
    * own that the process watchdog ends only later, so once the CLI has closed
    * its ledger is reaped before the run settles.
    */
@@ -119,6 +127,8 @@ export function spawnCli(opts: {
    * that is still going.
    */
   onSpawn?: ((pid: number | undefined) => void) | undefined;
+  /** Kills the CLI's group like the deadline does. */
+  signal?: AbortSignal | undefined;
 }): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
   return new Promise((settle) => {
     const child = spawn(process.execPath, [...opts.args], {
@@ -140,15 +150,18 @@ export function spawnCli(opts: {
     child.stderr.on('data', (chunk: string) => {
       stderr += chunk;
     });
-    let deadlineFired = false;
-    const deadline = setTimeout(() => {
-      deadlineFired = true;
+    let killed = false;
+    const kill = () => {
+      killed = true;
       killTree(child.pid);
-    }, opts.timeoutMs);
+    };
+    const deadline = setTimeout(kill, opts.timeoutMs);
+    opts.signal?.addEventListener('abort', kill, { once: true });
     child.on('close', (code) => {
       clearTimeout(deadline);
+      opts.signal?.removeEventListener('abort', kill);
       const outcome = { exitCode: code, stdout, stderr };
-      const reapProjectDir = deadlineFired ? opts.reapProjectDir : undefined;
+      const reapProjectDir = killed ? opts.reapProjectDir : undefined;
       if (reapProjectDir === undefined) {
         settle(outcome);
         return;
@@ -173,7 +186,7 @@ function killTree(pid: number | undefined): void {
 }
 
 /** A completed run clears `.splitbrief/active`, so the newest session dir is the fallback. */
-function resolveSessionDir(projectDir: string): string {
+export function resolveSessionDir(projectDir: string): string {
   const active = readActive(projectDir);
   if (active !== null) return sessionDir(projectDir, active);
   const root = sessionsRoot(projectDir);

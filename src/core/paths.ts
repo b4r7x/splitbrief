@@ -78,6 +78,8 @@ export const STATE_FILE = 'state.json';
 export const SEATS_FILE = 'seats.json';
 export const SUMMARY_FILE = 'summary.json';
 export const SESSION_LOG_FILE = 'session.jsonl';
+/** The run's workspace diff against its base; Show diff and a close without Apply write it. */
+export const RUN_PATCH_FILE = 'run.patch';
 export const CONFIG_FILE = 'config.yaml';
 export const CLARIFICATIONS_FILE = 'clarifications.md';
 export const CONSTITUTION_CHECK_FILE = 'constitution-check.json';

@@ -1,7 +1,8 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { rejectSymlinkTarget, writeSecureFile } from '../../lib/fs.js';
+import { isENOENT } from '../../lib/process/errors.js';
 import { warnStderr } from '../../lib/warn.js';
 import { sessionDir } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
@@ -21,7 +22,6 @@ function runnerPidsPath(ref: SessionRef): string {
 
 export function readRunnerPids(ref: SessionRef): RunnerPidEntry[] {
   const filePath = runnerPidsPath(ref);
-  if (!existsSync(filePath)) return [];
   try {
     rejectSymlinkTarget(filePath);
   } catch {
@@ -29,8 +29,16 @@ export function readRunnerPids(ref: SessionRef): RunnerPidEntry[] {
     return [];
   }
 
+  let text: string;
+  try {
+    text = readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    // The last release removes the ledger, also while another process reads it.
+    if (isENOENT(err)) return [];
+    throw err;
+  }
   const entries: RunnerPidEntry[] = [];
-  for (const line of readFileSync(filePath, 'utf-8').split('\n')) {
+  for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     try {
       const result = RunnerPidEntrySchema.safeParse(JSON.parse(line));

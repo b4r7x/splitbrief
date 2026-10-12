@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -11,10 +11,16 @@ import {
   readRunnerPids,
 } from './runner-pids.js';
 
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>();
+  return { ...fs, existsSync: vi.fn(fs.existsSync) };
+});
+
 let tmp: string;
 const itUnix = process.platform === 'win32' ? it.skip : it;
 
 afterEach(() => {
+  vi.mocked(existsSync).mockReset();
   if (tmp) cleanupTempDir(tmp);
 });
 
@@ -36,6 +42,14 @@ describe('runner pid ledger', () => {
     expect(readRunnerPids(ref)).toEqual([{ pid: 222, startTimeMs: 2000 }]);
 
     releaseRunnerPids(ref, [{ pid: 222, startTimeMs: 2000 }]);
+    expect(readRunnerPids(ref)).toEqual([]);
+  });
+
+  it('reads an empty ledger when the last release removes the file while it reads', () => {
+    tmp = createTempDir('runner-pids-test');
+    const ref = { projectDir: tmp, sessionId: '2024-01-01-race' };
+    vi.mocked(existsSync).mockReturnValueOnce(true);
+
     expect(readRunnerPids(ref)).toEqual([]);
   });
 
