@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { renderFeature, tick } from '#testing/helpers/ink.js';
@@ -25,6 +26,12 @@ import { transitionAndSave } from '../../../engine/orchestrator/state-ops.js';
 import { finalizeEndedRun } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
 import { buildReviewFailedRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
 import { readRunEvents } from '../../../engine/events/replay.js';
+import {
+  WORKFLOW_CANCEL_REASON_USER,
+  workflowCancelledReasonFromSignal,
+} from '../../../engine/events/workflow-cancel.js';
+import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
+import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import { hydrateResume } from '../resume-hydration.js';
 import { buildContextOverflowRecoveryIssue } from '../../../engine/orchestrator/recovery/builders/task.js';
@@ -32,6 +39,7 @@ import type { PreparedExecution } from '../../../engine/runners/prepared-executi
 import { killAllProcesses, registeredProcessCount } from '../../../lib/process/registry.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
+import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { overlayStore } from '../../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../../stores/workflow/stop.js';
@@ -221,6 +229,94 @@ describe('run-loop stop completion', () => {
     expect(readSession(prepared.session.ref)?.status).toBe('open');
   }
 
+  it('keeps an unfinished Apply recovery active when live End run is refused', async () => {
+    const prepared = prepare({
+      ...createInitialState('Partial Apply'),
+      applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'apply-partial',
+        availableActions: ['retry-same-worker', 'restore-backup'],
+      }),
+    });
+    const before = loadState(prepared.session.ref);
+    const engine = vi.fn<RunWorkflowFn>();
+    mount(prepared, engine);
+    await vi.waitFor(() => expect(controlsStore.get().inputMode).toBe('question'));
+
+    expect(requestEndRun()).toBe(true);
+
+    expect(feedbackStore.get()).toMatchObject({
+      isError: true,
+      message: expect.stringContaining('Restore or retry Apply first'),
+    });
+    expect(controlsStore.get().inputMode).toBe('question');
+    expect(stopStore.get().intent).toBe('none');
+    expect(loadState(prepared.session.ref)).toEqual(before);
+    expect(engine).not.toHaveBeenCalled();
+  });
+
+  it.each(['stay', 'home', 'quit'] as const)(
+    'keeps Apply recoverable after End run with %s queued',
+    async (destination) => {
+      const cleanup = Promise.withResolvers<void>();
+      let quit = false;
+      const prepared = prepare();
+      let signal: AbortSignal | undefined;
+      const engine = vi.fn<RunWorkflowFn>(async (options) => {
+        signal = options.signal;
+        await awaitAbort(options);
+        await cleanup.promise;
+        const state: WorkflowState = {
+          ...createInitialState('Apply starts during stop'),
+          applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
+          pendingRecovery: makeRecoveryIssue({
+            reason: 'apply-partial',
+            availableActions: ['retry-same-worker', 'restore-backup'],
+          }),
+        };
+        saveState(prepared.session.ref, state);
+        await closeRunIfOpen(
+          {
+            ...prepared.session.ref,
+            bus: createRecoveryBus({ ...prepared.session.ref, sink: () => {} }),
+          },
+          state,
+        );
+        throw new Error('End run closed a run with an unfinished Apply');
+      });
+      mount(prepared, engine);
+      await vi.waitFor(() => expect(signal).toBeDefined());
+
+      expect(requestEndRun()).toBe(true);
+
+      expect(signal?.aborted).toBe(true);
+      expect(workflowCancelledReasonFromSignal(signal)).toBe(WORKFLOW_CANCEL_REASON_USER);
+      if (destination === 'home') requestLeaveSession();
+      else if (destination === 'quit')
+        requestQuit(() => {
+          quit = true;
+        });
+      await tick(30);
+      expect(routerStore.get().screen).toBe('workflow');
+      expect(quit).toBe(false);
+      cleanup.resolve();
+      await vi.waitFor(() => expect(stopStore.get().phase).toBe('parked'));
+      expect(routerStore.get().screen).toBe(destination === 'home' ? 'home' : 'workflow');
+      expect(quit).toBe(destination === 'quit');
+      expect(feedbackStore.get().message).toContain('Restore or retry Apply first');
+      expect(stopStore.get().intent).toBe('end-run');
+      expect(loadState(prepared.session.ref)?.applying?.backupId).toBe('apply-backup');
+      expect(loadState(prepared.session.ref)?.pendingRecovery?.reason).toBe('apply-partial');
+      expect(loadState(prepared.session.ref)?.closed).toBeUndefined();
+      expect(readRunRecord(prepared.session.ref)?.status.kind).toBe('open');
+      expect(
+        (await readRunEvents(prepared.session.ref)).events.filter(
+          (event) => event.type === 'workflow_cancelled',
+        ),
+      ).toEqual([]);
+    },
+  );
+
   it.each(['planner question', 'review approval', 'permission approval'] as const)(
     'stops a %s with no registered process and persists before parking',
     async (wait) => {
@@ -303,6 +399,27 @@ describe('run-loop stop completion', () => {
     );
     requestStopNow();
     await expectParked(prepared);
+  });
+
+  it('ends a real run during planning without a stop row or a cut step', async () => {
+    const prepared = prepare();
+    mount(prepared);
+    await vi.waitFor(
+      () => {
+        expect(existsSync(join(projectDir, 'planner-started'))).toBe(true);
+        expect(registeredProcessCount()).toBeGreaterThan(0);
+      },
+      { timeout: 5000 },
+    );
+    expect(requestEndRun()).toBe(true);
+    await vi.waitFor(() => expect(stopStore.get().phase).toBe('ended'), { timeout: 5000 });
+    expect(registeredProcessCount()).toBe(0);
+    const saved = loadState(prepared.session.ref);
+    expect(saved?.closed?.as).toBe('ended');
+    expect(saved?.interruptedStep).toBeUndefined();
+    const events = (await readRunEvents(prepared.session.ref)).events;
+    expect(events.filter((event) => event.type === 'turn_interrupted')).toEqual([]);
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
   });
 
   // Stop, then continue the run at rest in place: the re-entry is live again, so the stop is armed

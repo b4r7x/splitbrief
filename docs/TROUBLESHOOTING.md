@@ -1043,9 +1043,9 @@ A killed process's `base-<pid>-*` tree under `$XDG_STATE_HOME/splitbrief/bases/`
 
 ### Symptom: `/run reject confirm` has nothing to reject
 
-**Likely cause:** The run has no recorded workspace and uses the older snapshot ledger. It may have no snapshot or may already be accepted.
+**Likely cause:** The checkout run was killed before its first brief settled, or the older run has no recorded run snapshot, or its snapshot ledger is already accepted. A closed run refuses rejection except undo of a completed Apply from its backup in a worktree or staged-copy run.
 
-**Fix:** Read the command's diagnostic and the [older-run behavior](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). A workspace run instead uses Discard before Apply and backup restore after Apply.
+**Fix:** Read the command's diagnostic and the [run rejection behavior](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). Checkout rejection changes no files without a recorded run snapshot; use End run to keep the files, or remove them yourself. A worktree or staged-copy run uses Discard before Apply and backup restore after Apply. End run and Discard refuse an unfinished Apply: restore or retry Apply first.
 
 
 ---

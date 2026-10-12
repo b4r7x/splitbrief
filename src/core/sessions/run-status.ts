@@ -111,6 +111,15 @@ export function awaitsApply(state: WorkflowState): boolean {
   );
 }
 
+/** A workspace run whose completed Apply its backup can still undo. */
+export function canUndoApply(state: WorkflowState): boolean {
+  return (
+    (state.workspace?.kind === 'worktree' || state.workspace?.kind === 'staged-copy') &&
+    state.applied !== undefined &&
+    state.applied.undone === undefined
+  );
+}
+
 export function isAnsweredApplyRecovery(issue: RecoveryIssue): issue is RecoveryIssue & {
   reason: 'apply-partial';
   status: 'applying';

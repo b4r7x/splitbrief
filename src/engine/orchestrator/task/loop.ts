@@ -28,6 +28,7 @@ import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
 import { buildImplementerUnavailableRecoveryIssue } from '../recovery/builders/task.js';
 import { runScheduledReview } from '../run/review.js';
+import { recordCheckoutRunSnapshot } from '../run/snapshots.js';
 
 type RunTaskLoopOptions = {
   wctx: WorkflowContext;
@@ -252,6 +253,7 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
     // A stop at this boundary parks from the persisted head, which would otherwise lack this
     // brief's files and usage.
     persistTaskBreakdowns();
+    await recordCheckoutRunSnapshot({ projectDir, sessionId, bus: wctx.bus, state });
 
     if (wctx.signal?.aborted || state.currentTaskIndex <= i) {
       setCurrentTask(undefined);

@@ -43,14 +43,16 @@ describe('createSnapshot — first call (baseline)', () => {
     expect(written.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('records file entries with only path, hash, and encodedName (no sizeBytes)', async () => {
+  it('records file entries with only path, hash, encodedName and mode (no sizeBytes)', async () => {
     await writeFile(join(tmp, 'foo.ts'), 'export const x = 1;');
+    await chmod(join(tmp, 'foo.ts'), 0o751);
 
     const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
 
     const entry = result.manifest.fileEntries.find((e) => e.path === 'foo.ts');
     expect(entry).toBeDefined();
-    expect(Object.keys(entry ?? {}).sort()).toEqual(['encodedName', 'hash', 'path']);
+    expect(Object.keys(entry ?? {}).sort()).toEqual(['encodedName', 'hash', 'mode', 'path']);
+    expect(entry?.mode).toBe(0o751);
 
     const manifestFile = snapshotManifestPath(
       { projectDir: tmp, sessionId: 'sess-01' },

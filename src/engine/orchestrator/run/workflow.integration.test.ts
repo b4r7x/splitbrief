@@ -87,6 +87,7 @@ import {
 } from '../changed-files-baseline.js';
 import type { OrchestratorCallbacks } from '../types.js';
 import { typedCallFromTasks } from '#testing/helpers/typed-planner.js';
+import { readRunSnapshotLedger, resolveLedgerRunSnapshot } from '../../snapshots/run/ledger.js';
 import {
   planFromTasks,
   planQuestionsFrom,
@@ -1616,6 +1617,54 @@ describe('runWorkflow — smoke', () => {
       stderrWrite.mockRestore();
     }
   });
+});
+
+describe('runWorkflow — checkout run snapshot', () => {
+  it('records the checkout as the run left it once disposal settles its last revert', async () => {
+    const projectDir = setupProject();
+    const sessionId = 'checkout-rest-snapshot';
+    const isolationModule = await import('../isolation/create.js');
+    const originalCreate = isolationModule.createRunIsolation;
+    const createSpy = vi.spyOn(isolationModule, 'createRunIsolation').mockImplementation((opts) => {
+      const handle = originalCreate(opts);
+      return {
+        open: handle.open,
+        acquire: handle.acquire,
+        dispose: async () => {
+          writeFileSync(join(projectDir, 'settled-at-dispose.txt'), 'settled\n');
+          await handle.dispose();
+        },
+      };
+    });
+    try {
+      await runWorkflow({
+        feature: 'checkout rest snapshot',
+        projectDir,
+        sessionId,
+        config: makeConfig({
+          validation: { endChecks: false, testCommand: 'noop' },
+          workflow: { approve: 'none', isolation: 'none' },
+        }),
+        callbacks: makeCallbacks().callbacks,
+        sinks: { setAbortHandler: () => {}, setQueueHandler: () => {} },
+        _planner: makePlanner({
+          typedCall: typedCallFromTasks([makeTask({ id: 'T001' })], {
+            inputTokens: 50,
+            outputTokens: 25,
+          }),
+        }),
+        _implementer: makeImplementer(),
+      });
+
+      const ledger = await readRunSnapshotLedger(projectDir, sessionId);
+      if (ledger === null) throw new Error('the checkout run recorded no run snapshot');
+      const latest = await resolveLedgerRunSnapshot(projectDir, sessionId, ledger);
+      expect(latest?.fileHashes['settled-at-dispose.txt']).toBeDefined();
+      expect(ledger.runSnapshotKinds?.[latest?.id ?? '']).toBe('post-task');
+    } finally {
+      createSpy.mockRestore();
+    }
+  }, 20_000);
 });
 
 describe('runWorkflow — orphan session sweep', () => {

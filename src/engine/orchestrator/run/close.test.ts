@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -9,15 +11,144 @@ import { readActive, reactivateExistingSession } from '../../../core/sessions/ac
 import { readSession } from '../../../core/sessions/io.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
-import { endRunAtRest } from './close.js';
+import { sessionDir } from '../../../core/paths.js';
+import { writeRunPatch } from '../apply/patch.js';
+import { removeRunWorkspace } from '../isolation/remove-worktree.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
+import { closeRunIfOpen, endRunAtRest } from './close.js';
+
+vi.mock('../apply/patch.js', () => ({ writeRunPatch: vi.fn() }));
+vi.mock('../isolation/remove-worktree.js', () => ({ removeRunWorkspace: vi.fn() }));
 
 let projectDir: string;
 
 afterEach(() => {
+  vi.resetAllMocks();
   cleanupTempDir(projectDir);
 });
 
+describe('run closure during Apply', () => {
+  it.each(['end-run', 'discard'] as const)(
+    'refuses %s when Apply starts while the patch is being written',
+    async (action) => {
+      projectDir = createTempDir('close-run-apply-race-');
+      const ref = { projectDir, sessionId: 'apply-race' };
+      reactivateExistingSession(ref);
+      const workspacePath = join(projectDir, 'workspace');
+      mkdirSync(workspacePath);
+      const state: WorkflowState = {
+        ...createInitialState('Apply races with closure'),
+        phase: 'complete',
+        reviewStatus: 'passed',
+        workspace: {
+          kind: 'staged-copy',
+          path: workspacePath,
+          base: { snapshotId: 'base', head: null },
+        },
+      };
+      saveState(ref, state);
+      let saved = loadState(ref);
+      vi.mocked(writeRunPatch).mockImplementationOnce(async () => {
+        saveState(ref, {
+          ...state,
+          stateRevision: (saved?.stateRevision ?? 0) + 1,
+          applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
+          pendingRecovery: makeRecoveryIssue({
+            reason: 'apply-partial',
+            availableActions: ['retry-same-worker', 'restore-backup'],
+          }),
+        });
+        saved = loadState(ref);
+        return join(sessionDir(projectDir, ref.sessionId), 'run.patch');
+      });
+      const { bus, events } = makeBusRecorder();
+
+      await expect(
+        action === 'end-run'
+          ? endRunAtRest({ ...ref, bus }, state, makeConfig())
+          : closeRunIfOpen({ ...ref, bus }, state, 'discarded'),
+      ).rejects.toThrow('Restore or retry Apply first');
+
+      expect(vi.mocked(writeRunPatch)).toHaveBeenCalledOnce();
+      expect(loadState(ref)).toEqual(saved);
+      expect(loadState(ref)?.closed).toBeUndefined();
+      expect(loadState(ref)?.applying?.backupId).toBe('apply-backup');
+      expect(loadState(ref)?.pendingRecovery?.reason).toBe('apply-partial');
+      expect(readActive(projectDir)).toBe(ref.sessionId);
+      expect(readSession(ref)).toBeNull();
+      expect(existsSync(workspacePath)).toBe(true);
+      expect(removeRunWorkspace).not.toHaveBeenCalled();
+      expect(events).toEqual([]);
+    },
+  );
+});
+
 describe('endRunAtRest', () => {
+  it('leaves a closed run that still records Apply closed', async () => {
+    projectDir = createTempDir('close-closed-applying-');
+    const ref = { projectDir, sessionId: 'closed-applying' };
+    const state: WorkflowState = {
+      ...createInitialState('Closed during Apply'),
+      applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
+      closed: { at: '2026-10-11T00:00:01.000Z', as: 'ended' },
+    };
+    saveState(ref, state);
+    const saved = loadState(ref);
+    const { bus, events } = makeBusRecorder();
+
+    await expect(endRunAtRest({ ...ref, bus }, state, makeConfig())).resolves.toMatchObject({
+      closedNow: false,
+    });
+
+    expect(loadState(ref)).toEqual(saved);
+    expect(events).toEqual([]);
+  });
+
+  it('refuses End run from the recovery action without clearing restore', async () => {
+    projectDir = createTempDir('end-run-apply-recovery-');
+    const ref = { projectDir, sessionId: 'apply-recovery' };
+    const state: WorkflowState = {
+      ...createInitialState('Partial Apply'),
+      applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
+      pendingRecovery: makeRecoveryIssue({
+        reason: 'apply-partial',
+        availableActions: ['retry-same-worker', 'restore-backup', 'end-run'],
+      }),
+    };
+    saveState(ref, state);
+    const saved = loadState(ref);
+    const { bus, events } = makeBusRecorder();
+
+    await expect(applyRecoveryAction({ ...ref, bus, state, action: 'end-run' })).rejects.toThrow(
+      'Restore or retry Apply first',
+    );
+
+    expect(loadState(ref)).toEqual(saved);
+    expect(events).toEqual([]);
+  });
+
+  it('refuses End run from stale state when the saved state still records Apply', async () => {
+    projectDir = createTempDir('end-run-applying-');
+    const ref = { projectDir, sessionId: 'applying-run' };
+    reactivateExistingSession(ref);
+    const stale = createInitialState('Interrupted Apply');
+    saveState(ref, {
+      ...stale,
+      applying: { at: '2026-10-11T00:00:00.000Z', backupId: 'apply-backup' },
+    });
+    const saved = loadState(ref);
+    const { bus, events } = makeBusRecorder();
+
+    await expect(endRunAtRest({ ...ref, bus }, stale, makeConfig())).rejects.toThrow(
+      'Restore or retry Apply first',
+    );
+
+    expect(loadState(ref)).toEqual(saved);
+    expect(readActive(projectDir)).toBe(ref.sessionId);
+    expect(readSession(ref)).toBeNull();
+    expect(events).toEqual([]);
+  });
+
   it('closes a stopped run, publishes one cancellation and finalizes the session', async () => {
     projectDir = createTempDir('end-run-at-rest-');
     const ref = { projectDir, sessionId: 'stopped-run' };

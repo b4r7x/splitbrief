@@ -241,7 +241,7 @@ Every workflow run produces files on disk under `.splitbrief/sessions/<id>/`:
 
 **`summary.json`** — final cost, timing, task outcomes. Written at the end of each pass by `saveFinalSession()` (`src/engine/orchestrator/session-lifecycle/finalize.ts`), which also clears the `.splitbrief/active` lock file once the run is closed. A resumed pass drops the stop the last pass recorded as it starts (`reopenSessionRecord`).
 
-**`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, and for a run without a workspace or a checkout-mode run the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
+**`snapshots/`** — the run's content-addressed snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, `pre-final-review`, the `post-task-<n>` snapshots of a checkout run, and for a run without a workspace or a checkout-mode run the accepted-run snapshot, plus the run ledger. There are no configurable trigger points. See [SUBSYSTEMS.md](./SUBSYSTEMS.md).
 
 **`entries/`** — the content-addressed byte store of the entry snapshots. A staged copy, and a no-git checkout in checkout mode, take their task-start and attempt snapshots without git: hashes and modes in the snapshot, bytes once in this store. A restart restores from it.
 

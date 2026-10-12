@@ -1,5 +1,5 @@
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
-import { dirname, join, relative } from 'node:path';
+import { lstat, readFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import { SNAPSHOT_BASELINE_ID } from '../../../core/paths.js';
 import {
@@ -9,12 +9,14 @@ import {
 } from '../../../lib/path-confinement.js';
 import type { RejectRunSnapshotResult } from '../../../core/runtime/commands/types.js';
 import { resolveValidatedBlobPath } from '../blob-resolver.js';
-import { hashFile, walkProjectEntries } from '../files.js';
+import { isENOENT } from '../../../lib/process/errors.js';
+import { error } from '../../../utils/error.js';
 import { readManifest } from '../manifest.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { saveReplacedEntries } from '../../orchestrator/isolation/entry-snapshot.js';
 import {
-  removeConfinedSymlink,
+  readConfinedEntry,
+  sameFileEntry,
   writeConfinedEntry,
 } from '../../orchestrator/approval/file-snapshots/entry.js';
 import {
@@ -30,6 +32,7 @@ async function restoreBaselineFile(opts: {
   sessionId: string;
   path: string;
   baselineEntry: SnapshotManifest['fileEntries'][number] | undefined;
+  beforeWrite: () => Promise<void>;
 }): Promise<boolean> {
   if (!opts.baselineEntry) return false;
 
@@ -45,90 +48,103 @@ async function restoreBaselineFile(opts: {
   let contents: Buffer;
   try {
     contents = await readFile(sourcePath);
-  } catch {
+  } catch (err) {
+    if (!isENOENT(err)) throw err;
     return false;
   }
 
-  const targetPath = join(opts.projectDir, opts.path);
-  await removeConfinedSymlink(opts.projectDir, opts.path);
-  await mkdir(dirname(targetPath), { recursive: true });
-  assertWritablePathConfined(opts.path, opts.projectDir);
-  await writeFile(targetPath, contents);
+  await opts.beforeWrite();
+  const current = await readConfinedEntry(opts.projectDir, opts.path);
+  await writeConfinedEntry(
+    opts.projectDir,
+    opts.path,
+    {
+      kind: 'file',
+      bytes: contents,
+      sha256: opts.baselineEntry.hash,
+      mode: current.kind === 'file' ? current.mode : (opts.baselineEntry.mode ?? 0o644),
+    },
+    opts.beforeWrite,
+  );
   return true;
 }
 
-async function hashProjectFileIfConfined(projectDir: string, path: string): Promise<string | null> {
+async function hashProjectFileIfConfined(
+  projectDir: string,
+  path: string,
+): Promise<string | null | undefined> {
   assertPathConfined(path, projectDir);
   const filePath = join(projectDir, path);
   try {
-    await stat(filePath);
-  } catch {
+    const entry = await lstat(filePath);
+    if (!entry.isFile()) return undefined;
+  } catch (err) {
+    if (!isENOENT(err)) throw err;
+    assertWritablePathConfined(path, projectDir);
     return null;
   }
   assertExistingPathConfined(path, projectDir);
-  return hashFile(filePath);
+  const entry = await readConfinedEntry(projectDir, path);
+  return entry.kind === 'file' ? entry.sha256 : null;
 }
 
 async function restoreBaselinePaths(
   ref: SessionRef,
   baseline: SnapshotManifest,
+  latest: SnapshotManifest,
   restore: readonly string[],
-  deletedPaths: string[],
+  remove: readonly string[],
 ): Promise<Extract<RejectRunSnapshotResult, { status: 'rejected' }>> {
-  const savedTo = await saveReplacedEntries(ref, [...restore, ...deletedPaths]);
+  const savedTo = await saveReplacedEntries(ref, [...restore, ...remove]);
   const baselineEntries = new Map(baseline.fileEntries.map((entry) => [entry.path, entry]));
+  const restoreSet = new Set(restore);
   const restoredPaths: string[] = [];
+  const deletedPaths: string[] = [];
+  const conflictedPaths: string[] = [];
   const missingSnapshotFiles: string[] = [];
-  for (const path of restore) {
-    if (await restoreBaselineFile({ ...ref, path, baselineEntry: baselineEntries.get(path) })) {
-      restoredPaths.push(path);
-    } else missingSnapshotFiles.push(path);
-  }
-  for (const path of deletedPaths) {
-    await removeConfinedSymlink(ref.projectDir, path);
-    await writeConfinedEntry(ref.projectDir, path, { kind: 'absent' });
+  for (const path of [...restore, ...remove]) {
+    const changed = error('snapshot-reject-conflict', `File changed during rejection: ${path}`, {
+      path,
+    });
+    const beforeWrite = async (): Promise<void> => {
+      const currentHash = await hashProjectFileIfConfined(ref.projectDir, path);
+      if (currentHash !== (latest.fileHashes[path] ?? null)) throw changed;
+    };
+    try {
+      await beforeWrite();
+      const current = await readConfinedEntry(ref.projectDir, path);
+      const beforeCommit = async (): Promise<void> => {
+        await beforeWrite();
+        if (!sameFileEntry(current, await readConfinedEntry(ref.projectDir, path))) throw changed;
+      };
+      if (restoreSet.has(path)) {
+        if (
+          await restoreBaselineFile({
+            ...ref,
+            path,
+            baselineEntry: baselineEntries.get(path),
+            beforeWrite: beforeCommit,
+          })
+        ) {
+          restoredPaths.push(path);
+        } else missingSnapshotFiles.push(path);
+      } else {
+        await writeConfinedEntry(ref.projectDir, path, { kind: 'absent' }, beforeCommit);
+        deletedPaths.push(path);
+      }
+    } catch (err) {
+      if (err !== changed) throw err;
+      conflictedPaths.push(path);
+    }
   }
   return {
     status: 'rejected',
     snapshotId: baseline.id,
     restoredPaths,
     deletedPaths,
-    conflictedPaths: [],
+    conflictedPaths,
     missingSnapshotFiles,
     ...(savedTo !== undefined && { savedTo: relative(ref.projectDir, savedTo) }),
-  };
-}
-
-export async function rejectCheckoutRun(
-  projectDir: string,
-  sessionId: string,
-): Promise<Extract<RejectRunSnapshotResult, { status: 'rejected' }>> {
-  const baseline = await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
-  const current = new Map<string, 'file' | 'symlink'>();
-  for await (const entry of walkProjectEntries(projectDir)) {
-    if (entry.kind !== 'directory') current.set(entry.path, entry.kind);
-  }
-  const paths = new Set([...Object.keys(baseline.fileHashes), ...current.keys()]);
-  const restore: string[] = [];
-  const deleted: string[] = [];
-  const conflicted: string[] = [];
-  for (const path of [...paths].sort()) {
-    assertPathConfined(path, projectDir);
-    const baselineHash = baseline.fileHashes[path];
-    if (baselineHash === undefined) {
-      // The baseline records files only, so it cannot tell a link from before the run.
-      if (current.get(path) === 'symlink') conflicted.push(path);
-      else deleted.push(path);
-    } else if (
-      current.get(path) === 'symlink' ||
-      (await hashProjectFileIfConfined(projectDir, path)) !== baselineHash
-    ) {
-      restore.push(path);
-    }
-  }
-  return {
-    ...(await restoreBaselinePaths({ projectDir, sessionId }, baseline, restore, deleted)),
-    conflictedPaths: conflicted,
   };
 }
 
@@ -204,18 +220,21 @@ export async function rejectRunSnapshotBody(
     restoredPaths.push(path);
   }
 
+  const restored = await restoreBaselinePaths(
+    { projectDir, sessionId },
+    baseline,
+    latest,
+    restoredPaths,
+    deletedPaths,
+  );
   const result: RejectRunSnapshotResult = {
-    ...(await restoreBaselinePaths(
-      { projectDir, sessionId },
-      baseline,
-      restoredPaths,
-      deletedPaths,
-    )),
+    ...restored,
     snapshotId: latest.id,
-    conflictedPaths,
+    conflictedPaths: [...conflictedPaths, ...restored.conflictedPaths].sort(),
   };
 
-  const fullyRejected = conflictedPaths.length === 0 && result.missingSnapshotFiles.length === 0;
+  const fullyRejected =
+    result.conflictedPaths.length === 0 && result.missingSnapshotFiles.length === 0;
   const nextLedger = await createRunLedger({
     projectDir,
     sessionId,

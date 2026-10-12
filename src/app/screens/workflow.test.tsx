@@ -975,14 +975,17 @@ describe('WorkflowScreen showing a run at rest', () => {
 
     const ui = renderFeature(<WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} />);
     await flushEffects();
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('/run accept');
+    const before = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(before).toContain('esc home');
+    expect(before).not.toContain('/run accept');
+    expect(before).not.toContain('Accepted');
 
     routerStore.updateRun({ run: { ...record, checkpoint: { kind: 'accepted' } } });
     await flushEffects();
 
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-    expect(frame).toContain('Accepted');
-    expect(frame).not.toContain('Keep it with /run accept');
+    expect(frame).toContain('Accepted · nothing left to do');
+    expect(frame).not.toContain('/run accept');
     ui.unmount();
   });
 });

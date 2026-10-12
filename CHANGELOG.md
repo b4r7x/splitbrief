@@ -84,6 +84,12 @@
 ### Fixed
 
 - `splitbrief continue <run> --action end-run` closes any open run; a ready run closes as discarded and keeps `run.patch`.
+- `splitbrief continue` on a closed run exits 1, with a JSON error under `--json`.
+- Reject on a checkout run restores only the files that still hold what the run wrote, and names the files you changed since. It also works on a run that stopped or halted after a brief passed, and it refuses a closed run.
+- A file that Reject recreates gets its recorded mode, and a folder that Reject, Apply or a restore recreates gets the normal mode, not owner-only.
+- End run refuses an unfinished Apply until you restore or retry it.
+- A closed run's byline offers only the commands that the run can still take.
+- The `resume` and `continue` help lines tell the most recent run apart from a run named by id.
 - A repository with a large ignored directory, such as a nested `node_modules`, no longer fails every run with `Maximum call stack size exceeded`.
 - A failed final review takes a correction from the recovery panel or the composer.
 - Stop keys and the first typed input work after you resume a stopped run on the same screen, and `/resume` and `/end` work at the plan card.

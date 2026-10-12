@@ -3,7 +3,7 @@ import type { BriefQualitySummary, ReviewVerdict, Summary } from '../../../core/
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
-import type { RunStatus } from '../../../core/sessions/run-status.js';
+import { canUndoApply, type RunStatus } from '../../../core/sessions/run-status.js';
 import { sanitizeTerminalDisplayText } from '../../../utils/display-text.js';
 import type { RailStageState } from '../../../core/rail-stages.js';
 import { atRestRailStages } from '../at-rest.js';
@@ -113,6 +113,7 @@ export interface SummaryView {
     patch: string | null;
   }>;
   checkpoint: 'accepted' | 'rejected' | null;
+  canUndoApply: boolean;
   applyUndo: Readonly<{ conflicts: readonly string[] }> | null;
   phases: PhaseTiming[];
 }
@@ -175,6 +176,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
     tokens: tokensView(summary),
     files: { ...files, patch: savedPatch(state, files.changed) },
     checkpoint: record.checkpoint?.kind ?? null,
+    canUndoApply: state !== null && canUndoApply(state),
     applyUndo:
       state?.applied?.undone === undefined
         ? null

@@ -6,6 +6,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { transition } from '../../../core/state/machine.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
+import { error, matches } from '../../../utils/error.js';
 import type { EventBus } from '../../events/types.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
@@ -59,6 +60,7 @@ export async function closeRunIfOpen(
   let workspaceToRemove: NonNullable<WorkflowState['workspace']> | undefined;
   let patchHandled = false;
   let patch: string | undefined;
+  let warning: string | undefined;
 
   for (let attempt = 0; ; attempt += 1) {
     // A run stopped before it ever saved a state still closes: the close then
@@ -69,28 +71,21 @@ export async function closeRunIfOpen(
     if (status.kind === 'closed') {
       return { state: latest, closedNow: false };
     }
+    assertCanCloseRun(latest);
 
     if (!patchHandled) {
       patchHandled = true;
       const workspace = latest.workspace;
       if (workspace?.kind === 'checkout') {
-        warn(
-          'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.',
-          latest.phase,
-        );
+        warning =
+          'This run edited your checkout directly: its changes are already there, so nothing is unapplied and no run patch was written.';
       } else if (workspace !== undefined) {
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
           patch = relative(scope.projectDir, await writeRunPatch(scope, workspace));
-          warn(
-            `Run changes not applied are saved in ${patch}; apply them with git apply.`,
-            latest.phase,
-          );
+          warning = `Run changes not applied are saved in ${patch}; apply them with git apply.`;
         } else {
-          warn(
-            `The run workspace at ${workspace.path} is gone; no run patch was written.`,
-            latest.phase,
-          );
+          warning = `The run workspace at ${workspace.path} is gone; no run patch was written.`;
         }
       }
     }
@@ -106,6 +101,7 @@ export async function closeRunIfOpen(
       }),
     });
     if (result.kind === 'committed') {
+      if (warning !== undefined) warn(warning, result.state.phase);
       if (workspaceToRemove !== undefined) {
         await removeClosedRunWorkspace(scope, workspaceToRemove, result.state.phase);
       }
@@ -122,6 +118,19 @@ export async function closeRunIfOpen(
       });
     }
   }
+}
+
+export const endRunError = {
+  applying: () =>
+    error(
+      'end-run-while-applying',
+      'Apply did not finish. Restore or retry Apply first, then end the run.',
+    ),
+  isApplying: matches('end-run-while-applying'),
+};
+
+export function assertCanCloseRun(state: WorkflowState): void {
+  if (state.applying !== undefined) throw endRunError.applying();
 }
 
 export async function endRun(

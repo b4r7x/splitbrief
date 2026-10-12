@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import type {
   SnapshotFileEntry,
@@ -57,8 +57,9 @@ async function captureFile(opts: {
   const absPath = join(projectDir, path);
 
   let contents: Buffer;
+  let mode: number;
   try {
-    contents = await readFile(absPath);
+    [contents, { mode }] = await Promise.all([readFile(absPath), stat(absPath)]);
   } catch {
     // Read failure (unreadable/removed source). The path stays tracked via its
     // hash, but no blob is written and no entry is recorded — restore reports it
@@ -72,7 +73,7 @@ async function captureFile(opts: {
   assertWritablePathConfined(relative(projectDir, blobPath), projectDir);
   await writeFile(blobPath, contents, { mode: SECURE_FILE_MODE });
 
-  return { hash, entry: { path, hash, encodedName } };
+  return { hash, entry: { path, hash, encodedName, mode: mode & 0o777 } };
 }
 
 function buildManifest(opts: {

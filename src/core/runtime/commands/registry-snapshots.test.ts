@@ -145,6 +145,36 @@ describe('run snapshot runtime commands', () => {
       onError: noop,
     });
     expect(error).toMatch(/conflict/i);
+    expect(error).toContain('left as you changed them: src/a.ts.');
+  });
+
+  it('bounds the named rejection conflicts with the shared list formatter', async () => {
+    let error: string | undefined;
+    const commands = createRuntimeCommands(
+      makeCtx({
+        rejectRun: async () => ({
+          status: 'rejected',
+          snapshotId: 'snap-3',
+          restoredPaths: [],
+          deletedPaths: [],
+          conflictedPaths: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts', 'g.ts'],
+          missingSnapshotFiles: [],
+        }),
+        setFeedbackError: (message) => {
+          error = message;
+        },
+      }),
+    );
+    await runCommandInTest({
+      commands,
+      raw: '/run reject confirm',
+      screen: 'workflow',
+      onError: noop,
+    });
+    expect(error).toContain(
+      'left as you changed them: a.ts · b.ts · c.ts · d.ts · e.ts · +2 more.',
+    );
+    expect(error).not.toContain('f.ts');
   });
 
   it('reports the files Apply wrote on a workspace run', async () => {

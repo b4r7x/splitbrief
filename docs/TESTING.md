@@ -669,7 +669,7 @@ The run directory is content-addressed from the normalized selection. Repeating 
 | `workflow-at-rest-left-isolation` | a left-isolation halt read back from its log; the transcript rows the halt wrote over the byline `Seat down · T002 left the isolation directory · ⏎ to decide` |
 | `workflow-at-rest-waiting-gate` | an older run parked at its spec gate; `Waiting at the plan · ⏎ to continue` |
 | `workflow-at-rest-quick` | an older run paused while it still researched; the three-stage rail folds that phase into Plan, `× plan` wears the stop, `Stopped at the plan · type a correction or ⏎ to continue` |
-| `workflow-closed-complete-ready` | three `●` (Plan, Build, Review), the `Closed ─` block, `Keep it with /run accept…` |
+| `workflow-closed-complete` | three `●` (Plan, Build, Review), the `Closed ─` block, `esc home` in the legend and an empty byline |
 | `workflow-closed-complete-needs-attention` | the same block with a failing review and a dirty scope |
 | `workflow-closed-ended` | a run somebody ended inside T003; `× Ended · Build 1/5 · stopped in T003` |
 | `workflow-replayed-history` | the transcript read back from `testing/fixtures/session-log/run.jsonl` |

@@ -7,6 +7,8 @@ export const SnapshotFileEntrySchema = z.object({
   path: z.string(),
   hash: z.string(),
   encodedName: z.string(),
+  // Manifests written before modes were recorded have none.
+  mode: z.number().int().nonnegative().optional(),
 });
 export type SnapshotFileEntry = z.infer<typeof SnapshotFileEntrySchema>;
 

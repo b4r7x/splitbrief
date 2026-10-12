@@ -4,7 +4,7 @@ import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
 import { loadRunRecord } from '../../../core/sessions/run-record.js';
 import { defaultRunRecordDeps } from '../../../core/sessions/run-record-io.js';
-import { runHeadless } from '../../headless.js';
+import { recordWriterFor, runHeadless } from '../../headless.js';
 import { resolveSessionAlias } from '../../sessions/aliases.js';
 import { assertSessionExists } from '../../sessions/resolve.js';
 import { readActive } from '../../../core/sessions/active-pointer.js';
@@ -24,7 +24,11 @@ import {
 import { resumeSavedSession } from './resume.js';
 import { settleReadyRun } from './settle.js';
 import { prepareExecution } from '../../../engine/runners/prepare-execution/prepare-execution.js';
-import { endRunAtRest, filesStillOnDiskSuffix } from '../../../engine/orchestrator/run/close.js';
+import {
+  endRunAtRest,
+  endRunError,
+  filesStillOnDiskSuffix,
+} from '../../../engine/orchestrator/run/close.js';
 
 export interface ContinueDeps {
   initStores: typeof initStores;
@@ -163,8 +167,11 @@ export async function continueCommand(
 
   let resumed: { state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat };
   const action = opts.action;
-  if (action?.action === 'end-run' && record.status.kind === 'closed') {
-    throw cliError(`Run ${sessionId} is closed (${record.status.as}); nothing to end.`, 1);
+  const writeRecord = recordWriterFor(opts.json !== true);
+  if (record.status.kind === 'closed') {
+    const message = `Run ${sessionId} is closed (${record.status.as}); nothing to ${action?.action === 'end-run' ? 'end' : 'resume'}.`;
+    writeRecord({ type: 'error', message });
+    throw cliError(message, 1);
   }
   // The revision the operator answered the halt on, read before the switch is applied, so a
   // config that changed underneath the halt is not overwritten by the write that follows.
@@ -184,7 +191,11 @@ export async function continueCommand(
       { projectDir: opts.projectDir, sessionId, bus },
       hydrated.state,
       resolveRunConfig({ projectDir: opts.projectDir, opts }),
-    );
+    ).catch((err: unknown) => {
+      if (!endRunError.isApplying(err)) throw err;
+      writeRecord({ type: 'error', message: err.message });
+      throw cliError(err.message, 1);
+    });
     resumed = { state: closure.state };
   } else if (action?.action === 'apply' || action?.action === 'discard') {
     if (record.status.kind !== 'ready-to-apply') {
