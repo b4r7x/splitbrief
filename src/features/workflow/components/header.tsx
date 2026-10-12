@@ -165,10 +165,9 @@ export function Header({
 
 /**
  * The header bar itself: rail on the left, the seat line and the clock pinned right, each paid for
- * out of one budget. It reads no store, so the summary screen can paint the same bar from a
- * finished run's record.
+ * out of one budget. It reads no store: the caller passes the rail, the seat line and the clock.
  */
-export function HeaderRow({
+function HeaderRow({
   rail,
   railCells,
   seatLine,

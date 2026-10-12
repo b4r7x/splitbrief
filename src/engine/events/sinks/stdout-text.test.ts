@@ -52,13 +52,13 @@ describe('createStdoutTextSink', () => {
       phase: 'idle',
       text: 'build it',
       attachedInputs: [
-        { path: '/Users/dev/notes.md', kind: 'text' },
+        { path: '/Users/alice/notes.md', kind: 'text' },
         { path: '/Volumes/design/mock.png', kind: 'image' },
       ],
     };
 
     expect(collect([request])).toEqual([
-      'attached files: /Users/dev/notes.md (text); /Volumes/design/mock.png (image)',
+      'attached files: /Users/alice/notes.md (text); /Volumes/design/mock.png (image)',
     ]);
     expect(collect([{ type: 'user_message', ts, phase: 'idle', text: 'build it' }])).toEqual([]);
 

@@ -41,6 +41,7 @@
 
 ### Changed
 
+- **Supported Node.js versions.** SPLITBRIEF supports Node.js 22 and Node.js 24, and the package declares that range.
 - **Scope is guidance.** A brief's files are suggestions. The implementer may edit another ordinary project file that the change needs, and SPLITBRIEF records it. Only a protected path asks: dependency manifests and lockfiles, `.git` and `.splitbrief`, CI configuration, and env or key files. It asks once per path per run.
 - **The retry ladder is attempt → one retry → consult.** `workflow.max_retries` is retired.
 - **`workflow.approve` is `plan | none`** (default `plan`). Retired keys load with one notice each and are ignored: `workflow.mode`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `workflow.max_retries`, `approval.enabled`, `approval.tiers`, the `escalation` block, `validation.typecheck`, `validation.lint`, `validation.test`, `validation.typecheck_command` and `validation.lint_command`.

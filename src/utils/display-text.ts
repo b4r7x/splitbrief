@@ -281,7 +281,11 @@ export function padTerminalDisplayTextEnd(text: string, width: number): string {
   return `${clean}${' '.repeat(Math.max(0, width - getTerminalCellWidth(clean)))}`;
 }
 
-function graphemes(text: string): string[] {
+/**
+ * The grapheme clusters of `text` with every character kept: unlike `splitTerminalGraphemes`,
+ * it strips no control.
+ */
+export function graphemes(text: string): string[] {
   return Array.from(graphemeSegmenter.segment(text), (part) => part.segment);
 }
 

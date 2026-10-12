@@ -529,8 +529,7 @@ describe('the workflow screen showing a closed run', () => {
     const withSpendOff = stripAnsiStyles(hidden.lastFrame() ?? '');
     hidden.unmount();
 
-    // The setting governs the surfaces that paint an amount, and this is no longer one of them,
-    // so it has nothing left to turn off here.
+    // No screen reads the setting, so the closed block paints the same frame either way.
     expect(withSpendOff).toBe(withSpendOn);
     expect(withoutTextLead(withSpendOff)).not.toMatch(/^Cost/m);
     expect(withSpendOff).not.toContain('$0.15');

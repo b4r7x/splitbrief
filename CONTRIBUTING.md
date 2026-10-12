@@ -15,7 +15,7 @@ Read in order:
 
 ## Development setup
 
-Requires **Node.js 22+**, **ripgrep** (`rg`) for the invariant checks and their tests, and **jq** for the commit-guard hook and its test. On Linux, CLI integration and replay tests also require `bubblewrap` and `socat`. The project is TypeScript 6.x, ESM only.
+Requires **Node.js 22 or 24**, **ripgrep** (`rg`) for the invariant checks and their tests, and **jq** for the commit-guard hook and its test. On Linux, CLI integration and replay tests also require `bubblewrap` and `socat`. The project is TypeScript 6.x, ESM only.
 
 ```bash
 git clone <repo>

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
 import type { Phase } from '../../../core/schemas/enums.js';
-import type { RequestEstimate, Summary } from '../../../core/schemas/summary.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { taskId } from '../../../core/schemas/task.js';
@@ -56,36 +56,21 @@ function booked(overrides: Partial<TaskTokenUsage> & Pick<TaskTokenUsage, 'taskI
   } satisfies TaskTokenUsage;
 }
 
-interface DeriveOverrides extends Partial<Omit<RunRecord, 'summary'>> {
-  showSpend?: boolean;
-}
-
-function derive(summary: Summary, overrides: DeriveOverrides = {}): SummaryView {
-  const { showSpend, ...record } = overrides;
+function derive(
+  summary: Summary,
+  overrides: Partial<Omit<RunRecord, 'summary'>> = {},
+): SummaryView {
   const view = deriveSummaryView({
     record: makeRunRecord({
       summary,
-      ...record,
+      ...overrides,
     }),
-    ...(showSpend !== undefined && { showSpend }),
   });
   if (view === null) throw new Error('expected a closed run to have a view');
   return view;
 }
 
 const ENDED = { kind: 'closed', as: 'ended' } as const;
-
-function unmeteredEstimate(items: RequestEstimate['items']): RequestEstimate {
-  return {
-    amount: null,
-    currency: 'USD',
-    basis: 'unavailable',
-    completeness: 'unavailable',
-    knownSubtotal: 0,
-    reasons: ['unpriced-model'],
-    items,
-  };
-}
 
 function readySummary(overrides: Partial<Summary> = {}): Summary {
   return makeSummary({
@@ -412,7 +397,6 @@ describe('seats', () => {
     );
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'Claude Code CLI · Claude Sonnet 4',
       short: 'Sonnet 4',
     });
   });
@@ -428,12 +412,10 @@ describe('seats', () => {
     );
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'Claude Code CLI · Opus 5.5',
       short: 'Opus 5.5',
     });
     expect(view.seats.build).toEqual({
       kind: 'named',
-      identity: 'Claude Code CLI · Sonnet 5',
       short: 'Sonnet 5',
     });
     const spans = crewLine(view, 200);
@@ -560,7 +542,7 @@ describe('seats', () => {
     expect(view.seats.build.kind).toBe('named');
   });
 
-  it('names a recorded API seat by its provider word and the pretty model name when the cost record kept its kind', () => {
+  it('spells a recorded API seat model pretty when the cost record kept its kind', () => {
     const view = derive(
       makeSummary({
         plannerTool: 'opencode',
@@ -581,12 +563,11 @@ describe('seats', () => {
 
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'opencode · GPT-5',
       short: 'GPT-5',
     });
   });
 
-  it('spells a recorded API seat model pretty when its name is a CLI alias, never with the CLI label', () => {
+  it('spells a recorded API seat model pretty when its name is a CLI alias, never with the CLI alias name', () => {
     const view = derive(
       makeSummary({
         plannerTool: 'claude-code',
@@ -608,7 +589,6 @@ describe('seats', () => {
     // The API twin must not borrow the CLI alias's display name for its own model.
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'claude-code · Sonnet',
       short: 'Sonnet',
     });
   });
@@ -634,7 +614,6 @@ describe('seats', () => {
 
     expect(view.seats.plan).toEqual({
       kind: 'named',
-      identity: 'Claude Code CLI · Sonnet 5',
       short: 'Sonnet 5',
     });
   });
@@ -642,20 +621,21 @@ describe('seats', () => {
   it('leaves a recorded name the run used under two kinds on the name-only words', () => {
     const view = derive(
       makeSummary({
-        plannerTool: 'opencode',
+        plannerTool: 'claude-code',
+        plannerModel: 'sonnet',
         costBreakdown: makeCostBreakdown({
           providerRunMetadata: {
-            'api:opencode': {
-              service: 'opencode',
+            'api:claude-code': {
+              service: 'claude-code',
               offering: 'payg',
               normalizedEndpoint: 'https://my-endpoint.example/v1',
               billing: 'api-metered',
               asOf: '',
             },
-            'cli:opencode': {
-              service: 'opencode',
+            'cli:claude-code': {
+              service: 'claude-code',
               offering: 'payg',
-              normalizedEndpoint: 'cli:opencode',
+              normalizedEndpoint: 'cli:claude-code',
               billing: 'provider-dependent',
               asOf: '',
             },
@@ -664,11 +644,8 @@ describe('seats', () => {
       }),
     );
 
-    expect(view.seats.plan).toEqual({
-      kind: 'named',
-      identity: 'OpenCode CLI · auto',
-      short: 'auto',
-    });
+    // The API kind alone reads `Sonnet`; an ambiguous name reads the merged catalog's alias.
+    expect(view.seats.plan).toEqual({ kind: 'named', short: 'Sonnet 5' });
   });
 
   it('names a moved API seat literally when its name is a CLI tool id', () => {
@@ -778,7 +755,6 @@ describe('brief rows', () => {
         completedByLocal: 0,
         changedFiles: ['src/old.ts'],
         taskBreakdown: [booked({ taskId: taskId('T001'), taskTitle: 'Old brief' })],
-        costBreakdown: makeCostBreakdown({ totalActualCost: 0.42 }),
       }),
       { status: ENDED, hydration: { kind: 'loaded', state }, ledger: makeLedger([old]) },
     );
@@ -790,7 +766,6 @@ describe('brief rows', () => {
     ]);
     expect(view.files.changed).toEqual(['src/old.ts']);
     expect(view.files.stoppedAt).toBeNull();
-    expect(view.cost).toEqual({ kind: 'priced', actual: 0.42, partial: false });
   });
 
   it('follows the ledger plan order and joins the spend record by id', () => {
@@ -890,7 +865,7 @@ describe('brief rows', () => {
       ['T002', 'stopped', 'src/b.ts', 3_236_892],
     ]);
     expect(view.briefs.earlierRows).toEqual([]);
-    expect(view.files.stoppedAt?.partialFiles).toEqual(['src/b.ts']);
+    expect([...view.files.partial]).toEqual(['src/b.ts']);
   });
 
   // In a real run, End run during the BUILD call of T003: the ledger still held the pending seed
@@ -961,7 +936,7 @@ describe('brief rows', () => {
     const view = derive(
       makeSummary({ totalTasks: 5, completedByLocal: 1, escalatedToPlanner: 1, failed: 1 }),
     );
-    expect(view.briefs).toMatchObject({ total: 5, passed: 1, escalated: 1, failed: 1 });
+    expect(view.briefs).toMatchObject({ total: 5, passed: 1, failed: 1 });
   });
 });
 
@@ -990,7 +965,6 @@ describe('review', () => {
       verdict: 'pass',
       counts: { critical: 0, warning: 2, note: 1 },
       markdownPath: '',
-      driftPassed: true,
     });
   });
 
@@ -1030,126 +1004,6 @@ describe('scope', () => {
   });
 });
 
-describe('cost', () => {
-  it('is unmetered when every runner bills outside per-token metering', () => {
-    const view = derive(
-      makeSummary({
-        costBreakdown: makeCostBreakdown({
-          requestEstimate: unmeteredEstimate([
-            {
-              callId: 'planner-call',
-              role: 'planner',
-              usageBoundary: 'single-request',
-              amount: null,
-              knownSubtotal: 0,
-              completeness: 'unavailable',
-              reasons: ['unpriced-model'],
-              billing: { posture: 'subscription-included', basis: 'observed-invocation' },
-            },
-          ]),
-        }),
-      }),
-    );
-    expect(view.cost).toEqual({ kind: 'unmetered', label: 'subscription-included' });
-  });
-
-  it('never prices a zero-token subscription crew as $0.00', () => {
-    const view = derive(
-      makeSummary({
-        tokenUsage: makeUsage(),
-        costBreakdown: makeCostBreakdown({
-          requestEstimate: unmeteredEstimate([
-            {
-              callId: 'planner-call',
-              role: 'planner',
-              usageBoundary: 'single-request',
-              amount: null,
-              knownSubtotal: 0,
-              completeness: 'unavailable',
-              reasons: ['unpriced-model'],
-              billing: { posture: 'subscription-included', basis: 'observed-invocation' },
-            },
-            {
-              callId: 'implementer-call',
-              role: 'implementer',
-              usageBoundary: 'single-request',
-              amount: null,
-              knownSubtotal: 0,
-              completeness: 'unavailable',
-              reasons: ['unpriced-model'],
-              billing: { posture: 'local', basis: 'local-transport' },
-            },
-          ]),
-        }),
-      }),
-    );
-    expect(view.cost).toEqual({ kind: 'unmetered', label: 'subscription-included · local' });
-  });
-
-  it('is unpriced when the run booked no priced usage', () => {
-    const view = derive(
-      makeSummary({ costBreakdown: makeCostBreakdown({ hasPricedUsage: false }) }),
-    );
-    expect(view.cost).toEqual({ kind: 'unpriced' });
-  });
-
-  it('is unpriced when the run has no cost breakdown at all', () => {
-    expect(derive(makeSummary()).cost).toEqual({ kind: 'unpriced' });
-  });
-
-  it('carries the spend and nothing beside it when the run is priced', () => {
-    const view = derive(
-      makeSummary({
-        costBreakdown: makeCostBreakdown({
-          totalActualCost: 0.42,
-        }),
-      }),
-    );
-    expect(view.cost).toEqual({ kind: 'priced', actual: 0.42, partial: false });
-  });
-
-  it('marks a run partial when part of its spend has no price', () => {
-    const view = derive(
-      makeSummary({
-        costBreakdown: makeCostBreakdown({
-          totalActualCost: 0.42,
-          hasUnpricedUsage: true,
-          isTotalActualCostKnown: false,
-        }),
-      }),
-    );
-    expect(view.cost).toMatchObject({ kind: 'priced', partial: true });
-  });
-
-  it('has no cost view at all when the spend display is off', () => {
-    const view = derive(
-      makeSummary({ costBreakdown: makeCostBreakdown({ totalActualCost: 0.42 }) }),
-      { showSpend: false },
-    );
-    expect(view.cost).toBeNull();
-  });
-});
-
-describe('tokens', () => {
-  it('sums input and output per seat and folds escalation into build', () => {
-    const view = derive(
-      makeSummary({
-        tokenUsage: makeUsage({
-          plannerInput: 10_000,
-          plannerOutput: 2_300,
-          implementerInput: 100_000,
-          implementerOutput: 40_000,
-          escalationInput: 6_000,
-          escalationOutput: 2_000,
-          reviewerInput: 15_000,
-          reviewerOutput: 3_700,
-        }),
-      }),
-    );
-    expect(view.tokens).toEqual({ plan: 12_300, build: 148_000, review: 18_700 });
-  });
-});
-
 describe('files', () => {
   it('sorts and de-duplicates the changed set and marks the partial ones', () => {
     const view = derive(
@@ -1160,7 +1014,7 @@ describe('files', () => {
     );
     expect(view.files.changed).toEqual(['src/a.ts', 'src/b.ts']);
     expect([...view.files.partial]).toEqual(['src/b.ts']);
-    expect(view.files.stoppedAt).toEqual({ taskId: taskId('T002'), partialFiles: ['src/b.ts'] });
+    expect(view.files.stoppedAt).toEqual({ taskId: taskId('T002') });
   });
 
   it('keeps a legacy summary without a changed set distinct from an empty one', () => {
@@ -1194,14 +1048,13 @@ describe('checkpoint, phases and pass-through', () => {
     expect(view.phases).toEqual([{ phase: 'planning', ms: 1000 }]);
   });
 
-  it('carries the session id and clock from the record, and no mode', () => {
-    const view = derive(makeSummary({ mode: 'standard', totalTime: 133_000 }), {
+  it('carries the session id from the record, and no mode', () => {
+    const view = derive(makeSummary({ mode: 'standard' }), {
       ref: { projectDir: '/tmp/p', sessionId: '2026-09-14-add-email-validation' },
     });
     expect(view.run).toEqual({
       feature: expect.any(String),
       sessionId: '2026-09-14-add-email-validation',
-      totalMs: 133_000,
     });
   });
 

@@ -1753,7 +1753,7 @@ describe('invokeProcessCli tool-use guard', () => {
       tool_name: 'run_command',
       tool_info: {
         name: 'run_command',
-        parameters: { CommandLine: 'find /Users/dev -name "process-invoke.ts" 2>/dev/null' },
+        parameters: { CommandLine: 'find /Users/alice -name "process-invoke.ts" 2>/dev/null' },
       },
     },
   });

@@ -19,7 +19,7 @@ export function runnerCallWarningFingerprint(opts: {
   return `rw:${sha256Hex(`${opts.source}\0${opts.code}\0${normalized}`).slice(0, 24)}`;
 }
 
-export function normalizeRunnerCallWarningFingerprintText(message: string): string {
+function normalizeRunnerCallWarningFingerprintText(message: string): string {
   return message
     .replace(ISO_TIMESTAMP_PATTERN, '<timestamp>')
     .replace(SESSION_ID_PATTERN, '$1 <id>')

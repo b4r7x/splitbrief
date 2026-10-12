@@ -111,7 +111,7 @@ export function runnerCallLimitWarning(limit: RunnerCallOutputLimit): RunnerCall
   };
 }
 
-export function runnerCallToolUseSummary(toolUses: readonly RunnerCallToolUse[]): string {
+function runnerCallToolUseSummary(toolUses: readonly RunnerCallToolUse[]): string {
   const recent = toolUses.slice(-RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS);
   const lines = recent.map((toolUse) => {
     const input = JSON.stringify(toolUse.input);

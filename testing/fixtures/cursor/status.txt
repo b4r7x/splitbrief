@@ -1,3 +1,0 @@
-cursor-agent --workspace /tmp/cursor-fixture-CQyXZw status
-# version: 2026.08.25-3e8eec8
-✓ Logged in as user@example.test

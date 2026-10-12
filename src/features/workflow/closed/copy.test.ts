@@ -4,7 +4,7 @@ import {
   endedInPlanning,
   makeView,
 } from '#testing/helpers/factories/summary-view.js';
-import type { BriefRow, CostView, SummaryView } from './view-model.js';
+import type { BriefRow, SummaryView } from './view-model.js';
 import { taskId } from '../../../core/schemas/task.js';
 import { arrowSep } from '../../../core/separators.js';
 import type { CopySegment } from './copy.js';
@@ -176,43 +176,6 @@ describe('runRows', () => {
     ).toEqual([{ text: 'quality 0.40', tone: 'warning' }]);
   });
 
-  it.each<[string, CostView]>([
-    ['a fully priced run', { kind: 'priced', actual: 0.42, partial: false }],
-    ['a partly priced run', { kind: 'priced', actual: 0.42, partial: true }],
-    ['a subscription crew', { kind: 'unmetered', label: 'subscription-included' }],
-    ['a mixed unmetered crew', { kind: 'unmetered', label: 'subscription-included · local' }],
-    ['a run nobody priced', { kind: 'unpriced' }],
-  ])('names no cost row for %s, whatever the record priced', (_label, cost) => {
-    const view = makeView({ cost });
-    expect(runRows(view).some((row) => row.label === 'Cost')).toBe(false);
-    for (const row of runRows(view)) {
-      for (const segment of row.segments.flatMap(factSpans))
-        expect(segment.text).not.toContain('$');
-    }
-    // The record keeps what `/usage` reports; only the ledger stopped saying it.
-    expect(view.cost).toEqual(cost);
-  });
-
-  it('names no token row for the seats that booked tokens', () => {
-    const view = makeView();
-    expect(runRows(view).some((row) => row.label === 'Tokens')).toBe(false);
-    for (const row of runRows(view)) {
-      expect(row.label).not.toMatch(/token/i);
-      for (const segment of row.segments.flatMap(factSpans)) {
-        expect(segment.text).not.toContain('31.2k');
-        expect(segment.text).not.toContain('204.5k');
-        expect(segment.text).not.toContain('18.7k');
-        expect(segment.text).not.toMatch(/token/i);
-      }
-    }
-    expect(view.tokens).toEqual({ plan: 31_200, build: 204_500, review: 18_700 });
-  });
-
-  it('reads the same with the spend display off as with it on', () => {
-    const labels = (view: SummaryView) => runRows(view).map((row) => row.label);
-    expect(labels(makeView({ cost: null }))).toEqual(labels(makeView()));
-  });
-
   it('shows phase times only when more than one phase booked time', () => {
     expect(segmentsFor(makeView(), 'Phases')).toEqual([
       { text: 'planning 2m 50s', tone: 'textDim' },
@@ -259,7 +222,7 @@ describe('crewLine', () => {
     const view = makeView({
       seats: {
         ...makeView().seats,
-        review: { kind: 'named', identity: 'Codex CLI · gpt-5-codex', short: 'gpt-5-codex' },
+        review: { kind: 'named', short: 'gpt-5-codex' },
       },
     });
     expect(

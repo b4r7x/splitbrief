@@ -1,21 +1,19 @@
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidence.js';
-import type { CostBreakdown, Summary } from '../../../core/schemas/summary.js';
+import type { Summary } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type {
   BriefRow,
   BriefRowState,
-  CostView,
   PhaseTiming,
   ReviewView,
   ScopeView,
   SeatView,
   SummaryView,
 } from './view-model.js';
-import { costKnownFlags, unmeteredRunCostLabel } from '../../../core/schemas/summary.js';
-import { formatSeatIdentity, formatShortSeatIdentity } from '../../../core/crew/identity.js';
+import { formatShortSeatIdentity } from '../../../core/crew/identity.js';
 import {
   getProviderDisplayName,
   getRunnerIdentityDisplayName,
@@ -48,7 +46,6 @@ function seatView(input: {
       : resolveModelDisplayName({ providerId: tool, model, role, cache: modelCacheStore, kind });
   return {
     kind: 'named',
-    identity: formatSeatIdentity({ seat, displayName, kind }),
     short: formatShortSeatIdentity({ seat, displayName, kind }),
   };
 }
@@ -388,7 +385,6 @@ export function reviewView(summary: Summary): ReviewView {
       verdict: legacy.verdict,
       counts: { critical: legacy.critical, warning: legacy.warnings, note: legacy.notes },
       markdownPath: '',
-      driftPassed: summary.driftSummary?.passed ?? null,
       evidence: {
         validated: summary.evidenceSummary?.tasksWithValidationEvidence ?? 0,
         total: summary.evidenceSummary?.totalTasks ?? summary.totalTasks,
@@ -402,7 +398,6 @@ export function reviewView(summary: Summary): ReviewView {
     verdict: packet.finalReviewVerdict,
     counts: packet.finalReviewFindingCounts,
     markdownPath: sanitizeTerminalDisplayText(packet.markdownPath),
-    driftPassed: packet.driftPassed,
     evidence: { validated: packet.evidenceValidatedTasks, total: packet.evidenceTotalTasks },
     missingArtifacts: packet.missingArtifactCount,
   };
@@ -419,36 +414,6 @@ export function scopeView(summary: Summary): ScopeView {
   };
 }
 
-/**
- * A run billed entirely outside per-token metering has no dollar figure to report, and printing
- * `$0.00` for it states a charge that never happened.
- */
-export function costView(breakdown: CostBreakdown | undefined): CostView {
-  if (breakdown === undefined) return { kind: 'unpriced' };
-  const unmetered = unmeteredRunCostLabel(breakdown);
-  if (unmetered !== null) return { kind: 'unmetered', label: unmetered };
-  if (breakdown.hasPricedUsage !== true) return { kind: 'unpriced' };
-  const flags = costKnownFlags(breakdown);
-  return {
-    kind: 'priced',
-    actual: breakdown.totalActualCost,
-    partial: !flags.totalCostKnown,
-  };
-}
-
-export function tokensView(summary: Summary): SummaryView['tokens'] {
-  const usage = summary.tokenUsage;
-  return {
-    plan: usage.plannerInput + usage.plannerOutput,
-    build:
-      usage.implementerInput +
-      usage.implementerOutput +
-      usage.escalationInput +
-      usage.escalationOutput,
-    review: usage.reviewerInput + usage.reviewerOutput,
-  };
-}
-
 export function filesView(summary: Summary): Omit<SummaryView['files'], 'patch'> {
   const stoppedAt = summary.stoppedAt;
   const partialFiles = uniqueSorted(
@@ -460,7 +425,7 @@ export function filesView(summary: Summary): Omit<SummaryView['files'], 'patch'>
         ? null
         : uniqueSorted(summary.changedFiles.map((file) => sanitizeTerminalDisplayText(file))),
     partial: new Set(partialFiles),
-    stoppedAt: stoppedAt === undefined ? null : { taskId: stoppedAt.taskId, partialFiles },
+    stoppedAt: stoppedAt === undefined ? null : { taskId: stoppedAt.taskId },
   };
 }
 

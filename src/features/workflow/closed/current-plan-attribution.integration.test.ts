@@ -3,7 +3,6 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
-import { makeCostBreakdown } from '#testing/helpers/factories/cost-breakdown.js';
 import { createEvidenceLedger, emptyEvidenceTask } from '../../../core/evidence/ledger-state.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -55,7 +54,6 @@ function view(
         totalTasks: tasks.length,
         completedByLocal: 0,
         changedFiles: ['old.ts'],
-        costBreakdown: makeCostBreakdown({ totalActualCost: 0.42 }),
         taskBreakdown: [
           {
             taskId: oldTask.id,
@@ -76,7 +74,7 @@ function view(
 }
 
 describe('independent closed attribution proof', () => {
-  it('keeps current pending briefs ordered and earlier evidence separate without altering totals', () => {
+  it('keeps current pending briefs ordered and earlier evidence separate', () => {
     const result = view([makeTask({ id: 'T003', title: 'Third' }), newTask]);
     expect(result.briefs.rows.map(({ id, state }) => [id, state])).toEqual([
       ['T003', 'pending'],
@@ -85,7 +83,6 @@ describe('independent closed attribution proof', () => {
     expect(result.briefs.earlierRows).toHaveLength(1);
     expect(result.briefs.earlierRows[0]).toMatchObject({ title: 'Old task', retries: 3 });
     expect(result.files.changed).toEqual(['old.ts']);
-    expect(result.cost).toEqual({ kind: 'priced', actual: 0.42, partial: false });
   });
 
   it('does not revive an old persisted stoppedAt for the new pending T001', () => {
@@ -104,7 +101,7 @@ describe('independent closed attribution proof', () => {
     const result = view([{ ...newTask, status: 'in_progress' }], {
       stoppedAt: { taskId: oldTask.id, partialFiles: ['old.ts'] },
     });
-    expect(result.files.stoppedAt).toEqual({ taskId: newTask.id, partialFiles: [] });
+    expect(result.files.stoppedAt).toEqual({ taskId: newTask.id });
     expect(result.briefs.rows[0]).toMatchObject({ state: 'stopped', partialFiles: 0, retries: 0 });
     expect([...result.files.partial]).toEqual([]);
     expect(result.files.changed).toEqual(['old.ts']);
@@ -167,7 +164,8 @@ describe('independent closed attribution proof', () => {
         },
         ledger,
       );
-      expect(result.files.stoppedAt).toEqual({ taskId: active.id, partialFiles: ['new.ts'] });
+      expect(result.files.stoppedAt).toEqual({ taskId: active.id });
+      expect([...result.files.partial]).toEqual(['new.ts']);
       expect(result.briefs.rows[0]).toMatchObject({ state: 'stopped', partialFiles: 1 });
     },
   );
@@ -186,7 +184,7 @@ describe('independent closed attribution proof', () => {
       { stoppedAt: { taskId: active.id, partialFiles: ['old.ts'] } },
       ledger,
     );
-    expect(result.files.stoppedAt?.partialFiles).toEqual([]);
+    expect([...result.files.partial]).toEqual([]);
     expect(result.briefs.earlierRows).toHaveLength(2);
   });
 

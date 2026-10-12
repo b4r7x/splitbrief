@@ -69,9 +69,8 @@ export function findingCounts(counts: Readonly<{ critical: number; warning: numb
 }
 
 /**
- * What the run did, and never what it cost. The record keeps the money and the token counts
- * (`view.cost`, `view.tokens`) for the reader who opens `/usage`; a ledger nobody asked for a price
- * from states the work instead.
+ * What the run did, and never what it cost. The view carries no money and no token counts: the
+ * record keeps them for the reader who opens `/usage`.
  */
 export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [

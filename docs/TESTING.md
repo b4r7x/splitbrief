@@ -242,7 +242,7 @@ Every scenario copies the record of each of its runs to `.test-artifacts/live/pa
 ## Tests pass locally but fail in CI (or vice versa)
 
 Diagnostic checklist:
-- Node version: engines field requires `>=22`. Check `node --version` matches CI.
+- Node version: `engines.node` is `^22.0.0 || ^24.0.0`. Check that `node --version` reports major 22 (CI) or 24 (the release workflow).
 - `CI`: GitHub sets `CI=true`, and Ink paints no frames when `CI` is on. The `unit` and `integration` test steps set `CI=false`. A shell that exports `CI=1` makes Ink tests fail locally; run them with `CI=false npm test`.
 - Temp dir state: some tests write under `os.tmpdir()`. Flake when runs don't clean up; rerun after `rm -rf $TMPDIR/splitbrief-*`.
 - Credentials: `testing/helpers/scrub-credentials.ts` removes API-key and token env vars from every test process, so no test reads the keys in your shell. A test that needs a key sets a fake one.

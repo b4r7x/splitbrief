@@ -41,7 +41,7 @@ For the long version, see [docs/VISION.md](./VISION.md).
 
 ## 3. Installation
 
-Requires **Node.js 22 or newer**, **macOS, Linux or inside WSL**, and a **git** repository with at least one commit to work in.
+Requires **Node.js 22 or 24**, **macOS, Linux or inside WSL**, and a **git** repository with at least one commit to work in.
 
 On Linux and WSL2, a Claude Code implementer also needs `bubblewrap` and `socat` for its sandbox: `sudo apt-get install bubblewrap socat` on Debian and Ubuntu. See [Troubleshooting](./TROUBLESHOOTING.md#symptom-the-run-halted-with-tool-recipe-rejected-by-claude-code-cli-and-sandbox-required-but-unavailable).
 

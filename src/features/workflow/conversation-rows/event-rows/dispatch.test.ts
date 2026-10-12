@@ -1294,7 +1294,7 @@ describe('event row dispatch', () => {
       phase: 'idle',
       text: 'build it',
       attachedInputs: [
-        { path: '/Users/dev/notes.md', kind: 'text' },
+        { path: '/Users/alice/notes.md', kind: 'text' },
         { path: '/Volumes/design/mock.png', kind: 'image' },
       ],
     };
@@ -1317,14 +1317,14 @@ describe('event row dispatch', () => {
       expect(lines.findIndex((line) => line.includes('build it'))).toBeLessThan(header);
       expect(lines.slice(header, header + 3)).toEqual([
         'Attached files · 2',
-        'text · /Users/dev/notes.md',
+        'text · /Users/alice/notes.md',
         'image · /Volumes/design/mock.png',
       ]);
     });
 
     it.each([80, 60])('wraps only the path after its kind at %i columns', (width) => {
       const long =
-        '/Users/dev/projects/a-rather-long-folder-name/another-nested-level/brief-for-the-feature.md';
+        '/Users/alice/projects/a-rather-long-folder-name/another-nested-level/brief-for-the-feature.md';
       const lines = requestLines(
         { ...request, attachedInputs: [{ path: long, kind: 'text' }] },
         width,
@@ -1400,8 +1400,8 @@ describe('event row dispatch', () => {
           {
             ...request,
             phase: 'planning',
-            text: '1. Which module?\n@/Users/dev/notes.md',
-            qa: [{ question: 'Which module?', answer: '@/Users/dev/notes.md' }],
+            text: '1. Which module?\n@/Users/alice/notes.md',
+            qa: [{ question: 'Which module?', answer: '@/Users/alice/notes.md' }],
           },
           width,
         );
@@ -1409,9 +1409,9 @@ describe('event row dispatch', () => {
         expect(lines).toEqual([
           'Answered · 1 question',
           '1. Which module?',
-          'You → @/Users/dev/notes.md',
+          'You → @/Users/alice/notes.md',
           'Attached files · 2',
-          'text · /Users/dev/notes.md',
+          'text · /Users/alice/notes.md',
           'image · /Volumes/design/mock.png',
         ]);
       },

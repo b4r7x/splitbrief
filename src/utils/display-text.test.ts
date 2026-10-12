@@ -275,7 +275,7 @@ describe('truncateTerminalDisplayTextStart', () => {
 describe('truncateTerminalDisplayTextMiddle', () => {
   it('preserves the head and tail by terminal cell width', () => {
     const result = truncateTerminalDisplayTextMiddle(
-      "sed -n '1,260p' /Users/dev/.agents/library/codebase-exploration/SKILL.md",
+      "sed -n '1,260p' /Users/alice/.agents/library/codebase-exploration/SKILL.md",
       36,
     );
 

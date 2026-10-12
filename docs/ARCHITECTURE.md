@@ -656,7 +656,7 @@ src/
 │   │                              context, escalation,
 │   │                              summary, types
 │   ├── providers/                 candidate-contract, capabilities,
-│   │                              capability-inference, catalog-detection,
+│   │                              catalog-detection,
 │   │                              cli-model-catalog, client, conformance,
 │   │                              constants, cost, cost-math, discovery,
 │   │                              dispatch-stream, errors, image-attach,

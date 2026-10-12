@@ -7,7 +7,6 @@ import { createReviewInputHandler, type ReviewInputEffects } from '../../review-
 import { useWorkflowKeys } from '../use-keys.js';
 import { resolveInputHint } from '../../input-hints.js';
 import { continueRun } from '../../../../engine/orchestrator/run/continue.js';
-import { configStore } from '../../../../stores/project/config.js';
 import { skillsStore } from '../../../../stores/project/skills.js';
 import { overlayStore } from '../../../../stores/ui/overlay.js';
 import { routerStore } from '../../../../stores/navigation/router.js';
@@ -21,7 +20,6 @@ import { stopStore } from '../../../../stores/workflow/stop.js';
 import { reviewStore } from '../../../../stores/workflow/review.js';
 import { approvalPromptStore } from '../../../../stores/approval-prompt/prompt.js';
 import { useStores } from '../../../../stores/use-stores.js';
-import { getShowSpend } from '../../../../core/config/accessors/values.js';
 import { atRestComposer, atRestRailStages } from '../../at-rest.js';
 import { deriveSummaryView } from '../../closed/view-model.js';
 import { hydrateResume } from '../../resume-hydration.js';
@@ -45,7 +43,6 @@ interface UseWorkflowScreenOptions {
 }
 
 export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenOptions) {
-  const showSpend = configStore.use((s) => s.config === null || getShowSpend(s.config));
   const [skills] = useStores(skillsStore);
   const selectedSkillMetas = skills.available.filter((m) => skills.selected.has(m.id));
   const hasOverlay = overlayStore.use((s) => s.active !== 'none');
@@ -118,7 +115,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
 
   const composer = atRestRecord === undefined ? null : atRestComposer(atRestRecord);
   const closedView =
-    atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord, showSpend });
+    atRestRecord === undefined ? null : deriveSummaryView({ record: atRestRecord });
   const closed = atRestRecord !== undefined && atRestRecord.status.kind === 'closed';
 
   const resumeAtRest = useEffectEvent(continueAtRest);

@@ -22,7 +22,7 @@ See the complete set in [`overview.png`](overview.png).
 | [`planning.png`](final/planning.png) | Sparse planner state with a two-row header and readable streaming area |
 | [`implementation.png`](final/implementation.png) | Clean 25/75 sidebar and activity split with aligned routing and cost facts |
 | [`review.png`](final/review.png) | Document and approval controls side by side instead of competing vertically |
-| [`summary.png`](final/summary.png) | Local completion first; compact phase timing without an empty frame |
+| [`summary.png`](final/summary.png) | Local completion first; compact phase timing without an empty frame (historical: the closed-run block replaced the summary screen) |
 | [`command-palette.png`](final/command-palette.png) | Aligned command columns, quieter groups, and one unmistakable selected row |
 
 ## Implementation map
@@ -35,7 +35,11 @@ See the complete set in [`overview.png`](overview.png).
 - Review layout: `src/features/workflow/components/review-view.tsx` and the approval prompt
   components under `src/features/workflow/components/approval-prompt/`.
 - Home: `src/app/screens/home.tsx` and `src/features/home/`.
-- Summary: `src/app/screens/summary.tsx` and `src/features/summary/`.
+- Summary: the summary screen (`src/app/screens/summary.tsx`, `src/features/summary/`) is removed;
+  the closed-run block replaced it. A closed run now states its outcome at the tail of its own
+  transcript: `src/features/workflow/closed/block.tsx` (`closedTranscriptBlock`),
+  `src/features/workflow/closed/view-model.ts` (`deriveSummaryView`), and
+  `src/features/workflow/closed/copy.ts`.
 - Command palette: `src/app/overlays/palette.tsx` and `src/features/palette/`.
 
 The catalog's `frame.txt` and `frame.cells.json` remain canonical for copy, terminal-cell geometry,

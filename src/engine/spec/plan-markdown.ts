@@ -30,7 +30,7 @@ function taskLines(task: TaskSpec): string[] {
 }
 
 /** Every protected operation the plan lists, with the task that needs it. Approving confirms them. */
-export function planProtectedOperations(
+function planProtectedOperations(
   plan: PlanProposal,
 ): { taskId: string; operation: string; path: string }[] {
   return plan.tasks.flatMap((task) =>

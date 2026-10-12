@@ -114,7 +114,7 @@ export function calculateCost(
   );
 }
 
-export function cachePricingIsComplete(
+function cachePricingIsComplete(
   pricing: ResolvedPricing,
   cacheReadTokens: number,
   cacheCreateTokens: number,
@@ -124,7 +124,7 @@ export function cachePricingIsComplete(
   return true;
 }
 
-export function usageCostIsFullyKnown(opts: {
+function usageCostIsFullyKnown(opts: {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
