@@ -3,7 +3,7 @@ import { getDefaultDetectionService } from '../../engine/detection/service.js';
 import { killAllProcesses } from '../../lib/process/registry.js';
 import { restoreTerminalControl } from '../../lib/terminal/control.js';
 import { preparationStore } from '../../stores/navigation/preparation.js';
-import { teardownStores } from '../init-stores.js';
+import { teardownStores } from '../bootstrap/init.js';
 
 const SIGNAL_EXIT_CODE: Record<TerminationSignal, number> = {
   SIGINT: 130,

@@ -9,7 +9,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { writeConfigMarker, prepareExecutionMock } from '#testing/helpers/start-command.js';
 import { saveDetectionCache } from '../../../engine/detection/cache.js';
 import * as capabilitiesModule from '../../../engine/providers/capabilities.js';
-import * as initStoresModule from '../../init-stores.js';
+import * as initStoresModule from '../../bootstrap/init.js';
 import * as setupModule from '../../setup.js';
 import { COLD_START_STDERR_LINE } from '../../../core/discovery/copy.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';

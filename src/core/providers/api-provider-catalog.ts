@@ -61,6 +61,7 @@ export type DataUsePosture =
   | 'allowed-training'
   | 'unreviewed';
 
+/** A capability tier, not a seat: the reviewer reads the planner tier (`runnerRoleForActiveRole`). */
 export type ApiRunnerRole = 'planner' | 'implementer';
 
 export interface ApiProviderDescriptor<

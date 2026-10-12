@@ -64,7 +64,7 @@ Existing example to follow: `src/cli/commands/start/register.ts`.
    ```ts
    export const _myInternal = { set: store.set };
    ```
-6. If the store reads disk on startup: add the init call in `src/cli/init-stores.ts`
+6. If the store reads disk on startup: add the init call in `src/cli/bootstrap/project.ts`
 7. Tests: call `myStore.reset()` in `beforeEach`
 
 Factory: `src/stores/create-store.ts`.

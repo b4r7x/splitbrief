@@ -6,7 +6,7 @@ import { initConfig } from '../../core/config/load/io.js';
 import { configPath } from '../../core/config/load/document.js';
 import { renderApp } from '../render/app.js';
 import { canonicalizeProjectDir, assertInteractiveTty } from '../setup.js';
-import { initStores } from '../init-stores.js';
+import { initStores } from '../bootstrap/init.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE } from '../../core/paths.js';
 

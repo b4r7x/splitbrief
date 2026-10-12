@@ -7,7 +7,7 @@ import { resetAllStores } from '#testing/helpers/stores.js';
 import { setupFetchMock } from '#testing/helpers/fetch-mock.js';
 import { registerStartCommand } from './start/register.js';
 import type { StartDeps } from './start/types.js';
-import { initStores } from '../init-stores.js';
+import { initStores } from '../bootstrap/init.js';
 import { configStore } from '../../stores/project/config.js';
 import { routerStore } from '../../stores/navigation/router.js';
 import {

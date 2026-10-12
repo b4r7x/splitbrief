@@ -327,7 +327,7 @@ The workflow screen takes no density, live or at rest: its rail, dividers, trans
 2. Call `createStore(initialState)`.
 3. Export the public API via `storeBase(store)` -- this gives consumers `use`, `get`, `subscribe`, `reset`.
 4. Export `_<name>Internal = { set: store.set }` for the actions file that needs write access.
-5. If the store reads disk on startup: add an init call in `src/cli/init-stores.ts`.
+5. If the store reads disk on startup: add an init call in `src/cli/bootstrap/project.ts`.
 6. Reset in tests: `beforeEach(() => store.reset())`.
 
 ---

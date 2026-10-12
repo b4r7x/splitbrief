@@ -15,7 +15,7 @@ const lifecycle = vi.hoisted(() => ({
   awaitActiveWorkflowShutdown: vi.fn<() => Promise<void>>(),
 }));
 
-vi.mock('../init-stores.js', () => ({ teardownStores: lifecycle.teardownStores }));
+vi.mock('../bootstrap/init.js', () => ({ teardownStores: lifecycle.teardownStores }));
 vi.mock('../../engine/detection/service.js', () => ({
   getDefaultDetectionService: () => ({ shutdown: lifecycle.shutdownDetection }),
 }));

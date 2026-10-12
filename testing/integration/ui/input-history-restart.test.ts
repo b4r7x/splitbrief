@@ -24,9 +24,8 @@ async function loadRuntime() {
   const { Composer: ComposerComponent } = await import(
     '../../../src/components/composer/composer.js'
   );
-  const { awaitBackgroundDiscovery, initStores, teardownStores } = await import(
-    '../../../src/cli/init-stores.js'
-  );
+  const { initStores, teardownStores } = await import('../../../src/cli/bootstrap/init.js');
+  const { awaitBackgroundDiscovery } = await import('../../../src/cli/bootstrap/discovery.js');
   const { resetAllStores } = await import('#testing/helpers/stores.js');
 
   const renderComposer = (

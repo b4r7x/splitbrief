@@ -599,7 +599,7 @@ describe('validateConfig', () => {
     expect(data).toBeUndefined();
   });
 
-  it('compiler key is rejected with the retirement message', () => {
+  it('compiler key is rejected with a message that names the fix', () => {
     const { errors } = validateConfig({
       ...makeConfig(),
       compiler: { kind: 'cli', tool: 'codex' },
@@ -608,7 +608,7 @@ describe('validateConfig', () => {
     expect(errors).toContainEqual({
       path: 'compiler',
       message:
-        'Unknown key "compiler" \u2014 the brief compiler was retired on 2026-09-13; briefs compile from the plan directly.',
+        'Unknown key "compiler" \u2014 briefs compile from the plan directly; remove the "compiler" block.',
     });
   });
 

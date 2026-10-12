@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { addWorkflowOptions } from '../../options.js';
 import { canonicalizeProjectDir } from '../../setup.js';
-import { initStores } from '../../init-stores.js';
+import { initStores } from '../../bootstrap/init.js';
 import { runHeadless } from '../../headless.js';
 import { renderApp } from '../../render/app.js';
 import { formatAtFileRefusal, parseAtFiles } from '../../parse-at-files.js';

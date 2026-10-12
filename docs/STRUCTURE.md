@@ -71,7 +71,10 @@ Representative contents of the non-feature folders that have more than a handful
 
 ```
 src/cli/
-├── init-stores.ts     # store bootstrap (initStoresForTuiMount, initStores); see BOOTSTRAP.md
+├── bootstrap/         # store bootstrap; see BOOTSTRAP.md
+│   ├── init.ts        # entries: initStoresForTuiMount, initStores, teardownStores
+│   ├── project.ts     # project-state loading
+│   └── discovery.ts   # async discovery
 ├── options.ts         # commander option builder (addWorkflowOptions)
 ├── setup.ts           # bootstrap prep (canonicalizeProjectDir, ensureGitAndConfig, setupWorkflow)
 ├── render/            # Ink / fullscreen render setup (app.ts is the production entry)
@@ -122,7 +125,7 @@ src/stores/ui/
 └── persistence.ts     # disk I/O for inputHistoryStore (hydrate + debounced save)
 ```
 
-`persistence.ts` is called from `cli/init-stores.ts` at boot. See [`BOOTSTRAP.md`](./BOOTSTRAP.md) for why I/O colocates with the store rather than living in `cli/`.
+`persistence.ts` is called from `cli/bootstrap/project.ts` at boot. See [`BOOTSTRAP.md`](./BOOTSTRAP.md) for why I/O colocates with the store rather than living in `cli/`.
 
 ### `src/engine/events/` — EventBus subsystem
 
@@ -296,6 +299,7 @@ features/workflow/
 │   │   └── use-inline-edit.ts # external-edit handoff
 │   ├── use-run-loop.ts       # runWorkflow + the recovery loop + the process-registry stop watcher
 │   ├── use-run-continue.ts   # how the run is re-entered: the state, the steer, continueRun
+│   ├── use-shared-clock.ts   # one ticking now for header, sidebar and build progress
 │   └── use-keys.ts
 ├── closed/                   # a closed run's ledger: view-model, projections, outcome, byline, copy, rows
 ├── run-history.ts            # hydrateRun — replay the log, lay the saved state over it
@@ -432,7 +436,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 - **Shared overlays** — `overlays/overlay-panel.tsx`. The runner picker's text input overlay has one consumer, so it lives in its feature: `src/features/runners/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/filtering.ts`, `pickers/single-column.tsx`, `pickers/aligned-option-row.tsx`, `pickers/row-zone.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
-`src/hooks/` holds the shared hooks: `use-spinner-frame.ts` (`useSpinnerFrame`), `use-shared-clock.ts` (`useSharedClock`), `use-static-selector.ts` (`useStaticSelector`), `use-filterable-list.ts` (`useFilterableList`) and `use-crew-display-names.ts` (`useCrewDisplayNames`). See [`HOOKS.md`](./HOOKS.md).
+`src/hooks/` holds the shared hooks: `use-spinner-frame.ts` (`useSpinnerFrame`), `use-static-selector.ts` (`useStaticSelector`), `use-filterable-list.ts` (`useFilterableList`) and `use-crew-display-names.ts` (`useCrewDisplayNames`). See [`HOOKS.md`](./HOOKS.md).
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 

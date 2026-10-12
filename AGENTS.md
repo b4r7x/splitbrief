@@ -1,8 +1,12 @@
 # SPLITBRIEF — Agent Guide
 
-## CRITICAL — NEVER COMMIT, NEVER STAGE
+## CRITICAL — NEVER COMMIT, NEVER STAGE (subagents); checkpoint commits only (the orchestrating session)
 
-Do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates a commit or stages files. The user commits manually. A `PreToolUse` hook at `.claude/hooks/block-git-commits.sh` enforces this with exit code 2.
+Subagents, workflow agents and implementer tools do **NOT** run `git commit`, `git add`, `git stage`, or any command that creates a commit or stages files — ever. Not even when the task is done, not even after tests pass. Leave every change as an unstaged modification in the working tree.
+
+The one exception is the orchestrating session, at an agreed checkpoint: after the gates of that checkpoint are green and the review findings are fixed, it stages and commits with the `/human-commit` style message, running the command prefixed with `SPLITBRIEF_OWNER_COMMIT=1 ` (the hook lets that prefix through). Nothing else commits, nothing pushes, nothing rewrites history.
+
+**Enforcement (best-effort):** `.claude/hooks/block-git-commits.sh` is a `PreToolUse` hook that blocks `git add` / `git stage` / `git commit` with exit code 2. It is a guardrail, not a sandbox, so the rule above is what binds you, not the hook. A `BLOCKED:` message in stderr means the guardrail fired — stop and report to the user.
 
 ---
 
