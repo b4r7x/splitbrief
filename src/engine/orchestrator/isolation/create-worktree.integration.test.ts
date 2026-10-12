@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, mkdir, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir, readFile, chmod } from 'node:fs/promises';
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -143,6 +143,80 @@ describe('createWorktree', () => {
       else process.env.GIT_ALLOW_PROTOCOL = prevAllowProtocol;
       await rm(superRepo, { recursive: true, force: true });
       await rm(subRepo, { recursive: true, force: true });
+    }
+  });
+
+  it('passes the user transport environment to the submodule clone of the new worktree', async () => {
+    createTestGitRepo(repoDir, {
+      '.gitmodules':
+        '[submodule "vendor"]\n\tpath = vendor\n\turl = ssh://splitbrief.invalid:2222/sub.git\n',
+    });
+    const head = (await git.revparse(['HEAD'])).trim();
+    execFileSync('git', ['update-index', '--add', '--cacheinfo', '160000', head, 'vendor'], {
+      cwd: repoDir,
+    });
+    execFileSync('git', ['commit', '-m', 'add ssh submodule'], { cwd: repoDir, stdio: 'pipe' });
+
+    const sshCommand = join(repoDir, 'ssh.sh');
+    const argvMarker = join(repoDir, 'ssh-argv');
+    const environmentMarker = join(repoDir, 'ssh-env');
+    await writeFile(
+      sshCommand,
+      `#!/bin/sh\nprintf "%s\\n" "$@" > "\${0%/*}/ssh-argv"\nenv > "\${0%/*}/ssh-env"\nexit 1\n`,
+    );
+    await chmod(sshCommand, 0o755);
+    const environment = {
+      GIT_ALLOW_PROTOCOL: 'ssh:https',
+      GIT_PROTOCOL_FROM_USER: '0',
+      GIT_SSH: '/splitbrief/ssh',
+      GIT_SSH_COMMAND: `"${sshCommand}"`,
+      GIT_SSH_VARIANT: 'ssh',
+      GIT_ASKPASS: '/splitbrief/git-askpass',
+      SSH_ASKPASS: '/splitbrief/ssh-askpass',
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_PROXY_COMMAND: '/splitbrief/proxy',
+      GIT_PROXY_SSL_CAINFO: '/splitbrief/proxy-ca.pem',
+      GIT_PROXY_SSL_CERT: '/splitbrief/proxy-cert.pem',
+      GIT_PROXY_SSL_CERT_PASSWORD_PROTECTED: 'false',
+      GIT_PROXY_SSL_KEY: '/splitbrief/proxy-key.pem',
+      GIT_SSL_CAINFO: '/splitbrief/ca.pem',
+      GIT_SSL_CAPATH: '/splitbrief/ca',
+      GIT_SSL_CERT: '/splitbrief/cert.pem',
+      GIT_SSL_CERT_PASSWORD_PROTECTED: 'no',
+      GIT_SSL_CIPHER_LIST: 'DEFAULT',
+      GIT_SSL_KEY: '/splitbrief/key.pem',
+      GIT_SSL_NO_VERIFY: 'true',
+      GIT_SSL_VERSION: 'tlsv1.2',
+      GIT_HTTP_LOW_SPEED_LIMIT: '7',
+      GIT_HTTP_LOW_SPEED_TIME: '11',
+      GIT_HTTP_MAX_REQUESTS: '3',
+      GIT_HTTP_PROXY_AUTHMETHOD: 'basic',
+      GIT_HTTP_USER_AGENT: 'splitbrief-transport-test',
+      GIT_CURL_FTP_NO_EPSV: 'off',
+    };
+    const previousEnvironment = new Map(
+      [...Object.keys(environment), 'GIT_EDITOR'].map((key) => [key, process.env[key]]),
+    );
+    try {
+      for (const [key, value] of Object.entries(environment)) process.env[key] = value;
+      process.env.GIT_EDITOR = '/splitbrief/editor';
+      await expect(
+        createWorktree({ projectDir: repoDir, slug: 'feat-ssh-sub', git }),
+      ).rejects.toThrow();
+      const argv = (await readFile(argvMarker, 'utf-8')).split('\n');
+      expect.soft(argv).toContain('-p');
+      expect.soft(argv).toContain('2222');
+      expect.soft(argv).not.toContain('-G');
+      const childEnvironment = (await readFile(environmentMarker, 'utf-8')).split('\n');
+      for (const [key, value] of Object.entries(environment)) {
+        expect.soft(childEnvironment, key).toContain(`${key}=${value}`);
+      }
+      expect(childEnvironment.some((line) => line.startsWith('GIT_EDITOR='))).toBe(false);
+    } finally {
+      for (const [key, value] of previousEnvironment) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 });

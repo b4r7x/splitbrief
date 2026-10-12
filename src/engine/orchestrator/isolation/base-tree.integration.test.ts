@@ -126,6 +126,84 @@ describe('withRunBaseTree', { timeout: 60_000 }, () => {
     );
   });
 
+  it('initialises the submodules of the run base', async () => {
+    const subRepo = createTempDir('base-tree-sub');
+    createTestGitRepo(subRepo, { 'lib.txt': 'submodule content\n' });
+    const prevAllowProtocol = process.env.GIT_ALLOW_PROTOCOL;
+    process.env.GIT_ALLOW_PROTOCOL = 'file';
+    try {
+      await withApplyRun(
+        FILES,
+        {
+          sessionId: 'sess-base-tree-submodule',
+          atBase: (dir) => {
+            git(dir, `submodule add -q ${JSON.stringify(subRepo)} vendor`);
+            git(dir, 'commit -q -m submodule');
+          },
+        },
+        async (run) => {
+          const completed = await withRunBaseTree(baseOf(run), async ({ dir }) => ({
+            head: git(join(dir, 'vendor'), 'rev-parse HEAD').trim(),
+            lib: readFileSync(join(dir, 'vendor/lib.txt'), 'utf-8'),
+          }));
+          expect(completed).toEqual({
+            result: { head: git(subRepo, 'rev-parse HEAD').trim(), lib: 'submodule content\n' },
+            cleanupError: undefined,
+          });
+        },
+      );
+    } finally {
+      if (prevAllowProtocol === undefined) delete process.env.GIT_ALLOW_PROTOCOL;
+      else process.env.GIT_ALLOW_PROTOCOL = prevAllowProtocol;
+      cleanupTempDir(subRepo);
+    }
+  });
+
+  it('passes the user LFS smudge settings to the checkout filter of the run base', async () => {
+    const probeDir = createTempDir('base-tree-smudge');
+    const probe = join(probeDir, 'smudge.sh');
+    const marker = join(probeDir, 'smudge-env');
+    writeFileSync(
+      probe,
+      `#!/bin/sh\nprintf "%s %s\\n" "\${GIT_LFS_SKIP_SMUDGE-unset}" "\${GIT_LFS_SKIP_DOWNLOAD_ERRORS-unset}" >> "${marker}"\ncat\n`,
+    );
+    chmodSync(probe, 0o755);
+    const environment = { GIT_LFS_SKIP_SMUDGE: '1', GIT_LFS_SKIP_DOWNLOAD_ERRORS: '1' };
+    const previousEnvironment = new Map(
+      Object.keys(environment).map((key) => [key, process.env[key]]),
+    );
+    try {
+      await withApplyRun(
+        FILES,
+        {
+          sessionId: 'sess-base-tree-smudge',
+          atBase: (dir) => {
+            git(dir, `config filter.probe.smudge ${JSON.stringify(probe)}`);
+            git(dir, 'config filter.probe.clean cat');
+            writeFileSync(join(dir, '.gitattributes'), '*.bin filter=probe\n');
+            writeFileSync(join(dir, 'asset.bin'), 'pointer\n');
+            git(dir, 'add .gitattributes asset.bin');
+            git(dir, 'commit -q -m lfs');
+          },
+        },
+        async (run) => {
+          Object.assign(process.env, environment);
+          rmSync(marker, { force: true });
+          await withRunBaseTree(baseOf(run), async () => undefined);
+          const lines = readFileSync(marker, 'utf-8').trim().split('\n');
+          expect(lines.length).toBeGreaterThan(0);
+          for (const line of lines) expect(line).toBe('1 1');
+        },
+      );
+    } finally {
+      for (const [key, value] of previousEnvironment) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      cleanupTempDir(probeDir);
+    }
+  });
+
   it('removes the tree when the work inside it throws', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-base-tree-throws' }, async (run) => {
       const worktrees = git(run.dir, 'worktree list --porcelain');

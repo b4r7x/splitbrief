@@ -38,24 +38,21 @@ vi.mock('node:fs/promises', async (importOriginal) => {
         if (control.editAlreadyApplied) await actual.writeFile(String(args[1]), 'user edited A\n');
       }
     },
-    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
-      if (
-        control.partialWriteName &&
-        basename(String(args[0])).startsWith(`.${control.partialWriteName}.tmp.`)
-      ) {
-        await actual.writeFile(args[0], 'partial bytes');
-        throw new Error('EIO: partial temporary write');
+    open: async (...args: Parameters<typeof actual.open>) => {
+      const handle = await actual.open(...args);
+      const name = basename(String(args[0]));
+      if (control.partialWriteName && name.startsWith(`.${control.partialWriteName}.tmp.`)) {
+        handle.writeFile = async () => {
+          await actual.writeFile(args[0], 'partial bytes');
+          throw new Error('EIO: partial temporary write');
+        };
       }
-      return actual.writeFile(...args);
-    },
-    chmod: async (...args: Parameters<typeof actual.chmod>) => {
-      if (
-        control.failChmodName &&
-        basename(String(args[0])).startsWith(`.${control.failChmodName}.tmp.`)
-      ) {
-        throw new Error('EPERM: chmod rejected');
+      if (control.failChmodName && name.startsWith(`.${control.failChmodName}.tmp.`)) {
+        handle.chmod = async () => {
+          throw new Error('EPERM: chmod rejected');
+        };
       }
-      return actual.chmod(...args);
+      return handle;
     },
     readdir: async (...args: Parameters<typeof actual.readdir>) => {
       if (String(args[0]) === control.failReaddir) throw new Error('EACCES: directory unreadable');
