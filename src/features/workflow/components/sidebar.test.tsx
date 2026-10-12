@@ -16,6 +16,9 @@ import { tasksStore, type WorkflowTask } from '../../../stores/workflow/tasks.js
 import { tokensStore } from '../../../stores/workflow/tokens.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { Sidebar } from './sidebar.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { taskId } from '../../../core/schemas/task.js';
 import chalk from 'chalk';
 import { defaultTheme } from '../../../components/theme.js';
 import { TaskSummary } from '../../../components/task-summary.js';
@@ -62,6 +65,32 @@ describe('Sidebar — passed count', () => {
     expect(frame).not.toContain('5/5');
 
     ui.unmount();
+  });
+
+  it('marks the brief a run at rest left in progress as stopped, not as working', async () => {
+    forceUnicodeGlyphs();
+    tasksStore.__testReset({ tasks: [task('T001', 'done'), task('T002', 'in_progress')] });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({
+        status: {
+          kind: 'open',
+          stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+          resumeAt: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+        },
+      }),
+      execution: { kind: 'at-rest' },
+    });
+
+    const ui = renderFeature(<Sidebar width={40} />);
+    await tick();
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+
+    expect(frame).toContain(`${glyph('statusCancelled')} T002`);
+    expect(frame).not.toContain(glyph('statusInProgress'));
+
+    ui.unmount();
+    routerStore.init({ screen: 'home' });
   });
 
   it('excludes pending and in-progress tasks from the passed numerator', async () => {

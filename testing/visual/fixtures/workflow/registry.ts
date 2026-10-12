@@ -5,6 +5,12 @@ import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { SESSION_LOG_FILE, sessionDir } from '../../../../src/core/paths.js';
 import { toEngineEventEntry } from '../../../../src/core/sessions/log-writer.js';
 import { hydrateRun } from '../../../../src/features/workflow/run-history.js';
+import { endRunAtRest } from '../../../../src/engine/orchestrator/run/close.js';
+import { createRecoveryBus } from '../../../../src/engine/orchestrator/recovery/bus.js';
+import { visualConfig } from '../screen-fixtures.js';
+import { saveState } from '../../../../src/core/state/persistence.js';
+import { writeEvidenceLedger } from '../../../../src/core/evidence/ledger-storage.js';
+import { WORKFLOW_STATE_VERSION } from '../../../../src/core/schemas/workflow.js';
 import { readConversationScrollSnapshot } from '../../../../src/features/workflow/layout/snapshot.js';
 import {
   getConversationRowsProjection,
@@ -17,7 +23,12 @@ import { conversationScrollStore } from '../../../../src/stores/workflow/convers
 import { streamingOutputStore } from '../../../../src/stores/workflow/streaming-output.js';
 import type { CheckpointId } from '../../contracts/identifiers.js';
 import { checkpointId } from '../../contracts/identifiers.js';
-import type { CheckpointPredicate, FixtureFactory, FixtureRegistry } from '../common.js';
+import {
+  VISUAL_FIXTURE_EPOCH,
+  type CheckpointPredicate,
+  type FixtureFactory,
+  type FixtureRegistry,
+} from '../common.js';
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
@@ -145,6 +156,44 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
       };
     };
   }
+  if (atRest !== undefined && projection.scenarioId === 'workflow-at-rest-closed-elsewhere') {
+    return () => {
+      const lifecycle = base();
+      return {
+        ...lifecycle,
+        setup: async (context) => {
+          await lifecycle.setup(context);
+          // The screen still offers the stop menu of the run it parked when another process ends
+          // that run, as `splitbrief continue --action end-run` does. The record's state is a
+          // view fixture; the one on disk is the current state version, started before the
+          // capture clock, as a real run saves it.
+          const { record } = atRest;
+          if (record.hydration.kind !== 'loaded') throw new Error('closed-elsewhere needs a state');
+          const saved = {
+            ...record.hydration.state,
+            stateVersion: WORKFLOW_STATE_VERSION,
+            stateRevision: 0,
+            startedAt: new Date(VISUAL_FIXTURE_EPOCH).toISOString(),
+          };
+          saveState(record.ref, saved);
+          if (record.ledger !== null) writeEvidenceLedger(record.ref, record.ledger);
+          const bus = createRecoveryBus({ ...record.ref, sink: () => {} });
+          await endRunAtRest({ ...record.ref, bus }, saved, visualConfig());
+          stopStore.park('mid-brief', null, null);
+          overlayStore.open('stop-sheet');
+        },
+        afterMount: async (write) => {
+          const fixedNow = Date.now;
+          Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
+          try {
+            await write.press('\r');
+          } finally {
+            Date.now = fixedNow;
+          }
+        },
+      };
+    };
+  }
   if (projection.scenarioId === 'workflow-stop-sheet-recovery') {
     return () => ({ ...base(), afterMount: () => overlayStore.open('stop-sheet') });
   }
@@ -190,6 +239,26 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
         await write.press(CONSULT_BOUND_NOTE);
       },
     });
+  }
+  if (projection.scenarioId === 'workflow-resuming') {
+    return () => {
+      const lifecycle = base();
+      let off: (() => void) | null = null;
+      return {
+        setup: async (context) => {
+          off = lifecycleStore.subscribe(() => {
+            if (lifecycleStore.get().status === 'running') markWorkflowPaused();
+          });
+          await lifecycle.setup(context);
+          markWorkflowPaused();
+        },
+        teardown: () => {
+          off?.();
+          off = null;
+          return lifecycle.teardown();
+        },
+      };
+    };
   }
   const stop = projection.stop;
   if (stop === undefined) return base;
@@ -327,7 +396,12 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('continuous-transcript-ready'),
-    includesTranscript('● Review 1 passed', 'Plan check K1', 'Plan check K2', 'Reviewer check V1'),
+    includesTranscript(
+      '● Final review passed',
+      'Plan check K1',
+      'Plan check K2',
+      'Reviewer check V1',
+    ),
   ],
   [
     checkpointId('implementation-queued'),
@@ -352,7 +426,7 @@ const checkpointPredicates = [
           'Review · Reviewer check V2',
           'npm test · running',
         )(context) &&
-        includesTranscript('Review 1 failed', 'fixes T904')(context) &&
+        includesTranscript('Final review failed', 'fixes T904')(context) &&
         !text.includes('does not take') &&
         workflowTranscriptText().split('Tasks  18 lines').length === 2
       );
@@ -378,7 +452,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('review-task-cadence-settled'),
-    includesTranscript('Review 1 passed', 'Review T002 failed', 'fixes T003'),
+    includesTranscript('Final review passed', 'Review T002 failed', 'fixes T003'),
   ],
   [checkpointId('review-task-out-of-scope'), includesAll('Review T001 passed', '3 notes')],
   [checkpointId('review-drift-clean'), includesAll('Drift · clean')],
@@ -386,11 +460,11 @@ const checkpointPredicates = [
     checkpointId('review-drift-found'),
     includesAll('Drift · failed · 2 errors · 3 warnings', '3/5 briefs passed'),
   ],
-  [checkpointId('review-settled-passed'), includesTranscript('● Review 1 passed', '7.0s')],
-  [checkpointId('review-settled-failed'), includesTranscript('✗ Review 1 failed', '7.0s')],
+  [checkpointId('review-settled-passed'), includesTranscript('● Final review passed', '7.0s')],
+  [checkpointId('review-settled-failed'), includesTranscript('✗ Final review failed', '7.0s')],
   [
     checkpointId('review-corrected'),
-    includesTranscript('T902', 'Review 1 failed', '7.0s', 'Review 2 passed', '5.0s'),
+    includesTranscript('T902', 'Final review failed', '7.0s', 'Final review re-run passed', '5.0s'),
   ],
   [checkpointId('review-summary'), includesAll('Review · Summary')],
   [checkpointId('review-compaction'), includesAll('Review · Compaction')],
@@ -447,6 +521,13 @@ const checkpointPredicates = [
   [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
   [checkpointId('at-rest-long-park'), includesAll('15:00')],
   [checkpointId('at-rest-halted'), includesAll()],
+  [checkpointId('resuming'), includesAll('Resuming T')],
+  [
+    checkpointId('at-rest-closed-elsewhere'),
+    (context) => includesAll('Ended ·')(context) && excludesAll('Resume ·', '⏎ resume')(context),
+  ],
+  [checkpointId('at-rest-crashed-build'), includesAll('interrupted', 'Stopped at T002')],
+  [checkpointId('at-rest-crashed-review'), includesAll('interrupted', 'Stopped at the review')],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-complete'), includesAll()],

@@ -84,11 +84,12 @@ function applyAction(action: AppKeyAction, exit: () => void, deps: AppKeyDeps) {
 }
 
 // A run that can still be stopped answers esc with the sheet. A question prompt, a review gate and
-// a validation stage are all part of that run, so none of them takes the press for itself.
+// a validation stage are all part of that run, so none of them takes the press for itself. A paused
+// run with no park of its own was continued and is re-entering the engine, as its byline says.
 function stopSheetReachable(): boolean {
   const { cancelled, status } = lifecycleStore.get();
   if (cancelled) return false;
-  return status === 'running' || status === 'interrupted';
+  return status === 'running' || status === 'interrupted' || status === 'paused';
 }
 
 function openStopSheet(): void {
@@ -258,11 +259,7 @@ export function useAppKeys({ exit, deps = defaultAppKeyDeps }: UseAppKeysOptions
   });
 
   const escapePress = (input: string): { immediate: () => void; deferred: () => void } | null => {
-    if (
-      (route.screen === 'workflow' && route.execution.kind === 'at-rest') ||
-      stoppedOrStopping() ||
-      lifecycleStore.get().status === 'paused'
-    )
+    if ((route.screen === 'workflow' && route.execution.kind === 'at-rest') || stoppedOrStopping())
       return { immediate: goHome, deferred: goHome };
     if (stopSheetReachable())
       return {

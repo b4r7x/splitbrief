@@ -20,7 +20,8 @@ describe('stageSummaryRow', () => {
         stage: 'review',
         scope: 'task',
         afterTaskId: 'T001',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         outcome: 'stopped',
         failedCommands: [],
         failedChecks: 0,
@@ -58,13 +59,18 @@ describe('stageSummaryRow', () => {
   });
 
   it.each([
-    ['final', 'passed', undefined, '● Review 1 passed  1m 2s'],
-    ['final', 'passed-with-notes', { blocking: 0, minor: 2 }, '● Review 1 passed  2 notes · 1m 2s'],
+    ['final', 'passed', undefined, '● Final review passed  1m 2s'],
+    [
+      'final',
+      'passed-with-notes',
+      { blocking: 0, minor: 2 },
+      '● Final review passed  2 notes · 1m 2s',
+    ],
     [
       'final',
       'failed',
       { blocking: 2, minor: 0 },
-      '✗ Review 1 failed  2 blocking · npm test, 1 check · fixes T006 · 1m 2s',
+      '✗ Final review failed  2 blocking · npm test, 1 check · fixes T006 · 1m 2s',
     ],
     ['task', 'passed', undefined, '● Review T001 passed  1m 2s'],
     [
@@ -83,7 +89,7 @@ describe('stageSummaryRow', () => {
       'final',
       'passed-with-notes',
       { blocking: 0, minor: 2, outOfScope: 3 },
-      '● Review 1 passed  5 notes · 1m 2s',
+      '● Final review passed  5 notes · 1m 2s',
     ],
     [
       'task',
@@ -91,7 +97,7 @@ describe('stageSummaryRow', () => {
       { blocking: 1, minor: 0 },
       '✗ Review T001 failed  1 blocking · npm test, 1 check · fixes T006 · 1m 2s',
     ],
-    ['final', 'no-verdict', undefined, '✗ Review 1 no verdict  1m 2s'],
+    ['final', 'no-verdict', undefined, '✗ Final review no verdict  1m 2s'],
     ['task', 'stopped', undefined, '× Review T001 stopped  1m 2s'],
   ] as const)(
     'renders %s %s with the review marker and verdict',
@@ -100,7 +106,8 @@ describe('stageSummaryRow', () => {
         stage: 'review',
         scope,
         afterTaskId: scope === 'task' ? 'T001' : undefined,
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         outcome,
         findings,
         failedCommands: outcome === 'failed' ? ['npm test'] : [],
@@ -117,12 +124,37 @@ describe('stageSummaryRow', () => {
     },
   );
 
+  it('names a final review after a fix cycle by the cycles before it, not by a bare count', () => {
+    const ui = renderFeature(
+      createElement(TaskSummary, {
+        ...stageSummaryRow({
+          stage: 'review',
+          scope: 'final',
+          fixCyclesBefore: 1,
+          rerunsBefore: 0,
+          outcome: 'passed',
+          failedCommands: [],
+          failedChecks: 0,
+          fixes: [],
+          duration: 26_400,
+        }),
+        width: 120,
+      }),
+      { cols: 120, rows: 24 },
+    );
+    expect(stripAnsiStyles(ui.lastFrame()).trim()).toBe(
+      '● Final review after 1 fix cycle passed  26.4s',
+    );
+    ui.unmount();
+  });
+
   it('keeps a failed terminal verdict red even when no fixes are appended', () => {
     expect(
       stageSummaryRow({
         stage: 'review',
         scope: 'final',
-        ordinal: 2,
+        fixCyclesBefore: 1,
+        rerunsBefore: 0,
         outcome: 'failed',
         failedCommands: [],
         failedChecks: 0,
@@ -147,7 +179,8 @@ describe('stageSummaryRow', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'failed',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         failedCommands: ['npm test'],
         failedChecks: 1,
         fixes: ['T006', 'T007', 'T008'],
@@ -168,7 +201,8 @@ describe('stageSummaryRow', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'failed',
-        ordinal: 2,
+        fixCyclesBefore: 1,
+        rerunsBefore: 0,
         failedCommands: ['npm run typecheck', 'npm test'],
         failedChecks: 3,
         fixes: ['T009'],
@@ -187,7 +221,8 @@ describe('stageSummaryRow', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'failed',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         failedCommands: [],
         failedChecks: 0,
         fixes: ['T004'],
@@ -208,7 +243,8 @@ describe('stageSummaryRow', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'passed',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         failedCommands: [],
         failedChecks: 0,
         fixes: [],

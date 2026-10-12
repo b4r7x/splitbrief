@@ -457,6 +457,66 @@ describe('walkTranscript', () => {
       recovery: { firstIndex: 4, prompted, selected, resolved },
     });
   });
+
+  describe('the working on row of an attempt', () => {
+    const T002 = taskId('T002');
+    const running: EngineEventOf<'implementer_generate_running'> = {
+      type: 'implementer_generate_running',
+      ts: 2_000,
+      phase: 'implementing',
+      taskId: T002,
+      file: 'src/strings.js',
+    };
+    const cutCall = makeRunnerCallActivity({
+      ts: 3_000,
+      taskId: T002,
+      role: 'implementer',
+      callId: 'implementer-2',
+      activityId: 'implementer-2:terminal',
+      stage: 'aborted',
+      kind: 'error',
+      label: 'aborted runner_interrupted',
+      diagnosticPartial: 'SPLITBRIEF exited',
+    });
+    const runningRows = (events: EngineEvent[]) =>
+      [...walkTranscript(groupEventsIntoSections(events))].filter(
+        (step) => step.kind === 'event' && step.event.type === 'implementer_generate_running',
+      );
+
+    it('shows while its attempt runs', () => {
+      expect(runningRows([makeTaskStart({ taskId: T002, ts: 1_000 }), running])).toHaveLength(1);
+    });
+
+    it.each([
+      ['a call closed as interrupted', cutCall],
+      [
+        'a stop',
+        {
+          type: 'turn_interrupted',
+          ts: 3_000,
+          phase: 'implementing',
+          source: 'user',
+          at: 'mid-step',
+        } satisfies EngineEvent,
+      ],
+      ['its result', makeImplementerGenerate({ taskId: T002, ts: 3_000 })],
+    ])('goes once %s ends the attempt', (_label, end) => {
+      expect(runningRows([makeTaskStart({ taskId: T002, ts: 1_000 }), running, end])).toEqual([]);
+    });
+
+    it('leaves one row for the attempt a resume starts after a cut one', () => {
+      const rows = runningRows([
+        makeTaskStart({ taskId: T002, ts: 1_000 }),
+        running,
+        cutCall,
+        { type: 'workflow_resumed', ts: 4_000, phase: 'implementing' },
+        makeTaskStart({ taskId: T002, ts: 5_000 }),
+        { ...running, ts: 6_000 },
+      ]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ event: { ts: 6_000 } });
+    });
+  });
 });
 
 describe('walkTranscript on a stopped run’s workspace', () => {

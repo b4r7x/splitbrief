@@ -3,7 +3,7 @@ import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
 import { continueRun } from '../../../engine/orchestrator/run/continue.js';
 import type { PreparedExecution } from '../../../engine/runners/prepared-execution.js';
-import { resumeParkedRun } from '../handlers.js';
+import { rereadRunAtRest, resumeParkedRun } from '../handlers.js';
 import { hydrateResume, resumeFailureMessage } from '../resume-hydration.js';
 import { clearSessionScopedStores } from '../session-stores.js';
 import type { UseInputModeResult } from './use-input-mode.js';
@@ -64,6 +64,12 @@ export function useRunContinue({
     });
     if (outcome.kind !== 'refused') return;
     inputMode.resetMode();
+    // A run closed or finished elsewhere keeps its transcript and shows as it stands now.
+    if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply') {
+      rereadRunAtRest(prepared.session.ref);
+      feedbackStore.setError(outcome.message);
+      return;
+    }
     clearSessionScopedStores();
     feedbackStore.setError(
       outcome.reason === 'invalid'

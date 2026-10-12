@@ -14,15 +14,21 @@ export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
 } {
   const duration = formatDuration(summary.duration);
+  // A task review names the brief it reviewed; the final review names itself, says how many fix
+  // cycles came before it, and marks a review run again within one cycle, as after a crash.
+  const finalReview = summary.stage === 'review' && summary.scope === 'final';
   const idParts: TaskSummaryHeadingPart[] = [
-    { text: formatStageLabel(summary.stage), tone: CREW_SEAT_ROLES[summary.stage] },
+    {
+      text: finalReview ? 'Final review' : formatStageLabel(summary.stage),
+      tone: CREW_SEAT_ROLES[summary.stage],
+    },
   ];
   const anchor =
     summary.stage === 'plan'
       ? undefined
       : summary.scope === 'task'
         ? summary.afterTaskId
-        : summary.ordinal;
+        : finalReviewAnchor(summary.fixCyclesBefore, summary.rerunsBefore);
   if (anchor !== undefined) idParts.push({ text: ` ${anchor}`, tone: 'textDim' });
   const title = sanitizeTerminalDisplayText(
     summary.stage === 'plan'
@@ -102,4 +108,12 @@ export function stageSummaryRow(summary: StageSummary): {
       detail,
     },
   };
+}
+
+function finalReviewAnchor(fixCycles: number, reruns: number): string | undefined {
+  const parts = [
+    ...(fixCycles > 0 ? [`after ${countNoun(fixCycles, 'fix cycle')}`] : []),
+    ...(reruns > 0 ? [reruns === 1 ? 're-run' : `re-run ${reruns}`] : []),
+  ];
+  return parts.length === 0 ? undefined : parts.join(', ');
 }

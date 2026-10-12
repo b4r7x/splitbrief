@@ -636,6 +636,41 @@ const AT_REST_PAUSED = record({
   }),
 });
 
+/**
+ * The paused run of `workflow-at-rest-paused`, which another process ends while this screen shows
+ * it. Its ledger is on disk, so the close books T003's partial work as the real End run does.
+ */
+const CLOSED_ELSEWHERE_SESSION = 'visual-at-rest-closed-elsewhere';
+const AT_REST_CLOSED_ELSEWHERE = record({
+  sessionId: CLOSED_ELSEWHERE_SESSION,
+  status: AT_REST_PAUSED.status,
+  state: {
+    ...AT_REST_PAUSED.hydration.state,
+    tasks: AT_REST_PAUSED.hydration.state.tasks.map((task) =>
+      task.id === BRIEFS.wire.id ? { ...task, action: 'modify' } : task,
+    ),
+  },
+  ledger: ledger({
+    sessionId: CLOSED_ELSEWHERE_SESSION,
+    tasks: INTERRUPTED_BUILD_LEDGER.tasks.map((task) =>
+      task.id === BRIEFS.validator.id
+        ? { ...task, durationMs: 10_000 }
+        : task.id === BRIEFS.wire.id
+          ? {
+              ...task,
+              status: 'done',
+              method: 'local',
+              retries: 0,
+              durationMs: 10_000,
+              validation: [...PASSED_STAGES],
+              escalated: false,
+            }
+          : task,
+    ),
+    validationSummary: INTERRUPTED_BUILD_LEDGER.validationSummary,
+  }),
+});
+
 const AT_REST_QUEUED = record({
   sessionId: 'visual-at-rest-queued',
   status: AT_REST_PAUSED.status,
@@ -1699,6 +1734,218 @@ const CADENCE_SETTLED_STATE: WorkflowState = {
   ),
 };
 
+/**
+ * A run whose process went away mid-call: the log stops inside the call, with no end and no stop
+ * written. The state is saved where the call began, and nothing records why it stopped.
+ */
+const CRASH_TS = Date.parse(STARTED_AT_ISO);
+const CRASH_BUILD_CALL = {
+  callId: 'implementer-2',
+  role: 'implementer',
+  backendKind: 'api',
+  runnerName: 'ollama',
+  model: 'qwen2.5-coder:7b',
+} as const;
+const CRASH_REVIEW_CALL = {
+  callId: 'review-1',
+  role: 'review',
+  backendKind: 'cli',
+  runnerName: 'claude',
+  model: 'claude-sonnet-4',
+} as const;
+
+function crashBrief(brief: { id: Task['id']; title: string; file: string }, index: number) {
+  return {
+    type: 'task_started',
+    ts: CRASH_TS + index * 60_000,
+    phase: 'implementing',
+    taskId: brief.id,
+    title: brief.title,
+    file: brief.file,
+    action: 'modify',
+    index,
+    total: 2,
+    tool: 'ollama',
+    model: 'qwen2.5-coder:7b',
+  } satisfies EngineEvent;
+}
+
+function crashBriefDone(brief: { id: Task['id']; title: string }, index: number) {
+  return {
+    type: 'task_completed',
+    ts: CRASH_TS + index * 60_000 + 40_000,
+    phase: 'implementing',
+    taskId: brief.id,
+    title: brief.title,
+    method: 'local',
+    retries: 0,
+    duration: 40_000,
+    tool: 'ollama',
+    model: 'qwen2.5-coder:7b',
+  } satisfies EngineEvent;
+}
+
+function crashActivity(
+  call: typeof CRASH_BUILD_CALL | typeof CRASH_REVIEW_CALL,
+  input: {
+    readonly ts: number;
+    readonly phase: Phase;
+    readonly sequence: number;
+    readonly kind: 'read' | 'edit' | 'command';
+    readonly label: string;
+    readonly target: string;
+    readonly taskId?: Task['id'];
+  },
+): EngineEvent {
+  return {
+    type: 'runner_call_activity',
+    ts: input.ts,
+    phase: input.phase,
+    ...(input.taskId !== undefined && { taskId: input.taskId }),
+    ...call,
+    sequence: input.sequence,
+    activityId: `${call.callId}:tool:${input.sequence}`,
+    stage: 'completed',
+    kind: input.kind,
+    label: input.label,
+    target: input.target,
+    redacted: false,
+  };
+}
+
+const CRASHED_BUILD_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: CRASH_TS,
+    phase: 'implementing',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  crashBrief(BRIEFS.validator, 0),
+  crashBriefDone(BRIEFS.validator, 0),
+  crashBrief(BRIEFS.wire, 1),
+  {
+    type: 'implementer_generate_running',
+    ts: CRASH_TS + 60_100,
+    phase: 'implementing',
+    taskId: BRIEFS.wire.id,
+    file: BRIEFS.wire.file,
+  },
+  {
+    type: 'runner_call_started',
+    ts: CRASH_TS + 60_200,
+    phase: 'implementing',
+    taskId: BRIEFS.wire.id,
+    ...CRASH_BUILD_CALL,
+    sequence: 0,
+  },
+  crashActivity(CRASH_BUILD_CALL, {
+    ts: CRASH_TS + 64_000,
+    phase: 'implementing',
+    sequence: 1,
+    kind: 'read',
+    label: 'Read',
+    target: FILES.form,
+    taskId: BRIEFS.wire.id,
+  }),
+  crashActivity(CRASH_BUILD_CALL, {
+    ts: CRASH_TS + 71_000,
+    phase: 'implementing',
+    sequence: 2,
+    kind: 'edit',
+    label: 'Edit',
+    target: FILES.form,
+    taskId: BRIEFS.wire.id,
+  }),
+];
+
+const CRASHED_BUILD = record({
+  sessionId: 'visual-at-rest-crashed-build',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+    resumeAt: { kind: 'brief', taskId: BRIEFS.wire.id, attempt: 0 },
+  },
+  state: savedState({
+    phase: 'implementing',
+    currentTaskIndex: 1,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'in_progress' },
+    ],
+  }),
+});
+
+const CRASHED_REVIEW_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: CRASH_TS,
+    phase: 'implementing',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
+  crashBrief(BRIEFS.validator, 0),
+  crashBriefDone(BRIEFS.validator, 0),
+  crashBrief(BRIEFS.wire, 1),
+  crashBriefDone(BRIEFS.wire, 1),
+  {
+    type: 'full_suite',
+    ts: CRASH_TS + 101_000,
+    phase: 'final-review',
+    status: 'done',
+    id: 'K1',
+    command: 'npm test',
+    moment: 'plan',
+    passed: true,
+  },
+  {
+    type: 'review_started',
+    ts: CRASH_TS + 102_000,
+    phase: 'final-review',
+    scope: 'final',
+    tool: 'claude-code',
+    model: 'claude-sonnet-4',
+  },
+  {
+    type: 'runner_call_started',
+    ts: CRASH_TS + 102_100,
+    phase: 'final-review',
+    ...CRASH_REVIEW_CALL,
+    sequence: 0,
+  },
+  crashActivity(CRASH_REVIEW_CALL, {
+    ts: CRASH_TS + 106_000,
+    phase: 'final-review',
+    sequence: 1,
+    kind: 'command',
+    label: 'Run',
+    target: 'git diff HEAD --stat',
+  }),
+  crashActivity(CRASH_REVIEW_CALL, {
+    ts: CRASH_TS + 109_000,
+    phase: 'final-review',
+    sequence: 2,
+    kind: 'read',
+    label: 'Read',
+    target: FILES.form,
+  }),
+];
+
+const CRASHED_REVIEW = record({
+  sessionId: 'visual-at-rest-crashed-review',
+  status: {
+    kind: 'open',
+    stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+    resumeAt: { kind: 'review', cycle: 0 },
+  },
+  state: savedState({
+    phase: 'final-review',
+    currentTaskIndex: 2,
+    briefs: [
+      { id: BRIEFS.validator.id, status: 'done' },
+      { id: BRIEFS.wire.id, status: 'done' },
+    ],
+  }),
+});
+
 export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   {
     ...reviewTaskCadenceProjection,
@@ -1722,6 +1969,13 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: AT_REST_PAUSED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
   }),
   atRestProjection({
+    id: 'workflow-at-rest-closed-elsewhere',
+    route: {
+      record: AT_REST_CLOSED_ELSEWHERE,
+      log: 'testing/fixtures/session-log/paused-mid-brief.jsonl',
+    },
+  }),
+  atRestProjection({
     id: 'workflow-at-rest-queued',
     route: { record: AT_REST_QUEUED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
   }),
@@ -1731,6 +1985,17 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),
+  {
+    ...atRestProjection({
+      id: 'workflow-at-rest-crashed-build',
+      route: { record: CRASHED_BUILD, log: CRASHED_BUILD_LOG },
+    }),
+    sidebarVisible: true,
+  },
+  atRestProjection({
+    id: 'workflow-at-rest-crashed-review',
+    route: { record: CRASHED_REVIEW, log: CRASHED_REVIEW_LOG },
+  }),
   atRestProjection({
     id: 'workflow-at-rest-left-isolation',
     route: { record: AT_REST_LEFT_ISOLATION, log: LEFT_ISOLATION_LOG },

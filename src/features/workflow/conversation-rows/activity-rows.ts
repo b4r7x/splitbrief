@@ -179,6 +179,7 @@ function activityHeaderRow(input: {
       'activity',
     ),
     markerTone: input.model.markerTone,
+    ...(input.model.interrupted && { interrupted: true }),
   };
 }
 

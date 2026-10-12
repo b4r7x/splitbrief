@@ -32,6 +32,15 @@ export type RunStatus =
   | { kind: 'ready-to-apply'; override: boolean }
   | { kind: 'closed'; as: 'complete' | 'ended' | 'applied' | 'discarded' };
 
+/** An open run whose process went away mid-step, so nothing recorded where or why it stopped. */
+export function processWentAway(status: RunStatus): boolean {
+  return (
+    status.kind === 'open' &&
+    status.stop.kind === 'stopped' &&
+    status.stop.on.kind === 'interrupted'
+  );
+}
+
 export function haltedIssue(status: RunStatus): RecoveryIssue | null {
   if (status.kind !== 'open' || status.stop.on.kind !== 'halt') return null;
   return status.stop.on.issue;

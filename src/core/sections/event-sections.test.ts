@@ -73,7 +73,8 @@ describe('groupEventsIntoSections', () => {
         {
           stage: 'review',
           scope: 'final',
-          ordinal: 1,
+          fixCyclesBefore: 0,
+          rerunsBefore: 0,
           outcome: 'failed',
           failedCommands: ['npm test'],
           failedChecks: 0,
@@ -83,7 +84,8 @@ describe('groupEventsIntoSections', () => {
         {
           stage: 'review',
           scope: 'final',
-          ordinal: 2,
+          fixCyclesBefore: 1,
+          rerunsBefore: 0,
           outcome: 'passed',
           findings: { blocking: 0, minor: 0 },
           failedCommands: [],
@@ -295,7 +297,14 @@ describe('groupEventsIntoSections', () => {
     });
     expect(settled[3]?.items).toContainEqual(events[13]);
     expect(settled[5]).toMatchObject({
-      summary: { stage: 'review', scope: 'final', ordinal: 1, outcome: 'passed', duration: 62_000 },
+      summary: {
+        stage: 'review',
+        scope: 'final',
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
+        outcome: 'passed',
+        duration: 62_000,
+      },
     });
   });
 
@@ -366,7 +375,14 @@ describe('groupEventsIntoSections', () => {
       expect(requireSection(sections, 1, 'settled-stage')).toMatchObject({
         startIndex: 2,
         items: events.slice(2),
-        summary: { stage: 'review', ordinal: 1, outcome: review, fixes: [], duration: 5_000 },
+        summary: {
+          stage: 'review',
+          fixCyclesBefore: 0,
+          rerunsBefore: 0,
+          outcome: review,
+          fixes: [],
+          duration: 5_000,
+        },
       });
     },
   );
@@ -498,12 +514,24 @@ describe('groupEventsIntoSections', () => {
       expect(requireSection(sections, 1, 'settled-stage')).toMatchObject({
         startIndex: 2,
         items: events.slice(2, 4),
-        summary: { stage: 'review', ordinal: 1, outcome: 'failed', duration: 5_000 },
+        summary: {
+          stage: 'review',
+          fixCyclesBefore: 0,
+          rerunsBefore: 0,
+          outcome: 'failed',
+          duration: 5_000,
+        },
       });
       expect(requireSection(sections, 2, 'settled-stage')).toMatchObject({
         startIndex: 4,
         items: events.slice(4, 7),
-        summary: { stage: 'review', ordinal: 2, outcome: 'passed', duration: 5_000 },
+        summary: {
+          stage: 'review',
+          fixCyclesBefore: 0,
+          rerunsBefore: 1,
+          outcome: 'passed',
+          duration: 5_000,
+        },
       });
       if (laterBrief) expect(requireSection(sections, 3, 'active-task').startIndex).toBe(7);
     },
@@ -1003,7 +1031,8 @@ describe('groupEventsIntoSections', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'failed',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         failedCommands: ['npm test'],
         failedChecks: 1,
         fixes: ['T003', 'T004'],
@@ -1015,7 +1044,8 @@ describe('groupEventsIntoSections', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'failed',
-        ordinal: 2,
+        fixCyclesBefore: 1,
+        rerunsBefore: 0,
         failedCommands: ['npm run typecheck', 'npm test'],
         failedChecks: 0,
         fixes: ['T005'],
@@ -1039,7 +1069,8 @@ describe('groupEventsIntoSections', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'passed',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         failedCommands: [],
         failedChecks: 0,
         fixes: [],
@@ -1072,7 +1103,8 @@ describe('groupEventsIntoSections', () => {
         stage: 'review',
         scope: 'final',
         outcome: 'failed',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         failedCommands: ['npm test'],
         failedChecks: 3,
         fixes: ['T003', 'T004'],

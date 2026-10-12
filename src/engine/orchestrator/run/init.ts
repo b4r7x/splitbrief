@@ -36,6 +36,7 @@ import {
 import { projectName } from '../../../core/project-meta.js';
 import type { EventBus, EventSink } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';
+import { recordInterruptedCalls } from '../../calls/interrupted.js';
 import { seatCandidateOfRunner } from '../recovery/switch-seat.js';
 import { createBranch } from '../../../lib/git/refs.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
@@ -243,6 +244,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     }
     setTrackedState(savedState);
   }
+  if (savedState) await recordInterruptedCalls({ projectDir, sessionId, bus }, savedState);
   // Every resume passes here, from the app and from the CLI alike, so this is
   // the one place the record is compared and rewritten. A moved plan seat also drops the
   // saved planner session: it belongs to the tool that left, so the notice's

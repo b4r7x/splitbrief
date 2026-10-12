@@ -12,6 +12,7 @@ const ACTIVITY_LABEL_DISPLAY: Record<RunnerActivityLedgerLabel, string> = {
   ART: 'Art',
   WARN: 'Warn',
   ERR: 'Err',
+  STOP: 'Stop',
   LIST: 'List',
 };
 

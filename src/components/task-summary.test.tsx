@@ -321,7 +321,8 @@ describe('TaskSummary', () => {
       const summary = stageSummaryRow({
         stage: 'review',
         scope: 'final',
-        ordinal: 1,
+        fixCyclesBefore: 0,
+        rerunsBefore: 0,
         outcome: failed ? 'failed' : 'passed',
         failedCommands: [],
         failedChecks: 0,
@@ -330,7 +331,7 @@ describe('TaskSummary', () => {
       });
       const ui = renderFeature(<TaskSummary {...summary} width={120} />);
       const frame = ui.lastFrame();
-      expectForeground(frame, 'Review', defaultTheme.reviewer);
+      expectForeground(frame, 'Final review', defaultTheme.reviewer);
       expectForeground(
         frame,
         failed ? ' failed' : 'passed',
@@ -350,7 +351,8 @@ describe('TaskSummary', () => {
       stage: 'review',
       scope: 'task',
       afterTaskId: 'T001',
-      ordinal: 1,
+      fixCyclesBefore: 0,
+      rerunsBefore: 0,
       outcome: 'failed',
       failedCommands: [],
       failedChecks: 0,

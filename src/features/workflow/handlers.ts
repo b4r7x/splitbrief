@@ -21,6 +21,7 @@ import type {
   QueueSubmissionResult,
 } from '../../engine/orchestrator/types.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
+import type { SessionRef } from '../../core/types/session-ref.js';
 
 type AbortHandler = () => void;
 
@@ -226,6 +227,20 @@ export function requestSteer(message: UserMessageInput): boolean {
   return true;
 }
 
+/**
+ * The run on screen at rest, read again from its record. Another process can close a run this
+ * screen holds, so an action that finds the record changed paints it as it stands now, and the
+ * listings with it. A closed or ready run takes no stop: a park the screen still offered goes.
+ */
+export function rereadRunAtRest(ref: SessionRef): void {
+  const run = readRunRecord(ref);
+  routerStore.updateRun({ run, execution: { kind: 'at-rest' } });
+  sessionsStore.refresh();
+  if (run.status.kind !== 'closed' && run.status.kind !== 'ready-to-apply') return;
+  if (stopStore.get().phase === 'parked') stopStore.reset();
+  if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
+}
+
 export function requestEndRun(): boolean {
   const route = routerStore.get();
   if (route.screen === 'workflow' && route.execution.kind === 'at-rest') {
@@ -234,6 +249,10 @@ export function requestEndRun(): boolean {
     try {
       const record = readRunRecord(route.run.ref);
       if (record.status.kind === 'running') return false;
+      if (record.status.kind === 'closed') {
+        rereadRunAtRest(record.ref);
+        return true;
+      }
       const hydrated = hydrateResume(record.ref);
       if (hydrated.kind !== 'loaded') return false;
       stopStore.request('end-run');

@@ -40,6 +40,8 @@ export interface ConversationRow {
   kind: ConversationRowKind;
   segments: ConversationRowSegment[];
   markerTone?: ConversationRowTone;
+  /** A settled row whose call a stop cut: it wears the stop mark instead of the done mark. */
+  interrupted?: true;
   headerContinuation?: boolean;
   codeBg?: true;
   /**

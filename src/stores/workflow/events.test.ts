@@ -160,6 +160,32 @@ describe('eventsStore — append via addEvent', () => {
     },
   );
 
+  // A run reopened at rest shows its cut call closed as interrupted, read off its log; continuing
+  // it records that same close on the bus. The transcript states the close once.
+  it('keeps one close of a cut call when the resume records the close the screen already read', () => {
+    const cut = makeRunnerCallActivity({
+      callId: 'implementer-2',
+      ts: 45,
+      activityId: 'implementer-2:terminal',
+      stage: 'aborted',
+      kind: 'error',
+      label: 'aborted runner_interrupted',
+      diagnosticPartial: 'SPLITBRIEF exited',
+    });
+    addEvent(cut);
+    addEvent({ ...cut });
+    expect(
+      eventsStore.get().events.filter((event) => event.type === 'runner_call_activity'),
+    ).toHaveLength(1);
+
+    // Call ids restart with each process: the next process's close of a reused id is its own.
+    addEvent({ type: 'workflow_resumed', ts: 60, phase: 'implementing' });
+    addEvent({ ...cut });
+    expect(
+      eventsStore.get().events.filter((event) => event.type === 'runner_call_activity'),
+    ).toHaveLength(2);
+  });
+
   it('appends event to events array', () => {
     const event = makePlannerText();
     addEvent(event);

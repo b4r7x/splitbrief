@@ -5041,6 +5041,17 @@ const projections = [
   planCompiledProjection,
   firstBriefAfterPlanProjection,
   implementationProjection,
+  // The same run a moment after it was continued: the screen holds it and its engine has not
+  // started its first call yet (`markWorkflowPaused`, applied by the registry).
+  {
+    scenarioId: scenarioId('workflow-resuming'),
+    feature: implementationProjection.feature,
+    inputMode: implementationProjection.inputMode,
+    sidebarVisible: implementationProjection.sidebarVisible,
+    events: implementationProjection.events.filter(
+      (event) => event.type !== 'runner_call_started' && event.type !== 'runner_call_activity',
+    ),
+  },
   implementationQueuedProjection,
   implementationDeliveredProjection,
   implementationSteerableProjection,

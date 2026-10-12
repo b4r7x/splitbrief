@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent } from 'react';
-import { requestResume, setResumeHandler } from '../../handlers.js';
+import { requestResume, rereadRunAtRest, setResumeHandler } from '../../handlers.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
 import { useRunLoop, type RunWorkflowFn } from '../use-run-loop.js';
@@ -87,7 +87,10 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
         },
       },
     });
-    if (outcome.kind === 'refused') feedbackStore.setError(outcome.message);
+    if (outcome.kind !== 'refused') return;
+    if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply')
+      rereadRunAtRest(run.ref);
+    feedbackStore.setError(outcome.message);
   };
 
   const continuation = useRunContinue({ prepared, inputMode });

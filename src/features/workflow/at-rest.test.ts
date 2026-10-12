@@ -7,7 +7,7 @@ import type { RunStatus, StopReason } from '../../core/sessions/run-status.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import type { ReviewPacketSummary } from '../../core/schemas/summary.js';
-import { atRestComposer, atRestRailStages, recordPhase } from './at-rest.js';
+import { atRestBriefMark, atRestComposer, atRestRailStages, recordPhase } from './at-rest.js';
 
 const PACKET: ReviewPacketSummary = {
   jsonPath: 'review-packet.json',
@@ -250,6 +250,30 @@ describe('atRestRailStages on a run with a workspace', () => {
       3,
     );
   });
+});
+
+describe('atRestBriefMark', () => {
+  it.each([
+    [
+      'a process that went away',
+      openWith({ kind: 'stopped', on: { kind: 'interrupted' } }),
+      'cancelled',
+    ],
+    ['a stop', openWith({ kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } }), 'cancelled'],
+    ['a failure', openWith({ kind: 'stopped', on: { kind: 'failed', message: 'x' } }), 'failed'],
+    [
+      'a halt',
+      openWith({ kind: 'waiting-for-you', on: { kind: 'halt', issue: makeRecoveryIssue() } }),
+      'failed',
+    ],
+    ['an end', { kind: 'closed', as: 'ended' }, 'cancelled'],
+    ['a run still running', { kind: 'running' }, null],
+  ] as const)(
+    'marks the brief a run left in progress after %s as its rail does',
+    (_, status, mark) => {
+      expect(atRestBriefMark(recordAt({ status }))).toBe(mark);
+    },
+  );
 });
 
 describe('atRestComposer', () => {

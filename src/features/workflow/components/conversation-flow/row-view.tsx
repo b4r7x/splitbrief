@@ -12,6 +12,7 @@ import {
   type RowMarkerStatus,
 } from '../../conversation-rows/row-markers.js';
 import { colorForTone } from '../../../../core/theme/tone-color.js';
+import { stateTone } from '../../../../core/theme/state-tone.js';
 import { prefersReducedMotion } from '../../../../lib/terminal/reduce-motion.js';
 
 function RowSegment({ segment }: { segment: ConversationRowSegment }) {
@@ -53,7 +54,8 @@ function ActiveDot({ theme, leadingWidth }: { theme: Theme; leadingWidth: number
   );
 }
 
-export type RowLifecycle = 'live' | 'active' | 'queued' | 'done';
+/** `cancelled` and `failed` mark a brief left in progress on a run at rest, as its rail marks it. */
+export type RowLifecycle = 'live' | 'active' | 'queued' | 'done' | 'cancelled' | 'failed';
 
 function alignLeadingWithinWidth(content: string, width: number): string {
   const pad = Math.max(0, width - getTerminalCellWidth(content));
@@ -79,7 +81,11 @@ function RowLeading({
     (kind === 'activity' || kind === 'task-header') && headerContinuation !== true;
   const isPulsingDot = isHeaderMarker && lifecycle === 'live';
   const status: RowMarkerStatus =
-    lifecycle === 'queued' ? 'queued' : isPulsingDot || lifecycle === 'active' ? 'live' : 'done';
+    lifecycle === 'queued' || lifecycle === 'cancelled' || lifecycle === 'failed'
+      ? lifecycle
+      : isPulsingDot || lifecycle === 'active'
+        ? 'live'
+        : 'done';
   const leading = rowLeading(leadingKind, status);
   const leadingWidth = rowLeadingCells(leadingKind);
 
@@ -115,6 +121,8 @@ function markerColorFor(
   t: Theme,
 ): string | undefined {
   if (lifecycle === 'queued') return t.textDim;
+  if (lifecycle === 'cancelled') return t[stateTone('attention')];
+  if (lifecycle === 'failed') return t[stateTone('failed')];
   if (row.markerTone !== undefined) return colorForTone(row.markerTone, t);
   if (row.kind === 'activity' || row.kind === 'callout-top' || row.kind === 'callout-body') {
     const first = row.segments[0];
@@ -141,7 +149,8 @@ export function ConversationRowView({
       </Box>
     );
   }
-  const markerColor = markerColorFor(row, lifecycle, t);
+  const settled = lifecycle === 'done' && row.interrupted === true ? 'cancelled' : lifecycle;
+  const markerColor = markerColorFor(row, settled, t);
   const codeBg = row.codeBg === true ? t.markdown.codeBg : undefined;
   const content = (
     <Text wrap="truncate-end">
@@ -155,7 +164,7 @@ export function ConversationRowView({
     <Box width="100%" height={1} overflow="hidden" flexShrink={0}>
       <RowLeading
         kind={row.kind}
-        lifecycle={lifecycle}
+        lifecycle={settled}
         {...(focused === undefined ? {} : { focused })}
         markerColor={markerColor}
         {...(row.headerContinuation === true ? { headerContinuation: true } : {})}

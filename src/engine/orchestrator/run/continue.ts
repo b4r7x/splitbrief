@@ -17,10 +17,10 @@ export type ContinueRunOutcome =
     };
 
 const CLOSED_MESSAGE: Record<Extract<RunStatus, { kind: 'closed' }>['as'], string> = {
-  complete: 'This run is complete; start a new one.',
-  ended: 'This run was ended; start a new one.',
-  applied: 'This run was applied; start a new one.',
-  discarded: 'This run was discarded; start a new one.',
+  complete: 'Cannot continue: this run is complete; start a new one.',
+  ended: 'Cannot continue: this run was ended; start a new one.',
+  applied: 'Cannot continue: this run was applied; start a new one.',
+  discarded: 'Cannot continue: this run was discarded; start a new one.',
 };
 
 export type ContinueRunDeps = Readonly<{
@@ -81,7 +81,7 @@ export function continueRun(
       kind: 'refused',
       reason: 'ready-to-apply',
       message:
-        'This run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).',
+        'Cannot continue: this run is ready to apply; choose Apply or Discard (/run accept, /run reject confirm).',
     };
   }
 

@@ -693,6 +693,21 @@ describe('useAppKeys: ESC stop ladder', () => {
     ui.unmount();
   });
 
+  it('esc on a continued run that has not reached its first call opens the stop sheet', async () => {
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'paused' });
+    const exit = vi.fn();
+    const ui = renderFeature(<Harness exit={exit} />);
+    await tick();
+
+    await writeEsc(ui);
+    await tick();
+    vi.advanceTimersByTime(PAST_DEBOUNCE_MS);
+
+    expect(routerStore.get().screen).toBe('workflow');
+    expect(overlayStore.get().active).toBe('stop-sheet');
+    ui.unmount();
+  });
+
   it('parked Escape returns home even with an unsent draft', async () => {
     stopStore.park('mid-brief', null, null);
     composerLiveStore.setDraft(createDraftDocument('draft'));

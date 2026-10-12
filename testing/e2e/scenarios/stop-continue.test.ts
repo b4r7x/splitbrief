@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readRunnerPids } from '../../../src/core/sessions/runner-pids.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
+import type { EngineEvent, EngineEventOf } from '../../../src/engine/events/types.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
@@ -23,6 +25,13 @@ import {
 const ORPHAN_EXIT_TIMEOUT_MS = 10_000;
 
 let fixture: StopContinueFixture | undefined;
+
+function cutCalls(events: readonly EngineEvent[]): EngineEventOf<'runner_call_error'>[] {
+  return events.filter(
+    (event): event is EngineEventOf<'runner_call_error'> =>
+      event.type === 'runner_call_error' && event.error.code === 'runner_interrupted',
+  );
+}
 
 afterEach(async () => {
   if (fixture !== undefined) {
@@ -120,6 +129,10 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
 
     expectStoppedWorkInWorkspace(target, checkoutAtStart);
 
+    // The killed process wrote no end for its BUILD call: nothing in the log says it was cut.
+    const ref = { projectDir: target.projectDir, sessionId: killed.sessionId };
+    expect(cutCalls((await readRunEvents(ref)).events)).toEqual([]);
+
     const killedState = readState(target, killed.sessionId);
     expect(killedState.interruptedStep).toBeUndefined();
     expect(killedState.tasks[0]?.status).toBe('in_progress');
@@ -133,6 +146,23 @@ describe('stop → continue → finish', { timeout: 240_000 }, () => {
     expect(readRunnerPids({ projectDir: target.projectDir, sessionId: killed.sessionId })).toEqual(
       [],
     );
+
+    // The continuation recorded the cut once, closing the killed call before it ran the brief
+    // again: the log now says where the run was interrupted.
+    const events = (await readRunEvents(ref)).events;
+    const cut = cutCalls(events);
+    expect(cut).toHaveLength(1);
+    const cutIndex = events.indexOf(cut[0] as EngineEvent);
+    const killedCall = events.findLastIndex(
+      (event, index) =>
+        index < cutIndex &&
+        event.type === 'runner_call_started' &&
+        event.callId === (cut[0] as EngineEventOf<'runner_call_error'>).callId,
+    );
+    const resumedAt = events.findIndex((event) => event.type === 'workflow_resumed');
+    expect(killedCall).toBeGreaterThanOrEqual(0);
+    expect(cutIndex).toBeGreaterThan(killedCall);
+    expect(cutIndex).toBeLessThan(resumedAt);
 
     const finalState = readState(target, killed.sessionId);
     expect(finalState.tasks[0]?.status).toBe('done');

@@ -1086,16 +1086,15 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
-  it.each(['paused', 'waiting'] as const)('paints %s with warning', (state) => {
+  it('paints waiting with warning', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({
-      status: state === 'paused' ? 'paused' : 'running',
-      phase: 'planning',
-    });
-    const ui = renderFeature(<InputFooter width={120} waiting={state === 'waiting'} />);
-    const word = state === 'paused' ? 'Paused' : 'Waiting for your answer';
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
+    const ui = renderFeature(<InputFooter width={120} waiting />);
     expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.warning, `${glyph('statusPending')} ${word}`).replace('\u001b[39m', ''),
+      paint(defaultTheme.warning, `${glyph('statusPending')} Waiting for your answer`).replace(
+        '\u001b[39m',
+        '',
+      ),
     );
     ui.unmount();
   });
@@ -1208,17 +1207,32 @@ describe('InputFooter', () => {
     ui.unmount();
   });
 
-  it('keeps paused commands dim and only the state word warning', () => {
-    chalk.level = 3;
-    lifecycleStore.__testReset({ status: 'paused', phase: 'planning' });
+  // A continued run sits paused until its engine starts again: reaping, restoring and re-entering
+  // take seconds, and the byline says what is happening rather than asking for a resume.
+  it.each([
+    { phase: 'implementing', brief: 'T002', expected: 'Resuming T002' },
+    { phase: 'final-review', brief: null, expected: 'Resuming the review' },
+    { phase: 'planning', brief: null, expected: 'Resuming the plan' },
+  ] as const)('says $expected while a continued run starts again', ({ phase, brief, expected }) => {
+    terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
+    lifecycleStore.__testReset({ status: 'paused', phase });
+    if (brief !== null) {
+      tasksStore.__testReset({
+        currentTask: 2,
+        totalTasks: 2,
+        tasks: [
+          { id: 'T001', title: 'One', status: 'done' },
+          { id: brief, title: 'Two', status: 'in_progress' },
+        ],
+      });
+    }
     const ui = renderFeature(<InputFooter width={120} />);
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.warning, `${glyph('statusPending')} Paused`).replace('\u001b[39m', ''),
-    );
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.textDim, ' — resume with /resume or `splitbrief resume`'),
-    );
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${spinnerFrames()[0]} ${expected}`);
+    expect(frame).not.toContain('Paused');
+    expect(frame).not.toContain('/resume');
     ui.unmount();
+    terminalSizeStore.reset();
   });
 
   it('paints a running reviewer check mark accent and only its seat words reviewer', () => {

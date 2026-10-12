@@ -574,9 +574,9 @@ describe('ConversationFlow', () => {
         60,
       );
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame.split(`Review 1 ${review}`)).toHaveLength(2);
+      expect(frame.split(`Final review ${review}`)).toHaveLength(2);
       expect(frame).toContain('5.0s');
-      expect(frame.indexOf(`Review 1 ${review}`)).toBeGreaterThan(
+      expect(frame.indexOf(`Final review ${review}`)).toBeGreaterThan(
         frame.indexOf('T001 First brief'),
       );
       expect(frame).toContain('Checking the diff.');
@@ -669,9 +669,9 @@ describe('ConversationFlow', () => {
     expect(lineOf('+2 earlier')).toBe(-1);
     expect(lineOf('Plan Fix the red tests')).toBeGreaterThan(-1);
     expect(lineOf('T001 First brief')).toBeGreaterThan(lineOf('Plan Fix the red tests'));
-    expect(lineOf('Review 1 failed')).toBeGreaterThan(lineOf('T001 First brief'));
-    expect(lines[lineOf('Review 1 failed')]).toContain('npm test · fixes T002');
-    expect(lineOf('T002 Fix brief')).toBeGreaterThan(lineOf('Review 1 failed'));
+    expect(lineOf('Final review failed')).toBeGreaterThan(lineOf('T001 First brief'));
+    expect(lines[lineOf('Final review failed')]).toContain('npm test · fixes T002');
+    expect(lineOf('T002 Fix brief')).toBeGreaterThan(lineOf('Final review failed'));
     expect(lineOf('npm test · running')).toBeGreaterThan(lineOf('T002 Fix brief'));
     expect(frameRowCount(ui.lastFrame() ?? '')).toBeLessThanOrEqual(80);
 
@@ -1053,7 +1053,7 @@ describe('ConversationFlow', () => {
     );
     const baseline = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(baseline).not.toContain(FOCUS_MARK);
-    for (const label of ['Plan Fix the queue', 'T001 First brief', 'Review 1 passed']) {
+    for (const label of ['Plan Fix the queue', 'T001 First brief', 'Final review passed']) {
       const index = baseline.split('\n').findIndex((line) => line.includes(label));
       expect(index).toBeGreaterThan(-1);
       hoverStore.set(index);

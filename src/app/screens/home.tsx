@@ -260,6 +260,11 @@ export function HomeScreen({
   const { frame: refreshFrame } = useSpinnerFrame(hintNotice);
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
 
+  // Another process can end or finish a run, so home reads the list again whenever it shows.
+  useEffect(() => {
+    sessionsStore.refresh();
+  }, []);
+
   useEffect(() => {
     if (!canFocus) setSessionsFocused(false);
   }, [canFocus]);

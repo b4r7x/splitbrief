@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PHASES } from '../../../core/schemas/enums.js';
-import { deriveLiveStatus, stallRunnerHint, PAUSED_LIVE_STATUS_PARTS } from './live-activity.js';
+import { deriveLiveStatus, stallRunnerHint } from './live-activity.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
@@ -25,13 +25,6 @@ const base = {
   suiteStage: null,
   activeOperation: null,
 };
-
-it('keeps the paused state separate from its dim resume hint', () => {
-  expect(PAUSED_LIVE_STATUS_PARTS).toEqual([
-    { text: 'Paused', tone: 'warning' },
-    { text: ' — resume with /resume or `splitbrief resume`', tone: 'textDim' },
-  ]);
-});
 
 it.each([
   ['shell', 'Custom Shell'],

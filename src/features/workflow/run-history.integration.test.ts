@@ -587,7 +587,7 @@ describe('hydrateRun', () => {
       const lines = stripAnsiStyles(ui.lastFrame())
         .split('\n')
         .map((line) => line.trim())
-        .filter((line) => /^[●✗×] (?:T\d|Review )/u.test(line));
+        .filter((line) => /^[●✗×] (?:T\d|Review |Final review )/u.test(line));
       ui.unmount();
       return {
         lines,
@@ -601,10 +601,10 @@ describe('hydrateRun', () => {
     writeLog(log);
     for (const event of log) addEvent(event);
     const live = transcript();
-    expect(live.lines.filter((line) => line.includes('Review'))).toEqual([
+    expect(live.lines.filter((line) => /review/i.test(line))).toEqual([
       '● Review T001 passed  49.0s',
       '✗ Review T002 failed  1 blocking · fixes T003 · 49.0s',
-      '● Review 1 passed  1m 2s',
+      '● Final review passed  1m 2s',
     ]);
     resetWorkflow();
     await hydrateRun(
@@ -747,6 +747,53 @@ describe('hydrateRun', () => {
     );
 
     expect(lifecycleStore.get().durationMs).toBe(9_000 - 1_000);
+  });
+
+  it('shows the call a crashed process left open as interrupted, and its brief as no longer working', async () => {
+    const T002 = taskId('T002');
+    const call = { taskId: T002, callId: 'implementer-2', role: 'implementer' } as const;
+    writeLog([
+      ...RUN,
+      makeTaskStart({ taskId: T002, title: 'Wire it in', file: 'src/form.ts', ts: 4_000 }),
+      {
+        type: 'implementer_generate_running',
+        ts: 4_100,
+        phase: 'implementing',
+        taskId: T002,
+        file: 'src/form.ts',
+      },
+      makeRunnerCallStarted({ ...call, ts: 4_200 }),
+    ]);
+    const interrupted = {
+      kind: 'open',
+      stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+      resumeAt: { kind: 'brief', taskId: T002, attempt: 0 },
+    } as const;
+    const paused = {
+      ...interrupted,
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+    } as const;
+
+    for (const [status, cut] of [
+      [interrupted, 1],
+      [paused, 0],
+    ] as const) {
+      await hydrateRun(
+        makeRunRecord({
+          ref: { projectDir, sessionId: SESSION_ID },
+          hydration: { kind: 'loaded', state: savedState() },
+          status,
+        }),
+      );
+      const events = eventsStore.get().events;
+      expect(events.at(-1)?.type).toBe('replay_complete');
+      expect(
+        events.filter((event) => event.type === 'runner_call_activity' && event.kind === 'error'),
+      ).toHaveLength(cut);
+      const rows = historyRows(events).join('\n');
+      expect(rows.includes('working on')).toBe(cut === 0);
+      if (cut === 1) expect(rows).toContain('current turn interrupted: SPLITBRIEF exited');
+    }
   });
 
   it('shows a run whose state cannot be read as the log alone', async () => {

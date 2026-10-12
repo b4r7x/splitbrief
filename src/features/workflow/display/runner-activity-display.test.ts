@@ -22,7 +22,7 @@ describe('runnerActivityLedgerItem', () => {
         diagnosticPartial: 'cancelled',
       }),
     ).toMatchObject({
-      label: 'WARN',
+      label: 'STOP',
       value: 'current turn interrupted: cancelled',
       diagnosticPreview: 'cancelled',
       tone: 'warning',

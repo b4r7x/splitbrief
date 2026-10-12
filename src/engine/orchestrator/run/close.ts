@@ -8,6 +8,7 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error, matches } from '../../../utils/error.js';
 import type { EventBus } from '../../events/types.js';
+import { recordInterruptedCalls } from '../../calls/interrupted.js';
 import { WORKFLOW_CANCEL_REASON_USER } from '../../events/workflow-cancel.js';
 import { writeRunPatch } from '../apply/patch.js';
 import { persistStoppedBriefEvidence } from '../evidence/persistence.js';
@@ -179,6 +180,7 @@ export async function endRunAtRest(
   state: WorkflowState,
   config: Config,
 ): Promise<{ state: WorkflowState; closedNow: boolean }> {
+  await recordInterruptedCalls(scope, rebaseOnPersistedWorkflowState(scope, state));
   const closure = await endRun(scope, state);
   finalizeRunAtRest({ ref: scope, config, state: closure.state });
   return closure;
