@@ -26,7 +26,8 @@
       "!!**/.nuke",
       "!!**/specs",
       "!!**/.splitbrief",
-      "!!**/.opencode"
+      "!!**/.opencode",
+      "!!testing/compat/fixtures/v3-pre-change-writer"
     ]
   },
   "formatter": {
