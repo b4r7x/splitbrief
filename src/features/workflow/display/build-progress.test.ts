@@ -819,7 +819,7 @@ describe('deriveBuildProgress', () => {
     expect(progress.silent).toBe(false);
   });
 
-  // S8 run 18:06–18:58: the pre-review `npm test` ran ten minutes and no surface said which stage
+  // In a real run, the pre-review `npm test` ran ten minutes and no surface said which stage
   // it was or how long it had run.
   it('names the full-suite stage, its command and how long it has run, not the seat', () => {
     const progress = deriveBuildProgress(

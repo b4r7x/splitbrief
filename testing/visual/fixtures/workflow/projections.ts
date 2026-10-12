@@ -1830,7 +1830,7 @@ const planCardRenderNoteProjection: WorkflowFixtureProjection = {
 };
 
 // Two run checks under different ids run one command, as `c-invariants` and `c-deleted-symbols`
-// did in the S11 run: the confirms line names the command once.
+// did in a real run: the confirms line names the command once.
 const SHARED_COMMAND_PLAN = makePlanProposal({
   ...PLAN_CARD_PLAN,
   checks: [
@@ -2451,7 +2451,7 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
   }),
 };
 
-/** The final review left six criteria unverified, as in the S9 run: nothing for the planner to fix. */
+/** The final review left six criteria unverified, as in a real run: nothing for the planner to fix. */
 const reviewUnverifiedRecoveryProjection: WorkflowFixtureProjection = {
   ...reviewFailedRecoveryProjection,
   scenarioId: scenarioId('workflow-recovery-review-unverified'),
@@ -2595,7 +2595,7 @@ const checkoutChangedRecoveryProjection: WorkflowFixtureProjection = {
   events: [],
   config: AGY_CREW,
   // A halt that names only a branch is stale on a run with no workspace, so the run keeps its
-  // worktree, as the S11 run that raised it did.
+  // worktree, as the real run that raised it did.
   resumeState: {
     ...haltedResumeState(checkoutChangedRecoveryIssue),
     workspace: {
@@ -3661,7 +3661,7 @@ const implementationAdjacentNarrationProjection: WorkflowFixtureProjection = {
   ],
 };
 
-/** S11 run 2, 08:49: the build seat fenced its hand-back report in a json code block. */
+/** In a real run, the build seat fenced its hand-back report in a json code block. */
 const implementationFencedHandBackProjection: WorkflowFixtureProjection = {
   ...implementationNarrationProjection,
   scenarioId: WORKFLOW_IMPLEMENTATION_FENCED_HANDBACK_ID,

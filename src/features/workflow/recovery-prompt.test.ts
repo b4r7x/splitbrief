@@ -456,7 +456,7 @@ describe('recovery prompt', () => {
     expect(parseRecoveryActionAnswer('c', issue)).toBeNull();
   });
 
-  // S11 run 2, 07:54: the panel blamed the checkout and listed T004's own file as a Files row,
+  // In a real run, the panel blamed the checkout and listed T004's own file as a Files row,
   // although only a branch another session created had changed.
   it('heads a checkout-changed halt with the ref that changed and lists no brief file', async () => {
     const issue = buildCheckoutChangedRecoveryIssue({

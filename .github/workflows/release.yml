@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes the npm package. The owner dispatches it by hand; the procedure is
+# Publishes the npm package. The maintainer dispatches it by hand; the procedure is
 # docs/RELEASING.md § "npm release".
 on:
   workflow_dispatch:

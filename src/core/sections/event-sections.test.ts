@@ -702,7 +702,7 @@ describe('groupEventsIntoSections', () => {
     requireSection(sections, 3, 'completed-task');
   });
 
-  // S11 run 3 (owner screenshot, 2026-10-07 20:10): rows no brief owned stayed above the live brief
+  // In a real run, rows no brief owned stayed above the live brief
   // for the rest of the run. A build row between briefs stays in that brief's retained body.
   describe('a build row no brief owns joins a brief', () => {
     const row = (type: string, phase: Phase, fields: Record<string, unknown> = {}) => ({
@@ -895,7 +895,7 @@ describe('groupEventsIntoSections', () => {
     });
   });
 
-  // sb-RED (owner screenshot, 2026-10-08): under `Completed · 9/9 briefs passed` the transcript painted
+  // In a real run, under `Completed · 9/9 briefs passed` the transcript painted
   // first plan's Tasks card (T001–T005), its validation warning and two earlier pre-review cycles.
   // Each stage the run left settles in time order between the briefs; only the live stage is loose.
   describe('the stages a run left settle between its briefs', () => {

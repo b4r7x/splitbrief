@@ -14,7 +14,7 @@ The built CLI runs on its own repository. This skill contains the supervision an
 
 Read the target repository's agent instructions. No other skill, private run script, handoff file, or external service is required by this skill.
 The run uses the repository's Node.js, npm, Git, dependencies, and configured coding tools.
-When `tmux` is on PATH, every run launches in a named tmux session so the owner can watch it live. Without tmux, use an interactive terminal supplied by the host.
+When `tmux` is on PATH, every run launches in a named tmux session so the maintainer can watch it live. Without tmux, use an interactive terminal supplied by the host.
 Do not install tmux or change the host configuration automatically.
 
 Resolve `SKILL_DIR` to the directory containing this installed `SKILL.md`. All helper paths are relative to that directory.
@@ -105,16 +105,16 @@ tmux set-option -t "$T" window-size manual
 For `continue <run-id>`, run the whole block with two changes: set `T` to the session name recorded in that run's `babysit.md`, and pass `continue "$ID"` in place of `start …`.
 When `babysit.md` records no session, keep the new name and record it.
 If `tmux has-session -t "$T"` succeeds, wait until its pane prints `SPLITBRIEF EXIT CODE`, then replace the `new-session` and `set-option` lines with `tmux respawn-pane -k -t "$T" -e "SB_STDERR=$SB_STDERR" "$SCR/launch.sh" continue "$ID"`.
-A read-only attach never resizes the window. `window-size manual` keeps the window at 140x45 when the owner attaches without `-r` to scroll, so the TUI the babysitter reads keeps its size.
+A read-only attach never resizes the window. `window-size manual` keeps the window at 140x45 when the maintainer attaches without `-r` to scroll, so the TUI the babysitter reads keeps its size.
 
-Right after launch, give the owner this command once, with the session name expanded: `tmux attach -r -t "$T"`.
-A babysitter subagent passes it to the orchestrator, which relays it to the owner.
+Right after launch, give the maintainer this command once, with the session name expanded: `tmux attach -r -t "$T"`.
+A babysitter subagent passes it to the orchestrator, which relays it to the maintainer.
 Record the session name and the attach command in `<session-dir>/babysit.md` (`$SCR/defects.md` until the session directory exists).
 
 Read-only attach cannot scroll, because the TUI draws on the alternate screen.
 tmux copy mode shows only the current screen, for the same reason.
-To scroll, the owner attaches without `-r` and uses the TUI's own keys (`shift+↑↓`, `pgup`/`pgdn`), only when the babysitter agrees; a writable client sends keys to the run.
-Otherwise the owner reads `babysit.md`.
+To scroll, the maintainer attaches without `-r` and uses the TUI's own keys (`shift+↑↓`, `pgup`/`pgdn`), only when the babysitter agrees; a writable client sends keys to the run.
+Otherwise the maintainer reads `babysit.md`.
 
 Without tmux, launch the same command in the host's persistent interactive terminal.
 
@@ -193,7 +193,7 @@ A blocking tool defect is fixed **in this session**, between runs. There is no L
 4. Fix the cause in the main checkout. Delegate this step if agents are available.
 5. Prove a logic fix with a failing-before/passing-after regression test, affected suites, and typecheck.
 6. For a visual or flow defect, do the look-and-logic loop in CLAUDE.md on the screen and its neighbors. Stop at zero open items.
-7. Run npm run release-check, then npm run build. The owner commits the fix.
+7. Run npm run release-check, then npm run build. The maintainer commits the fix.
 8. Start a new run with start '<task>' @<task-file>. Reproduce the original interaction and verify the repair live.
 9. Record the verification evidence. If the defect remains, end the new run too; do not advance or approve the next step.
 ```
@@ -208,7 +208,7 @@ Repeat until the plan's runs are done.
 
 **Scope.** Fix defects exposed by the run or verification. A weak flow that the run shows is a defect, not a redesign. Do not search for unrelated cleanup or redesign opportunities.
 Record unrelated ideas separately; they do not become requirements for this run.
-If a repair needs an unauthorized product decision or unavailable credentials, keep the run parked, edit nothing, and report the exact blocker. Record the options in the defect record and ask the owner. Do not invent the decision.
+If a repair needs an unauthorized product decision or unavailable credentials, keep the run parked, edit nothing, and report the exact blocker. Record the options in the defect record and ask the maintainer. Do not invent the decision.
 
 A catalog or model claim is verified by set equality, never by a count — "exit 0 and a plausible count" hid a parser that collapsed 118 rows to 105. The four checks: the tool's own listing against production discovery (missing, extra, duplicates); every metadata field per row; the rows the live picker shows; the argv the child receives.
 
@@ -246,7 +246,7 @@ A seat taken through the panel **is** the config of record: the picker saves thr
 
 **New code needs a new run in a fresh process.** The at-rest `⏎` keeps the old build in memory.
 After a source repair, confirm the ended run's process exited, build, then launch `start` in the retained terminal.
-With tmux, respawn the pane in the same session, so the owner's attach command stays valid:
+With tmux, respawn the pane in the same session, so the maintainer's attach command stays valid:
 
 ```bash
 # pane: esc, End run, then ctrl+c ctrl+c; wait until it prints SPLITBRIEF EXIT CODE
@@ -260,7 +260,7 @@ If the new run repeats the same failure, check the loaded build and reproduce th
 
 ## Standing prohibitions
 
-- Never `git add`, `git stage` or `git commit`. Every change stays unstaged for the owner.
+- Never `git add`, `git stage` or `git commit`. Every change stays unstaged for the maintainer.
 - Never edit the checkout while a run lives, and never rebuild while a run lives. Never hand-edit `state.json` or `.splitbrief/config.yaml` mid-run — answer the surface that owns the change.
 - Never `model: auto`. Name the model.
 - Inspect external changes before answering `c`; the reason label alone is not approval.
@@ -280,4 +280,4 @@ npm run release-check
 git diff --stat
 ```
 
-Report the run ID, outcome, fixed defects, checks, live verification, and any blocker. Leave all changes unstaged for the owner.
+Report the run ID, outcome, fixed defects, checks, live verification, and any blocker. Leave all changes unstaged for the maintainer.

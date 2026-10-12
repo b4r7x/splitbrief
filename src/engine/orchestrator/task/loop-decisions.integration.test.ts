@@ -262,7 +262,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const result = await runLoop({
       projectDir,
       sessionId,
-      // The stale consult already spent one of the lineage's two consults, as in the S6 run.
+      // The stale consult already spent one of the lineage's two consults, as in a real run.
       state: stateWithPlan([task], { lineages: { T001: lineage({ consults: 1 }) } }),
       implementer,
       validator,
@@ -406,7 +406,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     // The attempt reports a change of what; the answered attempt reports a change of how and
-    // fails typecheck; the one local retry passes. This is T005 of the S11 run.
+    // fails typecheck; the one local retry passes. This is T005 of a real run.
     const implementer = decidingImplementer([[WHAT], [HOW], [HOW]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
     const confirms = [askUser, () => confirm([HOW])];

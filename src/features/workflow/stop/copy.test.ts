@@ -185,7 +185,7 @@ describe('stopByline', () => {
     ).toBe('Finishing the run');
   });
 
-  // S8 run 18:06–18:58: with a pause armed, the ten-minute boundary suite read `Finishing the run`.
+  // In a real run, with a pause armed, the ten-minute boundary suite read `Finishing the run`.
   it('names the full-suite stage a pause waits on, with its command and its clock', () => {
     const paused = input({
       intent: 'pause-after-brief',
@@ -420,7 +420,7 @@ describe('stopByline', () => {
     ).toEqual([{ text: 'Stopped', tone: 'warning' }]);
   });
 
-  // S11 run, 04:55: after End run the byline called T005 cancelled with its changes kept, while
+  // In a real run, after End run the byline called T005 cancelled with its changes kept, while
   // the closed line read `× Ended · Build 4/13 · stopped in T005` and the changes sat in run.patch.
   // A run End run closed is a closed run: its own closed byline speaks for it, and the closed block
   // states where it stopped and what it kept.

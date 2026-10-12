@@ -59,7 +59,7 @@ describe('bylineText', () => {
     expect(bylineText(makeView({ outcome: { kind: 'discarded' } }), WIDE)).toBe('');
   });
 
-  // S11 run, 04:55: one ended run was called cancelled at T005 on the byline and `× Ended` on the
+  // In a real run, one ended run was called cancelled at T005 on the byline and `× Ended` on the
   // closed line. The closed byline names the outcome in the closed line's word.
   it('says an ended workspace run ended and how to bring its changes back', () => {
     const view = endedInBuild();

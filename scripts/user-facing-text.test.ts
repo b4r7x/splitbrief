@@ -64,9 +64,7 @@ describe('user-facing text', () => {
         '- Details in `.nuke/2026-09-21-session-handoff.md`.',
         '- The reviewer answers the consult (owner decision 2026-10-09).',
         '- The owner does not hold a subscription.',
-        '- Sol implemented it; Astra reviewed it.',
         '- Fixes N-7, DOC-2, REL-04, CLR-01, WD-3 and S11.',
-        '- Read it with fresh eyes.',
         '- The limit wording was captured live.',
         '- Cursor has no captured wording.',
         '- **Known gaps.** Copilot is not covered.',
@@ -81,13 +79,31 @@ describe('user-facing text', () => {
       'CHANGELOG.md:4: .nuke/ path',
       'CHANGELOG.md:5: owner decision',
       'CHANGELOG.md:6: the owner',
-      'CHANGELOG.md:7: agent name Sol',
-      'CHANGELOG.md:7: agent name Astra',
-      'CHANGELOG.md:8: finding id',
-      'CHANGELOG.md:9: fresh eyes',
-      'CHANGELOG.md:10: captured live',
-      'CHANGELOG.md:11: no captured',
-      'CHANGELOG.md:12: known gaps',
+      'CHANGELOG.md:7: finding id',
+      'CHANGELOG.md:8: captured live',
+      'CHANGELOG.md:9: no captured',
+      'CHANGELOG.md:10: known gaps',
+    ]);
+  });
+
+  it('adds the terms of the optional local term list', () => {
+    write(
+      'CHANGELOG.md',
+      [
+        '- Zephyr implemented it in the night shift.',
+        '- Pick `gpt-5-zephyr` (GPT-5-Zephyr) for long runs.',
+      ].join('\n'),
+    );
+    write('README.md', '');
+    write('docs/GUIDE.md', '');
+
+    expect(findUserFacingTextViolations(root)).toEqual([]);
+
+    write('.nuke/user-facing-terms.txt', 'Zephyr\nnight shift\n\n');
+
+    expect(findUserFacingTextViolations(root)).toEqual([
+      'CHANGELOG.md:1: Zephyr',
+      'CHANGELOG.md:1: night shift',
     ]);
   });
 
@@ -98,7 +114,6 @@ describe('user-facing text', () => {
         'A criterion the verdict leaves `unverified` blocks pass.',
         'The row reads `1 not verified at the run base`.',
         'Receipts live in the owner-only trust store.',
-        'Pick `gpt-5.6-sol`, `GPT-5.6 Sol` or `gpt-6-astra` (GPT-6-Astra).',
         'Upload the artifact to S3 with a T-0004 task id.',
         'Solve it on Solaris.',
         'The workspace-base snapshot holds the captured uncommitted files.',

@@ -365,7 +365,7 @@ export const gates: readonly Gate[] = [
   {
     id: '59',
     description:
-      'Shipped docs, the changelog, the website copy and the installable skills carry no internal text (untested admissions, owner decisions, agent names, finding ids, .nuke/ paths)',
+      'Shipped docs, the changelog, the website copy and the installable skills carry no internal text (untested admissions, owner decisions, finding ids, .nuke/ paths, the terms of an optional local list)',
     command: 'tsx scripts/user-facing-text.ts | wc -l',
     expected: 0,
   },

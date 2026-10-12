@@ -302,7 +302,7 @@ describe('a run with a workspace', () => {
     expect(view.rail.map((state) => state.status)).toEqual(['done', 'cancelled', 'pending']);
   });
 
-  // S9 run, 01:11: `× Ended · Apply 12/12 · changes saved in run.patch` under a rail whose failed
+  // In a real run, `× Ended · Apply 12/12 · changes saved in run.patch` under a rail whose failed
   // review read done. The closed block and the header rail read one rail.
   it('stops a run ended on a failed review at Review, on the rail the header paints', () => {
     const passed = readySummary();
@@ -833,7 +833,7 @@ describe('brief rows', () => {
     expect(view.briefs.rows[0]?.partialFiles).toBe(0);
   });
 
-  // S11 run, 04:55: End run on a consult-bound halt. The saved brief was still in progress, its
+  // In a real run, End run on a consult-bound halt. The saved brief was still in progress, its
   // ledger entry read failed: `Briefs ─` said T005 stopped with no file or duration, and
   // `Earlier work ─` said T005 failed. One brief, one row, one status word.
   it('joins the failed attempt the ledger booked to the brief the run stopped in', () => {

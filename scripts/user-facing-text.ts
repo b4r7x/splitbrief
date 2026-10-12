@@ -1,10 +1,10 @@
-import { globSync, readFileSync } from 'node:fs';
+import { existsSync, globSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 // Text a user may never read: admissions of untested work, internal process, and the
-// ids, agents and paths of how SPLITBRIEF is built. Each pattern is narrow enough that
-// product vocabulary such as `unverified`, `owner-only` or a `gpt-5.6-sol` model id passes.
+// ids and paths of how SPLITBRIEF is built. Each pattern is narrow enough that product
+// vocabulary such as `unverified`, `owner-only` or `S3` passes.
 const USER_FACING_MARKERS: readonly Readonly<{ label: string; pattern: RegExp }>[] = [
   { label: 'not verified live', pattern: /\bnot verified live\b/i },
   { label: 'untested', pattern: /\buntested\b/i },
@@ -14,11 +14,27 @@ const USER_FACING_MARKERS: readonly Readonly<{ label: string; pattern: RegExp }>
   { label: '.nuke/ path', pattern: /\.nuke\// },
   { label: 'owner decision', pattern: /\bowner decision\b/i },
   { label: 'the owner', pattern: /\bthe owner\b(?!-)/i },
-  { label: 'agent name Sol', pattern: /(?<![-\w.]|GPT-[\d.]+ )Sol\b/ },
-  { label: 'agent name Astra', pattern: /(?<![-\w.])Astra\b/ },
   { label: 'finding id', pattern: /\b(?:N|DOC|REL|CLR|WD)-\d+\b|\bS(?!3\b)\d{1,2}\b/ },
-  { label: 'fresh eyes', pattern: /\bfresh eyes\b/i },
 ];
+
+// An optional local term list, one term per line, kept out of the repository.
+const LOCAL_TERMS = '.nuke/user-facing-terms.txt';
+
+function localTermMarkers(root: string): { label: string; pattern: RegExp }[] {
+  const file = join(root, LOCAL_TERMS);
+  if (!existsSync(file)) return [];
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((term) => term !== '')
+    .map((term) => ({
+      label: term,
+      pattern: new RegExp(
+        `(?<![-\\w.])${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![-\\w])`,
+        'i',
+      ),
+    }));
+}
 
 const MARKETPLACE = '.claude-plugin/marketplace.json';
 
@@ -66,13 +82,14 @@ export function userFacingFiles(root: string = process.cwd()): string[] {
 }
 
 export function findUserFacingTextViolations(root: string = process.cwd()): string[] {
+  const markers = [...USER_FACING_MARKERS, ...localTermMarkers(root)];
   return userFacingFiles(root).flatMap((file) =>
     readFileSync(join(root, file), 'utf8')
       .split('\n')
       .flatMap((line, index) =>
-        USER_FACING_MARKERS.filter(({ pattern }) => pattern.test(line)).map(
-          ({ label }) => `${file}:${index + 1}: ${label}`,
-        ),
+        markers
+          .filter(({ pattern }) => pattern.test(line))
+          .map(({ label }) => `${file}:${index + 1}: ${label}`),
       ),
   );
 }
