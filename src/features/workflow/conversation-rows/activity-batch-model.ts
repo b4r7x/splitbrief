@@ -45,6 +45,8 @@ export interface ActivityBatchViewModel {
   markerTone: ConversationRowTone;
   /** The tool and model the batch's call ran on; the header row fits it after the counts. */
   headerRunner: string | null;
+  /** A stop cut the batch's call, so the batch wears the stop mark, as its brief and rail do. */
+  interrupted: boolean;
   tone: ConversationRowTone;
   renderableUnits: number;
   expandableKey: string | null;
@@ -85,10 +87,12 @@ export function buildActivityBatchViewModel(input: {
     ? expandedActivityItemsProjection(events)
     : collapsedActivityItemsProjection(events, COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
   const hiddenCount = Math.max(0, projection.headerCount - COLLAPSED_ACTIVITY_BATCH_ITEM_COUNT);
+  const stops = projection.groups.find((group) => group.label === 'stop')?.count ?? 0;
   const headerSegments = activityBatchHeader(
     events,
     projection.headerCount,
     projection.severityCounts,
+    stops,
   );
   const latest = events.at(-1);
 
@@ -109,6 +113,7 @@ export function buildActivityBatchViewModel(input: {
       latest === undefined
         ? null
         : formatRecordedSeatIdentity({ ...latest, role: runnerActivityModelRole(latest.role) }),
+    interrupted: stops > 0,
     tone: activityBatchTone(events),
     renderableUnits: projection.headerCount,
     expandableKey: hiddenCount > 0 ? input.batchKey : null,
@@ -186,16 +191,19 @@ function activityBatchHeader(
   events: readonly RunnerActivityEvent[],
   headerCount: number,
   severityCounts: Readonly<Record<RunnerActivitySeverity, number>>,
+  stops: number,
 ): ConversationRowSegment[] {
   const latest = events.at(-1);
   if (latest === undefined) return [];
 
-  const warnings = severityCounts.warning;
+  // An interruption is the stop that ended the call, not a warning the call raised.
+  const warnings = severityCounts.warning - stops;
   const errors = severityCounts.error;
   const roleLabel = `${runnerActivityRoleLabel(latest.role)} activity`;
   const parts: ConversationRowSegment[] = [
     { text: roleLabel, tone: runnerActivityModelRole(latest.role) },
     { text: countNoun(headerCount, 'update'), tone: 'textDim' },
+    ...(stops > 0 ? [{ text: 'interrupted', tone: stateTone('attention') }] : []),
     ...(warnings > 0 ? [{ text: `${warnings} warn`, tone: stateTone('attention') }] : []),
     ...(errors > 0 ? [{ text: `${errors} err`, tone: stateTone('failed') }] : []),
   ];
@@ -284,6 +292,7 @@ function activityLabelTone(
     case 'LIST':
       return 'textDim';
     case 'WARN':
+    case 'STOP':
       return 'warning';
     case 'ERR':
       return 'error';

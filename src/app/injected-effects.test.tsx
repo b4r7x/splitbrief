@@ -20,6 +20,7 @@ import type { SetupScreenDeps } from './screens/setup.js';
 import type { AppKeyDeps } from './keys.js';
 import type { PickerEffectDeps } from '../features/runners/use-picker-actions.js';
 import { glyph } from '../lib/glyphs.js';
+import { saveSummary } from '../core/sessions/io.js';
 import { getKnownProviderBaseURL } from '../core/providers/catalog.js';
 import { CREW_SEAT_LABELS } from '../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS } from '../core/runners/seat-roles.js';
@@ -422,6 +423,8 @@ describe('App screens route to the supplied interaction ports', () => {
   it('sends a Sessions selection to the supplied session-select ports', async () => {
     const fx = fixture();
     const session = makeSession({ id: 'sess-injected', feature: 'replayed run', status: 'open' });
+    // The picker reads the list again from disk when it opens.
+    saveSummary({ projectDir, sessionId: session.id }, session);
     sessionsStore.__testReset({ sessions: [session], totalCount: 1, projectDir });
     overlayStore.open('sessions');
 

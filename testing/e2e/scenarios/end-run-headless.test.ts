@@ -12,6 +12,10 @@ import type { EngineEvent } from '../../../src/engine/events/types.js';
 import { briefRowParts, filesRows } from '../../../src/features/workflow/closed/copy.js';
 import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
 import { walkTranscript } from '../../../src/features/workflow/conversation-rows/transcript-walk.js';
+import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
+import { hydrateRun } from '../../../src/features/workflow/run-history.js';
+import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
@@ -53,6 +57,37 @@ afterEach(async () => {
 });
 
 describe('headless End run', { timeout: 240_000 }, () => {
+  it('records the call a killed process left open, so the ended run reopens with it interrupted once', async () => {
+    fixture = createStopContinueFixture();
+    const target = fixture;
+    const killed = await startAndSignal(target, 'SIGKILL', target.isolationTreesDir);
+    expect(killed.exitCode).toBeNull();
+    const ref = { projectDir: target.projectDir, sessionId: killed.sessionId };
+
+    const ended = await cli(target, ['continue', killed.sessionId, '--action', 'end-run']);
+
+    expect(ended.exitCode, ended.stderr).toBe(0);
+    expect(readState(target, killed.sessionId).closed?.as).toBe('ended');
+    const { events } = await readRunEvents(ref);
+    const cut = events.filter(
+      (event) => event.type === 'runner_call_error' && event.error.code === 'runner_interrupted',
+    );
+    expect(cut).toHaveLength(1);
+    const cutIndex = events.indexOf(cut[0] as (typeof events)[number]);
+    expect(cutIndex).toBeLessThan(events.findIndex((event) => event.type === 'workflow_cancelled'));
+
+    await hydrateRun(readRunRecord(ref));
+    const rows = buildConversationRows({
+      sections: groupEventsIntoSections(eventsStore.get().events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 200,
+      viewportHeight: 50,
+      streaming: { taskId: null, lines: [], active: false },
+    }).rows.map(rowText);
+    expect(rows.filter((row) => row.includes('current turn interrupted'))).toHaveLength(1);
+  });
+
   it('ends a SIGINT-parked run without pending recovery and preserves its patch', async () => {
     fixture = createStopContinueFixture();
     const target = fixture;

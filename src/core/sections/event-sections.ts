@@ -132,7 +132,10 @@ export type StageSummary =
       stage: 'review';
       scope: 'final' | 'task';
       afterTaskId?: string | undefined;
-      ordinal: number;
+      /** The final review's fix cycles that came before this review. */
+      fixCyclesBefore: number;
+      /** The final reviews of this fix cycle that came before this one: a re-run, as after a crash. */
+      rerunsBefore: number;
       outcome: 'passed' | 'passed-with-notes' | 'failed' | 'no-verdict' | 'stopped';
       findings?: ReviewCompletedEvent['findings'];
       failedCommands: string[];
@@ -223,7 +226,17 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
 
   const sections: Section<TEvent>[] = [];
   let cursor = 0;
-  let reviewStages = 0;
+  let fixCycles = 0;
+  let reruns = 0;
+  const countFinalReview = (summary: StageSummary): void => {
+    if (summary.stage !== 'review' || summary.scope !== 'final') return;
+    if (summary.fixes.length === 0) {
+      reruns++;
+      return;
+    }
+    fixCycles++;
+    reruns = 0;
+  };
 
   function appendCompletedReviews(endIndex: number): void {
     let reviewStarted = false;
@@ -241,10 +254,10 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
         if (following?.type === 'review_fix_started') reviewEnd = next;
       }
       const items = events.slice(cursor, reviewEnd + 1);
-      const summary = settledStageSummary(items, reviewStages + 1);
+      const summary = settledStageSummary(items, fixCycles, reruns);
       if (summary?.stage !== 'review') continue;
       sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
-      if (summary.scope === 'final') reviewStages++;
+      countFinalReview(summary);
       cursor = reviewEnd + 1;
       index = reviewEnd;
     }
@@ -254,12 +267,12 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     appendCompletedReviews(range.startIdx);
     if (cursor < range.startIdx) {
       const items = events.slice(cursor, range.startIdx);
-      const summary = settledStageSummary(items, reviewStages + 1);
+      const summary = settledStageSummary(items, fixCycles, reruns);
       if (summary === null) {
         sections.push({ type: 'events', items, startIndex: cursor });
       } else {
         sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
-        if (summary.stage === 'review' && summary.scope === 'final') reviewStages++;
+        countFinalReview(summary);
       }
     }
 
@@ -348,7 +361,8 @@ function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean
 
 function settledStageSummary<TEvent extends SectionableEvent>(
   items: TEvent[],
-  ordinal: number,
+  fixCyclesBefore: number,
+  rerunsBefore: number,
 ): StageSummary | null {
   const stages = items.map((event) => (event.phase === undefined ? null : phaseStage(event.phase)));
   const completed = items.findLast(isReviewCompletedEvent);
@@ -416,7 +430,8 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     scope: completed?.scope ?? 'final',
     ...(completed?.afterTaskId !== undefined && { afterTaskId: completed.afterTaskId }),
     ...(completed?.findings !== undefined && { findings: completed.findings }),
-    ordinal,
+    fixCyclesBefore,
+    rerunsBefore,
     outcome,
     failedCommands: [...failedCommands],
     failedChecks,

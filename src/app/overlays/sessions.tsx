@@ -22,7 +22,9 @@ export function SessionsPicker({ deps = sessionSelectDeps }: { deps?: SessionSel
   const selectionError = sessionSelectStore.use((s) => s.error);
   const [{ projectDir }, { sessions }] = useStores(configStore, sessionsStore);
 
+  // Another process can end or finish a run, so the list is read again whenever it opens.
   useEffect(() => {
+    sessionsStore.refresh();
     sessionSelectStore.clearError();
     return () => sessionSelectStore.clearError();
   }, []);

@@ -131,6 +131,7 @@ function updateRunningCommandIndex(
 }
 
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
+  if (repeatsCallError(events, event)) return events;
   if (event.type === 'turn_interrupted' || event.type === 'workflow_cancelled') {
     events = events.slice();
     settleStoppedCommands(events);
@@ -215,6 +216,26 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
   }
 
   return log.filter((_, index) => dropped[index] !== true);
+}
+
+// A run reopened at rest shows the calls its process left open as interrupted, read off its log
+// (`interruptedCallEvents`); continuing or ending it records that same close on the bus. A call ends once, so
+// the repeat is dropped. Call ids restart with each process, so the search stops at the run's
+// latest start or resume.
+function repeatsCallError(events: readonly EngineEvent[], event: EngineEvent): boolean {
+  if (event.type !== 'runner_call_activity' || event.kind !== 'error') return false;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const earlier = events[index];
+    if (earlier?.type === 'workflow_started' || earlier?.type === 'workflow_resumed') return false;
+    if (
+      earlier?.type === 'runner_call_activity' &&
+      earlier.activityId === event.activityId &&
+      earlier.ts === event.ts
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function settleStoppedCommands(events: EngineEvent[], runningCommands?: Map<string, number>): void {

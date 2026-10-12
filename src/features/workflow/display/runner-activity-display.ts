@@ -69,6 +69,7 @@ export type RunnerActivityLedgerLabel =
   | 'ART'
   | 'WARN'
   | 'ERR'
+  | 'STOP'
   | 'LIST';
 
 const DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS = 80;
@@ -234,7 +235,7 @@ function runnerActivityLedgerLabel(
   input: RunnerActivityDisplayInput,
   opts: { interrupted: boolean; shellCommand: boolean },
 ): RunnerActivityLedgerLabel {
-  if (opts.interrupted) return 'WARN';
+  if (opts.interrupted) return 'STOP';
 
   switch (input.kind) {
     case 'warning':
@@ -346,7 +347,7 @@ function activityFitMode(
   if (label === 'READ' || label === 'EDIT' || label === 'LIST' || input.kind === 'file') {
     return isProse(value) ? 'end' : 'start';
   }
-  if (label === 'WARN' || label === 'ERR') return 'middle';
+  if (label === 'WARN' || label === 'ERR' || label === 'STOP') return 'middle';
   return 'end';
 }
 

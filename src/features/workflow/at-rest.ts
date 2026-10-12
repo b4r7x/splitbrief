@@ -7,6 +7,7 @@ import {
 } from '../../core/rail-stages.js';
 import type { RunRecord } from '../../core/sessions/run-record.js';
 import type { StopReason } from '../../core/sessions/run-status.js';
+import type { RouteData } from '../../stores/navigation/router.js';
 import { AT_REST_PLACEHOLDER } from './closed/byline.js';
 
 /**
@@ -55,6 +56,25 @@ export function atRestRailStages(record: RunRecord): RailStageState[] {
   }
   const phase = status.resumeAt.kind === 'apply' ? 'complete' : recordPhase(record);
   return getRailStages(phase, { halted: stopMark(status.stop), ...applyOption });
+}
+
+/**
+ * The mark a brief left in progress wears while nothing runs it: the mark its run's stop earned on
+ * the rail, so the transcript header, the sidebar and the rail say one thing. A run still running
+ * has no rest mark.
+ */
+export function atRestBriefMark(record: RunRecord): RailHalt | null {
+  const status = record.status;
+  if (status.kind === 'open') return stopMark(status.stop);
+  if (status.kind === 'closed') return 'cancelled';
+  return null;
+}
+
+/** The rest mark of the run on screen: none unless the workflow screen shows its run at rest. */
+export function routeBriefMark(route: RouteData): RailHalt | null {
+  return route.screen === 'workflow' && route.execution.kind === 'at-rest'
+    ? atRestBriefMark(route.run)
+    : null;
 }
 
 /**

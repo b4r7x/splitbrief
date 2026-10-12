@@ -84,6 +84,11 @@
 
 ### Fixed
 
+- Continue or End run on a crashed run records each tool call that the crash cut as interrupted, before it restores, runs or closes anything. The run shows that call once as `current turn interrupted: SPLITBRIEF exited`, at rest, after Continue and after End run.
+- At rest, a brief that a stop or a crash cut shows the stop mark of the rail, not the working mark, and drops its `working on <file>…` row.
+- The final review reads `Final review`, `Final review after 1 fix cycle`, or `Final review re-run` when it ran again with no fix cycle between.
+- While a continued run starts again, the byline reads `Resuming T002`, not `Paused`, and `esc` opens the stop sheet.
+- A run that another process closed shows as closed on the next action on its screen. Home, `/sessions` and the palette read the run list again each time they open.
 - A tool does not outlive a crashed SPLITBRIEF. A watchdog process ends every tool when SPLITBRIEF dies, also on `kill -9`. A tool that survives is stopped when SPLITBRIEF starts, when a run opens at rest and when a run ends.
 - `splitbrief continue <run> --action end-run` closes any open run; a ready run closes as discarded and keeps `run.patch`.
 - `splitbrief continue` on a closed run exits 1, with a JSON error under `--json`.

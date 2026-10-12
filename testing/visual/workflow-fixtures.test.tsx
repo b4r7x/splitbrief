@@ -481,14 +481,14 @@ describe('workflow visual fixtures', () => {
             axes: ['high'],
           });
         } else {
-          expect(lines.filter((line) => line.includes('Review'))).toEqual(
+          expect(lines.filter((line) => /review/i.test(line))).toEqual(
             expect.arrayContaining([
               expect.stringContaining('✗ Review T002 failed  1 blocking · fixes T003 · 49.0s'),
               expect.stringContaining('● Review T002 passed  49.0s'),
-              expect.stringContaining('● Review 1 passed  1m 2s'),
+              expect.stringContaining('● Final review passed  1m 2s'),
             ]),
           );
-          expect(lines.filter((line) => line.includes('Review 1 passed'))).toHaveLength(1);
+          expect(lines.filter((line) => line.includes('Final review passed'))).toHaveLength(1);
           expect(frame).not.toContain('running 0:');
         }
       } finally {
@@ -641,14 +641,14 @@ describe('workflow visual fixtures', () => {
           '● Plan',
           '● T001',
           '● T002',
-          '● Review 1 passed',
+          '● Final review passed',
           'Plan check K1',
           'Plan check K2',
           'Reviewer check V1',
         ];
         const history = await scrollTranscript(ui, markers);
         for (const marker of markers) expect(history).toContain(marker);
-        expect(history.indexOf('● Review 1 passed')).toBeLessThan(
+        expect(history.indexOf('● Final review passed')).toBeLessThan(
           history.indexOf('Reviewer check V1'),
         );
         expect(history).toContain('npm test · passed');
@@ -1048,9 +1048,10 @@ describe('workflow visual fixtures', () => {
       const live = stripTerminalControls(await ui.waitForCheckpoint());
       expect(live).toContain('│ Stopped at T003');
       expect(live).not.toContain('no events yet');
-      const markers = ['● T001', '● T002', '◉ T003 Add signup route tests'];
+      const markers = ['● T001', '● T002', '× T003 Add signup route tests'];
       const history = await scrollTranscript(ui, markers);
       for (const marker of markers) expect(history).toContain(marker);
+      expect(history).not.toContain('working on');
     } finally {
       await ui.unmount();
     }
@@ -1074,7 +1075,7 @@ describe('workflow visual fixtures', () => {
       try {
         const live = stripAnsiStyles(await ui.waitForCheckpoint());
         expect(live).toContain('Review · Reviewer check V2');
-        const markers = ['● Plan', 'Review 1 failed', 'fixes T904', '● T904'];
+        const markers = ['● Plan', 'Final review failed', 'fixes T904', '● T904'];
         const history = await scrollTranscript(ui, markers);
         for (const marker of markers) expect(history).toContain(marker);
       } finally {

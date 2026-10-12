@@ -27,7 +27,9 @@ import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/c
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import { formatElapsedClock } from '../../../utils/format-time.js';
-import { getActiveRailStage, railStageSeat } from '../../../core/rail-stages.js';
+import { getActiveRailStage, railStageSeat, type RailHalt } from '../../../core/rail-stages.js';
+import { routerStore } from '../../../stores/navigation/router.js';
+import { routeBriefMark } from '../at-rest.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import {
   getSidebarTaskListRows,
@@ -80,7 +82,7 @@ function statusGlyph(status: WorkflowTask['status']): string {
   return glyph(TASK_STATUS_GLYPH_NAME[status]);
 }
 
-function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
+function rowSpec(status: WorkflowTask['status'], t: Theme, restMark: RailHalt | null): RowSpec {
   switch (status) {
     case 'done':
       return {
@@ -93,8 +95,16 @@ function rowSpec(status: WorkflowTask['status'], t: Theme): RowSpec {
     case 'in_progress':
       return {
         bar: glyph('liveBar'),
-        marker: statusGlyph('in_progress'),
-        markerColor: t[stateTone('running')],
+        marker:
+          restMark === null
+            ? statusGlyph('in_progress')
+            : glyph(restMark === 'failed' ? 'statusFailed' : 'statusCancelled'),
+        markerColor:
+          t[
+            stateTone(
+              restMark === null ? 'running' : restMark === 'failed' ? 'failed' : 'attention',
+            )
+          ],
         labelColor: t.text,
         bold: true,
       };
@@ -206,7 +216,8 @@ function TaskRow({
   statusCells: number;
 }) {
   const t = useTheme();
-  const spec = rowSpec(task.status, t);
+  const restMark = routerStore.use(routeBriefMark);
+  const spec = rowSpec(task.status, t, restMark);
   const titleCells = getSidebarTaskTitleWidth({ width, reservedTailCells: statusCells });
   const taskLabel = taskRowLabel(task, titleCells);
   return (

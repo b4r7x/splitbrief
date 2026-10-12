@@ -1,5 +1,5 @@
 import { ThemeText as Text, useTheme } from '../../components/theme.js';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Box, useInput } from 'ink';
 import { FilterInput } from '../../components/filter-input.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -77,6 +77,10 @@ export function CommandPaletteOverlay({ commands, onRuntimeCommand }: CommandPal
   const mruIds = commandPaletteMruStore.use((s) => s.ids);
   const tasks = tasksStore.use((s) => s.tasks);
   const sessions = sessionsStore.use((s) => s.sessions);
+  // The palette lists runs too, read again whenever it opens.
+  useEffect(() => {
+    sessionsStore.refresh();
+  }, []);
   const projectDir = configStore.use((s) => s.projectDir);
   const cols = terminalSizeStore.use((s) => s.cols);
   const rows = terminalSizeStore.use((s) => s.rows);

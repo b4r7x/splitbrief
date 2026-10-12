@@ -172,6 +172,17 @@ describe('ConversationRowView lifecycle and focus glyphs', () => {
     expect(settled.lastFrame().split(DONE_MARK)[0]).toContain(colorOpen(defaultTheme.error));
     settled.unmount();
   });
+  it('settles an activity row whose call a stop cut with the stop ×, not the done ●', () => {
+    const row: ConversationRow = { ...makeActivityRow('activity-batch:0:cut'), interrupted: true };
+    const settled = renderFeature(<ConversationRowView row={row} />);
+    expect(settled.lastFrame()).toContain(glyph('statusCancelled'));
+    expect(settled.lastFrame()).not.toContain(DONE_MARK);
+    settled.unmount();
+    const live = renderFeature(<ConversationRowView row={row} lifecycle="live" />);
+    expect(live.lastFrame()).toContain(LIVE_MARK);
+    live.unmount();
+  });
+
   it('renders the live ◉ for an active activity row and the done ● for a finished one', () => {
     const activeRow = makeActivityRow('activity-batch:0:call-1');
 

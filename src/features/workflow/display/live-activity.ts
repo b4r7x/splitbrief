@@ -22,15 +22,6 @@ import {
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
-import { SPLITBRIEF_IDENTITY } from '../../../core/identity.js';
-
-export const PAUSED_LIVE_STATUS_PARTS: readonly ConversationRowSegment[] = [
-  { text: 'Paused', tone: stateTone('attention') },
-  {
-    text: ` — resume with /resume or \`${SPLITBRIEF_IDENTITY.executable} resume\``,
-    tone: 'textDim',
-  },
-];
 
 // Review gates use the waiting byline while their document replaces the transcript. A change
 // request sent from a gate rewrites the document inside that gate, and that call is live work.

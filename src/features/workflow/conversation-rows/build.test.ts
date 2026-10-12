@@ -903,7 +903,8 @@ describe('buildConversationRows', () => {
                     : {
                         stage: 'review',
                         scope: 'final',
-                        ordinal: 1,
+                        fixCyclesBefore: 0,
+                        rerunsBefore: 0,
                         outcome: 'passed',
                         failedCommands: [],
                         failedChecks: 0,
@@ -976,7 +977,7 @@ describe('buildConversationRows', () => {
         ),
       );
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-      expect(frame).toContain(`Review 1 ${review}`);
+      expect(frame).toContain(`Final review ${review}`);
       expect(frame).toContain('5.0s');
       expect(frame).toContain('Checking the diff.');
       ui.unmount();
@@ -1108,10 +1109,10 @@ describe('buildConversationRows', () => {
       'T002 Pre-hook skip',
       'T003 Failed brief',
       'Failure evidence retained',
-      'Review 1 failed',
+      'Final review failed',
       'Reviewer check V1',
       'Plan check P1',
-      'Review 2 passed',
+      'Final review re-run passed',
       'Please check again',
       'Reviewer check V2',
       'Plan check P2',
@@ -1452,7 +1453,7 @@ describe('buildConversationRows', () => {
     expect(text.toLowerCase()).not.toContain('abcdefghijklmnopqrstuvwxyz');
   });
 
-  it('renders user interruption as warning copy without internal runner codes', () => {
+  it('renders an interrupted call with the stop mark and no internal runner codes', () => {
     const sections: Section<EngineEvent>[] = [
       {
         type: 'events',
@@ -1478,8 +1479,12 @@ describe('buildConversationRows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toContain(activityLine('WARN', 'current turn interrupted'));
+    expect(text).toContain(activityLine('STOP', 'current turn interrupted'));
     expect(text).not.toContain('runner_interrupted');
+    const header = rows.find((row) => row.kind === 'activity');
+    expect(header?.interrupted).toBe(true);
+    expect(header === undefined ? '' : rowText(header)).toContain('1 update  interrupted');
+    expect(text).not.toContain('warn');
   });
 
   it('shows sanitized warning and error diagnostics in the compact transcript', () => {

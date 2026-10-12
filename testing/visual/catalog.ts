@@ -471,6 +471,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-resuming',
+      title: 'Workflow · a continued run before its first call',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'resuming',
+        title: 'The byline says the run is resuming, not paused',
+        kind: 'implementation',
+        marker: 'Resuming',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-implementation-queued',
       title: 'Workflow · a message queued for the running brief',
       surface: screenSurface('workflow'),
@@ -739,7 +754,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
               ? 'Task review running after the second brief'
               : 'Task and final reviews replayed at rest',
           kind: 'implementation',
-          marker: suffix === '' ? 'Review T001 passed' : 'Review 1 passed',
+          marker: suffix === '' ? 'Review T001 passed' : 'Final review passed',
         },
         viewports: WIDE_VIEWPORTS,
         elements: [
@@ -777,7 +792,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-settled-passed',
         title: 'Settled terminal Review',
         kind: 'implementation',
-        marker: 'Review 1 passed',
+        marker: 'Final review passed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -824,7 +839,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       viewports: [...WIDE_VIEWPORTS, viewport({ cols: 200, rows: 50 })],
       checkpoint: {
         id: 'continuous-transcript-ready',
-        title: 'Plan, two completed briefs and Review 1 passed at rest',
+        title: 'Plan, two completed briefs and Final review passed at rest',
         kind: 'success',
         marker: 'Apply',
       },
@@ -843,7 +858,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-settled-failed',
         title: 'Settled terminal Review',
         kind: 'implementation',
-        marker: 'Review 1 failed',
+        marker: 'Final review failed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -860,7 +875,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         id: 'review-corrected',
         title: 'Each finished brief and review has its own row',
         kind: 'implementation',
-        marker: 'Review 2 passed',
+        marker: 'Final review re-run passed',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1453,6 +1468,55 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Halted run at rest',
         kind: 'ready',
         marker: 'Seat down · Quota spent on Ollama',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-closed-elsewhere',
+      title: 'Workflow · a paused run that another process ended',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-closed-elsewhere',
+        title: 'The next action reads the run again and shows it closed, without its stop menu',
+        kind: 'failure',
+        marker: 'Cannot continue: this run was ended',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-crashed-build',
+      title: 'Workflow · a run whose process went away during a brief',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'at-rest-crashed-build',
+        title: 'The cut BUILD call reads as interrupted',
+        kind: 'ready',
+        marker: 'interrupted',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-at-rest-crashed-review',
+      title: 'Workflow · a run whose process went away during the final review',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'at-rest-crashed-review',
+        title: 'The cut REVIEW call reads as interrupted',
+        kind: 'ready',
+        marker: 'interrupted',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -479,6 +479,10 @@ Pending queue entries remain in `state.json`. A continuation excludes still-pend
 
 A park keeps the worktree's partial edits and continues with that context; a crash does not, because nobody chose to keep them.
 
+A crash leaves its last calls open in `session.jsonl`. The first writer after the crash records each one as interrupted (`recordInterruptedCalls`, `src/engine/calls/interrupted.ts`): a `runner_call_error` with code `runner_interrupted`, dated at the last report of its call. The continuation records it before it restores files or runs a step again. End run at rest (the TUI or `splitbrief continue <id> --action end-run`) records it before the run closes. A run opened at rest before either shows the same close, read from the log, so the cut call reads `current turn interrupted: SPLITBRIEF exited` once: at rest, after the continuation and after End run. Its activity batch wears the stop mark `×` and reads `interrupted`, and the row reads `Stop`. At rest, a brief left in progress wears the mark of its stop (`atRestBriefMark`, `src/features/workflow/at-rest.ts`), as the rail does, and an attempt that ended drops its `working on <file>…` row. While a continued run starts again, the byline reads `Resuming T002` (or `the plan`, `the review`), and `esc` opens the stop sheet as it does on a running run.
+
+Another process can close a run that this screen shows at rest, for example with `splitbrief continue <id> --action end-run`. The next action on the screen (`⏎`, Resume, End run) reads the record again (`rereadRunAtRest`, `src/features/workflow/handlers.ts`). The screen then shows the run as closed, removes its stop options and says `Cannot continue: this run was ended; start a new one.` Home, `/sessions` and the palette read the session list again each time they open.
+
 ### Recovery on continuing
 
 If state has `pendingRecovery`, resume shows that issue before dispatching work. [Retired file halts](./APPROVAL-AND-RECOVERY.md#retired-file-halts) resolve on continue with a notice. A halt stays pending until you choose one of its actions, so a run you leave shows the same decision when you continue it.

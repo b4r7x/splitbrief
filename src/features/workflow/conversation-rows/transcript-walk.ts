@@ -88,6 +88,7 @@ export function* walkTranscript(
   const workspaceClosed = sections.some((section) =>
     section.items.some((event) => event.type === 'workspace_closed'),
   );
+  const endedAttempts = endedImplementerAttempts(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
@@ -132,7 +133,7 @@ export function* walkTranscript(
         lastRowEvent = event;
         continue;
       }
-      if (automatic.hidden.has(event)) continue;
+      if (automatic.hidden.has(event) || endedAttempts.has(event)) continue;
       if (event.type === 'workflow_started' || event.type === 'workflow_resumed')
         seatSwitches.clear();
       if (event.type === 'seat_switched') seatSwitches.set(event.seat, event);
@@ -233,6 +234,47 @@ export function* walkTranscript(
     }
   }
   yield* flush();
+}
+
+/**
+ * The `working on <file>…` rows whose attempt has ended. The row says a BUILD call is running; once
+ * the attempt is done, failed, reset, cut by a stop, or closed by a call error — the interruption a
+ * process that went away leaves — the rows after it say what happened, and the row goes.
+ */
+function endedImplementerAttempts(sections: readonly Section<EngineEvent>[]): Set<EngineEvent> {
+  const ended = new Set<EngineEvent>();
+  const open = new Map<string, EngineEventOf<'implementer_generate_running'>>();
+  const end = (taskId: string | undefined): void => {
+    for (const [openTaskId, running] of open) {
+      if (taskId !== undefined && taskId !== openTaskId) continue;
+      ended.add(running);
+      open.delete(openTaskId);
+    }
+  };
+  for (const section of sections) {
+    for (const event of section.items) {
+      switch (event.type) {
+        case 'implementer_generate_running':
+          end(event.taskId);
+          open.set(event.taskId, event);
+          break;
+        case 'implementer_generate_done':
+        case 'implementer_generate_failed':
+        case 'task_reset':
+          end(event.taskId);
+          break;
+        case 'turn_interrupted':
+        case 'workflow_cancelled':
+        case 'workflow_resumed':
+          end(undefined);
+          break;
+        case 'runner_call_activity':
+          if (event.kind === 'error' && event.role === 'implementer') end(event.taskId);
+          break;
+      }
+    }
+  }
+  return ended;
 }
 
 function restatesSeatSwitch(

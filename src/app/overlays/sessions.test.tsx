@@ -22,8 +22,8 @@ import { flushEffects, tick } from '#testing/helpers/ink.js';
 
 let tmp: string;
 
-// The picker renders what the store already holds — boot loads it, and a finished
-// run refreshes it — so a fixture that writes a session also seeds the store.
+// Boot loads the store and the picker reads the list again whenever it opens; a fixture that
+// writes a session also seeds the store, so a test reads what the run left on disk.
 function writeSessionSummary(projectDir: string, session: Session): void {
   const dir = join(projectDir, SPLITBRIEF_DIR, 'sessions', session.id);
   mkdirSync(dir, { recursive: true });
@@ -53,6 +53,27 @@ afterEach(() => {
 });
 
 describe('SessionsPicker', () => {
+  it('reads the list again when it opens, so a run another process ended shows as ended', async () => {
+    const session = makeSession({
+      id: 'sess-ended',
+      feature: 'add a word counter',
+      status: 'open',
+    });
+    writeSessionSummary(tmp, session);
+    expect(sessionsStore.get().sessions[0]?.status).toBe('open');
+    // Another process closes the run after this one loaded its list.
+    const dir = join(tmp, SPLITBRIEF_DIR, 'sessions', session.id);
+    writeFileSync(join(dir, 'summary.json'), JSON.stringify({ ...session, status: 'ended' }));
+
+    const instance = render(<SessionsPicker />);
+    await tick(1);
+    await tick(1);
+
+    expect(sessionsStore.get().sessions[0]?.status).toBe('ended');
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('ended');
+    instance.unmount();
+  });
+
   it('renders session feature names from disk once the store loads them', async () => {
     writeSessionSummary(
       tmp,

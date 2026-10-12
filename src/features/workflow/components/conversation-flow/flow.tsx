@@ -26,6 +26,8 @@ import { SOFT_SEP } from '../../../../core/separators.js';
 import { countNoun, pluralize } from '../../../../utils/pluralize.js';
 import { ConversationRowView } from './row-view.js';
 import { ConversationTranscriptRows } from './conversation-hover-rows.js';
+import { routerStore } from '../../../../stores/navigation/router.js';
+import { routeBriefMark } from '../../at-rest.js';
 
 interface ConversationFlowProps {
   height: number;
@@ -89,6 +91,7 @@ export function ConversationFlow({
     pendingApproval: approval.status === 'pending',
   });
   const isRunning = display.animate;
+  const restMark = routerStore.use(routeBriefMark);
   const sections = useSections();
   const viewportHeight = Math.max(0, height);
   const cols = conversationWidth;
@@ -210,6 +213,7 @@ export function ConversationFlow({
             rows={rows}
             visibleActiveRowKey={visibleActiveRowKey}
             activeTaskHeaderKey={activeTaskHeaderKey}
+            restMark={restMark}
           />
         </Box>
       </Box>

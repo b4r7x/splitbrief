@@ -7,7 +7,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { preparationStore } from '../../../stores/navigation/preparation.js';
 import { getActiveRailStage, phaseStage, railStageSeat } from '../../../core/rail-stages.js';
-import { deriveLiveStatus, PAUSED_LIVE_STATUS_PARTS } from '../display/live-activity.js';
+import { deriveLiveStatus } from '../display/live-activity.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { TextSpans } from '../../../components/text-spans.js';
@@ -123,7 +123,10 @@ export function InputFooter({
           suiteStage: operations.suiteStage ?? null,
           activeOperation: operations.active,
         });
-  const { frame } = useSpinnerFrame(display.animate || checkingStage !== null);
+  // A run on screen that is paused with no stop of its own and no record byline has been
+  // continued: the engine is reaping, restoring and re-entering before its first event.
+  const resuming = lifecycle.status === 'paused' && stopped === null && givenByline === undefined;
+  const { frame } = useSpinnerFrame(display.animate || checkingStage !== null || resuming);
 
   const stageSeat = activeStage === null ? null : railStageSeat(activeStage.stage);
   const stageParts: ConversationRowSegment[] = [
@@ -165,14 +168,19 @@ export function InputFooter({
         ];
 
   const interrupted = lifecycle.status === 'interrupted';
-  const paused = lifecycle.status === 'paused';
   const interruptedLead: ConversationRowSegment[] = [
     { text: `${glyph('statusPending')} Interrupted`, tone: stateTone('attention') },
     { text: ' — finishing current step…', tone: 'textDim' },
   ];
-  const pausedLead: ConversationRowSegment[] = [
-    { text: `${glyph('statusPending')} `, tone: stateTone('attention') },
-    ...PAUSED_LIVE_STATUS_PARTS,
+  const runningBriefId = selectRunningBrief(tasks, lifecycle.phase).current?.id ?? null;
+  const seat = phaseStage(lifecycle.phase);
+  const resumingLead: ConversationRowSegment[] = [
+    { text: `${frame} `, tone: stateTone('running') },
+    { text: 'Resuming ', tone: 'text' },
+    {
+      text: runningBriefId ?? (seat === null ? 'the run' : `the ${seat}`),
+      tone: seat === null ? 'text' : CREW_SEAT_ROLES[seat],
+    },
   ];
   // A run that ended without finishing must not reach the stageLead fallback: the pip there is
   // `stageDone`, so the one line that survives at every width would report a completed-looking
@@ -238,8 +246,8 @@ export function InputFooter({
               }
             : interrupted
               ? { lead: interruptedLead, hintText: null }
-              : paused
-                ? { lead: pausedLead, hintText: null }
+              : resuming
+                ? { lead: resumingLead, hintText: null }
                 : stall !== null
                   ? {
                       lead: stalledLead,
@@ -253,8 +261,6 @@ export function InputFooter({
                       }
                     : { lead: stageLead, hintText: null };
 
-  const runningBriefId = selectRunningBrief(tasks, lifecycle.phase).current?.id ?? null;
-  const seat = phaseStage(lifecycle.phase);
   const queuedCopy =
     lifecycle.queueDepth > 0 && (atRestStatus === null || atRestStatus === 'open')
       ? queueCopy({

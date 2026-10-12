@@ -6,11 +6,15 @@ import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { extractLastJsonObject } from '../../engine/runners/typed-output.js';
 import { ImplementerReportSchema } from '../../core/schemas/consult.js';
+import { processWentAway } from '../../core/sessions/run-status.js';
+import { interruptedCallEvents } from '../../engine/calls/interrupted.js';
 
 /**
  * A past run, put back on the workflow screen: its session log replayed into the stores, then the
  * saved state laid over the facts the log cannot settle — the phase it stopped in, the brief list
- * and what it spent. One read at the navigation event; the live bus appends from there.
+ * and what it spent. A run whose process went away left its last calls open; they read as the
+ * interruption its resume or its End run will record. One read at the navigation event; the live
+ * bus appends from there.
  */
 export async function hydrateRun(record: RunRecord): Promise<void> {
   const publish = await readRunHistory(record);
@@ -26,8 +30,13 @@ export async function readRunHistory(record: RunRecord): Promise<() => void> {
   // A run shown at rest must not change underneath it: a tool its crashed process left running ends first.
   await reapOrphanRunners(record.ref.projectDir);
   const replay = await readRunEvents(record.ref);
+  const cut = processWentAway(record.status)
+    ? interruptedCallEvents(replay.events, record.ref.projectDir)
+    : [];
+  // The replay closes on its own marker; the cut calls belong to the history before it.
+  const history = [...replay.events.slice(0, -1), ...cut, ...replay.events.slice(-1)];
   return () => {
-    loadEvents(restoreCompletionFiles(replay.events));
+    loadEvents(restoreCompletionFiles(history));
     if (record.hydration.kind !== 'loaded') return;
     const { state } = record.hydration;
     hydrateFromState(state, {
