@@ -193,6 +193,58 @@ describe('collectReadiness runner availability wiring', () => {
   });
 });
 
+describe('collectReadiness Claude Code sandbox on Linux', () => {
+  let tempDir: string;
+  const originalPlatform = process.platform;
+  const originalPath = process.env['PATH'];
+
+  beforeEach(() => {
+    tempDir = createTempDir('collect-sandbox');
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    process.env['PATH'] = tempDir;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
+    process.env['PATH'] = originalPath;
+    cleanupTempDir(tempDir);
+  });
+
+  const claudeImplementer = () =>
+    makeConfig({
+      planner: { kind: 'cli', tool: 'claude-code' },
+      implementer: { kind: 'cli', tool: 'claude-code' },
+    });
+
+  const sandboxCheck = (report: Awaited<ReturnType<typeof collectReadiness>>['report']) =>
+    flattenReadinessChecks(report.sections).find(
+      (check) => check.id === 'runners.sandbox.claude-code',
+    );
+
+  it('blocks a run that calls the claude-code implementer without bwrap and socat', async () => {
+    const { report } = await collectReadiness({
+      projectDir: tempDir,
+      config: claudeImplementer(),
+      roles: ['planner', 'implementer', 'reviewer'],
+    });
+
+    expect(sandboxCheck(report)).toMatchObject({ severity: 'blocker' });
+  });
+
+  it.each([[['planner']], [['reviewer']]] as const)(
+    'skips the check for a run that calls only %j',
+    async (roles) => {
+      const { report } = await collectReadiness({
+        projectDir: tempDir,
+        config: claudeImplementer(),
+        roles,
+      });
+
+      expect(sandboxCheck(report)).toBeUndefined();
+    },
+  );
+});
+
 describe('preparation readiness projection', () => {
   it('replaces tool-level CLI placeholders with exact slot checks', async () => {
     const projectDir = createTempDir('collect-preparation-checks');

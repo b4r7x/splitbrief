@@ -32,6 +32,7 @@ import type { Config } from '../schemas/config.js';
 import type { IsolationStrategy } from '../schemas/enums.js';
 import { cliReadinessCheckId, type CliReadinessResult } from '../schemas/readiness.js';
 import { CLI_TOOL_IDS } from '../runners/cli-tool-catalog.js';
+import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import type { WorkflowOpts } from '../types/config-options.js';
 import type { SessionRef } from '../types/session-ref.js';
 import type { BuildReadinessReportInput } from './checks/build.js';
@@ -72,6 +73,8 @@ export interface CollectReadinessOptions {
     | undefined;
   /** How the run the report describes starts; a headless one approves its plan card unattended. */
   interaction?: 'interactive' | 'headless' | undefined;
+  /** The seats the run will call. Omitted, the report covers every seat, as `doctor` does. */
+  roles?: readonly ActiveRunnerRole[] | undefined;
   /**
    * Optional headless-equivalent runner admission probe for doctor-style
    * diagnostics. Execution admission performs its own fresh generic runner
@@ -176,7 +179,9 @@ export async function collectReadiness(
   if (isolationChecks.length > 0) {
     mergeChecks(report, { id: 'repo', title: 'Repository' }, isolationChecks);
   }
-  if (loaded.config) {
+  // Only the implementer starts Claude Code's sandbox, so a run that calls no
+  // implementer (a spec run, a one-shot review) does not need bwrap or socat.
+  if (loaded.config && (options.roles?.includes('implementer') ?? true)) {
     const sandboxChecks = buildClaudeSandboxChecks(loaded.config, {
       platform: process.platform,
       isOnPath: (program) => isOnSeatPath(program, options.projectDir),

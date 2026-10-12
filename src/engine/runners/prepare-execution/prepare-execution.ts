@@ -159,12 +159,10 @@ function withEffectiveModels(config: PreparedConfig, gates: readonly RunnerGate[
 }
 
 /**
- * A spec run never calls the implementer or the reviewer, so their reachability
- * cannot gate one; a one-shot review calls only the review seat.
+ * The seats a run of this purpose calls. A spec run calls only the planner and a
+ * one-shot review only the review seat, so no other seat's readiness can gate one.
  */
-function availabilityRoles(
-  purpose: PreparationPolicy['purpose'],
-): readonly RunnerAvailabilityRole[] {
+function calledRoles(purpose: PreparationPolicy['purpose']): readonly RunnerAvailabilityRole[] {
   switch (purpose) {
     case 'spec':
       return ['planner'];
@@ -221,17 +219,15 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
   const config = parsePreparedConfig(input.effectiveConfig);
   const deps = { ...DEFAULT_DEPENDENCIES, ...input.deps };
   const preparationId = deps.newPreparationId();
+  const roles = calledRoles(input.policy.purpose);
   const collected = await deps.collectReadiness({
     projectDir: input.projectDir,
     config,
     interaction: input.policy.interaction,
+    roles,
     cliReadiness: [],
     probeRunnerAvailability: (probe) =>
-      deps.probeRunnerAvailability({
-        ...probe,
-        roles: availabilityRoles(input.policy.purpose),
-        signal: input.signal,
-      }),
+      deps.probeRunnerAvailability({ ...probe, roles, signal: input.signal }),
     ...(input.resumeSession !== undefined && { resumeSession: input.resumeSession }),
   });
   throwIfAborted(input.signal);
@@ -314,7 +310,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
   const argVectorChecks = await deps.collectArgVectorPreflightChecks({
     config: admittedConfig,
     projectDir: input.projectDir,
-    roles: availabilityRoles(input.policy.purpose),
+    roles,
     installedVersions: Object.fromEntries(
       gates.flatMap((gate) =>
         gate.kind === 'cli' && gate.installedVersion !== undefined
