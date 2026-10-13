@@ -332,7 +332,7 @@ describe('withContinuationLoop', () => {
     expect(prompts[1]).toContain('No output from an earlier attempt');
   });
 
-  it('adds a continuation note for an explicit empty seed', async () => {
+  it('adds a continuation note for a kept-workspace seed with no output', async () => {
     const ref = setupProjectDir();
     const { callbacks } = makeCallbacks();
     const prompts: string[] = [];
@@ -341,7 +341,7 @@ describe('withContinuationLoop', () => {
       ctx: { ...ref, callbacks, bus: createEventBus(), sinks: makeSinks() },
       state: createInitialState('feat'),
       step: PLANNER_STEP,
-      seed: {},
+      seed: { keepWorkspace: true },
       body: async ({ partial, steer }) => {
         prompts.push(
           partial === undefined && steer === undefined
@@ -354,6 +354,25 @@ describe('withContinuationLoop', () => {
 
     expect(prompts[0]).toContain('[Continuation]');
     expect(prompts[0]).toContain('No output from an earlier attempt');
+  });
+
+  it('continues a kept-workspace cut that printed nothing when a correction resumes it', async () => {
+    const ref = setupProjectDir();
+    const { callbacks } = makeCallbacks();
+    const seen: Array<{ partial: string | undefined; steer: string | undefined }> = [];
+
+    await withContinuationLoop({
+      ctx: { ...ref, callbacks, bus: createEventBus(), sinks: makeSinks() },
+      state: createInitialState('feat'),
+      step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      seed: { keepWorkspace: true, steer: plainUserMessage('keep the files') },
+      body: async ({ partial, steer }) => {
+        seen.push({ partial, steer });
+        return 'done';
+      },
+    });
+
+    expect(seen).toEqual([{ partial: '', steer: 'keep the files' }]);
   });
 
   it('records an in-process steer in the authoritative session log', async () => {

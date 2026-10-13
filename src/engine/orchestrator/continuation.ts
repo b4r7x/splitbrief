@@ -195,10 +195,10 @@ export interface WithContinuationLoopOpts<T> {
   step: StepRef;
   /**
    * A continuation this loop inherits rather than produces: the partial a killed
-   * process left on disk and the steer that restarted the run. Consumed by the
-   * first attempt only.
+   * process left on disk, the steer that restarted the run, and whether a cut brief
+   * continues in its kept workspace. Consumed by the first attempt only.
    */
-  seed?: { partial?: string | undefined; steer?: UserMessageInput | undefined } | undefined;
+  seed?: ContinuationSeed | undefined;
   onStateChange?: ((s: WorkflowState) => void) | undefined;
   body: (args: ContinuationLoopBodyArgs) => Promise<T>;
 }
@@ -224,10 +224,8 @@ export async function withContinuationLoop<T>(
   const { projectDir, sessionId, callbacks, sinks, bus } = ctx;
   const persistRef = ctx.persistRef ?? { projectDir, sessionId };
   let state = opts.state;
-  // An explicit empty seed names a cut attempt even when it produced no text.
-  let partial =
-    opts.seed?.partial ??
-    (opts.seed !== undefined && opts.seed.steer === undefined ? '' : undefined);
+  // A kept workspace names a cut attempt even when it printed nothing, with or without a steer.
+  let partial = opts.seed?.partial ?? (opts.seed?.keepWorkspace === true ? '' : undefined);
   let steer = opts.seed?.steer;
   let partialOutput = '';
 

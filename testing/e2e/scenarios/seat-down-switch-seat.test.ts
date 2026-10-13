@@ -12,8 +12,10 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome as createTrustHome } from '#testing/helpers/trust-home.js';
+import { readRunEvents } from '../../../src/engine/events/replay.js';
 import {
   cli,
+  continueWithCorrection,
   createStopContinueFixture,
   GREET_FILE,
   GREET_SOURCE,
@@ -30,6 +32,7 @@ let trustHome: ReturnType<typeof createTrustHome> | undefined;
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   restorePath?.();
   trustHome?.restore();
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
@@ -38,11 +41,24 @@ afterEach(() => {
   trustHome = undefined;
 });
 
-function installShims(binDir: string, codexCalls: string, claudeCalls: string): void {
+const WRITE_BOTH_FILES = `mkdirSync('src', { recursive: true });
+  writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
+  writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});`;
+
+/**
+ * Codex refuses on its account; Claude builds. With `haltedCallWrote` codex writes both files
+ * before it refuses, and Claude finds them done and writes nothing.
+ */
+function installShims(
+  binDir: string,
+  codexCalls: string,
+  claudeCalls: string,
+  haltedCallWrote: boolean,
+): void {
   writeFakeNodeCli(
     binDir,
     'codex',
-    `const { appendFileSync, readFileSync } = require('node:fs');
+    `const { appendFileSync, mkdirSync, readFileSync, writeFileSync } = require('node:fs');
 const args = process.argv.slice(2);
 if (args[0] === '--version') {
   console.log('codex ${CLI_TOOL_CATALOG.codex.compatibility.testedVersion}');
@@ -55,6 +71,7 @@ if (args[0] === 'login' && args[1] === 'status') {
 if (!args.includes('exec')) throw new Error('Unexpected codex invocation: ' + args.join(' '));
 readFileSync(0, 'utf8');
 appendFileSync(${JSON.stringify(codexCalls)}, JSON.stringify({ model: args.includes('--model') ? args[args.indexOf('--model') + 1] : null }) + '\\n');
+${haltedCallWrote ? WRITE_BOTH_FILES : ''}
 console.log(JSON.stringify({ type: 'error', message: 'Insufficient Balance' }));
 process.exit(1);`,
   );
@@ -75,9 +92,7 @@ if (args[0] !== '-p') throw new Error('Unexpected claude invocation: ' + args.jo
 const emit = (entry) => console.log(JSON.stringify(entry));
 const build = (prompt) => {
   appendFileSync(${JSON.stringify(claudeCalls)}, JSON.stringify({ model: args.includes('--model') ? args[args.indexOf('--model') + 1] : null, prompt }) + '\\n');
-  mkdirSync('src', { recursive: true });
-  writeFileSync(${JSON.stringify(GREET_FILE)}, ${JSON.stringify(GREET_SOURCE)});
-  writeFileSync(${JSON.stringify(MARKER_FILE)}, ${JSON.stringify(MARKER_SOURCE)});
+  ${haltedCallWrote ? '' : WRITE_BOTH_FILES}
   emit({ type: 'system', subtype: 'init', session_id: 'seat-switch-claude' });
   emit({ type: 'assistant', session_id: 'seat-switch-claude', message: { content: [{ type: 'text', text: 'Implemented the greeting helper.' }] } });
   emit({ type: 'result', result: 'Implemented the greeting helper.', session_id: 'seat-switch-claude', usage: { input_tokens: 100, output_tokens: 40 } });
@@ -97,7 +112,7 @@ if (args.includes('--input-format')) {
   );
 }
 
-async function codexHaltFixture() {
+async function codexHaltFixture(haltedCallWrote = false) {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   trustHome = createTrustHome('e2e-seat-switch-home');
@@ -109,7 +124,7 @@ async function codexHaltFixture() {
   mkdirSync(binDir);
   const codexCalls = join(target.tmpDir, 'codex-calls.jsonl');
   const claudeCalls = join(target.tmpDir, 'claude-calls.jsonl');
-  installShims(binDir, codexCalls, claudeCalls);
+  installShims(binDir, codexCalls, claudeCalls, haltedCallWrote);
   restorePath = activateSafeCliShimPath(binDir);
 
   const config = loadConfig(target.projectDir).config;
@@ -249,5 +264,56 @@ describe('e2e: seat down without a fallback, switched by hand', { timeout: 240_0
     });
     expect(recordedCalls(codexCalls)).toEqual([{ model: PRIMARY_MODEL }]);
     expect(existsSync(claudeCalls)).toBe(false);
+  });
+});
+
+async function taskRetries(ref: { projectDir: string; sessionId: string }): Promise<string[]> {
+  const { events } = await readRunEvents(ref);
+  return events.flatMap((event) => (event.type === 'task_retry' ? [event.error] : []));
+}
+
+describe('e2e: seat down after the brief wrote its files', { timeout: 240_000 }, () => {
+  it('passes the brief on the kept work when the switched seat changes nothing', async () => {
+    const { target, halted, sessionId, claudeCalls, options } = await codexHaltFixture(true);
+    const ref = { projectDir: target.projectDir, sessionId };
+    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+    expect(loadState(ref)?.pendingRecovery?.reason).toBe('runner-usage-limit');
+
+    const switched = await cli(
+      target,
+      ['continue', sessionId, '--action', `switch-seat:claude-code:${SWITCHED_MODEL}`],
+      options,
+    );
+    expect(switched.exitCode, `${switched.stdout}\n${switched.stderr}`).toBe(0);
+    expect(switched.stdout).toContain('task T001: done');
+    expect(loadState(ref)?.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
+    expect(recordedCalls(claudeCalls)).toHaveLength(1);
+    expect(await taskRetries(ref)).toEqual([]);
+    expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
+    expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
+  });
+
+  it('passes the brief on the kept work when the switch carries a typed correction', async () => {
+    const { target, halted, sessionId, claudeCalls } = await codexHaltFixture(true);
+    const ref = { projectDir: target.projectDir, sessionId };
+    expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+    const correction = 'Both files are written. Check them and keep them.';
+    vi.stubGlobal('fetch', async () => {
+      throw new Error('Network disabled in seat switch E2E');
+    });
+
+    const resumed = await continueWithCorrection(
+      target,
+      sessionId,
+      correction,
+      `switch-seat:claude-code:${SWITCHED_MODEL}`,
+    );
+    expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
+    expect(recordedCalls(claudeCalls)).toEqual([
+      { model: SWITCHED_MODEL, prompt: expect.stringContaining(correction) },
+    ]);
+    expect(await taskRetries(ref)).toEqual([]);
+    expect(readFileSync(target.greetPath, 'utf8')).toBe(GREET_SOURCE);
+    expect(readFileSync(target.markerPath, 'utf8')).toBe(MARKER_SOURCE);
   });
 });
