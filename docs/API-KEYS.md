@@ -131,7 +131,7 @@ Which runners keep a private HOME, and which do not:
 | Antigravity, `session` channel, **macOS** | your real `HOME`, plus real `USER` | the login keychain, through its default search list |
 | Antigravity, `session` channel, Linux / Windows | private | none — unsupported credential bridge; authentication remains unknown |
 | Copilot, `session` channel, every platform | private | a read-only copy of Copilot's own credential files |
-| Codex, `session` channel, every platform | private, but `~/.codex` inside it is a link to your real `~/.codex` | your real `~/.codex`, live — reads **and writes** |
+| Codex, `session` channel, every platform | private, with Codex's sessions and history in it | your real `~/.codex/auth.json`, live — reads **and writes** |
 | OpenCode and Kilo Code, `provider-dependent` channel | private, but that tool's own state directory is a link to the real one | that tool's real state directory, live — reads **and writes** |
 | Any runner on an `api-key` channel | private | none — the credential arrives as an environment variable |
 | Every `api`, `shell`, or `agent` runner | private | none |

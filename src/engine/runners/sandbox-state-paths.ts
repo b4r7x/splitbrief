@@ -241,18 +241,16 @@ export const CLI_STATE_PATHS: Readonly<Record<CliToolId, readonly CliStatePath[]
  * is left holding a refresh token the server has already burned. Measured
  * first-hand against codex on 2026-08-06: a 0o400 snapshot turned one expired
  * access token into an unrecoverable signed-out host. These tools read their
- * state through a live passthrough instead — a directory link
- * (`passthroughStateEntry`) when that directory is tool-private, or a per-file
- * link (`passthroughStateFile`) when it is not.
+ * state through a live passthrough instead — a per-file link
+ * (`passthroughStateFile`) for the tools in `FILE_LINKED_CREDENTIAL_TOOLS`, a
+ * directory link (`passthroughStateEntry`) for the rest.
  *
  * Classification is per tool and evidence-driven: codex rotates its ChatGPT
  * refresh token on every refresh (measured); opencode stores the same rotating
  * OAuth family in its auth.json (`"type": "oauth"` entries with refresh
  * tokens, observed on a live install); kilo-code stores kilo.ai session state
- * the same way. Cursor's session file also rotates, but `~/.cursor` is the Cursor
- * IDE home — not a tool-private directory like `~/.codex` — so only
- * `agent-cli-state.json` is passed through live (`passthroughStateFile`);
- * linking the parent would admit every other file there. `cli-config.json` is
+ * the same way. Cursor's session file also rotates, and only
+ * `agent-cli-state.json` is passed through live. `cli-config.json` is
  * policy (`approvalMode`, sandbox), not a credential: a live link would hand
  * the child the host's `unrestricted` / yolo setting and write-enable a planner
  * that was not given `--force`. Copilot's `oauth_token` is a long-lived GitHub
@@ -276,6 +274,20 @@ export const CLI_CREDENTIAL_MODELS: Readonly<Record<CliToolId, CliCredentialMode
   'command-code': 'static-secret',
   antigravity: 'rotating-oauth',
 };
+
+/**
+ * Rotating-credential tools whose credential file alone is linked to the host,
+ * inside a state directory the sandbox owns. Their host state directory holds
+ * more than the credential. `~/.cursor` is the Cursor IDE home. `~/.codex`
+ * holds the user's own Codex sessions, thread index, history and logs: with
+ * the whole directory linked, a sandboxed codex wrote its rollouts there under
+ * the sandbox path, and every later codex call, the user's own included,
+ * reported each removed sandbox as `state db returned stale rollout path`.
+ * A file link keeps a rotation only when the tool rewrites the file in place.
+ * Codex does: `codex login --with-api-key` 0.162.1 against a linked `auth.json`
+ * kept the link and rewrote its target (measured 2026-10-13).
+ */
+export const FILE_LINKED_CREDENTIAL_TOOLS: ReadonlySet<CliToolId> = new Set(['cursor', 'codex']);
 
 const SANDBOX_ROLES: readonly RunnerRole[] = ['planner', 'implementer'];
 
