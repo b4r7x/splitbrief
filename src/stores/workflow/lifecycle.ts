@@ -199,6 +199,7 @@ const RUNNER_HEARTBEAT_EVENT_TYPES = new Set<EngineEvent['type']>([
   'validate',
   'review_checks',
   'review_started',
+  'review_step',
   'review_completed',
 ]);
 

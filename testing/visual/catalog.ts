@@ -803,6 +803,70 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-resumed',
+      title: 'Workflow · review continued after interruption',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 120, rows: 60 })],
+      checkpoint: {
+        id: 'review-resumed',
+        title: 'Two review attempts',
+        kind: 'implementation',
+        marker: 'Run continued',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review attempts' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-choosing-checks',
+      title: 'Workflow · reviewer choosing checks',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-choosing-checks',
+        title: 'Reviewer check selection',
+        kind: 'implementation',
+        marker: 'choosing checks',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-verdict-only',
+      title: 'Workflow · reviewer answers after a question',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-verdict-only',
+        title: 'Reviewer verdict',
+        kind: 'implementation',
+        marker: 'reviewing changes',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'composer', title: 'Review activity' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-review-check-crash',
+      title: 'Workflow · review continued after a check crash',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-check-crash',
+        title: 'Review attempts',
+        kind: 'implementation',
+        marker: 'Run continued',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review attempts' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-review-drift-clean',
       title: 'Workflow · reviewer checks then a clean drift',
       surface: screenSurface('workflow'),
@@ -2117,7 +2181,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
           id: 'spent-b2-replay-t001-activity',
           title: 'T001 activity and disclosure',
           kind: 'implementation',
-          marker: 'BUILD activity  4 updates',
+          marker: 'BUILD activity  5 updates',
         },
         {
           id: 'spent-b2-replay-t001-completion',

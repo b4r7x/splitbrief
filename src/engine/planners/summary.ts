@@ -12,6 +12,7 @@ import type {
 } from './types.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import { createRunnerCallId } from '../calls/call-id.js';
 import { requireCompletedCall } from './require-completed-call.js';
 
 type PlannerSummaryConfig = {
@@ -31,14 +32,12 @@ type PlannerSummaryConfig = {
 
 const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
 
-let summaryCallSequence = 0;
-
 function createSummaryCallContext(
   config: PlannerSummaryConfig,
   role: RunnerCallContext['role'],
 ): RunnerCallContext {
   return {
-    callId: `summary-${++summaryCallSequence}`,
+    callId: createRunnerCallId('summary'),
     role,
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),

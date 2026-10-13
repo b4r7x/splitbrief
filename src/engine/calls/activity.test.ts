@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EngineEventSchema } from '../events/schema.js';
 import { projectRunnerCallActivity } from './activity.js';
+import { createRunnerCallRecorder } from './recorder.js';
 import type { RunnerCallEvent, RunnerCallWarningInput } from './types.js';
 import { normalizeRunnerCallWarning } from './warnings.js';
 
@@ -33,6 +34,54 @@ function runnerWarning(input: RunnerCallWarningInput) {
 }
 
 describe('projectRunnerCallActivity', () => {
+  it('keeps distinct uses without upstream ids distinct at the recording boundary', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context: runnerCallBase,
+      onEvent: (event) => events.push(event),
+    });
+    for (const file of ['src/first.ts', 'src/second.ts']) {
+      recorder.toolUseDone({
+        toolUse: { id: null, name: 'Read', input: { file_path: file }, output: null },
+      });
+    }
+    const activities = events.flatMap((event, index) => {
+      const activity = projectRunnerCallActivity(event, index, '/project');
+      return activity === null ? [] : [activity];
+    });
+    expect(activities.map((activity) => activity.target)).toEqual([
+      'src/first.ts',
+      'src/second.ts',
+    ]);
+    expect(new Set(activities.map((activity) => activity.activityId)).size).toBe(2);
+    expect(recorder.snapshot().toolUses.map((use) => use.id)).not.toContain(null);
+  });
+
+  it('keeps one identity across updates and completion of a use without an upstream id', () => {
+    const events: RunnerCallEvent[] = [];
+    const recorder = createRunnerCallRecorder({
+      context: runnerCallBase,
+      onEvent: (event) => events.push(event),
+    });
+    recorder.toolUseDelta({ toolUseId: null, name: 'Read', inputDelta: '', stage: 'started' });
+    recorder.toolUseDelta({
+      toolUseId: null,
+      name: 'Read',
+      inputDelta: '{"file_path":"src/first.ts"}',
+      stage: 'delta',
+    });
+    recorder.toolUseDone({
+      toolUse: { id: null, name: 'Read', input: { file_path: 'src/first.ts' }, output: null },
+    });
+    const activities = events.flatMap((event, index) => {
+      const activity = projectRunnerCallActivity(event, index, '/project');
+      return activity === null ? [] : [activity];
+    });
+    expect(activities).toHaveLength(3);
+    expect(new Set(activities.map((activity) => activity.activityId)).size).toBe(1);
+    expect(recorder.snapshot().toolUses[0]?.id).not.toBeNull();
+  });
+
   it('normalizes safe structured tool, artifact, and warning activity', () => {
     expect(projectRunnerCallActivity(runnerToolUse(), 1, '/project')).toMatchObject({
       kind: 'read',
@@ -218,14 +267,14 @@ describe('projectRunnerCallActivity', () => {
     });
   });
 
-  it('falls back to a safe tool name for malformed input deltas', () => {
+  it('names command activity while its input is incomplete', () => {
     expect(
       projectRunnerCallActivity(
         runnerToolUse({ name: 'Bash', inputDelta: '{"command":' }),
         1,
         '/project',
       ),
-    ).toMatchObject({ label: 'tool Bash' });
+    ).toMatchObject({ kind: 'command', label: 'running command' });
   });
 
   it('only projects explicitly system text activity', () => {

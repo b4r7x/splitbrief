@@ -182,9 +182,11 @@ describe('run with no reviewer configured', () => {
       'full_suite',
       'checks_run',
       'review_started',
+      'review_step',
       'all_tasks_done',
       // End-of-run checks are off: one row says so, and no reviewer check runs.
       'review_checks',
+      'review_step',
       'drift_report',
       'cost_update',
       'review_completed',

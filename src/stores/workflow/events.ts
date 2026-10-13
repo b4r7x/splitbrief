@@ -31,6 +31,12 @@ export const eventsStore = {
 export const MAX_EVENTS = 10_000;
 export const MAX_MERGED_TEXT_LENGTH = 500_000;
 
+const COMMAND_BOUNDARIES: ReadonlySet<EngineEvent['type']> = new Set([
+  'turn_interrupted',
+  'workflow_cancelled',
+  'workflow_resumed',
+]);
+
 export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | null {
   switch (event.type) {
     case 'runner_call_activity':
@@ -132,7 +138,7 @@ function updateRunningCommandIndex(
 
 export function mergeEvent(events: EngineEvent[], event: EngineEvent): EngineEvent[] {
   if (repeatsCallError(events, event)) return events;
-  if (event.type === 'turn_interrupted' || event.type === 'workflow_cancelled') {
+  if (COMMAND_BOUNDARIES.has(event.type)) {
     events = events.slice();
     settleStoppedCommands(events);
   }
@@ -174,7 +180,7 @@ export function mergeEventLog(events: EngineEvent[]): EngineEvent[] {
   for (const event of events) {
     const projected = projectEventForTuiEventLog(event);
     if (projected === null) continue;
-    if (projected.type === 'turn_interrupted' || projected.type === 'workflow_cancelled') {
+    if (COMMAND_BOUNDARIES.has(projected.type)) {
       settleStoppedCommands(log, runningCommands);
     }
     const commandIndex = commandReplacementIndex(log, projected, runningCommands);

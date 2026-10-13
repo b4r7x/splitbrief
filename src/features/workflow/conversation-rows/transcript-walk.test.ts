@@ -295,6 +295,7 @@ describe('walkTranscript', () => {
         'settled',
         'event',
         'event',
+        'settled-end',
       ]);
       const final = steps[2];
       if (final?.kind !== 'settled') throw new Error('Expected settled review');
@@ -445,7 +446,12 @@ describe('walkTranscript', () => {
     expect(
       steps
         .slice(1, -1)
-        .every((step) => step.kind !== 'settled' && step.settledSection === heading.section),
+        .every(
+          (step) =>
+            step.kind !== 'settled' &&
+            step.kind !== 'settled-end' &&
+            step.settledSection === heading.section,
+        ),
     ).toBe(true);
     expect(steps.at(-1)).toEqual({ kind: 'event', event: events[10], globalIndex: 10 });
     expect(

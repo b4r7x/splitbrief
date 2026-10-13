@@ -2,6 +2,7 @@ import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import { toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallEvent, RunnerCallResult } from '../calls/types.js';
+import { createRunnerCallId } from '../calls/call-id.js';
 import { spawnAndCollect } from '../streaming/spawn-collect.js';
 import { createBoundedOutput } from '../../lib/process/bounded-output.js';
 import { DEFAULT_PROCESS_STDERR_MAX_BYTES } from '../../lib/process/spawn/lifecycle.js';
@@ -80,8 +81,6 @@ export interface CustomCommandBasedOptions {
 
 export type CustomCommandBasedResult = Awaited<ReturnType<typeof spawnAndCollect>>;
 
-let commandCallSequence = 0;
-
 function rejectPromptPlaceholderCommand(command: string): void {
   if (!command.includes(PROMPT_PLACEHOLDER)) return;
 
@@ -108,7 +107,7 @@ function createCommandCallContext(opts: {
 }): RunnerCallContext {
   return (
     opts.callContext ?? {
-      callId: `command-${++commandCallSequence}`,
+      callId: createRunnerCallId('command'),
       role: 'planner',
       backendKind: 'shell',
       runnerName: opts.command,

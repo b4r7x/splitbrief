@@ -1,4 +1,5 @@
 import { projectRunnerCallActivity } from '../../../../src/engine/calls/activity.js';
+import { reviewResumeProjection, reviewCheckCrashProjection } from './review-resume-projection.js';
 import { buildArtifactExcerpt } from '../../../../src/engine/orchestrator/artifact-card.js';
 import { checkFailureText } from '../../../../src/engine/orchestrator/validation/failure-text.js';
 import { formatTasks } from '../../../../src/engine/spec/formatter.js';
@@ -5092,6 +5093,8 @@ const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
 };
 
 const projections = [
+  reviewResumeProjection,
+  reviewCheckCrashProjection,
   idleProjection,
   planningProjection,
   startAttachedFilesProjection,
@@ -5148,6 +5151,60 @@ const projections = [
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,
+  {
+    ...finalReviewProjection,
+    scenarioId: scenarioId('workflow-review-verdict-only'),
+    events: finalReviewProjection.events
+      .filter((event) => event.type !== 'review_checks')
+      .flatMap((event): EngineEvent[] =>
+        event.type === 'review_started'
+          ? [
+              event,
+              {
+                type: 'review_checks',
+                ts: event.ts + 10,
+                phase: event.phase,
+                scope: 'final',
+                status: 'planned',
+                commands: [],
+                reason: 'The recorded plan checks verify the change.',
+              },
+              {
+                type: 'review_completed',
+                ts: event.ts + 20,
+                phase: event.phase,
+                scope: 'final',
+                tool: event.tool,
+                verdict: 'pass',
+                duration: 20,
+              },
+              {
+                type: 'user_message',
+                ts: event.ts + 30,
+                phase: event.phase,
+                text: 'Keep the cache key.',
+                qa: [{ question: 'Keep the cache key?', answer: 'Keep the cache key.' }],
+              },
+              { ...event, ts: event.ts + 40 },
+              { type: 'review_step', ts: event.ts + 40, phase: event.phase, step: 'verdict' },
+            ]
+          : [event],
+      ),
+  },
+  {
+    ...finalReviewProjection,
+    scenarioId: scenarioId('workflow-review-choosing-checks'),
+    events: finalReviewProjection.events
+      .filter((event) => event.type !== 'review_checks')
+      .flatMap((event): EngineEvent[] =>
+        event.type === 'review_started'
+          ? [
+              event,
+              { type: 'review_step', ts: event.ts, phase: event.phase, step: 'choosing-checks' },
+            ]
+          : [event],
+      ),
+  },
   reviewCorrectedProjection,
   reviewTaskCadenceProjection,
   reviewTaskOutOfScopeProjection,

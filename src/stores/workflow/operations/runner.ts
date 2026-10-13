@@ -33,7 +33,11 @@ export function startRunnerOperation(
   state: OperationsState,
   event: EngineEventOf<'runner_call_started'>,
 ): OperationsState {
-  const operation = operationFromRunnerStart(event);
+  const operation = {
+    ...operationFromRunnerStart(event),
+    ...(event.role === 'review' &&
+      state.reviewStage?.reviewStep !== undefined && { reviewStep: state.reviewStage.reviewStep }),
+  };
   const byCallId = new Map(state.byCallId);
   byCallId.set(operation.callId, operation);
   return compactOperationsState({ ...state, active: operation, byCallId });

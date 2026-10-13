@@ -6,6 +6,7 @@ import type { CliExecutableIdentity } from '../../../core/discovery/detection.js
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { ImplementerCliToolId } from '../../../core/schemas/enums.js';
 import { ImplementerConfigSchema } from '../../../core/schemas/implementer-config.js';
+import { createRunnerCallId } from '../../calls/call-id.js';
 import type { RunnerCallResult } from '../../calls/types.js';
 import { sanitizeCandidateOutput } from '../../providers/candidate-contract.js';
 import { invokeCliAdapter, toCliEnvironment } from '../invoke-cli-adapter.js';
@@ -227,7 +228,7 @@ export async function runCwdCliConformance(
         },
         prompt: cwdProbePrompt(file),
         callContext: {
-          callId: `cli-cwd-conformance-${options.tool}`,
+          callId: createRunnerCallId(`cli-cwd-conformance-${options.tool}`),
           role: 'implementer',
           backendKind: 'cli',
           runnerName: options.tool,

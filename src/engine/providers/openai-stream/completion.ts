@@ -17,6 +17,7 @@ import { attachImagesToLastUserMessage } from '../image-attach.js';
 import { throwIfAborted } from '../../../utils/abort.js';
 import { error as createError } from '../../../utils/error.js';
 import { createRunnerCallRecorder, type RunnerCallRecorder } from '../../calls/recorder.js';
+import { createRunnerCallId } from '../../calls/call-id.js';
 import {
   createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
@@ -84,11 +85,9 @@ interface StreamCompletionOptions {
   runtimeObservation?: ApiRuntimeObservation | undefined;
 }
 
-let callSequence = 0;
-
 function openAiCallContext(model: string, endpoint: StreamCompletionOptions['endpoint']) {
   return {
-    callId: `openai-stream-${++callSequence}`,
+    callId: createRunnerCallId('openai-stream'),
     role: 'planner',
     backendKind: 'api',
     runnerName: endpoint?.provider ?? 'openai',

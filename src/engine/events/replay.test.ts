@@ -369,6 +369,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
     declined: [{ target: 'e2e/app.spec.ts', reason: 'needs a browser' }],
     reason: null,
   },
+  review_step: { phase: 'final-review', step: 'verdict' },
   full_suite: {
     phase: 'final-review',
     status: 'refused',

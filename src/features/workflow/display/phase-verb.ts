@@ -25,7 +25,7 @@ interface ReviewActivityParts {
 const REVIEW_WAITING_ACTIVITY: ReviewActivityParts = {
   prefix: REVIEW_PREFIX_PARTS,
   identity: null,
-  suffix: [{ text: 'waiting for the verdict', tone: 'textDim' }],
+  suffix: [{ text: 'reviewing changes', tone: 'textDim' }],
 };
 
 // The plan stage is one planning session. Only an older run's briefs call has its own verb.
@@ -91,7 +91,13 @@ export function reviewActivityParts(
   if (operation?.status !== 'running') return REVIEW_WAITING_ACTIVITY;
   switch (operation.role) {
     case 'review': {
-      const waiting = isStatusFallback(operation);
+      const step =
+        operation.reviewStep === 'choosing-checks'
+          ? 'choosing checks'
+          : operation.reviewStep === 'verdict'
+            ? 'reviewing changes'
+            : null;
+      const waiting = isStatusFallback(operation) || step !== null;
       const identity =
         reviewerLabel === null ? null : { text: reviewerLabel, tone: CREW_SEAT_ROLES.review };
       return {
@@ -100,7 +106,7 @@ export function reviewActivityParts(
         suffix: waiting
           ? [
               ...(identity === null ? [] : [{ text: SOFT_SEP, tone: 'textDim' as const }]),
-              ...REVIEW_WAITING_ACTIVITY.suffix,
+              { text: step ?? 'reviewing changes', tone: 'textDim' },
             ]
           : identity === null
             ? [{ text: 'reviewing', tone: 'textDim' }]

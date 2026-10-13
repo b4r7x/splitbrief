@@ -35,7 +35,7 @@ it.each(['live', 'transcript'] as const)(
         { text: ' · ', tone: 'textDim' },
       ],
       identity: null,
-      suffix: [{ text: 'waiting for the verdict', tone: 'textDim' }],
+      suffix: [{ text: 'reviewing changes', tone: 'textDim' }],
     });
   },
 );
@@ -49,6 +49,7 @@ it('keeps the review identity separate from the waiting suffix', () => {
     scope: 'final',
     tool: 'codex',
   });
+  addEvent({ type: 'review_step', ts: 1_000, phase: 'final-review', step: 'choosing-checks' });
   const operation = operationsStore.get().active;
   expect(reviewActivityParts(operation, 'codex · gpt-5')).toEqual({
     prefix: [
@@ -58,7 +59,7 @@ it('keeps the review identity separate from the waiting suffix', () => {
     identity: { text: 'codex · gpt-5', tone: 'reviewer' },
     suffix: [
       { text: ' · ', tone: 'textDim' },
-      { text: 'waiting for the verdict', tone: 'textDim' },
+      { text: 'choosing checks', tone: 'textDim' },
     ],
   });
   resetWorkflow();
@@ -161,7 +162,7 @@ describe('activeVerb', () => {
       expect(activeVerb(phase, null, 'tasks')).toBe(activeVerb(phase, null, null));
     }
     expect(activeVerb('final-review', 'Sonnet 4.5', null)).toBe('Review · Sonnet 4.5');
-    expect(activeVerb('final-review', null, null)).toBe('Review · waiting for the verdict');
+    expect(activeVerb('final-review', null, null)).toBe('Review · reviewing changes');
   });
 });
 
@@ -227,12 +228,12 @@ describe('suiteStageText', () => {
 });
 
 describe('review waiting spans', () => {
-  it('is the status text while waiting for the verdict in final review', () => {
+  it('is the status text while reviewing changes in final review', () => {
     expect(
       reviewActivitySpans(reviewActivityParts(null, null))
         .map((part) => part.text)
         .join(''),
-    ).toBe('Review · waiting for the verdict');
+    ).toBe('Review · reviewing changes');
   });
 });
 

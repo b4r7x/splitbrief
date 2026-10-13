@@ -48,6 +48,9 @@ type ReviewCompletedEvent = {
   findings?: ReviewFindingCounts | undefined;
   duration: number;
 };
+type ReviewStartedEvent = Pick<ReviewCompletedEvent, 'scope' | 'afterTaskId'> & {
+  type: 'review_started';
+};
 type WorkflowCompleteEvent = {
   type: 'workflow_complete';
   review?: 'passed' | 'failed' | undefined;
@@ -118,6 +121,12 @@ function isReviewCompletedEvent<TEvent extends SectionableEvent>(
   event: TEvent,
 ): event is TEvent & ReviewCompletedEvent {
   return event.type === 'review_completed';
+}
+
+function isReviewStartedEvent<TEvent extends SectionableEvent>(
+  event: TEvent,
+): event is TEvent & ReviewStartedEvent {
+  return event.type === 'review_started';
 }
 
 // The diff's stable identity is its global render index, not its timestamp: publishers stamp events
@@ -244,14 +253,38 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     for (let index = cursor; index < endIndex; index++) {
       const event = events[index];
       if (event === undefined) continue;
-      if (event.type === 'review_started') reviewStarted = true;
+      if (
+        event.type === 'workflow_resumed' &&
+        (reviewStarted || (event.phase !== undefined && phaseStage(event.phase) === 'review'))
+      ) {
+        const items = events.slice(cursor, index);
+        const summary = reviewStarted ? settledStageSummary(items, fixCycles, reruns, true) : null;
+        if (items.length > 0) {
+          if (summary?.stage === 'review') {
+            sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
+            countFinalReview(summary);
+          } else {
+            sections.push({ type: 'events', items, startIndex: cursor });
+          }
+        }
+        sections.push({ type: 'events', items: [event], startIndex: index });
+        cursor = index + 1;
+        reviewStarted = false;
+        continue;
+      }
+      if (isReviewStartedEvent(event)) reviewStarted = true;
       if (isReviewCompletedEvent(event)) reviewStarted = true;
       else if (reviewStarted || !(isWorkflowCompleteEvent(event) && event.review !== undefined))
         continue;
       let reviewEnd = index;
       for (let next = index + 1; next < endIndex; next++) {
         const following = events[next];
-        if (following?.type === 'review_started' || following?.type === 'task_started') break;
+        if (
+          following?.type === 'review_started' ||
+          following?.type === 'task_started' ||
+          following?.type === 'workflow_resumed'
+        )
+          break;
         if (following?.type === 'review_fix_started') reviewEnd = next;
       }
       const items = events.slice(cursor, reviewEnd + 1);
@@ -344,7 +377,15 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
 
   appendCompletedReviews(events.length);
   if (cursor < events.length) {
-    sections.push({ type: 'events', items: events.slice(cursor), startIndex: cursor });
+    const items = events.slice(cursor);
+    const summary = items.some(isReviewStartedEvent)
+      ? settledStageSummary(items, fixCycles, reruns)
+      : null;
+    sections.push(
+      summary?.stage === 'review'
+        ? { type: 'settled-stage', items, startIndex: cursor, summary }
+        : { type: 'events', items, startIndex: cursor },
+    );
   }
 
   return sections;
@@ -364,10 +405,11 @@ function settledStageSummary<TEvent extends SectionableEvent>(
   items: TEvent[],
   fixCyclesBefore: number,
   rerunsBefore: number,
+  resumed = false,
 ): StageSummary | null {
   const stages = items.map((event) => (event.phase === undefined ? null : phaseStage(event.phase)));
   const completed = items.findLast(isReviewCompletedEvent);
-  const reviewStarted = items.some((event) => event.type === 'review_started');
+  const reviewStarted = items.findLast(isReviewStartedEvent);
   const verdict =
     reviewStarted || completed !== undefined
       ? undefined
@@ -387,7 +429,8 @@ function settledStageSummary<TEvent extends SectionableEvent>(
     firstTs ??= event.ts;
     lastTs = event.ts;
   }
-  const duration = firstTs === undefined || lastTs === undefined ? 0 : lastTs - firstTs;
+  const startTs = stage === 'review' ? (reviewStarted?.ts ?? firstTs) : firstTs;
+  const duration = startTs === undefined || lastTs === undefined ? 0 : lastTs - startTs;
   if (stage === 'plan') {
     return { stage, feature: items.find(isWorkflowStartedEvent)?.feature ?? '', duration };
   }
@@ -423,13 +466,29 @@ function settledStageSummary<TEvent extends SectionableEvent>(
           ? 'failed'
           : completed.verdict
     : reviewStarted
-      ? null
+      ? resumed ||
+        items.some(
+          (event) =>
+            event.type === 'turn_interrupted' ||
+            event.type === 'workflow_cancelled' ||
+            (event.type === 'runner_call_activity' &&
+              'kind' in event &&
+              event.kind === 'error' &&
+              'role' in event &&
+              event.role === 'review' &&
+              'stage' in event &&
+              event.stage === 'aborted'),
+        )
+        ? 'stopped'
+        : null
       : (verdict ?? (fixes.length > 0 ? 'failed' : null));
   if (outcome === null) return null;
   return {
     stage,
-    scope: completed?.scope ?? 'final',
-    ...(completed?.afterTaskId !== undefined && { afterTaskId: completed.afterTaskId }),
+    scope: completed?.scope ?? reviewStarted?.scope ?? 'final',
+    ...((completed?.afterTaskId ?? reviewStarted?.afterTaskId) !== undefined && {
+      afterTaskId: completed?.afterTaskId ?? reviewStarted?.afterTaskId,
+    }),
     ...(completed?.findings !== undefined && { findings: completed.findings }),
     fixCyclesBefore,
     rerunsBefore,

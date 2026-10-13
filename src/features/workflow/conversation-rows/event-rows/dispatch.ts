@@ -82,6 +82,13 @@ export function eventRowBlock(options: {
   if (isTranscriptRowlessEvent(event)) return null;
 
   switch (event.type) {
+    case 'workflow_resumed':
+      return wrappedTextBlock({
+        keyPrefix,
+        text: 'Run continued',
+        width: ctx.width,
+        tone: 'textDim',
+      });
     case 'workflow_cancelled': {
       const segments: ConversationRowSegment[] =
         event.reason === WORKFLOW_CANCEL_REASON_USER

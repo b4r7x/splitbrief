@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { collectRunnerCallResult } from './collector.js';
 import {
   InvocationIdentitySchema,
@@ -148,6 +149,7 @@ export function createRunnerCallRecorder(opts: {
   let stderrWarningEmitted = false;
   let lastNativeSessionId: string | null = null;
   let lastHeartbeatTs: number | null = null;
+  let activeToolUse: { id: string; name: string | null } | null = null;
   const recentToolUses: RunnerCallToolUse[] = [];
   let toolUseLimitExceeded = false;
   const emittedLimitWarnings = new Set<string>();
@@ -483,6 +485,16 @@ export function createRunnerCallRecorder(opts: {
       if (accepted.limit !== null) noteLimit(accepted.limit, 'diagnostic-only');
     },
     toolUseDelta: (eventOpts) => {
+      const toolUseId =
+        eventOpts.toolUseId ??
+        (eventOpts.stage === 'started' ||
+        activeToolUse === null ||
+        (eventOpts.name !== null &&
+          activeToolUse.name !== null &&
+          eventOpts.name !== activeToolUse.name)
+          ? randomUUID()
+          : activeToolUse.id);
+      activeToolUse = { id: toolUseId, name: eventOpts.name ?? activeToolUse?.name ?? null };
       const accepted = toolDeltaLimiter.accept(redactCredential(eventOpts.inputDelta));
       if (accepted.text.length > 0 || accepted.limit === null) {
         emit({
@@ -490,8 +502,8 @@ export function createRunnerCallRecorder(opts: {
           ts: eventOpts.ts ?? Date.now(),
           ...context,
           channel: 'tool',
-          toolUseId: eventOpts.toolUseId,
-          name: eventOpts.name,
+          toolUseId: activeToolUse.id,
+          name: activeToolUse.name,
           inputDelta: accepted.text,
         });
       }
@@ -503,12 +515,22 @@ export function createRunnerCallRecorder(opts: {
       }
     },
     toolUseDone: (eventOpts) => {
+      const toolUse =
+        eventOpts.toolUse.id === null
+          ? {
+              ...eventOpts.toolUse,
+              id:
+                activeToolUse !== null &&
+                (activeToolUse.name === null || activeToolUse.name === eventOpts.toolUse.name)
+                  ? activeToolUse.id
+                  : randomUUID(),
+            }
+          : eventOpts.toolUse;
+      if (activeToolUse?.id === toolUse.id) activeToolUse = null;
       // Past the cap the result keeps the tool results it has, and the feed
       // still hears every completion: a call does not go quiet at its 257th.
       const kept = toolUseDoneCount < RUNNER_CALL_TOOL_USE_MAX_ITEMS;
-      const bounded = boundRunnerCallToolUse(
-        redactRunnerCallToolUse(eventOpts.toolUse, redactCredential),
-      );
+      const bounded = boundRunnerCallToolUse(redactRunnerCallToolUse(toolUse, redactCredential));
       recentToolUses.push(bounded.value);
       if (recentToolUses.length > RUNNER_CALL_TOOL_USE_SUMMARY_MAX_ITEMS) recentToolUses.shift();
       toolUseDoneCount += 1;

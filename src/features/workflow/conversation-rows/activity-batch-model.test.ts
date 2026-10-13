@@ -22,7 +22,7 @@ function activity(
     backendKind: overrides.backendKind ?? 'cli',
     runnerName: overrides.runnerName ?? 'codex',
     sequence: overrides.sequence ?? 1,
-    activityId: overrides.activityId ?? 'activity-1',
+    activityId: overrides.activityId ?? `${overrides.kind}:${overrides.label}`,
     stage: overrides.stage ?? 'updated',
     kind: overrides.kind ?? 'unknown',
     label: overrides.label ?? 'checking project',
@@ -98,7 +98,7 @@ describe('buildActivityBatchViewModel', () => {
       activity({ sequence: 5, activityId: 'd', kind: 'read', label: 'reading d.ts' }),
       activity({
         sequence: 6,
-        activityId: 'command-failed',
+        activityId: 'command-start',
         kind: 'command',
         stage: 'failed',
         label: 'failed npm test',
@@ -148,7 +148,7 @@ describe('buildActivityBatchViewModel', () => {
         activity({ sequence: 4, activityId: 'c', kind: 'read', label: 'reading c.ts' }),
         activity({
           sequence: 5,
-          activityId: 'stage-completed',
+          activityId: 'stage-warning',
           kind: 'command',
           stage: 'completed',
           label: 'completed npm test',

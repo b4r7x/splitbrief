@@ -35,6 +35,7 @@ export interface OpenTool {
 }
 
 interface OperationBase {
+  reviewStep?: EngineEventOf<'review_step'>['step'] | undefined;
   callId: string;
   role: OperationRole;
   backendKind?: EngineEventOf<'runner_call_started'>['backendKind'];

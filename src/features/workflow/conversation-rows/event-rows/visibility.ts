@@ -1,8 +1,8 @@
 import type { EngineEvent } from '../../../../engine/events/types.js';
+import { isProtocolActivity } from '../../display/runner-activity-display.js';
 
 const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'workflow_started',
-  'workflow_resumed',
   'workflow_complete',
   'workflow_config',
   'spec_approved',
@@ -32,6 +32,7 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
   'task_tokens',
   'task_review_needed',
   'review_started',
+  'review_step',
   'review_completed',
   'review_fix_started',
   'hint_failed',
@@ -60,13 +61,14 @@ const TRANSCRIPT_ROWLESS_EVENT_TYPES = [
 
 type TranscriptRowlessEvent =
   | Extract<EngineEvent, { type: (typeof TRANSCRIPT_ROWLESS_EVENT_TYPES)[number] }>
-  | (Extract<EngineEvent, { type: 'runner_call_activity' }> & { kind: 'session' });
+  | (Extract<EngineEvent, { type: 'runner_call_activity' }> & { kind: 'session' | 'unknown' });
 
 const transcriptRowlessEventTypes: ReadonlySet<string> = new Set(TRANSCRIPT_ROWLESS_EVENT_TYPES);
 
 export function isTranscriptRowlessEvent(event: EngineEvent): event is TranscriptRowlessEvent {
   return (
     transcriptRowlessEventTypes.has(event.type) ||
-    (event.type === 'runner_call_activity' && event.kind === 'session')
+    (event.type === 'runner_call_activity' &&
+      (event.kind === 'session' || isProtocolActivity(event)))
   );
 }

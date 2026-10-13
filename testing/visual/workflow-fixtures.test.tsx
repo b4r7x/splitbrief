@@ -308,8 +308,10 @@ describe('workflow visual fixtures', () => {
       try {
         const frame = stripAnsiStyles(await ui.waitForCheckpoint());
         const text = workflowTranscriptText();
-        expect(text.match(/BUILD activity {2}4 updates/g)).toHaveLength(2);
-        expect(text.match(/\+1 more · ctrl\+a/g)).toHaveLength(2);
+        expect(text.match(/BUILD activity {2}5 updates/g)).toHaveLength(1);
+        expect(text.match(/BUILD activity {2}4 updates/g)).toHaveLength(1);
+        expect(text.match(/\+2 more · ctrl\+a/g)).toHaveLength(1);
+        expect(text.match(/\+1 more · ctrl\+a/g)).toHaveLength(1);
         expect(frame).toContain('● Plan → × Build → ○ Review');
         if (renderViewport.cols === 200) expect(frame).toContain('Stopped before the review');
         expect(text.match(/Recovery {2}/g)).toHaveLength(1);
@@ -648,7 +650,7 @@ describe('workflow visual fixtures', () => {
         ];
         const history = await scrollTranscript(ui, markers);
         for (const marker of markers) expect(history).toContain(marker);
-        expect(history.indexOf('● Final review passed')).toBeLessThan(
+        expect(history.indexOf('● Final review passed')).toBeGreaterThan(
           history.indexOf('Reviewer check V1'),
         );
         expect(history).toContain('npm test · passed');

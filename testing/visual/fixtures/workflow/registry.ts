@@ -417,6 +417,16 @@ const checkpointPredicates = [
   [checkpointId('implementation-after-retry'), includesAll()],
   [checkpointId('recovery-resolved-retry'), includesAll()],
   [checkpointId('review-fix'), includesAll()],
+  [checkpointId('review-choosing-checks'), includesAll()],
+  [checkpointId('review-verdict-only'), includesAll()],
+  [
+    checkpointId('review-check-crash'),
+    includesTranscript('Final review stopped', 'Run continued', 'Final review re-run passed'),
+  ],
+  [
+    checkpointId('review-resumed'),
+    includesTranscript('Final review stopped', 'Run continued', 'Final review re-run passed'),
+  ],
   [
     checkpointId('review-fix-cycles'),
     (context) => {
@@ -623,7 +633,7 @@ const checkpointPredicates = [
   ],
   [
     checkpointId('spent-b2-replay-t001-activity'),
-    includesAll('+1 more · ctrl+a', 'Edit    test/text.test.js'),
+    includesAll('+2 more · ctrl+a', 'Edit    test/text.test.js'),
   ],
   [checkpointId('spent-b2-replay-t001-completion'), includesAll()],
   [

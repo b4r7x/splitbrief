@@ -181,6 +181,24 @@ export function updateOperations(state: OperationsState, event: EngineEvent): Op
     case 'review_started':
     case 'review_completed':
       return updateStatusFallback(state, event);
+    case 'review_step':
+    case 'review_checks': {
+      const review = state.reviewStage;
+      if (review === undefined || review === null) return state;
+      const reviewStep = event.type === 'review_step' ? event.step : 'verdict';
+      const reviewStage = { ...review, reviewStep };
+      const next = updateKnownOperation(
+        { ...state, reviewStage },
+        review.callId,
+        () => reviewStage,
+      );
+      return next.active?.role === 'review'
+        ? updateKnownOperation(next, next.active.callId, (operation) => ({
+            ...operation,
+            reviewStep,
+          }))
+        : next;
+    }
     default:
       return state;
   }

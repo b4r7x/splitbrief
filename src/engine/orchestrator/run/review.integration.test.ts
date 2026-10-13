@@ -524,6 +524,7 @@ describe('runScheduledReview saved recovery', () => {
     }).callbacks;
     const checks = vi.fn(() => ({ commands: [], declined: [], reason: 'No command is needed.' }));
     const reviewPrompts: string[] = [];
+    const { bus, events } = makeBusRecorder();
     const planner = makePlanner({
       typedCall: typedCallPlanAndReview(
         () => planFromTasks(state.tasks),
@@ -546,6 +547,7 @@ describe('runScheduledReview saved recovery', () => {
     const result = await runScheduledReview({
       wctx: makeWctx({
         ...ref,
+        bus,
         callbacks,
         planner,
         config: makeNoValidationConfig({ validation: { endChecks: true } }),
@@ -561,6 +563,11 @@ describe('runScheduledReview saved recovery', () => {
     expect(callbacks.onPlannerReply).toHaveBeenCalledOnce();
     expect(result.state.pendingTriage).toBeUndefined();
     expect(result.state.pendingScheduledReview).toBeUndefined();
+    expect(events.filter((event) => event.type === 'review_step')).toEqual([
+      expect.objectContaining({ step: 'choosing-checks' }),
+      expect.objectContaining({ step: 'verdict' }),
+      expect.objectContaining({ step: 'verdict' }),
+    ]);
   });
 
   it('halts a scheduled review at its cap and resumes triage with pending tasks intact', async () => {
