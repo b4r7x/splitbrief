@@ -21,10 +21,20 @@ import type { Config } from '../../../src/core/schemas/config.js';
 import type { IsolationStrategy } from '../../../src/core/schemas/enums.js';
 import {
   type PersistedWorkflowState,
+  type WorkflowState,
   WorkflowStateSchema,
 } from '../../../src/core/schemas/workflow.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
+import { loadConfig } from '../../../src/core/config/load/io.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
+import { parseContinueActionOption } from '../../../src/cli/options.js';
+import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
+import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
+import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
@@ -275,14 +285,33 @@ export function cli(
   });
 }
 
-export async function startAndSignal(
+export function startAndSignal(
   target: StopContinueFixture,
   signal: NodeJS.Signals,
   markerDir: string,
 ): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
+  return signalWhenMarked(target, ['start', 'smoke'], START_TIMEOUT_MS, signal, markerDir);
+}
+
+/** Continues the active run and signals it once its implementer wrote the marker under `markerDir`. */
+export function continueAndSignal(
+  target: StopContinueFixture,
+  signal: NodeJS.Signals,
+  markerDir: string,
+): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
+  return signalWhenMarked(target, ['continue'], CONTINUE_TIMEOUT_MS, signal, markerDir);
+}
+
+async function signalWhenMarked(
+  target: StopContinueFixture,
+  args: readonly string[],
+  timeoutMs: number,
+  signal: NodeJS.Signals,
+  markerDir: string,
+): Promise<{ exitCode: number | null; stdout: string; sessionId: string }> {
   let groupPid: number | undefined;
-  const run = cli(target, ['start', 'smoke'], {
-    timeoutMs: START_TIMEOUT_MS,
+  const run = cli(target, args, {
+    timeoutMs,
     onSpawn: (pid) => {
       groupPid = pid;
     },
@@ -302,6 +331,74 @@ export async function startAndSignal(
 
 export function continueRun(target: StopContinueFixture): ReturnType<typeof spawnCli> {
   return cli(target, ['continue'], { timeoutMs: CONTINUE_TIMEOUT_MS });
+}
+
+/**
+ * Continues a run the way the run screen does when the operator types a correction and presses
+ * ⏎: the run is re-entered on its saved state, and the words ride the steer into the first step.
+ * An `action` answers a pending halt first, as the recovery menu does.
+ */
+export async function continueWithCorrection(
+  target: StopContinueFixture,
+  sessionId: string,
+  correction: string,
+  action?: string,
+): Promise<PersistedWorkflowState> {
+  // The CLI runs on the canonical project path; the run records its workspace under it.
+  const projectDir = await canonicalizeProjectDir({ project: target.projectDir });
+  const ref = { projectDir, sessionId };
+  const stateHome = process.env.XDG_STATE_HOME;
+  process.env.XDG_STATE_HOME = target.stateHome;
+  try {
+    let state: WorkflowState = readState(target, sessionId);
+    let config = loadConfig(projectDir).config;
+    if (action !== undefined) {
+      const parsed = parseContinueActionOption(action);
+      if (parsed.action === 'apply' || parsed.action === 'discard')
+        throw new Error(`'${action}' does not answer a halt`);
+      const answered = await applyRecoveryAction({
+        projectDir,
+        sessionId,
+        state,
+        action: parsed.action,
+        bus: createRecoveryBus({ projectDir, sessionId }),
+        config,
+        ...(parsed.candidate !== undefined && { candidate: parsed.candidate }),
+      });
+      if (!answered.ok) throw new Error(answered.message);
+      state = answered.state;
+      config = answered.switchedConfig ?? config;
+    }
+    const preparation = await prepareExecution({
+      existingSession: ref,
+      feature: state.feature,
+      effectiveConfig: config,
+      policy: {
+        purpose: 'resume',
+        interaction: 'headless',
+        allowRepoRunners: true,
+        allowHooks: false,
+        unverifiedAuth: 'allowed',
+      },
+      signal: new AbortController().signal,
+      resumeState: state,
+    });
+    if (preparation.kind !== 'prepared')
+      throw new Error(`the resume was not prepared: ${preparation.kind}`);
+    await runWorkflow({
+      prepared: preparation.execution,
+      sinks: TEST_WORKFLOW_SINKS,
+      savedState: state,
+      steer: plainUserMessage(correction),
+      callbacks: {
+        onApprovalNeeded: async () => ({ approved: true }),
+        onComplete: () => undefined,
+      },
+    });
+    return readState(target, sessionId);
+  } finally {
+    process.env.XDG_STATE_HOME = stateHome;
+  }
 }
 
 async function waitForMarker(dir: string, timeoutMs: number): Promise<void> {

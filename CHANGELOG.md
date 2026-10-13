@@ -125,6 +125,7 @@
 - Claude Code retries, model fallbacks, refusals, denied tool calls and rate-limit warnings show as warning or error rows; its bookkeeping frames no longer reach the transcript.
 - A direct implementer's narration shows once.
 - A brief stopped inside any implementer continues with the partial output and your note.
+- A stopped brief keeps its work when the run continues. This applies after a stop or a *Seat down* halt, with or without a correction, and on the same tool or another tool. When the continued call finds the work done and changes nothing, the brief passes on the files it already wrote. It no longer fails and starts a retry that discards them.
 - Stops, plan approvals and End run are recorded in `session.jsonl`.
 - Your edits survive when a parked run reuses its worktree, and committed partial output in a kept worktree is still applied.
 - The external-edit check tells safe edits outside the current brief from real conflicts, names the affected brief, and keeps its actions visible on small terminals. **End run** at that question closes the run at once.
