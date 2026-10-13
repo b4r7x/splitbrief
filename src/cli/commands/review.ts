@@ -50,7 +50,12 @@ import {
   parseSeatSpecOption,
   type SeatSpec,
 } from '../options.js';
-import { canonicalizeProjectDir, ensureGitAndConfig, loadConfigOrExit } from '../setup.js';
+import {
+  assertGitRepo,
+  canonicalizeProjectDir,
+  ensureHeadlessConfig,
+  loadConfigOrExit,
+} from '../setup.js';
 import { cliPreparationPolicy, preparedExecutionOrThrow } from './start/readiness.js';
 
 const NO_SPECIFICATION =
@@ -125,7 +130,11 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
     )
     .action(async (opts: ReviewOpts) => {
       const projectDir = await canonicalizeProjectDir(opts);
-      await ensureGitAndConfig(projectDir);
+      await assertGitRepo(projectDir);
+      const initialInvocation = await ensureHeadlessConfig({
+        projectDir,
+        overrides: seatOverrides(opts.reviewer),
+      });
 
       const baseRef = opts.base;
       const untracked = (await withCliErrors(() => getGitStatus(projectDir))).not_added.filter(
@@ -145,13 +154,14 @@ export function registerReviewCommand(program: Command, deps: ReviewCommandDeps 
       // decides it once — the configured block, or the planner holding the seat —
       // and preparation then admits it as the reviewer slot, so the factory has
       // one path to take and no second reading of `config.reviewer` exists.
+      const base = initialInvocation ?? loaded.config;
       const declared = {
-        ...loaded.config,
-        reviewer: resolveReviewerRunner(loaded.config).runner,
+        ...base,
+        reviewer: resolveReviewerRunner(base).runner,
       };
       const { config, warnings } = resolveEffectiveConfig({
         base: declared,
-        overrides: seatOverrides(opts.reviewer),
+        ...(initialInvocation === undefined && { overrides: seatOverrides(opts.reviewer) }),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
       emitEffectiveConfigWarnings(warnings);

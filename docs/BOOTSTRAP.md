@@ -161,7 +161,7 @@ A bootstrap step that reaches detection after shutdown cannot start a refresh la
 - Resolves `projectDir` from the `--project` flag through `canonicalizeProjectDir()` (a path inside a git repository resolves to the repository root)
 - Asserts the directory is a git repo (hard exit otherwise)
 - Detects TTY and `CI` env to compute `useFullscreen` / `useMouse` / `useHover`
-- With no config: creates a default config when CLI runner overrides were given, else returns `needsSetup: true` so the router opens the setup screen
+- With no config: returns `needsSetup: true`, including when CLI runner overrides were given. Interactive start opens Setup. Both start paths select the persisted crew against its own connections, independently of invocation overrides. The shared resolver applies seat overrides to the original defaults and replaces only unoverridden seats with detected ready defaults. Partial overrides keep their original runner. Setup and headless start use the same availability check, including custom API connections through the existing provider probe. Setup checks both the persisted crew and the effective crew before saving `.splitbrief/config.yaml`. Headless start validates the effective crew before saving its detected proposal. The effective crew passes directly into preparation, so saving a different default cannot change the current invocation.
 
 It does **not** touch stores. Stores know nothing about TTY flags or the git check result. `setupWorkflow()` returns a `SetupResult` whose render flags the subcommand handler passes to `renderApp()`.
 

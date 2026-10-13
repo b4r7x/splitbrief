@@ -108,7 +108,7 @@ describe('artifactWrittenRowBlock', () => {
     );
 
     expect(rows.map(rowText)).toEqual([
-      'Tasks  2 lines',
+      'Tasks',
       '  # Tasks',
       '  - T001 Add the tool contract',
       '  ↳ .splitbrief/sessions/2026-08-10-add-tool-calling/tasks.md',

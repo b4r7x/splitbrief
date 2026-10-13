@@ -18,6 +18,7 @@ import { HEARTBEAT_STALENESS_MS } from '../sessions/lockfile-status.js';
 import { makeSessionLockfile } from '#testing/helpers/factories/session-lockfile.js';
 import { applyRunnerPreparationChecks, collectReadiness } from './collect.js';
 import { initConfig } from '../config/load/io.js';
+import { createDefaultConfig } from '../config/load/defaults.js';
 import { configPath } from '../config/load/document.js';
 import { flattenReadinessChecks } from './status.js';
 
@@ -325,7 +326,7 @@ describe('collectReadiness git posture', () => {
       join(tempDir, 'package.json'),
       JSON.stringify({ name: 'mono', workspaces: ['packages/*'] }),
     );
-    await initConfig(tempDir);
+    await initConfig(tempDir, createDefaultConfig());
 
     expect(readFileSync(configPath(tempDir), 'utf8')).not.toContain('isolation');
     const { report } = await collectReadiness({ projectDir: tempDir });

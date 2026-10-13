@@ -97,11 +97,13 @@ splitbrief start "fix the typo in src/auth.ts"     # your first task
 
 SPLITBRIEF operates on the git repository root. If you run it from a subdirectory, it canonicalizes the project to the repository toplevel (via `git rev-parse --show-toplevel`); pass `--project <dir>` to target an explicit directory.
 
-The setup screen needs a terminal. In CI, a Dockerfile, or any piped shell, `splitbrief init --yes` writes the default config without it — Claude Code as planner, a local Ollama model as implementer — and `splitbrief doctor` then tells you what is missing on that machine.
+The setup screen needs a terminal. In CI, a Dockerfile, or any piped shell, `splitbrief init --yes` detects ready tools and saves a crew without opening the picker. On a Codex-only machine, Codex fills PLAN, BUILD and REVIEW. If no crew is ready, sign in to your tools with `splitbrief init` before retrying.
 
 Here is what happens, step by step:
 
 1. `splitbrief init` opens the Crew screen — PLAN, BUILD and REVIEW on one surface, plus ready-made crews when the tools they need are installed and authenticated. Apply a crew, or press Enter on a seat to set it yourself, then Continue. It writes `.splitbrief/config.yaml`.
+
+   On a first run, Setup proposes tools that detection finds ready. It marks an unavailable selected seat as **Unavailable**. Without a config, `splitbrief start --plain "your change"`, `--json`, `spec`, `review` and `init --yes` save a detected ready crew. Start flags apply to that invocation. If detection finds no default crew, a start with every seat supplied through runner flags saves those runners; REVIEW inherits PLAN unless you set it explicitly. If any seat is unavailable, the command asks you to run `splitbrief init` and leaves the config absent.
 
    Setup shows no fallback. Set one in Settings › Fallback, directly below Crew, or write it in `.splitbrief/config.yaml` using [Configuration §fallback](./CONFIGURATION.md#fallback). The section has a PLAN, BUILD and REVIEW row. With none set, a Seat down halt pauses and asks.
 

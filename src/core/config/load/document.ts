@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import YAML, { isMap, isScalar, parseDocument, type Document } from 'yaml';
-import { SPLITBRIEF_DIR, TREES_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
+import { SPLITBRIEF_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
 import { ensureGitignore } from '../../../lib/fs.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/confined-fs-atomic.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
@@ -38,7 +38,6 @@ export interface ConfigDocumentEdit {
 
 export function ensureConfigGitignore(projectDir: string): void {
   ensureGitignore(projectDir, `${SPLITBRIEF_DIR}/`);
-  ensureGitignore(projectDir, `${TREES_DIR}/`);
 }
 
 function configRevision(rawBytes: Uint8Array, stat: BigIntStats): ConfigRevision {

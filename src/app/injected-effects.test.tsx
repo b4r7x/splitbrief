@@ -4,6 +4,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliDetectionFor } from '#testing/helpers/factories/detection.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -377,18 +378,22 @@ describe('App screens route to the supplied interaction ports', () => {
 
   it('sends Setup continue to the supplied prepare and record reader', async () => {
     const fx = fixture();
+    const request = detectionStore.beginRefresh({
+      contexts: {
+        readiness: 'injected-readiness',
+        modelsDev: 'injected-models-dev',
+        cliModels: 'injected-cli-models',
+      },
+    });
     expect(
-      detectionStore.hydrate({
-        cliTools: [],
-        providers: [],
-        fetchedAt: 10,
-        validatedAt: 10,
-        generation: 1,
-        requestId: 1,
-        contexts: {
-          readiness: 'injected-readiness',
-          modelsDev: 'injected-models-dev',
-          cliModels: 'injected-cli-models',
+      detectionStore.publish({
+        request,
+        result: {
+          cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'codex')],
+          providers: [],
+          catalog: {},
+          cliModels: [],
+          generation: 1,
         },
       }),
     ).toBe(true);

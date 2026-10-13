@@ -578,13 +578,13 @@ describe('ToolModelPicker discovery state', () => {
     detectionStore.beginRefresh({ contexts: catalogContexts });
     const ui = renderFeature(<ToolModelPicker slot="seat" role="planner" />);
     await tick(20);
-    expect(frameText(ui)).toContain('Waking your crew…');
+    expect(frameText(ui)).toContain('Checking your tools…');
     expect(frameText(ui)).not.toContain('Tools');
 
     publishOpenCodePlannerModels(['openrouter/deepseek-v4-flash']);
     await vi.waitFor(() => {
       const frame = frameText(ui);
-      expect(frame).not.toContain('Waking your crew…');
+      expect(frame).not.toContain('Checking your tools…');
       expect(frame).toContain('Tools');
       expect(frame).toContain('Models');
     });
@@ -599,7 +599,7 @@ describe('ToolModelPicker discovery state', () => {
     const frame = frameText(ui);
     expect(frame).toContain('refreshing…');
     expect(frame).toContain('Tools');
-    expect(frame).not.toContain('Waking your crew…');
+    expect(frame).not.toContain('Checking your tools…');
     ui.unmount();
   });
 
@@ -642,7 +642,7 @@ describe('ToolModelPicker discovery state', () => {
 
     // Warm start: the foreign record's rows are on screen, marked stale.
     const frameBefore = frameText(ui);
-    expect(frameBefore).not.toContain('Waking your crew…');
+    expect(frameBefore).not.toContain('Checking your tools…');
     expect(frameBefore).toContain('Tools');
     expect(frameBefore).toContain('Codex CLI');
     expect(frameBefore).toContain('OpenCode CLI');
@@ -661,7 +661,7 @@ describe('ToolModelPicker discovery state', () => {
     await tick(20);
 
     const frameDuring = frameText(ui);
-    expect(frameDuring).not.toContain('Waking your crew…');
+    expect(frameDuring).not.toContain('Checking your tools…');
     expect(frameDuring).toContain('refreshing…');
     expect(frameDuring).toContain(`${listRowLead('active')}OpenCode CLI`);
 
@@ -720,7 +720,7 @@ describe('ToolModelPicker discovery state', () => {
 
     await vi.waitFor(() => {
       const frameAfter = frameText(ui);
-      expect(frameAfter).not.toContain('Waking your crew…');
+      expect(frameAfter).not.toContain('Checking your tools…');
       expect(frameAfter).not.toContain('refreshing…');
       // The cursor never moved and the picker never remounted.
       expect(frameAfter).toContain(`${listRowLead('active')}OpenCode CLI`);
@@ -752,7 +752,7 @@ describe('ToolModelPicker discovery state', () => {
 
     await vi.waitFor(() => {
       const frameAfter = frameText(ui);
-      expect(frameAfter).not.toContain('Waking your crew…');
+      expect(frameAfter).not.toContain('Checking your tools…');
       expect(frameAfter).not.toContain('refreshing…');
       expect(frameAfter).toContain(`${listRowLead('active')}OpenAI Codex CLI`);
       expect(frameAfter).toContain('GPT-6 Codex');

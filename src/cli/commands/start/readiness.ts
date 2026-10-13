@@ -159,6 +159,7 @@ type StartPreparationInput = Readonly<{
   plannerContext?: string | undefined;
   attachedInputs?: readonly AttachedInput[] | undefined;
   opts: WorkflowOpts;
+  effectiveConfig?: Config | undefined;
   transport: 'interactive' | 'headless';
   emitReadiness: (report: ReadinessReport) => void;
   /** Where an interactive start asks for runner trust; without one it asks on the terminal. */
@@ -175,10 +176,12 @@ type StartPreparationInput = Readonly<{
 export async function prepareStartOutcome(
   input: StartPreparationInput,
 ): Promise<PreparationOutcome> {
-  const config = resolveRunConfig({
-    projectDir: input.projectDir,
-    opts: input.opts,
-  });
+  const config =
+    input.effectiveConfig ??
+    resolveRunConfig({
+      projectDir: input.projectDir,
+      opts: input.opts,
+    });
   clearStaleSessionForCli(input.projectDir);
   const interaction = input.transport;
   const outcome = await (input.prepare ?? prepareExecution)({

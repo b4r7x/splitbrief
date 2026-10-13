@@ -1833,6 +1833,22 @@ const planCardProjection: WorkflowFixtureProjection = {
   sidebarVisible: true,
   events: [
     {
+      type: 'tasks_planned',
+      ts: FIXED_TS,
+      phase: 'reviewing-plan',
+      tasks: PLAN_CARD_PLAN.tasks.map((spec, index) => {
+        const task = taskFromSpec(spec, VISUAL_FIXTURE_PROJECT_DIR);
+        return {
+          id: task.id,
+          title: task.title,
+          index,
+          file: task.suggestedFiles[0],
+          action: task.action,
+        };
+      }),
+      total: PLAN_CARD_PLAN.tasks.length,
+    },
+    {
       type: 'workflow_started',
       ts: FIXED_TS,
       phase: 'reviewing-plan',

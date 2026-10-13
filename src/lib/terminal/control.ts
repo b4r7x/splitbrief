@@ -36,6 +36,21 @@ export function installTerminalOutputErrorGuard(): void {
   };
   process.stdout.on('error', guard);
   process.stderr.on('error', guard);
+  // Ink's restore-cursor dependency writes to stderr at process exit, even when stdout owns the TUI.
+  const stderrWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (
+    chunk: string | Uint8Array,
+    encodingOrCallback?: BufferEncoding | ((err?: Error | null) => void),
+    callback?: (err?: Error | null) => void,
+  ) => {
+    const write =
+      chunk === terminalSequences.showCursor
+        ? process.stdout.write.bind(process.stdout)
+        : stderrWrite;
+    return typeof encodingOrCallback === 'string'
+      ? write(chunk, encodingOrCallback, callback)
+      : write(chunk, encodingOrCallback ?? callback);
+  };
 }
 
 // Returns whether the sequence was handed to stdout without a synchronous failure. A broken pipe

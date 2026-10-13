@@ -253,6 +253,17 @@ describe('HomeScreen', () => {
     Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
   });
 
+  it('shows the missing config and Setup save path once, then removes the notice after saving', async () => {
+    configStore.load(projectDir);
+    const ui = renderHome();
+    await flushEffects();
+    const notice = 'No config. Setup saves .splitbrief/config.yaml.';
+    expect(stripAnsiStyles(ui.lastFrame() ?? '').split(notice)).toHaveLength(2);
+    await configStore.save(makeConfig());
+    await vi.waitFor(() => expect(ui.lastFrame() ?? '').not.toContain('No config.'));
+    ui.unmount();
+  });
+
   it('passes the display feature, separate file context, and attachment metadata through preparation retries', async () => {
     const externalDir = createTempDir('home-outside-files-');
     const textPath = join(externalDir, 'notes.md');
@@ -351,7 +362,7 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleRow = lines.findIndex((line) => line.includes('Waking your crew…'));
+    const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
 
     expect(lines[titleRow + 1]).toContain(
       'PLAN GPT-6-Astra · BUILD Gemini 3.8 Flash (High) · REVIEW GPT-6.1-Sol',
@@ -374,7 +385,7 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
     const lines = stripAnsiStyles(ui.lastFrame() ?? '').split('\n');
-    const titleRow = lines.findIndex((line) => line.includes('Waking your crew…'));
+    const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
 
     expect(lines[titleRow + 1]).toContain('REVIEW = PLAN');
     const rawLine = (ui.lastFrame() ?? '').split('\n')[titleRow + 1] ?? '';
@@ -395,7 +406,7 @@ describe('HomeScreen', () => {
     const ui = renderHome();
     await flushEffects();
     const coldFrame = ui.lastFrame() ?? '';
-    expect(coldFrame).toContain('Waking your crew…');
+    expect(coldFrame).toContain('Checking your tools…');
     const anchorRow = coldFrame.split('\n').findIndex((line) => line.includes('Recent sessions'));
 
     detectionStore.hydrate({
@@ -409,7 +420,7 @@ describe('HomeScreen', () => {
     });
     await flushEffects();
     const settledFrame = ui.lastFrame() ?? '';
-    expect(settledFrame).not.toContain('Waking your crew…');
+    expect(settledFrame).not.toContain('Checking your tools…');
     expect(settledFrame).not.toContain('Tools ready');
     // The box floats in the slack between content and the bottom-anchored
     // composer: neither the recent-sessions block nor the input may move when
@@ -440,7 +451,7 @@ describe('HomeScreen', () => {
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
     expect(frame).toContain('Refreshing your tools…');
-    expect(frame).not.toContain('Waking your crew…');
+    expect(frame).not.toContain('Checking your tools…');
     ui.unmount();
   });
 
@@ -488,7 +499,7 @@ describe('HomeScreen', () => {
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');
     expect(frame).toContain('Tool check failed');
     expect(frame).toContain('Open /settings to retry.');
-    expect(frame).not.toContain('Waking your crew…');
+    expect(frame).not.toContain('Checking your tools…');
     ui.unmount();
   });
 
@@ -891,7 +902,7 @@ describe('HomeScreen', () => {
     expect(submittedRows.flatMap((row, index) => (row === idleRows[index] ? [] : [index]))).toEqual(
       [hintRow, idleRows.findIndex((row) => row.includes('Describe your feature…'))],
     );
-    expect(submittedRows.join('\n')).not.toContain('Waking your crew…');
+    expect(submittedRows.join('\n')).not.toContain('Checking your tools…');
 
     await tick(500);
     expect(stripAnsiStyles(ui.lastFrame() ?? '').split('\n')[hintRow]).toContain(CHECKING_STATUS);
@@ -925,7 +936,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('restore this draft');
-      expect(frame).not.toContain('Waking your crew…');
+      expect(frame).not.toContain('Checking your tools…');
     }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ESC);
@@ -933,7 +944,7 @@ describe('HomeScreen', () => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('restore this draft');
       expect(frame).toContain(DEFAULT_HOME_HINT);
-      expect(frame).not.toContain('Waking your crew…');
+      expect(frame).not.toContain('Checking your tools…');
     }, SESSION_FILTER_WAIT_MS);
     expect(routerStore.get()).toEqual({ screen: 'home' });
     ui.unmount();
@@ -951,7 +962,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(frame).toContain('keep this draft');
-      expect(frame).not.toContain('Waking your crew…');
+      expect(frame).not.toContain('Checking your tools…');
     }, SESSION_FILTER_WAIT_MS);
 
     await flushEffects();
@@ -995,7 +1006,7 @@ describe('HomeScreen', () => {
     await vi.waitFor(() => {
       const frame = ui.lastFrame() ?? '';
       expect(frame).toContain('cancel preparation');
-      expect(frame).not.toContain('Waking your crew…');
+      expect(frame).not.toContain('Checking your tools…');
     }, SESSION_FILTER_WAIT_MS);
 
     ui.stdin.write(ESC);

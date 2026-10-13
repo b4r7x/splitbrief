@@ -14,6 +14,7 @@ import {
 } from '../../core/config/accessors/implementer-profiles.js';
 import type { Config } from '../../core/schemas/config.js';
 import { configError } from '../../core/config/errors.js';
+import { selectInitialCrew } from '../../core/crew/default.js';
 import {
   cloneConfig,
   cloneValue,
@@ -71,7 +72,9 @@ function loadedState(projectDir: string, overrides: CLIOverrides): ConfigState {
   emitEffectiveConfigWarnings(warnings);
   return {
     config,
-    diskConfig: cloneConfig(loaded),
+    diskConfig: cloneConfig(
+      revision === null ? selectInitialCrew({ detected: null, overrides }).persisted : loaded,
+    ),
     rawYaml,
     revision,
     projectDir,
@@ -125,7 +128,13 @@ async function saveOnce(
         currentRevision: result.currentRevision,
       };
     }
-    const next = loadedState(projectDir, overrides);
+    const next = {
+      ...loadedState(projectDir, revision === null ? {} : overrides),
+      ...(revision === null && {
+        config: cloneConfig(updated),
+        overrides: cloneValue(overrides),
+      }),
+    };
     if (result.kind === 'saved') {
       if (!configRevisionsMatch(result.revision, next.revision)) {
         return { kind: 'conflict', ok: false, currentRevision: next.revision };
@@ -165,6 +174,22 @@ function useConfig(): Config {
   const config = store.use((s) => s.config);
   if (!config) throw configError.loadNotCalled('rendering');
   return config;
+}
+
+function setInitialCrew(config: Config): void {
+  store.set((state) => {
+    if (state.revision !== null) return state;
+    const { persisted, effective } = selectInitialCrew({
+      detected: config,
+      overrides: state.overrides,
+    });
+    return {
+      ...state,
+      config: cloneConfig(effective),
+      diskConfig: cloneConfig(persisted),
+      detectedContextLength: undefined,
+    };
+  });
 }
 
 function setContextLength(contextLength: number, detected = false) {
@@ -215,6 +240,7 @@ export const configStore = {
   refreshFromExecution,
   save,
   useConfig,
+  setInitialCrew,
   setContextLength,
   getDetectedContextLength,
   __testReset,

@@ -143,6 +143,7 @@ export function renderModelRow({
       />
     );
   }
+  const rowPlan = plan ?? planModelRows({ rows: [row], width: maxWidth, providerId: undefined });
   if (row.kind === 'auth') {
     // The value is the state, so the row carries no check; a row with nothing to
     // choose also carries no disclosure, and so says nothing about being steerable.
@@ -150,32 +151,29 @@ export function renderModelRow({
     return (
       <ListRow
         treeLead={treeLead(row.tree, row.last)}
-        label={`${AUTH_ROW_LABEL} ${row.unproven ? AUTH_UNPROVEN_WORD : word}`}
+        label={AUTH_ROW_LABEL}
+        metadata={row.unproven ? AUTH_UNPROVEN_WORD : word}
         state={isCursor ? 'active' : 'default'}
-        width={maxWidth}
+        width={rowPlan.childWidth}
+        keepWhole="metadata"
       />
     );
   }
   if (row.kind === 'axis') {
-    // The cell stays even when the row cannot step, or the sibling rows' trailing column shifts under it.
     return (
       <ListRow
         treeLead={treeLead(row.tree, row.last)}
         label={row.axis}
         state={isCursor ? 'active' : 'default'}
         metadata={row.value}
-        trailing={' '}
-        selected={false}
-        width={maxWidth}
+        width={rowPlan.childWidth}
         // The level is what the row steps; its axis name is the part a narrow row gives up.
         keepWhole="metadata"
       />
     );
   }
 
-  const planned = (
-    plan ?? planModelRows({ rows: [row], width: maxWidth, providerId: undefined })
-  ).rows.get(row.model.id);
+  const planned = rowPlan.rows.get(row.model.id);
   const label = planned?.label ?? row.model.id;
   return (
     <ListRow

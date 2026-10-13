@@ -87,10 +87,8 @@ export function rightRowActivation(
     case 'route':
     case 'axis':
       return 'confirm';
-    // Nothing to choose: the row states who decides rather than taking a key that
-    // would only pretend to change it.
     case 'auth':
-      return row.choices.length === 0 ? 'none' : 'confirm';
+      return 'confirm';
     case 'model': {
       if (row.expanded) return expansionDrafts(row.model) ? 'confirm' : 'collapse';
       // An option family's children are spellings of one route, never routes to
@@ -148,10 +146,7 @@ export function expandedRowHint(
 ): string | undefined {
   if (row === undefined || row.kind === 'route') return undefined;
   if (row.kind === 'action') return '⏎ browse';
-  // A row with nothing to choose drops its verb slot instead of promising a key it
-  // does not take; one that can step names the step the same way an axis does.
   if (row.kind === 'auth') {
-    if (row.choices.length === 0) return '';
     return row.steps ? `space cycle${SOFT_SEP}⏎ confirm` : '⏎ confirm';
   }
   // A sparse variant grid leaves an axis with nowhere to step, and the byline
@@ -196,6 +191,12 @@ export function confirmRow(
   // is saved on its own rather than through a model commit.
   if (row.kind === 'auth') {
     if (row.choices.length > 0) void actions.confirmAuthMethod(row.method);
+    else
+      confirmDraft(
+        row.model,
+        optionDraftOf(row.model, pickerViewStore.get().optionDraftId),
+        actions,
+      );
     return;
   }
   const draftId = pickerViewStore.get().optionDraftId;

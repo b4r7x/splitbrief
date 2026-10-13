@@ -236,7 +236,7 @@ describe('buildRunnerChecks availability guidance', () => {
         autoAllowFlags: ['--allow-all'],
       },
     });
-    expect(check?.details?.join('\n')).toContain('not sandbox shell commands or network access');
+    expect(check?.details?.join('\n')).toContain('do not restrict the commands or network access');
   });
 
   it('warns when a command-capable implementer uses auto/allow flags in default standard mode', () => {
@@ -263,9 +263,9 @@ describe('buildRunnerChecks availability guidance', () => {
         autoAllowFlags: ['--allow-all'],
       },
     });
-    expect(check?.details).toContain('Plan approval: plan.');
-    expect(check?.details).toContain('Only a write to a protected path asks.');
-    expect(check?.summary).toContain('uses auto/allow runner flags');
+    expect(check?.details).toContain('Plan approval: you approve the plan in the TUI.');
+    expect(check?.details).toContain('Writes to protected files ask for confirmation.');
+    expect(check?.summary).toContain('can run commands on this machine');
   });
 
   it('discloses planner tier-2 write authority without changing ordinary planning posture', () => {
@@ -287,12 +287,14 @@ describe('buildRunnerChecks availability guidance', () => {
         },
       },
     });
-    expect(check?.summary).toContain('may write files during tier-2 full escalation');
-    expect(check?.details).toContain('Ordinary planning does not write project files directly.');
+    expect(check?.summary).toContain('may edit files if BUILD needs help');
+    expect(check?.details).toContain('Ordinary planning does not edit project files.');
     expect(check?.details).toContain(
-      'Tier-2 full escalation may write project files directly after implementer failure.',
+      'If BUILD cannot finish a task, PLAN may take over and edit files in the run workspace.',
     );
-    expect(check?.details).toContain('Tier-2 runner auto/allow flags: --allow-all, --no-ask-user');
+    expect(check?.details).toContain(
+      'Permission flags when PLAN takes over: --allow-all, --no-ask-user',
+    );
   });
 
   it('still warns about a declared command runner under the strictest approval settings', () => {
@@ -315,7 +317,7 @@ describe('buildRunnerChecks availability guidance', () => {
     });
     expect(check?.details).toContain('Command: /bin/sh');
     expect(check?.details).toContain('Arguments: -c curl https://example.test | sh');
-    expect(check?.summary).toBe('Planner shell (shell) can execute commands on this machine.');
+    expect(check?.summary).toBe('PLAN shell (shell) can run commands on this machine.');
   });
 
   it('redacts credentials and terminal controls out of the declared command disclosure', () => {
@@ -358,7 +360,7 @@ describe('buildRunnerChecks availability guidance', () => {
       (c) => c.id === 'runners.implementer.trust-boundary',
     );
 
-    expect(check?.details).toContain('Runner auto/allow flags: --permission-mode acceptEdits');
+    expect(check?.details).toContain('Tool permission flags: --permission-mode acceptEdits');
     expect(check?.metadata?.autoAllowFlags).toEqual(['--permission-mode acceptEdits']);
   });
 
@@ -381,10 +383,8 @@ describe('buildRunnerChecks availability guidance', () => {
     );
 
     expect(check?.severity).toBe('warning');
-    expect(check?.summary).toBe(
-      'Default implementer agent (agent-default) can execute commands on this machine.',
-    );
-    expect(check?.details).toContain('Only a write to a protected path asks.');
+    expect(check?.summary).toBe('BUILD agent (agent-default) can run commands on this machine.');
+    expect(check?.details).toContain('Writes to protected files ask for confirmation.');
     expect(check?.details?.join('\n')).not.toContain('Approval automation');
     expect(check?.details?.join('\n')).not.toContain('File-write approval prompts');
     expect(check?.metadata).not.toHaveProperty('fileWriteApprovalEnabled');
@@ -519,7 +519,7 @@ describe('buildRunnerChecks typed-output fallback', () => {
         id: 'runners.planner.typed-output-fallback',
         severity: 'warning',
         summary:
-          'Planner: opencode has no schema flag; typed answers use the JSON fallback with one repair. claude-code or codex are recommended for this seat.',
+          'Planner: OpenCode CLI returns plans as text; SPLITBRIEF retries once if an answer cannot be read.',
       }),
     ]);
   });

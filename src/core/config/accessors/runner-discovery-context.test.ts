@@ -68,6 +68,47 @@ describe('projectRunnerDiscoveryContext', () => {
     expect(context.kind).toBe('cli');
     expect(context.endpointIdentity).toBeUndefined();
   });
+
+  it('separates identical inline credentials by their configured seat', () => {
+    const runner = apiSeat({ apiBase: 'http://localhost:1234/v1', apiKey: INLINE_KEY });
+    const config = makeConfig({ planner: runner, implementer: runner, reviewer: runner });
+    const planner = contextFor(config, 'planner').credentialDomain;
+    const implementer = contextFor(config, 'implementer').credentialDomain;
+    const reviewer = contextFor(config, 'reviewer').credentialDomain;
+
+    expect(planner).not.toEqual(implementer);
+    expect(planner).not.toEqual(reviewer);
+    expect(implementer).not.toEqual(reviewer);
+    expect(contextFor(structuredClone(config), 'reviewer').credentialDomain).toEqual(reviewer);
+
+    const { reviewer: _reviewer, ...inherited } = config;
+    expect(contextFor(inherited, 'reviewer').credentialDomain).toEqual(
+      contextFor(inherited, 'planner').credentialDomain,
+    );
+  });
+
+  it('separates identical profiles from each other and their top-level mirror', () => {
+    const runner = apiSeat({ apiBase: 'http://localhost:1234/v1', apiKey: INLINE_KEY });
+    const mirrored = makeConfig({ implementer: runner });
+    const profiles = { primary: mirrored.implementer, secondary: mirrored.implementer };
+    const config = {
+      ...mirrored,
+      implementerProfiles: {
+        default: 'primary',
+        profiles,
+      },
+    };
+    const primary = contextFor(config, 'implementer').credentialDomain?.credentialSource;
+    const secondary = contextFor(
+      { ...config, implementerProfiles: { default: 'secondary', profiles } },
+      'implementer',
+    ).credentialDomain?.credentialSource;
+
+    expect(primary).not.toEqual(secondary);
+    expect(primary).not.toEqual(
+      contextFor(mirrored, 'implementer').credentialDomain?.credentialSource,
+    );
+  });
 });
 
 describe('runnerDiscoveryContextKey', () => {

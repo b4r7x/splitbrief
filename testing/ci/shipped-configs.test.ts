@@ -105,7 +105,7 @@ describe('committed example configs', () => {
 describe('the product writes what the product reads', () => {
   it('loads back exactly what initConfig writes', async () => {
     await withProject(async (projectDir) => {
-      await initConfig(projectDir);
+      await initConfig(projectDir, createDefaultConfig());
       const result = loadConfig(projectDir);
       expect(result.warnings).toEqual([]);
       expect(result.config).toStrictEqual(createDefaultConfig());

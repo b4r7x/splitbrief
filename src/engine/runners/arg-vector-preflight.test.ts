@@ -442,7 +442,7 @@ describe('collectArgVectorPreflightChecks', () => {
       severity: 'warning',
       metadata: { deprecated: ['--json'], unsupported: [] },
     });
-    expect(check?.fix).toBeUndefined();
+    expect(check?.fix).toContain('remove these options from .splitbrief/config.yaml');
   });
 
   it('reports ok when every emitted flag is advertised', async () => {
@@ -589,7 +589,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       }),
     ]);
     expect(checks[0]?.details).toContain(
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
+      'Command options: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
     );
   });
 
@@ -621,7 +621,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
+      'Command options: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
     ]);
   });
 
@@ -648,7 +648,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
+      'Command options: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
     ]);
   });
 
@@ -679,10 +679,10 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
-      'Emitted argv: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd /project -',
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
+      'Command options: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
+      'Command options: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
+      'Command options: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd /project -',
+      'Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
   });
 
@@ -695,7 +695,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: --model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
+      'Command options: --model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
     ]);
   });
 
@@ -737,7 +737,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       .filter((line) => !line.includes('-c, --config'))
       .join('\n');
     const vectors = (checks[0]?.details ?? []).map((detail) =>
-      detail.replace('Emitted argv: ', '').split(' '),
+      detail.replace('Command options: ', '').split(' '),
     );
 
     expect(vectors).toHaveLength(4);
@@ -794,8 +794,8 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan <PROMPT>',
-      'Emitted argv: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent build <PROMPT>',
+      'Command options: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan <PROMPT>',
+      'Command options: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent build <PROMPT>',
     ]);
   });
 
@@ -823,7 +823,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
+      'Command options: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
     ]);
   });
 
@@ -835,7 +835,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       severity: 'ok',
     });
     expect(checks[0]?.details).toEqual([
-      'Emitted argv: run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build <PROMPT>',
+      'Command options: run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build <PROMPT>',
     ]);
   });
 
@@ -1112,10 +1112,10 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       }),
     ]);
     expect(checks[0]?.details).toEqual([
-      `Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd ${project} -`,
-      `Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd ${project} -`,
-      `Emitted argv: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd ${project} -`,
-      'Emitted argv: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
+      `Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd ${project} -`,
+      `Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd ${project} -`,
+      `Command options: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd ${project} -`,
+      'Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
     expect(helpInvocations(log)).toEqual(['--help', 'exec --help']);
   });

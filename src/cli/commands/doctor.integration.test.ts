@@ -780,7 +780,7 @@ describe('doctor command', () => {
     );
     expect(argVector?.severity).toBe('ok');
     expect(argVector?.details).toEqual([
-      'Emitted argv: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
+      'Command options: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
     ]);
   });
 
@@ -793,7 +793,7 @@ describe('doctor command', () => {
       (check) => check.id === 'runners.cli.claude-code.arg-vector.planner',
     );
     expect(argVector?.severity).toBe('ok');
-    expect(argVector?.summary).toContain('could not be compared');
+    expect(argVector?.summary).toContain('command options are configured');
     expect(checks.map((check) => check.id)).toContain('runners.cli.claude-code.readiness');
   });
 

@@ -30,6 +30,35 @@ afterEach(() => {
 });
 
 describe('picker tree geometry', () => {
+  it.each(
+    ['overlay-picker-claude-effort-set', 'overlay-picker-opencode-expanded'].flatMap((scenarioId) =>
+      CASES.map(({ viewport }) => ({ scenarioId, viewport })),
+    ),
+  )(
+    'aligns auth and effort value edges in $scenarioId at $viewport.cols columns',
+    async ({ scenarioId, viewport }) => {
+      const scenario = requireScenario(scenarioId);
+      const checkpoint = requireCheckpoint(scenario);
+      const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        const lines = stripVTControlCharacters(frame).split('\n');
+        const auth = lines.find((line) => line.includes('─ auth '));
+        const effort = lines.find((line) => line.includes('─ effort '));
+        expect(auth).toBeDefined();
+        expect(effort).toBeDefined();
+        const authValue = auth?.indexOf('CLI decides');
+        const effortValue = effort?.match(/\b(auto|high)\b/);
+        expect(authValue).toBeGreaterThan(-1);
+        expect(effortValue, effort).not.toBeNull();
+        expect((authValue ?? -1) + 'CLI decides'.length).toBe(
+          (effortValue?.index ?? -1) + (effortValue?.[0].length ?? 0),
+        );
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
   it.each(CASES)(
     'pins OpenCode tree columns at $viewport.cols x $viewport.rows, size cell $sizeCell',
     async (geometryCase) => {
@@ -147,13 +176,21 @@ describe('picker tree geometry', () => {
 
         const authRows = classified.filter((entry) => lineOf(entry.row).includes('─ auth '));
         expect(authRows).toHaveLength(1);
+        const valueRows = classified.filter((entry) =>
+          /─ (?:auth|effort|thinking|speed) /.test(lineOf(entry.row)),
+        );
+        const valueEdges = valueRows.map((entry) =>
+          lastInkColumnBefore(entry.row, trailingColumn + 3),
+        );
+        expect(valueEdges.length).toBeGreaterThanOrEqual(2);
+        expect(new Set(valueEdges).size).toBe(1);
         for (const entry of classified) {
           if (authRows.includes(entry)) {
-            // Auth has one left-aligned label and value, with no metadata or disclosure cell.
-            expect(lineOf(entry.row.slice(entry.column, trailingColumn + 3)).trim()).toBe(
-              `${branch}─ auth CLI decides`,
-            );
+            expect(lineOf(entry.row)).toContain('CLI decides');
             expect(disclosureEntries.some((item) => item.rowIndex === entry.rowIndex)).toBe(false);
+          }
+          if (valueRows.includes(entry)) {
+            expect(lineOf(entry.row.slice(entry.column))).not.toContain(ELLIPSIS);
             continue;
           }
           let modelAbove: (typeof disclosureEntries)[number] | undefined;
@@ -170,10 +207,6 @@ describe('picker tree geometry', () => {
               'the list drops the size cell for every row at this width, so the parent ends at its label',
             ).toBeLessThan(trailingColumn - 2);
           }
-          // A child's value ends on the parent's size-cell edge, or, with no parent cell, two cells
-          // before the chevron. Words outrank that edge: a value too wide for it runs on into the
-          // blank chevron and check cells, and one that still does not fit is given up whole,
-          // leaving the child's one-word label.
           const valueEdge =
             geometryCase.sizeCell === 'kept'
               ? lastInkColumnBefore(modelAbove.row, trailingColumn)
@@ -190,7 +223,7 @@ describe('picker tree geometry', () => {
             end === valueEdge ||
               end === trailingColumn - 1 ||
               (end < valueEdge && !words.includes(' ')),
-            `a child's value ends on the value edge, runs on past it, or goes whole: ${words}`,
+            `a route's value ends on the value edge or goes whole: ${words}`,
           ).toBe(true);
         }
       } finally {

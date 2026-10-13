@@ -356,8 +356,7 @@ async function readRepoPosture(
   const status = await getGitStatus(projectDir);
   const untracked = new Set(status.not_added);
   // The dirty-worktree check is about the operator's own edits. SPLITBRIEF's
-  // state directory and the worktrees it creates under `.trees/` live inside the
-  // project and show up in git status whenever they are not ignored, so counting
+  // state directory and old `.trees/` directories can show up in git status, so counting
   // them would report the tool's own bookkeeping as local work the run might
   // overwrite.
   const dirtyFiles = status.files

@@ -250,14 +250,16 @@ export function cli(
     timeoutMs: RUN_TIMEOUT_MS,
   },
 ): ReturnType<typeof spawnCli> {
+  const diagnostics = args[0] === 'init' || args[0] === 'doctor';
+  const oneShot = args[0] === 'spec' || args[0] === 'review';
   return spawnCli({
     args: [
       '--import',
       'tsx',
       'src/cli.ts',
       ...args,
-      options.json === true ? '--json' : '--plain',
-      '--allow-repo-runners',
+      ...(options.json === true ? ['--json'] : diagnostics || oneShot ? [] : ['--plain']),
+      ...(diagnostics ? [] : ['--allow-repo-runners']),
       '--project',
       target.projectDir,
     ],

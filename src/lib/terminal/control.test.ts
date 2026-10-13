@@ -48,6 +48,29 @@ describe('terminal control', () => {
     process.stdout.write = originalWrite;
   });
 
+  it('routes dependency cursor restoration to stdout and keeps diagnostics on stderr', () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const originalStderr = process.stderr.write;
+    process.stdout.write = ((chunk: string) => {
+      stdout.push(chunk);
+      return true;
+    }) as typeof process.stdout.write;
+    process.stderr.write = ((chunk: string) => {
+      stderr.push(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      installTerminalOutputErrorGuard();
+      process.stderr.write(terminalSequences.showCursor);
+      process.stderr.write('A diagnostic\n');
+      expect(stdout).toEqual([terminalSequences.showCursor]);
+      expect(stderr).toEqual(['A diagnostic\n']);
+    } finally {
+      process.stderr.write = originalStderr;
+    }
+  });
+
   it('writes terminal input mode enable and disable sequences', () => {
     const written: string[] = [];
     process.stdout.write = ((chunk: string) => {

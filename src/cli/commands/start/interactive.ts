@@ -1,13 +1,11 @@
 import { createElement } from 'react';
 import { App } from '../../../app/root.js';
-import { COLD_START_STDERR_LINE } from '../../../core/discovery/copy.js';
 import { assertInteractiveTty, setupWorkflow } from '../../setup.js';
 import { initStoresForTuiMount } from '../../bootstrap/init.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { CHECKING_TOOLS_STAGE, preparationStore } from '../../../stores/navigation/preparation.js';
 import { openApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
-import { hasRememberedDetection } from '../../../engine/detection/cache.js';
 import {
   releasePreparedExecutionOwnership,
   type PreparationOutcome,
@@ -22,8 +20,6 @@ import type { InteractiveDispatchArgs } from './types.js';
 export async function runInteractiveStart(args: InteractiveDispatchArgs): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, attachedInputs, opts } = args;
   assertInteractiveTty('use --json or --plain');
-  // The line claims a first run, so it is only true while nothing is remembered.
-  if (!hasRememberedDetection(projectDir)) process.stderr.write(COLD_START_STDERR_LINE);
   const { useFullscreen, useMouse, useHover, needsSetup } = await setupWorkflow(opts);
   const { awaitDiscovery } = await initStoresForTuiMount(projectDir, opts);
 

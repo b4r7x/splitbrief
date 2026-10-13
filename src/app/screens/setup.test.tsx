@@ -25,6 +25,7 @@ import type {
   DetectionRefreshOutcomes,
   DetectionServiceResult,
 } from '../../engine/detection/service.js';
+import { createProductionDetectionDeps } from '../../engine/detection/deps.js';
 import type { PrepareExecutionInput } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import type {
   PreparationOutcome,
@@ -233,8 +234,379 @@ describe('SetupScreen', () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     terminalSizeStore.reset();
     approvalPromptStore.__testReset();
+  });
+
+  it('proposes a ready crew without saving it and explains the first save', async () => {
+    await withTempDir('setup-ready-default', async (projectDir) => {
+      configStore.load(projectDir, { plannerEffort: 'high' });
+      configStore.setContextLength(8192, true);
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'opencode')],
+        providers: [{ provider: 'ollama', available: false, isLocal: true }],
+      });
+      const ui = renderFeature(<SetupScreen />);
+      await vi.waitFor(() => {
+        expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+        expect(configStore.get().config?.planner.effort).toBe('high');
+        expect(configStore.getDetectedContextLength()).toBeUndefined();
+        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+        expect(frame).toContain('No config. Setup saves .splitbrief/config.yaml.');
+        expect(frame).not.toContain('Ollama');
+      });
+      expect(existsSync(configPath(projectDir))).toBe(false);
+      await continueSetup(ui);
+      await vi.waitFor(() => expect(existsSync(configPath(projectDir))).toBe(true));
+      expect(loadConfig(projectDir).config.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+      expect(loadConfig(projectDir).config.planner.effort).toBeUndefined();
+      ui.unmount();
+    });
+  });
+
+  it('marks an unavailable configured build seat without replacing the choice', async () => {
+    await withTempDir('setup-unavailable', async (projectDir) => {
+      configStore.load(projectDir);
+      await configStore.save(makeConfig());
+      const saved = readFileSync(configPath(projectDir), 'utf8');
+      const chosen = configStore.get().config?.implementer;
+      freshDiscovery(beginDiscovery(), 1, INSTALLED_RUNNERS);
+      const ui = renderFeature(<SetupScreen />);
+      await vi.waitFor(() => {
+        const build = stripAnsiStyles(ui.lastFrame() ?? '')
+          .split('\n')
+          .find((row) => row.includes('BUILD'));
+        expect(build).toContain('Unavailable');
+      });
+      expect(configStore.get().config?.implementer).toEqual(chosen);
+      await continueSetup(ui);
+      expect(routerStore.get().screen).toBe('setup');
+      expect(readFileSync(configPath(projectDir), 'utf8')).toBe(saved);
+      ui.unmount();
+    });
+  });
+
+  it('uses the current seat catalog when the local model is ready', async () => {
+    await withTempDir('setup-local-ready', async (projectDir) => {
+      configStore.load(projectDir);
+      const config = configStore.get().config;
+      if (config === null) throw new Error('Expected a loaded config');
+      const { sourceContexts } = createProductionDetectionDeps({ config, projectDir });
+      freshDiscovery(beginDiscovery(), 1);
+      detectionStore.setDetection({
+        ...INSTALLED_RUNNERS,
+        providerOutcomes: sourceContexts.configuredProviders?.map((connection) => ({
+          connection,
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'installed-coder' }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        })),
+      });
+      const ui = renderFeature(<SetupScreen />);
+      await vi.waitFor(() => {
+        expect(configStore.get().config?.implementer).toMatchObject({
+          kind: 'api',
+          model: 'installed-coder',
+        });
+        const build = stripAnsiStyles(ui.lastFrame() ?? '')
+          .split('\n')
+          .find((row) => row.includes('BUILD'));
+        expect(build).not.toContain('Unavailable');
+      });
+      await continueSetup(ui);
+      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      expect(loadConfig(projectDir).config.implementer).toMatchObject({
+        kind: 'api',
+        model: 'installed-coder',
+        apiBase: 'http://localhost:11434/v1',
+      });
+      ui.unmount();
+    });
+  });
+
+  it.each([true, false])(
+    'keeps an endpoint override out of the persisted default crew, explicit tool=%s',
+    async (explicitTool) => {
+      await withTempDir('setup-api-override', async (projectDir) => {
+        configStore.load(projectDir, {
+          implementer: {
+            ...(explicitTool && { tool: 'ollama' }),
+            model: 'custom-coder',
+            apiBase: 'http://127.0.0.1:12434/v1',
+          },
+        });
+        const effective = configStore.get().config;
+        if (effective === null) throw new Error('Expected a loaded config');
+        const { sourceContexts } = createProductionDetectionDeps({ config: effective, projectDir });
+        freshDiscovery(beginDiscovery(), 1);
+        detectionStore.setDetection({
+          ...INSTALLED_RUNNERS,
+          providerOutcomes: sourceContexts.configuredProviders?.map((connection) => ({
+            connection,
+            state: 'fresh',
+            catalog: 'populated',
+            models: [{ id: 'custom-coder' }],
+            fetchedAt: 1,
+            validatedAt: 1,
+          })),
+        });
+        const ui = renderFeature(<SetupScreen />);
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+        await continueSetup(ui);
+        await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+        const saved = loadConfig(projectDir).config;
+        expect(saved.implementer).toEqual({ kind: 'cli', tool: 'codex' });
+        expect(configStore.get().config?.implementer).toMatchObject({
+          kind: 'api',
+          apiBase: 'http://127.0.0.1:12434/v1',
+          model: 'custom-coder',
+        });
+        ui.unmount();
+        configStore.load(projectDir);
+        expect(configStore.get().config?.implementer).toEqual(saved.implementer);
+      });
+    },
+  );
+
+  it.each([true, false])(
+    'checks a custom API seat with an inline credential, listed model=%s',
+    async (listed) => {
+      await withTempDir('setup-custom-provider', async (projectDir) => {
+        configStore.load(projectDir);
+        await configStore.save(
+          makeConfig({
+            implementer: {
+              provider: 'custom-api',
+              apiBase: 'https://custom.example.test/v1',
+              apiKey: 'inline-test-key',
+              model: 'custom-coder',
+            },
+          }),
+        );
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async () =>
+            Response.json({ data: [{ id: listed ? 'custom-coder' : 'other-model' }] }),
+          ),
+        );
+        freshDiscovery(beginDiscovery(), 1);
+        const ui = renderFeature(<SetupScreen />);
+        await continueSetup(ui);
+        if (listed) await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+        else {
+          expect(routerStore.get().screen).toBe('setup');
+          expect(ui.lastFrame() ?? '').toContain('Unavailable');
+        }
+        expect(loadConfig(projectDir).config.implementer).toMatchObject({ provider: 'custom-api' });
+        ui.unmount();
+        vi.unstubAllGlobals();
+      });
+    },
+  );
+
+  it('refuses to save a persisted endpoint that only its override makes ready', async () => {
+    await withTempDir('setup-persisted-api-unavailable', async (projectDir) => {
+      configStore.load(projectDir);
+      await configStore.save(makeConfig());
+      const saved = readFileSync(configPath(projectDir), 'utf8');
+      configStore.load(projectDir, {
+        implementer: { apiBase: 'http://127.0.0.1:12434/v1' },
+      });
+      const effective = configStore.get().config;
+      if (effective === null) throw new Error('Expected a loaded config');
+      const { sourceContexts } = createProductionDetectionDeps({ config: effective, projectDir });
+      freshDiscovery(beginDiscovery(), 1);
+      detectionStore.setDetection({
+        ...INSTALLED_RUNNERS,
+        providerOutcomes: sourceContexts.configuredProviders?.map((connection) => ({
+          connection,
+          state: 'fresh',
+          catalog: 'populated',
+          models: [{ id: 'qwen2.5-coder:7b' }],
+          fetchedAt: 1,
+          validatedAt: 1,
+        })),
+      });
+      const ui = renderFeature(<SetupScreen />);
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+      await continueSetup(ui);
+      expect(routerStore.get().screen).toBe('setup');
+      expect(readFileSync(configPath(projectDir), 'utf8')).toBe(saved);
+      expect(ui.lastFrame() ?? '').toContain('Unavailable');
+      ui.unmount();
+    });
+  });
+
+  it.each(['detection', 'unmount', 'exit'] as const)(
+    'does not save when %s changes during a connection check',
+    async (change) => {
+      await withTempDir('setup-changing-detection', async (projectDir) => {
+        configStore.load(projectDir, {
+          implementer: { apiBase: 'http://127.0.0.1:12434/v1', model: 'custom-coder' },
+        });
+        freshDiscovery(beginDiscovery(), 1, {
+          cliTools: [cliDetectionFor('ready', 'claude-code')],
+          providers: [],
+        });
+        let release: (() => void) | undefined;
+        let started = false;
+        let hold = false;
+        vi.stubGlobal(
+          'fetch',
+          vi.fn(async () => {
+            if (hold) {
+              started = true;
+              await new Promise<void>((resolve) => {
+                release = resolve;
+              });
+            }
+            return Response.json({ models: [{ name: 'custom-coder' }] });
+          }),
+        );
+        const ui = renderFeature(<SetupScreen />);
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Continue'));
+        await tick(20);
+        hold = true;
+        await continueSetup(ui);
+        await vi.waitFor(() => expect(started).toBe(true));
+        if (change === 'detection')
+          detectionStore.setDetection({
+            cliTools: [cliDetectionFor('unavailable', 'claude-code')],
+            providers: [],
+          });
+        else if (change === 'unmount') ui.unmount();
+        else {
+          ui.stdin.write(ESC);
+          await tick(20);
+        }
+        hold = false;
+        release?.();
+        await tick(50);
+        expect(existsSync(configPath(projectDir))).toBe(false);
+        expect(routerStore.get().screen).toBe('setup');
+        ui.unmount();
+      });
+    },
+  );
+
+  it('waits for a fresh proposal after abandoned Setup and a failed cached refresh', async () => {
+    await withTempDir('setup-abandoned-cache', async (projectDir) => {
+      configStore.load(projectDir);
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'opencode')],
+        providers: [],
+      });
+      const abandoned = renderFeature(<SetupScreen />);
+      await vi.waitFor(() => expect(abandoned.lastFrame() ?? '').toContain(CREW_TITLE));
+      abandoned.stdin.write(ESC);
+      await tick(20);
+      abandoned.unmount();
+      expect(existsSync(configPath(projectDir))).toBe(false);
+
+      configStore.load(projectDir);
+      detectionStore.reset();
+      expect(
+        detectionStore.hydrate({
+          cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'opencode')],
+          providers: [],
+          fetchedAt: 1,
+          validatedAt: 1,
+          generation: 1,
+          requestId: 1,
+          contexts: DISCOVERY_CONTEXTS,
+        }),
+      ).toBe(true);
+      const request = beginDiscovery();
+      const ui = renderFeature(<SetupScreen />);
+      await flushEffects();
+      expect(ui.lastFrame() ?? '').toContain('Choose your crew after the tool check.');
+      expect(ui.lastFrame() ?? '').not.toContain('Continue');
+      expect(ui.lastFrame() ?? '').not.toContain('Ollama');
+      failedDiscovery(request, 2);
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool check failed'));
+      expect(ui.lastFrame() ?? '').not.toContain('Continue');
+      ui.stdin.write(ENTER);
+      await tick(20);
+      expect(existsSync(configPath(projectDir))).toBe(false);
+
+      freshDiscovery(beginDiscovery(), 3, {
+        cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'opencode')],
+        providers: [],
+      });
+      await vi.waitFor(() => {
+        expect(ui.lastFrame() ?? '').toContain(CREW_TITLE);
+        expect(ui.lastFrame() ?? '').not.toContain('Ollama');
+        expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+      });
+      await continueSetup(ui);
+      await vi.waitFor(() => expect(existsSync(configPath(projectDir))).toBe(true));
+      expect(loadConfig(projectDir).config.implementer).toEqual({ kind: 'cli', tool: 'opencode' });
+      ui.unmount();
+    });
+  });
+
+  it('blocks Continue when a selected seat becomes unavailable', async () => {
+    await withTempDir('setup-unavailable-continue', async (projectDir) => {
+      configStore.load(projectDir);
+      freshDiscovery(beginDiscovery(), 1);
+      const ui = renderFeature(<SetupScreen />);
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+      detectionStore.setDetection({
+        cliTools: [
+          cliDetectionFor('ready', 'claude-code'),
+          cliDetectionFor('unavailable', 'codex'),
+        ],
+        providers: [],
+      });
+      await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Unavailable'));
+      await continueSetup(ui);
+      expect(existsSync(configPath(projectDir))).toBe(false);
+      expect(routerStore.get().screen).toBe('setup');
+      expect(ui.lastFrame() ?? '').toContain('Choose a ready tool and model');
+      ui.unmount();
+    });
+  });
+
+  it('saves explicit shell seats and completes when no detected crew is ready', async () => {
+    await withTempDir('setup-explicit-shell-crew', async (projectDir) => {
+      configStore.load(projectDir, {
+        planner: { command: process.execPath },
+        implementer: { command: process.execPath, model: 'fixture' },
+      });
+      freshDiscovery(beginDiscovery(), 1, {
+        cliTools: [
+          cliDetectionFor('unavailable', 'claude-code'),
+          cliDetectionFor('unavailable', 'codex'),
+        ],
+        providers: [{ provider: 'ollama', available: false, isLocal: true }],
+      });
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+      const ui = renderFeature(<SetupScreen />);
+      try {
+        await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain(CREW_TITLE));
+        await continueSetup(ui);
+        expect(feedbackStore.get().message).not.toBe(
+          'Choose a ready tool and model for each unavailable seat.',
+        );
+        expect(ui.lastFrame() ?? '').not.toContain(
+          'Choose a ready tool and model for each unavailable seat.',
+        );
+        await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+        const saved = loadConfig(projectDir).config;
+        expect(saved.planner).toMatchObject({ kind: 'shell', command: process.execPath });
+        expect(saved.implementer).toMatchObject({
+          kind: 'shell',
+          command: process.execPath,
+          model: 'fixture',
+        });
+        expect(configStore.get().diskConfig).toEqual(saved);
+      } finally {
+        ui.unmount();
+      }
+    });
   });
 
   it('shows generic cold initialization and reaches the crew surface once discovery is actionable', async () => {
@@ -243,8 +615,9 @@ describe('SetupScreen', () => {
     await flushEffects();
 
     const cold = ui.lastFrame() ?? '';
-    expect(cold).toContain('Waking your crew…');
-    expect(cold).toContain('first run — results are remembered');
+    expect(cold).toContain('Checking your tools…');
+    expect(cold).toContain('Choose your crew after the tool check.');
+    expect(cold).not.toContain('Ollama');
 
     expect(cold).not.toContain('No planner');
 
@@ -264,6 +637,14 @@ describe('SetupScreen', () => {
 
   it('keeps remembered rows through warm refresh success and failure', async () => {
     terminalSizeStore.__testReset({ cols: 80, rows: 24 });
+    configStore.__testReset({
+      projectDir: '/tmp/project',
+      config: makeConfig(),
+      revision: {
+        rawSha256: 'saved-config',
+        fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
+      },
+    });
     expect(
       detectionStore.hydrate({
         ...INSTALLED_RUNNERS,
@@ -540,6 +921,12 @@ describe('SetupScreen', () => {
 
   it('yields the blank spacer rows, never a seat, and keeps a save error to one line at the smallest supported viewport', async () => {
     terminalSizeStore.__testReset({ cols: 60, rows: 18 });
+    freshDiscovery(beginDiscovery(), 1);
+    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
+      cols: 60,
+      rows: 18,
+    });
+    await flushEffects();
     configStore.__testReset({
       projectDir: '/tmp/project',
       config: makeConfig({
@@ -548,25 +935,10 @@ describe('SetupScreen', () => {
         escalation: { intermediateProvider: 'ollama', intermediateModel: 'llama3.1' },
       }),
     });
-    expect(
-      detectionStore.hydrate({
-        ...INSTALLED_RUNNERS,
-        fetchedAt: 10,
-        validatedAt: 10,
-        generation: 1,
-        requestId: 1,
-        contexts: DISCOVERY_CONTEXTS,
-      }),
-    ).toBe(true);
     beginDiscovery();
     feedbackStore.setError(
       'Failed to save config: EACCES permission denied while writing splitbrief.yaml in this project',
     );
-
-    const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />, {
-      cols: 60,
-      rows: 18,
-    });
     await flushEffects();
 
     const lines = stripAnsiStyles(ui.lastFrame() ?? '')
@@ -580,9 +952,10 @@ describe('SetupScreen', () => {
     expect(lines.filter((line) => line.includes('Failed to save config'))).toHaveLength(1);
     expect(lines.join('\n')).not.toContain('splitbrief.yaml');
     expect(lines.join('\n')).toContain('Continue');
-    // The blank spacer rows are the last block to yield; the crews and the three seats never do.
+    // The save notice and the seats keep their rows; ready-made crews yield to the save error.
     expect(lines.length).toBeLessThanOrEqual(18);
-    expect(lines.join('\n')).toContain('Claude crew, Codex review');
+    expect(lines.join('\n')).toContain('No config. Setup saves .splitbrief/config.yaml.');
+    expect(lines.join('\n')).not.toContain('Claude crew, Codex review');
     for (const seat of ['PLAN', 'BUILD', 'REVIEW']) expect(lines.join('\n')).toContain(seat);
   });
 
@@ -620,6 +993,7 @@ describe('SetupScreen', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Claude crew');
       expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
+      expect(configStore.get().config?.implementer).toEqual({ kind: 'cli', tool: 'codex' });
     });
     ui.unmount();
   });
@@ -791,7 +1165,7 @@ describe('SetupScreen', () => {
 
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       expect(existsSync(configPath(projectDir))).toBe(true);
-      expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n.trees/\n');
+      expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n');
       ui.unmount();
     });
   });
@@ -810,7 +1184,7 @@ describe('SetupScreen', () => {
 
       const ignorePath = join(projectDir, '.gitignore');
       await vi.waitFor(() => expect(ui.lastFrame() ?? '').toContain('Tool preparation · Blocked'));
-      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n.trees/\n');
+      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n');
       const before = 'node_modules/\n';
       writeFileSync(ignorePath, before);
       ui.stdin.write(ESC);
@@ -844,7 +1218,7 @@ describe('SetupScreen', () => {
       ui.stdin.write(ENTER);
 
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
-      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n.trees/\n');
+      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n');
       ui.unmount();
     });
   });

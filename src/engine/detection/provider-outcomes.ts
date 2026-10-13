@@ -2,7 +2,9 @@ import { cloneDetectedModel } from '../../core/discovery/clone-model.js';
 import type { DetectedModel } from '../../core/discovery/detection.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import type { ApiProviderId } from '../../core/providers/api-provider-catalog.js';
+import type { RunnerDiscoveryContext } from '../../core/config/accessors/runner-discovery-context.js';
 import type { ProviderCatalogFailureKind, ProviderCatalogOutcome } from '../providers/types.js';
+import { runnerDiscoveryContextKey } from './runner-evidence.js';
 
 /**
  * A configured connection is deliberately narrower than a provider adapter.
@@ -39,6 +41,27 @@ export interface ConfiguredProviderRuntime {
   readonly validatedAt: number;
   readonly failure?: ProviderCatalogFailureKind | undefined;
   readonly diagnostic?: string | undefined;
+}
+
+export function configuredProviderConnection(
+  context: RunnerDiscoveryContext,
+  provider: ApiProviderId,
+): ConfiguredProviderConnection {
+  // A catalog belongs to the connection, independently of the selected model
+  // and unrelated config changes.
+  const catalogContext: RunnerDiscoveryContext = {
+    ...context,
+    model: undefined,
+    configGeneration: 'connection',
+    ...(context.credentialDomain === undefined
+      ? {}
+      : { credentialDomain: { ...context.credentialDomain, configGeneration: 'connection' } }),
+  };
+  return {
+    role: context.seatRole ?? context.role,
+    provider,
+    contextKey: runnerDiscoveryContextKey(catalogContext),
+  };
 }
 
 function cloneConnection(connection: ConfiguredProviderConnection): ConfiguredProviderConnection {

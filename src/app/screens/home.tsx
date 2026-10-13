@@ -183,6 +183,7 @@ export function HomeScreen({
     configStore,
   );
   const selectionError = sessionSelectStore.use((s) => s.error);
+  const noConfig = configStore.use((state) => state.revision === null);
   const approvalPending = approvalPromptStore.use((state) => state.status === 'pending');
   const discoveryNotice = detectionStore.use((s) => {
     const r = s.refresh;
@@ -349,6 +350,10 @@ export function HomeScreen({
                 </Box>
 
                 <HomeSeatBlock rows={rows} width={layout.width} />
+
+                {noConfig && (
+                  <Text color={theme.textDim}>No config. Setup saves .splitbrief/config.yaml.</Text>
+                )}
 
                 {hasRoomForSessions && (
                   <RecentSessions

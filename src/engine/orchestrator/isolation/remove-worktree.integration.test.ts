@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { initConfig } from '../../../core/config/load/io.js';
+import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import { createWorktree } from './create-worktree.js';
 import { removeRunWorkspace, removeWorktree } from './remove-worktree.js';
 import { resolveConfinedIsolationWorktreePath } from './path.js';
@@ -207,7 +208,7 @@ describe('removeWorktree', () => {
   it('does not warn when the only dirt is in-worktree initConfig bookkeeping', async () => {
     await createWorktree({ projectDir: repoDir, slug: 'feat-bk-rm', git });
     const wtPath = join(repoDir, TREES_DIR, 'feat-bk-rm');
-    await initConfig(wtPath);
+    await initConfig(wtPath, createDefaultConfig());
     const warningPublisher = vi.fn();
 
     await removeWorktree({ projectDir: repoDir, slug: 'feat-bk-rm', git, warningPublisher });

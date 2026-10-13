@@ -83,6 +83,7 @@ export type RightRow =
     }
   | {
       kind: 'auth';
+      model: ModelOption;
       /** The method the row reads: the drafted one, else the one the seat runs today. */
       method: CliAuthMethod | 'host-configured';
       /** The ladder space steps through; empty where there is nothing to choose. */
@@ -297,11 +298,16 @@ function authMethodChoices(offer: AuthMethodOffer): readonly AuthMethodChoice[] 
  * before this ladder existed is not a rung of it, so the row reads what the seat
  * runs until the draft lands on something this ladder spells.
  */
-function authRowFor(offer: AuthMethodOffer, draft: AuthMethodChoice | null | undefined): AuthRow {
+function authRowFor(
+  model: ModelOption,
+  offer: AuthMethodOffer,
+  draft: AuthMethodChoice | null | undefined,
+): AuthRow {
   const choices = authMethodChoices(offer);
   const method = draft != null && choices.includes(draft) ? draft : offer.selected;
   return {
     kind: 'auth',
+    model,
     method,
     choices,
     // The one rung the row already reads is not a step; the byline must not promise it.
@@ -447,7 +453,7 @@ export function buildRightRows(input: {
     // applies to, so each of those keeps the glyph it already draws.
     if (input.authMethod !== undefined) {
       rows.push({
-        ...authRowFor(input.authMethod, input.authDraft),
+        ...authRowFor(model, input.authMethod, input.authDraft),
         last: routes.length === 0 && flatAxes.length === 0,
         tree: { depth: 1, parentContinues: false },
       });

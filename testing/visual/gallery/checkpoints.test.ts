@@ -4,6 +4,24 @@ import { checkpointPredicate, waitForCheckpoint } from './checkpoints.js';
 
 describe('checkpoint frame text', () => {
   it.each([
+    'workflow-plan-card',
+    'workflow-plan-card-render-note',
+    'workflow-plan-card-shared-command',
+  ])('waits for the plan document before accepting %s', (id) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports[0];
+    if (scenario === undefined || checkpoint === undefined || viewport === undefined)
+      throw new Error(`Missing checkpoint for ${id}`);
+    const output = `${checkpoint.marker}\nEnd run\nEdit plan.json`;
+    const context = { output, scenario, checkpoint, viewport };
+    const ready = checkpointPredicate(scenario, checkpoint);
+    expect(ready(context)).toBe(false);
+    expect(
+      ready({ ...context, output: `${output}\nAdd a greeting module and expose it from the CLI.` }),
+    ).toBe(true);
+  });
+  it.each([
     'workflow-stop-menu-ended-gate',
     'workflow-stop-menu-ended-rewound-gate',
     'workflow-recovery-balance-spent',

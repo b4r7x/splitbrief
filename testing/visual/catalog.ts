@@ -1,4 +1,5 @@
 import { ACTIVE_OVERLAYS, ALL_SCREENS, type Screen } from '../../src/core/navigation/types.js';
+import { BOOT_MANIFEST_TITLE } from '../../src/core/discovery/copy.js';
 import {
   ScenarioDefinitionSchema,
   type CheckpointKind,
@@ -125,6 +126,7 @@ interface ScreenScenarioInput {
 
 const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
   { id: 'home-empty', title: 'Home · empty project' },
+  { id: 'home-no-config', title: 'Home · no config' },
   { id: 'home-reviewer', title: 'Home · reviewer seat configured' },
   { id: 'home-floor-collapsed', title: 'Home · one-token reviewer' },
   { id: 'home-cold', title: 'Home · detection still cold' },
@@ -2769,6 +2771,51 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
   ],
   setup: [
     defineScenario({
+      id: 'setup-no-config-detecting',
+      title: 'Setup · first tool check',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Finding ready tools',
+        kind: 'ready',
+        marker: 'Choose your crew after the tool check.',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-no-config-cached-refresh',
+      title: 'Setup · remembered tools before first save',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Waiting for a fresh crew proposal',
+        kind: 'ready',
+        marker: 'Choose your crew after the tool check.',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-no-config-cached-failure',
+      title: 'Setup · remembered tools after a failed refresh',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Retry without saving an unavailable crew',
+        kind: 'ready',
+        marker: 'Tool check failed',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
       id: 'setup-initial',
       title: 'Setup · crew selection',
       surface: screenSurface('setup'),
@@ -2777,6 +2824,81 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Crew setup ready',
         kind: 'ready',
         marker: 'Set up your crew',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-unavailable-seat',
+      title: 'Setup · unavailable build seat',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Unavailable seat shown',
+        kind: 'ready',
+        marker: 'Unavailable',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-api-endpoint-override',
+      title: 'Setup · ready endpoint override',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Ready invocation and persisted crew',
+        kind: 'ready',
+        marker: 'Custom Coder',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-persisted-api-unavailable',
+      title: 'Setup · unavailable persisted endpoint',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'An override cannot authorize an unavailable saved endpoint',
+        kind: 'ready',
+        marker: 'Unavailable',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-custom-api',
+      title: 'Setup · ready custom API connection',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Custom API crew ready',
+        kind: 'ready',
+        marker: 'Custom Coder',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-custom-api-unavailable',
+      title: 'Setup · custom API missing the selected model',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Missing custom model blocks Continue',
+        kind: 'ready',
+        marker: 'Unavailable',
       },
       elements: [
         { id: 'header', title: 'Setup header' },
@@ -2997,6 +3119,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         id: 'overlay-picker-routes-unchecked',
         title: 'Overlay · planner picker · routes with no credential read',
         marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-first-discovery',
+        title: 'Overlay · planner picker · first tool check',
+        marker: BOOT_MANIFEST_TITLE,
       },
       {
         id: 'overlay-planner-picker-cold',

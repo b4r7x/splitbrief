@@ -23,6 +23,7 @@ import {
 
 let dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const d of dirs) cleanupTempDir(d);
   dirs = [];
 });
@@ -54,10 +55,14 @@ describe('runPlanningPhase — the plan card', () => {
   });
 
   it('opens the plan card once and builds what it approves', async () => {
-    const onApprovalNeeded = sequencedApproval([{ approved: true }]);
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const onApprovalNeeded = vi.fn(async () => {
+      clock.mockReturnValue(2000);
+      return { approved: true } as const;
+    });
     const { callbacks } = makeCallbacks({ onApprovalNeeded });
 
-    const { result } = await runTurn({
+    const { result, events } = await runTurn({
       planner: makePassingPlanner(),
       callbacks,
       config: makeConfig({ workflow: manual() }),
@@ -67,6 +72,14 @@ describe('runPlanningPhase — the plan card', () => {
     expect(result.state.phase).toBe('implementing');
     expect(onApprovalNeeded).toHaveBeenCalledTimes(1);
     expect(onApprovalNeeded).toHaveBeenCalledWith('plan', expect.stringMatching(/plan\.md$/), []);
+    expect(events.find((event) => event.type === 'tasks_planned')).toMatchObject({
+      phase: 'planning',
+      ts: 1000,
+      total: result.tasks.length,
+      tasks: result.tasks.map((task, index) =>
+        expect.objectContaining({ id: task.id, title: task.title, index }),
+      ),
+    });
   });
 
   it('a change request at the plan card goes back into the session with the revised plan', async () => {

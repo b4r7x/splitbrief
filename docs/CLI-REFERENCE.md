@@ -53,6 +53,8 @@ splitbrief start [feature] [files...] [options]
 
 Launch a complete plan-and-implement workflow. Without a feature argument the TUI opens to the home screen so you can pick one interactively. With a feature, SPLITBRIEF runs one planning session, shows the plan card (unless `workflow.approve: none`), then dispatches the implementer loop. This is the canonical entry point for ordinary work.
 
+Without a config, the TUI opens Setup and proposes detected ready tools. Setup saves your choices to `.splitbrief/config.yaml`. A headless start (`--plain` or `--json`) saves a detected ready crew before starting; runner flags apply to that invocation. If detection finds no default crew, supplying every seat through runner flags saves that crew instead. REVIEW inherits PLAN unless explicitly set. If any seat is unavailable, start exits with a `splitbrief init` instruction and writes no config.
+
 **Shorthand.** `splitbrief "feature"` is equivalent to `splitbrief start "feature"` — `start` is the default command (`isDefault`). No subcommand required for the happy path.
 
 **`@file` syntax.** Put the feature description first, then the `@file` inputs. Example: `splitbrief "refactor auth" @context.md @screenshot.png`. A feature description cannot start with `@`. Example: `splitbrief "Implement @mentions in comments"`.
@@ -202,6 +204,8 @@ splitbrief spec <feature> [options]
 
 Run only the planning session. It writes `plan.json`, `plan.md` and `tasks.md` to a fresh session folder, then exits without invoking the implementer. Useful for review-only flows or scripting.
 
+Without a config, spec saves a detected ready crew to `.splitbrief/config.yaml`. If no crew is ready, it asks you to run `splitbrief init` and leaves the config absent.
+
 The planning session is the same one `splitbrief start` runs ([WORKFLOW.md](./WORKFLOW.md#3-the-planning-session)): the planner answers with one typed plan, SPLITBRIEF checks it (`checkPlan` plus the context fit), and a plan that fails its checks goes back to the planner once.
 
 ### Usage
@@ -268,6 +272,8 @@ splitbrief review [options]
 ```
 
 One reviewer call over the current diff. The command needs no session: it creates none, runs no planning phase and enters no state machine. It collects the diff, hands it to the review seat with the same review prompt a full run uses, and writes the review to `.splitbrief/reviews/<timestamp>/review.json` and `review.md`. Then it prints the rendered review, the verdict and the findings.
+
+Without a config, review saves a detected ready crew to `.splitbrief/config.yaml`. If no crew is ready, it asks you to run `splitbrief init` and leaves the config absent.
 
 Without `--base`, the diff is the staged changes, the unstaged changes and the untracked files. With `--base <ref>`, it is `git diff <ref>` plus the untracked files. Untracked files under `.splitbrief/` and `.trees/` are left out.
 
@@ -336,6 +342,8 @@ splitbrief doctor [--project <dir>] [--json] [--probe-seat <plan|build|review>]
 ```
 
 Check whether the current repository and SPLITBRIEF configuration are ready for a safe run. The readiness report is read-only. It makes no model call and writes nothing: no `.splitbrief/active`, session folders, worktrees, snapshots or config rewrites. With `--probe-seat`, `doctor` makes one paid call instead of the report; see [Seat probe](#seat-probe---probe-seat). The readiness report probes each configured CLI runner the way `start` does — installation, trust, version, authentication, and the arg vector SPLITBRIEF would emit compared against that binary's own `--help` — and runs no validation subprocess.
+
+With plan approval enabled, the TUI waits for you to approve the plan. Headless runs approve it automatically. Context windows are sized automatically unless you set an override. Tool permission warnings explain what your coding tools can do; open Settings > Crew to change a seat.
 
 ### Usage
 
@@ -452,7 +460,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 
 - A blocked readiness report exits `1`. It prints each blocker once in the report, with no repeated `Error:` message on stderr.
 - Missing config reports `splitbrief init`; legacy config warnings report `splitbrief init --reconfigure`, but `doctor` does not run setup commands.
-- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`, `validation.typecheck|lint|test|typecheck_command|lint_command`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section reports the plan approval level as the check `workflow.plan-approval` (`Plan approval: plan.`), and the context check uses one floor for every run: 32,000 tokens.
+- Every load-time config notice is listed, one per retired key (`workflow.mode`, `workflow.approve: all|spec|default`, `workflow.task_review`, `workflow.brief_review`, `workflow.speckit`, `approval.tiers`, `validation.typecheck|lint|test|typecheck_command|lint_command`; see [CONFIGURATION.md §16](./CONFIGURATION.md#retired-keys-that-still-load)). The **Workflow** section explains whether you approve the plan in the TUI or approval is automatic. Context windows are sized automatically; an explicit limit below 32,000 tokens gets a warning.
 - On Linux, when an implementer profile is `cli` `claude-code`, the check `runners.sandbox.claude-code` looks for `bwrap` and `socat` on `PATH` and names each missing program. It is a blocker when that profile is the default implementer, and a warning for any other profile. `splitbrief spec` and `splitbrief review` call no implementer, so they skip it. It does not start the sandbox. See [TROUBLESHOOTING.md](./TROUBLESHOOTING.md#symptom-the-run-halted-with-tool-recipe-rejected-by-claude-code-cli-and-sandbox-required-but-unavailable).
 - Validation readiness is posture only. It reports whether End-of-run checks are on (`validation.configured`; `validation.end-checks-off` is a warning when they are off), the command a planner `test` check resolves, and a missing npm script. It runs no command. The `--probe-validation` flag was removed: the reviewer chooses the end-of-run commands during the run, so no fixed command set exists to probe before it.
 - Runner availability is probed for the `api` runners a run would call (`runners.availability.planner`, `runners.availability.implementer.<profile>`, and `runners.availability.reviewer` when a `reviewer` block is configured). Each probe is one model-list round trip against the endpoint the runner already targets, bounded by a 2s budget and run in parallel. An unreachable planner or default implementer is a blocker — the planning phase runs before the implementer is first used — while a non-default profile is a warning. A probe that could not run or overran its budget reports `not-probed` (info); it never reports available. When no probe runs at all, readiness says so and makes no claim (`runners.availability`).
@@ -473,7 +481,7 @@ splitbrief init [--project <dir>] [--reconfigure] [--yes]
 
 Bootstrap a project. Creates `.splitbrief/config.yaml` populated with detected planner / implementer providers and models, then opens the TUI setup screen for review. Safe to re-run with `--reconfigure` to start over.
 
-`--yes` skips the setup screen and writes the default config directly — the same defaults `start` and `spec` fall back to when no config exists, written on purpose instead of as a side effect. That is the mode for CI, container builds and piped shells: the setup screen needs a TTY, and without `--yes` a non-TTY invocation refuses and points at `--yes`.
+`--yes` skips the setup screen, detects ready tools and saves a crew. On a Codex-only machine, Codex fills every seat. If no crew is ready, init asks you to choose and sign in to your tools with `splitbrief init` and writes no config. This mode serves CI, container builds and piped shells: the setup screen needs a TTY, and without `--yes` a non-TTY invocation refuses and points at `--yes`.
 
 ### Usage
 
@@ -487,7 +495,7 @@ splitbrief init [--project <dir>] [--reconfigure] [--yes]
 |---|---|---|---|
 | `--project <dir>` | string | cwd | Project directory. Canonicalized to the git toplevel, like every other command. |
 | `--reconfigure` | boolean | `false` | Overwrite an existing `.splitbrief/config.yaml`. Without this flag, init refuses to overwrite. |
-| `--yes` | boolean | `false` | Write the default config without the interactive picker. Requires no TTY. |
+| `--yes` | boolean | `false` | Detect and save a ready crew without the interactive picker. Requires no TTY. |
 
 ### Examples
 
@@ -508,7 +516,7 @@ splitbrief init --reconfigure
 ### Exit codes
 
 - `0` — config exists / was created and the TUI exited cleanly, or `--yes` wrote the config.
-- `1` — no TTY and no `--yes`, TUI render failure, or unexpected I/O error.
+- `1` — no ready crew, no TTY and no `--yes`, TUI render failure, or unexpected I/O error.
 
 ### Files affected
 

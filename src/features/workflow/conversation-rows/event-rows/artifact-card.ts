@@ -1,6 +1,5 @@
 import { configStore } from '../../../../stores/project/config.js';
 import type { EngineEventOf } from '../../../../engine/events/types.js';
-import { countNoun } from '../../../../utils/pluralize.js';
 import { filePathUrl, projectRelativePathLabel } from '../../../../utils/path-links.js';
 import {
   getTerminalCellWidth,
@@ -13,7 +12,6 @@ import { sourceFooterSegments } from '../row-format/preformatted-block.js';
 import type { ConversationRow, ConversationRowBlock, ConversationRowSegment } from '../types.js';
 
 const BODY_PREFIX = '  ';
-const LABEL_GAP = '  ';
 const SEPARATOR = '/';
 const ELISION = '…';
 const FILE_EXTENSION = /\.[^./\\]+$/;
@@ -29,11 +27,7 @@ export function artifactWrittenRowBlock(
   const rows: ConversationRow[] = [
     segmentedRow(
       `${keyPrefix}-top`,
-      [
-        { text: artifactLabel(event.filename), tone: 'planner', bold: true },
-        { text: LABEL_GAP, tone: 'text' },
-        { text: countNoun(event.lineCount, 'line'), tone: 'textDim' },
-      ],
+      [{ text: artifactLabel(event.filename), tone: 'planner', bold: true }],
       'card-top',
     ),
     // The excerpt is lifted out of a larger document — an outline of its headings, or a slice of

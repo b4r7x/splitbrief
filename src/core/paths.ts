@@ -99,8 +99,8 @@ export const UI_PREFS_FILE = 'ui-prefs.json';
  * The in-project worktree root: `.trees/<slug>`. Nothing creates one any more —
  * it was the root of the removed `start --worktree` flag — but a checkout made
  * before that removal still has the directory on disk, so file discovery
- * (`INTERNAL_SKIP_DIRS`), git status (`GIT_STATUS_INTERNAL_DIRS`), the gitignore
- * the loader writes and the staged-project walker all still have to skip it.
+ * (`INTERNAL_SKIP_DIRS`), git status (`GIT_STATUS_INTERNAL_DIRS`) and the
+ * staged-project walker still skip existing directories.
  * It is not the run's own isolation worktree — that one is `ISOLATION_TREES_DIR`
  * below and lives outside the project entirely.
  */
