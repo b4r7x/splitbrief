@@ -86,44 +86,74 @@ function isPathLikeScriptArg(arg: string): boolean {
   return /\.(?:[cm]?[jt]sx?|py)$/.test(arg);
 }
 
-// A runner front-end (`uv run`, `poetry run`, `make`) can put the interpreter
-// anywhere in the line, so the scan starts at the interpreter token, not at 0.
-// Its first operand is the script it runs; `-m` hands the line to a Python tool.
-function loadsInterpreterScript(tokens: string[]): boolean {
-  const start = tokens.findIndex((token) => INTERPRETERS.has(commandFamily(token)));
-  if (start === -1) return false;
+function executedProgramPositions(tokens: string[]): number[] {
+  const positions: number[] = [];
+  let start = 0;
+  while (start < tokens.length) {
+    positions.push(start);
+    const program = commandFamily(tokens[start] ?? '');
+    if (program === 'npx') {
+      start = tokens.findIndex((token, index) => index > start && !token.startsWith('-'));
+      if (start === -1) break;
+    } else if (RUN_FRONT_ENDS.has(program) && tokens[start + 1] === 'run') {
+      start += 2;
+    } else {
+      break;
+    }
+  }
+  return positions;
+}
+
+function interpreterRefusal(tokens: string[], start: number): string | null {
+  const program = commandFamily(tokens[start] ?? '');
   for (let index = start + 1; index < tokens.length; index++) {
     const arg = tokens[index];
     if (!arg) continue;
-    if (arg === '-' || arg === '--' || !arg.startsWith('-')) return true;
+    if (arg === '-') return `reads code from standard input (${program} -)`;
+    if (arg === '--') return `uses the script separator ${program} --`;
+    if (!arg.startsWith('-')) return `passes an operand to ${program} (${arg})`;
     const flag = arg.startsWith('--') ? arg.replace(/=.*$/s, '') : arg.slice(0, 2);
     if (flag === '-m') {
       const module = arg === '-m' ? tokens[index + 1] : arg.slice(2);
-      return module === undefined || !PYTHON_TOOLS.has(module);
+      if (module === undefined) return `runs ${program} -m without a module name`;
+      return PYTHON_TOOLS.has(module)
+        ? null
+        : `runs a Python module outside the stack tools (${module})`;
     }
-    if (CODE_LOAD_FLAGS.has(flag)) return true;
+    if (CODE_LOAD_FLAGS.has(flag)) return `uses the code-loading option ${program} ${flag}`;
   }
-  return false;
+  return null;
 }
 
-function loadsNpxScript(tokens: string[]): boolean {
-  if (tokens[0] !== 'npx') return false;
+function npxScriptRefusal(tokens: string[]): string | null {
+  if (tokens[0] !== 'npx') return null;
+  let program: string | undefined;
   for (let index = 1; index < tokens.length; index++) {
     const arg = tokens[index];
     if (!arg || arg.startsWith('-')) {
       const flag = arg?.replace(/=.*$/s, '');
-      if (flag === '--package' || flag === '-p' || flag === '--call' || flag === '-c') return true;
+      if (flag === '--package' || flag === '-p' || flag === '--call' || flag === '-c') {
+        return program === undefined
+          ? `uses the code-loading option npx ${flag}`
+          : `passes ${flag} to ${program}; a command through npx takes no -p, --package, -c or --call option`;
+      }
       continue;
     }
-    if (isPathLikeScriptArg(arg)) return true;
-    if (NPX_CODE_LOAD_PACKAGES.has(commandFamily(arg))) return true;
+    if (isPathLikeScriptArg(arg))
+      return `passes the path ${arg} through npx; a command through npx takes no path arguments`;
+    if (NPX_CODE_LOAD_PACKAGES.has(commandFamily(arg))) {
+      return program === undefined
+        ? `runs the code loader ${arg} through npx`
+        : `passes ${arg} to ${program}; a command through npx takes no tsx, ts-node or node argument`;
+    }
+    program ??= arg;
   }
-  return false;
+  return null;
 }
 
-function loadsPackageScript(tokens: string[]): boolean {
+function packageScriptRefusal(tokens: string[]): string | null {
   const cmd = commandFamily(tokens[0] ?? '');
-  if (!cmd) return false;
+  if (!cmd) return null;
   const subcommands =
     cmd === 'npm'
       ? NPM_SCRIPT_SUBCOMMANDS
@@ -132,60 +162,130 @@ function loadsPackageScript(tokens: string[]): boolean {
         : cmd === 'yarn'
           ? YARN_SCRIPT_SUBCOMMANDS
           : null;
-  if (!subcommands) return false;
+  if (!subcommands) return null;
   for (let index = 1; index < tokens.length; index++) {
     const arg = tokens[index];
     if (!arg || arg.startsWith('-')) continue;
-    if (subcommands.has(arg)) return true;
+    if (!subcommands.has(arg)) continue;
+    if (index === 1) return `runs a package script or binary (${cmd} ${arg})`;
+    const words = [...subcommands];
+    const list = `${words.slice(0, -1).join(', ')} or ${words.at(-1)}`;
+    const article = cmd === 'npm' ? 'an' : 'a';
+    const command = tokens[1]?.startsWith('-') ? cmd : `${cmd} ${tokens[1]}`;
+    return `passes the argument ${arg} to ${command}; ${article} ${cmd} command takes no ${list} argument`;
   }
-  return false;
+  return null;
 }
 
 // A package manager runs whatever its first argument names, under many spellings
-// (`rum`, `run-s`, `x`, a bare script name), so only `test` passes. A front-end
-// (`npx npm`, `uv run npm`) can put it anywhere in the line.
-function runsOtherPackageCommand(tokens: string[]): boolean {
-  const start = tokens.findIndex((token) => isPackageManager(commandFamily(token)));
-  return start !== -1 && tokens[start + 1] !== 'test';
+// (`rum`, `run-s`, `x`, a bare script name), so only `test` passes.
+function packageCommandRefusal(tokens: string[], start: number): string | null {
+  if (tokens[start + 1] === 'test') return null;
+  const program = commandFamily(tokens[start] ?? '');
+  const next = tokens[start + 1];
+  return next === undefined
+    ? `runs ${program} without the required test subcommand`
+    : `uses ${program} ${next} instead of the required ${program} test`;
 }
 
-function passesPathToTestCommand(tokens: string[]): boolean {
-  const start = tokens.findIndex((token) => isPackageManager(commandFamily(token)));
-  return start !== -1 && tokens.slice(start + 2).some(isPathLikeScriptArg);
+function testPathRefusal(tokens: string[], start: number): string | null {
+  const path = tokens.slice(start + 2).find(isPathLikeScriptArg);
+  return path === undefined
+    ? null
+    : `passes a path to ${commandFamily(tokens[start] ?? '')} test (${path})`;
 }
 
 // make and just run only one bare target named typecheck, lint or test.
-function runsTaskRecipe(tokens: string[]): boolean {
-  const start = tokens.findIndex((token) => TASK_RUNNERS.has(commandFamily(token)));
-  if (start === -1) return false;
-  return tokens.length !== start + 2 || !STAGE_TARGETS.has(tokens[start + 1] ?? '');
+function taskRecipeRefusal(tokens: string[], start: number): string | null {
+  const program = commandFamily(tokens[start] ?? '');
+  const target = tokens[start + 1];
+  if (target === undefined) return `runs ${program} without a stage target`;
+  if (target.startsWith('-')) {
+    return `uses the option ${program} ${target}; only a bare stage target is allowed`;
+  }
+  if (!STAGE_TARGETS.has(target)) return `runs the non-stage target ${program} ${target}`;
+  return tokens.length === start + 2
+    ? null
+    : `passes extra arguments to ${program} ${target}; only one bare stage target is allowed`;
 }
 
 // `uv run` and `poetry run` execute the command that follows `run`.
-function forwardsUnlistedCommand(tokens: string[]): boolean {
-  return tokens.some(
-    (token, index) =>
-      RUN_FRONT_ENDS.has(commandFamily(token)) &&
-      (tokens[index + 1] !== 'run' || !PYTHON_TOOLS.has(tokens[index + 2] ?? '')),
-  );
+function forwardedCommandRefusal(tokens: string[], start: number): string | null {
+  if (tokens[start + 1] === 'run' && PYTHON_TOOLS.has(tokens[start + 2] ?? '')) return null;
+  const program = commandFamily(tokens[start] ?? '');
+  const next = tokens[start + 1];
+  if (next === undefined) return `runs ${program} without the required run subcommand`;
+  if (next !== 'run') return `uses ${program} ${next} instead of the required ${program} run`;
+  const tool = tokens[start + 2];
+  return tool === undefined
+    ? `runs ${program} run without a Python stack tool`
+    : `requires a Python stack tool directly after ${program} run (received ${tool})`;
 }
 
-function loadsTestRunnerConfig(tokens: string[]): boolean {
+function programArgumentRefusal(tokens: string[], positions: number[], start: number): string {
+  const token = tokens[start] ?? '';
+  const program = commandFamily(token);
+  const names = INTERPRETERS.has(program)
+    ? 'node, python or python3'
+    : isPackageManager(program)
+      ? 'npm, pnpm, yarn or bun'
+      : TASK_RUNNERS.has(program)
+        ? 'make or just'
+        : 'uv or poetry';
+  const commandStart = positions.findLast((index) => index < start) ?? 0;
+  const cmd = commandFamily(tokens[commandStart] ?? '');
+  const command = isPackageManager(cmd) ? `${cmd} test` : tokens[commandStart];
+  return `passes ${token} to ${command}; a validation command takes no ${names} argument`;
+}
+
+function programRefusal(tokens: string[], positions: number[]): string | null {
+  const refusals: { start: number; reason: string }[] = [];
+  const check = (start: number, rule: (tokens: string[], start: number) => string | null) => {
+    if (start === -1) return;
+    const reason = rule(tokens, start);
+    if (reason !== null) refusals.push({ start, reason });
+  };
+  const packageStart = tokens.findIndex((token) => isPackageManager(commandFamily(token)));
+  check(packageStart, packageCommandRefusal);
+  check(packageStart, testPathRefusal);
+  check(
+    tokens.findIndex((token) => TASK_RUNNERS.has(commandFamily(token))),
+    taskRecipeRefusal,
+  );
+  for (const [start, token] of tokens.entries()) {
+    if (RUN_FRONT_ENDS.has(commandFamily(token))) check(start, forwardedCommandRefusal);
+  }
+  check(0, testRunnerConfigRefusal);
+  check(
+    tokens.findIndex((token) => INTERPRETERS.has(commandFamily(token))),
+    interpreterRefusal,
+  );
+
+  const executed = refusals.find(({ start }) => positions.includes(start));
+  if (executed !== undefined) return executed.reason;
+  const argument = refusals.sort((a, b) => a.start - b.start)[0];
+  return argument === undefined ? null : programArgumentRefusal(tokens, positions, argument.start);
+}
+
+function testRunnerConfigRefusal(tokens: string[]): string | null {
   const cmd = tokens[0];
-  if (cmd !== 'vitest' && cmd !== 'jest') return false;
+  if (cmd !== 'vitest' && cmd !== 'jest') return null;
   for (let index = 1; index < tokens.length; index++) {
     const arg = tokens[index];
     if (!arg) continue;
     if (TEST_CONFIG_FLAGS.has(arg)) {
       const value = tokens[index + 1];
-      if (value && !value.startsWith('-') && isPathLikeScriptArg(value)) return true;
+      if (value && !value.startsWith('-') && isPathLikeScriptArg(value)) {
+        return `loads a test config by path (${cmd} ${arg} ${value})`;
+      }
     }
     if (arg.startsWith('--config=')) {
       const value = arg.slice('--config='.length);
-      if (isPathLikeScriptArg(value)) return true;
+      if (isPathLikeScriptArg(value))
+        return `loads a test config by path (${cmd} --config ${value})`;
     }
   }
-  return false;
+  return null;
 }
 
 // `npm run test`, `pnpm run test` and `yarn run test` run the same scripts as their bare `test`.
@@ -204,16 +304,12 @@ export function unsafeCommandReason(raw: string): string | null {
   const tokens = asBareTest(parseShellCommand(raw));
   const cmd = tokens[0];
   if (!cmd) return 'names no program';
-  if (cmd.includes('/') || cmd.includes('\\')) return 'runs a file by path';
-  if (!ALLOWED_COMMANDS.has(cmd)) return 'runs a program outside the allowlist';
-  if (loadsInterpreterScript(tokens)) return 'runs a script or inline code';
-  if (loadsNpxScript(tokens)) return 'runs code through npx';
-  if (loadsPackageScript(tokens)) return 'runs a package script or binary';
-  if (runsOtherPackageCommand(tokens)) return 'runs a package manager, not as a bare test';
-  if (passesPathToTestCommand(tokens)) return 'passes a path to the test command';
-  if (runsTaskRecipe(tokens)) return 'runs make or just, not on a bare stage';
-  if (forwardsUnlistedCommand(tokens)) return 'differs from a bare run of a Python tool';
-  if (loadsTestRunnerConfig(tokens)) return 'loads a test config by path';
+  if (cmd.includes('/') || cmd.includes('\\')) return `runs a file by path (${cmd})`;
+  if (!ALLOWED_COMMANDS.has(cmd)) return `runs a program outside the allowlist (${cmd})`;
+  const positions = executedProgramPositions(tokens);
+  const refusal =
+    npxScriptRefusal(tokens) ?? packageScriptRefusal(tokens) ?? programRefusal(tokens, positions);
+  if (refusal !== null) return refusal;
   for (const token of tokens) {
     if (SHELL_OPERATORS.test(token)) return 'contains a shell operator';
   }
@@ -234,11 +330,12 @@ export function commandTextRefusal(command: string, npmScriptsApproved: boolean)
   const cmd = tokens[0];
   if (!cmd) return 'names no program';
   if (commandFamily(cmd) === 'npx') {
-    const tool = tokens[1] === '--no-install' ? tokens[2] : undefined;
-    if (tool === undefined) return 'runs npx without --no-install';
+    if (tokens[1] !== '--no-install') return 'runs npx without --no-install as its first option';
+    const tool = tokens[2];
+    if (tool === undefined) return 'runs npx without a program';
     return NPX_STACK_TOOLS.has(commandFamily(tool))
       ? null
-      : 'runs a program outside the stack tools through npx';
+      : `requires a stack tool directly after npx --no-install (received ${tool})`;
   }
   if (isApprovedNpmRun(tokens, npmScriptsApproved)) {
     if (tokens[2] === undefined) return 'runs npm run without a script name';

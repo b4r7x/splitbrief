@@ -28,6 +28,7 @@ import {
 } from '../../lib/terminal/editor-handover.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
 import { resolveRenderInputConfig } from './input-config.js';
+import { createEditorOutput } from './editor-output.js';
 import {
   createCrashHandler,
   createResumeHandler,
@@ -294,11 +295,20 @@ export async function renderApp(
   // cost is a whole-frame rewrite per repaint, which Ink brackets in DEC 2026 synchronized
   // output on a TTY outside CI (ink/build/write-synchronized.js) and leaves unbracketed on a
   // pipe. Under CI there is no cost at all: Ink drops every non-static redraw (ink.js:262).
+  const editorOutput = createEditorOutput(process.stdout);
   const renderFallback = (stdin?: NodeJS.ReadStream) => {
+    setActiveTerminalHandover({
+      fullscreen: false,
+      mouse: false,
+      sourceStdin: process.stdin,
+      beforeSuspend: editorOutput.suspend,
+      beforeResume: editorOutput.resume,
+    });
     return render(appElement, {
       exitOnCtrlC: false,
       maxFps: 30,
       kittyKeyboard,
+      stdout: editorOutput.stdout,
       ...(stdin ? { stdin } : {}),
     });
   };
@@ -311,6 +321,7 @@ export async function renderApp(
         const fullscreenInk = withFullScreen(appElement, {
           exitOnCtrlC: false,
           kittyKeyboard,
+          stdout: editorOutput.stdout,
           ...(inkStdin ? { stdin: inkStdin } : {}),
         });
         ink = fullscreenInk;
@@ -332,8 +343,14 @@ export async function renderApp(
             paste: usePaste,
             hover: useHover,
             sourceStdin: process.stdin,
-            beforeSuspend: selection?.suspend,
-            beforeResume: selection?.resume,
+            beforeSuspend: () => {
+              editorOutput.suspend();
+              selection?.suspend();
+            },
+            beforeResume: () => {
+              editorOutput.resume();
+              selection?.resume();
+            },
           },
           setHandover: setActiveTerminalHandover,
         });

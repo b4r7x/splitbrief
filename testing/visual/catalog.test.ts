@@ -29,6 +29,7 @@ import {
   workflowTranscriptText,
 } from './fixtures/workflow/registry.js';
 import { mountGalleryScenario } from './gallery/mount.js';
+import { editorHandoverScenarios } from './gallery/editor-handover.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 
 function sorted(values: Iterable<string>): string[] {
@@ -564,6 +565,7 @@ describe('visual catalog', () => {
       ...workflowFixtureRegistry.keys(),
       ...screenFixtureRegistry.keys(),
       ...overlayFixtureRegistry.keys(),
+      ...editorHandoverScenarios.keys(),
     ];
 
     expect(new Set(registered).size).toBe(registered.length);

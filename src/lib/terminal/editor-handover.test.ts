@@ -68,6 +68,26 @@ afterEach(() => {
 });
 
 describe('terminal handover for $EDITOR', () => {
+  it.each([true, false])(
+    'requests a TUI redraw after the fullscreen=%s editor returns',
+    (fullscreen) => {
+      const { stdin } = makeFakeStdin();
+      const config = { fullscreen, mouse: false, sourceStdin: stdin };
+      let redraws = 0;
+      const redraw = () => {
+        redraws += 1;
+      };
+      process.stdout.on('resize', redraw);
+      try {
+        suspendTerminalForEditor(config);
+        resumeTerminalAfterEditor(config);
+        expect(redraws).toBe(1);
+      } finally {
+        process.stdout.off('resize', redraw);
+      }
+    },
+  );
+
   it('brackets the editor with disable-then-restore sequences in fullscreen mouse mode', () => {
     const { stdin, calls } = makeFakeStdin();
     const config: TerminalHandoverConfig = { fullscreen: true, mouse: true, sourceStdin: stdin };

@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { chdir, cwd } from 'node:process';
-import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
+import { editorDisplayLabel, editorWaitingMessage, resolveEditorArgv } from './editor-command.js';
 
 function withBinDir<T>(executables: readonly string[], run: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'editor-command-test-'));
@@ -66,12 +66,14 @@ describe('resolveEditorArgv', () => {
 
   it('uses macOS open text-editor fallback before terminal EDITOR fallback', () => {
     withBinDir(['open'], (dir) => {
-      expect(
-        resolveEditorArgv({
-          env: { VISUAL: '', EDITOR: 'vim', PATH: dir },
-          platform: 'darwin',
-        }),
-      ).toEqual({ command: join(dir, 'open'), args: ['-W', '-t'] });
+      const editor = resolveEditorArgv({
+        env: { VISUAL: '', EDITOR: 'vim', PATH: dir },
+        platform: 'darwin',
+      });
+      expect(editor).toEqual({ command: join(dir, 'open'), args: ['-W', '-t'] });
+      expect(editorWaitingMessage(editor, '/tmp/run.patch')).toBe(
+        'run.patch open in open. Quit the editor app to return.',
+      );
     });
   });
 

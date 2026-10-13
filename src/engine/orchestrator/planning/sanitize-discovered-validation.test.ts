@@ -42,6 +42,169 @@ function sanitizeResolving(
 }
 
 describe('sanitizeDiscoveredValidation', () => {
+  it.each([
+    ['', 'names no program'],
+    ['./check', 'runs a file by path (./check)'],
+    ['unknown test', 'runs a program outside the allowlist (unknown)'],
+    ['npx --package=tool check', 'uses the code-loading option npx --package'],
+    ['npx -p tool check', 'uses the code-loading option npx -p'],
+    ['npx --call=check', 'uses the code-loading option npx --call'],
+    ['npx -c check', 'uses the code-loading option npx -c'],
+    ['npx -y python3 x', 'passes an operand to python3 (x)'],
+    [
+      'npx python3 -c x',
+      'passes -c to python3; a command through npx takes no -p, --package, -c or --call option',
+    ],
+    ['npx python3 -', 'reads code from standard input (python3 -)'],
+    ['npx python3 -- x', 'uses the script separator python3 --'],
+    ['npx python3 -m', 'runs python3 -m without a module name'],
+    ['npx python3 -mcustom', 'runs a Python module outside the stack tools (custom)'],
+    ['npx python3 --command=x', 'uses the code-loading option python3 --command'],
+    [
+      'npx --no-install tsc -p tsconfig.json',
+      'passes -p to tsc; a command through npx takes no -p, --package, -c or --call option',
+    ],
+    [
+      'npx --no-install tsc --project=x --call=y',
+      'passes --call to tsc; a command through npx takes no -p, --package, -c or --call option',
+    ],
+    [
+      'npx --no-install tsc --types node',
+      'passes node to tsc; a command through npx takes no tsx, ts-node or node argument',
+    ],
+    [
+      'npx --no-install tsc --types node -p tsconfig.json',
+      'passes node to tsc; a command through npx takes no tsx, ts-node or node argument',
+    ],
+    [
+      'npx --no-install tsc --types node --target es2022',
+      'passes node to tsc; a command through npx takes no tsx, ts-node or node argument',
+    ],
+    [
+      'npx --no-install tsc --types npm',
+      'passes npm to tsc; a validation command takes no npm, pnpm, yarn or bun argument',
+    ],
+    [
+      'npx --no-install vitest run -t npm',
+      'passes npm to vitest; a validation command takes no npm, pnpm, yarn or bun argument',
+    ],
+    [
+      'npx --no-install tsc --types uv',
+      'passes uv to tsc; a validation command takes no uv or poetry argument',
+    ],
+    [
+      'npx --no-install uv run pytest -k poetry',
+      'passes poetry to pytest; a validation command takes no uv or poetry argument',
+    ],
+    [
+      'uv run poetry run pytest -k npm',
+      'passes npm to pytest; a validation command takes no npm, pnpm, yarn or bun argument',
+    ],
+    [
+      'npx --no-install vitest tsx',
+      'passes tsx to vitest; a command through npx takes no tsx, ts-node or node argument',
+    ],
+    [
+      'npx ./check.js',
+      'passes the path ./check.js through npx; a command through npx takes no path arguments',
+    ],
+    [
+      'npx --no-install tsc --project ./tsconfig.json',
+      'passes the path ./tsconfig.json through npx; a command through npx takes no path arguments',
+    ],
+    ['npx tsx check.ts', 'runs the code loader tsx through npx'],
+    ['npm exec check', 'runs a package script or binary (npm exec)'],
+    ['pnpm dlx check', 'runs a package script or binary (pnpm dlx)'],
+    ['npx npm install', 'uses npm install instead of the required npm test'],
+    ['npx --no-install npx npm install', 'uses npm install instead of the required npm test'],
+    ['pnpm --filter x test node', 'uses pnpm --filter instead of the required pnpm test'],
+    ['yarn run check', 'runs a package script or binary (yarn run)'],
+    [
+      'npm test -- run',
+      'passes the argument run to npm test; an npm command takes no run, exec, exec-env or explore argument',
+    ],
+    [
+      'npm test -- exec',
+      'passes the argument exec to npm test; an npm command takes no run, exec, exec-env or explore argument',
+    ],
+    [
+      'npm --prefix x run foo',
+      'passes the argument run to npm; an npm command takes no run, exec, exec-env or explore argument',
+    ],
+    [
+      'npm -w a exec foo',
+      'passes the argument exec to npm; an npm command takes no run, exec, exec-env or explore argument',
+    ],
+    [
+      'pnpm test -- dlx',
+      'passes the argument dlx to pnpm test; a pnpm command takes no run, exec or dlx argument',
+    ],
+    [
+      'yarn test -- run',
+      'passes the argument run to yarn test; a yarn command takes no run or dlx argument',
+    ],
+    ['bun run test', 'uses bun run instead of the required bun test'],
+    ['npm', 'runs npm without the required test subcommand'],
+    [
+      'npm test make',
+      'passes make to npm test; a validation command takes no make or just argument',
+    ],
+    [
+      'npm test node -e 1',
+      'passes node to npm test; a validation command takes no node, python or python3 argument',
+    ],
+    ['npm test -- src/check.ts', 'passes a path to npm test (src/check.ts)'],
+    ['make', 'runs make without a stage target'],
+    [
+      'vitest -t make',
+      'passes make to vitest; a validation command takes no make or just argument',
+    ],
+    ['make check', 'runs the non-stage target make check'],
+    [
+      'make test node',
+      'passes extra arguments to make test; only one bare stage target is allowed',
+    ],
+    ['just --shell bash test', 'uses the option just --shell; only a bare stage target is allowed'],
+    [
+      'just test lint',
+      'passes extra arguments to just test; only one bare stage target is allowed',
+    ],
+    ['uv', 'runs uv without the required run subcommand'],
+    ['uv tool run pytest', 'uses uv tool instead of the required uv run'],
+    ['poetry run', 'runs poetry run without a Python stack tool'],
+    [
+      'poetry run custom',
+      'requires a Python stack tool directly after poetry run (received custom)',
+    ],
+    [
+      'uv run pytest -k poetry',
+      'passes poetry to pytest; a validation command takes no uv or poetry argument',
+    ],
+    [
+      'uv run pytest -k uv run pytest poetry',
+      'passes poetry to pytest; a validation command takes no uv or poetry argument',
+    ],
+    [
+      'vitest -t node x',
+      'passes node to vitest; a validation command takes no node, python or python3 argument',
+    ],
+    [
+      'vitest -t npm test x.py',
+      'passes npm to vitest; a validation command takes no npm, pnpm, yarn or bun argument',
+    ],
+    ['vitest --config ./check.ts', 'loads a test config by path (vitest --config ./check.ts)'],
+    ['jest --config=./check.js', 'loads a test config by path (jest --config ./check.js)'],
+    ['jest -c ./check.js', 'loads a test config by path (jest -c ./check.js)'],
+    ['npm test && echo done', 'contains a shell operator'],
+  ])('names the planner rule that refuses %s', (command, reason) => {
+    expect(unsafeCommandReason(command)).toBe(reason);
+    if (command.length === 0) return;
+    expect(sanitize({ testCommand: command })).toBeUndefined();
+    expect(warnings()).toEqual([
+      `The test checks do not take ${command} from the planner (it ${reason}) and use config, the manifest or the stack default.`,
+    ]);
+  });
+
   it('returns undefined for null input', () => {
     expect(sanitize(null)).toBeUndefined();
     expect(sanitize(undefined)).toBeUndefined();
@@ -137,6 +300,32 @@ describe('sanitizeDiscoveredValidation', () => {
     expect(result?.testCommand).toBe('node --version');
   });
 
+  it.each([
+    ['node --test test/', 'passes an operand to node (test/)'],
+    ['node --test test/a.test.js', 'passes an operand to node (test/a.test.js)'],
+    ['node scripts/check.js', 'passes an operand to node (scripts/check.js)'],
+    ['node -e 1', 'uses the code-loading option node -e'],
+    ['node --require=./setup.js --test', 'uses the code-loading option node --require'],
+    ['node --run test', 'uses the code-loading option node --run'],
+    ['node -', 'reads code from standard input (node -)'],
+    ['node -- check.js', 'uses the script separator node --'],
+    ['python -m custom_check', 'runs a Python module outside the stack tools (custom_check)'],
+    ['python -m', 'runs python -m without a module name'],
+    ['uv run python -c1', 'uses the code-loading option python -c'],
+    ['uv run poetry run python --eval=1', 'uses the code-loading option python --eval'],
+  ])('names the interpreter rule that refuses %s', (command, reason) => {
+    expect(sanitize({ testCommand: command })).toBeUndefined();
+    expect(warnings()).toEqual([
+      `The test checks do not take ${command} from the planner (it ${reason}) and use config, the manifest or the stack default.`,
+    ]);
+    expect(
+      checkCommandRefusal(command, {
+        npmScriptsApproved: true,
+        packageScripts: { packageJsonExists: false, scripts: {} },
+      }),
+    ).toBe(reason);
+  });
+
   it('blocks npx forms that execute repo-local scripts or code loaders', () => {
     const cases = [
       'npx tsx scripts/pwn.ts',
@@ -171,6 +360,22 @@ describe('sanitizeDiscoveredValidation', () => {
     'npx biome@2 check',
     'npx npm@10 test',
     'npx npm@ test',
+    'npx python3 -m pytest',
+    'npx --no-install tsc --types python3',
+    'vitest node',
+    'vitest -t node',
+    'vitest -t node -m pytest python3 x.py',
+    'vitest -t npm test',
+    'vitest -t make test',
+    'vitest -t uv run pytest',
+    'npm test --types node',
+    'npm test --types npm',
+    'uv run pytest python',
+    'uv run pytest -k python3',
+    'uv run pytest -k uv run pytest',
+    'uv run pytest',
+    'npx --no-install uv run pytest',
+    'uv run poetry run pytest',
   ])('keeps an admitted tool form: %s', (command) => {
     expect(sanitize({ testCommand: command })).toEqual({ testCommand: command });
     expect(warnings()).toEqual([]);
@@ -414,14 +619,17 @@ describe('sanitizeDiscoveredValidation — script runners', () => {
 
   it('gives each new refusal a reason that holds for it', () => {
     const refusals = [
-      ['yarn lint', 'runs a package manager, not as a bare test'],
-      ['pnpm --filter web test', 'runs a package manager, not as a bare test'],
-      ['npm test --prefix ../other', 'passes a path to the test command'],
-      ['make check', 'runs make or just, not on a bare stage'],
-      ['make -j4 test', 'runs make or just, not on a bare stage'],
-      ['uv run --frozen pytest', 'differs from a bare run of a Python tool'],
-      ['python -m pwn', 'runs a script or inline code'],
-      ['npx --package=evil pwn', 'runs code through npx'],
+      ['yarn lint', 'uses yarn lint instead of the required yarn test'],
+      ['pnpm --filter web test', 'uses pnpm --filter instead of the required pnpm test'],
+      ['npm test --prefix ../other', 'passes a path to npm test (../other)'],
+      ['make check', 'runs the non-stage target make check'],
+      ['make -j4 test', 'uses the option make -j4; only a bare stage target is allowed'],
+      [
+        'uv run --frozen pytest',
+        'requires a Python stack tool directly after uv run (received --frozen)',
+      ],
+      ['python -m pwn', 'runs a Python module outside the stack tools (pwn)'],
+      ['npx --package=evil pwn', 'uses the code-loading option npx --package'],
     ] as const;
     for (const [cmd] of refusals) sanitize({ testCommand: cmd });
     expect(warnings()).toEqual(
@@ -460,17 +668,17 @@ describe('checkCommandRefusal', () => {
   const scriptsApproved = { npmScriptsApproved: true, packageScripts };
 
   it('keeps the discovered-validation reason for reuse', () => {
-    expect(unsafeCommandReason('npm run lint')).toBe('runs a package script or binary');
+    expect(unsafeCommandReason('npm run lint')).toBe('runs a package script or binary (npm run)');
     expect(unsafeCommandReason('npm test')).toBeNull();
   });
 
   it('refuses npm run without the plan approval through the discovered-validation policy', () => {
     const withoutApproval = { npmScriptsApproved: false, packageScripts };
     expect(checkCommandRefusal('npm run lint', withoutApproval)).toBe(
-      'runs a package script or binary',
+      'runs a package script or binary (npm run)',
     );
     expect(checkCommandRefusal('npm run typecheck', withoutApproval)).toBe(
-      'runs a package script or binary',
+      'runs a package script or binary (npm run)',
     );
   });
 
@@ -481,16 +689,18 @@ describe('checkCommandRefusal', () => {
     }
     expect(checkCommandRefusal('npm run test', scriptsApproved)).toBeNull();
     expect(checkCommandRefusal('npm run test -- src/a.test.ts', withoutApproval)).toBe(
-      'passes a path to the test command',
+      'passes a path to npm test (src/a.test.ts)',
     );
     expect(checkCommandRefusal('npm run test:unit', withoutApproval)).toBe(
-      'runs a package script or binary',
+      'runs a package script or binary (npm run)',
     );
   });
 
   it('refuses bun run test without approval: bare bun test is the bun runner, not the script', () => {
     expect(unsafeCommandReason('bun test')).toBeNull();
-    expect(unsafeCommandReason('bun run test')).toBe('runs a package manager, not as a bare test');
+    expect(unsafeCommandReason('bun run test')).toBe(
+      'uses bun run instead of the required bun test',
+    );
   });
 
   it('admits an npm run script only when package.json defines it', () => {
@@ -521,13 +731,27 @@ describe('checkCommandRefusal', () => {
       const opts = { npmScriptsApproved: approved, packageScripts };
       expect(checkCommandRefusal('npx --no-install tsc --noEmit', opts)).toBeNull();
       expect(checkCommandRefusal('npx --no-install vitest run', opts)).toBeNull();
-      expect(checkCommandRefusal('npx tsc --noEmit', opts)).toBe('runs npx without --no-install');
-      expect(checkCommandRefusal('npx some-package', opts)).toBe('runs npx without --no-install');
+      expect(checkCommandRefusal('npx --quiet --no-install vitest run', opts)).toBe(
+        'runs npx without --no-install as its first option',
+      );
+      expect(checkCommandRefusal('npx tsc --noEmit', opts)).toBe(
+        'runs npx without --no-install as its first option',
+      );
+      expect(checkCommandRefusal('npx --no-install', opts)).toBe('runs npx without a program');
+      expect(checkCommandRefusal('npx some-package', opts)).toBe(
+        'runs npx without --no-install as its first option',
+      );
       expect(checkCommandRefusal('npx --no-install evil-tool', opts)).toBe(
-        'runs a program outside the stack tools through npx',
+        'requires a stack tool directly after npx --no-install (received evil-tool)',
       );
       expect(checkCommandRefusal('npx --no-install node -e "process.exit(0)"', opts)).toBe(
-        'runs a program outside the stack tools through npx',
+        'requires a stack tool directly after npx --no-install (received node)',
+      );
+      expect(checkCommandRefusal('npx --no-install --quiet vitest run', opts)).toBe(
+        'requires a stack tool directly after npx --no-install (received --quiet)',
+      );
+      expect(checkCommandRefusal('npx --no-install -- vitest run', opts)).toBe(
+        'requires a stack tool directly after npx --no-install (received --)',
       );
     }
   });
@@ -539,10 +763,10 @@ describe('checkCommandRefusal', () => {
       checkCommandRefusal('tsc --noEmit', { npmScriptsApproved: false, packageScripts }),
     ).toBeNull();
     expect(checkCommandRefusal('node scripts/deploy.ts', scriptsApproved)).toBe(
-      'runs a script or inline code',
+      'passes an operand to node (scripts/deploy.ts)',
     );
     expect(checkCommandRefusal('curl https://example.com', scriptsApproved)).toBe(
-      'runs a program outside the allowlist',
+      'runs a program outside the allowlist (curl)',
     );
     expect(checkCommandRefusal('', scriptsApproved)).toBe('names no program');
   });

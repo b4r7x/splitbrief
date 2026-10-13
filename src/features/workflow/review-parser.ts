@@ -7,7 +7,7 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
-import { editorDisplayLabel, resolveEditorArgv } from './editor-command.js';
+import { editorDisplayLabel, editorWaitingMessage, resolveEditorArgv } from './editor-command.js';
 import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
@@ -66,6 +66,7 @@ export function runEditor({
 }: RunEditorOptions): Promise<EditorExit> {
   suspendTerminalForEditor();
   return new Promise<EditorExit>((resolve, reject) => {
+    process.stdout.write(`\r\n${editorWaitingMessage({ command, args }, filePath)}\n`);
     const child = spawnEditor(command, [...args, filePath]);
     child.once('error', reject);
     child.once('close', (code, signal) => resolve({ code, signal }));

@@ -8,10 +8,15 @@ import {
   type Viewport,
 } from '../testing/visual/contracts/geometry.js';
 import { listVisualScenarios, VISUAL_CATALOG_VERSION } from '../testing/visual/catalog.js';
+import { editorHandoverScenarios } from '../testing/visual/gallery/editor-handover.js';
 import { createFilteredStdin } from '../src/lib/terminal/filtered-stdin/create.js';
 import { setActiveFilteredStdin } from '../src/lib/terminal/filtered-stdin/active.js';
 import { PreviewView } from '../testing/visual/preview/view.js';
 import { createPreviewController } from '../testing/visual/preview/controller.js';
+
+const PREVIEW_SCENARIOS = listVisualScenarios().filter(
+  (scenario) => !editorHandoverScenarios.has(scenario.id),
+);
 
 interface PreviewCliOptions {
   readonly list: boolean;
@@ -58,7 +63,7 @@ function printHelp(): void {
 
 function printCatalog(): void {
   process.stdout.write(`visual catalog v${VISUAL_CATALOG_VERSION}\n`);
-  for (const scenario of listVisualScenarios()) {
+  for (const scenario of PREVIEW_SCENARIOS) {
     process.stdout.write(
       `${scenario.id}\t${scenario.title}\tviewports=${scenario.viewports.map(formatViewport).join(',')}\telements=${scenario.elements.map((element) => element.id).join(',')}\n`,
     );
@@ -122,7 +127,7 @@ async function runTuiPreview(args: readonly string[] = process.argv.slice(2)): P
     });
     let fullscreen: ReturnType<typeof withFullScreen> | undefined;
     const controller = createPreviewController({
-      scenarios: listVisualScenarios(),
+      scenarios: PREVIEW_SCENARIOS,
       hostViewport: terminalViewport(),
       forward: (input) => inputProxy.write(input),
       onQuit: () => fullscreen?.instance.unmount(),

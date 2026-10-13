@@ -268,8 +268,11 @@ describe('checkPlan', () => {
 
   it('refuses a cmd check the plan command policy refuses at the approve level of the run', () => {
     const plan = makePlanProposal({
-      checks: [{ id: 'K9', kind: 'cmd', value: 'npm run lint', required: true }],
-      criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K8', 'K9'] }],
+      checks: [
+        { id: 'K9', kind: 'cmd', value: 'npm run lint', required: true },
+        { id: 'K10', kind: 'cmd', value: 'npm test -- run', required: true },
+      ],
+      criteria: [{ id: 'C1', text: 'Greets', checkIds: ['K1', 'K8', 'K9', 'K10'] }],
       tasks: [
         makeTaskSpec({
           checks: [
@@ -282,18 +285,24 @@ describe('checkPlan', () => {
     const refusedK8 = {
       code: 'refused-check-command',
       message:
-        'Check K8 is refused: `npx tsc --noEmit` runs npx without --no-install. Name a command the plan command policy runs, or use a `test` check.',
+        'Check K8 is refused: `npx tsc --noEmit` runs npx without --no-install as its first option. Name a command the plan command policy runs, or use a `test` check.',
+    };
+    const refusedK10 = {
+      code: 'refused-check-command',
+      message:
+        'Check K10 is refused: `npm test -- run` passes the argument run to npm test; an npm command takes no run, exec, exec-env or explore argument. Name a command the plan command policy runs, or use a `test` check.',
     };
     expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
       {
         code: 'refused-check-command',
         message:
-          'Check K9 is refused: `npm run lint` runs a package script or binary. Name a command the plan command policy runs, or use a `test` check.',
+          'Check K9 is refused: `npm run lint` runs a package script or binary (npm run). Name a command the plan command policy runs, or use a `test` check.',
       },
+      refusedK10,
       refusedK8,
     ]);
     // An approved plan may name a script that package.json does not define yet: a task can add it.
-    expect(checkPlan(plan, projectDir, fits, undefined, true)).toEqual([refusedK8]);
+    expect(checkPlan(plan, projectDir, fits, undefined, true)).toEqual([refusedK10, refusedK8]);
   });
 
   it('refuses a criterion id used twice', () => {

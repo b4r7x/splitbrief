@@ -557,7 +557,7 @@ describe('runChecks', () => {
       {
         checkId: 'K1',
         status: 'refused',
-        output: 'runs a package script or binary',
+        output: 'runs a package script or binary (npm run)',
         command: 'npm run typecheck',
       },
     ]);
@@ -600,7 +600,7 @@ describe('runChecks', () => {
       {
         checkId: 'K2',
         status: 'refused',
-        output: 'runs npx without --no-install',
+        output: 'runs npx without --no-install as its first option',
         command: 'npx some-package',
       },
       {
