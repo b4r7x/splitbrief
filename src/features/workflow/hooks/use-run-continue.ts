@@ -66,7 +66,7 @@ export function useRunContinue({
     inputMode.resetMode();
     // A run closed or finished elsewhere keeps its transcript and shows as it stands now.
     if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply') {
-      rereadRunAtRest(prepared.session.ref);
+      void rereadRunAtRest(prepared.session.ref);
       feedbackStore.setError(outcome.message);
       return;
     }

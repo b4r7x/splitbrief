@@ -96,7 +96,7 @@ describe('workflow closure', () => {
     expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
   });
 
-  it('End run overtaken by a passing review closes the ready run with a patch', async () => {
+  it('End run overtaken by a passing review closes the ready run without a patch', async () => {
     const projectDir = createTempDir('workflow-closure-race-');
     dirs.push(projectDir);
     execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
@@ -154,7 +154,8 @@ describe('workflow closure', () => {
     expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'discarded' });
     expect(readSession(ref)?.status).toBe('ended');
     expect(loadState(ref)?.reviewStatus).toBe('passed');
-    expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+    expect(loadState(ref)?.closed?.patch).toBeUndefined();
+    expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(false);
     expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
     expect(
       (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
@@ -168,7 +169,7 @@ describe('workflow closure', () => {
     { at: 'completion callback', review: 'passed' },
     { at: 'completion event', review: 'failed' },
   ] as const)(
-    'End run at the $at keeps the $review review and closes the run with a patch',
+    'End run at the $at keeps the $review review and closes the run without a patch',
     async ({ at, review }) => {
       const projectDir = createTempDir('workflow-closure-');
       dirs.push(projectDir);
@@ -245,7 +246,8 @@ describe('workflow closure', () => {
       expect(saved?.reviewStatus).toBe(review);
       expect(saved?.pendingRecovery).toBeUndefined();
       expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: closedAs });
-      expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+      expect(saved?.closed?.patch).toBeUndefined();
+      expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(false);
       expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
       expect(
         (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),

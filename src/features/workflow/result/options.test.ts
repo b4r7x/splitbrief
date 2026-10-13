@@ -38,6 +38,72 @@ describe('resultMenuRows', () => {
     expect(rows.find((row) => row.id === 'discard')?.consequence).toContain('run.patch');
   });
 
+  it('promises no patch when the run changed no files', () => {
+    const rows = resultMenuRows({ override: false, findings: [], confirming: false, files: 0 });
+
+    const discard = rows.find((row) => row.id === 'discard');
+    expect(discard?.consequence).toBe('close the run; it changed no files');
+    expect(discard?.consequence).not.toContain('run.patch');
+  });
+
+  it('closes the run without promising changes on Apply when no files changed', () => {
+    const rows = resultMenuRows({ override: false, findings: [], confirming: false, files: 0 });
+
+    expect(rows.find((row) => row.id === 'apply')?.consequence).toBe(
+      'close the run; it changed no files',
+    );
+  });
+
+  it('closes an empty override with open findings and asks once', () => {
+    const rows = resultMenuRows({
+      override: true,
+      findings: ['missing null check'],
+      confirming: false,
+      files: 0,
+    });
+
+    expect(rows.find((row) => row.id === 'apply')?.consequence).toBe(
+      'close the run with the open findings; asks once',
+    );
+  });
+
+  it('confirms an empty override without promising changes', () => {
+    const rows = resultMenuRows({
+      override: true,
+      findings: ['missing null check'],
+      confirming: true,
+      files: 0,
+    });
+
+    expect(rows.find((row) => row.id === 'confirm-apply')?.consequence).toBe(
+      'close the run; these findings stay open',
+    );
+  });
+
+  it.each([4, null])('keeps the Apply consequences when files is %s', (files) => {
+    const input = { override: false, findings: ['missing null check'], confirming: false, files };
+
+    expect(resultMenuRows(input).find((row) => row.id === 'apply')?.consequence).toBe(
+      'write the run’s changes into your checkout; close the run',
+    );
+    expect(
+      resultMenuRows({ ...input, override: true }).find((row) => row.id === 'apply')?.consequence,
+    ).toBe('write the changes with the open findings; asks once');
+    expect(
+      resultMenuRows({ ...input, override: true, confirming: true }).find(
+        (row) => row.id === 'confirm-apply',
+      )?.consequence,
+    ).toBe('write the changes; these findings stay open');
+  });
+
+  it('keeps the patch consequence when the run recorded no changed set', () => {
+    const rows = resultMenuRows({ override: false, findings: [], confirming: false, files: null });
+
+    expect(rows.find((row) => row.id === 'discard')?.consequence).toBe(
+      'close the run; save its changes in run.patch',
+    );
+  });
+
   it('names an override on its Apply row', () => {
     const rows = resultMenuRows({
       override: true,
@@ -106,6 +172,15 @@ describe('resultMenuTitle', () => {
     expect(resultMenuTitle({ override: false, findings: [], confirming: false, files: 4 })).toBe(
       'Ready to apply · 4 files changed · run changes await Apply',
     );
+  });
+
+  it('keeps the zero file count without promising changes await Apply', () => {
+    expect(resultMenuTitle({ override: false, findings: [], confirming: false, files: 0 })).toBe(
+      'Ready to apply · 0 files changed',
+    );
+    expect(
+      resultMenuTitle({ override: true, findings: ['issue'], confirming: false, files: 0 }),
+    ).toBe('Ready to apply as is · 1 open finding · 0 files changed');
   });
 
   it('leaves the count out when the run recorded no changed set', () => {

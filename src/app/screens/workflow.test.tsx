@@ -527,8 +527,17 @@ describe('WorkflowScreen showing a run at rest', () => {
   });
 
   it('states what an open run takes and continues it on a typed correction', async () => {
-    const record = openRun();
-    const state = makeWorkflowState({ phase: 'implementing' });
+    const state = makeWorkflowState({
+      phase: 'implementing',
+      tasks: [makeTask({ id: 'T003', status: 'in_progress' })],
+      interruptedStep: {
+        step: { kind: 'brief', taskId: taskId('T003'), attempt: 0 },
+        source: 'user',
+        at: '2026-10-13T08:00:00.000Z',
+        cut: 'mid-step',
+      },
+    });
+    const record = openRun({ hydration: { kind: 'loaded', state } });
     saveState(record.ref, state);
     const prepareResume = vi.fn(async () => ({
       kind: 'prepared' as const,

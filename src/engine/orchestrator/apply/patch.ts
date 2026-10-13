@@ -114,7 +114,10 @@ function withStandardSides(diff: string): string {
  * were never captured fails the write instead of producing a hunk that would
  * create or delete content the operator never had.
  */
-export async function writeRunPatch(ref: SessionRef, workspace: WorkspaceBase): Promise<string> {
+export async function writeRunPatch(
+  ref: SessionRef,
+  workspace: WorkspaceBase,
+): Promise<string | null> {
   const { projectDir, sessionId } = ref;
   const base = await readManifest(projectDir, sessionId, workspace.base.snapshotId);
   const baseline = await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
@@ -174,8 +177,8 @@ export async function writeRunPatch(ref: SessionRef, workspace: WorkspaceBase): 
 
   const patchPath = join(sessionDir(projectDir, sessionId), RUN_PATCH_FILE);
   if (changes.length === 0) {
-    await writeFile(patchPath, '', { mode: 0o600 });
-    return patchPath;
+    await rm(patchPath, { force: true });
+    return null;
   }
 
   const root = await mkdtemp(join(tmpdir(), 'splitbrief-run-patch-'));

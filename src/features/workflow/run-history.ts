@@ -2,6 +2,7 @@ import type { RunRecord } from '../../core/sessions/run-record.js';
 import { readRunEvents, type RunReplay } from '../../engine/events/replay.js';
 import { reapOrphanRunners } from '../../engine/orchestrator/run/orphan-reaper.js';
 import { loadEvents } from '../../stores/workflow/actions/load.js';
+import { resetWorkflowControls } from '../../stores/workflow/actions/reset.js';
 import { hydrateFromState } from '../../stores/workflow/actions/hydrate.js';
 import type { EngineEvent, EngineEventOf } from '../../engine/events/types.js';
 import { extractLastJsonObject } from '../../engine/runners/typed-output.js';
@@ -13,11 +14,12 @@ import { interruptedCallEvents } from '../../engine/calls/interrupted.js';
  * A past run, put back on the workflow screen: its session log replayed into the stores, then the
  * saved state laid over the facts the log cannot settle — the phase it stopped in, the brief list
  * and what it spent. A run whose process went away left its last calls open; they read as the
- * interruption its resume or its End run will record. One read at the navigation event; the live
- * bus appends from there.
+ * interruption its resume or its End run will record. Navigation and changed session files at
+ * rest replay this history; the live bus appends while this process drives the run.
  */
 export async function hydrateRun(record: RunRecord): Promise<void> {
   const publish = await readRunHistory(record);
+  resetWorkflowControls();
   publish();
 }
 

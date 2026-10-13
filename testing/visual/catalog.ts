@@ -1497,9 +1497,9 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       surface: screenSurface('workflow'),
       checkpoint: {
         id: 'at-rest-closed-elsewhere',
-        title: 'The next action reads the run again and shows it closed, without its stop menu',
+        title: 'The screen follows the ended run without input',
         kind: 'failure',
-        marker: 'Cannot continue: this run was ended',
+        marker: 'visual-at-rest-closed-elsewhere',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1582,6 +1582,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Ready to apply',
         kind: 'ready',
         marker: 'Ready to apply',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Replayed transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-ready-empty-diff',
+      title: 'Workflow · Show diff with no changes',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'ready-empty-diff',
+        title: 'No changes to show',
+        kind: 'ready',
+        marker: 'No run changes to show.',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -1694,6 +1710,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Ended run',
         kind: 'failure',
         marker: 'visual-closed-ended',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-closed-ended-empty',
+      title: 'Workflow · ended without changes',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-ended-empty',
+        title: 'Ended run without a patch',
+        kind: 'failure',
+        marker: 'visual-closed-ended-empty',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },

@@ -10,7 +10,7 @@ import { ReviewChecksCard } from '../../features/workflow/review-checks/card.js'
 import { reviewChecksCardLayout } from '../../features/workflow/review-checks/options.js';
 import { reviewChecksPromptStore } from '../../stores/review-checks-prompt/prompt.js';
 import { showRunDiff } from '../../features/workflow/result/show-diff.js';
-import { filesView } from '../../features/workflow/closed/projections.js';
+import { changedFileCount } from '../../features/workflow/closed/projections.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { tasksStore } from '../../stores/workflow/tasks.js';
@@ -262,10 +262,7 @@ export function WorkflowScreen({
     ready !== undefined && ready.hydration.kind === 'loaded'
       ? (ready.hydration.state.acceptedAsIs?.findings ?? [])
       : [];
-  const changedFiles =
-    ready === undefined || ready.summary === null
-      ? null
-      : (filesView(ready.summary).changed?.length ?? null);
+  const changedFiles = ready === undefined ? null : changedFileCount(ready.summary);
   const railForm = selectRailForm({ phase: model.phase, cols });
   const reviewBudgetRows = getReviewPanelBudget({ rows, inputRows });
   const requestedPromptRows = stopMenuOpen

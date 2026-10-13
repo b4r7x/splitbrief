@@ -113,7 +113,7 @@ async function openWorkspaceRun(strategy: 'worktree' | 'staged-copy') {
     },
   };
   saveState(ref, state);
-  return { ref, state, workspaceDir };
+  return { ref, state, workspaceDir, base };
 }
 
 function checkoutFiles(projectDir: string) {
@@ -189,6 +189,36 @@ describe('closeRunIfOpen on a workspace run before Apply', () => {
     expect(closure.state.closed?.as).toBe('discarded');
     expect(loadState(ref)?.closed?.as).toBe('discarded');
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(true);
+  });
+
+  it('End run discards an empty ready result without a patch or apply warning', {
+    timeout: 60_000,
+  }, async () => {
+    const { ref, state, workspaceDir, base } = await openWorkspaceRun('staged-copy');
+    await reconcileWorkspaceToBase({
+      ...ref,
+      snapshotId: base.manifest.id,
+      workspaceDir,
+      keep: [],
+    });
+    const ready: WorkflowState = { ...state, phase: 'complete', reviewStatus: 'passed' };
+    saveState(ref, ready);
+    const { bus, events } = makeBusRecorder();
+
+    const closure = await closeRunIfOpen({ ...ref, bus }, ready);
+
+    expect(closure.closedNow).toBe(true);
+    expect(closure.state.closed?.as).toBe('discarded');
+    expect(loadState(ref)?.closed?.as).toBe('discarded');
+    expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(false);
+    expect(closure.state.closed?.patch).toBeUndefined();
+    expect(loadState(ref)?.closed?.patch).toBeUndefined();
+    expect(
+      events.some(
+        (event) => event.type === 'warning' && event.message.includes('apply them with git apply'),
+      ),
+    ).toBe(false);
+    expect(existsSync(workspaceDir)).toBe(false);
   });
 
   it('End run from a recovery halt writes run.patch and removes the workspace', {

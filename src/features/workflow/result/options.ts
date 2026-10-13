@@ -28,7 +28,10 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
       {
         id: 'confirm-apply',
         label: 'Apply as is',
-        consequence: 'write the changes; these findings stay open',
+        consequence:
+          input.files === 0
+            ? 'close the run; these findings stay open'
+            : 'write the changes; these findings stay open',
       },
       { id: 'back', label: 'Back', consequence: 'return to the result menu' },
     ];
@@ -37,9 +40,14 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
     {
       id: 'apply',
       label: input.override ? 'Apply as is' : 'Apply',
-      consequence: input.override
-        ? 'write the changes with the open findings; asks once'
-        : 'write the run’s changes into your checkout; close the run',
+      consequence:
+        input.files === 0
+          ? input.override
+            ? 'close the run with the open findings; asks once'
+            : 'close the run; it changed no files'
+          : input.override
+            ? 'write the changes with the open findings; asks once'
+            : 'write the run’s changes into your checkout; close the run',
     },
     {
       id: 'show-diff',
@@ -49,7 +57,10 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
     {
       id: 'discard',
       label: 'Discard',
-      consequence: 'close the run; save its changes in run.patch',
+      consequence:
+        input.files === 0
+          ? 'close the run; it changed no files'
+          : 'close the run; save its changes in run.patch',
     },
   ];
 }
@@ -84,7 +95,9 @@ export function resultMenuTitle(input: ResultMenuInput): readonly ConversationRo
   const changed = input.files === null ? [] : [`${countNoun(input.files, 'file')} changed`];
   const facts = input.override
     ? [countNoun(input.findings.length, 'open finding'), ...changed]
-    : [...changed, 'run changes await Apply'];
+    : input.files === 0
+      ? changed
+      : [...changed, 'run changes await Apply'];
   return [
     {
       text: input.override ? 'Ready to apply as is' : 'Ready to apply',

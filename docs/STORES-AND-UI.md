@@ -91,7 +91,7 @@ On `turn_interrupted` or `workflow_cancelled`, the operations reducer clears eve
 
 ### Navigation -- `src/stores/navigation/`
 
-- **routerStore** -- current screen (`home` | `workflow` | `setup`) plus screen-specific data. Validates transitions against a fixed map. The `workflow` route carries the run itself: a `RunRecord` (`src/core/sessions/run-record.ts`) and whether a process in this session is driving it (`execution: { kind: 'local'; prepared; steer? } | { kind: 'at-rest' }`). Every session selection lands there — `handleSessionSelect` reads the record, replays the history and navigates at rest, whatever the run did. The record is complete before the route changes, so the screen does no disk IO; `routerStore.updateRun({ run, execution? })` re-reads it in place when the run loop returns or a command changes its checkpoint.
+- **routerStore** -- current screen (`home` | `workflow` | `setup`) plus screen-specific data. Validates transitions against a fixed map. The `workflow` route carries the run itself: a `RunRecord` (`src/core/sessions/run-record.ts`) and whether a process in this session is driving it (`execution: { kind: 'local'; prepared; steer? } | { kind: 'at-rest' }`). Every session selection lands there — `handleSessionSelect` reads the record, replays the history and navigates at rest, whatever the run did. At rest, the screen observes changes to the session's state, lock, log and summary files. `rereadRunAtRest` replays the saved history and calls `routerStore.updateRun({ run, execution? })` with the refreshed record. A superseded read publishes nothing. The run loop and commands also update the record in place.
 
 ### UI -- `src/stores/ui/`
 

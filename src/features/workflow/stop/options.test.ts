@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
+import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
@@ -173,16 +174,35 @@ describe('readStopMenuRows on a run ready to apply', () => {
     resetAllStores();
   });
 
-  it('offers End run as a discard that saves run.patch, and no Resume', () => {
+  it.each([null, makeSummary(), makeSummary({ changedFiles: ['src/changed.ts'] })])(
+    'offers End run as a discard that saves run.patch, and no Resume',
+    (summary) => {
+      routerStore.init({
+        screen: 'workflow',
+        run: makeRunRecord({ status: { kind: 'ready-to-apply', override: false }, summary }),
+        execution: { kind: 'at-rest' },
+      });
+
+      const rows = readStopMenuRows();
+      expect(rows.map((row) => row.id)).toEqual(['end-run', 'leave']);
+      expect(rows[0]?.consequence).toBe('discard the result; save its changes in run.patch');
+    },
+  );
+
+  it('offers End run without a patch when the ready run changed no files', () => {
     routerStore.init({
       screen: 'workflow',
-      run: makeRunRecord({ status: { kind: 'ready-to-apply', override: false } }),
+      run: makeRunRecord({
+        status: { kind: 'ready-to-apply', override: false },
+        summary: makeSummary({ changedFiles: [] }),
+      }),
       execution: { kind: 'at-rest' },
     });
 
     const rows = readStopMenuRows();
     expect(rows.map((row) => row.id)).toEqual(['end-run', 'leave']);
-    expect(rows[0]?.consequence).toBe('discard the result; save its changes in run.patch');
+    expect(rows[0]?.consequence).toBe('discard the result; it changed no files');
+    expect(rows[0]?.consequence).not.toContain('run.patch');
   });
 });
 
