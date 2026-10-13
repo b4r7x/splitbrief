@@ -37,29 +37,32 @@ import {
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
 import { formatMessageInput } from '../queue/prompt.js';
 
-/**
- * The brief's own declared files that already moved since it started. A restarted
- * attempt is told about them so it edits what is there instead of writing the
- * file again from nothing.
- */
-async function changedDeclaredFilesNote(
+/** The brief's own declared files that already moved since it started. */
+async function changedDeclaredFiles(
   projectDir: string,
   task: Task,
   taskStartSnapshot: ChangedFilesSnapshot,
-): Promise<{ extra?: string }> {
+): Promise<string[]> {
   try {
     const patterns = taskDeclaredPatterns(task);
-    const changed = (await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot)).filter(
-      (file) => isInDeclaredSet(file, patterns),
+    return (await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot)).filter((file) =>
+      isInDeclaredSet(file, patterns),
     );
-    if (changed.length === 0) return {};
-    return {
-      extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
-    };
   } catch {
-    // Best-effort context: a snapshot head the operator rewrote must not stop the restart.
-    return {};
+    // Best-effort: a snapshot head the operator rewrote must not stop the restart.
+    return [];
   }
+}
+
+/**
+ * A restarted attempt is told about the declared files that already moved, so it
+ * edits what is there instead of writing the file again from nothing.
+ */
+function changedDeclaredFilesNote(changed: readonly string[]): { extra?: string } {
+  if (changed.length === 0) return {};
+  return {
+    extra: `These declared files changed since this brief started (an earlier attempt of this brief left them): ${changed.join(', ')}`,
+  };
 }
 
 export type RunImplementationResult = {
@@ -221,41 +224,42 @@ export async function runImplementation(opts: {
           absorb();
           const correction = buildCorrectionInput(state, task, wctx);
           const combinedSteer = correction.continuation?.steer;
-          const continuation =
-            partial === undefined && combinedSteer === undefined
-              ? undefined
-              : {
-                  ...(partial !== undefined && { partial }),
-                  ...(combinedSteer !== undefined && { steer: combinedSteer }),
-                  ...(await changedDeclaredFilesNote(
-                    workspace.projectDir,
-                    task,
-                    opts.taskStartSnapshot,
-                  )),
-                };
+          const continues = partial !== undefined || combinedSteer !== undefined;
+          const changed = continues
+            ? await changedDeclaredFiles(workspace.projectDir, task, opts.taskStartSnapshot)
+            : [];
+          const continuation = continues
+            ? {
+                ...(partial !== undefined && { partial }),
+                ...(combinedSteer !== undefined && { steer: combinedSteer }),
+                ...changedDeclaredFilesNote(changed),
+              }
+            : undefined;
+          // A fix task may already have its code on disk when none of its findings needs a change,
+          // and a cut attempt continues on the files it wrote before the cut: either call may
+          // find the work complete and change nothing.
+          const allowNoChange =
+            (task.fix !== undefined && opts.retryError === undefined) ||
+            (partial !== undefined && changed.length > 0);
           const firstCall: ImplementerOptions = {
             ...call,
             ...correction,
             signal: attemptSignal,
             ...creationOwnership(),
             ...(continuation !== undefined && { continuation }),
+            ...(allowNoChange && { allowNoChange }),
           };
           return runWithCorrectionPasses({
             ref: { projectDir, sessionId },
-            first: () => {
-              // A fix task may already have its code on disk when none of its findings needs a change.
-              if (task.fix !== undefined && opts.retryError === undefined) {
-                return wctx.implementer.implement({ ...firstCall, allowNoChange: true });
-              }
-              return opts.retryError === undefined
+            first: () =>
+              opts.retryError === undefined
                 ? wctx.implementer.implement(firstCall)
                 : wctx.implementer.retry({
                     ...firstCall,
                     error: opts.retryError,
                     attempt: 1,
                     kind: 'local',
-                  });
-            },
+                  }),
             pass: async () => {
               const correction = buildCorrectionInput(state, task, wctx);
               return wctx.implementer.implement({
@@ -265,11 +269,9 @@ export async function runImplementation(opts: {
                 ...creationOwnership(),
                 continuation: {
                   ...correction.continuation,
-                  ...(await changedDeclaredFilesNote(
-                    workspace.projectDir,
-                    task,
-                    opts.taskStartSnapshot,
-                  )),
+                  ...changedDeclaredFilesNote(
+                    await changedDeclaredFiles(workspace.projectDir, task, opts.taskStartSnapshot),
+                  ),
                 },
                 allowNoChange: true,
               });

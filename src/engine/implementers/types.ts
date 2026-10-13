@@ -125,9 +125,10 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
     | ((file: string) => Promise<{ allow: boolean; reason?: string | undefined }>)
     | undefined;
   /**
-   * A fix task may find its work already on disk, so a
-   * direct-write attempt that verifies and changes nothing completes instead of
-   * failing `no-staged-change`. Every other attempt must change something.
+   * A fix task, or a cut attempt continued on the files it already wrote, may find
+   * its work already on disk, so a direct-write attempt that verifies and changes
+   * nothing completes instead of failing `no-staged-change`. Every other attempt
+   * must change something.
    */
   allowNoChange?: boolean | undefined;
 }
