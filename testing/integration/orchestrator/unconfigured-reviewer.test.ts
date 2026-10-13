@@ -184,9 +184,9 @@ describe('run with no reviewer configured', () => {
       'review_started',
       'review_step',
       'all_tasks_done',
-      // End-of-run checks are off: one row says so, and no reviewer check runs.
+      // End-of-run checks are off: one row says so, no reviewer check runs, and the one review
+      // step is the verdict.
       'review_checks',
-      'review_step',
       'drift_report',
       'cost_update',
       'review_completed',
@@ -205,6 +205,9 @@ describe('run with no reviewer configured', () => {
       expect(review).not.toHaveProperty('afterTaskId');
     }
     expect(reviews[1]).toMatchObject({ verdict: 'pass', findings: { blocking: 0, minor: 0 } });
+    expect(events.filter((event) => event.type === 'review_step')).toEqual([
+      expect.objectContaining({ step: 'verdict' }),
+    ]);
     expect(events.filter((event) => event.type === 'planner_status')).toHaveLength(2);
     const checks = events.filter((event) => event.type === 'full_suite');
     expect(checks.filter((event) => event.moment !== 'plan')).toEqual([]);
