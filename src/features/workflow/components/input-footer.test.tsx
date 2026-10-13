@@ -1114,15 +1114,11 @@ describe('InputFooter', () => {
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.reviewer, 'Review').replace('\u001b[39m', ''),
     );
+    expect(ui.lastFrame()).toContain(paint(defaultTheme.textDim, ' · reviewing changes 0:42'));
     expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.textDim, ' · waiting for the verdict 0:42'),
+      paint(defaultTheme.textDim, ' · reviewing changes 0:42').replace('\u001b[39m', ''),
     );
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.textDim, ' · waiting for the verdict 0:42').replace('\u001b[39m', ''),
-    );
-    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
-      'Review · waiting for the verdict 0:42',
-    );
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Review · reviewing changes 0:42');
     ui.unmount();
   });
 

@@ -24,6 +24,7 @@ import { isInDeclaredSet, taskDeclaredPatterns } from '../../core/scope/declared
 import { isQueuedMessagePendingReviewer } from '../../core/queue-state.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { resolveEndChecks } from '../../core/config/runtime/resolve.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import {
   getRunnerCatalogDisplayName,
@@ -453,6 +454,12 @@ export async function runFinalReviewPhase(opts: {
     };
   };
   publishReviewEvent({ bus, phase: state.phase }, { type: 'review_started', ...reviewEvent });
+  bus.publish({
+    type: 'review_step',
+    ts: Date.now(),
+    phase: state.phase,
+    step: opts.reviewChecks === true && resolveEndChecks(config) ? 'choosing-checks' : 'verdict',
+  });
   if (opts.signal?.aborted) return interrupted();
   if (opts.scope !== 'task') {
     bus.publish({ type: 'all_tasks_done', ts: Date.now(), phase: state.phase });
@@ -517,6 +524,7 @@ export async function runFinalReviewPhase(opts: {
       }
       reviewChecksSection = checks.section;
       dischargedReviewCommands = checks.discharged;
+      bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verdict' });
     }
     // A run planned on one session agreed on its plan; only an older run wrote a spec.
     const spec = readSpecFileOrEmpty(

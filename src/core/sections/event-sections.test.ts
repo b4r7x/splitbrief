@@ -22,6 +22,66 @@ function requireSection<T extends Section['type']>(
 }
 
 describe('groupEventsIntoSections', () => {
+  it.each(['final', 'task'] as const)(
+    'settles an unfinished %s review at resume after check selection completed',
+    (scope) => {
+      const phase = scope === 'final' ? 'final-review' : 'implementing';
+      const events: EngineEvent[] = [
+        { type: 'review_started', ts: 1_000, phase, scope, tool: 'codex' },
+        makeRunnerCallCompleted({
+          ts: 3_000,
+          phase,
+          role: 'review',
+          startedAt: 1_000,
+          endedAt: 3_000,
+          durationMs: 2_000,
+        }),
+        {
+          type: 'review_checks',
+          ts: 3_000,
+          phase,
+          scope,
+          status: 'planned',
+          commands: [{ id: 'V1', command: 'npm test', reason: 'Verify the change.' }],
+        },
+        {
+          type: 'full_suite',
+          ts: 4_000,
+          phase,
+          status: 'running',
+          id: 'V1',
+          command: 'npm test',
+          moment: 'pre-review',
+        },
+        { type: 'workflow_resumed', ts: 65_000, phase },
+        { type: 'review_started', ts: 66_000, phase, scope, tool: 'codex' },
+        {
+          type: 'review_completed',
+          ts: 70_000,
+          phase,
+          scope,
+          tool: 'codex',
+          verdict: 'pass',
+          duration: 4_000,
+        },
+      ];
+      const sections = groupEventsIntoSections(events);
+      expect(sections.map((section) => section.type)).toEqual([
+        'settled-stage',
+        'events',
+        'settled-stage',
+      ]);
+      expect(sections[0]).toMatchObject({
+        items: events.slice(0, 4),
+        summary: { stage: 'review', scope, outcome: 'stopped', duration: 3_000, rerunsBefore: 0 },
+      });
+      expect(sections[1]?.items).toEqual([events[4]]);
+      expect(sections[2]).toMatchObject({
+        summary: { outcome: 'passed', duration: 4_000, rerunsBefore: scope === 'final' ? 1 : 0 },
+      });
+    },
+  );
+
   it.each(['review_fix_started', 'workflow_complete'] as const)(
     'preserves a legacy failed review recorded by %s before a new review passes',
     (terminal) => {

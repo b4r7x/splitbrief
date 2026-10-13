@@ -26,6 +26,11 @@ import {
   markdownConversationRowsCacheKey,
 } from './markdown-rows.js';
 import { settledRowBlock } from './settled-row-block.js';
+import { stageSummaryRow } from '../components/conversation-flow/stage-summary.js';
+import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
+import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
+import { rowsBlock } from './row-block-compose.js';
+import { segmentedRow } from './row-format/rows.js';
 import { walkTranscript, type RunnerActivityBatch } from './transcript-walk.js';
 
 const MIN_ROW_WIDTH = 1;
@@ -110,8 +115,31 @@ function buildConversationRowsProjectionWithContext(
 
   for (const step of walkTranscript(inputs.sections)) {
     if (step.kind === 'settled') {
-      const block = settledRowBlock({ section: step.section, width: ctx.width });
-      appendBlock(block, undefined, true);
+      const section = step.section;
+      const key = `review-${section.startIndex}`;
+      if (
+        section.type === 'settled-stage' &&
+        section.summary.stage === 'review' &&
+        section.items.every(
+          (event) => isTranscriptRowlessEvent(event) || isRunnerCallTranscriptRowSuppressed(event),
+        )
+      )
+        continue;
+      const block =
+        section.type === 'settled-stage' && section.summary.stage === 'review'
+          ? rowsBlock(key, [
+              segmentedRow(
+                key,
+                [...stageSummaryRow(section.summary).state.headingParts.id],
+                'section',
+              ),
+            ])
+          : settledRowBlock({ section, width: ctx.width });
+      if (block !== null) appendBlock(block, undefined, true);
+      continue;
+    }
+    if (step.kind === 'settled-end') {
+      appendBlock(settledRowBlock({ section: step.section, width: ctx.width }));
       continue;
     }
     if (step.kind === 'activity-batch') {

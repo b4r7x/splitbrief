@@ -71,12 +71,13 @@ it.each([
       model: 'gpt-5',
       axes: ['high'],
     });
+    addEvent({ type: 'review_step', ts: NOW - 1_000, phase, step: 'choosing-checks' });
     const progressNow = () =>
       deriveBuildProgress(
         input({ lifecycle: lifecycleStore.get(), operations: operationsStore.get() }),
       );
     const reviewer = 'Review · OpenAI Codex CLI · GPT-5 · high';
-    expect(progressNow().activity).toBe(`${reviewer} · waiting for the verdict`);
+    expect(progressNow().activity).toBe(`${reviewer} · choosing checks`);
     expect(progressNow().freshness).toBe('last event 1s ago');
     addEvent(
       makeRunnerCallStarted({
@@ -89,7 +90,7 @@ it.each([
         axes: ['high'],
       }),
     );
-    expect(progressNow().activity).toBe(reviewer);
+    expect(progressNow().activity).toBe(`${reviewer} · choosing checks`);
     addEvent(
       makeRunnerCallCompleted({
         ts: NOW - 800,
@@ -101,7 +102,17 @@ it.each([
         durationMs: 100,
       }),
     );
-    expect(progressNow().activity).toBe(`${reviewer} · waiting for the verdict`);
+    expect(progressNow().activity).toBe(`${reviewer} · choosing checks`);
+    addEvent({
+      type: 'review_checks',
+      ts: NOW - 750,
+      phase,
+      scope,
+      status: 'planned',
+      commands: [],
+      declined: [],
+      reason: 'No checks needed.',
+    });
     addEvent({
       type: 'full_suite',
       ts: NOW - 700,
@@ -124,7 +135,7 @@ it.each([
       status: 'done',
       passed: true,
     });
-    expect(progressNow().activity).toBe(`${reviewer} · waiting for the verdict`);
+    expect(progressNow().activity).toBe(`${reviewer} · reviewing changes`);
     addEvent({
       type: 'review_completed',
       ts: NOW - 500,
@@ -135,7 +146,7 @@ it.each([
       duration: 500,
     });
     expect(progressNow().activity).toBe(
-      scope === 'task' ? 'Between calls' : 'Review · waiting for the verdict',
+      scope === 'task' ? 'Between calls' : 'Review · reviewing changes',
     );
     expect(progressNow().freshness).toBe('last event 0s ago');
     resetWorkflow();
@@ -713,17 +724,17 @@ describe('deriveBuildProgress', () => {
     ).toBe('Waiting for the consult answer');
     expect(
       deriveBuildProgress(input({ lifecycle: lifecycleState({ phase: 'final-review' }) })).activity,
-    ).toBe('Review · waiting for the verdict');
+    ).toBe('Review · reviewing changes');
   });
 
-  it('says waiting for the verdict and shows no "no update yet" in final review between calls', () => {
+  it('says reviewing changes and shows no "no update yet" in final review between calls', () => {
     const progress = deriveBuildProgress(
       input({
         lifecycle: lifecycleState({ phase: 'final-review', lastRunnerEventTs: null }),
         operations: operationsState({ active: null }),
       }),
     );
-    expect(progress.activity).toBe('Review · waiting for the verdict');
+    expect(progress.activity).toBe('Review · reviewing changes');
     expect(progress.freshness).toBe('');
     expect(progress.freshness).not.toContain('no update yet');
     for (const width of [getChromeContentWidth(120), 80, 60]) {

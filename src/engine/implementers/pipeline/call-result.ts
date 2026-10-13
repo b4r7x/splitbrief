@@ -1,6 +1,7 @@
 import type { TaskId } from '../../../core/schemas/task.js';
 import { seatAxisWords } from '../../../core/runners/effort-channel.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
+import { createRunnerCallId } from '../../calls/call-id.js';
 import {
   runnerOutcome,
   type RunnerFailureOutcomeState,
@@ -12,8 +13,6 @@ import { classifySeatFailure } from '../../runners/seat-failure.js';
 import { isRecord } from '../../../utils/type-guards.js';
 
 export const ABORTED_OUTCOME_TEXT = 'Aborted';
-
-let implementerCallSequence = 0;
 
 export function defaultShouldThrow(err: unknown): boolean {
   return processError.isNotFound(err) || processError.isTimeout(err);
@@ -44,7 +43,7 @@ export function createImplementerCallContext(opts: {
   const implementer = opts.config.implementer;
   const backendKind = opts.backendKind ?? implementer.kind;
   return {
-    callId: `implementer-${++implementerCallSequence}`,
+    callId: createRunnerCallId('implementer'),
     role: 'implementer',
     backendKind,
     runnerName: implementerRunnerName(implementer),

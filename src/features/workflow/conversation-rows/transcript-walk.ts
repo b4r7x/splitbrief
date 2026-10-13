@@ -58,6 +58,7 @@ export function settledTaskStartedEvent(
 
 export type TranscriptWalkStep =
   | { kind: 'settled'; section: SettledTranscriptSection }
+  | { kind: 'settled-end'; section: SettledTranscriptSection }
   | ((
       | { kind: 'activity-batch'; batch: RunnerActivityBatch }
       | { kind: 'recovery'; recovery: RecoveryFold }
@@ -236,6 +237,8 @@ export function* walkTranscript(
     }
     if (isSettledSection(section)) {
       yield* flush();
+      if (section.type === 'settled-stage' && section.summary.stage === 'review')
+        yield { kind: 'settled-end', section };
       lastRowEvent = null;
       openHeader = null;
     }

@@ -1,6 +1,7 @@
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
+import { createRunnerCallId } from '../calls/call-id.js';
 import {
   createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
@@ -66,8 +67,6 @@ interface SpawnAndCollectOptions {
   /** Redacts invocation-specific values before they reach controlled surfaces. */
   redact?: CustomRunnerRedactor | undefined;
 }
-
-let callSequence = 0;
 
 export const spawnCollectError = {
   invalidHardDeadline: (timeoutMs: number) =>
@@ -146,7 +145,7 @@ export async function spawnAndCollect(
   const context =
     opts.callContext ??
     ({
-      callId: `call-${++callSequence}`,
+      callId: createRunnerCallId('call'),
       role: 'implementer',
       backendKind: 'cli',
       runnerName: opts.command,

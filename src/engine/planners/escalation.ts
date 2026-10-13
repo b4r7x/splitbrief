@@ -7,6 +7,7 @@ import { buildProjectLanguageContext } from '../spec/prompts/language-context.js
 import type { EscalateOptions, EscalationResult, PlannerOutputCallbacks } from './types.js';
 import { toInvokeResult, toTokenDelta } from '../calls/projection.js';
 import type { RunnerCallContext, RunnerCallResult } from '../calls/types.js';
+import { createRunnerCallId } from '../calls/call-id.js';
 import { requireCompletedCall } from './require-completed-call.js';
 
 type PlannerEscalationConfig = {
@@ -34,11 +35,9 @@ type PlannerEscalationConfig = {
 
 const DEFAULT_BACKEND_KIND: RunnerCallContext['backendKind'] = 'cli';
 
-let escalationCallSequence = 0;
-
 function createEscalationCallContext(config: PlannerEscalationConfig): RunnerCallContext {
   return {
-    callId: `escalation-${++escalationCallSequence}`,
+    callId: createRunnerCallId('escalation'),
     role: 'escalation',
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,
     ...(config.runnerName !== undefined && { runnerName: config.runnerName }),

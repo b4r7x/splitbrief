@@ -116,6 +116,8 @@ The full union has many variants, but the pattern is consistent: every event is 
 
 Task reviews carry `afterTaskId`, the completed brief that scheduled the review. Final reviews omit it. A completion carries the derived verdict and `duration` in milliseconds. `findings` counts blocking and minor findings only when a verdict exists. A failed call records `no-verdict`; a stop records `stopped`. Neither outcome carries findings.
 
+`review_step` names the engine's current step: `choosing-checks` or `verdict`. A review after an answered question starts at `verdict`. The stores carry the recorded step into each review call and the gaps between calls.
+
 ### Runner call pipeline
 
 Raw acquisition happens before the runner-call contract. The shared subprocess helpers in `src/lib/process/spawn/` (`lifecycle.ts`, `run-command.ts`, `progress.ts`, `line-stream.ts`) drain child stdout/stderr while retaining bounded snapshots: stdout/result text defaults to 1 MiB with prefix+tail retention, stderr defaults to a 256 KiB tail, and stdout line buffers default to 1 MiB; an over-budget channel is retained-and-reported, never terminated. Snapshots carry `bytesSeen`, `bytesStored`, `omittedBytes`, `truncated`, policy, and budget. Runner stderr streaming uses an 8 KiB line buffer; an oversized stderr line is skipped and becomes a bounded `stderr_line_overflow` warning. Process errors use only sanitized bounded snapshots.
@@ -125,6 +127,8 @@ Backend calls are normalized through `src/engine/calls/*`. CLI tools, shell comm
 - call identity: `callId`, role, backend kind, runner/model metadata
 - lifecycle status: `completed`, `failed`, `truncated`, `aborted`, `timeout`, `refused`, `unsupported_tool`, or `incomplete`
 - text with semantic channel (`assistant`, `result`, `system`, or raw compatibility text), usage, native session ID, tool-use, artifacts, warnings, error, and `partial`
+
+The recorder assigns an identity to each tool use whose upstream record has no id. Its input updates and completion keep that identity. A tool name is a label, never a tool-use identity.
 
 Which budget a call dies on is a judgement, not a byte count. The text channels, the streamed tool-input deltas and the artifacts are the result itself, so exhausting one of their budgets ends the call `truncated` with the limit as its error. Stderr, the tool-use records and the input a tool was *announced* with (`toolUseDelta` at the `started` stage, which `toolUseDone` carries again in full) are diagnostics: exhausting their budgets leaves the call `completed` and says so with a `call_warning`, so a run with hundreds of tool calls does not lose a healthy result to its own telemetry.
 

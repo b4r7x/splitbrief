@@ -18,6 +18,7 @@ export type RunnerActivityLedgerTone = 'info' | 'success' | 'warning' | 'error' 
 export type RunnerActivitySeverity = 'info' | 'warning' | 'error';
 
 export interface RunnerActivityDisplayInput {
+  activityId?: string | undefined;
   stage: EngineEventOf<'runner_call_activity'>['stage'];
   kind: Exclude<EngineEventOf<'runner_call_activity'>['kind'], 'session'>;
   label: string;
@@ -75,6 +76,12 @@ export type RunnerActivityLedgerLabel =
 const DEFAULT_DIAGNOSTIC_PREVIEW_MAX_CELLS = 80;
 const INTERNAL_RUNNER_INTERRUPTED_PATTERN = /\brunner_interrupted\b/g;
 
+export function isProtocolActivity(
+  input: Pick<EngineEventOf<'runner_call_activity'>, 'kind' | 'label'>,
+): boolean {
+  return input.kind === 'unknown' && /^tool StructuredOutput$/i.test(input.label.trim());
+}
+
 export function runnerActivityLedgerItem(
   input: RunnerActivityDisplayInput,
   options: RunnerActivityDisplayOptions = {},
@@ -97,7 +104,7 @@ export function runnerActivityLedgerItem(
   const rawMarker = display.rawAvailable === true ? 'raw' : null;
 
   return {
-    visibleKey: [label, value, rawMarker ?? ''].join('\u0000'),
+    visibleKey: input.activityId ?? [label, value, rawMarker ?? ''].join('\u0000'),
     groupingKey: label.toLowerCase(),
     label,
     groupLabel: label.toLowerCase(),
@@ -223,6 +230,9 @@ function runnerActivityLedgerValue(
     return detail ? `current turn interrupted: ${detail}` : 'current turn interrupted';
   }
 
+  if (/^tool (Read|Write|Edit|MultiEdit)$/i.test(input.label)) return 'file';
+  if (/^tool (Bash|Shell)$/i.test(input.label)) return 'command';
+
   const source = input.target ?? input.label;
   const withoutVerb = stripActivityVerb(source);
   const primary = shellCommandFromText(withoutVerb) ?? shellCommandFromText(source) ?? withoutVerb;
@@ -236,6 +246,9 @@ function runnerActivityLedgerLabel(
   opts: { interrupted: boolean; shellCommand: boolean },
 ): RunnerActivityLedgerLabel {
   if (opts.interrupted) return 'STOP';
+  if (/^tool Read$/i.test(input.label)) return 'READ';
+  if (/^tool (Write|Edit|MultiEdit)$/i.test(input.label)) return 'EDIT';
+  if (/^tool (Bash|Shell)$/i.test(input.label)) return 'RUN';
 
   switch (input.kind) {
     case 'warning':

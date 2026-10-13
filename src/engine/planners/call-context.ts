@@ -1,3 +1,4 @@
+import { createRunnerCallId } from '../calls/call-id.js';
 import type { RunnerCallContext } from '../calls/types.js';
 import {
   createPlannerArtifactAttemptId,
@@ -24,7 +25,7 @@ export function createPlannerCallContext(
 ): RunnerCallContext {
   const attemptId = createPlannerArtifactAttemptId();
   return {
-    callId: attemptId,
+    callId: createRunnerCallId(role),
     attemptId,
     role,
     backendKind: config.backendKind ?? DEFAULT_BACKEND_KIND,

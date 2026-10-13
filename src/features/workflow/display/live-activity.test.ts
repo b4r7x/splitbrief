@@ -119,6 +119,7 @@ describe('deriveLiveStatus', () => {
         axes: ['high'],
         ...(scope === 'task' && { afterTaskId: 'T001' }),
       });
+      addEvent({ type: 'review_step', ts: 1_000, phase, step: 'choosing-checks' });
       const liveNow = () =>
         deriveLiveStatus({
           ...base,
@@ -134,7 +135,7 @@ describe('deriveLiveStatus', () => {
           { text: ' · ', tone: 'textDim' },
           { text: 'OpenAI Codex CLI · GPT-5 · high', tone: 'reviewer' },
           { text: ' · ', tone: 'textDim' },
-          { text: 'waiting for the verdict', tone: 'textDim' },
+          { text: 'choosing checks', tone: 'textDim' },
         ],
         stageStart: 1_000,
       });
@@ -154,6 +155,8 @@ describe('deriveLiveStatus', () => {
           { text: 'Review', tone: 'reviewer' },
           { text: ' · ', tone: 'textDim' },
           { text: 'OpenAI Codex CLI · GPT-5 · high', tone: 'reviewer' },
+          { text: ' · ', tone: 'textDim' },
+          { text: 'choosing checks', tone: 'textDim' },
         ],
         stageStart: 1_100,
       });
@@ -172,7 +175,17 @@ describe('deriveLiveStatus', () => {
         liveNow()
           ?.parts.map((part) => part.text)
           .join(''),
-      ).toBe(`${reviewer} · waiting for the verdict`);
+      ).toBe(`${reviewer} · choosing checks`);
+      addEvent({
+        type: 'review_checks',
+        ts: 1_250,
+        phase,
+        scope,
+        status: 'planned',
+        commands: [],
+        declined: [],
+        reason: 'No checks needed.',
+      });
       addEvent({
         type: 'full_suite',
         ts: 1_300,
@@ -207,7 +220,7 @@ describe('deriveLiveStatus', () => {
         liveNow()
           ?.parts.map((part) => part.text)
           .join(''),
-      ).toBe(`${reviewer} · waiting for the verdict`);
+      ).toBe(`${reviewer} · reviewing changes`);
       addEvent(
         makeRunnerCallStarted({
           ts: 1_500,
@@ -223,7 +236,7 @@ describe('deriveLiveStatus', () => {
         liveNow()
           ?.parts.map((part) => part.text)
           .join(''),
-      ).toBe(reviewer);
+      ).toBe(`${reviewer} · reviewing changes`);
       addEvent(
         makeRunnerCallCompleted({
           ts: 1_600,
@@ -248,7 +261,7 @@ describe('deriveLiveStatus', () => {
         liveNow()
           ?.parts.map((part) => part.text)
           .join(''),
-      ).toBe(scope === 'task' ? 'Implementing…' : 'Review · waiting for the verdict');
+      ).toBe(scope === 'task' ? 'Implementing…' : 'Review · reviewing changes');
       resetWorkflow();
     },
   );
@@ -317,7 +330,7 @@ describe('deriveLiveStatus', () => {
           ? [
               { text: 'Review', tone: 'reviewer' },
               { text: ' · ', tone: 'textDim' },
-              { text: 'waiting for the verdict', tone: 'textDim' },
+              { text: 'reviewing changes', tone: 'textDim' },
             ]
           : [
               {
@@ -604,7 +617,7 @@ describe('deriveLiveStatus', () => {
       activeOperation: null,
     });
     expect(betweenCalls?.parts.map((part) => part.text).join('')).toBe(
-      'Review · waiting for the verdict',
+      'Review · reviewing changes',
     );
 
     const unconfigured = deriveLiveStatus({
@@ -654,7 +667,7 @@ describe('deriveLiveStatus', () => {
         })
           ?.parts.map((part) => part.text)
           .join(''),
-      ).toBe('Review · waiting for the verdict');
+      ).toBe('Review · reviewing changes');
     },
   );
 

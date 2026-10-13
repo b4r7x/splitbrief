@@ -426,6 +426,28 @@ describe('operationsStore', () => {
     });
   });
 
+  it('uses the engine step for a verdict-only review and carries it into the verdict call', () => {
+    addEvent({
+      type: 'review_started',
+      ts: 1_000,
+      phase: 'final-review',
+      scope: 'final',
+      tool: 'codex',
+    });
+    expect(operationsStore.get().active?.reviewStep).toBeUndefined();
+    addEvent({ type: 'review_step', ts: 1_010, phase: 'final-review', step: 'verdict' });
+    addEvent(
+      runnerStarted({ ts: 1_100, phase: 'final-review', role: 'review', taskId: undefined }),
+    );
+    expect(operationsStore.get().active?.reviewStep).toBe('verdict');
+    addEvent({ type: 'review_step', ts: 1_200, phase: 'final-review', step: 'choosing-checks' });
+    expect(operationsStore.get().active?.reviewStep).toBe('choosing-checks');
+    addEvent(
+      runnerCompleted({ ts: 1_300, phase: 'final-review', role: 'review', taskId: undefined }),
+    );
+    expect(operationsStore.get().active?.reviewStep).toBe('choosing-checks');
+  });
+
   it('keeps planner_status on the planner role and closes it on done', () => {
     addEvent(
       makePlannerStatus({

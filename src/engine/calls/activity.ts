@@ -139,9 +139,10 @@ function toolActivity(opts: {
   input: Record<string, unknown> | null;
   rootDir: string;
 }): RunnerCallActivityProjection | null {
+  if (opts.name.toLowerCase() === 'structuredoutput') return null;
   const details = toolUseDetails(opts.name, opts.input, opts.rootDir);
   return buildActivity({
-    activityId: `${opts.callId}:tool:${opts.toolUseId ?? opts.name ?? opts.sequence}`,
+    activityId: `${opts.callId}:tool:${opts.toolUseId ?? opts.sequence}`,
     stage: opts.stage,
     ...details,
   });
@@ -321,6 +322,9 @@ function toolUseDetails(
     return { kind: 'unknown', label: `${name} ${pattern}`, target: pattern };
   if (command !== undefined)
     return { kind: 'unknown', label: `${name} ${command}`, target: command };
+  if (isReadTool(normalized)) return { kind: 'read', label: 'reading file' };
+  if (isWriteTool(normalized)) return { kind: 'write', label: 'editing file' };
+  if (isCommandTool(normalized)) return { kind: 'command', label: 'running command' };
   return { kind: 'unknown', label: `tool ${name}` };
 }
 

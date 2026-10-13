@@ -58,7 +58,7 @@ export function buildConversationRowActions(
   };
 
   for (const step of walkTranscript(inputs.sections)) {
-    if (step.kind === 'settled') continue;
+    if (step.kind === 'settled' || step.kind === 'settled-end') continue;
     if (step.kind === 'activity-batch') {
       flushActivityBatch(step.batch);
       continue;

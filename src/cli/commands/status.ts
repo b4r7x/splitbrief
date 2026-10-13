@@ -10,6 +10,12 @@ import {
 } from '../../core/state/selectors.js';
 import { canonicalizeProjectDir } from '../setup.js';
 import { readActive } from '../../core/sessions/active-pointer.js';
+import { sessionStatusWord } from '../../core/sessions/display.js';
+import { rowFor } from '../../core/sessions/io.js';
+import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
+import { readSessionSummary } from '../../core/sessions/run-record-io.js';
+import { deriveRunStatus } from '../../core/sessions/run-status.js';
+import { sessionDir } from '../../core/paths.js';
 import {
   getProviderDisplayName,
   getRunnerIdentityDisplayName,
@@ -57,14 +63,14 @@ export function registerStatusCommand(program: Command): void {
       const sessionId = readActive(projectDir);
       const state = sessionId ? loadState({ projectDir, sessionId }) : null;
 
-      if (!state) {
+      if (!state || sessionId === null) {
         console.log('No active workflow.');
       } else {
         // The displayed seat's own calls name its kind, so an API provider that
         // shares a name with a CLI tool is not reported as that CLI, and a seat
         // whose own record is ambiguous stays literal instead of guessing.
-        const evidence =
-          sessionId === null ? undefined : resolveCallUsageEvidence({ projectDir, sessionId });
+        const ref = { projectDir, sessionId };
+        const evidence = resolveCallUsageEvidence(ref);
         const seatLabel = (role: 'planner' | 'implementer', tool: string): string => {
           const recorded = recordedRunnerKind(evidence, role, tool);
           if (recorded === 'ambiguous') return tool;
@@ -84,11 +90,25 @@ export function registerStatusCommand(program: Command): void {
         console.log(
           `${paint(theme.textDim, 'Feature:')}  ${chalk.bold(stripTerminalControls(state.feature))}`,
         );
-        const phaseSuffix = state.awaitingContinue
-          ? ` ${paint(theme.warning, '(awaiting continue)')}`
-          : '';
+        const status = deriveRunStatus({
+          state,
+          liveness: checkSessionLiveness(sessionDir(projectDir, sessionId)).alive
+            ? 'alive'
+            : 'not-alive',
+        });
+        const session = rowFor(
+          {
+            id: sessionId,
+            feature: state.feature,
+            startedAt: Date.parse(state.startedAt),
+            completedAt: null,
+            stateVersion: state.stateVersion,
+          },
+          status,
+          readSessionSummary(ref),
+        );
         console.log(
-          `${paint(theme.textDim, 'Phase:')}    ${chalk.bold(state.phase)}${phaseSuffix}`,
+          `${paint(theme.textDim, 'Status:')}   ${chalk.bold(sessionStatusWord(session))}`,
         );
         // The cursor points one past the last brief once every brief has settled, so the
         // position is the brief it names, never a brief the run does not have.

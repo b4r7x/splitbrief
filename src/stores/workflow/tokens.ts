@@ -316,6 +316,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'implementer_generate_failed':
     case 'validate':
     case 'review_started':
+    case 'review_step':
     case 'review_completed':
     case 'review_checks':
     case 'full_suite':

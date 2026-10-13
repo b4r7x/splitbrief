@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import type { z } from 'zod';
 import type { CliExecutableIdentity } from '../../../core/discovery/detection.js';
 import { INTERNAL_SKIP_DIRS } from '../../../core/paths.js';
+import { createRunnerCallId } from '../../calls/call-id.js';
 import { RunnerCallResultSchema } from '../../calls/schema.js';
 import type { RunnerCallContext, RunnerCallResult } from '../../calls/types.js';
 import { resolveCliExecutable } from '../resolve-cli-executable.js';
@@ -215,7 +216,7 @@ async function invokeCandidate(opts: {
     signal: undefined,
   };
   const callContext: RunnerCallContext = {
-    callId: `cli-conformance-${contract.id}`,
+    callId: createRunnerCallId(`cli-conformance-${contract.id}`),
     role: opts.role,
     backendKind: 'cli',
     runnerName: contract.id,

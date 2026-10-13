@@ -458,6 +458,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
     expect(rows.map(rowText).filter((text) => text !== '')).toEqual([
       `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
       `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI · opencode-go/deepseek-v4.1-flash · high · automatic fallback`,
+      'Run continued',
       'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · high',
       'working on src/text.js…',
     ]);
@@ -570,7 +571,7 @@ function activity(
     role: 'planner',
     runnerName: 'codex',
     sequence: 1,
-    activityId: 'activity-1',
+    activityId: `${overrides.kind}:${overrides.label}`,
     stage: 'updated',
     kind: 'unknown',
     label: 'checking project',
@@ -1109,13 +1110,13 @@ describe('buildConversationRows', () => {
       'T002 Pre-hook skip',
       'T003 Failed brief',
       'Failure evidence retained',
-      'Final review failed',
       'Reviewer check V1',
       'Plan check P1',
-      'Final review re-run passed',
+      'Final review failed',
       'Please check again',
       'Reviewer check V2',
       'Plan check P2',
+      'Final review re-run passed',
       'Recovery',
     ];
     const indices = ordered.map(lineOf);
@@ -1187,14 +1188,14 @@ describe('buildConversationRows', () => {
         items: [
           activity({
             sequence: 1,
-            activityId: 'call-1:tool:sed-start',
+            activityId: 'call-1:tool:sed',
             kind: 'command',
             label: 'running /bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
             target: '/bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
           }),
           activity({
             sequence: 2,
-            activityId: 'call-1:tool:sed-done',
+            activityId: 'call-1:tool:sed',
             kind: 'command',
             label: '/bin/zsh -lc "sed -n \'1,240p\' CLAUDE.md"',
           }),
@@ -1235,7 +1236,7 @@ describe('buildConversationRows', () => {
     expect(text).not.toContain('activity:');
   });
 
-  it('counts duplicate raw activity events by normalized visible activity', () => {
+  it('counts tool updates by their activity identity', () => {
     const sections: Section<EngineEvent>[] = [
       {
         type: 'events',
@@ -1250,13 +1251,13 @@ describe('buildConversationRows', () => {
           }),
           activity({
             sequence: 2,
-            activityId: 'run-done',
+            activityId: 'run-level',
             kind: 'command',
             label: '/bin/zsh -lc "npm run typecheck"',
           }),
           activity({
             sequence: 3,
-            activityId: 'run-repeat',
+            activityId: 'run-level',
             kind: 'command',
             label: 'running npm run typecheck',
             target: 'npm run typecheck',

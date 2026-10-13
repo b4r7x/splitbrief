@@ -7,6 +7,7 @@ import type { ActivityDisplayValueFit } from '../display/activity-display-text.j
 import { formatRecordedSeatIdentity } from '../display/recorded-seat-identity.js';
 import {
   runnerActivityLedgerItem,
+  isProtocolActivity,
   runnerActivityModelRole,
   runnerActivityRoleLabel,
   type RunnerActivityLedgerItem,
@@ -81,7 +82,8 @@ export function buildActivityBatchViewModel(input: {
 }): ActivityBatchViewModel {
   const expanded = input.expanded === true;
   const events = input.events.filter(
-    (event): event is VisibleRunnerActivityEvent => event.kind !== 'session',
+    (event): event is VisibleRunnerActivityEvent =>
+      event.kind !== 'session' && !isProtocolActivity(event),
   );
   const projection = expanded
     ? expandedActivityItemsProjection(events)

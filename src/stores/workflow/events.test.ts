@@ -142,6 +142,25 @@ function makeFullSuite(
 describe('eventsStore — append via addEvent', () => {
   beforeEach(() => resetWorkflow());
 
+  it('settles a crash-cut reviewer check at resume before a later attempt runs the same check', () => {
+    const started = makeFullSuite({ ts: 4_000, phase: 'final-review', id: 'V1' });
+    const resumed: EngineEvent = { type: 'workflow_resumed', ts: 65_000, phase: 'final-review' };
+    const restarted = { ...started, ts: 66_000 };
+    const completed = {
+      ...restarted,
+      ts: 70_000,
+      status: 'done',
+      passed: true,
+      duration: 4_000,
+    } satisfies EngineEventOf<'full_suite'>;
+    const events = [started, resumed, restarted, completed];
+    const expected = [{ ...started, status: 'stopped' }, resumed, completed];
+    for (const event of events) addEvent(event);
+    expect(eventsStore.get().events).toEqual(expected);
+    expect(mergeEventLog(events)).toEqual(expected);
+    expect(started.status).toBe('running');
+  });
+
   it.each(['failed', 'cancelled'] as const)(
     'keeps the %s call outcome in operations, outside the activity batch input',
     (status) => {

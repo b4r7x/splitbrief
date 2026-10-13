@@ -125,13 +125,13 @@ describe('status command', () => {
     expect(out).toContain('No active workflow');
   });
 
-  it('reports the feature name and phase for a live session', async () => {
+  it('reports the feature name and stopped status without a live process', async () => {
     writeActiveSession(tmp, '2026-04-18-add-auth', 'add auth');
 
     await runStatus([]);
     const out = captureOutput();
     expect(out).toContain('add auth');
-    expect(out).toContain('implementing');
+    expect(out).toContain('Status:   stopped');
   });
 
   it('names the last brief, not one past it, once every brief has settled', async () => {
