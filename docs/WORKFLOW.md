@@ -142,7 +142,7 @@ A fix check runs once per brief gate. Each new BUILD attempt runs the checks aga
 
 The fix brief names each command by check id and shows each distinct failing output once (`fixBriefDescription`).
 
-A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. Other attempts still fail `no-staged-change` when they change nothing.
+A fix attempt may verify the existing code without changing it: `task.fix` permits that attempt, and normal validation decides whether it completes. `implementer_generate_done` records `noChange: true`; its done row reads `verified · no change needed`. The first call of a brief continued after a stop may change nothing in the same way when the brief's declared files already changed since the brief started: the call found the work it wrote before the stop complete, and the brief gate judges that work. Other attempts still fail `no-staged-change` when they change nothing.
 
 `REVIEW_CYCLE_CAP` is 2 fix cycles (`src/core/pipeline-spec/review.ts`), so the run permits 2 automatic fix cycles; each review answer that starts fix work spends one cycle, and the Apply integration re-review counts one too. A scheduled review under `workflow.review: task` does not spend one when it passes.
 
