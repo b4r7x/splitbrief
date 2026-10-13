@@ -365,13 +365,13 @@ describe('HomeScreen', () => {
     const titleRow = lines.findIndex((line) => line.includes('Checking your tools…'));
 
     expect(lines[titleRow + 1]).toContain(
-      'PLAN GPT-6-Astra · BUILD Gemini 3.8 Flash (High) · REVIEW GPT-6.1-Sol',
+      'PLAN GPT-6-Astra · BUILD Gemini 3.8 Flash · REVIEW GPT-6.1-Sol',
     );
     expect(lineContaining(ui.lastFrame() ?? '', 'PLAN      ')).toContain(
       'OpenAI Codex CLI · GPT-6-Astra · xhigh',
     );
     expect(lineContaining(ui.lastFrame() ?? '', 'BUILD     ')).toContain(
-      'Google Antigravity CLI · Gemini 3.8 Flash (High)',
+      'Google Antigravity CLI · Gemini 3.8 Flash · high',
     );
     ui.unmount();
   });

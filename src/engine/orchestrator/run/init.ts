@@ -11,7 +11,7 @@ import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type { Implementer } from '../../implementers/types.js';
 import type { CustomRunnerRuntimePort } from '../../runners/types.js';
-import { labelSeatChange } from '../../providers/model/display-names.js';
+import { labelSeatChange, resolveCrewDisplayNames } from '../../providers/model/display-names.js';
 import { NULL_CACHE, type ModelCacheAccessor } from '../../providers/model/resolution.js';
 import type { Attachment } from '../../../core/schemas/attachment.js';
 import type { StreamingSink } from '../task/streaming-feed.js';
@@ -205,7 +205,12 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   // Every run passes here — interactive, headless, resumed — so this is the one
   // place the seats a session started on get recorded. A session that already
   // has a record keeps it; the resume path compares against it.
-  recordSeatIdentities({ projectDir, sessionId }, config);
+  const modelCache = opts.modelCache ?? NULL_CACHE;
+  recordSeatIdentities(
+    { projectDir, sessionId },
+    config,
+    resolveCrewDisplayNames(config, modelCache),
+  );
 
   const customRuntime = composeWorkflowCustomRunnerRuntime({
     projectDir,
@@ -256,7 +261,11 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
   // that cannot resume it.
   let planSeatChanged = false;
   if (savedState) {
-    const changes = reconcileSeatIdentities({ projectDir, sessionId }, config);
+    const changes = reconcileSeatIdentities(
+      { projectDir, sessionId },
+      config,
+      resolveCrewDisplayNames(config, modelCache),
+    );
     const events =
       changes.length === 0 ? [] : (await readRunEvents({ projectDir, sessionId })).events;
     const lastRun = events.findLastIndex(
@@ -278,7 +287,7 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         publishWarning({
           bus,
           phase: savedState.phase,
-          message: formatSeatChangeNotice(labelSeatChange(change, opts.modelCache ?? NULL_CACHE)),
+          message: formatSeatChangeNotice(labelSeatChange(change, modelCache)),
         });
       }
     }

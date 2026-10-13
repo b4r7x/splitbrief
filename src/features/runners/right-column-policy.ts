@@ -46,10 +46,18 @@ function expansionDrafts(model: ModelOption): boolean {
   return routePrefixesOf(variants).some((prefix) => optionAxesOf(variants, prefix).length > 0);
 }
 
-/** Unset heads the ladder, so a drafted preset can always be taken back. */
-function nextEffortDraft(choices: readonly string[], current: string | null): string | null {
-  const ladder: readonly (string | null)[] = [null, ...choices];
-  return ladder[(ladder.indexOf(current) + 1) % ladder.length] ?? null;
+/**
+ * Unset heads the ladder, so a drafted preset can always be taken back. Where unset already reads
+ * as a rung — the level the model id spells — it is that rung, and the walk does not stop twice.
+ */
+function nextEffortDraft(
+  choices: readonly string[],
+  current: string | null,
+  unset: string | undefined,
+): string | null {
+  const unsetRung = unset !== undefined && choices.includes(unset) ? unset : null;
+  const ladder: readonly (string | null)[] = unsetRung === null ? [null, ...choices] : choices;
+  return ladder[(ladder.indexOf(current ?? unsetRung) + 1) % ladder.length] ?? null;
 }
 
 /**
@@ -281,7 +289,7 @@ export function cycleRightRow(row: RightRow): CycleOutcome {
     // step starts from unset the way the row already reads.
     const draft = pickerViewStore.get().effortDraft;
     const current = draft !== null && row.choices.includes(draft) ? draft : null;
-    pickerViewStore.setEffortDraft(nextEffortDraft(row.choices, current));
+    pickerViewStore.setEffortDraft(nextEffortDraft(row.choices, current, row.unset));
     return 'stepped';
   }
   // Stepping inside a route moves the draft onto it, so every route of a

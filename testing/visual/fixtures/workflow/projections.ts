@@ -5125,7 +5125,12 @@ const projections = [
     events: implementationProjection.events.map((event): EngineEvent => {
       switch (event.type) {
         case 'task_started':
-          return { ...event, tool: 'antigravity', model: AGY_BUILD_SEAT.model };
+          return {
+            ...event,
+            tool: 'antigravity',
+            model: AGY_BUILD_SEAT.model,
+            axes: seatAxisWords(AGY_BUILD_SEAT),
+          };
         case 'runner_call_started':
         case 'runner_call_activity':
           return {

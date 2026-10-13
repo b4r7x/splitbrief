@@ -11,7 +11,7 @@
 import { join } from 'node:path';
 import { z } from 'zod';
 import type { Config } from '../schemas/config.js';
-import { CREW_SEAT_IDS, CREW_SEAT_LABELS, seatIdsOf } from '../crew/identity.js';
+import { CREW_SEAT_IDS, CREW_SEAT_LABELS, sameSeatIds, seatIdsOf } from '../crew/identity.js';
 import type { CrewSeatId, SeatIds } from '../crew/identity.js';
 import { deriveCrewSeats } from '../crew/seats.js';
 import { RUNNER_KINDS } from '../schemas/enums.js';
@@ -34,9 +34,9 @@ export const SeatIdentitiesSchema = z.object({
   review: z.string(),
   /**
    * The ids each identity was spelled from, so a notice can name both sides of a move in the
-   * catalog's words. The identities stay the comparison: a model the catalog renames never reads
-   * as a seat that moved. Records written before these were kept have none, and records written
-   * before the runner kind was kept carry ids without one.
+   * catalog's words. The ids are the comparison: a model the catalog renames never reads as a
+   * seat that moved. Records written before these were kept have none and compare by identity,
+   * and records written before the runner kind was kept carry ids without one.
    */
   ids: z.object({ plan: SeatIdsSchema, build: SeatIdsSchema, review: SeatIdsSchema }).optional(),
 });
@@ -55,8 +55,12 @@ export type SeatChange = Readonly<{
   afterIds?: SeatIds | undefined;
 }>;
 
-export function seatIdentitiesFromConfig(config: Config): SeatIdentities {
-  const [plan, build, review] = deriveCrewSeats({ config });
+/** The crew as the surfaces spell it: `displayNames` are the catalog labels the crew rows show. */
+export function seatIdentitiesFromConfig(
+  config: Config,
+  displayNames?: Partial<Record<CrewSeatId, string>>,
+): SeatIdentities {
+  const [plan, build, review] = deriveCrewSeats({ config, displayNames });
   return {
     plan: plan.model,
     build: build.model,
@@ -105,9 +109,13 @@ export function writeSeatIdentities(ref: SessionRef, seats: SeatIdentities): voi
 }
 
 /** Records the seats a run starts on; a session that already has a record keeps it. */
-export function recordSeatIdentities(ref: SessionRef, config: Config): void {
+export function recordSeatIdentities(
+  ref: SessionRef,
+  config: Config,
+  displayNames?: Partial<Record<CrewSeatId, string>>,
+): void {
   if (readSeatIdentities(ref) !== null) return;
-  writeSeatIdentities(ref, seatIdentitiesFromConfig(config));
+  writeSeatIdentities(ref, seatIdentitiesFromConfig(config, displayNames));
 }
 
 export function seatIdentityChanges(
@@ -117,7 +125,11 @@ export function seatIdentityChanges(
   if (recorded === null) return [];
   const changes: SeatChange[] = [];
   for (const seat of CREW_SEAT_IDS) {
-    if (recorded[seat] === current[seat]) continue;
+    const same =
+      recorded.ids === undefined || current.ids === undefined
+        ? recorded[seat] === current[seat]
+        : sameSeatIds(recorded.ids[seat], current.ids[seat]);
+    if (same) continue;
     changes.push({
       seat,
       before: recorded[seat],
@@ -145,17 +157,27 @@ function idsLackKind(ids: NonNullable<SeatIdentities['ids']>): boolean {
  * run and re-records the crew this run is about to use, so every resume — CLI
  * or in-app — compares against the run that really happened.
  */
-export function reconcileSeatIdentities(ref: SessionRef, config: Config): SeatChange[] {
-  const current = seatIdentitiesFromConfig(config);
+export function reconcileSeatIdentities(
+  ref: SessionRef,
+  config: Config,
+  displayNames?: Partial<Record<CrewSeatId, string>>,
+): SeatChange[] {
+  const current = seatIdentitiesFromConfig(config, displayNames);
   const recorded = readSeatIdentityRecord(ref);
-  const changes = seatIdentityChanges(recorded, current);
+  // A record without ids was spelled without catalog labels, so it compares against that spelling.
+  const changes = seatIdentityChanges(
+    recorded,
+    recorded?.ids === undefined ? seatIdentitiesFromConfig(config) : current,
+  );
+  const relabelled =
+    recorded !== null && CREW_SEAT_IDS.some((seat) => recorded[seat] !== current[seat]);
   const missingIds = recorded !== null && recorded.ids === undefined;
   const missingKinds = recorded?.ids !== undefined && idsLackKind(recorded.ids);
   const switchCount = loadState(ref)?.seatSwitches?.length ?? 0;
   const orderChanged = recorded !== null && recorded.switchCount !== switchCount;
   // A record written before the ids, or their kinds, were kept gains them without a notice, so
-  // the next move is named on both sides.
-  if (changes.length > 0 || missingIds || missingKinds || orderChanged) {
+  // the next move is named on both sides; a catalog label that changed is re-spelled the same way.
+  if (changes.length > 0 || relabelled || missingIds || missingKinds || orderChanged) {
     writeSeatIdentities(ref, current);
   }
   return changes;

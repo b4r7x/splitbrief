@@ -886,7 +886,7 @@ describe('Sidebar — a crew wider than the seat column', () => {
 
     expect(seatBlock(frame, 'PLAN')).toBe('PLAN    OpenAI Codex CLI GPT-6-Astra · xhigh');
     expect(seatBlock(frame, 'BUILD')).toBe(
-      'BUILD   Google Antigravity CLI Gemini 3.8 Flash (High)',
+      'BUILD   Google Antigravity CLI Gemini 3.8 Flash · high',
     );
     expect(seatBlock(frame, 'REVIEW')).toBe('REVIEW  OpenAI Codex CLI GPT-6.1-Sol · high');
     for (const line of stripAnsiStyles(frame).split('\n')) {
@@ -908,7 +908,7 @@ describe('Sidebar — a crew wider than the seat column', () => {
       'OpenAI Codex CLI · GPT-6-Astra · xhigh',
     );
     expect(lines.find((line) => line.includes('BUILD '))).toContain(
-      'Google Antigravity CLI · Gemini 3.8 Flash (High)',
+      'Google Antigravity CLI · Gemini 3.8 Flash · high',
     );
 
     ui.unmount();
@@ -926,7 +926,7 @@ describe('Sidebar — a crew wider than the seat column', () => {
 
     expect(frame.split('\n')).toHaveLength(20);
     expect(frame).toContain('GPT-6-Astra · xhigh');
-    expect(frame).toContain('Gemini 3.8 Flash (High)');
+    expect(frame).toContain('Gemini 3.8 Flash · high');
     expect(frame).toContain('GPT-6.1-Sol · high');
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');

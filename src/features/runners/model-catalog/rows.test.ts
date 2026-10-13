@@ -82,6 +82,29 @@ function effortRow(rows: readonly RightRow[]) {
 }
 
 describe('buildRightRows', () => {
+  it.each([
+    [null, true, 'high'],
+    ['low', true, 'low'],
+    [null, false, 'auto'],
+  ] as const)(
+    'reads the effort ladder with draft %s and id-spelled levels %s as %s',
+    (effortDraft, idSpellsEffort, value) => {
+      const [model] = mergeOptionFamilies([
+        { id: 'gemini-3.8-flash-high' },
+        { id: 'gemini-3.8-flash-low' },
+      ]);
+      if (model === undefined) throw new Error('Missing model family');
+      const rows = buildRightRows({
+        ...BASE,
+        models: [{ ...model, effortChoices: ['low', 'medium', 'high'] }],
+        expandedModelId: model.id,
+        effortDraft,
+        idSpellsEffort,
+      });
+      expect(effortRow(rows)).toMatchObject({ value });
+    },
+  );
+
   it('leaves a short list unsectioned and still words every row provenance', () => {
     const rows = buildRightRows({
       ...BASE,
