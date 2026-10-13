@@ -149,8 +149,8 @@ export function resumeTerminalAfterEditor(config?: TerminalHandoverConfig): void
         writeTerminalSequence(
           kittyPushSequence(resolveKittyFlagBits(detectKittyKeyboardFlags().flags)),
         );
-        process.stdout.emit('resize');
       }
+      process.stdout.emit('resize');
       const paste = handover.paste ?? handover.mouse;
       if (handover.mouse || paste)
         setTerminalInputModes('enable', { mouse: handover.mouse, paste, hover: handover.hover });

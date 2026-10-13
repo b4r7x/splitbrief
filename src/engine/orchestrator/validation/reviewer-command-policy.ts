@@ -513,7 +513,7 @@ const taskRunnerOptions = (kind: 'code' | 'definition'): string =>
 export const REVIEWER_COMMAND_RULES: readonly string[] = [
   'Write each command as one program and its arguments: no shell operator, substitution or redirect (`| & ; < > $ ( ) { }` or backticks), no control character (a line break or a tab), no environment variable before the program, no `cd`, no URL and no path outside the run workspace, also not after `KEY=` or attached to an option (`DESTDIR=/`, `-o/tmp/x`).',
   "Run an installed program by its name, never by path: `bin/test` and `sub/gradlew` are refused. The project's own `./gradlew` and `./mvnw` are the exception: they run as `gradle` and `mvn` under the same rules, and only when this run changed none of their wrapper files (`gradlew` and `gradle/wrapper/`, `mvnw` and `.mvn/wrapper/`).",
-  `A shell (${code(SHELLS)}) and a program that runs another command line (${code(WRAPPERS)}, \`npm explore\`) are refused. ${code(Object.entries(FORWARDERS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))} and \`python -m\` are checked by the program they run. Forwarders may take options. The program is the first word after the subcommand that does not follow an option; a word after an option can be its value, so it is checked as a possible program start too. Write a path value as \`--option=value\`. \`uv run --with\` is refused because it downloads a package; \`mise exec\` runs only as \`mise exec -- <program>\`, because it installs the tools named before \`--\`. A first word that is not a command of \`pnpm\` or \`yarn\` is a script or program they run, and it is checked the same way (\`pnpm tsx\`, \`yarn node\`).`,
+  `A shell (${code(SHELLS)}) and a program that runs another command line (${code(WRAPPERS)}, \`npm explore\`) are refused. ${code(Object.entries(FORWARDERS).flatMap(([program, subs]) => subs.map((sub) => `${program} ${sub}`)))} and \`python -m\` are checked by the program they run. Forwarders may take options. The program is the first word after the subcommand that does not follow an option; a word after an option can be its value, so it is checked as a possible program start too. Write a path value as \`--option=value\`. \`uv run --with\` is refused because it can download a package. This rule matches \`--with\`, \`--with-editable\`, \`--with-requirements\` and \`-w\` anywhere after \`uv run\`, including attached values and program arguments. \`mise exec\` runs only as \`mise exec -- <program>\`, because it installs the tools named before \`--\`. A first word that is not a command of \`pnpm\` or \`yarn\` is a script or program they run, and it is checked the same way (\`pnpm tsx\`, \`yarn node\`).`,
   `An interpreter, under any version of its name (\`python3.12\`, \`pypy3\`), runs a project script (\`python manage.py test\`, \`php artisan test\`) or a module (\`python -m pytest\`). It never runs inline code: \`node -e\`, \`python -c\`, \`deno eval\`, \`elixir -e\`, \`elixir --erl\`, \`iex -e\`, \`groovy -e\`, \`scala -e\`, \`kotlin -e\`, \`erl -eval\`, \`erl -s\`, \`erl -run\`, and \`php -r\`, \`php -B\`, \`php -R\`, \`php -F\`, \`php -E\` are refused. Interpreter option values are not code: \`perl -Mstrict t/x.t\`, \`php -c php.ini artisan test\` and \`php -dmemory_limit=1G artisan test\` can run. A build or task runner runs no inline code either: ${taskRunnerOptions('code')} are refused. So are ${code(Object.entries(TASK_CODE_GOALS).flatMap(([program, goals]) => goals.map((goal) => `${program} ${goal}${goal.endsWith(':') ? '*' : ''}`)))}, and \`mix do\` checks each task it chains as its own \`mix\` command. A \`make\` operand cannot set ${code(MAKE_CONTROL_VARIABLES)} or assign with \`!=\`.`,
   `\`npx\` runs only as \`npx --no-install <tool>\`, and \`npm exec\` only with \`--no-install\`; neither takes \`--yes\` or \`-y\`. A launcher that downloads and runs a package is refused: ${code(LAUNCHERS.map((pattern) => pattern.join(' ')))}, \`go run <package>@<version>\`.`,
   `A setup command is refused: a program whose subcommand or goal is ${code([...SETUP_VERBS].filter((verb) => SCOPED_SETUP_VERBS[verb] === undefined))} (\`npm ci\`, \`pip install\`, \`go generate\`, \`go mod tidy\`, \`mvn install\`), and a bare ${code(BARE_INSTALLERS)}. These setup verbs apply only to their named tools: ${code(Object.entries(SCOPED_SETUP_VERBS).flatMap(([verb, programs]) => programs.map((program) => `${program} ${verb}`)))}. \`npm run <script>\` and \`npm run-script <script>\` name package scripts, not setup verbs. A verification target such as \`make lock\` can run. An operand after an option can be the option's value, so it is checked too: write the subcommand or target before the options (\`cargo test --locked sync\`, \`pytest tests/ -k install -v\`).`,
@@ -579,7 +579,7 @@ function interpreterName(program: string): string {
 }
 
 type InterpreterCall =
-  | { kind: 'inline' }
+  | { kind: 'refused'; reason: string }
   | { kind: 'module'; command: string[] }
   | { kind: 'script'; file: string };
 
@@ -592,14 +592,18 @@ function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
   let runs = false;
   for (let index = 1; index < tokens.length; index++) {
     const arg = tokens[index] ?? '';
-    if (arg === '-') return { kind: 'inline' };
+    if (arg === '-') {
+      return { kind: 'refused', reason: `reads code from standard input (${tokens[0]} -)` };
+    }
     if (!isFlag(arg) || arg === '--') {
       if (codeOptions?.scriptOperand === false) continue;
       if (arg === '--') index++;
       const operand = tokens[index];
       if (operand === undefined) return null;
       if (subcommands === undefined) return { kind: 'script', file: operand };
-      if (!runs && subcommands.inline.includes(operand)) return { kind: 'inline' };
+      if (!runs && subcommands.inline.includes(operand)) {
+        return { kind: 'refused', reason: `runs the code-execution command ${program} ${operand}` };
+      }
       if (SCRIPT_FILE.test(operand)) return { kind: 'script', file: operand };
       // `deno run x.ts` and `bun run x.ts` run the file after `run`; `bun run test` runs a script.
       if (runs || operand !== 'run') return null;
@@ -616,7 +620,13 @@ function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
       };
     }
     if (arg.startsWith('--') || codeOptions?.clustered === false) {
-      if (codeFlags.has(arg.replace(/=.*$/s, ''))) return { kind: 'inline' };
+      const flag = arg.replace(/=.*$/s, '');
+      if (codeFlags.has(flag)) {
+        return {
+          kind: 'refused',
+          reason: `uses the code-loading option ${tokens[0]} ${flag}`,
+        };
+      }
       if (codeOptions?.values?.has(arg) === true) index++;
       continue;
     }
@@ -626,7 +636,12 @@ function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
         if (offset === letters.length - 1) index++;
         break;
       }
-      if (codeFlags.has(`-${letter}`)) return { kind: 'inline' };
+      if (codeFlags.has(`-${letter}`)) {
+        return {
+          kind: 'refused',
+          reason: `uses the code-loading option ${tokens[0]} -${letter}`,
+        };
+      }
     }
   }
   return null;
@@ -699,13 +714,22 @@ function forwarded(tokens: readonly string[]): Forwarded | null {
     const toolIndex = own.findIndex((token) => !isFlag(token));
     const flags = toolIndex === -1 ? own : own.slice(0, toolIndex);
     if (program === 'npx' ? tokens[1] !== '--no-install' : !flags.includes('--no-install')) {
-      return { refusal: `runs ${name} without --no-install` };
+      return {
+        refusal:
+          program === 'npx'
+            ? 'runs npx without --no-install as its first option'
+            : 'runs npm exec without --no-install',
+      };
     }
-    if (flags.some((flag) => EXEC_DOWNLOAD_FLAGS.has(flag.replace(/=.*$/s, '')))) {
-      return { refusal: `runs ${name} with --yes, which downloads a missing package` };
+    const download = flags.find((flag) => EXEC_DOWNLOAD_FLAGS.has(flag.replace(/=.*$/s, '')));
+    if (download !== undefined) {
+      return {
+        refusal: `runs ${name} with ${download.replace(/=.*$/s, '')}, which downloads a missing package`,
+      };
     }
-    if (flags.some((flag) => EXEC_CODE_FLAGS.has(flag.replace(/=.*$/s, '')))) {
-      return { refusal: `runs code through ${name}` };
+    const code = flags.find((flag) => EXEC_CODE_FLAGS.has(flag.replace(/=.*$/s, '')));
+    if (code !== undefined) {
+      return { refusal: `uses the code-loading option ${name} ${code.replace(/=.*$/s, '')}` };
     }
     const tool = own[toolIndex];
     if (tool === undefined) return { refusal: `runs ${name} without a program` };
@@ -722,13 +746,14 @@ function forwarded(tokens: readonly string[]): Forwarded | null {
   // mise installs the tools named before `--` and runs a shell when no program follows it.
   if (program === 'mise')
     return { refusal: `runs ${program} ${sub} without -- before its program` };
-  if (
-    program === 'uv' &&
-    rest.some(
+  if (program === 'uv') {
+    const download = rest.find(
       (token) => UV_RUN_DOWNLOAD_FLAGS.has(token.replace(/=.*$/s, '')) || /^-w./s.test(token),
-    )
-  ) {
-    return { refusal: 'downloads and runs a package (uv run --with)' };
+    );
+    if (download !== undefined) {
+      const option = /^-w./s.test(download) ? '-w' : download.replace(/=.*$/s, '');
+      return { refusal: `has ${option} after uv run, where it can download a package` };
+    }
   }
   return {
     commands: leadingOperands(rest).map((index) => {
@@ -817,7 +842,7 @@ const TASK_OPTION_KINDS = ['code', 'definition'] as const;
 function taskRunnerOption(
   program: string,
   token: string,
-): (typeof TASK_OPTION_KINDS)[number] | undefined {
+): { kind: (typeof TASK_OPTION_KINDS)[number]; option: string } | undefined {
   const runner = lookup(TASK_RUNNERS, program);
   if (runner === undefined || !isFlag(token)) return undefined;
   const long = (option: string) => option.startsWith('--');
@@ -825,18 +850,21 @@ function taskRunnerOption(
     // getopt and OptionParser take an unambiguous prefix of a long option: `--ev` is `--eval`.
     const name = token.replace(/=.*$/s, '');
     if (name.length <= 2) return undefined;
-    return TASK_OPTION_KINDS.find((kind) =>
+    const kind = TASK_OPTION_KINDS.find((kind) =>
       runner[kind].some((option) => long(option) && option.startsWith(name)),
     );
+    return kind === undefined ? undefined : { kind, option: name };
   }
   if (runner.valueLetters === null) {
-    return TASK_OPTION_KINDS.find((kind) =>
-      runner[kind].some((option) => !long(option) && token.startsWith(option)),
-    );
+    for (const kind of TASK_OPTION_KINDS) {
+      const option = runner[kind].find((option) => !long(option) && token.startsWith(option));
+      if (option !== undefined) return { kind, option };
+    }
+    return undefined;
   }
   for (const letter of token.slice(1)) {
     const kind = TASK_OPTION_KINDS.find((each) => runner[each].includes(`-${letter}`));
-    if (kind !== undefined) return kind;
+    if (kind !== undefined) return { kind, option: `-${letter}` };
     if (runner.valueLetters.includes(letter)) return undefined;
   }
   return undefined;
@@ -847,8 +875,8 @@ function makeVariableRefusal(tokens: readonly string[]): string | null {
   for (const token of operands(tokens)) {
     const assignment = /^\s*([^\s:+?!=]+)\s*(:{0,3}|[+?!])=/.exec(token);
     if (assignment === null) continue;
-    if (assignment[2] === '!') return 'runs inline code';
     const name = assignment[1] ?? '';
+    if (assignment[2] === '!') return `uses the make shell assignment operator != for ${name}`;
     if (MAKE_CONTROL_VARIABLES.has(name)) return `sets the make variable ${name}`;
   }
   return null;
@@ -859,17 +887,17 @@ function taskRunnerRefusal(program: string, tokens: readonly string[]): string |
   if (variable !== null) return variable;
   const goals = lookup(TASK_CODE_GOALS, program);
   const words = operands(tokens);
-  if (
-    (GOAL_RUNNERS.has(program) ? words : words.slice(0, 1)).some((word) =>
-      goals?.some((goal) => (goal.endsWith(':') ? word.startsWith(goal) : word === goal)),
-    )
-  ) {
-    return 'runs inline code';
+  const goal = (GOAL_RUNNERS.has(program) ? words : words.slice(0, 1)).find((word) =>
+    goals?.some((goal) => (goal.endsWith(':') ? word.startsWith(goal) : word === goal)),
+  );
+  if (goal !== undefined) {
+    return `runs the code-execution goal ${program} ${goal}`;
   }
   for (const token of tokens.slice(1)) {
-    const kind = taskRunnerOption(program, token);
-    if (kind === 'code') return 'runs inline code';
-    if (kind === 'definition') return `runs ${program} in another directory or on another file`;
+    const option = taskRunnerOption(program, token);
+    if (option?.kind === 'code') return `uses the code-loading option ${program} ${option.option}`;
+    if (option?.kind === 'definition')
+      return `uses the definition-changing option ${program} ${option.option}`;
   }
   return null;
 }
@@ -928,7 +956,7 @@ function tokensRefusal(tokens: readonly string[]): string | null {
   if (action !== undefined) return `runs find ${action}, which changes files or runs commands`;
   if (program === 'mix' && words[0] === 'do') return mixTasksRefusal(tokens);
   const call = interpreterCall(tokens);
-  if (call?.kind === 'inline') return 'runs inline code';
+  if (call?.kind === 'refused') return call.reason;
   if (call?.kind === 'module') return tokensRefusal(call.command);
   const refusal =
     taskRunnerRefusal(program, tokens) ??

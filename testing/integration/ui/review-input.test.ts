@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { EventEmitter } from 'node:events';
 import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -363,10 +364,38 @@ describe('createReviewInputHandler – brief review edit mode', () => {
 
     const exitIndex = written.indexOf(terminalSequences.exitAltBuffer);
     const enterIndex = written.indexOf(terminalSequences.enterAltBuffer);
+    const hintIndex = written.findIndex((chunk) =>
+      chunk.includes('plan.json open in true. Close the file to return.'),
+    );
     expect(exitIndex).toBeGreaterThanOrEqual(0);
+    expect(hintIndex).toBeGreaterThan(exitIndex);
+    expect(hintIndex).toBeLessThan(enterIndex);
     expect(enterIndex).toBeGreaterThan(exitIndex);
     expect(written.indexOf(terminalSequences.hideCursor, enterIndex)).toBeGreaterThan(enterIndex);
     expect(stdinCalls).toEqual(['pause', 'resume']);
+  });
+
+  it('tells the user to quit the app while macOS open waits for a review edit', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    reviewStore.setReviewFile(join(tmpDir, 'plan.md'));
+    vi.stubEnv('VISUAL', '/usr/bin/open -W -t');
+    const child = new EventEmitter();
+    const started = Promise.withResolvers<void>();
+    const resolve = vi.fn();
+    const editing = openReviewFileExternally(makeInputMode('review', resolve), (command, args) => {
+      expect(command).toBe('/usr/bin/open');
+      expect(args).toEqual(['-W', '-t', join(tmpDir, 'plan.json')]);
+      started.resolve();
+      return child;
+    });
+    try {
+      await started.promise;
+      expect(written.join('')).toContain('plan.json open in open. Quit the editor app to return.');
+      expect(resolve).not.toHaveBeenCalled();
+    } finally {
+      child.emit('close', 0, null);
+      await editing;
+    }
   });
 
   it('restores the handover and resumes stdin when the editor spawn fails', async () => {

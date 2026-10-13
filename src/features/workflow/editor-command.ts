@@ -1,6 +1,7 @@
 import { accessSync, constants } from 'node:fs';
 import { basename, delimiter, isAbsolute, join } from 'node:path';
 import { parseShellCommand } from '../../utils/parse-shell-command.js';
+import { oneLineDisplayText } from '../../utils/display-text.js';
 
 interface EditorArgv {
   command: string;
@@ -49,6 +50,16 @@ function parseEditor(raw: string | undefined): EditorArgv | undefined {
 
 export function editorDisplayLabel(command: string): string {
   return basename(command).replace(/\.(cmd|exe|bat)$/i, '');
+}
+
+export function editorWaitingMessage({ command, args }: EditorArgv, filePath: string): string {
+  const returnInstruction =
+    editorName(command) === 'open' && (args.includes('-W') || args.includes('--wait-apps'))
+      ? 'Quit the editor app to return.'
+      : 'Close the file to return.';
+  return oneLineDisplayText(
+    `${basename(filePath)} open in ${editorDisplayLabel(command)}. ${returnInstruction}`,
+  );
 }
 
 function editorName(command: string): string {

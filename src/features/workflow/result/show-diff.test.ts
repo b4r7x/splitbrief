@@ -57,6 +57,36 @@ describe('showRunDiff', () => {
     setActiveTerminalHandover(undefined);
     feedbackStore.reset();
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    { editor: 'mock-editor --wait', instruction: 'Close the file to return.' },
+    { editor: '/usr/bin/open -W -t', instruction: 'Quit the editor app to return.' },
+    { editor: '/usr/bin/open --wait-apps -t', instruction: 'Quit the editor app to return.' },
+  ])('shows the return instruction for $editor while it waits', async ({ editor, instruction }) => {
+    vi.stubEnv('VISUAL', editor);
+    const output: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const child = new EventEmitter();
+    const started = Promise.withResolvers<void>();
+    const editing = showRunDiff(readyRecord(), () => {
+      started.resolve();
+      return child;
+    });
+    try {
+      await started.promise;
+      expect(terminal).toMatchObject({ isRaw: false, paused: true });
+      expect(output.join('')).toContain(instruction);
+      expect(output.join('')).toContain('result-run.patch open in');
+    } finally {
+      child.emit('close', 0, null);
+      await editing;
+    }
+    expect(terminal).toMatchObject({ isRaw: true, paused: false });
   });
 
   it('opens the written patch in the editor and restores the terminal', async () => {

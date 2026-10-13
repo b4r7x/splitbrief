@@ -1672,6 +1672,30 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-external-editor',
+      title: 'Workflow · run diff open in an external editor',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'external-editor',
+        title: 'Waiting for the editor to close',
+        kind: 'ready',
+        marker: 'Close the file to return.',
+      },
+      elements: [{ id: 'activity', title: 'External editor return instruction' }],
+    }),
+    defineScenario({
+      id: 'workflow-external-editor-macos',
+      title: 'Workflow · run diff open in the macOS text editor',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'external-editor-macos',
+        title: 'Waiting for the editor app to quit',
+        kind: 'ready',
+        marker: 'Quit the editor app to return.',
+      },
+      elements: [{ id: 'activity', title: 'External editor return instruction' }],
+    }),
+    defineScenario({
       id: 'workflow-ready-override',
       title: 'Workflow · a reviewed workspace accepted as is',
       surface: screenSurface('workflow'),

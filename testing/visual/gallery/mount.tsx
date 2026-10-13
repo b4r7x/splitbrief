@@ -15,6 +15,7 @@ import {
 import { enterCaptureEnvironment } from './environment.js';
 import { waitForCheckpoint } from './checkpoints.js';
 import { createFixtureSession, type FixtureSession } from './fixture-session.js';
+import { editorHandoverScenarios, mountEditorHandover } from './editor-handover.js';
 
 export interface MountGalleryScenarioOptions {
   readonly scenario: ScenarioDefinition;
@@ -48,6 +49,15 @@ export async function mountGalleryScenario(
 ): Promise<GalleryCaptureHandle> {
   const viewport = ViewportSchema.parse(options.viewport);
   const environment = enterCaptureEnvironment({ viewport, profile: options.profile });
+  const launcher = editorHandoverScenarios.get(options.scenario.id);
+  if (launcher !== undefined) {
+    try {
+      return await mountEditorHandover(options, launcher, environment.restore);
+    } catch (error) {
+      environment.restore();
+      throw error;
+    }
+  }
   let session: FixtureSession;
   try {
     session = await createFixtureSession({

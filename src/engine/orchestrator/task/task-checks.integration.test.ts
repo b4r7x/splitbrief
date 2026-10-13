@@ -129,14 +129,21 @@ describe('runTaskChecks', () => {
         .filter((event): event is EngineEventOf<'full_suite'> => event.type === 'full_suite')
         .map((row) => [row.id, row.moment, row.status, row.command, row.scenario, row.detail]),
     ).toEqual([
-      ['K2', 'plan', 'refused', 'npm run lint', undefined, 'runs a package script or binary'],
+      [
+        'K2',
+        'plan',
+        'refused',
+        'npm run lint',
+        undefined,
+        'runs a package script or binary (npm run)',
+      ],
       ['K3', 'plan', 'not-run', '', 'home', 'validation.render is not set'],
     ]);
     expect(
       recordedChecks(projectDir, sessionId).map((entry) => [entry.id, entry.status, entry.output]),
     ).toEqual([
       ['K1', 'pass', expect.any(String)],
-      ['K2', 'refused', 'runs a package script or binary'],
+      ['K2', 'refused', 'runs a package script or binary (npm run)'],
       ['K3', 'not-runnable', 'validation.render is not set'],
     ]);
   });
