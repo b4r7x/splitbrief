@@ -1,4 +1,8 @@
-import { getWorkflowSidebarWidth } from '../../../src/features/workflow/layout/rect.js';
+import {
+  getReviewPanelBudget,
+  getWorkflowSidebarWidth,
+} from '../../../src/features/workflow/layout/rect.js';
+import { getReviewDocumentPromptRows } from '../../../src/features/workflow/prompt-rows/approval.js';
 import {
   getContentTopRowIndex,
   getProgressRows,
@@ -8,12 +12,14 @@ import { getHomeLayout, homeConfigBlockRows } from '../../../src/features/home/l
 import { getLogoHeight } from '../../../src/features/home/logo.js';
 import {
   workflowFixtureProjections,
+  getWorkflowFixturePromptRows,
   type WorkflowFixtureProjection,
 } from '../fixtures/workflow/projections.js';
 import { projectionChromeFacts } from '../fixtures/workflow/projection-chrome.js';
 import type { Cell, CellGrid } from '../contracts/cells.js';
 import { CellRectSchema, type CellRect } from '../contracts/geometry.js';
 import type { LocatorContext, LocatorDefinition } from './types.js';
+import { resolveMarkerRect } from './markers.js';
 
 const DEFAULT_INPUT_ROWS = 3;
 
@@ -65,10 +71,9 @@ const BASE_LOCATOR_REGISTRY: Record<string, LocatorDefinition> = {
     resolve: (context) => resolveCompletionMenuAbove(context, resolveWorkflowComposer(context)),
   },
   'workflow:approval-panel': {
-    kind: 'marker',
-    description: 'Approval panel around its checkpoint marker',
-    rowsAbove: 2,
-    rowsBelow: 2,
+    kind: 'layout',
+    description: 'Complete approval panel bounds',
+    resolve: resolveWorkflowApprovalPanel,
   },
   'workflow:activity': {
     kind: 'marker',
@@ -205,6 +210,34 @@ function resolveWorkflowComposer(context: LocatorContext): CellRect {
     y: rows - DEFAULT_INPUT_ROWS - 1,
     width: Math.max(1, cols - WORKFLOW_GUTTER_X * 2),
     height: DEFAULT_INPUT_ROWS,
+  });
+}
+
+function resolveWorkflowApprovalPanel(context: LocatorContext): CellRect {
+  resolveMarkerRect({
+    grid: context.grid,
+    marker: context.checkpoint.marker,
+    bounds: context.grid.rect,
+    selection: { kind: 'unique' },
+  });
+  const projection = projectionFor(context);
+  const { cols, rows } = context.grid.identity.provenance.viewport;
+  const transcript = resolveWorkflowTranscript(context);
+  const promptRows =
+    projection.review !== undefined && projection.approval === undefined
+      ? getReviewDocumentPromptRows(
+          projection.reviewArtifact ?? null,
+          projection.review.confirms ?? [],
+          cols,
+          getReviewPanelBudget({ rows, inputRows: DEFAULT_INPUT_ROWS }),
+        )
+      : getWorkflowFixturePromptRows(projection, cols);
+  const height = Math.min(promptRows, transcript.height);
+  return CellRectSchema.parse({
+    x: transcript.x,
+    y: transcript.y + transcript.height - height,
+    width: transcript.width,
+    height,
   });
 }
 

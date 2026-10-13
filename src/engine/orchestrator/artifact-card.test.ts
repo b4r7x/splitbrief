@@ -76,7 +76,7 @@ describe('buildArtifactExcerpt — the document itself', () => {
 });
 
 describe('buildArtifactExcerpt — section outline', () => {
-  it('lists the sections and their sizes instead of the opening narration', () => {
+  it('lists sections without counting document formatting as content', () => {
     const lines = [
       'I’ll trace the provider path, then report the gaps without modifying files.',
       ...section('### Architecture', 6),
@@ -86,11 +86,7 @@ describe('buildArtifactExcerpt — section outline', () => {
 
     const result = buildArtifactExcerpt(lines.join('\n'), 'research.md');
 
-    expect(result.excerpt).toEqual([
-      'Architecture      9 lines',
-      'Relevant Code     9 lines',
-      'Validation Tools  4 lines',
-    ]);
+    expect(result.excerpt).toEqual(['Architecture', 'Relevant Code', 'Validation Tools']);
     expect(result.omittedUnit).toBe('section');
     expect(result.omittedCount).toBe(0);
   });
@@ -107,11 +103,11 @@ describe('buildArtifactExcerpt — section outline', () => {
     const result = buildArtifactExcerpt(lines.join('\n'), SPEC_FILE);
 
     expect(result.excerpt).toEqual([
-      'Overview                  7 lines',
-      'Functional Requirements  23 lines',
-      '  Inputs                  9 lines',
-      '  Outputs                 9 lines',
-      'Out of Scope              6 lines',
+      'Overview',
+      'Functional Requirements',
+      '  Inputs',
+      '  Outputs',
+      'Out of Scope',
     ]);
     expect(result.omittedCount).toBe(0);
   });

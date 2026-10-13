@@ -58,14 +58,14 @@ describe('setupWorkflow', () => {
     { label: 'planner', opts: { planner: 'claude-code' } },
     { label: 'implementer', opts: { implementer: 'ollama' } },
   ] as const)(
-    'writes the config without requesting setup when a $label override is provided',
+    'requests setup without writing config when a $label override is provided',
     async ({ opts }) => {
       createTestGitRepo(tmp);
 
       const result = await setupWorkflow({ project: tmp, fullscreen: false, ...opts });
 
-      expect(result.needsSetup).toBeUndefined();
-      expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
+      expect(result.needsSetup).toBe(true);
+      expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
     },
   );
 
@@ -89,7 +89,8 @@ describe('setupWorkflow', () => {
 
   it('does NOT request setup when a config already exists on disk', async () => {
     createTestGitRepo(tmp);
-    // Simulate a completed wizard by passing a runner override (eager write).
+    mkdirSync(join(tmp, SPLITBRIEF_DIR), { recursive: true });
+    writeFileSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE), 'version: 3\n');
     const first = await setupWorkflow({ project: tmp, fullscreen: false, planner: 'claude-code' });
     expect(first.needsSetup).toBeUndefined();
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
@@ -104,8 +105,6 @@ describe('setupWorkflow', () => {
     mkdirSync(subdir, { recursive: true });
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    // A runner override takes the eager-write branch, so we can observe where
-    // the config lands relative to the invocation subdir.
     const result = await setupWorkflow({
       project: subdir,
       fullscreen: false,
@@ -114,7 +113,8 @@ describe('setupWorkflow', () => {
 
     expect(result.projectDir).not.toBe(subdir);
     expect(result.projectDir).toBe(realpathSync(tmp));
-    expect(existsSync(join(result.projectDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
+    expect(result.needsSetup).toBe(true);
+    expect(existsSync(join(result.projectDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
     expect(existsSync(join(subdir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
     errorSpy.mockRestore();
   });

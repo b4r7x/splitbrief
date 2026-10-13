@@ -76,7 +76,7 @@ src/cli/
 │   ├── project.ts     # project-state loading
 │   └── discovery.ts   # async discovery
 ├── options.ts         # commander option builder (addWorkflowOptions)
-├── setup.ts           # bootstrap prep (canonicalizeProjectDir, ensureGitAndConfig, setupWorkflow)
+├── setup.ts           # bootstrap prep (canonicalizeProjectDir, ensureHeadlessConfig, setupWorkflow)
 ├── render/            # Ink / fullscreen render setup (app.ts is the production entry)
 │   ├── app.ts
 │   ├── input-config.ts

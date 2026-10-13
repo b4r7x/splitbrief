@@ -39,7 +39,7 @@ function slotLabel(slot: RunnerConfigSlot): string {
     case 'planner':
       return 'Planner';
     case 'implementer':
-      return `Implementer profile ${slot.profile}`;
+      return slot.profile === 'default' ? 'BUILD' : `BUILD ${slot.profile}`;
     case 'reviewer':
       return 'Reviewer';
     default:
@@ -55,7 +55,7 @@ export function admittedCheck(
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'ok',
-    summary: `${slotLabel(slot)} passed fresh runner admission.`,
+    summary: `${slotLabel(slot)} is ready to start.`,
     ...(details.length > 0 && { details: [...details] }),
     metadata: { role: slot.role, kind },
   };
@@ -73,7 +73,7 @@ export function warningCheck(
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'warning',
-    summary: `${slotLabel(slot)} was admitted with warnings.`,
+    summary: `${slotLabel(slot)} is ready with warnings.`,
     details: [...warnings.map((warning) => warning.message), ...details],
     metadata: { role: slot.role, kind, warnings: warnings.map((warning) => warning.code) },
   };
@@ -88,7 +88,7 @@ export function blockedCheck(
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'blocker',
-    summary: `${slotLabel(slot)} could not be admitted.`,
+    summary: `${slotLabel(slot)} could not start.`,
     details: [reason],
     fix,
     nextAction: 'fix-config',

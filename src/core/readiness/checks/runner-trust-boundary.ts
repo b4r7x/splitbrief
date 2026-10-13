@@ -17,6 +17,7 @@ import {
   redactSecrets,
 } from '../../../utils/redact.js';
 import { formatRunner } from './runner-label.js';
+import { planApprovalCopy } from './plan-approval.js';
 
 export function buildRunnerTrustBoundaryChecks(
   config: Config,
@@ -24,15 +25,14 @@ export function buildRunnerTrustBoundaryChecks(
   interaction: 'interactive' | 'headless' | undefined,
 ): ReadinessCheck[] {
   const approve = resolveApproveLevel(config);
-  // A headless run has nobody at the plan card, so it approves the card unattended.
-  const planAutoApproved = approve === 'none' || interaction === 'headless';
+  const approval = planApprovalCopy(config, interaction);
 
   const checks: ReadinessCheck[] = [];
   checks.push(
     ...runnerTrustBoundaryCheck({
       id: 'runners.planner.trust-boundary',
       role: 'planner',
-      label: `Planner ${formatRunner(config.planner)}`,
+      label: `PLAN ${formatRunner(config.planner)}`,
       trust: getRunnerTrustMeta('planner', config.planner),
       ...(config.planner.kind === 'cli' && {
         plannerTier2FullEscalation:
@@ -40,7 +40,7 @@ export function buildRunnerTrustBoundaryChecks(
       }),
       runner: config.planner,
       approve,
-      planAutoApproved,
+      approval,
     }),
   );
 
@@ -50,11 +50,11 @@ export function buildRunnerTrustBoundaryChecks(
       ...runnerTrustBoundaryCheck({
         id: 'runners.reviewer.trust-boundary',
         role: 'reviewer',
-        label: `Reviewer ${formatRunner(reviewer.runner)}`,
+        label: `REVIEW ${formatRunner(reviewer.runner)}`,
         trust: getRunnerTrustMeta(runnerRoleForActiveRole('reviewer'), reviewer.runner),
         runner: reviewer.runner,
         approve,
-        planAutoApproved,
+        approval,
       }),
     );
   }
@@ -65,13 +65,13 @@ export function buildRunnerTrustBoundaryChecks(
         id: 'runners.implementer.trust-boundary',
         role: 'implementer',
         label: profile.isDefault
-          ? `Default implementer ${formatRunner(profile.config)}`
-          : `Implementer profile ${profile.name} ${formatRunner(profile.config)}`,
+          ? `BUILD ${formatRunner(profile.config)}`
+          : `BUILD ${profile.name} ${formatRunner(profile.config)}`,
         profile: profile.name,
         trust: getRunnerTrustMeta('implementer', profile.config),
         runner: profile.config,
         approve,
-        planAutoApproved,
+        approval,
       }),
     );
   }
@@ -114,27 +114,6 @@ function redactedArgv(argv: readonly string[]): string {
     .join(' ');
 }
 
-function trustBoundarySummary(
-  opts: Readonly<{
-    label: string;
-    approvalAutomationActive: boolean;
-    autoAllowFlags: boolean;
-    tier2FullEscalationWritesFiles: boolean;
-  }>,
-): string {
-  if (opts.tier2FullEscalationWritesFiles) {
-    const automationActive = opts.approvalAutomationActive || opts.autoAllowFlags;
-    return `${opts.label} can execute commands and may write files during tier-2 full escalation${automationActive ? ' with approval automation active' : ''}.`;
-  }
-  if (opts.approvalAutomationActive) {
-    return `${opts.label} can execute commands while approval automation is active.`;
-  }
-  if (opts.autoAllowFlags) {
-    return `${opts.label} can execute commands and uses auto/allow runner flags.`;
-  }
-  return `${opts.label} can execute commands on this machine.`;
-}
-
 // This warning describes what the configured runner is able to do, which does
 // not change with the approval level. Suppressing it under a stricter approval
 // setting made the most cautious configuration the quietest report.
@@ -147,33 +126,31 @@ function runnerTrustBoundaryCheck(opts: {
   plannerTier2FullEscalation?: CliPlannerTier2FullEscalationTrust | undefined;
   runner: Config['planner'] | Config['implementer'];
   approve: string;
-  planAutoApproved: boolean;
+  approval: ReturnType<typeof planApprovalCopy>;
 }): ReadinessCheck[] {
   if (!opts.trust.executesLocalCommand && opts.trust.autoAllowFlags.length === 0) return [];
 
   const details = [
     ...declaredCommandDetails(opts.runner),
-    `Plan approval: ${opts.approve}.`,
-    'Only a write to a protected path asks.',
-    'SPLITBRIEF approval gates review the plan and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
+    opts.approval.summary,
+    ...(opts.approval.details ?? []),
+    'Writes to protected files ask for confirmation.',
+    'Plan approval and file confirmations do not restrict the commands or network access of your coding tools.',
   ];
-  if (opts.planAutoApproved) {
-    details.push('Approval automation: plan approval is auto-approved.');
-  }
   if (opts.trust.autoAllowFlags.length > 0) {
-    details.push(`Runner auto/allow flags: ${opts.trust.autoAllowFlags.join(', ')}`);
+    details.push(`Tool permission flags: ${opts.trust.autoAllowFlags.join(', ')}`);
   }
   if (opts.trust.mayWriteFilesDirectly) {
-    details.push('Runner may write project files directly.');
+    details.push('This tool can edit files in the run workspace.');
   }
   if (opts.plannerTier2FullEscalation !== undefined) {
     details.push(
-      'Ordinary planning does not write project files directly.',
-      'Tier-2 full escalation may write project files directly after implementer failure.',
+      'Ordinary planning does not edit project files.',
+      'If BUILD cannot finish a task, PLAN may take over and edit files in the run workspace.',
     );
     if (opts.plannerTier2FullEscalation.autoAllowFlags.length > 0) {
       details.push(
-        `Tier-2 runner auto/allow flags: ${opts.plannerTier2FullEscalation.autoAllowFlags.join(', ')}`,
+        `Permission flags when PLAN takes over: ${opts.plannerTier2FullEscalation.autoAllowFlags.join(', ')}`,
       );
     }
   }
@@ -182,16 +159,9 @@ function runnerTrustBoundaryCheck(opts: {
     {
       id: opts.id,
       severity: 'warning',
-      summary: trustBoundarySummary({
-        label: opts.label,
-        approvalAutomationActive: opts.planAutoApproved,
-        autoAllowFlags:
-          opts.trust.autoAllowFlags.length > 0 ||
-          (opts.plannerTier2FullEscalation?.autoAllowFlags.length ?? 0) > 0,
-        tier2FullEscalationWritesFiles:
-          opts.plannerTier2FullEscalation?.mayWriteFilesDirectly === true,
-      }),
+      summary: `${opts.label} can run commands on this machine${opts.plannerTier2FullEscalation?.mayWriteFilesDirectly === true ? ' and may edit files if BUILD needs help' : ''}.`,
       details,
+      fix: `Use coding tools you trust. To change this seat, open Settings > Crew > ${opts.role === 'planner' ? 'PLAN' : opts.role === 'reviewer' ? 'REVIEW' : 'BUILD'}.`,
       metadata: {
         role: opts.role,
         ...(opts.profile !== undefined && { profile: opts.profile }),

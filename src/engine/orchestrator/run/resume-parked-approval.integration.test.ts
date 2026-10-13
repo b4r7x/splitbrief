@@ -5,7 +5,12 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
-import { makeCallbacks, makePlanner, makeWctx } from '#testing/helpers/orchestrator-factories.js';
+import {
+  makeBusRecorder,
+  makeCallbacks,
+  makePlanner,
+  makeWctx,
+} from '#testing/helpers/orchestrator-factories.js';
 import { makePassingTask } from '#testing/helpers/planning-phase.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
@@ -73,10 +78,20 @@ it('reopens a parked plan card and sends the correction typed at it to the plann
     tasks: proposal.tasks.map((spec) => taskFromSpec(spec, projectDir)),
   };
   const typed = scriptedTypedCall([makePlanProposal({ summary: 'Greet people in Polish' })]);
-  const onApprovalNeeded = vi.fn().mockResolvedValue({ approved: true });
+  const { bus, events } = makeBusRecorder();
+  const onApprovalNeeded = vi.fn(async () => {
+    expect(events.filter((event) => event.type === 'tasks_planned').at(-1)).toMatchObject({
+      total: proposal.tasks.length,
+      tasks: proposal.tasks.map((task, index) =>
+        expect.objectContaining({ id: task.id, title: task.title, index }),
+      ),
+    });
+    return { approved: true } as const;
+  });
   const wctx = makeWctx({
     projectDir,
     sessionId,
+    bus,
     planner: makePlanner({ typedCall: typed.typedCall }),
     config: makeConfig({
       codebase: { enabled: false, tokenBudget: 4000 },

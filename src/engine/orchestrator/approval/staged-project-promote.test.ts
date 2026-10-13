@@ -126,7 +126,7 @@ describe('promoteStagedChanges', () => {
     const projectDir = createTempDir('promote-project');
     const stagedDir = createTempDir('promote-staged');
     try {
-      // The strip cannot tell this line from the one isolation appended, so the
+      // The strip cannot tell this line from the one older runs appended, so the
       // task's own addition is dropped rather than risk writing SPLITBRIEF's
       // bookkeeping into a tracked file. Adding it stays a manual step.
       const original = 'node_modules/\n';

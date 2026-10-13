@@ -45,6 +45,7 @@ function authRow(input: {
   const choices = input.choices ?? [];
   return {
     kind: 'auth',
+    model: { id: 'sonnet', effortChoices: ['low', 'high'] },
     method,
     choices,
     steps: choices.length > 1 || (choices.length === 1 && choices[0] !== method),
@@ -459,8 +460,8 @@ describe('authentication method rows', () => {
     pickerViewStore.reset();
   });
 
-  it('takes no key where there is nothing to choose, and confirms where there is', () => {
-    expect(rightRowActivation(authRow({}), undefined)).toBe('none');
+  it('confirms from every auth row, including a method owned by the CLI', () => {
+    expect(rightRowActivation(authRow({}), undefined)).toBe('confirm');
     expect(rightRowActivation(authRow({ choices: enforceable }), undefined)).toBe('confirm');
     // A seat carrying a method no adapter can enforce keeps the way back out.
     expect(
@@ -471,13 +472,27 @@ describe('authentication method rows', () => {
     ).toBe('confirm');
   });
 
+  it('confirms the expanded model and its drafted effort from a CLI-owned auth row', () => {
+    const selected: { model: string; effort: string | null | undefined }[] = [];
+    const actions = makeActions();
+    actions.confirmProviderSelection = async (model, effort) => {
+      selected.push({ model, effort });
+    };
+    pickerViewStore.expand('sonnet', undefined, 'high');
+    confirmRow(cliTool({ id: 'claude-code', displayName: 'Claude Code CLI' }), authRow({}), {
+      actions,
+      auth: unchecked,
+    });
+    expect(selected).toEqual([{ model: 'sonnet', effort: 'high' }]);
+  });
+
   it('never draws a disclosure, so nothing on the row reads as an expansion', () => {
     expect(isExpandableRow(authRow({}), unchecked)).toBe(false);
     expect(isExpandableRow(authRow({ choices: enforceable }), unchecked)).toBe(false);
   });
 
-  it('drops its verb slot with nothing to choose, and names the step when it can move', () => {
-    expect(expandedRowHint(authRow({}), unchecked)).toBe('');
+  it('names confirmation with nothing to cycle, and names the step when it can move', () => {
+    expect(expandedRowHint(authRow({}), unchecked)).toBe('⏎ confirm');
     const hint = expandedRowHint(authRow({ choices: enforceable }), unchecked) ?? '';
     expect(hint).toContain('space');
     expect(hint).toContain('⏎');

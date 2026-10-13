@@ -8,13 +8,24 @@ import { SOFT_SEP } from '../../core/separators.js';
 import type { CrewLabVerdict } from '../../core/crew/labs.js';
 import type { CrewPreset } from '../../core/crew/presets.js';
 import { type CrewRow, crewRowKey } from '../../core/crew/rows.js';
+import {
+  checkCrewAvailability,
+  selectDetectedDefaultCrew,
+  unavailableCrewSeats,
+} from '../../engine/detection/crew.js';
+import type { CrewSeat } from '../../core/crew/seats.js';
+import type { PickerDetectionSnapshot } from '../../features/runners/model-catalog/status.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { AttachedInput } from '../../core/schemas/attachment.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { BOOT_MANIFEST_TITLE, REFRESHING_TOOLS_TITLE } from '../../core/discovery/copy.js';
 import { BootManifest } from '../../features/runners/boot-manifest.js';
 import { prepareExecution } from '../../engine/runners/prepare-execution/prepare-execution.js';
-import { planSeatBlock, type SeatBlockLayout } from '../../features/crew/format.js';
+import {
+  CREW_IDENTITY_COLUMN,
+  planSeatBlock,
+  type SeatBlockLayout,
+} from '../../features/crew/format.js';
 import { crewActivate } from '../../features/crew/rows.js';
 import { PresetRowView } from '../../features/crew/preset-row.js';
 import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
@@ -32,6 +43,7 @@ import { preparationStore } from '../../stores/navigation/preparation.js';
 import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
+import { persistedConfigForSave } from '../../stores/project/config-persistence.js';
 import { configPath, ensureConfigGitignore } from '../../core/config/load/document.js';
 import { configError } from '../../core/config/errors.js';
 import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
@@ -41,6 +53,8 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
+import { isAbortError } from '../../utils/abort.js';
+import { toErrorMessage } from '../../utils/format-errors.js';
 import { appPreparationError, interactivePreparationPolicy } from '../prepare-resume.js';
 
 type Step = 'discovery' | 'crew';
@@ -53,6 +67,21 @@ const NOTE_BLOCK_ROWS = 2;
 export const PRESET_SECTION = 'Ready-made crews';
 const CREW_SECTION = 'Crew';
 const CONTINUE_SECTION = '';
+
+async function unavailableSetupSeats(
+  config: Config,
+  detection: PickerDetectionSnapshot,
+  signal?: AbortSignal,
+) {
+  const { config: effective, diskConfig: persisted } = configStore.get();
+  if (effective === null || persisted === null) throw configError.loadNotCalled('setup');
+  const saved = persistedConfigForSave({ persisted, effective, updated: config });
+  const [invocationSeats, persistedSeats] = await Promise.all([
+    checkCrewAvailability({ config, detection, signal }),
+    checkCrewAvailability({ config: saved, detection, signal }),
+  ]);
+  return [...invocationSeats, ...persistedSeats];
+}
 
 type SetupItem =
   | Readonly<{ kind: 'preset'; preset: CrewPreset; key: string }>
@@ -175,14 +204,16 @@ type SetupPreparationInput = Readonly<{
 
 type DiscoveryPanelProps = Readonly<{
   state: 'initializing' | 'failed';
+  noConfig: boolean;
   onBack: () => void;
   onRetry: () => void;
   onOpenSettings: () => void;
 }>;
 
-function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
+function DiscoveryPanel({ state, noConfig, onBack, onRetry, onOpenSettings }: DiscoveryPanelProps) {
   const t = useTheme();
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
+  const { frame } = useSpinnerFrame(noConfig && state === 'initializing');
 
   useInput(
     (input, key) => {
@@ -203,7 +234,13 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
   if (state === 'initializing') {
     return (
       <OverlayPanel title={BOOT_MANIFEST_TITLE} density="compact" hint="esc quit">
-        <BootManifest />
+        {noConfig ? (
+          <Text color={t.textDim}>
+            <Text color={t.accent}>{frame}</Text> Choose your crew after the tool check.
+          </Text>
+        ) : (
+          <BootManifest />
+        )}
       </OverlayPanel>
     );
   }
@@ -214,7 +251,7 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
       density="compact"
       hint={`r retry${SOFT_SEP}esc quit${SOFT_SEP}s settings`}
     >
-      <Text color={t.error}>Your configured tools could not be checked.</Text>
+      <Text color={t.error}>Your tools could not be checked.</Text>
       <Box marginTop={1}>
         <Text color={t.textDim}>Retry the check or review runner settings.</Text>
       </Box>
@@ -223,6 +260,7 @@ function DiscoveryPanel({ state, onBack, onRetry, onOpenSettings }: DiscoveryPan
 }
 
 interface CrewStepProps {
+  noConfig: boolean;
   note?: string | undefined;
   /** The preparation status while one runs; without one the panel names the focused row's keys. */
   status?: string | undefined;
@@ -232,13 +270,43 @@ interface CrewStepProps {
   onExit: () => void;
 }
 
-function CrewStep({ note, status, inert = false, onContinue, onExit }: CrewStepProps) {
+function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }: CrewStepProps) {
   const t = useTheme();
   const config = configStore.useConfig();
   const { rows: crewRows, verdict, presets } = useCrew();
   const { cols, rows: terminalRows } = terminalSizeStore.use((state) => state);
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
   const error = feedbackStore.use((state) => (state.isError ? state.message : null));
+  const detection = detectionStore.use((state) => state);
+  const persisted = configStore.use((state) => state.diskConfig);
+  const [availability, setAvailability] = useState<{
+    config: Config;
+    persisted: Config | null;
+    detection: PickerDetectionSnapshot;
+    seats: readonly CrewSeat[];
+  } | null>(null);
+  const checked =
+    availability?.config === config &&
+    availability.persisted === persisted &&
+    availability.detection === detection;
+  const unavailableSeats = checked
+    ? availability.seats
+    : unavailableCrewSeats({ config, detection });
+  const canContinue = checked && unavailableSeats.length === 0;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void unavailableSetupSeats(config, detection, controller.signal).then(
+      (seats) => {
+        if (!controller.signal.aborted) setAvailability({ config, persisted, detection, seats });
+      },
+      (cause: unknown) => {
+        if (!controller.signal.aborted && !isAbortError(cause))
+          feedbackStore.setError(toErrorMessage(cause));
+      },
+    );
+    return () => controller.abort();
+  }, [config, persisted, detection]);
 
   const { innerWidth, innerRows } = overlayRect({
     cols,
@@ -248,6 +316,7 @@ function CrewStep({ note, status, inert = false, onContinue, onExit }: CrewStepP
   const budget =
     innerRows -
     PANEL_CHROME_ROWS -
+    (noConfig ? NOTE_BLOCK_ROWS : 0) -
     (note === undefined ? 0 : NOTE_BLOCK_ROWS) -
     (error === null ? 0 : 1);
   const { layout, showPresets, showHeaders, showGaps } = planSetupList({
@@ -288,10 +357,19 @@ function CrewStep({ note, status, inert = false, onContinue, onExit }: CrewStepP
     },
   });
   const focusedItem = list.filtered[list.selectedIndex];
-  const hint = status ?? `↑↓ select${SOFT_SEP}${crewKeysHint(focusedItem)}${SOFT_SEP}esc quit`;
+  const keys =
+    focusedItem?.kind === 'continue' && !canContinue
+      ? 'change unavailable seats'
+      : crewKeysHint(focusedItem);
+  const hint = status ?? `↑↓ select${SOFT_SEP}${keys}${SOFT_SEP}esc quit`;
 
   return (
     <OverlayPanel title="Set up your crew" density={CREW_PANEL_DENSITY} hint={hint}>
+      {noConfig && (
+        <Box marginBottom={1}>
+          <Text color={t.textDim}>No config. Setup saves .splitbrief/config.yaml.</Text>
+        </Box>
+      )}
       {note !== undefined && (
         <Box marginBottom={1}>
           <Text color={t.textDim} wrap="truncate-end">
@@ -331,19 +409,38 @@ function CrewStep({ note, status, inert = false, onContinue, onExit }: CrewStepP
                   labelWidth={presetLabelWidth}
                 />
               );
-            case 'crew':
+            case 'crew': {
+              const unavailable = unavailableSeats.some((seat) => seat.id === item.row.id);
+              const availabilityWidth = unavailable ? getTerminalCellWidth('  Unavailable') : 0;
               return (
-                <CrewRowView
-                  row={item.row}
-                  layout={layout}
-                  isCursor={ctx.isCursor}
-                  width={ctx.contentWidth}
-                />
+                <Box>
+                  <CrewRowView
+                    row={item.row}
+                    layout={
+                      unavailable
+                        ? {
+                            ...layout,
+                            identityWidth:
+                              ctx.contentWidth - availabilityWidth - CREW_IDENTITY_COLUMN,
+                            posture: false,
+                          }
+                        : layout
+                    }
+                    isCursor={ctx.isCursor}
+                    width={ctx.contentWidth - availabilityWidth}
+                  />
+                  {unavailable && <Text color={t.warning}>{'  Unavailable'}</Text>}
+                </Box>
               );
+            }
             case 'continue':
               return (
-                <Text color={ctx.isCursor ? t.accent : t.textDim} bold={ctx.isCursor}>
+                <Text
+                  color={ctx.isCursor && canContinue ? t.accent : t.textDim}
+                  bold={ctx.isCursor && canContinue}
+                >
                   {continueText(ctx.isCursor)}
+                  {!canContinue && `${SOFT_SEP}choose ready seats`}
                 </Text>
               );
             default:
@@ -370,6 +467,8 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   };
   const { exit } = useApp();
   const projectDir = configStore.use((state) => state.projectDir);
+  const noConfig = configStore.use((state) => state.revision === null);
+  const initialCrewSelected = useRef(false);
   const refresh = detectionStore.use((state) => state.refresh);
   const readiness = refresh.readiness;
   const onComplete = routerStore.use((state) =>
@@ -397,6 +496,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
   const [step, setStep] = useState<Step>('discovery');
   const ignoreInitialized = useRef(false);
+  const saveCheck = useRef<AbortController | null>(null);
 
   const preparation = useStartPreparation<SetupPreparationInput>({
     prepare: async (input, signal) => {
@@ -437,7 +537,22 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
       (source) =>
         source.outcome === 'failed' || (source.outcome === 'stale' && source.error !== null),
     );
-  const effectiveStep = step === 'discovery' && hasRememberedDiscovery ? 'crew' : step;
+  const effectiveStep = step === 'discovery' && hasRememberedDiscovery && !noConfig ? 'crew' : step;
+
+  useEffect(() => {
+    if (
+      !noConfig ||
+      initialCrewSelected.current ||
+      readiness.outcome !== 'fresh' ||
+      readiness.refreshing
+    )
+      return;
+    const crew = selectDetectedDefaultCrew(detectionStore.get());
+    if (crew !== null) {
+      initialCrewSelected.current = true;
+      configStore.setInitialCrew(crew);
+    }
+  }, [noConfig, readiness.outcome, readiness.generation, readiness.refreshing]);
 
   useEffect(() => {
     if (step === 'discovery' && readiness.outcome === 'fresh' && !readiness.refreshing) {
@@ -447,6 +562,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
 
   useEffect(
     () => () => {
+      saveCheck.current?.abort();
       if (sessionSelectStore.get().preparation.kind === 'idle') closeApprovalPrompt();
     },
     [],
@@ -480,6 +596,23 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
 
   const finalize = async (finalConfig: Config) => {
     if (!projectDir) return;
+    saveCheck.current?.abort();
+    const controller = new AbortController();
+    saveCheck.current = controller;
+    const detection = detectionStore.get();
+    const persisted = configStore.get().diskConfig;
+    const unavailable = await unavailableSetupSeats(finalConfig, detection, controller.signal);
+    if (
+      controller.signal.aborted ||
+      configStore.get().config !== finalConfig ||
+      configStore.get().diskConfig !== persisted ||
+      detectionStore.get() !== detection
+    )
+      return;
+    if (unavailable.length > 0) {
+      feedbackStore.setError('Choose a ready tool and model for each unavailable seat.');
+      return;
+    }
     const result = await configStore.save(finalConfig);
     if (reportConfigSaveFailure(result)) return;
     if (!ignoreInitialized.current) {
@@ -525,10 +658,14 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   }
 
   if (effectiveStep === 'discovery') {
-    const coldFailed = readiness.outcome === 'failed' && !readiness.refreshing;
+    const coldFailed =
+      !readiness.refreshing &&
+      (readiness.outcome === 'failed' ||
+        (readiness.outcome === 'stale' && readiness.error !== null));
     return (
       <DiscoveryPanel
         state={coldFailed ? 'failed' : 'initializing'}
+        noConfig={noConfig}
         onBack={exit}
         onRetry={retryDiscovery}
         onOpenSettings={() => overlayStore.open('settings')}
@@ -550,11 +687,15 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
 
   return (
     <CrewStep
-      {...(rememberedStepLabel !== undefined && { note: rememberedStepLabel })}
+      noConfig={noConfig}
+      note={rememberedStepLabel}
       status={preparationStatus}
       inert={checkingStage !== null}
       onContinue={(current) => void finalize(current)}
-      onExit={exit}
+      onExit={() => {
+        saveCheck.current?.abort();
+        exit();
+      }}
     />
   );
 }

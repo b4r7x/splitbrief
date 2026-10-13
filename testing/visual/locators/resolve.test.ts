@@ -121,9 +121,10 @@ describe('semantic visual locators', { timeout: 90_000 }, () => {
       rect: { x: 1, y: 36, width: 118, height: 3 },
     });
     expect(approval).toMatchObject({
-      kind: 'marker',
-      rect: { x: 0, y: 7, width: 80, height: 5 },
+      kind: 'layout',
+      rect: { x: 0, width: 80 },
     });
+    expect(approval.rect.y + approval.rect.height).toBe(18);
     expect(approval.provenance).toMatchObject({
       scenarioId: review.id,
       scenarioTitle: review.title,

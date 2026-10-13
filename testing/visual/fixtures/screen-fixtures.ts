@@ -4,6 +4,8 @@ import { modelCacheStore } from '../../../src/stores/discovery/model-cache/state
 import type { RouteData } from '../../../src/stores/navigation/router.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
 import { configStore } from '../../../src/stores/project/config.js';
+import { resolveEffectiveConfig } from '../../../src/core/config/runtime/effective-config.js';
+import { createProductionDetectionDeps } from '../../../src/engine/detection/deps.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { skillsStore } from '../../../src/stores/project/skills.js';
 import { composerDraftStore } from '../../../src/stores/ui/composer-draft.js';
@@ -38,12 +40,7 @@ import { createTestGitRepo } from '../../helpers/git.js';
 import { makeRunRecord } from '../../helpers/factories/run-record.js';
 import { resetAllStores } from '../../helpers/stores.js';
 import { prepareWorkflowExecution } from '../../helpers/workflow-screen.js';
-import type {
-  FixtureContext,
-  FixtureFactory,
-  FixtureLifecycle,
-  FixtureRegistry,
-} from './common.js';
+import type { FixtureContext, FixtureLifecycle, FixtureRegistry } from './common.js';
 
 /**
  * The context keys every visual fixture publishes discovery under. A lane
@@ -136,6 +133,10 @@ export function seedVisualConfig(overrides?: VisualConfigOverrides): void {
     config,
     diskConfig: config,
     projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+    revision: {
+      rawSha256: 'visual-config',
+      fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
+    },
   });
 }
 
@@ -166,6 +167,7 @@ interface HomeFixtureOptions {
   readonly config?: VisualConfigOverrides;
   readonly cold?: boolean;
   readonly detecting?: boolean;
+  readonly noConfig?: boolean;
 }
 
 const HOME_FIXTURE_SKILLS = new Set(['brief-discipline', 'repo-conventions']);
@@ -175,6 +177,9 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
     setup: (context) => {
       setupVisualFixture(context);
       if (options.config !== undefined) seedVisualConfig(options.config);
+      if (options.noConfig === true) {
+        configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
+      }
       skillsStore.setSelected(HOME_FIXTURE_SKILLS);
       if (options.cold !== true) publishFreshDiscovery();
       if (options.detecting === true) {
@@ -341,14 +346,128 @@ function modelsDevOutcome(
   };
 }
 
-export const createSetupFixture: FixtureFactory = () => ({
-  setup: (context) => {
-    setupVisualFixture(context);
-    publishFreshDiscovery();
-    routerStore.init({ screen: 'setup', onComplete: 'home' });
-  },
-  teardown: teardownVisualFixture,
-});
+export function createSetupFixture(
+  state:
+    | 'initial'
+    | 'unavailable'
+    | 'detecting'
+    | 'cached-refresh'
+    | 'cached-failure'
+    | 'api-override'
+    | 'custom-api'
+    | 'custom-unavailable'
+    | 'persisted-api-override' = 'initial',
+): FixtureLifecycle {
+  let restoreFetch: (() => void) | undefined;
+  return {
+    setup: (context) => {
+      setupVisualFixture(context);
+      if (state !== 'unavailable') {
+        configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
+      }
+      if (state === 'custom-api' || state === 'custom-unavailable') {
+        seedVisualConfig({
+          implementer: {
+            kind: 'api',
+            provider: 'custom-api',
+            service: 'custom-api',
+            offering: 'payg',
+            apiBase: 'https://custom.example.test/v1',
+            apiKey: 'inline-test-key',
+            model: 'custom-coder',
+          },
+        });
+        const previousFetch = globalThis.fetch;
+        globalThis.fetch = async (input, init) => {
+          const url = String(input instanceof Request ? input.url : input);
+          return url.startsWith('https://custom.example.test/')
+            ? Response.json({
+                data: [{ id: state === 'custom-api' ? 'custom-coder' : 'other-model' }],
+              })
+            : previousFetch(input, init);
+        };
+        restoreFetch = () => {
+          globalThis.fetch = previousFetch;
+        };
+      }
+      if (state === 'api-override' || state === 'persisted-api-override') {
+        const overrides = {
+          implementer: {
+            model: 'custom-coder',
+            apiBase: 'http://127.0.0.1:12434/v1',
+          },
+        };
+        if (state === 'api-override') configStore.load(VISUAL_FIXTURE_PROJECT_DIR, overrides);
+        else {
+          seedVisualConfig({ implementer: { model: 'custom-coder' } });
+          const persisted = configStore.get().diskConfig;
+          if (persisted === null) throw new Error('Expected a visual config');
+          configStore.__testReset({
+            ...configStore.get(),
+            config: resolveEffectiveConfig({ base: persisted, overrides }).config,
+            overrides,
+          });
+        }
+      }
+      if (state === 'cached-refresh' || state === 'cached-failure') {
+        detectionStore.hydrate({
+          cliTools: [cliDetectionFor('ready', 'claude-code'), cliDetectionFor('ready', 'opencode')],
+          providers: [],
+          fetchedAt: VISUAL_PUBLISHED_AT,
+          validatedAt: VISUAL_PUBLISHED_AT,
+          generation: 1,
+          requestId: 1,
+          contexts: VISUAL_DETECTION_CONTEXTS,
+        });
+        const request = detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
+        if (state === 'cached-failure') {
+          detectionStore.publishLane({
+            request,
+            lane: {
+              lane: 'readiness',
+              outcome: {
+                kind: 'failed',
+                source: 'readiness',
+                contextKey: request.contexts.readiness,
+                generation: 2,
+                requestId: request.id,
+                checkedAt: VISUAL_PUBLISHED_AT,
+                error: { kind: 'request-failed', message: 'Tool discovery failed.' },
+              },
+            },
+          });
+        }
+      } else if (state === 'detecting')
+        detectionStore.beginRefresh({ contexts: VISUAL_DETECTION_CONTEXTS });
+      else publishFreshDiscovery();
+      if (state === 'api-override' || state === 'persisted-api-override') {
+        const config = configStore.get().config;
+        if (config === null) throw new Error('Expected a visual config');
+        const { sourceContexts } = createProductionDetectionDeps({
+          config,
+          projectDir: VISUAL_FIXTURE_PROJECT_DIR,
+        });
+        detectionStore.setDetection({
+          cliTools: detectionStore.get().cliTools,
+          providers: [],
+          providerOutcomes: sourceContexts.configuredProviders?.map((connection) => ({
+            connection,
+            state: 'fresh',
+            catalog: 'populated',
+            models: [{ id: 'custom-coder' }],
+            fetchedAt: VISUAL_PUBLISHED_AT,
+            validatedAt: VISUAL_PUBLISHED_AT,
+          })),
+        });
+      }
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+    },
+    teardown: () => {
+      restoreFetch?.();
+      teardownVisualFixture();
+    },
+  };
+}
 
 const SKILLS_COMPLETION_FIXTURE: SkillMeta[] = [
   {
@@ -831,6 +950,7 @@ const HOME_REVIEWER_API_SEAT = {
 
 export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-empty'), () => createHomeFixture()],
+  [scenarioId('home-no-config'), () => createHomeFixture({ noConfig: true })],
   [
     scenarioId('home-reviewer'),
     () =>
@@ -878,5 +998,16 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('workflow-continuing'), createWorkflowContinuingFixture],
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
-  [scenarioId('setup-initial'), createSetupFixture],
+  [scenarioId('setup-initial'), () => createSetupFixture()],
+  [scenarioId('setup-unavailable-seat'), () => createSetupFixture('unavailable')],
+  [scenarioId('setup-api-endpoint-override'), () => createSetupFixture('api-override')],
+  [scenarioId('setup-custom-api'), () => createSetupFixture('custom-api')],
+  [scenarioId('setup-custom-api-unavailable'), () => createSetupFixture('custom-unavailable')],
+  [
+    scenarioId('setup-persisted-api-unavailable'),
+    () => createSetupFixture('persisted-api-override'),
+  ],
+  [scenarioId('setup-no-config-detecting'), () => createSetupFixture('detecting')],
+  [scenarioId('setup-no-config-cached-refresh'), () => createSetupFixture('cached-refresh')],
+  [scenarioId('setup-no-config-cached-failure'), () => createSetupFixture('cached-failure')],
 ]);

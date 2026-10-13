@@ -6,7 +6,12 @@ import { paint } from '../../core/theme/paint.js';
 import { createPlanner } from '../../engine/runners/factory.js';
 import type { Planner } from '../../engine/planners/types.js';
 import { getRunnerDisplayName } from '../../core/config/accessors/runner-config.js';
-import { ensureGitAndConfig, canonicalizeProjectDir, loadConfigOrExit } from '../setup.js';
+import {
+  assertGitRepo,
+  ensureHeadlessConfig,
+  canonicalizeProjectDir,
+  loadConfigOrExit,
+} from '../setup.js';
 import { cliError, withCliErrors } from '../errors.js';
 import { PLAN_FILE, PLAN_JSON_FILE, TASKS_FILE, sessionDir } from '../../core/paths.js';
 import { writeSpecFile } from '../../core/paths-io.js';
@@ -103,7 +108,11 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
     .option('--allow-repo-runners', ALLOW_REPO_RUNNERS_HELP, false)
     .action(async (feature: string, opts: SpecOpts) => {
       const projectDir = await canonicalizeProjectDir(opts);
-      await ensureGitAndConfig(projectDir);
+      await assertGitRepo(projectDir);
+      const initialInvocation = await ensureHeadlessConfig({
+        projectDir,
+        overrides: workflowOptsToCLIOverrides(opts),
+      });
 
       clearStaleSessionForCli(projectDir);
 
@@ -115,8 +124,8 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         allowHooks: opts.allowHooks,
       });
       const { config, warnings } = resolveEffectiveConfig({
-        base: loaded.config,
-        overrides: workflowOptsToCLIOverrides(opts),
+        base: initialInvocation ?? loaded.config,
+        ...(initialInvocation === undefined && { overrides: workflowOptsToCLIOverrides(opts) }),
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
       emitEffectiveConfigWarnings(warnings);

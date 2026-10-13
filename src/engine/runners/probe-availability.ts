@@ -173,6 +173,9 @@ async function catalogAdmission(
     return selectedModelVerdict(probe, runner);
   }
   const models = await provider.listModels({ signal });
+  if (models.length > 0 && selectionId !== undefined && !models.includes(selectionId)) {
+    return { state: 'missing-model', selectionId };
+  }
   return models.length > 0 ? { state: 'available' } : catalogVerdict(provider.getLastError?.());
 }
 

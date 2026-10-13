@@ -3,8 +3,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { delimiter, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
+import { createDefaultConfig } from '../../../src/core/config/load/defaults.js';
 import { configPath } from '../../../src/core/config/load/document.js';
-import { loadConfig } from '../../../src/core/config/load/io.js';
+import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { CONFIG_FILE, SPLITBRIEF_DIR, sessionsRoot } from '../../../src/core/paths.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { loadState } from '../../../src/core/state/persistence.js';
@@ -19,7 +20,6 @@ import { spawnCli } from '../helpers/live-cli-harness.js';
 import { assertPlainStdout } from '../helpers/run-dir-assertions.js';
 import { GREET_FILE, GREET_SOURCE } from '../helpers/stop-continue-fixture.js';
 
-/** The implementer `init --yes` writes: `createDefaultConfig` in src/core/config/load/defaults.ts. */
 const OLLAMA_MODEL = 'qwen3-coder:30b';
 const OLLAMA_BASE = 'http://localhost:11434/v1';
 const OLLAMA_ORIGIN_PORT = '11434';
@@ -424,7 +424,7 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     const target = await firstRunFixture('e2e-first-run-missing');
     vi.stubEnv('PATH', [target.bin, '/usr/bin', '/bin'].join(delimiter));
 
-    await initProject(target);
+    writeConfig(target.projectDir, createDefaultConfig());
 
     const doctor = await doctorJson(target);
     expect(doctor.run.exitCode, `${doctor.run.stdout}\n${doctor.run.stderr}`).toBe(1);

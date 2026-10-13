@@ -167,7 +167,7 @@ function ungatedCliAdvisory(checks: readonly ReadinessCheck[]): string {
 export function formatReadinessReport(report: ReadinessReport): string {
   const lines: string[] = [];
   lines.push(
-    `Run readiness: ${report.status} (${report.counts.blocker} blockers, ${report.counts.warning} warnings)`,
+    `Run readiness: ${report.status} (${countNoun(report.counts.blocker, 'blocker')}, ${countNoun(report.counts.warning, 'warning')})`,
   );
   const ungatedCli = ungatedCliReadinessChecks(report);
   if (report.status === 'blocked') {
@@ -192,7 +192,7 @@ export function formatReadinessReport(report: ReadinessReport): string {
 export function formatReadinessBlockers(report: ReadinessReport): string {
   const blockerOnly = createBlockerOnlyReadinessReport(report);
   const lines: string[] = [];
-  lines.push(`Run readiness: blocked (${blockerOnly.counts.blocker} blockers)`);
+  lines.push(`Run readiness: blocked (${countNoun(blockerOnly.counts.blocker, 'blocker')})`);
   lines.push(formatRequiredAction(blockerOnly.nextAction));
   lines.push('');
 

@@ -122,7 +122,7 @@ describe('config defaults', () => {
     it('does not serialize removed workflow fields when writing a new config', async () => {
       const dir = join(TMP, 'default-no-removed-workflow-fields');
       mkdirSync(dir, { recursive: true });
-      await initConfig(dir);
+      await initConfig(dir, createDefaultConfig());
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
@@ -193,7 +193,7 @@ describe('config defaults', () => {
     it('serializes the default API identity and loads it unchanged', async () => {
       const dir = join(TMP, 'default-api-identity');
       mkdirSync(dir, { recursive: true });
-      await initConfig(dir);
+      await initConfig(dir, createDefaultConfig());
 
       const written = YAML.parse(
         readFileSync(join(dir, SPLITBRIEF_DIR, 'config.yaml'), 'utf-8'),
@@ -209,7 +209,7 @@ describe('config defaults', () => {
     it('leaves the Claude auth channel to the host configuration in a new default config', async () => {
       const dir = join(TMP, 'default-claude-auth-channel');
       mkdirSync(dir, { recursive: true });
-      await initConfig(dir);
+      await initConfig(dir, createDefaultConfig());
       // No admitted CLI can enforce a method (docs/AUTH-METHOD-MATRIX.md), so a
       // persisted default `session` would read as a user choice and be refused.
 
@@ -220,22 +220,25 @@ describe('config defaults', () => {
       expect(loadConfig(dir).config.planner).toEqual({ kind: 'cli', tool: 'claude-code' });
     });
 
-    it('creates a missing config, preserves an existing config, and force-resets it', async () => {
+    it('writes the supplied config, preserves an existing config, and force-replaces it', async () => {
       const dir = join(TMP, 'init-first-save-and-force');
       const file = join(dir, SPLITBRIEF_DIR, 'config.yaml');
+      const config = createDefaultConfig();
+      config.workflow.approve = 'none';
       mkdirSync(dir, { recursive: true });
 
       expect(existsSync(file)).toBe(false);
-      await initConfig(dir);
-      expect(loadConfig(dir).config).toEqual(createDefaultConfig());
+      const result = await initConfig(dir, config);
+      expect(loadConfig(dir).config).toEqual(config);
+      expect(result).toBe('saved');
 
       const existing = 'version: 3\nworkflow:\n  mode: quick\n';
       writeFileSync(file, existing);
-      await initConfig(dir);
+      await initConfig(dir, config);
       expect(readFileSync(file, 'utf-8')).toBe(existing);
 
-      await initConfig(dir, { force: true });
-      expect(loadConfig(dir).config).toEqual(createDefaultConfig());
+      expect(await initConfig(dir, config, { force: true })).toBe('saved');
+      expect(loadConfig(dir).config).toEqual(config);
     });
 
     it('preserves a user-supplied sessions.scope', () => {

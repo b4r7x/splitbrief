@@ -92,6 +92,27 @@ describe('configStore.load', () => {
     expect(implementer.contextLength).toBeUndefined();
   });
 
+  it('seeds and saves explicit seats when no config file exists', async () => {
+    configStore.load(tmpDir, {
+      planner: { command: process.execPath },
+      implementer: { command: process.execPath, model: 'fixture' },
+    });
+    const config = loadedConfig();
+    expect(configStore.get().diskConfig).toEqual(config);
+    expect(configStore.get().revision).toBeNull();
+    expect(existsSync(join(tmpDir, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(false);
+
+    const result = await configStore.save(config);
+
+    expect(result.kind).toBe('saved');
+    const saved = loadConfig(tmpDir).config;
+    expect(saved).toEqual(config);
+    expect(configStore.get().diskConfig).toEqual(saved);
+    expect(configStore.get().revision).toEqual(readConfigDocument(tmpDir).revision);
+    configStore.load(tmpDir);
+    expect(loadedConfig()).toEqual(saved);
+  });
+
   it('refreshes persisted metadata while keeping the prepared config and runtime provenance', () => {
     writeConfigYaml();
     configStore.load(tmpDir, { implementer: { model: 'override-model' } });

@@ -262,7 +262,7 @@ The demotions cost one import-path rewrite each; the benefit is that `src/compon
 src/cli/setup.ts
   setupWorkflow(opts)          # git check + config presence + fullscreen detect
   canonicalizeProjectDir(opts) # resolve the --project flag to a canonical directory
-  ensureGitAndConfig(dir)      # fallback init when config missing
+  ensureHeadlessConfig(input) # detected crew init and explicit reconfiguration
 ```
 
 Only the CLI subcommands call this. An API server, SDK bootstrap, or programmatic entry point would be a second consumer — at which point `setupWorkflow` promotes to `src/core/config/setup.ts` and the CLI keeps a thin adapter.

@@ -19,7 +19,7 @@ export interface ActiveRunnerLens {
 
 interface ActiveRunnerSource {
   readonly runner: ActiveRunnerConfig;
-  readonly sourceNode: object;
+  readonly sourcePath: string;
 }
 
 export interface ReadActiveRunnerInput {
@@ -44,28 +44,30 @@ export type UpdateActiveRunnerInput =
       readonly updater: (existing: ReviewerConfig) => ReviewerConfig;
     };
 
-const sourceNodeId = (node: object): string => contentIdentityId('active-runner-source', node);
-
 function resolveActiveRunnerSource(input: ReadActiveRunnerInput): ActiveRunnerSource {
   if (input.role === 'planner') {
     return {
       runner: input.config.planner,
-      sourceNode: input.config.planner,
+      sourcePath: 'planner',
     };
   }
 
   if (input.role === 'reviewer') {
-    const reviewer = resolveReviewerRunner(input.config).runner;
-    return { runner: reviewer, sourceNode: reviewer };
+    const reviewer = resolveReviewerRunner(input.config);
+    return {
+      runner: reviewer.runner,
+      sourcePath: reviewer.source === 'planner' ? 'planner' : 'reviewer',
+    };
   }
 
   const resolved = resolveImplementerProfiles(input.config);
-  const sourceNode =
-    input.config.implementerProfiles?.profiles[resolved.defaultProfile.name] ??
-    input.config.implementer;
+  const sourcePath =
+    input.config.implementerProfiles?.profiles[resolved.defaultProfile.name] === undefined
+      ? 'implementer'
+      : `implementerProfiles.profiles.${resolved.defaultProfile.name}`;
   return {
     runner: resolved.defaultProfile.config,
-    sourceNode,
+    sourcePath,
   };
 }
 
@@ -73,7 +75,10 @@ export function readActiveRunnerLens(input: ReadActiveRunnerInput): ActiveRunner
   const activeRunner = resolveActiveRunnerSource(input);
   return {
     runner: activeRunner.runner,
-    sourceNodeId: sourceNodeId(activeRunner.sourceNode),
+    sourceNodeId: contentIdentityId('active-runner-source', {
+      path: activeRunner.sourcePath,
+      ...(activeRunner.runner.kind === 'api' && { apiKey: activeRunner.runner.apiKey }),
+    }),
   };
 }
 

@@ -5,12 +5,23 @@ import { buildReadinessReport } from './checks/build.js';
 import {
   createStartReadinessRecord,
   formatReadinessReport,
+  formatReadinessBlockers,
   readinessBlockerMessage,
   readinessBlockerPointer,
 } from './format.js';
 import { deriveCliReadiness } from '../schemas/readiness.js';
 
 describe('readiness formatting', () => {
+  it('uses singular counts for one blocker and one warning', () => {
+    const report = buildReadinessReport({
+      projectDir: '/tmp/project',
+      configLoad: { state: 'missing', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
+      packageScripts: { packageJsonExists: true, scripts: { test: 'node --test' } },
+      repo: { isGitRepo: true, hasCommits: true, dirtyFiles: ['src/edit.ts'], untrackedFiles: [] },
+    });
+    expect(formatReadinessReport(report)).toContain('(1 blocker, 1 warning)');
+    expect(formatReadinessBlockers(report)).toContain('blocked (1 blocker)');
+  });
   const blockedReport = () =>
     buildReadinessReport({
       projectDir: '/tmp/project',

@@ -51,10 +51,14 @@ export function buildRunnerChecks(
     checks.push({
       id: 'runners.implementer.default',
       severity: 'info',
-      summary: `Default implementer ${formatRunner(defaultProfile.config)} via profile ${defaultProfile.name}.`,
+      summary: `BUILD${defaultProfile.name === 'default' ? '' : ` (${defaultProfile.name})`} ${formatRunner(defaultProfile.config)} configured.`,
       details: [
-        `Profiles: ${resolved.profiles.map((profile) => profile.name).join(', ')}`,
-        `Write mode: ${defaultProfile.capabilities.writesFiles}`,
+        ...(resolved.profiles.length > 1
+          ? [`Build choices: ${resolved.profiles.map((profile) => profile.name).join(', ')}`]
+          : []),
+        defaultProfile.capabilities.writesFiles === 'direct'
+          ? 'BUILD edits files in the run workspace.'
+          : 'SPLITBRIEF applies the edits BUILD returns.',
       ],
       metadata: {
         defaultProfile: defaultProfile.name,
@@ -92,7 +96,8 @@ function typedOutputFallbackCheck(
     {
       id: `runners.${seat}.typed-output-fallback`,
       severity: 'warning',
-      summary: `${formatRoleLabel(seat)}: ${tool} has no schema flag; typed answers use the JSON fallback with one repair. claude-code or codex are recommended for this seat.`,
+      summary: `${formatRoleLabel(seat)}: ${CLI_TOOL_CATALOG[tool].displayName} returns plans as text; SPLITBRIEF retries once if an answer cannot be read.`,
+      fix: `Choose Claude Code or Codex in Settings > Crew > ${seat === 'planner' ? 'PLAN' : 'REVIEW'} for structured plans.`,
       metadata: { role: seat, tool },
     },
   ];

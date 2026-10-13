@@ -928,6 +928,20 @@ const createRoutesUncheckedFixture: FixtureFactory = () =>
     },
     focus: OPENCODE_FOCUS,
   });
+const createPlannerPickerFirstDiscoveryFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      detectionStore.reset();
+      detectionStore.beginRefresh({
+        contexts: {
+          readiness: 'picker-first-check',
+          modelsDev: 'picker-first-models',
+          cliModels: 'picker-first-cli',
+        },
+      });
+    },
+  });
 const createPlannerPickerColdFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'planner-picker', seed: seedModelsDevLane('uninitialized') });
 const createPlannerPickerNoListingFixture: FixtureFactory = () =>
@@ -1936,6 +1950,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
     createProviderExpandedUnreadableFixture,
   ],
   [scenarioId('overlay-picker-routes-unchecked'), createRoutesUncheckedFixture],
+  [scenarioId('overlay-planner-picker-first-discovery'), createPlannerPickerFirstDiscoveryFixture],
   [scenarioId('overlay-planner-picker-cold'), createPlannerPickerColdFixture],
   [scenarioId('overlay-planner-picker-no-listing'), createPlannerPickerNoListingFixture],
   [scenarioId('overlay-planner-picker-kilo'), createPlannerPickerKiloFixture],

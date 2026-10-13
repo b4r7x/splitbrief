@@ -343,6 +343,12 @@ function implementerMarkdown(label: string): CheckpointPredicate {
   };
 }
 
+const planCardReady = includesAll(
+  'End run',
+  'Edit plan.json',
+  'Add a greeting module and expose it from the CLI.',
+);
+
 const checkpointPredicates = [
   [
     checkpointId('stop-sheet-recovery'),
@@ -423,7 +429,9 @@ const checkpointPredicates = [
         )(context) &&
         includesTranscript('Final review failed', 'fixes T904')(context) &&
         !text.includes('does not take') &&
-        workflowTranscriptText().split('Tasks  18 lines').length === 2
+        workflowTranscriptText()
+          .split('\n')
+          .filter((line) => line.trim() === 'Tasks').length === 1
       );
     },
   ],
@@ -492,9 +500,9 @@ const checkpointPredicates = [
   [checkpointId('selection-copy'), includesAll('End run', 'Edit plan.json')],
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
-  [checkpointId('plan-card'), includesAll('End run', 'Edit plan.json')],
-  [checkpointId('plan-card-render-note'), includesAll('End run', 'Edit plan.json')],
-  [checkpointId('plan-card-shared-command'), includesAll('End run', 'Edit plan.json')],
+  [checkpointId('plan-card'), planCardReady],
+  [checkpointId('plan-card-render-note'), planCardReady],
+  [checkpointId('plan-card-shared-command'), planCardReady],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
   [checkpointId('tasks-card'), includesAll('T001', 'T004', 'T006', 'T007')],
   // The subsections the spec card does not nest, and the briefs after T001's unclosed sample.

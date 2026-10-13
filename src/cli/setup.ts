@@ -1,16 +1,19 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig } from '../core/config/load/io.js';
-import { configPath } from '../core/config/load/document.js';
+import { configPath, readConfigDocument } from '../core/config/load/document.js';
+import { selectInitialCrew } from '../core/crew/default.js';
+import type { CLIOverrides } from '../core/config/runtime/overrides/schema.js';
+import type { Config } from '../core/schemas/config.js';
+import { CLI_TOOL_IDS, defaultCliAuthChannel } from '../core/runners/cli-tool-catalog.js';
+import { detectAll, detectAvailableCliTools } from '../engine/detection/detect.js';
+import { checkCrewAvailability, selectDetectedDefaultCrew } from '../engine/detection/crew.js';
 import { isGitRepo, getRepoToplevel } from '../lib/git/repository.js';
-import { SPLITBRIEF_DIR, CONFIG_FILE } from '../core/paths.js';
 import { reapOrphanRunners } from '../engine/orchestrator/run/orphan-reaper.js';
 import { cliError } from './errors.js';
 import { toErrorMessage } from '../utils/format-errors.js';
 import { stripTerminalControls } from '../utils/display-text.js';
 import type { WorkflowOpts } from '../core/types/config-options.js';
-
-const NO_CONFIG_MSG = `No config found. Creating default ${SPLITBRIEF_DIR}/${CONFIG_FILE}`;
 
 function resolveProjectDir(dir?: string): string {
   return resolve(dir ?? process.cwd());
@@ -65,19 +68,56 @@ export function loadConfigOrExit(projectDir: string): ReturnType<typeof loadConf
   }
 }
 
-async function assertGitRepo(projectDir: string): Promise<void> {
+export async function assertGitRepo(projectDir: string): Promise<void> {
   if (!(await isGitRepo(projectDir))) {
     throw cliError('not a git repository. Run `git init` first.', 1);
   }
 }
 
-export async function ensureGitAndConfig(projectDir: string): Promise<void> {
-  await assertGitRepo(projectDir);
+export async function ensureHeadlessConfig(input: {
+  projectDir: string;
+  overrides?: CLIOverrides | undefined;
+  reconfigure?: boolean | undefined;
+}): Promise<Config | undefined> {
+  const { projectDir, overrides = {} } = input;
+  const snapshot = readConfigDocument(projectDir);
+  if (snapshot.revision !== null && !input.reconfigure) return undefined;
 
-  if (!existsSync(configPath(projectDir))) {
-    console.error(NO_CONFIG_MSG);
-    await initConfig(projectDir);
+  const detection = await detectAll({
+    detectCliTools: (options) => detectAvailableCliTools({ ...options, projectDir }),
+    authChannels: Object.fromEntries(
+      CLI_TOOL_IDS.map((tool) => [tool, defaultCliAuthChannel(tool).id]),
+    ),
+  });
+  const detected = selectDetectedDefaultCrew(detection);
+  const { persisted, effective } = selectInitialCrew({ detected, overrides });
+  const [unavailable] = await checkCrewAvailability({ config: effective, detection });
+  if (unavailable !== undefined) {
+    throw cliError(
+      detected === null
+        ? `${snapshot.revision === null ? 'No config found and no' : 'No'} ready crew is available. Run splitbrief init to choose and sign in to your tools.`
+        : `${unavailable.label} is unavailable. Choose a ready tool and model, then retry. Run splitbrief init to check your tools.`,
+      1,
+    );
   }
+  const saved = await initConfig(projectDir, persisted, {
+    force: input.reconfigure === true,
+    expectedRevision: snapshot.revision,
+  });
+  if (saved !== 'saved') {
+    throw cliError(
+      saved === 'conflict'
+        ? 'Config changed during setup. Retry the command.'
+        : 'Could not finish saving the crew. Retry the command.',
+      1,
+    );
+  }
+  console.error(
+    snapshot.revision === null
+      ? 'No config found. Saved a ready crew to .splitbrief/config.yaml.'
+      : 'Saved a ready crew to .splitbrief/config.yaml.',
+  );
+  return effective;
 }
 
 export interface SetupResult {
@@ -99,22 +139,8 @@ export async function setupWorkflow(opts: WorkflowOpts): Promise<SetupResult> {
   const useMouse = opts.mouse !== false && useFullscreen;
   const useHover = opts.hover === true && useMouse;
 
-  const hasOverrides =
-    opts.model !== undefined ||
-    opts.provider !== undefined ||
-    opts.planner !== undefined ||
-    opts.plannerModel !== undefined ||
-    opts.plannerCommand !== undefined ||
-    opts.implementer !== undefined ||
-    opts.implementerModel !== undefined ||
-    opts.implementerCommand !== undefined;
   if (!existsSync(configPath(projectDir))) {
-    if (hasOverrides) {
-      console.log(NO_CONFIG_MSG);
-      await initConfig(projectDir);
-    } else {
-      return { projectDir, useFullscreen, useMouse, useHover, needsSetup: true };
-    }
+    return { projectDir, useFullscreen, useMouse, useHover, needsSetup: true };
   }
 
   return { projectDir, useFullscreen, useMouse, useHover };

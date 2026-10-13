@@ -1,4 +1,5 @@
-import { ensureGitAndConfig } from '../../setup.js';
+import { ensureHeadlessConfig, setupWorkflow } from '../../setup.js';
+import { workflowOptsToCLIOverrides } from '../../../core/config/runtime/overrides/from-options.js';
 import {
   formatReadinessBlockers,
   serializeReadinessReportJson,
@@ -20,7 +21,10 @@ export async function runHeadlessStart(
 ): Promise<void> {
   const { deps, projectDir, feature, enrichedFeature, plannerContext, attachedInputs, opts, mode } =
     args;
-  await ensureGitAndConfig(projectDir);
+  const setup = await setupWorkflow({ ...opts, project: projectDir });
+  const initialInvocation = setup.needsSetup
+    ? await ensureHeadlessConfig({ projectDir, overrides: workflowOptsToCLIOverrides(opts) })
+    : undefined;
   const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   const execution = await prepareStartExecution({
     projectDir,
@@ -28,6 +32,7 @@ export async function runHeadlessStart(
     plannerContext,
     ...(attachedInputs !== undefined && { attachedInputs }),
     opts,
+    ...(initialInvocation !== undefined && { effectiveConfig: initialInvocation }),
     transport: 'headless',
     emitReadiness: (report) => {
       if (mode !== 'json') {

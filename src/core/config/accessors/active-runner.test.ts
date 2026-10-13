@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { clearReviewerSeat, readActiveRunner, updateActiveRunner } from './active-runner.js';
+import {
+  clearReviewerSeat,
+  readActiveRunner,
+  readActiveRunnerLens,
+  updateActiveRunner,
+} from './active-runner.js';
 import { createDefaultConfig } from '../load/defaults.js';
 import type { Config } from '../../schemas/config.js';
 
@@ -53,6 +58,33 @@ describe('active runner accessors', () => {
       model: 'active-profile-model',
     });
     expect(config).toEqual(original);
+  });
+
+  it('keeps the profile source identity across model changes and tracks key rotation', () => {
+    const config = configWithProfiles();
+    const original = readActiveRunnerLens({ config, role: 'implementer' });
+    const selected = updateActiveRunner({
+      config,
+      role: 'implementer',
+      updater: (runner) => ({ ...runner, model: 'selected-model' }),
+    });
+
+    expect(readActiveRunnerLens({ config: selected, role: 'implementer' }).sourceNodeId).toBe(
+      original.sourceNodeId,
+    );
+    expect(
+      readActiveRunnerLens({ config: structuredClone(selected), role: 'implementer' }).sourceNodeId,
+    ).toBe(original.sourceNodeId);
+
+    const rotated = updateActiveRunner({
+      config: selected,
+      role: 'implementer',
+      updater: (runner) =>
+        runner.kind === 'api' ? { ...runner, apiKey: 'replacement-key' } : runner,
+    });
+    expect(readActiveRunnerLens({ config: rotated, role: 'implementer' }).sourceNodeId).not.toBe(
+      original.sourceNodeId,
+    );
   });
 
   it('reads the planner runner for the reviewer seat when no reviewer is configured', () => {

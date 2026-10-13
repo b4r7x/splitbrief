@@ -283,23 +283,21 @@ export function writeConfigDocument(
 
 export async function initConfig(
   projectDir: string,
-  opts: { force?: boolean } = {},
-): Promise<void> {
-  const snapshot = readConfigDocument(projectDir);
-  if (!opts.force && snapshot.revision !== null) return;
+  config: Config,
+  opts: { force?: boolean; expectedRevision?: ExpectedConfigRevision } = {},
+): Promise<ConfigDocumentTransactionResult['kind']> {
+  const revision =
+    opts.expectedRevision === undefined
+      ? readConfigDocument(projectDir).revision
+      : opts.expectedRevision;
+  if (!opts.force && revision !== null) return 'saved';
   const result = await transactConfigDocumentWithWriter(
     projectDir,
-    snapshot.revision,
-    [{ path: [], value: toYaml(createDefaultConfig()) }],
+    revision,
+    [{ path: [], value: toYaml(config) }],
     confinedAtomicWriteFile,
-    true,
+    opts.force === true,
   );
-  if (result.kind !== 'saved') {
-    const path = configPath(projectDir);
-    const cause = configError.validationFailed(path, [
-      `Config initialization did not complete: ${result.kind}.`,
-    ]);
-    throw configError.saveFailed(path, cause);
-  }
-  ensureConfigGitignore(projectDir);
+  if (result.kind === 'saved') ensureConfigGitignore(projectDir);
+  return result.kind;
 }

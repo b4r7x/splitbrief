@@ -58,7 +58,7 @@ interface Outline {
  * 1. the document from its first real content, when the rest fits — nothing is selected, so
  *    nothing can be selected wrong;
  * 2. its outline — the ids and titles of the Task Briefs a `tasks.md` was rendered from, else
- *    its sections with their sizes;
+ *    its section titles;
  * 3. a slice from the same starting point, which is the fallback when neither outline exists.
  *
  * Every row is a display string, not a file byte: block heading markers and paired inline
@@ -221,8 +221,7 @@ function briefTitle(title: string): string {
  * Sections of the shallowest heading level that has more than one of them and never repeats a
  * title, plus the level below it when those titles are distinct too. Repetition means the level
  * is a per-section template — every Task Brief carries the same `### Description`, `### Tests` —
- * and listing it describes the form, not the document. Each row carries the section's own span,
- * so the reader sees where the document's weight sits and children read as contained.
+ * and listing it describes the form, not the document. Child sections read as contained.
  */
 function sectionOutline(structure: readonly string[], filename: string): Outline {
   const headings = documentHeadings(structure, filename);
@@ -240,14 +239,8 @@ function sectionOutline(structure: readonly string[], filename: string): Outline
   const labels = shown.map(
     (entry) => (entry.depth === primary ? '' : INDENT) + clipTitle(entry.title),
   );
-  const sizes = shown.map((entry) => sectionSize(structure, headings, entry));
-  const labelWidth = columnWidth(labels);
-  const sizeWidth = columnWidth(sizes);
   return {
-    rows: shown.map(
-      (_, index) =>
-        `${pad(labels[index] ?? '', labelWidth)}${INDENT}${padStart(sizes[index] ?? '', sizeWidth)}`,
-    ),
+    rows: labels,
     // Every section the outline does not carry is omitted, including the deeper levels it chose
     // not to nest — a complete top level is not a complete list of the document's sections. The
     // title is not one of them: it names the document rather than dividing it.
@@ -291,18 +284,6 @@ function outlineDepth(headings: readonly Heading[], deeperThan: number): number 
     if (titles.length >= 2 && new Set(titles).size === titles.length) return depth;
   }
   return null;
-}
-
-function sectionSize(
-  structure: readonly string[],
-  headings: readonly Heading[],
-  entry: Heading,
-): string {
-  const next = headings.find(
-    (heading) => heading.index > entry.index && heading.depth <= entry.depth,
-  );
-  const size = (next?.index ?? structure.length) - entry.index;
-  return `${size} ${size === 1 ? 'line' : 'lines'}`;
 }
 
 /**
@@ -379,10 +360,6 @@ function columnWidth(values: readonly string[]): number {
 
 function pad(value: string, width: number): string {
   return value + ' '.repeat(Math.max(0, width - getTerminalCellWidth(value)));
-}
-
-function padStart(value: string, width: number): string {
-  return ' '.repeat(Math.max(0, width - getTerminalCellWidth(value))) + value;
 }
 
 function clipTitle(title: string): string {

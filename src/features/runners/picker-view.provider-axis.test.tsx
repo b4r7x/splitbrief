@@ -1032,6 +1032,7 @@ describe('PickerView authentication method rows', () => {
     expect(authRows(enforced).filter((row) => row.kind === 'auth')).toEqual([
       {
         kind: 'auth',
+        model: routed,
         method: 'host-configured',
         choices: ['session', 'api-key', 'host-configured'],
         steps: true,
@@ -1092,6 +1093,7 @@ describe('PickerView authentication method rows', () => {
     expect(rows).toEqual([
       {
         kind: 'auth',
+        model: routed,
         method: 'host-configured',
         choices: [],
         steps: false,
@@ -1102,7 +1104,11 @@ describe('PickerView authentication method rows', () => {
     ]);
 
     const chosen: AuthMethodChoice[] = [];
+    const models: string[] = [];
     const actions = makeActions();
+    actions.confirmProviderSelection = async (model) => {
+      models.push(model);
+    };
     actions.confirmAuthMethod = async (method) => {
       chosen.push(method);
     };
@@ -1120,7 +1126,7 @@ describe('PickerView authentication method rows', () => {
       frameText(ui)
         .split('\n')
         .find((line) => line.includes('esc collapse')) ?? '';
-    expect(hint).not.toContain('⏎');
+    expect(hint).toContain('⏎ confirm');
     expect(hint).not.toContain('space cycle');
 
     ui.stdin.write('\r');
@@ -1128,6 +1134,7 @@ describe('PickerView authentication method rows', () => {
     ui.stdin.write(' ');
     await flushEffects();
     expect(chosen).toEqual([]);
+    expect(models).toEqual(['openai/gpt-5.6']);
     // Space is held by the row, so the family the user opened is still open.
     expect(authLine(ui)).toContain(AUTH_METHOD_WORDS['host-configured']);
     ui.unmount();
@@ -1138,6 +1145,7 @@ describe('PickerView authentication method rows', () => {
     expect(authRows(stranded).filter((row) => row.kind === 'auth')).toEqual([
       {
         kind: 'auth',
+        model: routed,
         method: 'session',
         choices: ['host-configured'],
         steps: true,

@@ -146,7 +146,7 @@ describe('readiness checks', () => {
     expect(allCheckIds(input)).toContain('config.missing');
   });
 
-  it('warns for missing context length without blocking start', () => {
+  it('uses automatic context sizing without a config warning', () => {
     const configWithDefaults = makeConfig({
       planner: { kind: 'cli', tool: 'claude-code' },
     });
@@ -163,7 +163,7 @@ describe('readiness checks', () => {
       report.sections
         .flatMap((section) => section.checks)
         .find((check) => check.id === 'context.implementer.missing')?.severity,
-    ).toBe('warning');
+    ).toBe('info');
     expect(allCheckIds(input)).toEqual(
       expect.arrayContaining(['context.planner.missing', 'context.implementer.missing']),
     );
@@ -177,7 +177,7 @@ describe('readiness checks', () => {
 
     const section = report.sections.find((candidate) => candidate.id === 'workflow');
     expect(section?.title).toBe('Workflow');
-    expect(section?.checks.map((check) => check.summary)).toEqual(['Plan approval: none.']);
+    expect(section?.checks.map((check) => check.summary)).toEqual(['Plan approval: automatic.']);
     expect(report.sections.some((candidate) => candidate.id === 'mode')).toBe(false);
     expect(report.metadata).toEqual(expect.objectContaining({ approve: 'none' }));
     expect(report.metadata).not.toHaveProperty('mode');
@@ -190,11 +190,13 @@ describe('readiness checks', () => {
     const checks = report.sections.flatMap((section) => section.checks);
 
     expect(checks.find((check) => check.id === 'workflow.plan-approval')?.summary).toBe(
-      'Plan approval: plan; a headless run approves the plan card unattended.',
+      'Plan approval: you approve the plan in the TUI.',
     );
     expect(
       checks.find((check) => check.id === 'runners.planner.trust-boundary')?.details,
-    ).toContain('Approval automation: plan approval is auto-approved.');
+    ).toContain(
+      'Headless runs approve the plan automatically because there is no approval prompt.',
+    );
   });
 
   it('asks every config for the same 32000-token context floor', () => {
@@ -209,6 +211,46 @@ describe('readiness checks', () => {
       .flatMap((section) => section.checks)
       .find((check) => check.id === 'context.planner.tight');
     expect(planner?.metadata).toMatchObject({ recommendedMinimum: 32_000 });
+    expect(planner?.fix).toContain('planner.contextLength in .splitbrief/config.yaml');
+    expect(planner?.fix).not.toContain('Settings');
+  });
+
+  it.each(['cli', 'api'] as const)('points a small %s BUILD limit at its Settings row', (kind) => {
+    const base = makeConfig();
+    const implementer = kind === 'cli' ? { kind, tool: 'claude-code' as const } : base.implementer;
+    const input = baseInput({
+      config: {
+        ...base,
+        implementer: { ...implementer, contextLength: 16_000 },
+      },
+    });
+    const check = buildReadinessReport(input)
+      .sections.flatMap((section) => section.checks)
+      .find((entry) => entry.id === 'context.implementer.tight');
+    expect(check?.fix).toBe(
+      `Raise Settings > Tuning > ${kind === 'api' ? 'Context length' : 'Prompt budget'} to at least 32000 tokens.`,
+    );
+    expect(check?.fix).not.toContain('config.yaml');
+  });
+
+  it('keeps YAML guidance when Settings cannot change the active profile limit', () => {
+    const base = makeConfig();
+    const check = buildReadinessReport(
+      baseInput({
+        config: {
+          ...base,
+          implementer: { ...base.implementer, contextLength: 128_000 },
+          implementerProfiles: {
+            default: 'small',
+            profiles: { small: { ...base.implementer, contextLength: 8192 } },
+          },
+        },
+      }),
+    )
+      .sections.flatMap((section) => section.checks)
+      .find((entry) => entry.id === 'context.implementer.tight');
+    expect(check?.fix).toContain('implementerProfiles.profiles.small.contextLength');
+    expect(check?.fix).not.toContain('Settings');
   });
 
   it('reports missing profile cost tier and inferred write mode as non-blocking info', () => {
@@ -318,7 +360,7 @@ describe('readiness checks', () => {
       .flatMap((section) => section.checks)
       .find((check) => check.id === 'runners.implementer.default');
 
-    expect(profileCheck?.summary).toContain('local-qwen');
+    expect(profileCheck?.summary).toContain('BUILD (local-qwen) ollama');
     expect(profileCheck?.metadata).toMatchObject({
       defaultProfile: 'local-qwen',
       writeMode: 'extracted-code',

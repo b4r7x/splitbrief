@@ -402,7 +402,7 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
 
     const wtGitignore = await readFile(join(result.worktreePath, '.gitignore'), 'utf-8');
     expect(wtGitignore.split('\n')).toContain(`${SPLITBRIEF_DIR}/`);
-    expect(wtGitignore.split('\n')).toContain(`${TREES_DIR}/`);
+    expect(wtGitignore.split('\n')).not.toContain(`${TREES_DIR}/`);
 
     const baseline = await getChangedFilesSnapshot(result.worktreePath);
     expect(await getChangedFilesSinceSnapshot(result.worktreePath, baseline)).toEqual([]);

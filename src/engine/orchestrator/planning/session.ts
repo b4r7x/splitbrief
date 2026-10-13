@@ -74,6 +74,7 @@ import { persistApprovalEvidence } from '../evidence/persistence.js';
 import {
   createBusTextHandler,
   publishPlannerStatus,
+  publishTasksPlanned,
   publishRunnerCallEvent,
   publishWarning,
 } from '../events.js';
@@ -708,6 +709,7 @@ export async function runPlanApproval(
   let current = state;
 
   while (resolveApproveLevel(wctx.config) === 'plan') {
+    publishTasksPlanned({ bus, phase: current.phase }, current.tasks);
     if (current.phase !== 'reviewing-plan') {
       current = transitionAndSave(ref, current, { type: 'PLAN_DONE', tasks: current.tasks });
       publishPlannerStatus(bus, current, 'running');

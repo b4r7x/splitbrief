@@ -400,14 +400,14 @@ async function buildPreflightCheck(
   }
   const descriptor = CLI_TOOL_CATALOG[runner.tool];
   const id = argVectorCheckId(runner.tool, runner.role);
-  const argvDetails = argVectors.map((argv) => `Emitted argv: ${argv.join(' ')}`);
+  const argvDetails = argVectors.map((argv) => `Command options: ${argv.join(' ')}`);
   if (unsupported.size === 0 && deprecated.size === 0) {
     return {
       id,
       severity: 'ok',
       summary: compared
-        ? `${descriptor.displayName} ${runner.role} arg vector is supported by the installed binary.`
-        : `${descriptor.displayName} ${runner.role} arg vector could not be compared with the installed binary's help; no conflict is assumed.`,
+        ? `${descriptor.displayName} ${runner.role} command options are supported by the installed tool.`
+        : `${descriptor.displayName} ${runner.role} command options are configured.`,
       details: argvDetails,
       metadata: {
         tool: runner.tool,
@@ -438,8 +438,9 @@ async function buildPreflightCheck(
   return {
     id,
     severity: 'warning',
-    summary: `${descriptor.displayName} ${runner.role} invocation uses flags the installed binary marks deprecated: ${[...deprecated].join(', ')}.`,
+    summary: `${descriptor.displayName} uses command options the installed tool is retiring: ${[...deprecated].join(', ')}.`,
     details: argvDetails,
+    fix: `Update ${descriptor.displayName}, or remove these options from .splitbrief/config.yaml.`,
     metadata: {
       tool: runner.tool,
       role: runner.role,

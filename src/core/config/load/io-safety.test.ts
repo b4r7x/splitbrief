@@ -37,23 +37,23 @@ describe('config load safety', () => {
         mkdirSync(join(outside, 'nested'), { recursive: true });
         symlinkSync(outside, join(dir, SPLITBRIEF_DIR));
 
-        await expect(initConfig(dir)).rejects.toThrow(/unsafe path|symlink/);
+        await expect(initConfig(dir, createDefaultConfig())).rejects.toThrow(/unsafe path|symlink/);
       } finally {
         cleanupTempDir(outside);
         cleanupTempDir(dir);
       }
     });
 
-    it('gitignores both the splitbrief dir and the worktree dir so neither leaks into git-status change detection', async () => {
+    it('ignores config state without adding the retired project worktree directory', async () => {
       const dir = createTempDir('config-init-gitignore');
       try {
-        await initConfig(dir);
+        await initConfig(dir, createDefaultConfig());
 
         const ignored = readFileSync(join(dir, '.gitignore'), 'utf-8')
           .split('\n')
           .map((line) => line.trim());
         expect(ignored).toContain(`${SPLITBRIEF_DIR}/`);
-        expect(ignored).toContain(`${TREES_DIR}/`);
+        expect(ignored).not.toContain(`${TREES_DIR}/`);
       } finally {
         cleanupTempDir(dir);
       }
@@ -66,7 +66,7 @@ describe('config load safety', () => {
       try {
         writeFileSync(ignorePath, before);
 
-        await initConfig(dir);
+        await initConfig(dir, createDefaultConfig());
 
         expect(readFileSync(ignorePath, 'utf8')).toBe(before);
       } finally {
@@ -100,7 +100,9 @@ describe('config load safety', () => {
         writeFileSync(sentinel, 'external sentinel\n');
         symlinkSync(sentinel, join(dir, '.gitignore'));
 
-        await expect(initConfig(dir)).rejects.toThrow(/refusing to write through symlink/);
+        await expect(initConfig(dir, createDefaultConfig())).rejects.toThrow(
+          /refusing to write through symlink/,
+        );
         expect(readFileSync(sentinel, 'utf8')).toBe('external sentinel\n');
       } finally {
         cleanupTempDir(outside);
@@ -364,6 +366,33 @@ describe('config load safety', () => {
 });
 
 describe('config document transaction safety', () => {
+  it.each([false, true])(
+    'initialization preserves a config changed after detection, reconfigure=%s',
+    async (force) => {
+      const dir = createTempDir('config-init-conflict');
+      try {
+        const config = createDefaultConfig();
+        if (force) writeConfig(dir, config);
+        const before = readConfigDocument(dir);
+        const external = writeConfig(dir, {
+          ...config,
+          workflow: { ...config.workflow, approve: 'none' },
+        });
+
+        const result = await initConfig(dir, config, {
+          force,
+          expectedRevision: before.revision,
+        });
+
+        expect(result).toBe('conflict');
+        expect(readFileSync(configPath(dir), 'utf8')).toBe(external);
+        expect(existsSync(join(dir, '.gitignore'))).toBe(false);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
   it('represents a missing config only with the explicit absence revision and empty document', () => {
     const dir = createTempDir('config-missing-snapshot');
     try {

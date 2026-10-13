@@ -20,6 +20,7 @@ import { detectAll } from './detect.js';
 import { runnerDiscoveryContextKey } from './runner-evidence.js';
 import {
   cloneConfiguredProviderOutcome,
+  configuredProviderConnection,
   type ConfiguredProviderConnection,
   type ConfiguredProviderOutcome,
 } from './provider-outcomes.js';
@@ -59,28 +60,6 @@ function activeRunnerContexts(config: Config): ActiveRunnerContexts {
   };
 }
 
-function connectionFor(
-  context: RunnerDiscoveryContext,
-  provider: ConfiguredProviderConnection['provider'],
-): ConfiguredProviderConnection {
-  // Catalog membership belongs to this connection. An unrelated seat or UI
-  // setting may change the overall generation without changing its catalog.
-  const catalogContext: RunnerDiscoveryContext = {
-    ...context,
-    configGeneration: 'connection',
-    ...(context.credentialDomain === undefined
-      ? {}
-      : { credentialDomain: { ...context.credentialDomain, configGeneration: 'connection' } }),
-  };
-  return {
-    // The seat that asked, not its admission tier: a reviewer outcome is never
-    // published as the planner's.
-    role: context.seatRole ?? context.role,
-    provider,
-    contextKey: runnerDiscoveryContextKey(catalogContext),
-  };
-}
-
 function apiProbeForSeat(
   input: Readonly<{
     config: Config;
@@ -94,7 +73,7 @@ function apiProbeForSeat(
   const runner = readActiveRunnerLens({ config: input.config, role: input.role }).runner;
   if (runner.kind !== 'api' || !isApiProviderId(runner.provider)) return null;
   return {
-    connections: [connectionFor(input.context, runner.provider)],
+    connections: [configuredProviderConnection(input.context, runner.provider)],
     provider: runner.provider,
     // An unset credential stays unset: an empty string is a configured
     // keyless connection, which a local provider rejects as a bad reference.

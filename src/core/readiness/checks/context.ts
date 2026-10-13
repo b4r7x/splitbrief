@@ -6,11 +6,26 @@ import { formatRoleLabel } from '../../phase-display.js';
 const CONTEXT_FLOOR = 32_000;
 
 export function buildContextChecks(config: Config): ReadinessCheck[] {
-  const checks: ReadinessCheck[] = [contextLengthCheck('planner', config.planner.contextLength)];
+  const checks: ReadinessCheck[] = [
+    contextLengthCheck('planner', config.planner.contextLength, 'planner.contextLength'),
+  ];
 
   try {
     const profiles = resolveImplementerProfiles(config);
-    checks.push(contextLengthCheck('implementer', profiles.defaultProfile.config.contextLength));
+    const profile = profiles.defaultProfile;
+    const label = profile.config.kind === 'api' ? 'Context length' : 'Prompt budget';
+    const key =
+      config.implementerProfiles?.profiles[profile.name] === undefined
+        ? 'implementer.contextLength'
+        : `implementerProfiles.profiles.${profile.name}.contextLength`;
+    checks.push(
+      contextLengthCheck(
+        'implementer',
+        profile.config.contextLength,
+        key,
+        key === 'implementer.contextLength' ? `Settings > Tuning > ${label}` : undefined,
+      ),
+    );
   } catch {
     return checks;
   }
@@ -21,14 +36,14 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
 function contextLengthCheck(
   role: 'planner' | 'implementer',
   contextLength: number | undefined,
+  field: string,
+  setting?: string,
 ): ReadinessCheck {
   if (contextLength === undefined) {
     return {
       id: `context.${role}.missing`,
-      severity: 'warning',
-      summary: `${formatRoleLabel(role)} context length is not configured.`,
-      fix: `Set ${role}.contextLength if the provider reports an unreliable context window.`,
-      nextAction: 'raise-context',
+      severity: 'info',
+      summary: `${formatRoleLabel(role)} context window is sized automatically.`,
       metadata: { role, contextLength: null, recommendedMinimum: CONTEXT_FLOOR },
     };
   }
@@ -38,7 +53,10 @@ function contextLengthCheck(
       id: `context.${role}.tight`,
       severity: 'warning',
       summary: `${formatRoleLabel(role)} context length ${contextLength} may be tight.`,
-      fix: 'Use a model with a larger context window.',
+      fix:
+        setting !== undefined
+          ? `Raise ${setting} to at least ${CONTEXT_FLOOR} tokens.`
+          : `Raise or remove ${field} in .splitbrief/config.yaml to allow a larger context window.`,
       nextAction: 'raise-context',
       metadata: { role, contextLength, recommendedMinimum: CONTEXT_FLOOR },
     };

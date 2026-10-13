@@ -11,7 +11,6 @@ import { saveDetectionCache } from '../../../engine/detection/cache.js';
 import * as capabilitiesModule from '../../../engine/providers/capabilities.js';
 import * as initStoresModule from '../../bootstrap/init.js';
 import * as setupModule from '../../setup.js';
-import { COLD_START_STDERR_LINE } from '../../../core/discovery/copy.js';
 import type { ReadinessReport } from '../../../core/readiness/types.js';
 import {
   reactivateExistingSession,
@@ -76,7 +75,7 @@ function makeDispatch(overrides: Partial<InteractiveDispatchArgs> = {}): Interac
 }
 
 describe('runInteractiveStart', () => {
-  it('writes cold-start stderr progress before setupWorkflow on a first run (T-037)', async () => {
+  it('keeps cold-start progress in the TUI', async () => {
     const setupGate =
       Promise.withResolvers<Awaited<ReturnType<typeof setupModule.setupWorkflow>>>();
     const setupSpy = vi
@@ -91,7 +90,7 @@ describe('runInteractiveStart', () => {
     const run = runInteractiveStart(makeDispatch());
 
     await Promise.resolve();
-    expect(stderrSpy).toHaveBeenCalledWith(COLD_START_STDERR_LINE);
+    expect(stderrSpy).not.toHaveBeenCalled();
     expect(setupSpy).toHaveBeenCalledOnce();
     expect(initSpy).not.toHaveBeenCalled();
 
@@ -132,7 +131,7 @@ describe('runInteractiveStart', () => {
 
     await runInteractiveStart(makeDispatch());
 
-    expect(stderrSpy).not.toHaveBeenCalledWith(COLD_START_STDERR_LINE);
+    expect(stderrSpy).not.toHaveBeenCalled();
   });
 
   it('mounts Ink before store discovery finishes (T-037)', async () => {

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { simpleGit, type SimpleGit } from 'simple-git';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { initConfig } from '../../../core/config/load/io.js';
+import { createDefaultConfig } from '../../../core/config/load/defaults.js';
 import { createWorktree } from './create-worktree.js';
 import { SPLITBRIEF_DIR, CONFIG_FILE, TREES_DIR } from '../../../core/paths.js';
 
@@ -100,7 +101,7 @@ describe('createWorktree', () => {
   });
 
   it('gitignores .splitbrief/ in the new worktree so a copied config secret stays untracked', async () => {
-    await initConfig(repoDir);
+    await initConfig(repoDir, createDefaultConfig());
 
     const wtPath = await createWorktree({ projectDir: repoDir, slug: 'feat-ignore', git });
 
@@ -108,7 +109,7 @@ describe('createWorktree', () => {
       .split('\n')
       .map((line) => line.trim());
     expect(ignoreLines).toContain(`${SPLITBRIEF_DIR}/`);
-    expect(ignoreLines).toContain(`${TREES_DIR}/`);
+    expect(ignoreLines).not.toContain(`${TREES_DIR}/`);
     expect(existsSync(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
   });
 
