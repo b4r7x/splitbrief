@@ -1285,6 +1285,30 @@ const CLOSED_ENDED = record({
   ledger: INTERRUPTED_BUILD_LEDGER,
 });
 
+const CLOSED_ENDED_EMPTY = record({
+  sessionId: 'visual-closed-ended-empty',
+  status: { kind: 'closed', as: 'ended' },
+  state: savedState({
+    phase: 'implementing',
+    briefs: [{ id: BRIEFS.validator.id, status: 'in_progress' }],
+    workspace: RUN_WORKSPACE,
+    closed: { at: new Date(Date.parse(STARTED_AT_ISO) + 2_000).toISOString(), as: 'ended' },
+  }),
+  summary: {
+    ...INTERRUPTED_BUILD_SUMMARY,
+    totalTasks: 1,
+    completedByLocal: 0,
+    escalatedToPlanner: 0,
+    skipped: 0,
+    failed: 0,
+    totalTime: 2_000,
+    phaseTimings: { planning: 1_000, implementing: 1_000 },
+    taskBreakdown: [],
+    changedFiles: [],
+    stoppedAt: { taskId: BRIEFS.validator.id, partialFiles: [] },
+  },
+});
+
 /**
  * A real run's close: a worktree run ended inside a brief. The run.patch holds the stopped brief's
  * partial files, and its log kept the workspace for Continue before the close let it go.
@@ -1308,6 +1332,12 @@ const CLOSED_ENDED_WORKSPACE = record({
   ledger: { ...INTERRUPTED_BUILD_LEDGER, sessionId: ENDED_WORKSPACE_SESSION },
 });
 const ENDED_WORKSPACE_LOG: readonly EngineEvent[] = [
+  {
+    type: 'workflow_started',
+    ts: Date.parse(STARTED_AT_ISO),
+    phase: 'planning',
+    feature: AT_REST_FIXTURE_FEATURE,
+  },
   {
     type: 'turn_interrupted',
     ts: ENDED_WORKSPACE_AT - 3_000,
@@ -2009,6 +2039,23 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-ready-to-apply',
     route: { record: READY_TO_APPLY, log: READY_LOG },
   }),
+  atRestProjection({
+    id: 'workflow-ready-empty-diff',
+    route: {
+      record: record({
+        sessionId: 'visual-ready-empty-diff',
+        status: READY_TO_APPLY.status,
+        state: READY_TO_APPLY.hydration.state,
+        summary: { ...workspaceSummary('visual-ready-empty-diff'), changedFiles: [] },
+        ledger: {
+          ...READY_LEDGER,
+          sessionId: 'visual-ready-empty-diff',
+          tasks: READY_LEDGER.tasks.map((task) => ({ ...task, changedFiles: [] })),
+        },
+      }),
+      log: READY_LOG,
+    },
+  }),
   {
     ...atRestProjection({
       id: 'workflow-continuous-transcript-ready',
@@ -2034,6 +2081,27 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: CLOSED_NEEDS_ATTENTION },
   }),
   atRestProjection({ id: 'workflow-closed-ended', route: { record: CLOSED_ENDED } }),
+  atRestProjection({
+    id: 'workflow-closed-ended-empty',
+    route: {
+      record: CLOSED_ENDED_EMPTY,
+      log: [
+        {
+          type: 'workflow_started',
+          ts: Date.parse(STARTED_AT_ISO),
+          phase: 'planning',
+          feature: AT_REST_FIXTURE_FEATURE,
+        },
+        { type: 'workspace_closed', ts: Date.parse(STARTED_AT_ISO) + 1_900, phase: 'implementing' },
+        {
+          type: 'workflow_cancelled',
+          ts: Date.parse(STARTED_AT_ISO) + 2_000,
+          phase: 'implementing',
+          reason: WORKFLOW_CANCEL_REASON_USER,
+        },
+      ],
+    },
+  }),
   atRestProjection({
     id: 'workflow-closed-ended-workspace',
     route: { record: CLOSED_ENDED_WORKSPACE, log: ENDED_WORKSPACE_LOG },

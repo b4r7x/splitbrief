@@ -6,15 +6,15 @@ import { _operationsInternal } from '../operations/state.js';
 import { _tasksInternal } from '../tasks.js';
 import { _tokensInternal, updateTokens } from '../tokens.js';
 import { reduceLifecycle, reduceTasks } from './event.js';
-import { resetWorkflow } from './reset.js';
+import { resetWorkflowHistory } from './reset.js';
 
 // Hydration counterpart of addEvent: the same reducers, folded over a replayed log and committed
-// once per store. The run being loaded replaces whatever was on screen, so every workflow store is
-// reset first. `cost_update` keeps addEvent's tokens-only path, so a replayed log records no phase
+// once per store. Replayed history replaces the run's facts and preserves local stop and prompt
+// state. `cost_update` keeps addEvent's tokens-only path, so a replayed log records no phase
 // for a phase whose only event was a cost update. The post-cancel gate addEvent applies is
 // deliberately absent — a load rebuilds the lifecycle rather than running inside one.
 export function loadEvents(events: EngineEvent[]): void {
-  resetWorkflow();
+  resetWorkflowHistory();
   const reduced = events.filter((event) => event.type !== 'cost_update');
 
   _eventsInternal.set((state) => ({ ...state, events: mergeEventLog(reduced) }));

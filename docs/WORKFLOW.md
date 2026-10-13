@@ -298,7 +298,7 @@ Apply is not atomic. A failed write or a killed process can leave a partial resu
 
 End run and Discard refuse closure while `applying` remains recorded. Restore or retry Apply first. The shared close path checks the state used for each commit attempt, including retries after another writer starts Apply. A refusal preserves the workspace, Apply backup and recovery. It publishes no patch-saved warning.
 
-For a worktree or staged-copy run, Discard, End run and `CLOSE_RUN` preserve unapplied work in `.splitbrief/sessions/<id>/run.patch` before closing or removing the workspace. The notice names the patch after the close commits. A patch failure keeps the run open and the workspace intact. End run on a ready run closes it as `discarded`; an earlier End run closes it as `ended`. Neither writes the run result into the checkout.
+For a worktree or staged-copy run, Discard, End run and `CLOSE_RUN` preserve unapplied work in `.splitbrief/sessions/<id>/run.patch` before closing or removing the workspace. A run with no changes writes no patch and shows no patch notice. The notice names the patch after the close commits. A patch failure keeps the run open and the workspace intact. End run on a ready run closes it as `discarded`; an earlier End run closes it as `ended`. Neither writes the run result into the checkout.
 
 These state actions describe Apply:
 
@@ -481,7 +481,7 @@ A park keeps the worktree's partial edits and continues with that context; a cra
 
 A crash leaves its last calls open in `session.jsonl`. The first writer after the crash records each one as interrupted (`recordInterruptedCalls`, `src/engine/calls/interrupted.ts`): a `runner_call_error` with code `runner_interrupted`, dated at the last report of its call. The continuation records it before it restores files or runs a step again. End run at rest (the TUI or `splitbrief continue <id> --action end-run`) records it before the run closes. A run opened at rest before either shows the same close, read from the log, so the cut call reads `current turn interrupted: SPLITBRIEF exited` once: at rest, after the continuation and after End run. Its activity batch wears the stop mark `×` and reads `interrupted`, and the row reads `Stop`. At rest, a brief left in progress wears the mark of its stop (`atRestBriefMark`, `src/features/workflow/at-rest.ts`), as the rail does, and an attempt that ended drops its `working on <file>…` row. While a continued run starts again, the byline reads `Resuming T002` (or `the plan`, `the review`), and `esc` opens the stop sheet as it does on a running run.
 
-Another process can close a run that this screen shows at rest, for example with `splitbrief continue <id> --action end-run`. The next action on the screen (`⏎`, Resume, End run) reads the record again (`rereadRunAtRest`, `src/features/workflow/handlers.ts`). The screen then shows the run as closed, removes its stop options and says `Cannot continue: this run was ended; start a new one.` Home, `/sessions` and the palette read the session list again each time they open.
+Another process can close a run that this screen shows at rest, for example with `splitbrief continue <id> --action end-run`. The screen refreshes without input. It shows the closed run and its saved transcript, and removes the stop options. Home, `/sessions` and the palette read the session list again each time they open.
 
 ### Recovery on continuing
 

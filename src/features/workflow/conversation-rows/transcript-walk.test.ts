@@ -548,6 +548,17 @@ describe('walkTranscript on a stopped run’s workspace', () => {
     expect(eventsOf([kept])).toEqual([kept]);
   });
 
+  it('shows only the latest workspace notice after repeated stops', () => {
+    const resumed: EngineEvent = { type: 'workflow_resumed', ts: 1_100, phase: 'implementing' };
+    const second = { ...kept, ts: 1_200 };
+    const third = { ...kept, ts: 1_400 };
+    expect(eventsOf([kept, resumed, second, { ...resumed, ts: 1_300 }, third])).toEqual([
+      resumed,
+      { ...resumed, ts: 1_300 },
+      third,
+    ]);
+  });
+
   // In a real run, End run removed the workspace, and the transcript still offered it for Continue.
   it('drops the kept-workspace notice once End run or Discard let the workspace go', () => {
     expect(eventsOf([kept, patchSaved, closed])).toEqual([patchSaved, closed]);

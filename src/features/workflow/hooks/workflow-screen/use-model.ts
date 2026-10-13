@@ -1,4 +1,13 @@
 import { useEffect, useEffectEvent } from 'react';
+import { existsSync, watchFile, unwatchFile, type Stats } from 'node:fs';
+import { join } from 'node:path';
+import {
+  LOCKFILE,
+  SESSION_LOG_FILE,
+  STATE_FILE,
+  SUMMARY_FILE,
+  sessionDir,
+} from '../../../../core/paths.js';
 import { requestResume, rereadRunAtRest, setResumeHandler } from '../../handlers.js';
 import { useInputMode } from '../use-input-mode.js';
 import { useRunContinue } from '../use-run-continue.js';
@@ -62,6 +71,34 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   );
 
   const atRestRecord = execution?.kind === 'at-rest' ? record : undefined;
+  const atRestProjectDir = atRestRecord?.ref.projectDir;
+  const atRestSessionId = atRestRecord?.ref.sessionId;
+
+  useEffect(() => {
+    if (atRestProjectDir === undefined || atRestSessionId === undefined) return;
+    const ref = { projectDir: atRestProjectDir, sessionId: atRestSessionId };
+    const directory = sessionDir(ref.projectDir, ref.sessionId);
+    const controller = new AbortController();
+    const refresh = () => {
+      const current = routerStore.get();
+      if (current.screen !== 'workflow' || current.execution.kind !== 'at-rest') return;
+      void rereadRunAtRest(ref, controller.signal);
+    };
+    const files = [STATE_FILE, LOCKFILE, SESSION_LOG_FILE, SUMMARY_FILE].map((file) =>
+      join(directory, file),
+    );
+    const changed = (current: Stats, previous: Stats) => {
+      if (current.nlink !== 0 || previous.nlink !== 0) refresh();
+    };
+    for (const file of files) {
+      watchFile(file, { persistent: false, interval: 100 }, changed);
+    }
+    if (existsSync(join(directory, STATE_FILE))) refresh();
+    return () => {
+      controller.abort();
+      for (const file of files) unwatchFile(file, changed);
+    };
+  }, [atRestProjectDir, atRestSessionId]);
 
   // One continuation path for a run at rest: the engine decides whether the run can be picked up,
   // the preparation attempt re-enters it in place, and the screen never moves.
@@ -86,7 +123,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     });
     if (outcome.kind !== 'refused') return;
     if (outcome.reason === 'closed' || outcome.reason === 'ready-to-apply')
-      rereadRunAtRest(run.ref);
+      void rereadRunAtRest(run.ref);
     feedbackStore.setError(outcome.message);
   };
 

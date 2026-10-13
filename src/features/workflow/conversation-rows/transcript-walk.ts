@@ -88,6 +88,12 @@ export function* walkTranscript(
   const workspaceClosed = sections.some((section) =>
     section.items.some((event) => event.type === 'workspace_closed'),
   );
+  let workspaceNotice: EngineEventOf<'warning'> | undefined;
+  for (const section of sections) {
+    for (const event of section.items) {
+      if (event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE) workspaceNotice = event;
+    }
+  }
   const endedAttempts = endedImplementerAttempts(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
@@ -138,7 +144,8 @@ export function* walkTranscript(
         seatSwitches.clear();
       if (event.type === 'seat_switched') seatSwitches.set(event.seat, event);
       if (event.type === 'warning') {
-        if (workspaceClosed && event.code === WORKSPACE_KEPT_CODE) continue;
+        if (event.code === WORKSPACE_KEPT_CODE && (workspaceClosed || event !== workspaceNotice))
+          continue;
         const switched = [...seatSwitches.values()].find((switchEvent) =>
           restatesSeatSwitch(event, switchEvent),
         );

@@ -15,9 +15,17 @@ import { clearSectionsCache } from './sections.js';
  * `loadEvents`/`hydrateFromState`, so this only ever clears — it never synthesizes a run.
  */
 export function resetWorkflow(): void {
+  resetWorkflowControls();
+  resetWorkflowHistory();
+}
+
+export function resetWorkflowControls(): void {
   stopStore.reset();
   closeApprovalPrompt();
   closeReviewChecksPrompt();
+}
+
+export function resetWorkflowHistory(): void {
   eventsStore.reset();
   tasksStore.reset();
   tokensStore.reset();

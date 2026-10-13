@@ -3,6 +3,7 @@ import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { assertCanCloseRun, endRunAtRest } from '../../engine/orchestrator/run/close.js';
 import { createRecoveryBus } from '../../engine/orchestrator/recovery/bus.js';
 import { addTuiEvent } from './tui-sink.js';
+import { readRunHistory } from './run-history.js';
 import { hydrateResume } from './resume-hydration.js';
 import { configStore } from '../../stores/project/config.js';
 import { sessionsStore } from '../../stores/project/sessions.js';
@@ -47,6 +48,7 @@ const pendingSeatChanges = new Map<CrewSeatId, string>();
 let steerUnsubscribe: (() => void) | undefined;
 let departure: { kind: 'home' | 'quit'; run: () => void } | null = null;
 let unsubscribeDeparture: (() => void) | undefined;
+let rereadAttempt = 0;
 
 function setHandler<K extends keyof Handlers>(k: K, h: Handlers[K] | null): void {
   if (h === null) delete handlers[k];
@@ -229,16 +231,33 @@ export function requestSteer(message: UserMessageInput): boolean {
 
 /**
  * The run on screen at rest, read again from its record. Another process can close a run this
- * screen holds, so an action that finds the record changed paints it as it stands now, and the
+ * screen holds, so a changed record replays its history and paints it as it stands now, and the
  * listings with it. A closed or ready run takes no stop: a park the screen still offered goes.
  */
-export function rereadRunAtRest(ref: SessionRef): void {
-  const run = readRunRecord(ref);
-  routerStore.updateRun({ run, execution: { kind: 'at-rest' } });
-  sessionsStore.refresh();
-  if (run.status.kind !== 'closed' && run.status.kind !== 'ready-to-apply') return;
-  if (stopStore.get().phase === 'parked') stopStore.reset();
-  if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
+export async function rereadRunAtRest(ref: SessionRef, signal?: AbortSignal): Promise<void> {
+  const route = routerStore.get();
+  if (
+    route.screen !== 'workflow' ||
+    route.run.ref.projectDir !== ref.projectDir ||
+    route.run.ref.sessionId !== ref.sessionId
+  )
+    return;
+  const attempt = ++rereadAttempt;
+  try {
+    const run = readRunRecord(ref);
+    const publish = await readRunHistory(run);
+    if (signal?.aborted || attempt !== rereadAttempt || routerStore.get() !== route) return;
+    publish();
+    routerStore.updateRun({ run, execution: { kind: 'at-rest' } });
+    sessionsStore.refresh();
+    if (run.status.kind !== 'closed' && run.status.kind !== 'ready-to-apply') return;
+    const stop = stopStore.get();
+    if (stop.phase === 'parked' && stop.parked?.resolve === null) stopStore.reset();
+    if (overlayStore.get().active === 'stop-sheet') overlayStore.close();
+  } catch (err) {
+    if (signal?.aborted || attempt !== rereadAttempt || routerStore.get() !== route) return;
+    feedbackStore.setError(toErrorMessage(err));
+  }
 }
 
 export function requestEndRun(): boolean {
@@ -250,7 +269,7 @@ export function requestEndRun(): boolean {
       const record = readRunRecord(route.run.ref);
       if (record.status.kind === 'running') return false;
       if (record.status.kind === 'closed') {
-        rereadRunAtRest(record.ref);
+        void rereadRunAtRest(record.ref);
         return true;
       }
       const hydrated = hydrateResume(record.ref);

@@ -1,6 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import { sessionDir } from '../../../src/core/paths.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
@@ -14,7 +16,19 @@ import { deriveSummaryView } from '../../../src/features/workflow/closed/view-mo
 import { walkTranscript } from '../../../src/features/workflow/conversation-rows/transcript-walk.js';
 import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { hydrateRun } from '../../../src/features/workflow/run-history.js';
+import { rereadRunAtRest } from '../../../src/features/workflow/handlers.js';
+import { showRunDiff } from '../../../src/features/workflow/result/show-diff.js';
+import type { SpawnEditor } from '../../../src/features/workflow/review-parser.js';
+import { routerStore } from '../../../src/stores/navigation/router.js';
+import { configStore } from '../../../src/stores/project/config.js';
+import { overlayStore } from '../../../src/stores/ui/overlay.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
+import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
+import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { flushEffects, renderFeature } from '#testing/helpers/ink.js';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { buildConversationRows } from '#testing/helpers/event-rows.js';
 import { checkoutEntries } from '#testing/helpers/checkout.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -54,6 +68,7 @@ afterEach(async () => {
     cleanupTempDir(fixture.tmpDir);
   }
   fixture = undefined;
+  resetAllStores();
 });
 
 describe('headless End run', { timeout: 240_000 }, () => {
@@ -127,11 +142,18 @@ describe('headless End run', { timeout: 240_000 }, () => {
     const target = fixture;
     const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
     expect(parked.exitCode).toBe(0);
+    const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+    const record = readRunRecord(ref);
+    await hydrateRun(record);
+    routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
 
     const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
 
     expect(ended.exitCode, ended.stderr).toBe(0);
-    const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+    await rereadRunAtRest(ref);
+    const refreshedEvents = eventsStore.get().events;
+    await hydrateRun(readRunRecord(ref));
+    expect(refreshedEvents).toEqual(eventsStore.get().events);
     const patch = readFileSync(
       join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'),
       'utf8',
@@ -150,6 +172,74 @@ describe('headless End run', { timeout: 240_000 }, () => {
     expect(notices.shown).not.toContain(WORKSPACE_KEPT_CODE);
     expect(notices.shown).toContain('workspace_closed');
   });
+
+  it.each([true, false])(
+    'refreshes an open screen after headless End run, with changes: %s',
+    async (hasChanges) => {
+      fixture = createStopContinueFixture();
+      const target = fixture;
+      const parked = await startAndSignal(target, 'SIGINT', target.isolationTreesDir);
+      expect(parked.exitCode).toBe(0);
+      const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+      const record = readRunRecord(ref);
+      const workspace = readState(target, parked.sessionId).workspace;
+      if (workspace === undefined) throw new Error('the parked run has no workspace');
+      if (!hasChanges) {
+        unlinkSync(join(workspace.path, MARKER_FILE));
+        const spawnEditor = vi.fn<SpawnEditor>();
+        await showRunDiff(record, spawnEditor);
+        expect(feedbackStore.get()).toEqual({ message: 'No run changes to show.', isError: false });
+        expect(spawnEditor).not.toHaveBeenCalled();
+        writeFileSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'), 'old patch');
+      }
+      await hydrateRun(record);
+      configStore.load(target.projectDir);
+      routerStore.init({ screen: 'workflow', run: record, execution: { kind: 'at-rest' } });
+      terminalSizeStore.__testReset({ cols: 160, rows: 60, isSmall: false });
+      stopStore.park('mid-brief', null, null);
+      overlayStore.open('stop-sheet');
+      const ui = renderFeature(
+        createElement(WorkflowScreen, { commands: [], onRuntimeCommand: () => {} }),
+        { cols: 160, rows: 60 },
+      );
+      try {
+        await flushEffects();
+        expect(stripAnsiStyles(ui.lastFrame())).toContain('Resume');
+
+        const ended = await cli(target, ['continue', parked.sessionId, '--action', 'end-run']);
+
+        expect(ended.exitCode, ended.stderr).toBe(0);
+        expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), 'run.patch'))).toBe(
+          hasChanges,
+        );
+        expect(ended.stderr.includes('apply them with git apply')).toBe(hasChanges);
+        await vi.waitFor(
+          () => {
+            const frame = stripAnsiStyles(ui.lastFrame());
+            expect(frame).toContain('Closed');
+            expect(frame).toContain('Stopped by you');
+            expect(frame).not.toContain('Resume');
+            expect(frame).not.toContain('to continue');
+            expect(frame).not.toContain('Workspace kept');
+            expect(frame).not.toContain('Partial changes kept');
+            expect(frame.includes('run.patch')).toBe(hasChanges);
+          },
+          { timeout: 5_000 },
+        );
+        const refreshedEvents = eventsStore.get().events;
+        const refreshedRoute = routerStore.get();
+        await hydrateRun(readRunRecord(ref));
+        expect(refreshedEvents).toEqual(eventsStore.get().events);
+        expect(refreshedRoute.screen === 'workflow' && refreshedRoute.run.status).toEqual({
+          kind: 'closed',
+          as: 'ended',
+        });
+        expect(existsSync(workspace.path)).toBe(false);
+      } finally {
+        ui.unmount();
+      }
+    },
+  );
 
   // Apply removes the workspace the stop kept, the same as End run and Discard do.
   it('an applied run no longer offers the workspace its stop kept for Continue', async () => {

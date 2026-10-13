@@ -14,6 +14,7 @@ import { getChromeContentWidth } from '../layout/chrome-rows.js';
 import { wrappedProseSegments } from '../conversation-rows/row-format/text.js';
 import type { ConversationRowSegment } from '../conversation-rows/types.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { changedFileCount } from '../closed/projections.js';
 
 export type StopRowId =
   | 'stop-now'
@@ -167,7 +168,10 @@ export function readStopMenuRows(): StopRow[] {
             {
               id: 'end-run' as const,
               label: 'End run',
-              consequence: 'discard the result; save its changes in run.patch',
+              consequence:
+                changedFileCount(route.run.summary) === 0
+                  ? 'discard the result; it changed no files'
+                  : 'discard the result; save its changes in run.patch',
             },
           ]
         : !closed

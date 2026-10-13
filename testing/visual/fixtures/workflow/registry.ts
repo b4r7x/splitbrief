@@ -137,6 +137,12 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
     };
   }
   const atRest = projection.atRest;
+  if (projection.scenarioId === 'workflow-ready-empty-diff') {
+    return () => ({
+      ...base(),
+      afterMount: () => feedbackStore.setMessage('No run changes to show.'),
+    });
+  }
   if (atRest !== undefined && projection.events.length > 0) {
     return () => {
       const lifecycle = base();
@@ -159,37 +165,26 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
   if (atRest !== undefined && projection.scenarioId === 'workflow-at-rest-closed-elsewhere') {
     return () => {
       const lifecycle = base();
+      const { record } = atRest;
+      if (record.hydration.kind !== 'loaded') throw new Error('closed-elsewhere needs a state');
+      const saved = {
+        ...record.hydration.state,
+        stateVersion: WORKFLOW_STATE_VERSION,
+        stateRevision: 0,
+        startedAt: new Date(VISUAL_FIXTURE_EPOCH).toISOString(),
+      };
       return {
         ...lifecycle,
         setup: async (context) => {
           await lifecycle.setup(context);
-          // The screen still offers the stop menu of the run it parked when another process ends
-          // that run, as `splitbrief continue --action end-run` does. The record's state is a
-          // view fixture; the one on disk is the current state version, started before the
-          // capture clock, as a real run saves it.
-          const { record } = atRest;
-          if (record.hydration.kind !== 'loaded') throw new Error('closed-elsewhere needs a state');
-          const saved = {
-            ...record.hydration.state,
-            stateVersion: WORKFLOW_STATE_VERSION,
-            stateRevision: 0,
-            startedAt: new Date(VISUAL_FIXTURE_EPOCH).toISOString(),
-          };
           saveState(record.ref, saved);
           if (record.ledger !== null) writeEvidenceLedger(record.ref, record.ledger);
-          const bus = createRecoveryBus({ ...record.ref, sink: () => {} });
-          await endRunAtRest({ ...record.ref, bus }, saved, visualConfig());
           stopStore.park('mid-brief', null, null);
           overlayStore.open('stop-sheet');
         },
-        afterMount: async (write) => {
-          const fixedNow = Date.now;
-          Date.now = () => fixedNow() + PROMPT_TYPEAHEAD_GRACE_MS;
-          try {
-            await write.press('\r');
-          } finally {
-            Date.now = fixedNow;
-          }
+        afterMount: async () => {
+          const bus = createRecoveryBus({ ...record.ref, sink: () => {} });
+          await endRunAtRest({ ...record.ref, bus }, saved, visualConfig());
         },
       };
     };
@@ -525,7 +520,15 @@ const checkpointPredicates = [
   [checkpointId('resuming'), includesAll('Resuming T')],
   [
     checkpointId('at-rest-closed-elsewhere'),
-    (context) => includesAll('Ended ·')(context) && excludesAll('Resume ·', '⏎ resume')(context),
+    (context) => {
+      const snapshot = readConversationScrollSnapshot();
+      const above = snapshot.maxOffset - snapshot.scrollOffset;
+      return (
+        includesAll('Ended ·')(context) &&
+        excludesAll('Resume ·', '⏎ resume')(context) &&
+        (above === 0 || context.output.includes(`${above} lines above`))
+      );
+    },
   ],
   [checkpointId('at-rest-crashed-build'), includesAll('interrupted', 'Stopped at T002')],
   [checkpointId('at-rest-crashed-review'), includesAll('interrupted', 'Stopped at the review')],
@@ -533,6 +536,7 @@ const checkpointPredicates = [
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
+  [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
@@ -540,6 +544,7 @@ const checkpointPredicates = [
   [checkpointId('closed-discarded'), includesAll()],
   [checkpointId('closed-needs-attention'), includesAll()],
   [checkpointId('closed-ended'), includesAll()],
+  [checkpointId('closed-ended-empty'), includesAll()],
   [checkpointId('closed-ended-workspace'), includesAll('run.patch')],
   [checkpointId('closed-ended-review'), includesAll()],
   [checkpointId('closed-ended-review-workspace'), includesAll('run.patch')],

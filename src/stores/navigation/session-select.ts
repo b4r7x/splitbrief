@@ -14,6 +14,7 @@ import { createStore, storeBase } from '../create-store.js';
 import { skillsStore } from '../project/skills.js';
 import { feedbackStore } from '../ui/feedback.js';
 import { overlayStore } from '../ui/overlay.js';
+import { resetWorkflowControls } from '../workflow/actions/reset.js';
 import { CHECKING_TOOLS_STAGE, preparationStore, type PreparationState } from './preparation.js';
 import { routerStore } from './router.js';
 
@@ -233,6 +234,7 @@ export async function handleSessionSelect(
   if (!routerStore.isCurrentSelection(generation)) return;
   const current = routerStore.get();
   if (current.screen === 'workflow' && current.execution.kind === 'local') return;
+  if (deps.readRunHistory) resetWorkflowControls();
   publish();
   // Continuing the run carries the skills it saved, never the last run's selection.
   if (record.hydration.kind === 'loaded') {

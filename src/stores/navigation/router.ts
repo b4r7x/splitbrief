@@ -21,7 +21,7 @@ export type WorkflowExecution =
   | Readonly<{ kind: 'at-rest' }>;
 
 type WorkflowPayload = {
-  /** Read once at the navigation event: the screen does no IO of its own. */
+  /** Read at navigation and refreshed with its history when session files change at rest. */
   run: RunRecord;
   execution: WorkflowExecution;
 };

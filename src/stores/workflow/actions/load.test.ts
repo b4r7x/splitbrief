@@ -8,6 +8,7 @@ import { operationsStore } from '../operations/state.js';
 import { selectRunningBrief, tasksStore } from '../tasks.js';
 import { makeReviewFixInsertedEvents } from '#testing/helpers/events/task.js';
 import { tokensStore } from '../tokens.js';
+import { stopStore } from '../stop.js';
 import { parseEngineEvent } from '../../../engine/events/schema.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 
@@ -137,6 +138,17 @@ function mixedFixture(): EngineEvent[] {
 
 describe('loadEvents', () => {
   beforeEach(() => resetWorkflow());
+
+  it('preserves the local pause and its boundary resolver when replaying history', () => {
+    const resolve = () => {};
+    stopStore.request('pause-after-brief');
+    stopStore.park('boundary', 'T001', resolve);
+    const stop = stopStore.get();
+
+    loadEvents(mixedFixture());
+
+    expect(stopStore.get()).toBe(stop);
+  });
 
   it('replays inserted task order and id-derived focus exactly as the live stream does', () => {
     const fixture = makeReviewFixInsertedEvents();

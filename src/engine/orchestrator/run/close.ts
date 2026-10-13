@@ -88,8 +88,11 @@ export async function closeRunIfOpen(
       } else if (workspace !== undefined) {
         workspaceToRemove = workspace;
         if (existsSync(workspace.path)) {
-          patch = relative(scope.projectDir, await writeRunPatch(scope, workspace));
-          warning = `Run changes not applied are saved in ${patch}; apply them with git apply.`;
+          const patchPath = await writeRunPatch(scope, workspace);
+          if (patchPath !== null) {
+            patch = relative(scope.projectDir, patchPath);
+            warning = `Run changes not applied are saved in ${patch}; apply them with git apply.`;
+          }
         } else {
           warning = `The run workspace at ${workspace.path} is gone; no run patch was written.`;
         }

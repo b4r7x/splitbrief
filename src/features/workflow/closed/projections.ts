@@ -429,6 +429,10 @@ export function filesView(summary: Summary): Omit<SummaryView['files'], 'patch'>
   };
 }
 
+export function changedFileCount(summary: Summary | null): number | null {
+  return summary === null ? null : (filesView(summary).changed?.length ?? null);
+}
+
 /** The three keys the orchestrator writes; anything else in the record is not a phase of this run. */
 const PHASE_TIMING_KEYS = [
   'planning',

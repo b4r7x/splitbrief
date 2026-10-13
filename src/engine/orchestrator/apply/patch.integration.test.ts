@@ -54,6 +54,7 @@ describe('writeRunPatch', () => {
     cpSync(join(ref.projectDir, 'src'), join(replayDir, 'src'), { recursive: true });
 
     const patchPath = await writeRunPatch(ref, workspace);
+    if (patchPath === null) throw new Error('the changed workspace has no patch');
 
     expect(readFileSync(patchPath, 'utf8')).not.toBe('');
     execFileSync('git', ['apply', patchPath], { cwd: replayDir });
@@ -74,6 +75,7 @@ describe('writeRunPatch', () => {
     cpSync(join(ref.projectDir, 'src'), join(replayDir, 'src'), { recursive: true });
 
     const patchPath = await writeRunPatch(ref, workspace);
+    if (patchPath === null) throw new Error('the changed workspace has no patch');
 
     expect(readFileSync(patchPath, 'utf8')).not.toBe('');
     execFileSync('git', ['apply', patchPath], { cwd: replayDir });
@@ -97,6 +99,7 @@ describe('writeRunPatch', () => {
     cpSync(join(ref.projectDir, 'src'), join(replayDir, 'src'), { recursive: true });
 
     const patchPath = await writeRunPatch(ref, workspace);
+    if (patchPath === null) throw new Error('the changed workspace has no patch');
 
     const headers = readFileSync(patchPath, 'utf8')
       .split('\n')
@@ -131,7 +134,9 @@ describe('writeRunPatch', () => {
     writeFileSync(join(workspace.path, '.gitignore'), `dist/\n${SPLITBRIEF_DIR}/\n.trees/\n`);
     writeFileSync(join(workspace.path, 'src/a.ts'), 'b\n');
 
-    const patch = readFileSync(await writeRunPatch(ref, workspace), 'utf8');
+    const patchPath = await writeRunPatch(ref, workspace);
+    if (patchPath === null) throw new Error('the changed workspace has no patch');
+    const patch = readFileSync(patchPath, 'utf8');
 
     expect(patch).toContain('src/a.ts');
     expect(patch).not.toContain('.gitignore');

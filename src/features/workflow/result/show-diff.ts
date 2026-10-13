@@ -17,6 +17,10 @@ export async function showRunDiff(
   }
   try {
     const path = await writeRunPatch(record.ref, workspace);
+    if (path === null) {
+      feedbackStore.setMessage('No run changes to show.');
+      return;
+    }
     const { command, args } = resolveEditorArgv();
     const { code, signal } = await runEditor({ command, args, filePath: path, spawnEditor });
     if (code !== 0 || signal !== null) {

@@ -1,6 +1,6 @@
 import { Text } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
+import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { makeSession } from '#testing/helpers/factories/session.js';
@@ -8,7 +8,6 @@ import { makePreparedExecution } from '#testing/helpers/factories/prepared-execu
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
-import { PROMPT_TYPEAHEAD_GRACE_MS } from '../../../src/lib/terminal/typeahead-grace.js';
 import { WorkflowScreen } from '../../../src/app/screens/workflow.js';
 import type { WorkflowScreenDeps } from '../../../src/features/workflow/hooks/workflow-screen/use-model.js';
 import type { SessionSelectDeps } from '../../../src/stores/navigation/session-select.js';
@@ -55,7 +54,73 @@ afterEach(() => {
 });
 
 describe('a run at rest that another process closes', () => {
-  it('paints closed on the next action, drops its stop options and lists it as ended', async () => {
+  it.each(['hydrateRun', 'readRunHistory'] as const)(
+    'clears the previous local stop when opening a run through %s',
+    async (history) => {
+      const sessionId = 'another-run';
+      saveState({ projectDir, sessionId }, createInitialState('Another run'));
+      stopStore.request('pause-after-brief');
+      stopStore.park('boundary', null, () => {});
+
+      await handleSessionSelect(makeSession({ id: sessionId }), projectDir, {
+        loadResumeState: loadOwnerWorkflowState,
+        prepareResume: vi.fn(),
+        hydrateRun,
+        ...(history === 'readRunHistory' && { readRunHistory }),
+      });
+
+      expect(stopStore.get()).toEqual({
+        intent: 'none',
+        phase: 'idle',
+        requestedAt: null,
+        parked: null,
+      });
+    },
+  );
+
+  it('refreshes a changed session log without resetting the local stop', async () => {
+    const ref = { projectDir, sessionId: 'parked-log-refresh' };
+    saveState(ref, { ...createInitialState('Keep the local stop'), phase: 'planning' });
+    const config = makeConfig();
+    configStore.__testReset({ config, projectDir });
+    terminalSizeStore.__testReset({ ...VIEWPORT, isSmall: false });
+    routerStore.init({
+      screen: 'workflow',
+      run: makeRunRecord({ ref }),
+      execution: { kind: 'at-rest' },
+    });
+    ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={{ runWorkflow: vi.fn() }} />,
+      VIEWPORT,
+    );
+    await vi.waitFor(() => {
+      expect(eventsStore.get().events.some((event) => event.type === 'replay_complete')).toBe(true);
+    });
+    stopStore.request('stop-now');
+    stopStore.park('mid-brief', null, null);
+    overlayStore.open('stop-sheet');
+    const stop = stopStore.get();
+
+    createRecoveryBus({ ...ref, sink: () => {} }).publish({
+      type: 'planner_text',
+      ts: Date.now(),
+      phase: 'planning',
+      role: 'planner',
+      content: 'plain',
+      text: 'New session history.',
+    });
+
+    await vi.waitFor(() => {
+      expect(eventsStore.get().events).toContainEqual(
+        expect.objectContaining({ type: 'planner_text', text: 'New session history.' }),
+      );
+    });
+    expect(stopStore.get()).toBe(stop);
+    expect(overlayStore.get().active).toBe('stop-sheet');
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Resume');
+  });
+
+  it('paints closed without input, drops its stop options and lists it as ended', async () => {
     const sessionId = 'closed-elsewhere-session';
     const feature = 'add a word counter';
     const savedState = { ...createInitialState(feature), phase: 'planning' as const };
@@ -99,10 +164,6 @@ describe('a run at rest that another process closes', () => {
       config,
     );
 
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
-    ui.stdin.write('\r');
-    await flushEffects();
-
     await vi.waitFor(() => {
       const route = routerStore.get();
       expect(route.screen === 'workflow' && route.run.status).toEqual({
@@ -140,7 +201,7 @@ describe('a run at rest that another process closes', () => {
       run: makeRunRecord({ ref }),
       execution: { kind: 'local', prepared },
     });
-    addEvent({
+    createRecoveryBus({ ...ref, sink: addEvent }).publish({
       type: 'workflow_started',
       ts: 1_000,
       phase: 'planning',
@@ -159,6 +220,11 @@ describe('a run at rest that another process closes', () => {
       config,
     );
     continuation?.handleResume();
+
+    await vi.waitFor(() => {
+      const route = routerStore.get();
+      expect(route.screen === 'workflow' && route.execution.kind).toBe('at-rest');
+    });
 
     const route = routerStore.get();
     expect(route.screen === 'workflow' && route.execution.kind).toBe('at-rest');
