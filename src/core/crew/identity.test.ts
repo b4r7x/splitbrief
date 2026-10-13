@@ -40,6 +40,27 @@ const openCodeMax: RunnerConfig = {
   variant: 'max',
 };
 
+it.each([undefined, 'low'] as const)(
+  'states the saved Antigravity effort with override %s',
+  (effort) => {
+    const seat = {
+      kind: 'cli',
+      tool: 'antigravity',
+      model: 'gemini-3.8-flash-high',
+      effort,
+    } as const;
+    const identity = `Google Antigravity CLI · Gemini 3.8 Flash · ${effort ?? 'high'}`;
+    expect(formatSeatIdentity({ seat, displayName: 'Gemini 3.8 Flash (High)' })).toBe(identity);
+    expect(
+      formatSeatIdentity({ seat: seatIdsOf(seat), displayName: 'Gemini 3.8 Flash (High)' }),
+    ).toBe(identity);
+    expect(formatShortSeatIdentity({ seat, displayName: 'Gemini 3.8 Flash (High)' })).toBe(
+      'Gemini 3.8 Flash',
+    );
+    expect(formatSeatCandidateIdentity(seat, 'Gemini 3.8 Flash (High)')).toBe(identity);
+  },
+);
+
 describe('seatLineText', () => {
   it('projects fitted seat spans without changing their copy or separator ownership', () => {
     const spans = formatCollapsedSeatSpansFromIdentities({

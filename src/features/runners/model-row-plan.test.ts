@@ -76,6 +76,45 @@ function modelIds(rows: readonly RightRow[]): string[] {
 }
 
 describe('planModelRows on the captured listings', () => {
+  it('keeps the DeepSeek family visible beside the id that distinguishes its rows', () => {
+    const rows: RightRow[] = [
+      { id: 'deepseek/deepseek-flash', contextLength: 1_000_000 },
+      {
+        id: 'opencode-go/deepseek-v4.1-flash',
+        contextLength: 1_000_000,
+        variants: [
+          {
+            fullId: 'opencode-go/deepseek-v4.1-flash',
+            providerPrefix: 'opencode-go',
+            tag: 'opencode-go',
+          },
+          {
+            fullId: 'ollama-cloud/deepseek-v4.1-flash',
+            providerPrefix: 'ollama-cloud',
+            tag: 'ollama-cloud',
+          },
+        ],
+      },
+    ].map((model) => ({
+      kind: 'model',
+      model: { ...model, displayName: 'DeepSeek V4.1 Flash' },
+      provenance: 'Detected',
+      section: '',
+      expanded: false,
+    }));
+    const labelsAt = (width: number) =>
+      [...planModelRows({ rows, width, providerId: 'opencode' }).rows.values()].map(
+        (row) => row.label,
+      );
+    for (const width of [56, 47]) {
+      const labels = labelsAt(width);
+      expect(labels.every((label) => label.startsWith('DeepSeek V4.1 Flash'))).toBe(true);
+      expect(new Set(labels).size).toBe(2);
+    }
+    // Too narrow for the family beside the id: the id stays, and no cut opens on the separator.
+    expect(labelsAt(31)).toEqual([`${ELLIPSIS}deepseek-flash`, `${ELLIPSIS}deepseek-v4.1-flash`]);
+  });
+
   it.each(['opencode', 'kilo-code', 'cursor', 'codex', 'copilot', 'antigravity'] as const)(
     'leaves no two %s rows reading alike at any width',
     (toolId) => {

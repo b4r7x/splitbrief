@@ -22,6 +22,7 @@ function optionAxisRow(input: {
   providerPrefix?: string;
   last?: boolean;
   steps?: boolean;
+  unset?: string;
 }): RightRow {
   return {
     kind: 'axis',
@@ -30,6 +31,7 @@ function optionAxisRow(input: {
     providerPrefix: input.providerPrefix ?? '',
     value: input.value,
     choices: input.choices ?? [],
+    ...(input.unset === undefined ? {} : { unset: input.unset }),
     steps: input.steps ?? true,
     last: input.last ?? false,
     tree: { depth: 1, parentContinues: false },
@@ -427,6 +429,23 @@ describe('cycleRightRow', () => {
 
     expect(cycleRightRow(row)).toBe('stepped');
     expect(pickerViewStore.get().effortDraft).toBe('low');
+  });
+
+  it('walks past unset where unset already reads the level the model id spells', () => {
+    const row = optionAxisRow({
+      model: { id: 'gemini-3.8-flash-high', effortChoices: ['low', 'medium', 'high'] },
+      axis: 'effort',
+      value: 'high',
+      choices: ['low', 'medium', 'high'],
+      unset: 'high',
+    });
+
+    const drafts = [1, 2, 3, 4].map(() => {
+      cycleRightRow(row);
+      return pickerViewStore.get().effortDraft;
+    });
+
+    expect(drafts).toEqual(['low', 'medium', 'high', 'low']);
   });
 
   it('moves optionDraftId and leaves effortDraft alone when the choices list is empty', () => {

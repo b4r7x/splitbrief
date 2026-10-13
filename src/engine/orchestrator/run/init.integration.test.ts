@@ -1465,6 +1465,47 @@ describe('initializeWorkflow — seat record', () => {
     });
   });
 
+  it("keeps the plan seat's session when its record left out the level its id spells", async () => {
+    await withTempDir('splitbrief-init-seat-id-level', async (projectDir) => {
+      const feature = 'resume on the same crew';
+      const ref = { projectDir, sessionId: 'session-init-seat-id-level' };
+      const planner = { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' } as const;
+      const events: EngineEvent[] = [];
+      ensureSessionDir(projectDir, ref.sessionId);
+      // The record an older version wrote for this crew: the axes held the effort flag alone.
+      const ids = { tool: 'antigravity', model: planner.model, axes: [], kind: 'cli' } as const;
+      const identity = 'Google Antigravity CLI · Gemini 3.8 Flash (High)';
+      writeSeatIdentities(ref, {
+        plan: identity,
+        build: identity,
+        review: identity,
+        ids: { plan: ids, build: ids, review: ids },
+      });
+
+      const { init, tracked } = await initializeTestWorkflow({
+        ...ref,
+        feature,
+        configOverrides: { planner, implementer: planner },
+        reviewer: planner,
+        savedState: {
+          ...createInitialState(feature),
+          phase: 'implementing',
+          plannerSessionId: 'session-minted-by-the-same-seat',
+        },
+        eventSink: (e) => events.push(e),
+      });
+
+      expect(init.ok).toBe(true);
+      expect(
+        events.filter((event) => event.type === 'warning' && /seat changed/.test(event.message)),
+      ).toEqual([]);
+      expect(tracked.current?.plannerSessionId).toBe('session-minted-by-the-same-seat');
+      expect(readSeatIdentities(ref)?.plan).toBe(
+        'Google Antigravity CLI · Gemini 3.8 Flash · high',
+      );
+    });
+  });
+
   it("re-records the crew on resume and clears the moved plan seat's session", async () => {
     await withTempDir('splitbrief-init-seat-change', async (projectDir) => {
       const feature = 'resume on another crew';

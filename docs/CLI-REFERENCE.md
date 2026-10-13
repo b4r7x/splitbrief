@@ -783,7 +783,7 @@ Commands in this section share stable `stateId` / `state` identifiers and copyab
 | `.splitbrief/sessions/<id>/plan.md` | planning session | Rendering of `plan.json`; the body of the plan card. |
 | `.splitbrief/sessions/<id>/tasks.md` | planning session | Rendering of the compiled Task Briefs. |
 | `.splitbrief/sessions/<id>/state.json` | orchestrator | Persisted machine state for `resume` / `status`. |
-| `.splitbrief/sessions/<id>/seats.json` | `start`, `resume`, `continue` | The crew the session last ran with, so a resume can report a seat change. Rewritten by every run that starts, resumes included; a resume that never starts leaves it alone. |
+| `.splitbrief/sessions/<id>/seats.json` | `start`, `resume`, `continue` | The crew the session last ran with, spelled as the crew rows spell it, so a resume can report a seat change. Rewritten by every run that starts, resumes included; a resume that never starts leaves it alone. |
 | `.splitbrief/sessions/<id>/session.jsonl` | orchestrator | Append-only transcript and event log. |
 | `.splitbrief/sessions/<id>/snapshots/<snap-id>/` | runtime `/run accept` | The run's snapshots: the run-start `baseline`, the `workspace-base` a workspace run starts from, the `pre-final-review` snapshot, the `post-task-<n>` snapshots of a checkout run and, for a run without a workspace, the accepted-run snapshot `/run accept` records, plus the run ledger. A workspace run restores from its Apply backup instead ([WORKFLOW.md §Apply](./WORKFLOW.md#apply)). |
 | `~/.splitbrief/trust/hooks.json` | `start`/`resume`/`spec` trust prompt | Hook trust receipts, owner-only, keyed by checkout. Never inside the project. |

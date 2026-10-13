@@ -203,13 +203,14 @@ function roomCut(label: string, room: number): string {
  * not the room: a cut that drops a whole tag keeps less than the room it was given. The whole-word
  * rule then decides only how the name is drawn, never which cells the list keeps.
  */
-function holds(cells: RowCells, rung: Rung, width: number): boolean {
+function holds(cells: RowCells, rung: Rung, width: number, twinFloor = 0): boolean {
   const metadata = metadataAt(cells, rung);
   const ceiling = width - BARE_MODEL_ROW_CHROME - LIST_ROW_LABEL_FLOOR - 1;
   if (getTerminalCellWidth(metadata) > ceiling) return false;
   const room = labelRoom(width, metadata);
   const nameWidth = getTerminalCellWidth(cells.name);
   if (room >= nameWidth) return true;
+  if (room < twinFloor) return false;
   const floor = Math.min(nameWidth, MODEL_LABEL_FLOOR);
   if (room < floor) return false;
   return cells.name.includes('/') || getTerminalCellWidth(roomCut(cells.name, room)) >= floor;
@@ -219,36 +220,69 @@ function holds(cells: RowCells, rung: Rung, width: number): boolean {
 const WORD_RE = /[^\s-]+[\s-]*/g;
 
 /**
- * A cut reads as its own row only while no other name starts, or for a tail ends, with what it
- * kept: `claude-fable-5…` beside `claude-fable-5` could be either, `Ling 3.0 Flash…` three times is
- * all three, and `…(free)` is every free route in the list.
+ * A cut reads as its own row only while no other name starts with what it kept before the
+ * ellipsis and ends with what it kept after it: `claude-fable-5…` beside `claude-fable-5` could be
+ * either, `Ling 3.0 Flash…` three times is all three, and `…(free)` is every free route in the list.
  */
 function isAmbiguousCut(label: string, id: string, bases: ReadonlyMap<string, LabelBase>): boolean {
-  const head = label.endsWith(ELLIPSIS) ? label.slice(0, -ELLIPSIS.length) : undefined;
-  const tail = label.startsWith(ELLIPSIS) ? label.slice(ELLIPSIS.length) : undefined;
-  if (head === undefined && tail === undefined) return false;
+  const at = label.indexOf(ELLIPSIS);
+  if (at < 0) return false;
+  const head = label.slice(0, at);
+  const tail = label.slice(at + ELLIPSIS.length);
   for (const [other, { base }] of bases) {
     if (other === id) continue;
-    if (head !== undefined && base.startsWith(head)) return true;
-    if (tail !== undefined && base.endsWith(tail)) return true;
+    if (base.startsWith(head) && base.endsWith(tail)) return true;
   }
   return false;
 }
 
-/** The longest run of whole trailing words that fits, after the words it gave up. */
-function tailLabel(base: string, room: number): string {
-  const words = base.match(WORD_RE) ?? [base];
+/**
+ * The longest run of whole trailing words that fits, after the words it gave up. It never opens
+ * on a separator: `…deepseek-flash`, not `…· deepseek-flash`.
+ */
+function wordTail(text: string, room: number): string | undefined {
+  const words = text.match(WORD_RE) ?? [text];
   for (let dropped = 1; dropped < words.length; dropped++) {
+    if (words[dropped]?.trim() === SOFT_SEP.trim()) continue;
     const tail = `${ELLIPSIS}${words.slice(dropped).join('')}`;
     if (getTerminalCellWidth(tail) <= room) return tail;
   }
-  return truncateTerminalDisplayTextStart(base, room);
+  return undefined;
+}
+
+/**
+ * Twins are named by the model and the id that tells them apart (`nameRows`). Cut, a twin keeps
+ * the model whole and gives up the leading words of the id, which its twins share:
+ * `DeepSeek V4.1 Flash · …v4.1-flash`.
+ */
+function twinLabel(base: string, room: number): string | undefined {
+  const at = base.indexOf(SOFT_SEP);
+  if (at < 0) return undefined;
+  const name = base.slice(0, at + SOFT_SEP.length);
+  const tail = wordTail(base.slice(name.length), room - getTerminalCellWidth(name));
+  return tail === undefined ? undefined : `${name}${tail}`;
+}
+
+/**
+ * The room a twin needs to keep its model and still read as its own row: its shortest twin label
+ * no other name could be, else its whole name. A name that is no twin needs none.
+ */
+function twinFloorOf(id: string, bases: ReadonlyMap<string, LabelBase>): number {
+  const base = bases.get(id)?.base ?? '';
+  if (!base.includes(SOFT_SEP)) return 0;
+  const nameWidth = getTerminalCellWidth(base);
+  for (let room = 1; room < nameWidth; room++) {
+    const label = twinLabel(base, room);
+    if (label !== undefined && !isAmbiguousCut(label, id, bases)) return room;
+  }
+  return nameWidth;
 }
 
 /**
  * A label cut to its room must still name its own row. A cut another name also starts with gives
- * up its leading words instead and keeps the ones that tell it apart — `…Fin (free)`,
- * `…Sante (free)`, `…VL (free)`, `…fable-5.1`. Telling rows apart outranks whole words: where no
+ * up its leading words instead and keeps the ones that tell it apart — a twin the leading words of
+ * its id (`DeepSeek V4.1 Flash · …v4.1-flash`), any other name its own (`…Fin (free)`,
+ * `…Sante (free)`, `…VL (free)`, `…fable-5.1`). Telling rows apart outranks whole words: where no
  * whole-word form does, the head is cut inside a word (`Nemotron 3.5 L…` beside
  * `…Safety (free)`), and where two tails still read alike, each keeps as much of its end as the
  * room holds.
@@ -260,9 +294,16 @@ function separateCollisions(
   for (const [id, label] of labels) {
     const entry = bases.get(id);
     if (entry === undefined || !isAmbiguousCut(label, id, bases)) continue;
-    const tail = tailLabel(entry.base, entry.room);
+    const tail =
+      wordTail(entry.base, entry.room) ?? truncateTerminalDisplayTextStart(entry.base, entry.room);
     const head = roomCut(entry.base, entry.room);
-    labels.set(id, [tail, head].find((candidate) => !isAmbiguousCut(candidate, id, bases)) ?? tail);
+    const candidates = [twinLabel(entry.base, entry.room), tail, head];
+    labels.set(
+      id,
+      candidates.find(
+        (candidate) => candidate !== undefined && !isAmbiguousCut(candidate, id, bases),
+      ) ?? tail,
+    );
   }
   const idsByLabel = new Map<string, string[]>();
   for (const [id, label] of labels) idsByLabel.set(label, [...(idsByLabel.get(label) ?? []), id]);
@@ -308,7 +349,13 @@ export function planModelRows(input: {
     id: row.model.id,
     cells: cellsOf(row, name),
   }));
+  const names = new Map(lines.map(({ id, cells }) => [id, { base: cells.name, room: 0 }]));
+  const twinFloors = new Map(lines.map(({ id }) => [id, twinFloorOf(id, names)]));
+  // A twin's model outranks every cell beside it; where no set of cells leaves it, the floor rules.
   const rung =
+    RUNGS.find((candidate) =>
+      lines.every((line) => holds(line.cells, candidate, input.width, twinFloors.get(line.id))),
+    ) ??
     RUNGS.find((candidate) => lines.every((line) => holds(line.cells, candidate, input.width))) ??
     TAGS_ONLY;
 

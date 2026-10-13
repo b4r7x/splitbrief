@@ -3290,6 +3290,16 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: PICKER_TITLE_MARKER,
       },
       {
+        id: 'overlay-planner-picker-antigravity-listed',
+        title: 'Overlay · planner picker · Antigravity effort spelled by the model id',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-picker-opencode-filter',
+        title: 'Overlay · planner picker · OpenCode filter on one model family',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
         id: 'overlay-planner-picker-cursor',
         title: 'Overlay · planner picker · Cursor Agent families',
         marker: PICKER_TITLE_MARKER,

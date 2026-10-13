@@ -15,8 +15,13 @@ import {
 } from '../providers/automatic-model.js';
 import type { EffortLevel, RunnerKind } from '../schemas/enums.js';
 import { SOFT_SEP } from '../separators.js';
-import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
-import { peelAxisTokensFromModelId, seatAxisWords } from '../runners/effort-channel.js';
+import { isCliToolId } from '../runners/cli-tool-catalog.js';
+import {
+  modelIdSpellsAxes,
+  peelAxisTokensFromModelId,
+  recordedAxisWords,
+  seatAxisWords,
+} from '../runners/effort-channel.js';
 
 export const CREW_SEAT_IDS = ['plan', 'build', 'review'] as const;
 
@@ -65,6 +70,27 @@ export function isSeatIdentity(
   if (candidate.tool !== seat.tool) return false;
   const model = resolveCliModel(candidate.model, candidate.tool);
   return model === undefined || model === resolveCliModel(seat.model, seat.tool);
+}
+
+function ranAxes(seat: SeatIds): string {
+  const tool = cliVocabularyTool(seat.tool, seat.kind);
+  const axes = seat.axes ?? [];
+  return (tool === undefined ? axes : recordedAxisWords(tool, seat.model, axes)).join(' ');
+}
+
+/**
+ * Two recorded seats are the same seat when their ids match: a catalog that renames the model
+ * changes the identity, not the seat. The axes compare by the level that runs, so a record
+ * that left out the level its id spells still matches. A side recorded before kinds were kept
+ * matches any kind.
+ */
+export function sameSeatIds(left: SeatIds, right: SeatIds): boolean {
+  return (
+    left.tool === right.tool &&
+    resolveCliModel(left.model, left.tool) === resolveCliModel(right.model, right.tool) &&
+    ranAxes(left) === ranAxes(right) &&
+    (left.kind === undefined || right.kind === undefined || left.kind === right.kind)
+  );
 }
 
 export function seatIdsOf(runner: RunnerConfig): SeatIds & Readonly<{ axes: readonly string[] }> {
@@ -119,9 +145,7 @@ function toolWord(seat: SeatIds, kind: RunnerKind | undefined): string {
 function modelIdOf(seat: SeatIds, kind: RunnerKind | undefined): string | undefined {
   const tool = cliVocabularyTool(seat.tool, kind);
   const model = normalizeConfiguredModel(seat.model, tool);
-  return model !== undefined &&
-    tool !== undefined &&
-    CLI_TOOL_CATALOG[tool].effortChannel === 'model-id'
+  return model !== undefined && tool !== undefined && modelIdSpellsAxes(tool)
     ? peelAxisTokensFromModelId(model)
     : model;
 }
@@ -135,7 +159,7 @@ function modelWord(
   const model = modelIdOf(seat, kind);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
   if (tool === 'opencode' && model.includes('/')) return redactSecrets(model);
-  if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
+  if (tool !== undefined && modelIdSpellsAxes(tool)) {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
     return formatModelName(model, tool);

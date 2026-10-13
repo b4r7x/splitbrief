@@ -1085,6 +1085,47 @@ const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
     },
     focus: 'tool:antigravity',
   });
+// No effort flag on a model id that spells one: the row states the level the id runs.
+const createPlannerPickerAntigravityListedFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedAntigravityNativeListing();
+      seedConfig({
+        planner: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
+      })();
+      pickerViewStore.expand('gemini-3.8-flash-high', 'gemini-3.8-flash-high', null);
+    },
+    focus: 'tool:antigravity',
+  });
+// A filter that leaves one model on two routes beside its namesake, as OpenCode 2.0.26 listed
+// them: each row keeps the family and the id that tells it apart.
+const createOpencodeFilterFixture: FixtureFactory = () => ({
+  ...createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedOpencodeCatalog();
+      const namesake = {
+        id: 'deepseek/deepseek-flash',
+        displayName: 'DeepSeek V4.1 Flash',
+        contextLength: 1_000_000,
+      };
+      publishVisualDiscovery({
+        cliTools: [cliDetectionFor('ready', 'opencode')],
+        cliModels: [
+          catalogAttempt({
+            tool: 'opencode',
+            outcome: { kind: 'success', value: [namesake, ...opencodeApiModels()] },
+          }),
+        ],
+      });
+    },
+    focus: OPENCODE_FOCUS,
+  }),
+  afterMount: async (write) => {
+    for (const key of 'deepseek v4.1') await write.press(key);
+  },
+});
 // The launcher's read-only card is what the cursor opens on this row, so the
 // fixture parks there with nothing configured — the state the card guides.
 const createCustomCommandLauncherFixture: FixtureFactory = () =>
@@ -1976,6 +2017,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
   [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
+  [
+    scenarioId('overlay-planner-picker-antigravity-listed'),
+    createPlannerPickerAntigravityListedFixture,
+  ],
+  [scenarioId('overlay-picker-opencode-filter'), createOpencodeFilterFixture],
   [scenarioId('overlay-planner-picker-cursor'), createPlannerPickerCursorFixture],
   [scenarioId('overlay-picker-cursor-expanded'), createCursorExpandedFixture],
   [scenarioId('overlay-picker-custom-launcher'), createCustomCommandLauncherFixture],

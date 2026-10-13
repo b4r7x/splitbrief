@@ -14,6 +14,7 @@ import {
   normalizeConfiguredModel,
 } from '../../core/providers/automatic-model.js';
 import { CLI_TOOL_IDS, hasNativeCliCatalog } from '../../core/runners/cli-tool-catalog.js';
+import { modelIdSpellsAxes } from '../../core/runners/effort-channel.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   seatPickerLane,
@@ -293,6 +294,7 @@ export function usePickerCatalog(
         browseCatalog,
         optionDraftId,
         effortDraft,
+        idSpellsEffort: tool !== undefined && modelIdSpellsAxes(tool),
         authMethod:
           slot === 'seat' && runnerConfig !== undefined
             ? authMethodOffer({ item, runner: runnerConfig })

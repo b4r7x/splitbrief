@@ -34,6 +34,15 @@ function session(name: string): { projectDir: string; sessionId: string } {
 }
 
 describe('recordSeatIdentities', () => {
+  it('records the catalog identity that the crew displays', () => {
+    const ref = session('seats-catalog');
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } });
+
+    recordSeatIdentities(ref, config, { build: 'GPT-6-Luna' });
+
+    expect(readSeatIdentities(ref)?.build).toBe('OpenAI Codex CLI · GPT-6-Luna');
+  });
+
   it('writes seats.json beside state.json', () => {
     const ref = session('seats-write');
 
@@ -91,6 +100,28 @@ describe('seatIdentityChanges', () => {
 });
 
 describe('reconcileSeatIdentities', () => {
+  it('refreshes catalog labels without reporting unchanged ids as a moved seat', () => {
+    const ref = session('seats-catalog-rename');
+    const config = makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } });
+    recordSeatIdentities(ref, config);
+
+    expect(reconcileSeatIdentities(ref, config, { build: 'GPT-6-Luna' })).toEqual([]);
+    expect(readSeatIdentities(ref)?.build).toBe('OpenAI Codex CLI · GPT-6-Luna');
+  });
+
+  it('reports different ids even when the catalog gives them the same name', () => {
+    const before = seatIdentitiesFromConfig(
+      makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'model-a' } }),
+      { build: 'Shared name' },
+    );
+    const after = seatIdentitiesFromConfig(
+      makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'model-b' } }),
+      { build: 'Shared name' },
+    );
+
+    expect(seatIdentityChanges(before, after).map((change) => change.seat)).toEqual(['build']);
+  });
+
   it('reports what moved and re-records the crew the run is about to use', () => {
     const ref = session('seats-reconcile');
     const current = makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } });
@@ -195,6 +226,52 @@ describe('reconcileSeatIdentities', () => {
     expect(reconcileSeatIdentities(ref, config)).toEqual([]);
     expect(readSeatIdentities(ref)?.ids?.plan?.kind).toBe('cli');
     expect(readSeatIdentities(ref)).toEqual(current);
+  });
+
+  const idLevelSeat = { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' } as const;
+  const idLevelConfig = makeConfig({
+    planner: idLevelSeat,
+    implementer: idLevelSeat,
+    reviewer: idLevelSeat,
+  });
+  // The bytes an older version wrote for this crew: the axes held the effort flag alone.
+  const legacyIds = {
+    tool: 'antigravity',
+    model: idLevelSeat.model,
+    axes: [],
+    kind: 'cli',
+  } as const;
+  const legacyIdentity = 'Google Antigravity CLI · Gemini 3.8 Flash (High)';
+  const idLevelLegacy = {
+    plan: legacyIdentity,
+    build: legacyIdentity,
+    review: legacyIdentity,
+    ids: { plan: legacyIds, build: legacyIds, review: legacyIds },
+  };
+
+  it('reads an effort-flag seat recorded without the level its id spells as the same seat', () => {
+    const ref = session('seats-reconcile-id-level');
+    writeFileSync(
+      join(sessionDir(ref.projectDir, ref.sessionId), SEATS_FILE),
+      `${JSON.stringify(idLevelLegacy, null, 2)}\n`,
+    );
+
+    expect(reconcileSeatIdentities(ref, idLevelConfig)).toEqual([]);
+    expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(idLevelConfig));
+  });
+
+  it('reports an effort flag that overrides the level a recorded id spells', () => {
+    const current = seatIdentitiesFromConfig(
+      makeConfig({
+        planner: idLevelSeat,
+        implementer: { ...idLevelSeat, effort: 'low' },
+        reviewer: idLevelSeat,
+      }),
+    );
+
+    expect(seatIdentityChanges(idLevelLegacy, current).map((change) => change.seat)).toEqual([
+      'build',
+    ]);
   });
 
   it('hands the ids of both sides to whoever names the change', () => {
