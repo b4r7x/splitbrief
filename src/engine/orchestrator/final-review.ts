@@ -454,11 +454,12 @@ export async function runFinalReviewPhase(opts: {
     };
   };
   publishReviewEvent({ bus, phase: state.phase }, { type: 'review_started', ...reviewEvent });
+  const choosingChecks = opts.reviewChecks === true && resolveEndChecks(config);
   bus.publish({
     type: 'review_step',
     ts: Date.now(),
     phase: state.phase,
-    step: opts.reviewChecks === true && resolveEndChecks(config) ? 'choosing-checks' : 'verdict',
+    step: choosingChecks ? 'choosing-checks' : 'verdict',
   });
   if (opts.signal?.aborted) return interrupted();
   if (opts.scope !== 'task') {
@@ -524,7 +525,9 @@ export async function runFinalReviewPhase(opts: {
       }
       reviewChecksSection = checks.section;
       dischargedReviewCommands = checks.discharged;
-      bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verdict' });
+      if (choosingChecks) {
+        bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verdict' });
+      }
     }
     // A run planned on one session agreed on its plan; only an older run wrote a spec.
     const spec = readSpecFileOrEmpty(
