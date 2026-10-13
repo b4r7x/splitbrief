@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { formatSeatChangeIdentities } from '../../../../core/crew/identity.js';
 import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import type { EvidenceLedger } from '../../../../core/schemas/evidence.js';
 import type { RecoveryAction, RecoveryReason } from '../../../../core/schemas/enums.js';
@@ -66,28 +65,19 @@ function buildRecovery(
   const recoveryEvents = events.filter(
     (event) => event.type.startsWith('recovery_') || event.type === 'seat_switched',
   );
-  const loggedSwitches = recoveryEvents.filter((event) => event.type === 'seat_switched');
+  const loggedSwitchIds = new Set(
+    recoveryEvents.filter((event) => event.type === 'seat_switched').map((event) => event.switchId),
+  );
   for (const record of state.seatSwitches ?? []) {
-    const loggedIndex = loggedSwitches.findIndex((event) => {
-      const identities =
-        typeof event.from === 'object' && typeof event.to === 'object'
-          ? formatSeatChangeIdentities(event.from, event.to)
-          : { from: event.from, to: event.to };
-      return (
-        event.seat === record.seat &&
-        event.configRevision === record.configRevision &&
-        event.auto === record.auto &&
-        event.cause === record.cause &&
-        identities.from === record.from &&
-        identities.to === record.to
-      );
+    if (record.switchId !== undefined && loggedSwitchIds.has(record.switchId)) continue;
+    recoveryEvents.push({
+      type: 'seat_switched',
+      ...record,
+      from: record.fromSeat ?? record.from,
+      to: record.toSeat ?? record.to,
     });
-    if (loggedIndex >= 0) {
-      loggedSwitches.splice(loggedIndex, 1);
-    } else {
-      recoveryEvents.push({ type: 'seat_switched', ...record });
-    }
   }
+  recoveryEvents.sort((left, right) => Date.parse(left.ts) - Date.parse(right.ts));
   const selectedActions: RecoverySelectedAction[] = recoveryEvents
     .filter(isSelectedActionEvent)
     .map((event) => ({

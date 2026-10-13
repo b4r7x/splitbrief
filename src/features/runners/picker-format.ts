@@ -1,4 +1,5 @@
 import { SOFT_SEP } from '../../core/separators.js';
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { countNoun } from '../../utils/pluralize.js';
 import type { ProbeOutcomeKind } from '../../core/discovery/runner-evidence.js';
 import { isCliToolId, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
@@ -75,7 +76,7 @@ export function fallbackInheritanceNotice(
   input: Readonly<{ slot: PickerSlot; role: SeatPickerRole; inherited: boolean }>,
 ): string | undefined {
   return input.slot === 'fallback' && input.role === 'reviewer' && input.inherited
-    ? `REVIEW uses PLAN${SOFT_SEP}saving here gives REVIEW its own seat`
+    ? `${CREW_SEAT_LABELS.review} ${PLANNER_INHERITANCE.mark}${SOFT_SEP}saving here gives REVIEW its own seat`
     : undefined;
 }
 

@@ -127,6 +127,7 @@ interface ScreenScenarioInput {
 const HOME_SCENARIOS: readonly ScreenScenarioInput[] = [
   { id: 'home-empty', title: 'Home · empty project' },
   { id: 'home-no-config', title: 'Home · no config' },
+  { id: 'home-opencode-routes', title: 'Home · same model on different OpenCode routes' },
   { id: 'home-reviewer', title: 'Home · reviewer seat configured' },
   { id: 'home-floor-collapsed', title: 'Home · one-token reviewer' },
   { id: 'home-cold', title: 'Home · detection still cold' },
@@ -3075,6 +3076,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     checkpointTitle: 'Settings ready',
     scenarios: [
       { id: 'overlay-settings', title: 'Overlay · settings', marker: 'Settings' },
+      {
+        id: 'overlay-settings-opencode-routes',
+        title: 'Overlay · settings · same model on different OpenCode routes',
+        marker: 'Fallback',
+      },
       {
         id: 'overlay-settings-crew-full',
         title: 'Overlay · settings · full crew',

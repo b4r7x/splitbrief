@@ -75,7 +75,7 @@ describe('formatSeatChangeIdentities', () => {
   };
   const displayName = 'DeepSeek V4.1 Flash';
 
-  it('uses configured model ids when two models share a display name', () => {
+  it('keeps the same routed identity in a seat, candidate, short line and switch', () => {
     expect(
       formatSeatChangeIdentities({ seat: from, displayName }, { seat: to, displayName }),
     ).toEqual({
@@ -83,16 +83,16 @@ describe('formatSeatChangeIdentities', () => {
       to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
     });
     expect(formatSeatIdentity({ seat: from, displayName })).toBe(
-      'OpenCode CLI · DeepSeek V4.1 Flash',
+      'OpenCode CLI · deepseek/deepseek-flash',
     );
     expect(formatSeatIdentity({ seat: to, displayName })).toBe(
-      'OpenCode CLI · DeepSeek V4.1 Flash · high',
+      'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
     );
     expect(formatSeatCandidateIdentity(to, displayName)).toBe(
-      'OpenCode CLI · DeepSeek V4.1 Flash · high',
+      'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
     );
     const shortIdentity = formatShortSeatIdentity({ seat: to, displayName });
-    expect(shortIdentity).toBe('DeepSeek V4.1 Flash');
+    expect(shortIdentity).toBe('opencode-go/deepseek-v4.1-flash');
     expect(shortIdentity).not.toContain('high');
   });
 
@@ -115,8 +115,8 @@ describe('formatSeatChangeIdentities', () => {
         { seat: openCodeMax, displayName: 'GPT-5.6 Luna' },
       ),
     ).toEqual({
-      from: 'OpenCode CLI · DeepSeek V4.1 Flash',
-      to: 'OpenCode CLI · GPT-5.6 Luna · max',
+      from: 'OpenCode CLI · deepseek/deepseek-flash',
+      to: 'OpenCode CLI · openai/gpt-5.6-luna · max',
     });
   });
 
@@ -127,8 +127,8 @@ describe('formatSeatChangeIdentities', () => {
         { seat: { ...from, variant: 'high' }, displayName },
       ),
     ).toEqual({
-      from: 'OpenCode CLI · DeepSeek V4.1 Flash',
-      to: 'OpenCode CLI · DeepSeek V4.1 Flash · high',
+      from: 'OpenCode CLI · deepseek/deepseek-flash',
+      to: 'OpenCode CLI · deepseek/deepseek-flash · high',
     });
   });
 
@@ -163,8 +163,8 @@ describe('formatSeatChangeIdentities', () => {
         { seat: { ...from, variant: 'high' }, displayName },
       ),
     ).toEqual({
-      from: 'OpenCode CLI · DeepSeek V4.1 Flash',
-      to: 'OpenCode CLI · DeepSeek V4.1 Flash · high',
+      from: 'OpenCode CLI · deepseek/deepseek-flash',
+      to: 'OpenCode CLI · deepseek/deepseek-flash · high',
     });
   });
 
@@ -246,7 +246,7 @@ describe('formatSeatCandidateIdentity', () => {
 
   it('reads candidate axes through the tool effort channel', () => {
     expect(formatSeatCandidateIdentity({ ...openCodeMax, effort: 'low' }, 'GPT-5.6 Luna')).toBe(
-      'OpenCode CLI · GPT-5.6 Luna · max',
+      'OpenCode CLI · openai/gpt-5.6-luna · max',
     );
   });
 
@@ -256,6 +256,48 @@ describe('formatSeatCandidateIdentity', () => {
 });
 
 describe('formatSeatIdentity', () => {
+  it('keeps the route when a narrow row must drop the tool label', () => {
+    const identity = formatSeatIdentity({
+      seat: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    });
+    expect(cutSeatIdentity(identity, 28)).toBe('deepseek/deepseek-flash');
+    expect(cutSeatIdentity(`${PLANNER_INHERITANCE.mark} · ${identity}`, 35)).toBe(
+      '= PLAN · deepseek/deepseek-flash',
+    );
+  });
+
+  it('keeps the route and effort when the sidebar needs two identity rows', () => {
+    const identity = formatSeatIdentity({
+      seat: {
+        kind: 'cli',
+        tool: 'opencode',
+        model: 'opencode-go/deepseek-v4.1-flash',
+        variant: 'high',
+      },
+    });
+    expect(wrapSeatIdentity(identity, 35)).toEqual([
+      'OpenCode CLI · high',
+      'opencode-go/deepseek-v4.1-flash',
+    ]);
+  });
+  it('names each OpenCode provider route even when it is the only displayed seat', () => {
+    const routes = [
+      'deepseek/deepseek-flash',
+      'opencode-go/deepseek-v4.1-flash',
+      'ollama-cloud/deepseek-v4.1-flash',
+    ];
+    const identities = routes.map((model) =>
+      formatSeatIdentity({
+        seat: { kind: 'cli', tool: 'opencode', model },
+        displayName: 'DeepSeek V4.1 Flash',
+      }),
+    );
+    expect(identities).toEqual(routes.map((route) => `OpenCode CLI · ${route}`));
+    expect(new Set(identities).size).toBe(routes.length);
+    expect(formatSeatIdentity({ seat: { tool: 'opencode', model: routes[0], axes: [] } })).toBe(
+      identities[0],
+    );
+  });
   it('names the tool and the model, separated once', () => {
     const identity = formatSeatIdentity({ seat: planner });
 
@@ -373,7 +415,7 @@ describe('formatSeatIdentity', () => {
 
   it("states an opencode seat's variant as the config spells it", () => {
     expect(formatSeatIdentity({ seat: openCodeMax })).toBe(
-      `OpenCode CLI · GPT-5.6 Luna · ${openCodeMax.variant}`,
+      `OpenCode CLI · openai/gpt-5.6-luna · ${openCodeMax.variant}`,
     );
   });
 
@@ -509,7 +551,7 @@ describe('formatShortSeatIdentity', () => {
 
   it('carries no axis word, in the suffix or inside the model word', () => {
     expect(formatShortSeatIdentity({ seat: cursorMultiAxis })).toBe('Opus 5');
-    expect(formatShortSeatIdentity({ seat: openCodeMax })).toBe('GPT-5.6 Luna');
+    expect(formatShortSeatIdentity({ seat: openCodeMax })).toBe('openai/gpt-5.6-luna');
   });
 
   it('peels the catalog name of a cursor seat the same way the full form does', () => {
@@ -943,7 +985,7 @@ describe('kind-aware seat identity', () => {
 
   it('keeps a CLI seat under its catalog display name', () => {
     expect(formatSeatIdentity({ seat: openCodeMax })).toBe(
-      `OpenCode CLI · GPT-5.6 Luna · ${openCodeMax.variant}`,
+      `OpenCode CLI · openai/gpt-5.6-luna · ${openCodeMax.variant}`,
     );
   });
 

@@ -409,7 +409,7 @@ describe('activity batch runner identity', () => {
       events: [activity({ backendKind: 'cli', runnerName: 'claude', model: 'sonnet' })],
     });
 
-    expect(model.headerRunner).toBe('Claude Code CLI · Sonnet 5');
+    expect(model.headerRunner).toBe('Claude Code CLI · Sonnet 5.5');
   });
 
   it('spells an API call model pretty when its name is a CLI alias, never with the CLI label', () => {

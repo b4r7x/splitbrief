@@ -11,7 +11,7 @@ import type { ProviderId } from '../../../src/core/schemas/enums.js';
  * row, not double it — and one no bundled row answers to, which the pin must paint as its own row.
  */
 export const PINNED_CLAUDE_CODE_OPTIONS: readonly ClaudeCodeModelOption[] = [
-  { id: 'claude-sonnet-5', displayName: 'Pinned Sonnet' },
+  { id: 'claude-sonnet-5-5', displayName: 'Pinned Sonnet' },
   { id: 'pinned-opus-probe', displayName: 'Pinned Probe' },
 ];
 

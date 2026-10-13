@@ -828,6 +828,7 @@ export function commitSeatSwitch(
   choice: Readonly<{ auto: boolean; configRevision: string }>,
 ): ApplySwitchSeatResult {
   const { issue, seat, candidate, from, switchedConfig } = plan;
+  const switchId = randomUUID();
   const parsedCause = SeatAccountCauseSchema.safeParse(
     issue.reason === 'runner-unauthenticated' ? 'auth' : recoveryFactString(issue.facts, 'cause'),
   );
@@ -857,8 +858,11 @@ export function commitSeatSwitch(
     state,
     {
       type: 'RECORD_SEAT_SWITCH',
+      switchId,
       seat,
       ...formatSeatChangeIdentities(from, candidate),
+      fromSeat: from,
+      toSeat: candidate,
       ...switchCause,
       auto: choice.auto,
       configRevision: choice.configRevision,
@@ -868,6 +872,7 @@ export function commitSeatSwitch(
   publishSeatSwitched(
     { bus: opts.bus, phase: state.phase },
     {
+      switchId,
       seat,
       from,
       to: candidate,

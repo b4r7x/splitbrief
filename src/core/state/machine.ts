@@ -953,9 +953,12 @@ export function transition(
         seatSwitches: [
           ...(state.seatSwitches ?? []),
           {
+            ...(action.switchId !== undefined && { switchId: action.switchId }),
             seat: action.seat,
             from: action.from,
             to: action.to,
+            ...(action.fromSeat !== undefined && { fromSeat: action.fromSeat }),
+            ...(action.toSeat !== undefined && { toSeat: action.toSeat }),
             cause: action.cause,
             ...(action.accountCause !== undefined && { accountCause: action.accountCause }),
             ...(action.headline !== undefined && { headline: action.headline }),

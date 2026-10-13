@@ -435,7 +435,9 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
       stateId: 'missing-binary',
       remediation: 'Install claude-code, then run runner readiness again.',
     });
-    expect(doctor.check('runners.planner.configured')?.summary).toContain('Planner claude-code');
+    expect(doctor.check('runners.planner.configured')?.summary).toContain(
+      'Planner Claude Code CLI',
+    );
     expect(doctor.check('runners.availability.implementer.default')?.severity).toBe('ok');
 
     const human = await splitbrief(target, ['doctor']);
@@ -445,7 +447,7 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
       'blocker runners.cli.claude-code.readiness: Claude Code CLI readiness is unavailable.',
     );
     expect(human.stdout).toContain('Fix: Install claude-code, then run runner readiness again.');
-    expect(human.stdout).toContain('Planner claude-code');
+    expect(human.stdout).toContain('Planner Claude Code CLI');
     expect(existsSync(sessionsRoot(target.projectDir))).toBe(false);
   });
 });

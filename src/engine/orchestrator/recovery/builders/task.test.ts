@@ -342,7 +342,7 @@ describe('buildSeatDownIssue', () => {
       },
     });
     expect(issue.switchSeat?.auto).toEqual({ candidate: fallback, configRevision: 'revision' });
-    expect(issue.facts?.fallback).toBe('Claude Code CLI · Sonnet 5');
+    expect(issue.facts?.fallback).toBe('Claude Code CLI · Sonnet 5.5');
   });
 
   it('names the automatic switch already used in this run and offers no automatic intent', () => {

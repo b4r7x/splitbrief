@@ -3,6 +3,15 @@ import { getRunnerDisplayName, getRunnerModelName } from '../config/accessors/ru
 import { resolveImplementerProfiles } from '../config/accessors/implementer-profiles.js';
 import { configuredReviewerSeat } from '../config/accessors/reviewer-seat.js';
 import type { RunnerKind } from '../schemas/enums.js';
+import { seatIdsOf } from '../crew/identity.js';
+import type { SpecMetadata } from '../paths-io.js';
+
+export function specMetadataOf(config: Config): SpecMetadata {
+  return {
+    planner: seatIdsOf(config.planner),
+    implementer: seatIdsOf(resolveImplementerProfiles(config).defaultProfile.config),
+  };
+}
 
 export interface SeatIdentity {
   plannerTool: string;

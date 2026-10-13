@@ -49,6 +49,19 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
 });
 
 describe('parseEngineEvent', () => {
+  it('reads recorded in-process resumes and restart events from older logs', () => {
+    const resumed = { type: 'workflow_resumed', ts: 1, phase: 'implementing' };
+    expect(parseEngineEvent(resumed)).toEqual(resumed);
+    expect(parseEngineEvent({ ...resumed, inProcess: true })).toEqual({
+      ...resumed,
+      inProcess: true,
+    });
+    const held = { ...resumed, inProcess: true, resumedAt: 0 };
+    expect(parseEngineEvent(held)).toEqual(held);
+    expect(parseEngineEvent({ ...resumed, inProcess: 'true' })).toBeNull();
+    expect(parseEngineEvent({ ...held, resumedAt: '0' })).toBeNull();
+  });
+
   it('round-trips a drift_report with findings', () => {
     const event = {
       type: 'drift_report',
@@ -831,31 +844,36 @@ describe('parseEngineEvent', () => {
     },
   );
 
-  it('round-trips a seat switch naming the seat it left and the seat it moved to', () => {
-    const parsed = parseEngineEvent({
-      type: 'seat_switched',
-      ts: 1,
-      phase: 'implementing',
-      seat: 'build',
-      from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
-      to: { tool: 'claude-code', model: 'claude-sonnet-4' },
-      cause: 'runner-usage-limit',
-      auto: true,
-      configRevision: 'abc123',
-    });
-
-    expect(parsed).toEqual(
-      expect.objectContaining({
+  it.each([undefined, 'b8b5c54f-97b8-47e0-8d19-30f7e671c972'])(
+    'round-trips a seat switch with switch id %s',
+    (switchId) => {
+      const parsed = parseEngineEvent({
         type: 'seat_switched',
+        ...(switchId !== undefined && { switchId }),
+        ts: 1,
+        phase: 'implementing',
         seat: 'build',
         from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
         to: { tool: 'claude-code', model: 'claude-sonnet-4' },
         cause: 'runner-usage-limit',
         auto: true,
         configRevision: 'abc123',
-      }),
-    );
-  });
+      });
+
+      expect(parsed?.type === 'seat_switched' && parsed.switchId).toBe(switchId);
+      expect(parsed).toEqual(
+        expect.objectContaining({
+          type: 'seat_switched',
+          seat: 'build',
+          from: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+          to: { tool: 'claude-code', model: 'claude-sonnet-4' },
+          cause: 'runner-usage-limit',
+          auto: true,
+          configRevision: 'abc123',
+        }),
+      );
+    },
+  );
 
   it('rejects a seat switch that names no seat to move to', () => {
     expect(

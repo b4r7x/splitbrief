@@ -58,8 +58,8 @@ describe('buildArtifactExcerpt — the document itself', () => {
 
   it('strips the frontmatter SPLITBRIEF prepends to persisted artifacts', () => {
     const text = `${buildSpecFrontmatter({
-      plannerTool: 'claude-code',
-      implementerTool: 'codex',
+      planner: { tool: 'claude-code' },
+      implementer: { tool: 'codex' },
     })}# Plan\n\nBody.\n`;
     const result = buildArtifactExcerpt(text, PLAN_FILE);
 

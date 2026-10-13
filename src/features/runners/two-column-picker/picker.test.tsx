@@ -73,32 +73,32 @@ describe('TwoColumnPicker', () => {
     {
       cols: 80,
       rows: 24,
-      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat',
+      label: 'REVIEW = PLAN · saving here gives REVIEW its own seat',
       labelRows: 1,
     },
     {
       cols: 60,
       rows: 18,
-      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
+      label: 'REVIEW = PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
       labelRows: 2,
     },
     {
       cols: 80,
       rows: 24,
-      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
+      label: 'REVIEW = PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
       labelRows: 1,
     },
     {
       cols: 120,
       rows: 40,
-      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat',
+      label: 'REVIEW = PLAN · saving here gives REVIEW its own seat',
       labelRows: 0,
     },
     {
       cols: 120,
       rows: 40,
-      label: 'REVIEW uses PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
-      labelRows: 1,
+      label: 'REVIEW = PLAN · saving here gives REVIEW its own seat · ⠋ refreshing…',
+      labelRows: 0,
     },
   ])(
     'keeps the title, complete step label and footer visible at $cols × $rows ($label)',

@@ -5,13 +5,14 @@ import { PLAN_FILE, TASKS_FILE } from '../../core/paths.js';
 import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeAndPublishPlanArtifacts } from './artifact-write.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { specMetadataOf } from '../../core/providers/seat-identity.js';
+import { formatSeatIdentity } from '../../core/crew/identity.js';
 
 const SESSION_ID = 'artifact-write-test';
 const METADATA: SpecMetadata = {
-  plannerTool: 'claude-code',
-  plannerModel: 'opus',
-  implementerTool: 'codex',
-  implementerModel: 'gpt-5',
+  planner: { tool: 'claude-code', model: 'opus' },
+  implementer: { tool: 'codex', model: 'gpt-5' },
 };
 
 let tempDir: string | undefined;
@@ -31,6 +32,37 @@ const TASKS = Array.from({ length: 3 }, (_, index) =>
 );
 
 describe('writeAndPublishPlanArtifacts', () => {
+  it('writes the same kind-qualified identities to both plan artifacts', () => {
+    const config = makeConfig({
+      planner: {
+        kind: 'api',
+        provider: 'opencode',
+        model: 'sonnet',
+        apiBase: 'http://localhost:11434/v1',
+      },
+      implementer: { kind: 'api', provider: 'claude-code', model: 'sonnet' },
+    });
+    const projectDir = fixtureDir();
+    const { bus } = makeBusRecorder();
+    writeAndPublishPlanArtifacts({
+      projectDir,
+      sessionId: SESSION_ID,
+      bus,
+      phase: 'planning',
+      metadata: specMetadataOf(config),
+      planMarkdown: '# Plan\n\nSteps.',
+      tasks: TASKS,
+    });
+    for (const filename of [PLAN_FILE, TASKS_FILE]) {
+      const content = readSpecFile({ projectDir, sessionId: SESSION_ID }, filename);
+      expect(content).toContain(`planner: ${formatSeatIdentity({ seat: config.planner })}\n`);
+      expect(content).toContain(
+        `implementer: ${formatSeatIdentity({ seat: config.implementer })}\n`,
+      );
+      expect(content).not.toContain('CLI');
+    }
+  });
+
   it('writes plan.md and tasks.md, then publishes one card for each', () => {
     const projectDir = fixtureDir();
     const { bus, events } = makeBusRecorder();

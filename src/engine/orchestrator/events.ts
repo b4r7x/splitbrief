@@ -386,7 +386,15 @@ export function publishSeatSwitched(
   ctx: BusContext,
   opts: Pick<
     EngineEventOf<'seat_switched'>,
-    'seat' | 'from' | 'to' | 'cause' | 'auto' | 'configRevision' | 'accountCause' | 'headline'
+    | 'switchId'
+    | 'seat'
+    | 'from'
+    | 'to'
+    | 'cause'
+    | 'auto'
+    | 'configRevision'
+    | 'accountCause'
+    | 'headline'
   >,
 ): void {
   ctx.bus.publish({ type: 'seat_switched', ts: Date.now(), phase: ctx.phase, ...opts });

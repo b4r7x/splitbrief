@@ -181,8 +181,8 @@ async function initializeConfiguredDirectWorkflow(
       sessionId: input.sessionId,
     },
     metadata: {
-      plannerTool: 'test-planner',
-      implementerTool: 'configured-direct',
+      planner: { tool: 'test-planner' },
+      implementer: { tool: 'configured-direct' },
     },
     setTrackedState: () => {},
     resumeHolder: { messages: [] },

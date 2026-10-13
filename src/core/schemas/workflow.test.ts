@@ -120,27 +120,36 @@ describe('WorkflowStateSchema v4', () => {
     expect(QueuedMessageSchema.safeParse({ ...old, deliveredMidCall: false }).success).toBe(false);
   });
 
-  it('preserves account details on seat-switch records', () => {
-    const parsed = WorkflowStateSchema.parse({
-      ...state(),
-      seatSwitches: [
-        {
-          seat: 'build',
-          from: 'old seat',
-          to: 'new seat',
-          cause: 'runner-usage-limit',
-          accountCause: 'balance',
-          headline: 'Balance spent on OpenCode CLI',
-          auto: true,
-          configRevision: 'revision',
-          ts: '2026-10-10T12:57:12.126Z',
-        },
-      ],
-    });
+  it.each([undefined, 'b8b5c54f-97b8-47e0-8d19-30f7e671c972'])(
+    'preserves seat-switch details with switch id %s',
+    (switchId) => {
+      const parsed = WorkflowStateSchema.parse({
+        ...state(),
+        seatSwitches: [
+          {
+            seat: 'build',
+            ...(switchId !== undefined && { switchId }),
+            from: 'old seat',
+            to: 'new seat',
+            fromSeat: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+            toSeat: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash', variant: 'high' },
+            cause: 'runner-usage-limit',
+            accountCause: 'balance',
+            headline: 'Balance spent on OpenCode CLI',
+            auto: true,
+            configRevision: 'revision',
+            ts: '2026-10-10T12:57:12.126Z',
+          },
+        ],
+      });
 
-    expect(parsed.seatSwitches?.[0]?.accountCause).toBe('balance');
-    expect(parsed.seatSwitches?.[0]?.headline).toBe('Balance spent on OpenCode CLI');
-  });
+      expect(parsed.seatSwitches?.[0]?.switchId).toBe(switchId);
+      expect(parsed.seatSwitches?.[0]?.accountCause).toBe('balance');
+      expect(parsed.seatSwitches?.[0]?.headline).toBe('Balance spent on OpenCode CLI');
+      expect(parsed.seatSwitches?.[0]?.fromSeat?.model).toBe('deepseek/deepseek-flash');
+      expect(parsed.seatSwitches?.[0]?.toSeat?.model).toBe('opencode-go/deepseek-v4.1-flash');
+    },
+  );
 
   it('loads seat-switch records without account details unchanged', () => {
     const record = {

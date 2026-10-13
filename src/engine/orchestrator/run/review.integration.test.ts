@@ -419,7 +419,7 @@ describe('runScheduledReview saved recovery', () => {
       auto: { candidate: fallback },
     });
     expect(halted?.pendingRecovery?.details).toContain(
-      'REVIEW uses PLAN. Switching here gives REVIEW its own seat.',
+      'REVIEW = PLAN. Switching here gives REVIEW its own seat.',
     );
     if (halted === undefined) throw new Error('expected a REVIEW halt');
     const moved = await switchSeatAndPrepareResume({

@@ -19,6 +19,7 @@ import { SPLITBRIEF_DIR, SESSIONS_DIR, SEATS_FILE } from '../paths.js';
 import type { SessionRef } from '../types/session-ref.js';
 import { confinedReadFile, confinedWriteFile } from '../../lib/confined-fs.js';
 import { assertSessionDirConfined } from '../sessions/confinement.js';
+import { loadState } from './persistence.js';
 
 const SeatIdsSchema = z.object({
   tool: z.string(),
@@ -41,6 +42,10 @@ export const SeatIdentitiesSchema = z.object({
 });
 
 export type SeatIdentities = z.infer<typeof SeatIdentitiesSchema>;
+
+const SeatIdentityRecordSchema = SeatIdentitiesSchema.extend({
+  switchCount: z.number().int().nonnegative().optional(),
+});
 
 export type SeatChange = Readonly<{
   seat: CrewSeatId;
@@ -68,23 +73,34 @@ function seatsRelativePath(sessionId: string): string {
   return join(SPLITBRIEF_DIR, SESSIONS_DIR, sessionId, SEATS_FILE);
 }
 
-export function readSeatIdentities(ref: SessionRef): SeatIdentities | null {
+export function readSeatIdentityRecord(
+  ref: SessionRef,
+): z.infer<typeof SeatIdentityRecordSchema> | null {
   const raw = confinedReadFile(ref.projectDir, seatsRelativePath(ref.sessionId));
   if (raw === null) return null;
   try {
-    const parsed = SeatIdentitiesSchema.safeParse(JSON.parse(raw));
+    const parsed = SeatIdentityRecordSchema.safeParse(JSON.parse(raw));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;
   }
 }
 
+export function readSeatIdentities(ref: SessionRef): SeatIdentities | null {
+  const record = readSeatIdentityRecord(ref);
+  if (record === null) return null;
+  const { switchCount: _switchCount, ...seats } = record;
+  return seats;
+}
+
 export function writeSeatIdentities(ref: SessionRef, seats: SeatIdentities): void {
   assertSessionDirConfined(ref.projectDir, ref.sessionId);
+  // Switches append to state before resume records the crew; this count preserves that order.
+  const switchCount = loadState(ref)?.seatSwitches?.length ?? 0;
   confinedWriteFile(
     ref.projectDir,
     seatsRelativePath(ref.sessionId),
-    `${JSON.stringify(seats, null, 2)}\n`,
+    `${JSON.stringify({ ...seats, switchCount }, null, 2)}\n`,
   );
 }
 
@@ -131,13 +147,15 @@ function idsLackKind(ids: NonNullable<SeatIdentities['ids']>): boolean {
  */
 export function reconcileSeatIdentities(ref: SessionRef, config: Config): SeatChange[] {
   const current = seatIdentitiesFromConfig(config);
-  const recorded = readSeatIdentities(ref);
+  const recorded = readSeatIdentityRecord(ref);
   const changes = seatIdentityChanges(recorded, current);
   const missingIds = recorded !== null && recorded.ids === undefined;
   const missingKinds = recorded?.ids !== undefined && idsLackKind(recorded.ids);
+  const switchCount = loadState(ref)?.seatSwitches?.length ?? 0;
+  const orderChanged = recorded !== null && recorded.switchCount !== switchCount;
   // A record written before the ids, or their kinds, were kept gains them without a notice, so
   // the next move is named on both sides.
-  if (changes.length > 0 || missingIds || missingKinds) {
+  if (changes.length > 0 || missingIds || missingKinds || orderChanged) {
     writeSeatIdentities(ref, current);
   }
   return changes;

@@ -46,7 +46,7 @@ describe('runner availability checks', () => {
       id: 'runners.availability.implementer.default',
       severity: 'blocker',
       summary:
-        'Default implementer ollama (qwen3-coder:30b) is not reachable at http://localhost:11434/v1.',
+        'Default implementer Ollama · Qwen3 Coder 30B is not reachable at http://localhost:11434/v1.',
       details: ['Probe: fetch failed'],
       fix: 'Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
       metadata: { availability: 'unavailable', provider: 'ollama' },
@@ -76,7 +76,7 @@ describe('runner availability checks', () => {
       id: 'runners.availability.planner',
       severity: 'blocker',
       summary:
-        'Planner custom-endpoint (some-model) is not reachable at https://api.example.test/v1.',
+        'Planner custom-endpoint · Some Model is not reachable at https://api.example.test/v1.',
       fix: 'Check the custom-endpoint endpoint and network, or configure a different planner, then run `splitbrief doctor` again.',
     });
   });
@@ -94,7 +94,7 @@ describe('runner availability checks', () => {
 
     expect(check).toMatchObject({
       severity: 'blocker',
-      summary: 'Default implementer ollama (qwen3-coder:30b) has no credential configured.',
+      summary: 'Default implementer Ollama · Qwen3 Coder 30B has no credential configured.',
       fix: 'Export CUSTOM_ENDPOINT_API_KEY, or configure a different implementer, then run `splitbrief doctor` again.',
     });
   });
@@ -107,7 +107,7 @@ describe('runner availability checks', () => {
     expect(check).toMatchObject({
       severity: 'blocker',
       summary:
-        'Default implementer ollama (qwen3-coder:30b) answered at http://localhost:11434/v1 but offers no models.',
+        'Default implementer Ollama · Qwen3 Coder 30B answered at http://localhost:11434/v1 but offers no models.',
       metadata: { availability: 'no-models' },
     });
   });
@@ -121,7 +121,7 @@ describe('runner availability checks', () => {
       severity: 'blocker',
       nextAction: 'prepare-runner',
       summary:
-        'Default implementer ollama (qwen3-coder:30b) answered at http://localhost:11434/v1 but does not serve "qwen3-coder:30b".',
+        'Default implementer Ollama · Qwen3 Coder 30B answered at http://localhost:11434/v1 but does not serve "qwen3-coder:30b".',
       fix: 'Select a model ollama serves, or configure a different implementer, then run `splitbrief doctor` again.',
       metadata: { availability: 'missing-model' },
     });
@@ -135,7 +135,7 @@ describe('runner availability checks', () => {
     expect(check).toMatchObject({
       severity: 'blocker',
       summary:
-        'Default implementer ollama (qwen3-coder:30b) did not answer in time at http://localhost:11434/v1.',
+        'Default implementer Ollama · Qwen3 Coder 30B did not answer in time at http://localhost:11434/v1.',
       details: ['Probe: The operation timed out'],
       fix: 'Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
       metadata: { availability: 'timeout' },
@@ -150,7 +150,7 @@ describe('runner availability checks', () => {
     expect(check).toMatchObject({
       severity: 'blocker',
       summary:
-        'Default implementer ollama (qwen3-coder:30b) rejected the configured credential at http://localhost:11434/v1.',
+        'Default implementer Ollama · Qwen3 Coder 30B rejected the configured credential at http://localhost:11434/v1.',
       details: ['Probe: HTTP 401'],
       fix: 'Check the credential for ollama, or configure a different implementer, then run `splitbrief doctor` again.',
       metadata: { availability: 'unauthorized' },
@@ -190,7 +190,7 @@ describe('runner availability checks', () => {
 
     expect(check).toMatchObject({
       severity: 'info',
-      summary: 'Default implementer ollama (qwen3-coder:30b) availability was not probed.',
+      summary: 'Default implementer Ollama · Qwen3 Coder 30B availability was not probed.',
       details: ['Probe: The operation was aborted due to timeout'],
       metadata: { availability: 'not-probed' },
     });
@@ -205,7 +205,7 @@ describe('runner availability checks', () => {
     expect(check).toMatchObject({
       severity: 'ok',
       summary:
-        'Default implementer ollama (qwen3-coder:30b) is available at http://localhost:11434/v1.',
+        'Default implementer Ollama · Qwen3 Coder 30B is available at http://localhost:11434/v1.',
     });
   });
 
@@ -243,7 +243,7 @@ describe('runner availability checks', () => {
       id: 'runners.availability.implementer.spare',
       severity: 'warning',
       summary:
-        'Implementer profile spare ollama (b) is not reachable at http://localhost:11434/v1.',
+        'Implementer profile spare Ollama · B is not reachable at http://localhost:11434/v1.',
     });
   });
 
@@ -272,7 +272,7 @@ describe('runner availability checks', () => {
       severity: 'blocker',
       nextAction: 'prepare-runner',
       summary:
-        'Reviewer custom-endpoint (some-model) is not reachable at https://api.example.test/v1.',
+        'Reviewer custom-endpoint · Some Model is not reachable at https://api.example.test/v1.',
       metadata: { role: 'reviewer' },
     });
     // The reviewer seat names its own runner and never borrows the planner's.

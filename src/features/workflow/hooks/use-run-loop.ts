@@ -139,6 +139,7 @@ export function useRunLoop({
       setQueueHandler,
       consumeBoundaryInterrupt,
       consumeBoundaryPause,
+      getContinuationResumedAt: () => lifecycleStore.get().resumedAt,
     };
     let stateForRun = inlineState;
     // The steer belongs to the first call this re-entry makes; the recovery loop's

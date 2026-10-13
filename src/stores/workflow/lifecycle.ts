@@ -84,7 +84,7 @@ interface InterruptedLifecycleState extends LifecycleBase {
   cancelled: false;
   startedAt: number | null;
   endedAt: null;
-  durationMs: null;
+  durationMs: number | null;
   reason: null;
 }
 
@@ -270,8 +270,11 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
       queuedMessageIds: state.queuedMessageIds,
       phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, event.ts),
       startedAt: state.startedAt ?? event.ts,
-      resumedAt: event.ts,
-      bankedRunMs: bankedAtResume(state),
+      resumedAt: event.resumedAt ?? event.ts,
+      bankedRunMs: bankedAtResume(
+        state,
+        event.inProcess === true ? (event.resumedAt ?? event.ts) : undefined,
+      ),
     });
   }
 
@@ -294,9 +297,13 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
   // signal. The engine publishes it at the moment the continuation prompt parks, so the park is
   // marked here; on the host the stop store owns that state instead.
   if (event.type === 'turn_interrupted') {
-    return markLifecycleInterruptParked(
+    const parked = markLifecycleInterruptParked(
       markLifecycleInterrupted(applyRunningPhase(state, phase, event.ts)),
     );
+    if (event.at === 'boundary' && parked.status === 'interrupted') {
+      return { ...parked, durationMs: parked.durationMs ?? runMsAt(parked, event.ts) };
+    }
+    return parked;
   }
 
   // A spawning runner call is proof the work resumed: it clears an event-set
@@ -394,7 +401,7 @@ export function markLifecyclePaused(state: LifecycleState, ts: number): Lifecycl
     status: 'paused',
     interruptParked: false,
     stall: null,
-    durationMs: runMsAt(state, ts),
+    durationMs: state.durationMs ?? runMsAt(state, ts),
   };
 }
 
@@ -419,7 +426,9 @@ export function markLifecycleInterruptParked(state: LifecycleState): LifecycleSt
 
 export function clearLifecycleInterrupted(state: LifecycleState): LifecycleState {
   if (state.status !== 'interrupted') return state;
-  return { ...state, status: 'running', interruptParked: false };
+  return state.durationMs === null
+    ? { ...state, status: 'running', interruptParked: false, durationMs: null }
+    : { ...state, status: 'paused', interruptParked: false };
 }
 
 // A parked run has no event of its own to un-park it: the next call spawning is the proof that the
@@ -479,10 +488,13 @@ export function runElapsedMs(state: LifecycleState, now: number): number | null 
   return state.startedAt === null ? null : runMsAt(state, now);
 }
 
-// A stopped run already holds its run time. One still running when the next stretch opens — a log
-// whose process died — ran until it last heard from a seat, not until the resume.
-function bankedAtResume(state: LifecycleState): number {
-  return state.durationMs ?? runMsAt(state, state.lastRunnerEventTs ?? state.resumedAt ?? 0);
+// Recorded in-process continuations include the live wait; restarts end the old stretch at its
+// last runner event. A stopped run already holds its frozen duration.
+function bankedAtResume(state: LifecycleState, continuingAt?: number): number {
+  return (
+    state.durationMs ??
+    runMsAt(state, continuingAt ?? state.lastRunnerEventTs ?? state.resumedAt ?? 0)
+  );
 }
 
 function durationFromStart(startedAt: number | null, endedAt: number): number {

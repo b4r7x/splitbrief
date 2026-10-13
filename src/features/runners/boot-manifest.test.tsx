@@ -35,7 +35,7 @@ describe('BootManifest', () => {
     expect(frame).toContain('PLAN');
     expect(frame).toContain('BUILD');
     expect(frame).toContain('REVIEW');
-    expect(frame).toContain(PLANNER_INHERITANCE.sentence);
+    expect(frame).toContain(PLANNER_INHERITANCE.mark);
     expect(frame).toContain('tools');
     expect(frame).toContain('model catalog');
     expect(frame).toContain('model lists');

@@ -449,7 +449,7 @@ describe('usePickerActions', () => {
 
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toContain(CREW_SEAT_LABELS.review);
-      expect(feedbackStore.get().message).toContain(PLANNER_INHERITANCE.sentence);
+      expect(feedbackStore.get().message).toContain(PLANNER_INHERITANCE.mark);
     });
     expect(configStore.get().config?.reviewer).toBeUndefined();
     ui.unmount();

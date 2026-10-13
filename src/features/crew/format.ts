@@ -1,5 +1,4 @@
 import {
-  CREW_IDENTITY_SEPARATOR,
   CREW_LABEL_WIDTH,
   PLANNER_INHERITANCE,
   cutSeatIdentity,
@@ -51,9 +50,7 @@ export function planSeatBlock(
 }
 
 function seatContent(seat: CrewSeat): string {
-  return seat.id === 'review' && seat.source === 'planner'
-    ? `${PLANNER_INHERITANCE.mark}${CREW_IDENTITY_SEPARATOR}${seat.model}`
-    : seat.model;
+  return seat.id === 'review' && seat.source === 'planner' ? PLANNER_INHERITANCE.mark : seat.model;
 }
 
 /** What a crew row shows beside its label, before the row's own width cuts it. */

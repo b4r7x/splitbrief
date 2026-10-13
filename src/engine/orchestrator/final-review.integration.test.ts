@@ -3,7 +3,7 @@ import { plainUserMessage } from '../../core/types/user-input.js';
 import { runPlanningPhase } from './planning/run.js';
 import { createInitialState, transition } from '../../core/state/machine.js';
 import { scriptedTypedCall } from '#testing/helpers/typed-planner.js';
-import { TEST_SINKS } from '#testing/helpers/orchestrator-factories.js';
+import { TEST_METADATA, TEST_SINKS } from '#testing/helpers/orchestrator-factories.js';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -87,12 +87,6 @@ function allTasksDoneState(tasks: Task[], runStartHead: string | null): Workflow
     changedFilesBaseline: { head: runStartHead, fingerprints: {}, runStartChangedFiles: [] },
   };
 }
-
-const TEST_METADATA = {
-  plannerTool: 'claude-code',
-  implementerTool: 'ollama',
-  mode: 'standard',
-} as const;
 
 const SUMMARY_BASE = {
   feature: 'test feature',

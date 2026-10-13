@@ -344,7 +344,7 @@ describe('doctor command', () => {
 
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(output).toContain(
-      'blocker runners.availability.implementer.default: Default implementer ollama (qwen2.5-coder:7b) is not reachable at http://localhost:11434/v1.',
+      'blocker runners.availability.implementer.default: Default implementer Ollama · Qwen2.5 Coder 7B is not reachable at http://localhost:11434/v1.',
     );
     expect(output).toContain(
       'Fix: Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
@@ -388,19 +388,24 @@ describe('doctor command', () => {
     );
 
     const planner = checks.find((check) => check.id === 'runners.planner.configured');
-    expect(planner?.summary).toContain('claude-code (auto)');
+    expect(planner?.summary).toBe('Planner Claude Code CLI · auto configured.');
     expect(planner?.modelSelection).toBe('auto');
 
     const implementer = checks.find((check) => check.id === 'runners.implementer.default');
-    expect(implementer?.summary).toContain('ollama (qwen2.5-coder:7b)');
+    expect(implementer?.summary).toBe('BUILD Ollama · Qwen2.5 Coder 7B configured.');
   });
 
   it.each([
-    { label: 'an explicit model', model: '\n  model: opus', expected: 'explicit' },
-    { label: 'no model key', model: '', expected: 'unset' },
+    {
+      label: 'an explicit model',
+      model: '\n  model: opus',
+      expected: 'explicit',
+      identity: 'Opus 5.5',
+    },
+    { label: 'no model key', model: '', expected: 'unset', identity: 'auto' },
   ])(
     'publishes $label as a JSON model selection distinct from auto',
-    async ({ model, expected }) => {
+    async ({ model, expected, identity }) => {
       initGitRepo(tmp);
       const checks = await doctorJsonChecks(
         validConfigYaml().replace('  tool: claude-code', `  tool: claude-code${model}`),
@@ -408,7 +413,7 @@ describe('doctor command', () => {
 
       const planner = checks.find((check) => check.id === 'runners.planner.configured');
       expect(planner?.modelSelection).toBe(expected);
-      expect(planner?.summary).not.toContain('(auto)');
+      expect(planner?.summary).toBe(`Planner Claude Code CLI · ${identity} configured.`);
     },
   );
 

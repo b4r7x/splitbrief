@@ -53,9 +53,7 @@ function selectedSkillsText(skills: {
 }
 
 function seatIdentity(seat: CrewSeat): string {
-  return seat.id === 'review' && seat.source === 'planner'
-    ? PLANNER_INHERITANCE.sentence
-    : seat.model;
+  return seat.id === 'review' && seat.source === 'planner' ? PLANNER_INHERITANCE.mark : seat.model;
 }
 
 export function HomeSeatBlock({ rows, width }: { rows: number; width: number }) {

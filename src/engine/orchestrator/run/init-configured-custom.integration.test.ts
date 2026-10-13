@@ -265,8 +265,8 @@ describe('configured custom workflow runtime', () => {
               sessionId,
             },
             metadata: {
-              plannerTool: 'test-planner',
-              implementerTool: 'configured-output',
+              planner: { tool: 'test-planner' },
+              implementer: { tool: 'configured-output' },
             },
             setTrackedState: () => {},
             resumeHolder: { messages: [] },
@@ -393,8 +393,8 @@ describe('configured custom workflow runtime', () => {
           sessionId,
         },
         metadata: {
-          plannerTool: 'configured planner',
-          implementerTool: 'configured implementer',
+          planner: { tool: 'configured planner' },
+          implementer: { tool: 'configured implementer' },
         },
         setTrackedState: () => {},
         resumeHolder: { messages: [] },

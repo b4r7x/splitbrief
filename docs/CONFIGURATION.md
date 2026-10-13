@@ -111,7 +111,7 @@ On the same tool, no model or the seat's resolved model counts as the same ident
 A typed custom model saves `fallback.model` only. It does not add to the seat's `customModels`.
 The entry screen is titled `Custom fallback model · <SEAT>`.
 
-When REVIEW follows PLAN, the picker and custom-model entry screen show `REVIEW uses PLAN · saving here gives REVIEW its own seat`.
+When REVIEW follows PLAN, the picker and custom-model entry screen show `REVIEW = PLAN · saving here gives REVIEW its own seat`.
 Saving copies PLAN's runner into a new `reviewer` block with the new fallback.
 Clearing it from REVIEW when PLAN has a fallback does the same, with no fallback in the new block. PLAN stays unchanged.
 Choosing None when PLAN has no fallback keeps REVIEW inherited.

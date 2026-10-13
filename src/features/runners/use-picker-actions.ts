@@ -473,7 +473,7 @@ export function usePickerActions(opts: {
         if (selection.kind === 'inherit-planner') {
           await commit(
             clearReviewerSeat(config),
-            `${catalog.roleLabel} set to: ${PLANNER_INHERITANCE.sentence}`,
+            `${catalog.roleLabel} set to: ${PLANNER_INHERITANCE.mark}`,
           );
           return;
         }

@@ -20,7 +20,7 @@ import { REVIEW_CYCLE_CAP } from '../pipeline-spec/review.js';
 import { BOUNDS } from '../pipeline-spec/bounds.js';
 import { CONSULT_REASONS, CONSULT_SEATS, ConsultAnswerSchema } from './consult.js';
 import { TokenUsageSchema, TaskTokenUsageSchema } from './tokens.js';
-import { RecoveryIssueSchema } from './recovery/schemas.js';
+import { RecoveryIssueSchema, SeatSwapCandidateSchema } from './recovery/schemas.js';
 import { StepCutSchema, StepRefSchema } from './run-step.js';
 import { CREW_SEAT_IDS } from '../crew/identity.js';
 import { topoSort } from '../state/topo-sort.js';
@@ -244,9 +244,12 @@ export const SeatWaitSchema = z.object({
 });
 
 export const SeatSwitchRecordSchema = z.object({
+  switchId: z.string().optional(),
   seat: z.enum(CREW_SEAT_IDS),
   from: z.string(),
   to: z.string(),
+  fromSeat: SeatSwapCandidateSchema.optional(),
+  toSeat: SeatSwapCandidateSchema.optional(),
   cause: RecoveryReasonSchema,
   accountCause: SeatAccountCauseSchema.optional(),
   headline: z.string().optional(),

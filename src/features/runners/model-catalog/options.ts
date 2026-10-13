@@ -125,7 +125,7 @@ export function inheritPlannerOption(
 ): InheritPlannerOption {
   return {
     id: INHERIT_PLANNER_OPTION_ID,
-    displayName: PLANNER_INHERITANCE.sentence,
+    displayName: PLANNER_INHERITANCE.mark,
     kind: 'inherit-planner',
     roles: input.planner.roles,
     modelPolicy: 'none',

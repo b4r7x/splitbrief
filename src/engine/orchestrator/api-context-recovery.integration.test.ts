@@ -738,7 +738,7 @@ describe('a REVIEW seat out of quota', () => {
     expect(issue?.details).toEqual([
       `OpenAI Codex CLI reported: ${CODEX_LIMIT}`,
       'no fallback set',
-      'REVIEW uses PLAN. Switching here gives REVIEW its own seat.',
+      'REVIEW = PLAN. Switching here gives REVIEW its own seat.',
     ]);
     expect(issue?.message).toContain('hit its usage limit');
     expect(issue?.message).not.toContain('codex login');

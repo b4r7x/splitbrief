@@ -103,7 +103,7 @@ export function BootManifest() {
             </Box>
             <Box flexGrow={1} flexShrink={1}>
               <Text color={inheritRow ? t.textDim : t.text} wrap="truncate-end">
-                {inheritRow ? PLANNER_INHERITANCE.sentence : seat.model}
+                {inheritRow ? PLANNER_INHERITANCE.mark : seat.model}
               </Text>
             </Box>
             {!inheritRow && (

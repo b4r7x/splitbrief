@@ -1,5 +1,6 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
+import { formatSeatIdentity } from '../../crew/identity.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
@@ -10,7 +11,7 @@ import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { runnerAvailabilityCheck, type RunnerAvailabilityFact } from './availability.js';
 import { configuredCliReadinessChecks } from './cli-readiness.js';
-import { formatRunner, modelSelection } from './runner-label.js';
+import { modelSelection } from './runner-label.js';
 import { buildRunnerTrustBoundaryChecks } from './runner-trust-boundary.js';
 
 export function buildRunnerChecks(
@@ -51,7 +52,7 @@ export function buildRunnerChecks(
     checks.push({
       id: 'runners.implementer.default',
       severity: 'info',
-      summary: `BUILD${defaultProfile.name === 'default' ? '' : ` (${defaultProfile.name})`} ${formatRunner(defaultProfile.config)} configured.`,
+      summary: `BUILD${defaultProfile.name === 'default' ? '' : ` (${defaultProfile.name})`} ${formatSeatIdentity({ seat: defaultProfile.config })} configured.`,
       details: [
         ...(resolved.profiles.length > 1
           ? [`Build choices: ${resolved.profiles.map((profile) => profile.name).join(', ')}`]
@@ -125,20 +126,21 @@ function buildAvailabilityChecks(
       case 'planner':
         return runnerAvailabilityCheck({
           fact,
-          label: `Planner ${formatRunner(config.planner)}`,
+          label: `Planner ${formatSeatIdentity({ seat: config.planner })}`,
           isDefaultImplementer: false,
         });
       case 'reviewer':
         return runnerAvailabilityCheck({
           fact,
-          label: `Reviewer ${formatRunner(resolveReviewerRunner(config).runner)}`,
+          label: `Reviewer ${formatSeatIdentity({ seat: resolveReviewerRunner(config).runner })}`,
           isDefaultImplementer: false,
         });
       case 'implementer': {
         const profileName = fact.slot.profile;
         const profile = profiles.find((candidate) => candidate.name === profileName);
         const isDefault = profile?.isDefault === true;
-        const runner = profile === undefined ? '' : ` ${formatRunner(profile.config)}`;
+        const runner =
+          profile === undefined ? '' : ` ${formatSeatIdentity({ seat: profile.config })}`;
         return runnerAvailabilityCheck({
           fact,
           label: isDefault
@@ -161,7 +163,7 @@ function buildWatchdogTimeoutChecks(
   checks.push(
     ...watchdogTimeoutCheck({
       id: 'runners.planner.timeout-disables-watchdog',
-      label: `Planner ${formatRunner(config.planner)}`,
+      label: `Planner ${formatSeatIdentity({ seat: config.planner })}`,
       runner: config.planner,
     }),
   );
@@ -171,7 +173,7 @@ function buildWatchdogTimeoutChecks(
     checks.push(
       ...watchdogTimeoutCheck({
         id: 'runners.reviewer.timeout-disables-watchdog',
-        label: `Reviewer ${formatRunner(reviewer.runner)}`,
+        label: `Reviewer ${formatSeatIdentity({ seat: reviewer.runner })}`,
         runner: reviewer.runner,
       }),
     );
@@ -182,8 +184,8 @@ function buildWatchdogTimeoutChecks(
       ...watchdogTimeoutCheck({
         id: 'runners.implementer.timeout-disables-watchdog',
         label: profile.isDefault
-          ? `Default implementer ${formatRunner(profile.config)}`
-          : `Implementer profile ${profile.name} ${formatRunner(profile.config)}`,
+          ? `Default implementer ${formatSeatIdentity({ seat: profile.config })}`
+          : `Implementer profile ${profile.name} ${formatSeatIdentity({ seat: profile.config })}`,
         runner: profile.config,
       }),
     );
@@ -251,7 +253,7 @@ function plannerCheck(runner: Config['planner']): ReadinessCheck {
   return {
     id: 'runners.planner.configured',
     severity: 'ok',
-    summary: `${formatRoleLabel('planner')} ${formatRunner(runner)} configured.`,
+    summary: `${formatRoleLabel('planner')} ${formatSeatIdentity({ seat: runner })} configured.`,
     metadata: {
       role: 'planner',
       kind: runner.kind,

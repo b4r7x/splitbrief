@@ -725,9 +725,9 @@ describe('runner-owned catalog resolution', () => {
     const cache = makeModelCacheAccessor({
       claudeCodeOptions: [
         {
-          id: 'claude-sonnet-5',
+          id: 'claude-sonnet-5-5',
           displayName: 'Sonnet',
-          description: 'Sonnet 5 · Balances speed and capability',
+          description: 'Sonnet 5.5 · Balances speed and capability',
         },
       ],
     });
@@ -735,7 +735,7 @@ describe('runner-owned catalog resolution', () => {
     const rows = resolveModelCatalog('claude-code', { cache });
 
     expect(rows.find((row) => row.selectionId === 'sonnet')).toMatchObject({
-      displayName: 'Sonnet 5',
+      displayName: 'Sonnet 5.5',
       detail: 'Balances speed and capability',
     });
   });
@@ -833,10 +833,10 @@ describe('runner-owned catalog resolution', () => {
         anthropic: {
           id: 'anthropic',
           models: {
-            'claude-haiku-4-5': {
-              id: 'claude-haiku-4-5',
-              name: 'Claude Haiku 4.5 (latest)',
-              limit: { context: 200_000 },
+            'claude-haiku-5-5': {
+              id: 'claude-haiku-5-5',
+              name: 'Claude Haiku 5.5 (latest)',
+              limit: { context: 1_000_000 },
             },
           },
         },
@@ -845,26 +845,26 @@ describe('runner-owned catalog resolution', () => {
 
     const [recovered] = resolveModelCatalog('claude-code', {
       cache,
-      configuredSelectionId: 'claude-haiku-4-5',
+      configuredSelectionId: 'claude-haiku-5-5',
     }).filter((row) => row.source === 'configured-recovery');
 
     expect(recovered).toMatchObject({
-      selectionId: 'claude-haiku-4-5',
+      selectionId: 'claude-haiku-5-5',
       membership: 'custom',
     });
     expect(recovered?.contextLength).toBe(
-      findKnownModel('claude-code', 'claude-haiku-4-5')?.contextLength,
+      findKnownModel('claude-code', 'claude-haiku-5-5')?.contextLength,
     );
     expect(recovered?.contextLength).toBeGreaterThan(0);
     expect(recovered?.displayName).toBeUndefined();
-    expect(formatModelName(recovered?.id ?? '', 'claude-code')).toBe('Haiku 4.5');
+    expect(formatModelName(recovered?.id ?? '', 'claude-code')).toBe('Haiku 5.5');
   });
 
   it('answers an alias window from its own declared number, catalog or not', () => {
     const catalog: ModelsDevCatalog = {
       anthropic: {
         id: 'anthropic',
-        models: { 'claude-haiku-4-5': { id: 'claude-haiku-4-5', limit: { context: 500_000 } } },
+        models: { 'claude-haiku-5-5': { id: 'claude-haiku-5-5', limit: { context: 500_000 } } },
       },
     };
 
@@ -873,8 +873,8 @@ describe('runner-owned catalog resolution', () => {
     });
     const offline = resolveModelCatalog('claude-code');
 
-    expect(withCatalog.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(200_000);
-    expect(offline.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(200_000);
+    expect(withCatalog.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(1_000_000);
+    expect(offline.find((row) => row.selectionId === 'haiku')?.contextLength).toBe(1_000_000);
   });
 
   it('carries the catalog id each documented alias resolves to, and nothing where the id already is one', () => {
@@ -902,7 +902,7 @@ describe('runner-owned catalog resolution', () => {
       sonnet: 1_000_000,
       opus: 1_000_000,
       fable: 1_000_000,
-      haiku: 200_000,
+      haiku: 1_000_000,
       opusplan: 1_000_000,
       best: 1_000_000,
       'sonnet[1m]': 1_000_000,

@@ -5,9 +5,12 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { ensureSessionDir } from '../paths-io.js';
 import { SEATS_FILE, sessionDir } from '../paths.js';
+import { createInitialState, transition } from './machine.js';
+import { saveState } from './persistence.js';
 import {
   formatSeatChangeNotice,
   readSeatIdentities,
+  readSeatIdentityRecord,
   reconcileSeatIdentities,
   recordSeatIdentities,
   seatIdentitiesFromConfig,
@@ -38,6 +41,7 @@ describe('recordSeatIdentities', () => {
 
     expect(existsSync(join(sessionDir(ref.projectDir, ref.sessionId), SEATS_FILE))).toBe(true);
     expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(makeConfig()));
+    expect(readSeatIdentityRecord(ref)?.switchCount).toBe(0);
   });
 
   it('keeps the record a session already has', () => {
@@ -104,6 +108,45 @@ describe('reconcileSeatIdentities', () => {
     recordSeatIdentities(ref, config);
 
     expect(reconcileSeatIdentities(ref, config)).toEqual([]);
+    expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(config));
+  });
+
+  it('records appended switches even when the crew did not move', () => {
+    const ref = session('seats-switch-count');
+    const config = makeConfig();
+    const action = {
+      type: 'RECORD_SEAT_SWITCH',
+      seat: 'build',
+      from: 'Claude Code CLI · Sonnet 5.5 · high',
+      to: 'Claude Code CLI · Sonnet 5.5 · max',
+      toSeat: { tool: 'claude-code', model: 'sonnet', effort: 'max' },
+      cause: 'runner-usage-limit',
+      auto: false,
+      configRevision: 'switched',
+    } as const;
+    const switched = transition(createInitialState('switch count'), action);
+    saveState(ref, switched);
+    recordSeatIdentities(ref, config);
+    expect(readSeatIdentityRecord(ref)?.switchCount).toBe(1);
+
+    saveState(ref, transition(switched, action));
+    expect(reconcileSeatIdentities(ref, config)).toEqual([]);
+    expect(readSeatIdentityRecord(ref)?.switchCount).toBe(2);
+    expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(config));
+  });
+
+  it('adds the switch count to an unchanged record that predates it', () => {
+    const ref = session('seats-count-upgrade');
+    const config = makeConfig();
+    writeFileSync(
+      join(sessionDir(ref.projectDir, ref.sessionId), SEATS_FILE),
+      JSON.stringify(seatIdentitiesFromConfig(config)),
+    );
+    expect(readSeatIdentityRecord(ref)?.switchCount).toBeUndefined();
+
+    expect(reconcileSeatIdentities(ref, config)).toEqual([]);
+
+    expect(readSeatIdentityRecord(ref)?.switchCount).toBe(0);
     expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(config));
   });
 

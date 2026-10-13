@@ -57,6 +57,8 @@
 - **One transcript, in time order.** Done, running and pending work reads in one scroller. A review row names its failed commands, failed checks and fix briefs. Event labels use sentence case; seat tags stay upper case.
 - **One screen for a run, live or at rest.** The summary screen is gone. A stopped run stays on its run screen, and typing a correction continues it in place. A closed run shows a `Closed ─` block at the end of its transcript.
 - **One name per seat on every surface.** `PLAN`, `BUILD` and `REVIEW` are the only seat words, and every surface names a seat as `<tool> · <model>` with the model's catalog label, for example `Claude Code CLI · Opus 5.5`.
+- **An inherited review seat reads `REVIEW = PLAN`** on home, in Setup and Settings, in the picker and in the workflow.
+- **Claude Code model aliases follow the current Claude Code CLI models.**
 - **Settings.** Crew is the first section of Settings, with one row per seat, and the same rows build the first-run Setup screen. Settings explains the row under the cursor. Ready-made crews are offered in Setup.
 - **The tool and model picker.** Effort, speed and thinking variants of a model are one row that expands into one child per option; effort is chosen there and shown read-only everywhere else. Providers route inline and show their sign-in state. A tool that cannot list its models says so, and a model with no display name shows its catalog name.
 - **Readable terminal colours.** Secondary text stays readable on dark and light terminals. The TUI follows the terminal background and uses no faint text.
@@ -138,6 +140,9 @@
 - A headless halt names the `--action` that `splitbrief continue` can take.
 - A checkout symlink that stays inside the project no longer stops briefs in the worktree.
 - A FIFO in the project can no longer stall the final review, a hook check or the evidence ledger.
+- Two OpenCode seats that use the same model through different providers show the full route, for example `OpenCode CLI · opencode-go/deepseek-v4.1-flash`, so you can tell them apart. A seat switch records that route.
+- The review lists each seat switch once.
+- The run clock no longer goes back when a seat switches.
 - An unreadable or newer saved state no longer stops a run before it can report itself, a run cancelled before its first save closes, and a saved rewind survives a stop.
 - A run that fails on a repair or revision call records `failed` instead of `interrupted`.
 - A runner picker save is one write and keeps a concurrent change on disk.

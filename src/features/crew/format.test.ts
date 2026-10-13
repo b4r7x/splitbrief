@@ -186,7 +186,7 @@ describe('formatCrewRow', () => {
 
     const formatted = formatCrewRow({ row, layout });
     expect(formatted.content.startsWith(PLANNER_INHERITANCE.mark)).toBe(true);
-    expect(formatted.content).toContain(row.seat.model);
+    expect(formatted.content).toBe(PLANNER_INHERITANCE.mark);
     expect('branch' in formatted).toBe(false);
   });
 

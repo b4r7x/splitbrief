@@ -786,7 +786,10 @@ describe('formatTaskStartedParts', () => {
         }),
       );
 
-      expect(parts).toEqual(['src/text.js (modify)', 'OpenCode CLI · DeepSeek V4.1 Flash · high']);
+      expect(parts).toEqual([
+        'src/text.js (modify)',
+        'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+      ]);
     },
   );
 
@@ -807,7 +810,7 @@ describe('formatTaskStartedParts', () => {
   it('resolves an older CLI command through the same model catalog as a current call', () => {
     expect(taskStartedPartTexts(taskStartedEvent({ tool: 'claude', model: 'sonnet' }))).toEqual([
       'src/validate.ts (create)',
-      'Claude Code CLI · Sonnet 5',
+      'Claude Code CLI · Sonnet 5.5',
     ]);
   });
 

@@ -561,7 +561,7 @@ describe('HomeScreen', () => {
     const frame = ui.lastFrame() ?? '';
     expect(lineContaining(frame, 'OpenAI Codex CLI')).not.toContain('Ollama');
     expect(lineContaining(frame, 'Ollama')).toContain('BUILD');
-    expect(lineContaining(frame, 'REVIEW')).toContain(PLANNER_INHERITANCE.sentence);
+    expect(lineContaining(frame, 'REVIEW')).toContain(PLANNER_INHERITANCE.mark);
     expect(frame.split('\n').length).toBeLessThanOrEqual(30);
     expect(frame.split('\n').every((line) => getTerminalCellWidth(line) <= 100)).toBe(true);
     ui.unmount();

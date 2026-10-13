@@ -250,7 +250,12 @@ export const taskReviewRequestFields = {
 
 const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   phaseEvent('workflow_started').extend({ feature: z.string() }),
-  phaseEvent('workflow_resumed'),
+  phaseEvent('workflow_resumed').extend({
+    /** The same run loop continued in this process; absent on restarts and older logs. */
+    inProcess: z.literal(true).optional(),
+    /** A held continuation's submit time, before persistence and publication completed. */
+    resumedAt: z.number().optional(),
+  }),
   phaseEvent('workflow_complete').extend({
     review: z.enum(['passed', 'failed']).optional(),
     blocking: z.number().int().optional(),
@@ -579,6 +584,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     resetAt: z.string(),
   }),
   phaseEvent('seat_switched').extend({
+    switchId: z.string().optional(),
     seat: z.enum(CREW_SEAT_IDS),
     from: SeatSwapCandidateSchema,
     to: SeatSwapCandidateSchema,

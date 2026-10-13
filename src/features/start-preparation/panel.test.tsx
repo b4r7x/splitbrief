@@ -49,7 +49,7 @@ function availability(
       ...(endpoint !== null && { endpoint }),
       verdict,
     },
-    label: 'Planner ollama',
+    label: 'Planner Ollama · Qwen3 Coder 30B',
     isDefaultImplementer: false,
   });
 }
@@ -57,7 +57,7 @@ function availability(
 const TRUST_BOUNDARY: ReadinessCheck = {
   id: 'runners.planner.trust-boundary',
   severity: 'warning',
-  summary: 'Planner claude-code can execute commands on this machine.',
+  summary: 'Planner Claude Code CLI · auto can execute commands on this machine.',
   details: [
     'Plan approval: none.',
     'SPLITBRIEF approval gates review the plan and declared/promoted file writes; they do not sandbox shell commands or network access inside external runners.',
@@ -118,7 +118,7 @@ describe('StartPreparationPanel', () => {
 
     await flushEffects();
     const frame = ui.lastFrame() ?? '';
-    expect(frame).toContain('Planner ollama answered but offers no models.');
+    expect(frame).toContain('Planner Ollama · Qwen3 Coder 30B answered but offers no models.');
     expect(frame).toContain('Install a model for ollama');
     expect(frame).not.toMatch(/\d+ blockers?/);
     expect(frame.indexOf('offers no models')).toBeLessThan(frame.indexOf('Warnings'));
@@ -167,10 +167,12 @@ describe('StartPreparationPanel', () => {
     }
     const [offline, unauthorized, missingModel, timeout] = leads;
 
-    expect(offline).toContain('is not reachable at http://localhost:11434');
+    expect(offline).toContain('Planner Ollama · Qwen3 Coder 30B is not reachable at');
+    expect(offline).toContain('http://localhost:11434.');
     expect(offline).toContain('Run `ollama serve`');
 
-    expect(unauthorized).toContain('rejected the configured credential');
+    expect(unauthorized).toContain('Planner Ollama · Qwen3 Coder 30B rejected the configured');
+    expect(unauthorized).toContain('credential at http://localhost:11434.');
     expect(unauthorized).toContain('Check the credential for ollama');
     expect(unauthorized).not.toContain('Run `ollama serve`');
 
@@ -179,7 +181,7 @@ describe('StartPreparationPanel', () => {
     expect(missingModel).not.toContain('is not reachable');
 
     expect(timeout).toContain('did not answer in time');
-    expect(timeout).not.toContain('rejected the configured credential');
+    expect(timeout).not.toContain('rejected');
   });
 
   it('keeps check IDs and trust-boundary prose out of the summaries and under Details', async () => {

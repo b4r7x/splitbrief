@@ -1,4 +1,5 @@
 import { join, resolve } from 'node:path';
+import { stringify } from 'yaml';
 import { readPackageJson } from './project-meta.js';
 import {
   SPLITBRIEF_DIR,
@@ -20,6 +21,7 @@ import { assertPathConfined, assertModelWritablePathConfined } from '../lib/path
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { nowIso } from '../utils/format-time.js';
 import { error, matches } from '../utils/error.js';
+import { formatSeatIdentity, type SeatIds } from './crew/identity.js';
 
 export const pathError = {
   escapesProject: (filePath: string, cause?: unknown) =>
@@ -51,10 +53,8 @@ export function getSplitbriefVersion(): string {
 }
 
 export type SpecMetadata = {
-  plannerTool: string;
-  plannerModel?: string | undefined;
-  implementerTool: string;
-  implementerModel?: string | undefined;
+  planner: SeatIds;
+  implementer: SeatIds;
 };
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
@@ -65,17 +65,13 @@ function hasFileFrontmatter(content: string): boolean {
 }
 
 export function buildSpecFrontmatter(opts: SpecMetadata): string {
-  const plannerLine = opts.plannerModel
-    ? `planner: ${opts.plannerTool} (${opts.plannerModel})`
-    : `planner: ${opts.plannerTool}`;
-  const implementerLine = opts.implementerModel
-    ? `implementer: ${opts.implementerTool} (${opts.implementerModel})`
-    : `implementer: ${opts.implementerTool}`;
+  const planner = formatSeatIdentity({ seat: opts.planner });
+  const implementer = formatSeatIdentity({ seat: opts.implementer });
   const lines = [
     '---',
     `generated_by: splitbrief v${getSplitbriefVersion()}`,
-    plannerLine,
-    implementerLine,
+    `planner: ${stringify(planner, { lineWidth: 0 }).trimEnd()}`,
+    `implementer: ${stringify(implementer, { lineWidth: 0 }).trimEnd()}`,
     `created_at: ${nowIso()}`,
     '---',
     '',
