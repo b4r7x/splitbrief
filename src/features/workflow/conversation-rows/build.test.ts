@@ -459,7 +459,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
       `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI · opencode-go/deepseek-v4.1-flash · high · automatic fallback`,
       'Run continued',
-      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · high',
+      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
       'working on src/text.js…',
     ]);
   });
@@ -2719,7 +2719,7 @@ describe('one recovery reads as one block', () => {
         : ['Error', headline, `Recovery  Change BUILD model${arrowSep()}T002 resumed on new seat`],
     );
     expect(lines.at(auto ? 1 : 3)).toContain(
-      `BUILD  OpenCode CLI · DeepSeek V4.1 Flash${arrowSep()}OpenCode CLI`,
+      `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI`,
     );
     expect(lines.join(' ').includes('automatic fallback')).toBe(auto);
     expect(lines.join(' ').match(/Balance spent on OpenCode CLI/gu)).toHaveLength(auto ? 1 : 2);

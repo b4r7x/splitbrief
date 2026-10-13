@@ -97,12 +97,19 @@ async function parkAtBoundary(args: {
 
   const steer = await onContinuationNeeded('', 'boundary');
   if (wctx.signal?.aborted) return { state, continued: false };
+  const resumedAt = wctx.sinks.getContinuationResumedAt?.() ?? Date.now();
   state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });
   setTrackedState(state);
   recordSteer({ ...ref, bus: wctx.bus }, state.phase, steer);
   state = rebaseOnPersistedWorkflowState(ref, state);
   setTrackedState(state);
-  wctx.bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
+  wctx.bus.publish({
+    type: 'workflow_resumed',
+    ts: Date.now(),
+    phase: state.phase,
+    inProcess: true,
+    resumedAt,
+  });
   wctx.continuation?.hold(step, steer.text.trim() === '' ? undefined : steer);
   return { state, continued: true };
 }

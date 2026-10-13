@@ -4,6 +4,7 @@ import {
   sanitizeTerminalDisplayText,
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
+import { redactSecrets } from '../../utils/redact.js';
 import { getRunnerDisplayName, type RunnerConfig } from '../config/accessors/runner-config.js';
 import { cliVocabularyTool, formatModelName, peelDisplayLabel } from '../model-display.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
@@ -34,7 +35,6 @@ export const CREW_LABEL_WIDTH = 8;
 export const AUTO_MODEL_WORD = 'auto';
 
 export const PLANNER_INHERITANCE = Object.freeze({
-  sentence: 'same as planner',
   mark: '= PLAN',
 });
 
@@ -134,6 +134,7 @@ function modelWord(
   const tool = cliVocabularyTool(seat.tool, kind);
   const model = modelIdOf(seat, kind);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
+  if (tool === 'opencode' && model.includes('/')) return redactSecrets(model);
   if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
@@ -467,17 +468,37 @@ export function cutSeatIdentity(identity: string, budget: number): string {
 export function wrapSeatIdentity(identity: string, budget: number): string[] {
   if (getTerminalCellWidth(identity) <= budget) return [identity];
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
+  const route = segments[1];
+  const routeIndex = opencodeRouteIndex(segments);
+  if (
+    routeIndex === 1 &&
+    route !== undefined &&
+    getTerminalCellWidth(segments.slice(1).join(CREW_IDENTITY_SEPARATOR)) > budget
+  ) {
+    return [[segments[0], ...segments.slice(2)].join(CREW_IDENTITY_SEPARATOR), route].map((row) =>
+      cutSeatIdentity(row, budget),
+    );
+  }
   return [
     segments.slice(0, 1).join(CREW_IDENTITY_SEPARATOR),
     segments.slice(1).join(CREW_IDENTITY_SEPARATOR),
   ].map((row) => cutSeatIdentity(row, budget));
 }
 
+function opencodeRouteIndex(segments: readonly string[]): number | undefined {
+  const toolIndex = segments.indexOf(toolWord({ tool: 'opencode' }, 'cli'));
+  return toolIndex >= 0 && segments[toolIndex + 1]?.includes('/') ? toolIndex + 1 : undefined;
+}
+
 function shedSegments(identity: string, budget: number): string {
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
-  let kept = segments.length;
   const width = (count: number): number =>
     getTerminalCellWidth(segments.slice(0, count).join(CREW_IDENTITY_SEPARATOR));
-  while (kept > 1 && width(kept) > budget) kept -= 1;
+  const routeIndex = opencodeRouteIndex(segments);
+  const keepRoute = routeIndex !== undefined && width(routeIndex + 1) > budget;
+  if (keepRoute) segments.splice(routeIndex - 1, 1);
+  const minimum = keepRoute ? routeIndex : 1;
+  let kept = segments.length;
+  while (kept > minimum && width(kept) > budget) kept -= 1;
   return segments.slice(0, kept).join(CREW_IDENTITY_SEPARATOR);
 }

@@ -188,14 +188,14 @@ describe('PickerView terminal panes', () => {
     await flushEffects();
     const frame = frameText(ui);
 
-    expect(frame).toContain(PLANNER_INHERITANCE.sentence);
+    expect(frame).toContain(PLANNER_INHERITANCE.mark);
     expect(frame).toContain('Claude Code CLI · Claude Sonnet 4');
     // A CLI names no billing, so the inherited posture line is its trust alone.
     expect(frame).toContain('network · shell');
     expect(frame).not.toContain('subscription');
     const hintRow = frame.split('\n').find((row) => row.includes('↑↓ select')) ?? '';
     expect(hintRow.trim().startsWith('↑↓ select')).toBe(true);
-    expect(hintRow).toContain(PLANNER_INHERITANCE.sentence);
+    expect(hintRow).toContain('⏎ confirm');
     ui.unmount();
   });
 

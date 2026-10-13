@@ -1,4 +1,5 @@
 import type { ConsultSeat } from '../../../../core/schemas/consult.js';
+import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../../../core/crew/identity.js';
 import type { Task, TaskId } from '../../../../core/schemas/task.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { scopePathPatterns } from '../../../../utils/path-patterns.js';
@@ -52,7 +53,11 @@ export function attemptDetails(
 
 /** An inherited review follows PLAN until its switch gives REVIEW a separate seat. */
 export function reviewSeatDetails(followsPlan: boolean): string[] {
-  return followsPlan ? ['REVIEW uses PLAN. Switching here gives REVIEW its own seat.'] : [];
+  return followsPlan
+    ? [
+        `${CREW_SEAT_LABELS.review} ${PLANNER_INHERITANCE.mark}. Switching here gives REVIEW its own seat.`,
+      ]
+    : [];
 }
 
 /** A consult halt names the brief whose consult its seat could not answer. */

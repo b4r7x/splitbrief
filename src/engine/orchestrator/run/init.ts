@@ -88,6 +88,10 @@ import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
 import { buildSkillsContext } from './skills-context.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
 import { runCodeDir } from './task-execution.js';
+import { sessionDir } from '../../../core/paths.js';
+
+// TUI and headless recovery turns share their loop's signal; a restart owns a new one.
+const initializedSessionsBySignal = new WeakMap<AbortSignal, Set<string>>();
 
 function plannerUnavailableMessage(plannerConfig: Config['planner'], planner: Planner): string {
   const name = getRunnerDisplayName(plannerConfig);
@@ -389,12 +393,20 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     injectedImplementer: opts._implementer,
   });
 
+  const sessionPath = sessionDir(projectDir, sessionId);
+  const initializedSessions =
+    opts.signal === undefined ? undefined : initializedSessionsBySignal.get(opts.signal);
   let state: WorkflowState;
 
   if (savedState) {
     state = savedState;
     setTrackedState(state);
-    bus.publish({ type: 'workflow_resumed', ts: Date.now(), phase: state.phase });
+    bus.publish({
+      type: 'workflow_resumed',
+      ts: Date.now(),
+      phase: state.phase,
+      ...(initializedSessions?.has(sessionPath) && { inProcess: true }),
+    });
     if (shouldPublishResumePlannerStatus(state)) {
       publishPlannerStatus(bus, state, 'running');
     }
@@ -447,6 +459,12 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
         publishWarningFromError({ bus: bus, phase: state.phase }, 'failed to create branch', err);
       }
     }
+  }
+
+  if (opts.signal !== undefined) {
+    const sessions = initializedSessions ?? new Set<string>();
+    sessions.add(sessionPath);
+    initializedSessionsBySignal.set(opts.signal, sessions);
   }
 
   publishWorkflowConfig(

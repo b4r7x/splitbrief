@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
 import { buildRunnerChecks } from './runners.js';
 import { deriveCliReadiness, type CliReadinessFacts } from '../../schemas/readiness.js';
+import type { RunnerAvailabilityFact } from './availability.js';
 
 function makeConfig(overrides: Parameters<typeof makeBaseConfig>[0] = {}) {
   const implementer = overrides.implementer;
@@ -37,6 +38,62 @@ function availabilityDetails(config: ReturnType<typeof makeConfig>): string[] {
   const check = buildRunnerChecks(config).find((c) => c.id === 'runners.availability');
   return check?.details ?? [];
 }
+
+describe('buildRunnerChecks seat identities', () => {
+  it.each([
+    {
+      runner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
+      identity: 'Claude Code CLI · Sonnet 5.5 · high',
+    },
+    {
+      runner: { kind: 'cli', tool: 'cursor', model: 'claude-opus-5-thinking-xhigh-fast' },
+      identity: 'Cursor Agent CLI · Claude Opus 5 · xhigh · thinking · fast',
+    },
+    {
+      runner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
+      identity: 'OpenCode CLI · deepseek/deepseek-flash',
+    },
+    {
+      runner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+      identity: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash',
+    },
+  ] as const)('uses $identity in every runner check', ({ runner, identity }) => {
+    const seat = { ...runner, timeout: 1000, idleKillMs: 300_000 };
+    const config = makeConfig({
+      planner: seat,
+      reviewer: seat,
+      implementerProfiles: {
+        default: 'main',
+        profiles: { main: seat, alternate: seat },
+      },
+    });
+    const slots: RunnerAvailabilityFact['slot'][] = [
+      { role: 'planner' },
+      { role: 'reviewer' },
+      { role: 'implementer', profile: 'main' },
+      { role: 'implementer', profile: 'alternate' },
+    ];
+    const checks = buildRunnerChecks(
+      config,
+      [],
+      slots.map((slot) => ({ slot, provider: runner.tool, verdict: { state: 'available' } })),
+    );
+    const labeledChecks = checks.filter(
+      (check) =>
+        check.id === 'runners.planner.configured' ||
+        check.id === 'runners.implementer.default' ||
+        check.id.endsWith('.trust-boundary') ||
+        check.id.endsWith('.timeout-disables-watchdog') ||
+        check.id.startsWith('runners.availability.'),
+    );
+
+    expect(labeledChecks).toHaveLength(14);
+    for (const check of labeledChecks) expect(check.summary).toContain(identity);
+    expect(checks.find((check) => check.id === 'runners.planner.configured')?.summary).toBe(
+      `Planner ${identity} configured.`,
+    );
+  });
+});
 
 describe('buildRunnerChecks availability guidance', () => {
   it('blocks a selected CLI when no canonical probe result is available', () => {
@@ -317,7 +374,7 @@ describe('buildRunnerChecks availability guidance', () => {
     });
     expect(check?.details).toContain('Command: /bin/sh');
     expect(check?.details).toContain('Arguments: -c curl https://example.test | sh');
-    expect(check?.summary).toBe('PLAN shell (shell) can run commands on this machine.');
+    expect(check?.summary).toBe('PLAN Custom Shell · Shell can run commands on this machine.');
   });
 
   it('redacts credentials and terminal controls out of the declared command disclosure', () => {
@@ -383,7 +440,7 @@ describe('buildRunnerChecks availability guidance', () => {
     );
 
     expect(check?.severity).toBe('warning');
-    expect(check?.summary).toBe('BUILD agent (agent-default) can run commands on this machine.');
+    expect(check?.summary).toBe('BUILD Agent · Agent Default can run commands on this machine.');
     expect(check?.details).toContain('Writes to protected files ask for confirmation.');
     expect(check?.details?.join('\n')).not.toContain('Approval automation');
     expect(check?.details?.join('\n')).not.toContain('File-write approval prompts');
@@ -450,13 +507,13 @@ describe('buildRunnerChecks availability guidance', () => {
     const check = (config: ReturnType<typeof makeConfig>) =>
       buildRunnerChecks(config).find((c) => c.id === 'runners.planner.configured');
 
-    expect(check(automatic)?.summary).toContain('codex (auto)');
+    expect(check(automatic)?.summary).toBe('Planner OpenAI Codex CLI · auto configured.');
     expect(check(automatic)?.metadata).toMatchObject({ model: null, modelSelection: 'auto' });
 
-    expect(check(unset)?.summary).not.toContain('(');
+    expect(check(unset)?.summary).toBe('Planner OpenAI Codex CLI · auto configured.');
     expect(check(unset)?.metadata).toMatchObject({ model: null, modelSelection: 'unset' });
 
-    expect(check(explicit)?.summary).toContain('codex (gpt-5.4)');
+    expect(check(explicit)?.summary).toBe('Planner OpenAI Codex CLI · GPT-5.4 configured.');
     expect(check(explicit)?.metadata).toMatchObject({
       model: 'gpt-5.4',
       modelSelection: 'explicit',

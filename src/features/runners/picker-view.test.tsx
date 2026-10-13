@@ -96,7 +96,7 @@ describe('PickerView fallback slot', () => {
     );
     await flushEffects();
 
-    const notice = 'REVIEW uses PLAN · saving here gives REVIEW its own seat';
+    const notice = 'REVIEW = PLAN · saving here gives REVIEW its own seat';
     expect(ui.lastFrame()).toContain(notice);
     const initialFrame = ui.lastFrame();
     ui.stdin.write('\u001B[B');

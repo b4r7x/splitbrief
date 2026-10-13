@@ -74,6 +74,7 @@ import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common
 import {
   publishVisualDiscovery,
   seedVisualConfig,
+  seedRoutedCrew,
   setupVisualFixture,
   teardownVisualFixture,
   visualConfig,
@@ -1920,6 +1921,11 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-skills'), createSkillsEmptyFixture],
   [scenarioId('overlay-skills-list'), createSkillsFixture],
   [scenarioId('overlay-settings'), createSettingsFixture],
+  [
+    scenarioId('overlay-settings-opencode-routes'),
+    () =>
+      createOverlayFixture({ overlay: 'settings', seed: seedRoutedCrew, focus: 'fallback:build' }),
+  ],
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
   [scenarioId('overlay-settings-fallback-none'), createSettingsFallbackNoneFixture],
   [scenarioId('overlay-settings-fallback-set'), createSettingsFallbackSetFixture],

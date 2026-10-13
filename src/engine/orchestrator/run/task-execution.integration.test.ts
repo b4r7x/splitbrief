@@ -329,15 +329,17 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       makeTask({ id: 'T002', suggestedFiles: ['src/beta.ts'] }),
     ];
     const parks: { partial: string; at: string }[] = [];
+    let resumedAt = 0;
     const { events, implementer, options } = runOptions({
       projectDir,
       sessionId,
       state: reviewedState(tasks, head, 0),
       review: (prompt) => passingReviewVerdict(prompt),
       onComplete: vi.fn(),
-      sinks: pauseOnceSinks(),
+      sinks: { ...pauseOnceSinks(), getContinuationResumedAt: () => resumedAt },
       onContinuationNeeded: async (partial, at) => {
         parks.push({ partial, at });
+        resumedAt = Date.now();
         return plainUserMessage('use the shared helper');
       },
     });
@@ -351,7 +353,7 @@ describe('runTasksAndReview boundary pause', { timeout: 120_000 }, () => {
       step: { kind: 'brief', taskId: 'T002', attempt: 0 },
     });
     expect(events.filter((e) => e.type === 'workflow_resumed')).toEqual([
-      expect.objectContaining({ phase: 'implementing' }),
+      expect.objectContaining({ phase: 'implementing', inProcess: true, resumedAt }),
     ]);
     // Both briefs ran: the park held the run between them rather than ending it.
     expect(implementer.implement).toHaveBeenCalledTimes(2);

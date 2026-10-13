@@ -825,9 +825,12 @@ describe('transition', () => {
       state,
       {
         type: 'RECORD_SEAT_SWITCH',
+        switchId: 'b8b5c54f-97b8-47e0-8d19-30f7e671c972',
         seat: 'build',
-        from: 'codex',
-        to: 'claude-code',
+        from: 'OpenCode CLI · deepseek/deepseek-flash',
+        to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash',
+        fromSeat: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        toSeat: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
         cause: 'runner-usage-limit',
         auto: true,
         configRevision: 'abc123',
@@ -837,9 +840,12 @@ describe('transition', () => {
 
     expect(next.seatSwitches).toEqual([
       {
+        switchId: 'b8b5c54f-97b8-47e0-8d19-30f7e671c972',
         seat: 'build',
-        from: 'codex',
-        to: 'claude-code',
+        from: 'OpenCode CLI · deepseek/deepseek-flash',
+        to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash',
+        fromSeat: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+        toSeat: { tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
         cause: 'runner-usage-limit',
         auto: true,
         configRevision: 'abc123',

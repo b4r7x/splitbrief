@@ -21,6 +21,7 @@ import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../src/core/readiness/types.js';
 import { buildIsolationChecks } from '../../../src/core/readiness/checks/isolation.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
+import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
 import type { CliToolDetection } from '../../../src/core/discovery/detection.js';
 import type { ClaudeCodeModelOption } from '../../../src/core/providers/claude-code-options.js';
@@ -189,6 +190,38 @@ export function createHomeFixture(options: HomeFixtureOptions = {}): FixtureLife
     },
     teardown: teardownVisualFixture,
   };
+}
+
+export function seedRoutedCrew(): void {
+  seedVisualConfig({
+    planner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+    implementer: {
+      kind: 'cli',
+      tool: 'opencode',
+      model: 'ollama-cloud/deepseek-v4.1-flash',
+      fallback: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
+    },
+  });
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'opencode')],
+    cliModels: [
+      {
+        connection: { tool: 'opencode', contextKey: 'planner-opencode-visual' },
+        outcome: {
+          kind: 'success',
+          value: [
+            'opencode-go/deepseek-v4.1-flash',
+            'ollama-cloud/deepseek-v4.1-flash',
+            'deepseek/deepseek-flash',
+          ].map((id) => ({
+            id,
+            displayName: 'DeepSeek V4.1 Flash',
+            maximumContextTokens: 1_000_000,
+          })),
+        },
+      },
+    ],
+  });
 }
 
 /**
@@ -631,7 +664,7 @@ function submitSettledCheck(outcome: PreparationOutcome): void {
 const TRUST_BOUNDARY_CHECK: ReadinessCheck = {
   id: 'runners.planner.trust-boundary',
   severity: 'warning',
-  summary: 'Planner claude-code can execute commands on this machine.',
+  summary: `Planner ${formatSeatIdentity({ seat: BASE_PLANNER })} can execute commands on this machine.`,
   details: [
     'Plan approval: plan.',
     'Only a write to a protected path asks.',
@@ -951,6 +984,19 @@ const HOME_REVIEWER_API_SEAT = {
 export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('home-empty'), () => createHomeFixture()],
   [scenarioId('home-no-config'), () => createHomeFixture({ noConfig: true })],
+  [
+    scenarioId('home-opencode-routes'),
+    () => {
+      const home = createHomeFixture();
+      return {
+        ...home,
+        setup: async (context) => {
+          await home.setup(context);
+          seedRoutedCrew();
+        },
+      };
+    },
+  ],
   [
     scenarioId('home-reviewer'),
     () =>

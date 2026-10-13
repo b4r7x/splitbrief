@@ -112,15 +112,11 @@ describe('crew row view', () => {
     expect(cursored.trimStart()).not.toBe(plain.trimStart());
   });
 
-  it('spells the inherited review seat with the mark and the planner it follows', async () => {
+  it('spells the inherited review seat with the shared mark', async () => {
     const config = makeConfig();
     const lines = await linesFor({ config, width: 78 });
     const review = lineWith(lines, CREW_SEAT_LABELS.review);
-    const reviewRow = deriveCrewRows({ config }).find((row) => row.id === 'review');
-    if (reviewRow === undefined) throw new Error('no review seat');
-
     expect(review).toContain(PLANNER_INHERITANCE.mark);
-    expect(review).toContain(reviewRow.seat.model);
   });
 
   it('gives every row a word in the label column, never a glyph alone', async () => {

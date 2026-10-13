@@ -1,5 +1,6 @@
 import type { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
+import { formatSeatIdentity } from '../../crew/identity.js';
 import { resolveApproveLevel } from '../../config/runtime/resolve.js';
 import {
   CLI_TOOL_CATALOG,
@@ -16,7 +17,6 @@ import {
   isCredentialEnvironmentName,
   redactSecrets,
 } from '../../../utils/redact.js';
-import { formatRunner } from './runner-label.js';
 import { planApprovalCopy } from './plan-approval.js';
 
 export function buildRunnerTrustBoundaryChecks(
@@ -32,7 +32,7 @@ export function buildRunnerTrustBoundaryChecks(
     ...runnerTrustBoundaryCheck({
       id: 'runners.planner.trust-boundary',
       role: 'planner',
-      label: `PLAN ${formatRunner(config.planner)}`,
+      label: `PLAN ${formatSeatIdentity({ seat: config.planner })}`,
       trust: getRunnerTrustMeta('planner', config.planner),
       ...(config.planner.kind === 'cli' && {
         plannerTier2FullEscalation:
@@ -50,7 +50,7 @@ export function buildRunnerTrustBoundaryChecks(
       ...runnerTrustBoundaryCheck({
         id: 'runners.reviewer.trust-boundary',
         role: 'reviewer',
-        label: `REVIEW ${formatRunner(reviewer.runner)}`,
+        label: `REVIEW ${formatSeatIdentity({ seat: reviewer.runner })}`,
         trust: getRunnerTrustMeta(runnerRoleForActiveRole('reviewer'), reviewer.runner),
         runner: reviewer.runner,
         approve,
@@ -65,8 +65,8 @@ export function buildRunnerTrustBoundaryChecks(
         id: 'runners.implementer.trust-boundary',
         role: 'implementer',
         label: profile.isDefault
-          ? `BUILD ${formatRunner(profile.config)}`
-          : `BUILD ${profile.name} ${formatRunner(profile.config)}`,
+          ? `BUILD ${formatSeatIdentity({ seat: profile.config })}`
+          : `BUILD ${profile.name} ${formatSeatIdentity({ seat: profile.config })}`,
         profile: profile.name,
         trust: getRunnerTrustMeta('implementer', profile.config),
         runner: profile.config,

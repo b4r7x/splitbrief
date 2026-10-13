@@ -116,7 +116,7 @@ describe('switchSeatAndPrepareResume', () => {
         }),
       );
       const revision = readConfigDocument(projectDir).revision?.rawSha256;
-      const { bus } = makeBusRecorder();
+      const { bus, events } = makeBusRecorder();
       const result = await switchSeatAndPrepareResume({
         projectDir,
         sessionId,
@@ -140,9 +140,13 @@ describe('switchSeatAndPrepareResume', () => {
         fallback,
       );
       expect(result.state.seatSwitches?.[0]).toMatchObject({
+        switchId: expect.any(String),
         auto: false,
         configRevision: revision,
       });
+      expect(events.filter((event) => event.type === 'seat_switched')).toEqual([
+        expect.objectContaining({ switchId: result.state.seatSwitches?.[0]?.switchId }),
+      ]);
       expect(revision).toBeDefined();
       if (seat === 'review') {
         expect(result.config.planner).toEqual(config.planner);
@@ -323,6 +327,10 @@ describe('switchSeatAndPrepareResume', () => {
       prepare: async (input) => preparedFor(input.effectiveConfig ?? config),
     });
     expect(result.kind).toBe('switched');
+    expect(loadState({ projectDir, sessionId })?.seatSwitches?.[0]).toMatchObject({
+      fromSeat: { tool: 'codex', model: 'gpt-5-codex' },
+      toSeat: candidate,
+    });
     if (result.kind !== 'switched') throw new Error('expected a switch');
     const expected = {
       kind: 'cli',

@@ -174,11 +174,9 @@ describe('resolveCrewDisplayNames', () => {
     });
 
     const names = resolveCrewDisplayNames(config, cache);
-    // A seat pinned to an alias reads the alias's own label — `sonnet` is Claude's `Sonnet 5`,
-    // not models.dev's `Claude Sonnet 5`, which four of the nine aliases would otherwise share.
-    expect(names.plan).toBe('Sonnet 5');
+    expect(names.plan).toBe('Sonnet 5.5');
     expect(names.build).toBe('Claude 3.7 Sonnet');
-    expect(names.review).toBe('Sonnet 5'); // inherited from planner
+    expect(names.review).toBe('Sonnet 5.5'); // inherited from planner
   });
 });
 
@@ -255,10 +253,10 @@ describe('labelSeatChange', () => {
     if (change === undefined) throw new Error('the plan seat moved');
 
     expect(formatSeatChangeNotice(change)).toBe(
-      'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · Sonnet 5; context will be rebuilt',
+      'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · Sonnet 5.5; context will be rebuilt',
     );
     expect(formatSeatChangeNotice(labelSeatChange(change, NULL_CACHE))).toBe(
-      'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · Sonnet 5; context will be rebuilt',
+      'PLAN seat changed Claude Code CLI · Opus 5.5 · max → Claude Code CLI · Sonnet 5.5; context will be rebuilt',
     );
   });
 
@@ -273,7 +271,7 @@ describe('labelSeatChange', () => {
     expect(labelSeatChange(change, NULL_CACHE)).toEqual(change);
   });
 
-  it('spells an API twin and the CLI tool it shares a name with by the kind each kept', () => {
+  it('keeps the API twin label and the OpenCode CLI route for a shared tool name', () => {
     const cache: ModelCacheAccessor = {
       getModelsDevCatalog: () => null,
       getProviderModels: () => [{ id: 'opencode/test-model', displayName: 'Opencode Test Model' }],
@@ -289,7 +287,7 @@ describe('labelSeatChange', () => {
     expect(labelSeatChange(change, cache)).toEqual({
       ...change,
       before: 'opencode · Test Model',
-      after: 'OpenCode CLI · Opencode Test Model',
+      after: 'OpenCode CLI · opencode/test-model',
     });
   });
 

@@ -14,8 +14,8 @@ let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
 
 const meta: SpecMetadata = {
-  plannerTool: 'claude-code',
-  implementerTool: 'ollama',
+  planner: { tool: 'claude-code' },
+  implementer: { tool: 'ollama' },
 };
 
 function makeTmp(): string {
@@ -48,7 +48,7 @@ describe('tasks.md spec-file provenance', () => {
     const content = readSpecFile({ projectDir: dir, sessionId: SESSION_ID }, TASKS_FILE);
     if (content === null) throw new Error('expected tasks file to be present');
     expect(content.startsWith('---\ngenerated_by: splitbrief v')).toBe(true);
-    expect(content).toContain('planner: claude-code');
+    expect(content).toContain('planner: Claude Code CLI · auto');
     expect(content).toContain('id: T001');
   });
 

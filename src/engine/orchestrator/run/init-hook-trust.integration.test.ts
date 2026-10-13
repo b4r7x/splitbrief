@@ -93,7 +93,7 @@ function makeInitArgs(projectDir: string, hooks?: HooksConfig, extra: InitCaller
     projectDir,
     sessionId,
   };
-  const metadata: SpecMetadata = { plannerTool: 'test', implementerTool: 'test' };
+  const metadata: SpecMetadata = { planner: { tool: 'test' }, implementer: { tool: 'test' } };
   return {
     projectDir,
     feature,

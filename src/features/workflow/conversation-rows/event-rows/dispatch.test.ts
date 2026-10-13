@@ -1222,7 +1222,7 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      `${CREW_SEAT_LABELS.build}  OpenCode CLI · DeepSeek V4.1 Flash ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
+      `${CREW_SEAT_LABELS.build}  OpenCode CLI · deepseek/deepseek-flash ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
     ]);
     expect(
       rows[0]?.segments
@@ -1231,7 +1231,7 @@ describe('event row dispatch', () => {
     ).toEqual([
       CREW_SEAT_LABELS.build,
       'OpenCode CLI',
-      'DeepSeek V4.1 Flash',
+      'deepseek/deepseek-flash',
       'Claude Code CLI',
       'Claude Sonnet 4',
     ]);

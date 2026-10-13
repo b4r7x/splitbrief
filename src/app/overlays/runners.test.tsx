@@ -979,7 +979,7 @@ describe('ToolModelPicker custom model entry', () => {
       pickerViewStore.open({ kind: 'custom-model' });
       const ui = renderFeature(<ToolModelPicker slot="fallback" role="reviewer" />);
       await tick(20);
-      const notice = 'REVIEW uses PLAN · saving here gives REVIEW its own seat';
+      const notice = 'REVIEW = PLAN · saving here gives REVIEW its own seat';
 
       expect(frameText(ui).includes(notice)).toBe(!ownReviewer);
       expect(frameText(ui)).toContain('Custom fallback model · REVIEW');
@@ -1065,7 +1065,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
         model: 'sonnet',
       });
       expect(feedbackStore.get()).toMatchObject({
-        message: 'PLAN set to: Claude Code CLI · Sonnet 5',
+        message: 'PLAN set to: Claude Code CLI · Sonnet 5.5',
         isError: false,
       });
     });
@@ -1183,7 +1183,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
         model: 'sonnet',
       });
       expect(feedbackStore.get()).toMatchObject({
-        message: 'PLAN set to: Claude Code CLI · Sonnet 5',
+        message: 'PLAN set to: Claude Code CLI · Sonnet 5.5',
         isError: false,
       });
     } finally {
@@ -1268,7 +1268,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     });
     expect(saveConfig).toHaveBeenCalledTimes(2);
     expect(feedbackStore.get()).toMatchObject({
-      message: 'PLAN set to: Claude Code CLI · Sonnet 5',
+      message: 'PLAN set to: Claude Code CLI · Sonnet 5.5',
       isError: false,
     });
     ui.unmount();

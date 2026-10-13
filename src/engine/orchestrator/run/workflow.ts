@@ -8,7 +8,7 @@ import type { Config } from '../../../core/schemas/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
-import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
+import { runSeatIdentity, specMetadataOf } from '../../../core/providers/seat-identity.js';
 import {
   clearProcessLedger,
   killAllProcesses,
@@ -135,12 +135,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   };
   const summaryBase = seatIdentityOf(config);
 
-  const metadata: SpecMetadata = {
-    plannerTool: summaryBase.plannerTool,
-    plannerModel: summaryBase.plannerModel,
-    implementerTool: summaryBase.implementerTool,
-    implementerModel: summaryBase.implementerModel,
-  };
+  const metadata: SpecMetadata = specMetadataOf(config);
 
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'suggestedFiles' | 'action'> | undefined;

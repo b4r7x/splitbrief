@@ -828,12 +828,12 @@ describe('hydrateRun replaying a seat swap', () => {
     return transcript();
   }
 
-  function transcript(): string {
+  function transcript(cols = 80): string {
     const { rows } = buildConversationRows({
       sections: [{ type: 'events', startIndex: 0, items: [...eventsStore.get().events] }],
       expandedDiffs: new Set(),
       expandedActivityBatches: new Set(),
-      cols: 80,
+      cols,
       viewportHeight: 20,
       streaming: { taskId: null, lines: [], active: false },
     });
@@ -885,6 +885,7 @@ describe('hydrateRun replaying a seat swap', () => {
       ];
       writeLog(log);
       const replayed = await replayedTranscript();
+      const replayedWide = transcript(120);
 
       resetWorkflow();
       const bus = createEventBus();
@@ -892,6 +893,10 @@ describe('hydrateRun replaying a seat swap', () => {
       for (const event of log) bus.publish(event);
 
       expect(transcript()).toBe(replayed);
+      expect(transcript(120)).toBe(replayedWide);
+      expect(replayedWide).toContain(
+        `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI${auto ? ' · automatic fallback' : ''}`,
+      );
       expect(
         replayed
           .split('\n')
@@ -901,13 +906,14 @@ describe('hydrateRun replaying a seat swap', () => {
         auto
           ? [
               `Recovery  ${headline}${arrowSep()}continued on fallback`,
-              `BUILD  OpenCode CLI · DeepSeek V4.1 Flash${arrowSep()}OpenCode CLI · automatic fallback`,
+              `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI`,
+              'automatic fallback',
             ]
           : [
               'Error',
               headline,
               `Recovery  Change BUILD model${arrowSep()}continued on new seat`,
-              `BUILD  OpenCode CLI · DeepSeek V4.1 Flash${arrowSep()}OpenCode CLI`,
+              `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI`,
               headline,
             ],
       );

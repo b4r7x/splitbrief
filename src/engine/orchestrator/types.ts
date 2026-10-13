@@ -85,6 +85,8 @@ export interface WorkflowSinks {
   setClearQueueHandler?: ((handler: ClearQueueHandler | null) => void) | undefined;
   consumeBoundaryInterrupt?: () => boolean;
   consumeBoundaryPause?: () => boolean;
+  /** When the operator resumed the held continuation, before the engine saved its next state. */
+  getContinuationResumedAt?: () => number | null | undefined;
 }
 
 export interface WorkflowContext {

@@ -307,6 +307,8 @@ describe('a spent implementer switches to its declared fallback', { timeout: 90_
       throw new Error('no seat_switched event');
     }
     expect(switchedEvent.auto).toBe(true);
+    expect(switchedEvent.switchId).toEqual(expect.any(String));
+    expect(switchedEvent.switchId).toBe(swapped.state.seatSwitches?.[0]?.switchId);
     expect(switchedEvent.seat).toBe('build');
     expect(switchedEvent.from.tool).toBe('agent');
     expect(switchedEvent.to).toEqual({ tool: 'opencode', model: FALLBACK_MODEL });

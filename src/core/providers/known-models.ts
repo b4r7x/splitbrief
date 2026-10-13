@@ -94,16 +94,15 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
 }
 
 /**
- * The nine labels below come from three sources, read off the newest installed build: the
- * `/model` menu's own `label` where the binary carries one, the baked catalog's `display_name`
- * otherwise (`fable[1m]` derived the way the binary derives it, `display_name + " (1M context)"`,
- * shortened to ` (1M)` here because the row's own detail already reads `forces the 1M window`),
- * and SPLITBRIEF's own title-cased alias for `best`, which has no label record in the binary.
+ * Model names come from the installed build's baked catalog `display_name`. Mode and window
+ * labels combine those names with the `/model` menu's words, shortening ` (1M context)` to
+ * ` (1M)` because the row's detail already reads `forces the 1M window`. `best` has no menu
+ * label record, so its label is the title-cased alias.
  * The row order is ours — plain aliases, then behavioural, then window variants; the binary ships
  * no ordered menu record, and its alias validity array orders them differently.
  *
- * Each window is that same baked record's `context.window` — `1e6` for `claude-sonnet-5`,
- * `claude-opus-5-5` and `claude-fable-5-1`, `200000` for `claude-haiku-4-5` — so it is Claude's
+ * Each window is that same baked record's `context.window` — `1e6` for `claude-sonnet-5-5`,
+ * `claude-opus-5-5`, `claude-fable-5-1` and `claude-haiku-5-5` — so it is Claude's
  * own number beside Claude's own label, not one we typed. For a CLI tool's rows the declared
  * window is the answer everywhere — what the picker row shows, and what an `auto` seat floors
  * to (REQ-D26, REQ-B08); `catalogProvider`/`catalogModelId` document the full catalog id each
@@ -112,16 +111,16 @@ function compatibleModel(model: Omit<KnownModel, 'recommendation'>): KnownModel 
  * runners only).
  */
 const CLAUDE_ALIAS_PROVENANCE =
-  'Claude Code 2.1.280 /model menu + baked catalog display_name & context.window + alias table (2026-09-23); code.claude.com/docs/en/model-config';
+  'Claude Code 2.1.296 (2026-10-13): baked catalog display_name & context.window + first-party alias table + embedded /model mode and window labels; code.claude.com/docs/en/model-config';
 
 export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
   'claude-code': [
     compatibleModel({
       name: 'sonnet',
-      displayName: 'Sonnet 5',
+      displayName: 'Sonnet 5.5',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-sonnet-5',
+      catalogModelId: 'claude-sonnet-5-5',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
@@ -142,10 +141,10 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'haiku',
-      displayName: 'Haiku 4.5',
-      contextLength: 200_000,
+      displayName: 'Haiku 5.5',
+      contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-haiku-4-5',
+      catalogModelId: 'claude-haiku-5-5',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({
@@ -168,11 +167,11 @@ export const KNOWN_MODELS: Partial<Record<ProviderId, KnownModel[]>> = {
     }),
     compatibleModel({
       name: 'sonnet[1m]',
-      displayName: 'Sonnet 5 (1M)',
+      displayName: 'Sonnet 5.5 (1M)',
       detail: 'forces the 1M window',
       contextLength: 1_000_000,
       catalogProvider: 'anthropic',
-      catalogModelId: 'claude-sonnet-5',
+      catalogModelId: 'claude-sonnet-5-5',
       provenance: CLAUDE_ALIAS_PROVENANCE,
     }),
     compatibleModel({

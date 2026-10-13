@@ -32,7 +32,7 @@ const zeroCounts = { confirmed: 0, stale: 0, suggestions: 0, bundled: 0, custom:
 describe('fallbackInheritanceNotice', () => {
   it('warns that saving an inherited REVIEW fallback gives REVIEW its own seat', () => {
     expect(fallbackInheritanceNotice({ slot: 'fallback', role: 'reviewer', inherited: true })).toBe(
-      'REVIEW uses PLAN · saving here gives REVIEW its own seat',
+      'REVIEW = PLAN · saving here gives REVIEW its own seat',
     );
   });
 

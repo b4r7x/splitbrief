@@ -156,6 +156,7 @@ async function initializeTestWorkflow(
     selectedSkills?: SkillMeta[];
     eventSink?: (event: EngineEvent) => void;
     eventBus?: EventBus;
+    signal?: AbortSignal;
     headless?: boolean;
     isolation?: RunIsolation;
     plannerContext?: string | undefined;
@@ -200,8 +201,8 @@ async function initializeTestWorkflow(
     sessionId: input.sessionId,
   };
   const metadata: SpecMetadata = {
-    plannerTool,
-    implementerTool: 'test-implementer',
+    planner: { tool: plannerTool },
+    implementer: { tool: 'test-implementer' },
   };
   const tracked: { current: WorkflowState | undefined } = { current: undefined };
 
@@ -214,6 +215,7 @@ async function initializeTestWorkflow(
       selectedSkills: input.selectedSkills,
       headless: input.headless,
       eventBus: input.eventBus,
+      signal: input.signal,
       _planner: planner,
       _implementer: implementer,
       _eventSink: input.eventSink,
@@ -247,6 +249,39 @@ afterEach(() => {
 });
 
 describe('initializeWorkflow', () => {
+  it('records recovery re-entry under the same signal, but a fresh restart has no marker', async () => {
+    await withTempDir('splitbrief-init-clock-continuation', async (projectDir) => {
+      const sessionId = 'clock-continuation';
+      const feature = 'continue the run';
+      const events: EngineEvent[] = [];
+      const signal = new AbortController().signal;
+      const input = {
+        projectDir,
+        sessionId,
+        feature,
+        signal,
+        eventSink: (event: EngineEvent) => events.push(event),
+      };
+      const started = await initializeTestWorkflow(input);
+      if (!started.init.ok) throw new Error('Expected run start');
+      const savedState = { ...started.init.state, phase: 'implementing' } as const;
+      const continued = await initializeTestWorkflow({ ...input, savedState });
+      expect(continued.init.ok).toBe(true);
+      const restarted = await initializeTestWorkflow({
+        ...input,
+        savedState,
+        signal: new AbortController().signal,
+      });
+      expect(restarted.init.ok).toBe(true);
+      const resumed = events.filter((event) => event.type === 'workflow_resumed');
+      expect(resumed).toHaveLength(2);
+      expect(resumed[0]).toMatchObject({ inProcess: true });
+      expect(resumed[1]).not.toHaveProperty('inProcess');
+      const replay = await readRunEvents({ projectDir, sessionId });
+      expect(replay.events.filter((event) => event.type === 'workflow_resumed')).toEqual(resumed);
+    });
+  });
+
   it.each<{ name: string; attachedInputs?: readonly AttachedInput[] }>([
     {
       name: 'with attached inputs',

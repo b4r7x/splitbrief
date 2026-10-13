@@ -3,6 +3,7 @@ import chalk from 'chalk';
 import { plainTheme } from '../../core/theme/resolve.js';
 import { paint } from '../../core/theme/paint.js';
 import { loadState } from '../../core/state/persistence.js';
+import { readSeatIdentityRecord } from '../../core/state/seats.js';
 import {
   getCompletedTaskIds,
   getEscalatedTaskIds,
@@ -16,14 +17,10 @@ import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { readSessionSummary } from '../../core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { sessionDir } from '../../core/paths.js';
-import {
-  getProviderDisplayName,
-  getRunnerIdentityDisplayName,
-} from '../../core/providers/catalog.js';
+import { candidateIdsOf, formatSeatIdentity, type SeatIds } from '../../core/crew/identity.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
 import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
 import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
-import { cliVocabularyTool, formatModelName } from '../../core/model-display.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 
 /**
@@ -66,26 +63,32 @@ export function registerStatusCommand(program: Command): void {
       if (!state || sessionId === null) {
         console.log('No active workflow.');
       } else {
-        // The displayed seat's own calls name its kind, so an API provider that
-        // shares a name with a CLI tool is not reported as that CLI, and a seat
-        // whose own record is ambiguous stays literal instead of guessing.
         const ref = { projectDir, sessionId };
         const evidence = resolveCallUsageEvidence(ref);
-        const seatLabel = (role: 'planner' | 'implementer', tool: string): string => {
-          const recorded = recordedRunnerKind(evidence, role, tool);
-          if (recorded === 'ambiguous') return tool;
-          return recorded === undefined
-            ? getProviderDisplayName(tool)
-            : getRunnerIdentityDisplayName(recorded, tool);
-        };
-        const seatModelLabel = (
-          role: 'planner' | 'implementer',
-          tool: string,
-          model: string,
-        ): string => {
-          const recorded = recordedRunnerKind(evidence, role, tool);
-          const provider = recorded === 'ambiguous' ? undefined : cliVocabularyTool(tool, recorded);
-          return stripTerminalControls(formatModelName(model, provider));
+        const seats = readSeatIdentityRecord(ref);
+        const seatIdentity = (role: 'planner' | 'implementer', seat: SeatIds): string => {
+          const seatId = role === 'planner' ? 'plan' : 'build';
+          const switchIndex =
+            state.seatSwitches?.findLastIndex((change) => change.seat === seatId) ?? -1;
+          const switched = state.seatSwitches?.[switchIndex];
+          const current =
+            switched?.toSeat !== undefined &&
+            (seats?.ids === undefined ||
+              seats.switchCount === undefined ||
+              switchIndex >= seats.switchCount)
+              ? candidateIdsOf(switched.toSeat)
+              : seats?.ids?.[seatId];
+          const selected = current ?? seat;
+          const recorded = selected.kind ?? recordedRunnerKind(evidence, role, selected.tool);
+          // API vocabulary keeps an ambiguous legacy name literal without selecting a CLI.
+          const kind = recorded === 'ambiguous' ? 'api' : recorded;
+          const ids =
+            current !== undefined
+              ? current
+              : kind === undefined || kind === 'cli'
+                ? candidateIdsOf(selected)
+                : selected;
+          return stripTerminalControls(formatSeatIdentity({ seat: ids, kind }));
         };
         console.log(
           `${paint(theme.textDim, 'Feature:')}  ${chalk.bold(stripTerminalControls(state.feature))}`,
@@ -118,19 +121,21 @@ export function registerStatusCommand(program: Command): void {
         console.log(`${paint(theme.textDim, 'Session:')}  ${sessionId}`);
 
         if (state.plannerTool) {
-          const model = state.plannerModel
-            ? ` (${seatModelLabel('planner', state.plannerTool, state.plannerModel)})`
-            : '';
           console.log(
-            `${paint(theme.textDim, 'Planner:')}  ${stripTerminalControls(seatLabel('planner', state.plannerTool))}${model}`,
+            `${paint(theme.textDim, 'Planner:')}  ${seatIdentity('planner', {
+              tool: state.plannerTool,
+              model: state.plannerModel,
+              kind: state.plannerKind,
+            })}`,
           );
         }
         if (state.implementerTool) {
-          const model = state.implementerModel
-            ? ` (${seatModelLabel('implementer', state.implementerTool, state.implementerModel)})`
-            : '';
           console.log(
-            `${paint(theme.textDim, 'Impl:')}     ${stripTerminalControls(seatLabel('implementer', state.implementerTool))}${model}`,
+            `${paint(theme.textDim, 'Impl:')}     ${seatIdentity('implementer', {
+              tool: state.implementerTool,
+              model: state.implementerModel,
+              kind: state.implementerKind,
+            })}`,
           );
         }
 

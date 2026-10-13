@@ -208,8 +208,8 @@ export function PickerView({
     }
     if (item.kind === 'inherit-planner') {
       return {
-        label: PLANNER_INHERITANCE.sentence,
-        verb: PLANNER_INHERITANCE.sentence,
+        label: PLANNER_INHERITANCE.mark,
+        verb: 'confirm',
         lines: [
           'Review uses the same',
           'tool and model:',

@@ -455,7 +455,7 @@ describe('review fix work', () => {
       {
         ...ref,
         workspaceDir: ref.projectDir,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+        metadata: { planner: { tool: 'claude-code' }, implementer: { tool: 'codex' } },
       },
       state,
       state.review,
@@ -476,7 +476,7 @@ describe('review fix work', () => {
     });
     expect(loadState(ref)?.tasks[1]?.fix?.cycle).toBe(1);
     const tasksMarkdown = readSpecFile(ref, TASKS_FILE) ?? '';
-    expect(tasksMarkdown).toContain('planner: claude-code');
+    expect(tasksMarkdown).toContain('planner: Claude Code CLI · auto');
     for (const task of applied.state.tasks) expect(tasksMarkdown).toContain(task.id);
   });
 
@@ -502,7 +502,7 @@ describe('review fix work', () => {
         {
           ...ref,
           workspaceDir: ref.projectDir,
-          metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+          metadata: { planner: { tool: 'claude-code' }, implementer: { tool: 'codex' } },
         },
         state,
         state.review,
@@ -553,7 +553,7 @@ describe('review fix work', () => {
       {
         ...ref,
         workspaceDir: ref.projectDir,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+        metadata: { planner: { tool: 'claude-code' }, implementer: { tool: 'codex' } },
       },
       state,
       state.review,
@@ -613,7 +613,7 @@ describe('review fix work', () => {
       {
         ...ref,
         workspaceDir: ref.projectDir,
-        metadata: { plannerTool: 'claude-code', implementerTool: 'codex' },
+        metadata: { planner: { tool: 'claude-code' }, implementer: { tool: 'codex' } },
       },
       state,
       state.review,

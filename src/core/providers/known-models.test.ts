@@ -3,6 +3,7 @@ import {
   KNOWN_MODELS,
   PENDING_EVALUATION_CANDIDATE_IDS,
   TOOL_EFFORT_LADDERS,
+  findKnownModel,
   type ModelRecommendation,
 } from './known-models.js';
 import {
@@ -99,13 +100,13 @@ describe('KNOWN_MODELS claude-code aliases', () => {
         catalogModelId,
       })),
     ).toEqual([
-      { name: 'sonnet', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
+      { name: 'sonnet', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5-5' },
       { name: 'opus', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5-5' },
       { name: 'fable', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
-      { name: 'haiku', catalogProvider: 'anthropic', catalogModelId: 'claude-haiku-4-5' },
+      { name: 'haiku', catalogProvider: 'anthropic', catalogModelId: 'claude-haiku-5-5' },
       { name: 'opusplan', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5-5' },
       { name: 'best', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
-      { name: 'sonnet[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5' },
+      { name: 'sonnet[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-sonnet-5-5' },
       { name: 'opus[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-opus-5-5' },
       { name: 'fable[1m]', catalogProvider: 'anthropic', catalogModelId: 'claude-fable-5-1' },
     ]);
@@ -120,7 +121,7 @@ describe('KNOWN_MODELS claude-code aliases', () => {
       ['sonnet', 1_000_000],
       ['opus', 1_000_000],
       ['fable', 1_000_000],
-      ['haiku', 200_000],
+      ['haiku', 1_000_000],
       ['opusplan', 1_000_000],
       ['best', 1_000_000],
       ['sonnet[1m]', 1_000_000],
@@ -133,17 +134,45 @@ describe('KNOWN_MODELS claude-code aliases', () => {
     const labels = claudeCode.map((model) => model.displayName);
 
     expect(labels).toEqual([
-      'Sonnet 5',
+      'Sonnet 5.5',
       'Opus 5.5',
       'Fable 5.1',
-      'Haiku 4.5',
+      'Haiku 5.5',
       'Opus 5.5 Plan Mode',
       'Best',
-      'Sonnet 5 (1M)',
+      'Sonnet 5.5 (1M)',
       'Opus 5.5 (1M)',
       'Fable 5.1 (1M)',
     ]);
     expect(new Set(labels).size).toBe(claudeCode.length);
+  });
+
+  it.each([
+    ['claude-sonnet-5-5', 'sonnet', 'Sonnet 5.5'],
+    ['claude-opus-5-5', 'opus', 'Opus 5.5'],
+    ['claude-fable-5-1', 'fable', 'Fable 5.1'],
+    ['claude-haiku-5-5', 'haiku', 'Haiku 5.5'],
+  ])('resolves the full id %s to its current alias metadata', (id, name, displayName) => {
+    expect(findKnownModel('claude-code', id)).toMatchObject({
+      name,
+      displayName,
+      contextLength: 1_000_000,
+    });
+  });
+
+  it('carries the current alias labels and windows into the picker catalog', () => {
+    const rows = resolveAndSort('claude-code', 'implementer');
+    expect(rows.find((row) => row.id === 'sonnet')).toMatchObject({
+      displayName: 'Sonnet 5.5',
+      contextLength: 1_000_000,
+      catalogModelId: 'claude-sonnet-5-5',
+    });
+    expect(rows.find((row) => row.id === 'haiku')).toMatchObject({
+      displayName: 'Haiku 5.5',
+      contextLength: 1_000_000,
+      catalogModelId: 'claude-haiku-5-5',
+    });
+    expect(claudeCode.every((row) => row.provenance?.includes('2.1.296 (2026-10-13)'))).toBe(true);
   });
 
   it('versions every alias name except best', () => {

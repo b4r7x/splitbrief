@@ -115,7 +115,7 @@ describe('HomeSeatBlock', () => {
     expect(lines[0]).toContain('PLAN');
     expect(lines[1]).toContain('BUILD');
     expect(lines[2]).toContain('REVIEW');
-    expect(lines[2]).toContain('same as planner');
+    expect(lines[2]).toContain('= PLAN');
     expect(lines[3]).toContain('/crew to change');
     expect(lines[3]).not.toMatch(/\b(quick|standard|speckit)\b/);
     for (const line of lines) {
@@ -143,7 +143,7 @@ describe('HomeSeatBlock', () => {
         await tick(20);
         const frame = ui.lastFrame() ?? '';
         for (const seat of deriveCrewSeats({ config })) {
-          const identity = seat.id === 'review' ? 'same as planner' : seat.model;
+          const identity = seat.id === 'review' ? '= PLAN' : seat.model;
           if (cold) {
             expect(frame).toContain(
               chalk
@@ -236,7 +236,7 @@ describe('HomeSeatBlock', () => {
     const { lines, unmount } = await renderBlock(40);
 
     expect(lines[2]).toContain('custom-endpoint');
-    expect(lines[2]).not.toContain('same as planner');
+    expect(lines[2]).not.toContain('= PLAN');
     unmount();
   });
 

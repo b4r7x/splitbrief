@@ -10,12 +10,10 @@ describe('resolveRunnerContextWindow', () => {
     expect(result).toEqual({ contextLength: 272_000, source: 'automatic-catalog' });
   });
 
-  // `auto` names no model, so the seat is floored at the smallest window the tool's own aliases
-  // declare — `haiku`'s 200 000, the one every model Claude could pick is guaranteed to have.
   it('resolves a claude-code/auto seat to the smallest window its aliases declare', () => {
     const result = resolveRunnerContextWindow({ providerId: 'claude-code', model: 'auto' });
 
-    expect(result).toEqual({ contextLength: 200_000, source: 'automatic-catalog' });
+    expect(result).toEqual({ contextLength: 1_000_000, source: 'automatic-catalog' });
   });
 
   // A pinned alias is the ordinary claude-code seat, and no catalog publishes a row called
@@ -37,20 +35,18 @@ describe('resolveRunnerContextWindow', () => {
     expect(result).toEqual({ contextLength: 1_000_000, source: 'known-catalog' });
   });
 
-  // The catalog row publishes 500 000 for `claude-haiku-4-5`, but no lane maps the alias `haiku`
-  // onto it: the alias's own declared 200 000 answers even with a catalog loaded.
   it('answers a pinned claude-code alias from its own declared window', () => {
     const catalog: ModelsDevCatalog = {
       anthropic: {
         id: 'anthropic',
-        models: { 'claude-haiku-4-5': { id: 'claude-haiku-4-5', limit: { context: 500_000 } } },
+        models: { 'claude-haiku-5-5': { id: 'claude-haiku-5-5', limit: { context: 500_000 } } },
       },
     };
     const cache = makeModelCacheAccessor({ catalog });
 
     const result = resolveRunnerContextWindow({ providerId: 'claude-code', model: 'haiku', cache });
 
-    expect(result).toEqual({ contextLength: 200_000, source: 'known-catalog' });
+    expect(result).toEqual({ contextLength: 1_000_000, source: 'known-catalog' });
   });
 
   // The first run of every session reaches here: no catalog has loaded yet. The alias's own

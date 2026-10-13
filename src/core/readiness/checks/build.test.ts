@@ -360,7 +360,7 @@ describe('readiness checks', () => {
       .flatMap((section) => section.checks)
       .find((check) => check.id === 'runners.implementer.default');
 
-    expect(profileCheck?.summary).toContain('BUILD (local-qwen) ollama');
+    expect(profileCheck?.summary).toContain('BUILD (local-qwen) Ollama · Qwen2.5 Coder 7B');
     expect(profileCheck?.metadata).toMatchObject({
       defaultProfile: 'local-qwen',
       writeMode: 'extracted-code',
