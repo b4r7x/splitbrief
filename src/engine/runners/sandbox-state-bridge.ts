@@ -17,6 +17,7 @@ import {
   CLI_CREDENTIAL_MODELS,
   CLI_STATE_PATHS,
   CURSOR_CLI_CONFIG_DESTINATION,
+  FILE_LINKED_CREDENTIAL_TOOLS,
   sandboxRoot,
   sandboxRootCandidates,
   type SandboxStateRoot,
@@ -187,11 +188,11 @@ async function seedCursorCliConfig(
 }
 
 /**
- * Live file passthrough for a rotating credential whose parent directory is
- * not tool-private. Cursor's `~/.cursor` is the IDE home; linking it would
- * admit every file there. The sandbox parent is a real directory and only
- * the rotating session file is a symlink to the host file, so in-place
- * rotation still lands on the host without exposing sibling paths.
+ * Live file passthrough for a rotating credential of a tool in
+ * `FILE_LINKED_CREDENTIAL_TOOLS`. The sandbox parent is a real directory and
+ * only the rotating credential file is a symlink to the host file, so in-place
+ * rotation still lands on the host while the tool's other state stays in the
+ * sandbox.
  */
 async function passthroughStateFile(
   source: string,
@@ -229,12 +230,12 @@ async function passthroughStateFile(
 }
 
 /**
- * Live passthrough for a `rotating-oauth` tool whose state directory is
- * tool-private: the sandbox path to that directory is a symlink to the real
- * host directory, so the tool itself persists a refreshed token to the host
- * file with its own write path. That is the only shape that survives every
- * way a rotation can land — in-place write, tempfile-and-rename inside the
- * directory, a run killed before any teardown — because there is no copy to
+ * Live passthrough for a `rotating-oauth` tool outside
+ * `FILE_LINKED_CREDENTIAL_TOOLS`: the sandbox path to its state directory is
+ * a symlink to the real host directory, so the tool itself persists a
+ * refreshed token to the host file with its own write path. That is the only
+ * shape that survives every way a rotation can land — in-place write,
+ * tempfile-and-rename inside the directory, a run killed before any teardown — because there is no copy to
  * go stale and no copy-back step to miss. The directory, not the credential
  * file, is linked: a file symlink is silently replaced by a rename-persisting
  * tool and the rotation is lost again.
@@ -305,10 +306,9 @@ export async function bridgeCliState(
       if (tool === 'cursor' && statePath.destinationPath === CURSOR_CLI_CONFIG_DESTINATION) {
         values = await seedCursorCliConfig(destination, tool);
       } else if (model === 'rotating-oauth') {
-        values =
-          tool === 'cursor'
-            ? await passthroughStateFile(source, destination, tool)
-            : await passthroughStateEntry(source, destination, root, tool);
+        values = FILE_LINKED_CREDENTIAL_TOOLS.has(tool)
+          ? await passthroughStateFile(source, destination, tool)
+          : await passthroughStateEntry(source, destination, root, tool);
       } else {
         values = await copyReadOnlyStateEntry(source, destination, tool);
       }

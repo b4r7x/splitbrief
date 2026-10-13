@@ -958,34 +958,73 @@ describe('runnerAuthEnvKeys', () => {
     },
   );
 
-  itUnix('passes a rotating credential through as a live state-directory link', async () => {
+  itUnix('links only the codex credential file live and keeps the codex home private', async () => {
     const hostHome = createTempDir('sandbox-state-passthrough-host');
     const projectDir = createTempDir('sandbox-state-passthrough-project');
     dirs.push(hostHome, projectDir);
-    const hostAuth = join(hostHome, '.codex', 'auth.json');
-    mkdirSync(join(hostHome, '.codex'), { recursive: true });
+    const hostCodex = join(hostHome, '.codex');
+    const hostAuth = join(hostCodex, 'auth.json');
+    mkdirSync(join(hostCodex, 'sessions'), { recursive: true });
     writeFileSync(hostAuth, '{"tokens":{"refresh_token":"rotating-passthrough-canary-2c7e"}}');
-    writeFileSync(join(hostHome, '.codex', 'config.toml'), 'model = "gpt-5"');
+    writeFileSync(join(hostCodex, 'config.toml'), 'model = "gpt-5"');
+    writeFileSync(join(hostCodex, 'sessions', 'user-rollout.jsonl'), '{}');
     setEnv('HOME', hostHome);
+    const runner = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
 
-    const env = await createRunnerSandboxEnv(
-      projectDir,
-      { kind: 'cli', tool: 'codex', authChannel: 'session' },
-      'implementer',
-    );
-    const linkDir = join(env.HOME as string, '.codex');
+    const env = await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+    const sandboxCodex = join(env.HOME as string, '.codex');
 
-    expect(lstatSync(linkDir).isSymbolicLink()).toBe(true);
-    expect(readlinkSync(linkDir)).toBe(realpathSync(join(hostHome, '.codex')));
-    expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(
-      '{"tokens":{"refresh_token":"rotating-passthrough-canary-2c7e"}}',
-    );
-    // The whole state directory is shared — that is the documented trade for a
-    // credential the tool must be able to rewrite
-    // (docs/PLANNERS-AND-IMPLEMENTERS.md, "Credential channels").
-    expect(readFileSync(join(linkDir, 'config.toml'), 'utf8')).toBe('model = "gpt-5"');
+    expect(lstatSync(sandboxCodex).isDirectory()).toBe(true);
+    expect(readdirSync(sandboxCodex)).toEqual(['auth.json']);
+    expect(readlinkSync(join(sandboxCodex, 'auth.json'))).toBe(realpathSync(hostAuth));
     expect(sandboxCredentialValues(env)).toContain('rotating-passthrough-canary-2c7e');
+
+    // What codex writes beside its credential stays in the sandbox.
+    mkdirSync(join(sandboxCodex, 'sessions'));
+    writeFileSync(join(sandboxCodex, 'sessions', 'child-rollout.jsonl'), '{}');
+    writeFileSync(join(sandboxCodex, 'state_5.sqlite'), 'child index');
+    expect(readdirSync(join(hostCodex, 'sessions'))).toEqual(['user-rollout.jsonl']);
+    expect(existsSync(join(hostCodex, 'state_5.sqlite'))).toBe(false);
+
+    // Codex rewrites auth.json in place, so a refresh lands on the host file.
+    writeFileSync(join(sandboxCodex, 'auth.json'), '{"token":"rotated-in-place"}');
+    expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-in-place"}');
+
+    // The next call of the run keeps the sessions it resumes.
+    await createRunnerSandboxEnv(projectDir, runner, 'implementer');
+    expect(existsSync(join(sandboxCodex, 'sessions', 'child-rollout.jsonl'))).toBe(true);
+    expect(readlinkSync(join(sandboxCodex, 'auth.json'))).toBe(realpathSync(hostAuth));
   });
+
+  itUnix(
+    'replaces a codex home link left by an earlier build without touching the host',
+    async () => {
+      const hostHome = createTempDir('sandbox-state-codex-link-host');
+      const projectDir = createTempDir('sandbox-state-codex-link-project');
+      dirs.push(hostHome, projectDir);
+      const hostCodex = join(hostHome, '.codex');
+      mkdirSync(join(hostCodex, 'sessions'), { recursive: true });
+      writeFileSync(join(hostCodex, 'auth.json'), '{"token":"codex-link-migration"}');
+      writeFileSync(join(hostCodex, 'sessions', 'user-rollout.jsonl'), '{}');
+      setEnv('HOME', hostHome);
+      const sandboxHome = join(projectDir, SANDBOX_DIR, 'planner', 'codex', 'home');
+      mkdirSync(sandboxHome, { recursive: true });
+      symlinkSync(realpathSync(hostCodex), join(sandboxHome, '.codex'), 'dir');
+
+      const env = await createRunnerSandboxEnv(
+        projectDir,
+        { kind: 'cli', tool: 'codex', authChannel: 'session' },
+        'planner',
+      );
+
+      expect(lstatSync(join(env.HOME as string, '.codex')).isDirectory()).toBe(true);
+      expect(readdirSync(join(env.HOME as string, '.codex'))).toEqual(['auth.json']);
+      expect(readFileSync(join(hostCodex, 'auth.json'), 'utf8')).toBe(
+        '{"token":"codex-link-migration"}',
+      );
+      expect(readdirSync(join(hostCodex, 'sessions'))).toEqual(['user-rollout.jsonl']);
+    },
+  );
 
   itUnix(
     'a symlinked host state directory bridges successfully; a non-directory target still fails closed',
@@ -1006,11 +1045,10 @@ describe('runnerAuthEnvKeys', () => {
         { kind: 'cli', tool: 'codex', authChannel: 'session' },
         'implementer',
       );
-      const linkDir = join(env.HOME as string, '.codex');
+      const bridgedAuth = join(env.HOME as string, '.codex', 'auth.json');
 
-      expect(lstatSync(linkDir).isSymbolicLink()).toBe(true);
-      expect(readlinkSync(linkDir)).toBe(realpathSync(realState));
-      expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(
+      expect(readlinkSync(bridgedAuth)).toBe(realpathSync(hostAuth));
+      expect(readFileSync(bridgedAuth, 'utf8')).toBe(
         '{"token":"symlinked-passthrough-canary-8b1a"}',
       );
 
@@ -1090,19 +1128,12 @@ describe('runnerAuthEnvKeys', () => {
       writeFileSync(sandboxAuth, '{"token":"rotated-in-place"}');
       expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-in-place"}');
 
-      // Tempfile-and-rename inside the state dir — the other strategy a vendor
-      // can switch to without notice. A directory link survives both.
-      const temp = join(env.HOME as string, '.codex', 'auth.json.tmp');
-      writeFileSync(temp, '{"token":"rotated-by-rename"}');
-      renameSync(temp, sandboxAuth);
-      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-by-rename"}');
-
       await clearBridgedCliState(projectDir);
-      expect(existsSync(join(env.HOME as string, '.codex'))).toBe(false);
-      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-by-rename"}');
+      expect(existsSync(sandboxAuth)).toBe(false);
+      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-in-place"}');
 
       rmSync(join(projectDir, SANDBOX_DIR), { recursive: true, force: true });
-      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-by-rename"}');
+      expect(readFileSync(hostAuth, 'utf8')).toBe('{"token":"rotated-in-place"}');
     },
   );
 
@@ -1155,7 +1186,7 @@ describe('runnerAuthEnvKeys', () => {
       'implementer',
     );
 
-    expect(lstatSync(join(env.HOME as string, '.codex')).isSymbolicLink()).toBe(true);
+    expect(lstatSync(join(env.HOME as string, '.codex', 'auth.json')).isSymbolicLink()).toBe(true);
     expect(readFileSync(join(env.HOME as string, '.codex', 'auth.json'), 'utf8')).toBe(
       '{"token":"live-host-token"}',
     );
@@ -1495,6 +1526,16 @@ describe('backend compatibility fixtures', () => {
     expect(readlinkSync(linkDir)).toBe(realpathSync(join(hostHome, '.config', 'opencode')));
     expect(readFileSync(join(linkDir, 'auth.json'), 'utf8')).toBe(JSON.stringify({ token }));
     expect(sandboxCredentialValues(env)).toContain(token);
+
+    // A directory link keeps a rotation persisted by tempfile-and-rename too.
+    const temp = join(linkDir, 'auth.json.tmp');
+    writeFileSync(temp, '{"token":"rotated-by-rename"}');
+    renameSync(temp, join(linkDir, 'auth.json'));
+    await clearBridgedCliState(projectDir);
+    expect(existsSync(linkDir)).toBe(false);
+    expect(readFileSync(join(hostHome, '.config', 'opencode', 'auth.json'), 'utf8')).toBe(
+      '{"token":"rotated-by-rename"}',
+    );
   });
 
   itUnix(

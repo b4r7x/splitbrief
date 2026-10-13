@@ -149,6 +149,7 @@
 - The inline (non-fullscreen) TUI no longer repaints one row low.
 - The slash-completion menu reads as one table, and a recovery menu row keeps its words whole on a narrow panel.
 - File snapshots are flushed to disk before they replace the old file, and worktree removal checks that the path is the run's own.
+- A Codex seat keeps its sessions and history in the SPLITBRIEF sandbox and shares only its login with your `~/.codex`. A removed sandbox no longer leaves an entry in your Codex state that Codex reports as `state db returned stale rollout path`.
 - `--plain` no longer prints a `phase:` line for each streamed chunk of the final review, and review usage is counted on the reviewer.
 - The guides now state the configuration that takes effect: `temperature` is accepted but not sent to the server, a `shell` or `agent` runner cannot declare session resume, and the loader fills the stated defaults.
 - The guides list all eight supported CLI tools, Antigravity included, and the llama.cpp endpoint default `http://localhost:8080/v1`.
