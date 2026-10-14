@@ -158,6 +158,7 @@
 - The guides state which seats take images: Cursor, Command Code and Antigravity take none.
 - The guides describe the second `ctrl+c` press that quits within two seconds, exact slash-command names, and help that shows only the commands available on the current screen.
 - The guides state that `splitbrief doctor --probe-seat` makes one paid call and records its result, and that `splitbrief review` needs no run.
+- A red reviewer check that is not verified at the run base, and that the reviewer rejects with a reason, no longer fails the review: a correct run reaches Apply. Every other red check, and every Apply conflict, still fails the review whatever the reviewer answers, and offers no **Accept as is**. The review result row and `review.md` now count each red that still blocks as a blocking finding, so they agree with the halt below them. When a red check names no failing test, the base re-run row quotes its first error line, for example `both runs exited with code 1: Error: Cannot find module 'src'`, in place of `without diagnostics`.
 
 ## [0.1.0] - 2026-08-07
 

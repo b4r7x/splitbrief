@@ -5174,6 +5174,64 @@ const reviewBaseNotVerifiedProjection: WorkflowFixtureProjection = {
   ],
 };
 
+/** The reviewer rejected a red check that was red at the run base too, and the review passed. */
+const reviewBaseRejectedProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-review-base-rejected'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...everyBriefPassed(),
+    finalReviewStarted(FIXED_TS + 900, BASE_PLANNER),
+    {
+      type: 'review_checks',
+      ts: FIXED_TS + 900,
+      phase: 'final-review',
+      scope: 'final',
+      status: 'planned',
+      commands: [BASE_NOT_VERIFIED_E2E, BASE_NOT_VERIFIED_TEST],
+      declined: [],
+      reason: null,
+    },
+    reviewCheck(FIXED_TS + 1_000, BASE_NOT_VERIFIED_E2E, {
+      status: 'done',
+      passed: false,
+      duration: 1_300,
+    }),
+    reviewCheck(FIXED_TS + 1_200, BASE_NOT_VERIFIED_E2E, {
+      status: 'done',
+      moment: 'base',
+      passed: false,
+      duration: 1_100,
+      newFailures: 0,
+      preExisting: 0,
+      notVerified: 1,
+      detail: "both runs exited with code 1: Error: Cannot find module 'e2e'",
+    }),
+    reviewCheck(FIXED_TS + 1_500, BASE_NOT_VERIFIED_TEST, {
+      status: 'not-run',
+      detail: 'V1 failed',
+    }),
+    {
+      ...finalReviewCompleted({
+        ts: FIXED_TS + 2_000,
+        duration: 22_600,
+        verdict: 'pass',
+        seat: BASE_PLANNER,
+      }),
+      verdict: 'pass-with-notes',
+      findings: { blocking: 0, minor: 1, outOfScope: 0 },
+    },
+    {
+      type: 'workflow_complete',
+      ts: FIXED_TS + 2_100,
+      phase: 'complete',
+      review: 'passed',
+      completedTasks: 3,
+    },
+  ],
+};
+
 const projections = [
   reviewResumeProjection,
   reviewCheckCrashProjection,
@@ -5491,6 +5549,7 @@ const projections = [
   fixCheckStoppedContinuedProjection,
   fixCheckDoneProjection,
   reviewBaseNotVerifiedProjection,
+  reviewBaseRejectedProjection,
   reviewRedGateProjection,
   plannerSessionExpiredProjection,
 ] as const;

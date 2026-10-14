@@ -197,6 +197,8 @@ export const ReviewRecordSchema = z.object({
       output: z.string(),
     }),
   ),
+  /** The red check and Apply inputs the answer left blocking; each one fails the review. */
+  redInputs: z.array(TriageInputSchema.pick({ id: true, text: true })).optional(),
   at: z.string(),
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;

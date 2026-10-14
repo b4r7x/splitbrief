@@ -2842,6 +2842,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-review-base-rejected',
+      title: 'Workflow · the reviewer rejects a red check not verified at the run base',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-base-rejected',
+        title: 'The base re-run row quotes the error line and the review passes with its note',
+        kind: 'review',
+        marker: 'Base re-run V1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Reviewer checks transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-fix-check-running',
       title: 'Workflow · a fix brief runs the red reviewer check again',
       surface: screenSurface('workflow'),

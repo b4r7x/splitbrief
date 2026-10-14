@@ -99,6 +99,7 @@ import {
   type TriageResult,
 } from '../../core/schemas/review.js';
 import {
+  blockingRedInputs,
   deriveReviewOutcome,
   findingInReviewScope,
   verificationKey,
@@ -918,13 +919,19 @@ export async function runFinalReviewPhase(opts: {
         );
       }
     }
-    const outcome = deriveReviewOutcome(reviewerVerdict, scope, verification.map);
+    const outcome = deriveReviewOutcome(
+      reviewerVerdict,
+      scope,
+      verification.map,
+      blockingRedInputs(state.pendingTriage?.inputs ?? [], fixWork),
+    );
     const record: ReviewRecord = {
       scope: opts.scope ?? 'final',
       cycle: fixCyclesOf(state).used,
       verdict: reviewerVerdict,
       outcome: outcome.kind,
       verification: verification.entries,
+      ...(outcome.redInputs.length > 0 && { redInputs: outcome.redInputs }),
       at: nowIso(),
     };
     state = transitionAndSave({ projectDir, sessionId }, state, {
@@ -1058,7 +1065,7 @@ export async function runFinalReviewPhase(opts: {
       verdict: verdict?.outcome.kind ?? 'no-verdict',
       ...(verdict !== null && {
         findings: {
-          blocking: verdict.outcome.blocking.length,
+          blocking: verdict.outcome.blocking.length + verdict.outcome.redInputs.length,
           minor: verdict.outcome.minor.length,
           outOfScope: verdict.outcome.outOfScope.length,
         },

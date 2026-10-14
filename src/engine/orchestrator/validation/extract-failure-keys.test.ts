@@ -224,6 +224,31 @@ describe('failureKeys', () => {
     ).toEqual({ keys: ['src/a.ts', 'src/b.ts'] });
   });
 
+  it('quotes the first error line of a red that names no failure, never claiming no diagnostics', () => {
+    expect(
+      failureKeys(
+        {
+          capture: {
+            text: [
+              'TAP version 13',
+              '# node:internal/modules/cjs/loader:1386',
+              "# Error: Cannot find module '/repo/src'",
+              '#     at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)',
+              "#   code: 'MODULE_NOT_FOUND',",
+              'not ok 1 - src',
+            ].join('\n'),
+            complete: true,
+          },
+          exitCode: 1,
+        },
+        '/repo',
+      ),
+    ).toEqual({
+      keys: ['exited with code 1'],
+      placeholder: "exited with code 1: Error: Cannot find module 'src'",
+    });
+  });
+
   it('keeps the placeholder when a path list holds any other line', () => {
     expect(
       failureKeys(
@@ -235,7 +260,7 @@ describe('failureKeys', () => {
       ),
     ).toEqual({
       keys: ['exited with code 1'],
-      placeholder: 'exited with code 1 without diagnostics',
+      placeholder: 'exited with code 1: fatal: runner crashed',
     });
   });
 });
