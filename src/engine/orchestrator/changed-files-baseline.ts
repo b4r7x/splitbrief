@@ -21,6 +21,7 @@ import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.
 import { recordedTargetOutput } from './evidence/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { listWorkspaceEntries } from './isolation/entry-snapshot.js';
+import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from './isolation/cleanliness.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;
@@ -132,10 +133,16 @@ export async function captureChangedFilesBaseline(
     files !== undefined
       ? userVisibleChangedFiles(files)
       : await candidateChangedFiles(projectDir, head);
+  // Isolation's own .gitignore lines are not a change the run started with.
+  const bookkeepingOnly =
+    changedFiles.includes('.gitignore') &&
+    (await gitignoreDiffersOnlyBySplitbriefBookkeeping(projectDir));
   return {
     head,
     fingerprints: await fingerprintFiles(projectDir, changedFiles),
-    runStartChangedFiles: new Set(changedFiles),
+    runStartChangedFiles: new Set(
+      bookkeepingOnly ? changedFiles.filter((file) => file !== '.gitignore') : changedFiles,
+    ),
   };
 }
 

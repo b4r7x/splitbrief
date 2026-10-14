@@ -121,6 +121,7 @@ async function reviewChecks(
     scope: opts.scope ?? 'final',
     taskIds: opts.taskIds ?? tasks.map((task) => task.id),
     changedFiles: opts.changedFiles ?? ['src/a.ts'],
+    preRunFiles: [],
     onApproval: opts.onApproval,
     signal: opts.signal,
   });

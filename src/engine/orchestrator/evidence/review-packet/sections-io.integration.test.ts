@@ -2,7 +2,7 @@ import { setupProject } from '#testing/helpers/planning-phase.js';
 import { writeSpecFile } from '../../../../core/paths-io.js';
 import { describe, it, expect, afterEach } from 'vitest';
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo, recordGitLaunches } from '#testing/helpers/git.js';
@@ -12,6 +12,7 @@ import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { buildFinalReview, resolveChangedFiles, resolveRunUniverse } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
+import { createSnapshot } from '../../../snapshots/create.js';
 
 let dirs: string[] = [];
 
@@ -20,10 +21,13 @@ afterEach(() => {
   dirs = [];
 });
 
-function makeProject(): { projectDir: string; runStartHead: string } {
+function makeProject(files: Record<string, string> = {}): {
+  projectDir: string;
+  runStartHead: string;
+} {
   const projectDir = createTempDir('sections-io-test');
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
+  createTestGitRepo(projectDir, files);
   const runStartHead = execSync('git rev-parse HEAD', {
     cwd: projectDir,
     stdio: 'pipe',
@@ -49,7 +53,8 @@ describe('resolveChangedFiles', () => {
     const missing: string[] = [];
 
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: driftWith(['src/b.ts', 'src/a.ts', 'src/a.ts']),
       missing,
       baseline: { head: runStartHead },
@@ -64,7 +69,8 @@ describe('resolveChangedFiles', () => {
     const missing: string[] = [];
 
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: null,
       missing,
       baseline: { head: runStartHead },
@@ -84,7 +90,8 @@ describe('resolveChangedFiles', () => {
 
     const missing: string[] = [];
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: null,
       missing,
       baseline: undefined,
@@ -106,7 +113,8 @@ describe('resolveChangedFiles', () => {
 
     const missing: string[] = [];
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: null,
       missing,
       baseline: { head: runStartHead },
@@ -126,7 +134,8 @@ describe('resolveChangedFiles', () => {
 
     const missing: string[] = [];
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: null,
       missing,
       baseline: { head: runStartHead },
@@ -153,7 +162,8 @@ describe('resolveChangedFiles', () => {
 
     const missing: string[] = [];
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: null,
       missing,
       baseline: { head: runStartHead },
@@ -173,7 +183,8 @@ describe('resolveChangedFiles', () => {
 
     const missing: string[] = [];
     const files = await resolveChangedFiles({
-      projectDir,
+      workspaceDir: projectDir,
+      runBase: undefined,
       drift: null,
       missing,
       baseline: { head: null },
@@ -191,7 +202,8 @@ describe('resolveChangedFiles', () => {
     const git = recordGitLaunches();
     try {
       const files = await resolveChangedFiles({
-        projectDir,
+        workspaceDir: projectDir,
+        runBase: undefined,
         drift: null,
         missing: [],
         baseline: { head: runStartHead },
@@ -213,7 +225,11 @@ describe('resolveRunUniverse', () => {
     writeFileSync(join(projectDir, 'new-a.txt'), 'UNTRACKED_BODY');
     const git = recordGitLaunches();
     try {
-      const universe = await resolveRunUniverse(projectDir, { head: runStartHead });
+      const universe = await resolveRunUniverse({
+        workspaceDir: projectDir,
+        baseline: { head: runStartHead },
+        runBase: undefined,
+      });
       expect(universe.changedFiles).toEqual(['init.txt', 'new-a.txt']);
       expect(universe.fullDiff).toContain('CHANGED_BODY');
       expect(universe.fullDiff).toContain('UNTRACKED_BODY');
@@ -221,6 +237,92 @@ describe('resolveRunUniverse', () => {
     } finally {
       git.restore();
     }
+  });
+
+  it("takes isolation's own .gitignore lines for no change, and the run's for one", async () => {
+    const committed = 'node_modules\n';
+    const { projectDir, runStartHead } = makeProject({ '.gitignore': committed });
+    writeFileSync(join(projectDir, '.gitignore'), `${committed}.splitbrief/\n.trees/\n`);
+    const baseline = { head: runStartHead, runStartChangedFiles: [] };
+
+    const untouched = await resolveRunUniverse({
+      workspaceDir: projectDir,
+      baseline,
+      runBase: undefined,
+    });
+    expect(untouched.changedFiles).toEqual([]);
+    expect(untouched.fullDiff).toBe('');
+
+    writeFileSync(join(projectDir, '.gitignore'), `${committed}.splitbrief/\n.trees/\ndist/\n`);
+    const changed = await resolveRunUniverse({
+      workspaceDir: projectDir,
+      baseline,
+      runBase: undefined,
+    });
+    expect(changed.changedFiles).toEqual(['.gitignore']);
+    expect(changed.fullDiff).toContain('+dist/');
+  });
+});
+
+describe('resolveRunUniverse on a checkout changed before the run', () => {
+  async function dirtyRun() {
+    const { projectDir, runStartHead } = makeProject();
+    writeFileSync(join(projectDir, 'init.txt'), 'USER_EDIT\n');
+    writeFileSync(join(projectDir, 'user-script.mjs'), 'USER_SCRIPT\n');
+    writeFileSync(join(projectDir, 'shared.txt'), 'USER_LINE\n');
+    chmodSync(join(projectDir, 'user-script.mjs'), 0o755);
+    // Latin-1 text: its bytes are no valid UTF-8.
+    writeFileSync(join(projectDir, 'latin.txt'), Buffer.from('caf\xe9\n', 'latin1'));
+    const ref = { projectDir, sessionId: 'dirty-run' };
+    await createSnapshot({ ...ref, phase: 'manual', name: 'run-baseline' });
+    const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
+    const runBase = { ...ref, snapshotId: base.manifest.id, head: runStartHead };
+    const baseline = {
+      head: runStartHead,
+      runStartChangedFiles: ['init.txt', 'latin.txt', 'shared.txt', 'user-script.mjs'],
+    };
+    return { projectDir, runBase, baseline };
+  }
+
+  it('leaves out the files the run did not change, and diffs the rest from the run start', async () => {
+    const { projectDir, runBase, baseline } = await dirtyRun();
+    writeFileSync(join(projectDir, 'shared.txt'), 'USER_LINE\nRUN_LINE\n');
+    writeFileSync(join(projectDir, 'run.txt'), 'RUN_FILE\n');
+    rmSync(join(projectDir, 'user-script.mjs'));
+
+    const universe = await resolveRunUniverse({ workspaceDir: projectDir, baseline, runBase });
+
+    expect(universe.changedFiles).toEqual(['run.txt', 'shared.txt', 'user-script.mjs']);
+    expect(universe.preRunFiles).toEqual([
+      'init.txt',
+      'latin.txt',
+      'shared.txt',
+      'user-script.mjs',
+    ]);
+    expect(universe.fullDiff).toContain('+RUN_FILE');
+    expect(universe.fullDiff).toContain('+RUN_LINE');
+    expect(universe.fullDiff).toContain('-USER_SCRIPT');
+    expect(universe.fullDiff).not.toContain('+USER_LINE');
+    expect(universe.fullDiff).not.toContain('USER_EDIT');
+    expect(universe.fullDiff).toContain('deleted file mode 100755');
+  });
+
+  it('diffs a pre-run file from its base bytes, never from a UTF-8 reading of them', async () => {
+    const { projectDir, runBase, baseline } = await dirtyRun();
+    writeFileSync(join(projectDir, 'latin.txt'), Buffer.from('caf\xe9\nRUN\n', 'latin1'));
+
+    const universe = await resolveRunUniverse({ workspaceDir: projectDir, baseline, runBase });
+
+    expect(universe.changedFiles).toEqual(['latin.txt']);
+    expect(universe.fullDiff).toContain('+RUN');
+    expect(universe.fullDiff).not.toContain('-caf');
+  });
+
+  it('refuses to guess when the run recorded no run base for its pre-run files', async () => {
+    const { projectDir, baseline } = await dirtyRun();
+    await expect(
+      resolveRunUniverse({ workspaceDir: projectDir, baseline, runBase: undefined }),
+    ).rejects.toThrow('no run base to compare them with');
   });
 });
 

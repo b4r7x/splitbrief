@@ -389,7 +389,7 @@ Apply lists those findings and requires one explicit confirmation. The result me
 
 A reviewer tool can have an input cap. The cap is a tool fact (`maxInputChars`, `src/core/runners/cli-tool-catalog.ts`). Codex takes at most 1,048,576 characters. A tool with no recorded cap gets no guard.
 
-The review prompt carries one diff per file for the whole run. Each file is headed by the tasks that touched it. The Workspace Context carries only files with no recorded run effect. No section repeats another.
+The review prompt carries one diff per file for the whole run. Each file is headed by the tasks that touched it. The Workspace Context carries only files with no recorded run effect. No section repeats another. A file that was already changed when the run started is listed apart as the user's own work. It is in a diff only when the run changed it again, and that diff starts at the version the run started with. A fix task cannot target such a file when the run did not change it. See [Complete transition table](./WORKFLOW.md#12-complete-transition-table).
 
 SPLITBRIEF measures the prompt before the review call (`fitReviewPrompt`, `src/engine/orchestrator/evidence/review-packet/fit.ts`). An oversized prompt is trimmed in this order: whole new files (the reviewer reads them in the workspace), then the diffs of files no brief declares, then the recorded validation output and the drift report. The prompt names what it dropped in a `Trimmed for Size` section. The transcript shows one `Review input trimmed` warning, and `review-packet.json` records the measurement under `reviewInput`.
 

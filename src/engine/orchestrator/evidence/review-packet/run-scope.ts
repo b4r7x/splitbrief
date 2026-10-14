@@ -36,6 +36,8 @@ export async function resolveRunReviewScope(opts: {
   workspaceFiles: readonly string[];
   /** The whole workspace diff, from the base to the workspace. */
   workspaceDiff: string;
+  /** The files already changed when the run started. */
+  preRunFiles: readonly string[];
   mergedPaths?: readonly string[];
 }): Promise<RunReviewScope> {
   let status: ReviewProvenance['status'] = 'available';
@@ -133,6 +135,7 @@ export async function resolveRunReviewScope(opts: {
     promotedFiles: uniqueSorted([...promotedFiles]),
     workspaceFiles: uniqueSorted([...opts.workspaceFiles]),
     uncertainFiles: uniqueSorted([...uncertainFiles]),
+    preRunFiles: uniqueSorted([...opts.preRunFiles]),
   };
   return {
     files,
@@ -148,6 +151,8 @@ export async function resolveRunReviewScope(opts: {
       `Files with recorded run effects: ${provenance.promotedFiles.join(', ') || 'none recorded'}.`,
       `Files touched, not suggested by any brief: ${uniqueSorted(notSuggested).join(', ') || 'none'}.`,
       `Files with uncertain attribution or later edits: ${provenance.uncertainFiles.join(', ') || 'none observed'}.`,
+      `Files already changed when this run started: ${provenance.preRunFiles.join(', ') || 'none'}.`,
+      "Those changes are the user's own work, not changes of this run: raise no finding and give no fix task for them. A file among them that the run changed too is a run change only in what the run did; its diff starts at the user's version.",
       'Unknown attribution is not proof of either implementer or operator authorship. Missing or invalid evidence, direct writes without capture and obsolete brief records remain unknown; they are not evidence of an empty run.',
       'Deterministic drift covers the recorded task changes only. A missing expected file in that report can mean missing provenance; inspect the workspace and task evidence before judging it.',
     ].join('\n\n'),

@@ -22,6 +22,7 @@ import { readBriefQuality, readCheckpoints, readPacketEvents, readReadiness } fr
 import { addMissing } from './missing-artifacts.js';
 import type { BuildReviewPacketOptions } from './types.js';
 import { makeRecoveryWithSources } from './recovery.js';
+import { runBaseOf } from '../../isolation/base-tree.js';
 import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 
 export const REVIEWER_CHECKLIST = [
@@ -49,10 +50,11 @@ export async function buildReviewPacket(opts: BuildReviewPacketOptions): Promise
   const readiness = readReadiness(opts.projectDir, opts.sessionId, missing);
   const events = await readPacketEvents(opts.projectDir, opts.sessionId, missing);
   const changedFiles = await resolveChangedFiles({
-    projectDir: opts.projectDir,
+    workspaceDir: opts.workspaceDir,
     drift,
     missing,
     baseline: opts.state.changedFilesBaseline,
+    runBase: runBaseOf(opts, opts.state),
   });
   const checkpoints = await readCheckpoints(opts.projectDir, opts.sessionId, missing);
   const finalReview = await buildFinalReview({

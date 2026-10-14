@@ -7,6 +7,7 @@ function prompt(overrides: Partial<ReviewChecksPromptInput> = {}): string {
     scope: 'final',
     taskIds: ['T001', 'T002'],
     changedFiles: ['src/a.ts', 'src/a.test.ts'],
+    preRunFiles: [],
     requiredCommands: [],
     workspaceInstructions: 'The run workspace is `/ws`.',
     ...overrides,
@@ -42,6 +43,17 @@ describe('buildReviewChecksPrompt', () => {
   it('lists the changed files, or says none changed', () => {
     expect(prompt()).toContain('## Changed files\n\n- src/a.ts\n- src/a.test.ts');
     expect(prompt({ changedFiles: [] })).toContain('## Changed files\n\nNo file changed.');
+  });
+
+  it("names the files changed before the run as the user's own work, apart from the run's", () => {
+    expect(prompt()).not.toContain('## Changed before this run');
+    const text = prompt({ preRunFiles: ['package.json', 'scripts/check.mjs'] });
+    expect(text).toContain(
+      '## Changed files\n\n- src/a.ts\n- src/a.test.ts\n\n## Changed before this run',
+    );
+    expect(text).toContain(
+      "the user's own work, not changes of this run: the run base holds them, and the command policy compares with the run base.\n- package.json\n- scripts/check.mjs",
+    );
   });
 
   it('admits any installed program and states every rule of the reviewer command policy', () => {

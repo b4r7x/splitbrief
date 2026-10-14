@@ -33,6 +33,7 @@ import { captureTaskReviewChanges } from './evidence/review-capture.js';
 import { getOrCreateLedger } from './evidence/persistence.js';
 import { writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { resolveRunReviewScope } from './evidence/review-packet/run-scope.js';
+import { createSnapshot } from '../snapshots/create.js';
 import { runFinalReviewPhase } from './final-review.js';
 
 const cleanups: Array<() => void> = [];
@@ -45,7 +46,7 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 });
 
-function project() {
+async function project() {
   const projectDir = createTempDir('review-scope');
   cleanups.push(() => cleanupTempDir(projectDir));
   // An unborn repository supports these reads without creating a commit or index.
@@ -56,11 +57,19 @@ function project() {
   const ref = { projectDir, sessionId: 'scope-test' };
   ensureSessionDir(projectDir, ref.sessionId);
   const task = makeTask({ suggestedFiles: [file], action: 'modify', status: 'in_progress' });
-  return { ...ref, ref, task };
+  // The run base: the operator's edits are already there when the run starts.
+  await createSnapshot({ ...ref, phase: 'manual', name: 'run-baseline' });
+  const base = await createSnapshot({ ...ref, phase: 'manual', name: 'workspace-base' });
+  const workspace = {
+    kind: 'checkout' as const,
+    path: projectDir,
+    base: { snapshotId: base.manifest.id, head: null },
+  };
+  return { ...ref, ref, task, workspace };
 }
 
 async function completeTask(
-  p: ReturnType<typeof project>,
+  p: Awaited<ReturnType<typeof project>>,
   text = worker,
   extra?: string,
   task = p.task,
@@ -78,7 +87,7 @@ async function completeTask(
   writeEvidenceLedger(p.ref, getOrCreateLedger({ ref: p.ref, state: makeImplState([task]) }));
 }
 
-async function review(p: ReturnType<typeof project>, api = false, tasks = [p.task]) {
+async function review(p: Awaited<ReturnType<typeof project>>, api = false, tasks = [p.task]) {
   const prompts: string[] = [];
   writeSpecFile(p.ref, SPEC_FILE, 'Enable feature; preserve operator fixes.', null);
   const result = await runFinalReviewPhase({
@@ -88,6 +97,7 @@ async function review(p: ReturnType<typeof project>, api = false, tasks = [p.tas
       tasks.map((task) => ({ ...task, status: 'done' as const })),
       {
         changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
+        workspace: p.workspace,
       },
     ),
     config: makeNoValidationConfig(
@@ -137,7 +147,7 @@ async function review(p: ReturnType<typeof project>, api = false, tasks = [p.tas
 
 describe('final review task completion provenance', () => {
   it('emits task review notes when every finding is out of scope', async () => {
-    const p = project();
+    const p = await project();
     await completeTask(p);
     const { bus, events } = makeBusRecorder();
     const result = await runFinalReviewPhase({
@@ -147,6 +157,7 @@ describe('final review task completion provenance', () => {
       afterTaskId: p.task.id,
       state: makeImplState([{ ...p.task, status: 'done' }], {
         changedFilesBaseline: { head: null, runStartChangedFiles: [file], fingerprints: {} },
+        workspace: p.workspace,
       }),
       config: makeNoValidationConfig(),
       bus,
@@ -190,7 +201,7 @@ describe('final review task completion provenance', () => {
   it.each([false, true])(
     'separates mixed-file and independent operator hunks for API=%s',
     async (api) => {
-      const p = project();
+      const p = await project();
       await completeTask(p);
       const { prompt, packet } = await review(p, api);
       const implementation =
@@ -227,7 +238,7 @@ describe('final review task completion provenance', () => {
   );
 
   it('keeps overlapping edits after capture explicit without erasing the run effect', async () => {
-    const p = project();
+    const p = await project();
     await completeTask(p);
     writeFileSync(join(p.projectDir, file), 'operator changed the same feature line\n');
     const { prompt, packet } = await review(p);
@@ -239,22 +250,25 @@ describe('final review task completion provenance', () => {
   });
 
   it.each(['missing', 'invalid'])(
-    'labels %s legacy evidence and retains all workspace edits',
+    'labels %s legacy evidence and retains every workspace edit since the run started',
     async (state) => {
-      const p = project();
+      const p = await project();
       if (state === 'invalid')
         writeFileSync(join(sessionDir(p.projectDir, p.sessionId), REVIEW_CHANGES_FILE), '{}');
       const { prompt, packet } = await review(p);
       expect(packet.changes.provenance?.status).toBe(state);
       expect(prompt).toContain('not evidence of an empty run');
-      expect(prompt).toContain('operatorFix');
       expect(prompt).toContain('independentFix');
-      expect(packet.changes.provenance?.uncertainFiles).toEqual([file, 'src/tool-fix.ts']);
+      // The operator's edit was there when the run started, so it is context, not a run change.
+      expect(prompt).not.toContain('operatorFix');
+      expect(prompt).toContain(`Files already changed when this run started: ${file}.`);
+      expect(packet.changes.provenance?.uncertainFiles).toEqual(['src/tool-fix.ts']);
+      expect(packet.changes.provenance?.preRunFiles).toEqual([file]);
     },
   );
 
   it('names a completed task file no brief suggested in the Changed Files section', async () => {
-    const p = project();
+    const p = await project();
     await completeTask(p, worker, 'src/shared.ts');
     const scope = await resolveRunReviewScope({
       ref: p.ref,
@@ -262,6 +276,7 @@ describe('final review task completion provenance', () => {
       tasks: [p.task],
       workspaceFiles: [],
       workspaceDiff: '',
+      preRunFiles: [],
     });
     expect(scope.description).toContain(
       'Files touched, not suggested by any brief: src/shared.ts.',
@@ -269,7 +284,7 @@ describe('final review task completion provenance', () => {
   });
 
   it('retains mode changes and deletions in the run diff of a file', async () => {
-    const p = project();
+    const p = await project();
     const scoped = () =>
       resolveRunReviewScope({
         ref: p.ref,
@@ -277,6 +292,7 @@ describe('final review task completion provenance', () => {
         tasks: [p.task],
         workspaceFiles: [],
         workspaceDiff: '',
+        preRunFiles: [],
       });
     const capture = async (change: () => void) => {
       const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
@@ -298,7 +314,7 @@ describe('final review task completion provenance', () => {
   });
 
   it('shows a file two tasks touched once, attributed to both, with each hunk once', async () => {
-    const p = project();
+    const p = await project();
     const second = makeTask({
       id: 'T002',
       suggestedFiles: [file],
@@ -314,6 +330,7 @@ describe('final review task completion provenance', () => {
       tasks: [p.task, second],
       workspaceFiles: [file],
       workspaceDiff: '',
+      preRunFiles: [],
     });
     expect(scope.files.map((entry) => [entry.path, entry.taskIds])).toEqual([
       [file, ['T001', 'T002']],
@@ -329,7 +346,7 @@ describe('final review task completion provenance', () => {
   });
 
   it('shows a later edit of a file whose run effect cancelled out once', async () => {
-    const p = project();
+    const p = await project();
     const second = makeTask({
       id: 'T002',
       suggestedFiles: [file],
@@ -346,7 +363,7 @@ describe('final review task completion provenance', () => {
   });
 
   it('keeps a file whose run effect cancelled out uncertain when it was edited afterwards', async () => {
-    const p = project();
+    const p = await project();
     const second = makeTask({
       id: 'T002',
       suggestedFiles: [file],
@@ -363,6 +380,7 @@ describe('final review task completion provenance', () => {
       tasks: [p.task, second],
       workspaceFiles: [],
       workspaceDiff: '',
+      preRunFiles: [],
     });
 
     expect(scope.files).toEqual([]);
@@ -371,7 +389,7 @@ describe('final review task completion provenance', () => {
   });
 
   it('does not adopt evidence for a rewound brief that reuses an ID', async () => {
-    const p = project();
+    const p = await project();
     await completeTask(p);
     const scope = await resolveRunReviewScope({
       ref: p.ref,
@@ -379,6 +397,7 @@ describe('final review task completion provenance', () => {
       tasks: [{ ...p.task, description: 'different brief' }],
       workspaceFiles: [file],
       workspaceDiff: '',
+      preRunFiles: [],
     });
     expect(scope.files).toEqual([]);
     expect(scope.provenance.uncertainFiles).toEqual([file]);

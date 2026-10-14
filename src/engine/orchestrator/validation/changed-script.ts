@@ -166,7 +166,7 @@ async function manifestRefusal(
   if (atBase.kind === 'new') {
     return `runs the package script ${script}, and the run base does not hold ${file}`;
   }
-  const before = parseManifest(atBase.text);
+  const before = parseManifest(atBase.base?.bytes.toString('utf8') ?? null);
   const after = parseManifest(await workspaceText(workspaceDir, file));
   if (before === null || after === null) {
     return `runs the package script ${script}, and this run changed ${file}`;

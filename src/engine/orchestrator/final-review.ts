@@ -124,6 +124,7 @@ import { fixCyclesOf } from '../../core/schemas/workflow.js';
 import {
   checkVerificationOutput,
   checkVerificationStatus,
+  fixTaskTargetErrors,
   runTriageVerification,
   triageContractErrors,
 } from './triage.js';
@@ -487,14 +488,22 @@ export async function runFinalReviewPhase(opts: {
   try {
     const baseline = state.changedFilesBaseline;
     if (baseline?.runStartChangedFiles === undefined) throw finalReviewError.missingRunBaseline();
-    const runStartChangedFiles = baseline.runStartChangedFiles;
-    const universe = await resolveRunUniverse(workspaceDir, baseline);
+    const universe = await resolveRunUniverse({
+      workspaceDir,
+      baseline,
+      runBase: runBaseOf({ projectDir, sessionId }, state),
+    });
+    // The user's own files the run left alone: no fix task may target them.
+    const userFiles = new Set(
+      universe.preRunFiles.filter((file) => !universe.changedFiles.includes(file)),
+    );
     reviewScope = await resolveRunReviewScope({
       ref: { projectDir, sessionId },
       workspaceDir,
       tasks: state.tasks,
       workspaceFiles: universe.changedFiles,
       workspaceDiff: universe.fullDiff,
+      preRunFiles: universe.preRunFiles,
       ...(state.applyReview !== undefined && {
         mergedPaths: state.applyReview.merged.map((entry) => entry.path),
       }),
@@ -524,6 +533,7 @@ export async function runFinalReviewPhase(opts: {
         scope: opts.scope ?? 'final',
         taskIds: scope.taskIds,
         changedFiles,
+        preRunFiles: universe.preRunFiles,
         signal: opts.signal,
         onApproval: callbacks.onReviewChecksApproval,
       });
@@ -577,7 +587,7 @@ export async function runFinalReviewPhase(opts: {
         changedFiles: reviewScope.provenance.promotedFiles,
         ledger,
         briefHash: hashTaskBrief(state.tasks),
-        preRunChangedFiles: runStartChangedFiles,
+        preRunChangedFiles: universe.preRunFiles,
       });
       writeDriftReport({ projectDir, sessionId }, driftReport);
       publishDriftReport(bus, state.phase, driftReport);
@@ -600,6 +610,7 @@ export async function runFinalReviewPhase(opts: {
           enabledReviewChecks(config, state.reviewChecks),
           scope,
         ),
+        ...fixTaskTargetErrors(candidate, userFiles),
       ]) {
         ctx.addIssue({ code: 'custom', message });
       }
@@ -682,7 +693,7 @@ export async function runFinalReviewPhase(opts: {
           reviewKind: opts.scope ?? 'final',
           fullDiff: universe.fullDiff,
           changedFiles: universe.changedFiles,
-          baseline: { head: baseline.head, runStartChangedFiles },
+          baseline: { head: baseline.head, runStartChangedFiles: universe.preRunFiles },
           driftSection: driftPromptSection,
           validation: { recorded: wholeChecksLog !== undefined, evidence: wholeChecksLog },
           reviewScope: promptScope,
@@ -1080,6 +1091,7 @@ export async function runFinalReviewPhase(opts: {
     try {
       await writeReviewPacket({
         projectDir,
+        workspaceDir,
         sessionId,
         summary: buildSummary({
           ...summaryBase,

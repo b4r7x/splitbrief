@@ -68,6 +68,10 @@ vi.mock('../../lib/git/refs.js', () => ({
     kind: 'commit',
     ref: head ?? '-1',
   }),
+  showFileAtHead: async (dir: string, file: string) => {
+    const text = history.get(dir)?.at(-1)?.[file];
+    return text === undefined ? null : Buffer.from(text);
+  },
 }));
 vi.mock('../../lib/git/diff.js', () => ({
   getCommittedFilesSince: async (dir: string, ref: string) =>
@@ -333,6 +337,27 @@ describe('changed-files baseline persistence', () => {
       cleanupTempDir(dir);
     }
   });
+
+  it.each([
+    ['only isolation lines', '.splitbrief/\n.trees/\n', []],
+    ['a line of the user', 'dist/\n.splitbrief/\n', ['.gitignore']],
+  ])(
+    'records the run-start .gitignore by its own lines, not isolation ones: %s',
+    async (_, added, expected) => {
+      const dir = createTempDir('changed-files-baseline-run-start-gitignore');
+      writeFileSync(join(dir, '.gitignore'), 'node_modules\n');
+      recordHead(dir);
+      try {
+        writeFileSync(join(dir, '.gitignore'), `node_modules\n${added}`);
+        const baseline = await captureChangedFilesBaseline(dir);
+
+        expect([...(baseline.runStartChangedFiles ?? [])]).toEqual(expected);
+        expect(baseline.fingerprints.has('.gitignore')).toBe(true);
+      } finally {
+        cleanupTempDir(dir);
+      }
+    },
+  );
 
   it('retains genuinely dirty-at-start paths while rolling fingerprints refresh', async () => {
     const dir = createTempDir('changed-files-baseline-run-start-dirty');

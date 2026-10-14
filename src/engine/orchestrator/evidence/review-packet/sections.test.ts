@@ -167,7 +167,14 @@ describe('buildChanges declared files', () => {
 describe('buildRun seat identity kinds', () => {
   function makeRun(summary: Parameters<typeof buildRun>[0]['summary'], state: WorkflowState) {
     return buildRun(
-      { projectDir: '/tmp/project', sessionId: 's', summary, state, finalReviewStatus: 'written' },
+      {
+        projectDir: '/tmp/project',
+        workspaceDir: '/tmp/project',
+        sessionId: 's',
+        summary,
+        state,
+        finalReviewStatus: 'written',
+      },
       [],
     );
   }
@@ -351,7 +358,13 @@ describe('buildRun recorded axes', () => {
       },
     });
     return buildRun(
-      { ...ref, summary, state: createInitialState('feat'), finalReviewStatus: 'written' },
+      {
+        ...ref,
+        workspaceDir: ref.projectDir,
+        summary,
+        state: createInitialState('feat'),
+        finalReviewStatus: 'written',
+      },
       [],
     );
   }
