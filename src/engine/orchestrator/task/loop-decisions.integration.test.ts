@@ -31,6 +31,7 @@ import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 import { runTaskLoop } from './loop.js';
+import { createSnapshot } from '../../snapshots/create.js';
 import { ABSENT_INPUT_HASH } from './stale-inputs.js';
 
 type Decision = { what: string; why: string };
@@ -1042,9 +1043,22 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     );
     const loop = (initialState: WorkflowState) =>
       runTaskLoop({ wctx, initialState, setTrackedState: vi.fn(), setCurrentTask: vi.fn() });
+    // The run base the task review compares the worktree with, recorded as a run records it.
+    await createSnapshot({ projectDir, sessionId, phase: 'manual', name: 'run-baseline' });
+    const base = await createSnapshot({
+      projectDir,
+      sessionId,
+      phase: 'manual',
+      name: 'workspace-base',
+    });
+    const workspace = {
+      kind: 'worktree' as const,
+      path: wctx.workspaceDir,
+      base: { snapshotId: base.manifest.id, head: null },
+    };
 
     const halted = await loop(
-      stateWithPlan([task], { lineages: { T001: lineage({ consults: 2 }) } }),
+      stateWithPlan([task], { lineages: { T001: lineage({ consults: 2 }) }, workspace }),
     );
     expect(halted.state.pendingRecovery?.reason).toBe('consult-bound-spent');
     expect(readFileSync(join(wctx.workspaceDir, 'src/a.ts'), 'utf-8')).toBe(

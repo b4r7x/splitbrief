@@ -44,5 +44,6 @@ export const ReviewProvenanceSchema = z.object({
   promotedFiles: z.array(z.string()),
   workspaceFiles: z.array(z.string()),
   uncertainFiles: z.array(z.string()),
+  preRunFiles: z.array(z.string()).default([]),
 });
 export type ReviewProvenance = z.infer<typeof ReviewProvenanceSchema>;

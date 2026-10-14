@@ -91,6 +91,8 @@ export type ReviewChecksOptions = {
   taskIds: readonly string[];
   /** The files the review covers. */
   changedFiles: readonly string[];
+  /** The files already changed when the run started. */
+  preRunFiles: readonly string[];
   signal?: AbortSignal | undefined;
   /** Asks the user to run or skip the chosen commands; a run without a screen has none. */
   onApproval?: OrchestratorCallbacks['onReviewChecksApproval'];
@@ -473,6 +475,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     scope: opts.scope,
     taskIds: opts.taskIds,
     changedFiles: opts.changedFiles,
+    preRunFiles: opts.preRunFiles,
     requiredCommands,
     ...(readsOwnFiles
       ? { workspaceInstructions: workspaceReadInstructions(opts.workspaceDir) }

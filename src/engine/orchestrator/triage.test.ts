@@ -17,7 +17,12 @@ import type {
   ReviewRecord,
   WorkflowState,
 } from '../../core/schemas/workflow.js';
-import { applyTriage, runTriageVerification, triageContractErrors } from './triage.js';
+import {
+  applyTriage,
+  fixTaskTargetErrors,
+  runTriageVerification,
+  triageContractErrors,
+} from './triage.js';
 import { enabledReviewChecks } from './validation/run-checks.js';
 import { processError } from '../../lib/process/errors.js';
 
@@ -364,6 +369,41 @@ describe('triageContractErrors', () => {
     expect(triageContractErrors(ask, plan, findings, [], [], undefined, FINAL_SCOPE)).toEqual([
       'Fix task T002 names unknown criterion C9.',
     ]);
+  });
+});
+
+describe('fixTaskTargetErrors', () => {
+  const result = (spec: Partial<TriageResult['fixTasks'][number]>): TriageResult => ({
+    fixTasks: [
+      {
+        ...makeTaskSpec({ id: 'T002', suggestedFiles: ['src/a.ts'] }),
+        findingIds: ['F1'],
+        ...spec,
+      },
+    ],
+    rejected: [],
+    verify: [],
+    ask: null,
+  });
+  const userFiles = new Set(['package.json', 'scripts/legacy.mjs']);
+
+  it('refuses a fix task that targets a file changed before the run and left alone by it', () => {
+    expect(
+      fixTaskTargetErrors(
+        result({
+          suggestedFiles: ['src/a.ts', 'package.json'],
+          protectedOperations: [{ path: 'scripts/legacy.mjs', operation: 'write' }],
+        }),
+        userFiles,
+      ),
+    ).toEqual([
+      'Fix task T002 targets package.json: it was already changed when this run started, and this run did not change it.',
+      'Fix task T002 targets scripts/legacy.mjs: it was already changed when this run started, and this run did not change it.',
+    ]);
+  });
+
+  it('admits a fix task on the files of the run', () => {
+    expect(fixTaskTargetErrors(result({}), userFiles)).toEqual([]);
   });
 });
 

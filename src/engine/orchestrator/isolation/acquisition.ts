@@ -235,35 +235,36 @@ async function readBaseSnapshot(base: {
 }
 
 // A snapshot stores a blob only for the files it captured; an unchanged file inherits the baseline's.
-async function baseBlobPath(
+async function baseBlob(
   snapshot: BaseSnapshot,
   file: string,
   hash: string,
-): Promise<string | null> {
+): Promise<{ path: string; mode: number | undefined } | null> {
   const entry = snapshot.entries.get(file);
   const inherited = entry === undefined && snapshot.baseline.fileHashes[file] === hash;
   const resolvedEntry = inherited ? snapshot.baselineEntries.get(file) : entry;
   if (resolvedEntry?.hash !== hash) return null;
-  return resolveValidatedBlobPath({
+  const path = await resolveValidatedBlobPath({
     projectDir: snapshot.projectDir,
     sessionId: snapshot.sessionId,
     snapshotId: inherited ? SNAPSHOT_BASELINE_ID : snapshot.snapshotId,
     path: file,
     entry: resolvedEntry,
   });
+  return path === null ? null : { path, mode: resolvedEntry.mode };
 }
 
 export type RunBaseFile =
   | { kind: 'absent' }
   | { kind: 'new' }
   | { kind: 'unchanged' }
-  | { kind: 'changed'; text: string | null };
+  | { kind: 'changed'; base: { bytes: Buffer; mode: number | undefined } | null };
 
 /**
  * A reader of files at the run base, compared with the workspace: absent from both, new when the
  * base holds no copy of a file the workspace has (the walk skipped it, or listed it with the empty
- * hash of a file it could not read), unchanged, or changed with its base text (null when the
- * snapshot holds no blob of it). It reads the base snapshot once, however many files it then reads.
+ * hash of a file it could not read), unchanged, or changed with its base bytes and mode (null when
+ * the snapshot holds no blob of it; the mode is undefined in a manifest older than modes). It reads the base snapshot once, however many files it then reads.
  */
 export async function createRunBaseReader(input: {
   projectDir: string;
@@ -280,8 +281,19 @@ export async function createRunBaseReader(input: {
       return current === null ? { kind: 'absent' } : { kind: 'new' };
     }
     if (current === hash) return { kind: 'unchanged' };
-    const blob = await baseBlobPath(snapshot, file, hash);
-    return { kind: 'changed', text: blob === null ? null : await readFile(blob, 'utf8') };
+    const blob = await baseBlob(snapshot, file, hash);
+    const base = blob === null ? null : { bytes: await readFile(blob.path), mode: blob.mode };
+    // Isolation's own .gitignore lines are not a change of the run.
+    if (
+      file === '.gitignore' &&
+      current !== null &&
+      base !== null &&
+      stripGitignoreBookkeeping(await readFile(join(input.workspaceDir, file), 'utf8')) ===
+        stripGitignoreBookkeeping(base.bytes.toString('utf8'))
+    ) {
+      return { kind: 'unchanged' };
+    }
+    return { kind: 'changed', base };
   };
 }
 
@@ -300,10 +312,10 @@ export async function reconcileWorkspaceToBase(input: {
     if (keep.has(file) || isInternalGitStatusPath(file) || hash === '') continue;
     assertPathConfined(file, workspaceDir);
     if ((await hashFile(join(workspaceDir, file))) === hash) continue;
-    const blob = await baseBlobPath(snapshot, file, hash);
+    const blob = await baseBlob(snapshot, file, hash);
     if (blob === null) continue;
     const current = await readConfinedEntry(workspaceDir, file);
-    const bytes = await readFile(blob);
+    const bytes = await readFile(blob.path);
     if (
       file === '.gitignore' &&
       current.kind === 'file' &&

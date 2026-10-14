@@ -260,6 +260,7 @@ describe('packet recovery evidence', () => {
       if (saved === null) throw new Error('Missing saved legacy switches');
       const packet = await buildReviewPacket({
         ...ref,
+        workspaceDir: ref.projectDir,
         state: saved,
         summary: makeSummary(),
         finalReviewStatus: 'failed',

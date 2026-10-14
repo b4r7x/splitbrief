@@ -6,6 +6,8 @@ import type { ReviewInputDrop } from './fit.js';
 
 export type BuildReviewPacketOptions = {
   projectDir: string;
+  /** The run workspace: the checkout itself for a run without a worktree or a staged copy. */
+  workspaceDir: string;
   sessionId: string;
   summary: Summary;
   state: WorkflowState;

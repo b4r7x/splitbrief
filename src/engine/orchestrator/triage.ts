@@ -36,6 +36,7 @@ import { recordCheckRuns } from './evidence/record-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
 import { checkFailureText } from './validation/failure-text.js';
+import { uniqueSorted } from '../../utils/collections.js';
 
 export function checkVerificationStatus(
   runs: readonly CheckRunResult[],
@@ -164,6 +165,24 @@ export function triageContractErrors(
     }
   }
   return errors;
+}
+
+/** A fix task never targets a file already changed when the run started that the run left alone. */
+export function fixTaskTargetErrors(
+  result: TriageResult,
+  userFiles: ReadonlySet<string>,
+): string[] {
+  return result.fixTasks.flatMap((task) =>
+    uniqueSorted([
+      ...task.suggestedFiles,
+      ...(task.protectedOperations ?? []).map((operation) => operation.path),
+    ])
+      .filter((path) => userFiles.has(path))
+      .map(
+        (path) =>
+          `Fix task ${task.id} targets ${path}: it was already changed when this run started, and this run did not change it.`,
+      ),
+  );
 }
 
 export async function runTriageVerification(

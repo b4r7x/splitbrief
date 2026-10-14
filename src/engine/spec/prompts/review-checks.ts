@@ -10,6 +10,8 @@ export type ReviewChecksPromptInput = {
   /** The task ids a task-cadence review covers. */
   taskIds: readonly string[];
   changedFiles: readonly string[];
+  /** The files already changed when the run started. */
+  preRunFiles: readonly string[];
   requiredCommands: readonly string[];
   /** The read instruction for a seat that reads the workspace itself. */
   workspaceInstructions?: string | undefined;
@@ -56,6 +58,15 @@ export function buildReviewChecksPrompt(input: ReviewChecksPromptInput): string 
     input.changedFiles.length === 0
       ? 'No file changed.'
       : input.changedFiles.map((file) => `- ${file}`).join('\n'),
+    ...(input.preRunFiles.length === 0
+      ? []
+      : [
+          '## Changed before this run',
+          [
+            "These files were already changed when this run started. Those changes are the user's own work, not changes of this run: the run base holds them, and the command policy compares with the run base.",
+            ...input.preRunFiles.map((file) => `- ${file}`),
+          ].join('\n'),
+        ]),
     '## How to choose',
     input.workspaceInstructions === undefined
       ? 'Read the project files below: they are verbatim copies from the run workspace.'

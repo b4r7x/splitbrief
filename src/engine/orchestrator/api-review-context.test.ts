@@ -42,6 +42,7 @@ vi.mock('./evidence/review-packet/sections-io.js', async (importOriginal) => {
     resolveRunUniverse: async () => ({
       fullDiff: universe.fullDiff,
       changedFiles: [...universe.changedFiles],
+      preRunFiles: [],
     }),
   };
 });

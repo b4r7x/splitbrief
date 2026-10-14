@@ -87,6 +87,7 @@
 
 ### Fixed
 
+- A run started with uncommitted edits in your checkout no longer counts those edits as its own. The reviewer sees them as your work, apart from the run's changes, and a file you changed and the run changed too shows only the run's lines. A review can no longer ask to revert or delete your edits, and Apply keeps them.
 - `splitbrief status` shows the same run status as the other screens, including Ready to apply.
 - The run transcript hides protocol calls and names file and command activity in plain language.
 - Each review attempt keeps its checks and activity in order, followed by its result and elapsed time. A continued run has a visible continuation row.

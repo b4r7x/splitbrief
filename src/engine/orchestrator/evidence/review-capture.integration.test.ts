@@ -85,6 +85,7 @@ describe('captureTaskReviewChanges', () => {
       tasks: state.tasks,
       workspaceFiles: [SHARED],
       workspaceDiff: '',
+      preRunFiles: [],
     });
     expect(scope.files.map((entry) => [entry.path, entry.taskIds])).toEqual([
       [SHARED, ['T001', 'T002']],
@@ -187,6 +188,7 @@ describe('captureTaskReviewChanges', () => {
       tasks: [task],
       workspaceFiles: [SHARED],
       workspaceDiff: '',
+      preRunFiles: [],
     });
 
     expect(scope.laterDiff).toBe('');

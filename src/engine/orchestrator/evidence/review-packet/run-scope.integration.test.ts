@@ -55,6 +55,7 @@ describe('resolveRunReviewScope with Apply-merged paths', () => {
       tasks: [p.task],
       workspaceFiles: [file],
       workspaceDiff,
+      preRunFiles: [],
     };
 
     const unchanged = await resolveRunReviewScope(base);
