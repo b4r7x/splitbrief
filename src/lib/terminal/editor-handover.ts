@@ -10,6 +10,7 @@ type HandoverSignal = 'SIGINT' | 'SIGTERM' | 'SIGHUP' | 'SIGTSTP' | 'SIGCONT';
 
 interface TerminalHandoverStdin {
   isRaw?: boolean | undefined;
+  readableFlowing?: boolean | null | undefined;
   pause: () => unknown;
   resume: () => unknown;
   setRawMode?: ((mode: boolean) => unknown) | undefined;
@@ -105,10 +106,14 @@ function endHandover(): HandoverSnapshot | undefined {
 
 export function suspendTerminalForEditor(config?: TerminalHandoverConfig): void {
   const handover = config ?? activeHandover;
-  const stdin = handover?.sourceStdin ?? process.stdin;
+  const stdin: TerminalHandoverStdin = handover?.sourceStdin ?? process.stdin;
   beginHandover(stdin);
   try {
     if (handoverSnapshots.length === 1) handover?.beforeSuspend?.();
+    // process.stdin stops reading the terminal only on its 'pause' event, and pause() emits
+    // none while Ink reads it through 'readable' (inline mode). A TUI read left pending races
+    // the child for its keys and blocks until the next key.
+    stdin.readableFlowing = null;
     stdin.pause();
     if (handover) {
       const paste = handover.paste ?? handover.mouse;

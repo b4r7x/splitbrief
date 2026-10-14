@@ -12,6 +12,10 @@ it.each([
     id: 'workflow-external-editor-macos',
     message: 'run.patch open in open. Quit the editor app to return.',
   },
+  {
+    id: 'workflow-external-pager',
+    message: 'run.patch open in less. Press q to return.',
+  },
 ])('captures the production Show diff handover for $id', async ({ id, message }) => {
   const scenario = findVisualScenario(id);
   if (scenario === undefined) throw new Error(`Missing visual scenario ${id}`);

@@ -105,8 +105,8 @@ describe('showRunDiff', () => {
   });
 
   it.each([
-    { code: 1, signal: null, message: 'Editor exited with code 1' },
-    { code: null, signal: 'SIGTERM', message: 'Editor exited with SIGTERM' },
+    { code: 1, signal: null, message: 'mock-editor exited with code 1' },
+    { code: null, signal: 'SIGTERM', message: 'mock-editor exited with SIGTERM' },
   ] satisfies { code: number | null; signal: NodeJS.Signals | null; message: string }[])(
     'reports $message and restores the terminal',
     async ({ code, signal, message }) => {
@@ -122,6 +122,35 @@ describe('showRunDiff', () => {
       expect(terminal).toMatchObject({ isRaw: true, paused: false });
     },
   );
+
+  it.each([
+    { pager: '', command: 'less', args: ['-+F', '-Ps?e(END) .Press q to return\\.'] },
+    { pager: 'more -d', command: 'more', args: ['-d'] },
+  ])('pages the patch with $command when no editor is set', async ({ pager, command, args }) => {
+    vi.stubEnv('VISUAL', '');
+    vi.stubEnv('EDITOR', '');
+    vi.stubEnv('PAGER', pager);
+    const output: string[] = [];
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const child = new EventEmitter();
+    const spawnEditor = vi.fn<SpawnEditor>(() => {
+      queueMicrotask(() => child.emit('close', 1, null));
+      return child;
+    });
+
+    await showRunDiff(readyRecord(), spawnEditor);
+
+    expect(spawnEditor).toHaveBeenCalledWith(command, [...args, patch.path]);
+    expect(output.join('')).toContain(`result-run.patch open in ${command}. Press q to return.`);
+    expect(feedbackStore.get()).toEqual({
+      message: `${command} exited with code 1`,
+      isError: true,
+    });
+    expect(terminal).toMatchObject({ isRaw: true, paused: false });
+  });
 
   it('reports a record without a workspace', async () => {
     const record = makeRunRecord({

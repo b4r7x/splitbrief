@@ -18,7 +18,8 @@ import { makeWorkflowState } from './factories/workflow-state.js';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
 interface ShowDiffEditorOptions {
-  readonly editor: 'cursor' | 'open';
+  /** `less` stands for the pager Show diff falls back to: the run sets no editor. */
+  readonly editor: 'cursor' | 'open' | 'less';
   readonly exitCode: number;
   readonly fullscreen: boolean;
   readonly viewport: { readonly cols: number; readonly rows: number };
@@ -28,6 +29,9 @@ export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
   const dir = createTempDir('show-diff-editor');
   try {
     const fixture = await createFixture(dir, options);
+    const { VISUAL: _visual, ...environment } = safeChildEnvironment(fixture.home, [
+      fixture.binDir,
+    ]);
     const result = await runWithPtyChild(
       {
         requirement: 'required',
@@ -46,9 +50,11 @@ export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
           ...options.viewport,
           cwd: fileURLToPath(new URL('../../', import.meta.url)),
           env: {
-            ...safeChildEnvironment(fixture.home, [fixture.binDir]),
+            ...environment,
             XDG_STATE_HOME: join(dir, 'state'),
-            VISUAL: `${shellQuoteArg(fixture.editorPath)} ${fixture.editorArgs.join(' ')}`,
+            ...(options.editor !== 'less' && {
+              VISUAL: `${shellQuoteArg(fixture.editorPath)} ${fixture.editorArgs.join(' ')}`,
+            }),
           },
         },
       },
@@ -89,6 +95,8 @@ export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
         };
         const waitForText = (text: string) => waitFor(() => screen().includes(text), text);
         const release = () => writeFileSync(fixture.releasePath, 'close');
+        // A pager quits on a key it reads from the terminal, like `less`.
+        const quit = () => (options.editor === 'less' ? child.write('q') : release());
         let disposal: Promise<void> | undefined;
         return {
           ...fixture,
@@ -107,7 +115,7 @@ export async function mountShowDiffEditor(options: ShowDiffEditorOptions) {
           rawIo: () => rawIo,
           didExit: () => didExit,
           exited: exited.promise,
-          release,
+          quit,
           openDiff: async () => {
             await waitForText('Describe your feature');
             child.write('/sessions');
@@ -157,6 +165,7 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
   const startedPath = join(dir, 'editor-started');
   const releasePath = join(dir, 'editor-release');
   const redrawPath = join(dir, 'editor-redraw');
+  const guiStartedPath = join(dir, 'gui-editor-started');
   const sessionId = '2026-10-13-show-diff';
   for (const path of [projectDir, workspace, home, binDir]) mkdirSync(path);
   mkdirSync(join(projectDir, '.git', 'objects'), { recursive: true });
@@ -187,7 +196,12 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
   );
   const statePath = join(sessionDir(projectDir, sessionId), 'state.json');
   const before = readFileSync(statePath, 'utf8');
-  const editorArgs = options.editor === 'open' ? ['-W', '-t'] : ['--wait'];
+  const editorArgs =
+    options.editor === 'open'
+      ? ['-W', '-t']
+      : options.editor === 'less'
+        ? ['-+F', '-Ps?e(END) .Press q to return\\.']
+        : ['--wait'];
   const editorScript = join(binDir, 'editor.cjs');
   writeFileSync(
     editorScript,
@@ -195,12 +209,19 @@ async function createFixture(dir: string, options: ShowDiffEditorOptions) {
 const args = process.argv.slice(2);
 if (JSON.stringify(args.slice(0, -1)) !== ${JSON.stringify(JSON.stringify(editorArgs))}) process.exit(1);
 fs.writeFileSync(${JSON.stringify(startedPath)}, JSON.stringify(args));
-const timer = setInterval(() => {
+${
+  options.editor === 'less'
+    ? `process.stdin.setRawMode(true);
+process.stdin.on('data', (key) => {
+  if (key.includes('q')) process.exit(${options.exitCode});
+});`
+    : `const timer = setInterval(() => {
   if (fs.existsSync(${JSON.stringify(releasePath)})) {
     clearInterval(timer);
     process.exit(${options.exitCode});
   }
-}, 20);
+}, 20);`
+}
 setTimeout(() => process.exit(4), 30000).unref();
 `,
   );
@@ -210,6 +231,14 @@ setTimeout(() => process.exit(4), 30000).unref();
     `#!/bin/sh\nexec ${shellQuoteArg(process.execPath)} ${shellQuoteArg(editorScript)} "$@"\n`,
     { mode: 0o755 },
   );
+  if (options.editor === 'less') {
+    // An installed GUI editor Show diff must not guess when no editor is set.
+    writeFileSync(
+      join(binDir, 'cursor'),
+      `#!/bin/sh\ncase "$*" in *run.patch*) echo started > ${shellQuoteArg(guiStartedPath)} ;; esac\n`,
+      { mode: 0o755 },
+    );
+  }
   const offlinePath = join(dir, 'offline.mjs');
   writeFileSync(
     offlinePath,
@@ -239,5 +268,6 @@ redraw.unref();
     editorArgs,
     offlinePath,
     editorStarted: () => existsSync(startedPath),
+    guiEditorStarted: () => existsSync(guiStartedPath),
   };
 }

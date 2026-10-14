@@ -29,6 +29,7 @@ const production = vi.hoisted(() => ({
   requestQuit: vi.fn(),
   requestStopNow: vi.fn(),
   resolveEditorArgv: vi.fn(),
+  resolveViewerArgv: vi.fn(),
   readRunRecord: vi.fn(),
 }));
 
@@ -68,6 +69,7 @@ vi.mock('../../../src/features/workflow/handlers.js', async (original) => ({
 vi.mock('../../../src/features/workflow/editor-command.js', async (original) => ({
   ...(await original<typeof import('../../../src/features/workflow/editor-command.js')>()),
   resolveEditorArgv: production.resolveEditorArgv,
+  resolveViewerArgv: production.resolveViewerArgv,
 }));
 vi.mock('../../../src/core/sessions/run-record-io.js', async (original) => ({
   ...(await original<typeof import('../../../src/core/sessions/run-record-io.js')>()),
@@ -187,6 +189,11 @@ beforeEach(() => {
   for (const spy of Object.values(production)) spy.mockReset();
   production.readRunRecord.mockImplementation(runRecordIo.readRunRecord);
   production.resolveEditorArgv.mockReturnValue({ command: 'preview-editor', args: [] });
+  production.resolveViewerArgv.mockReturnValue({
+    command: 'preview-editor',
+    args: [],
+    kind: 'editor',
+  });
   production.requestStopNow.mockReturnValue(true);
   production.discoverSkills.mockResolvedValue([]);
 });

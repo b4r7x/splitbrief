@@ -617,7 +617,7 @@ The byline stays `1 queued for BUILD on T003` until the first delivery event rem
 
 A ready workspace run shows an inline result menu above the composer. The rows are **Apply · Show diff · Discard**. Use Up/Down to select and Enter to confirm. Tab switches focus between the menu and composer. Bare letters do not select actions; the composer takes slash commands.
 
-**Show diff** writes the run patch and opens it in your configured external editor. **Apply** uses [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). **Discard** uses `/run reject confirm`. Their effects are in [Apply](./WORKFLOW.md#apply). The menu lives in `src/features/workflow/result/`.
+**Show diff** writes the run patch and opens it in the editor that `VISUAL` or `EDITOR` names. When neither is set, it opens the patch in `PAGER`, or in `less` when `PAGER` is unset; press `q` to return to the run. **Apply** uses [`/run accept`](./SLASH-COMMANDS-REFERENCE.md#run-acceptreject). **Discard** uses `/run reject confirm`. Their effects are in [Apply](./WORKFLOW.md#apply). The menu lives in `src/features/workflow/result/`.
 
 The byline under the menu reads `Ready to apply · pick Apply, Show diff or Discard`. An Accept as is override changes the first row to **Apply as is**, and the byline to `Ready to apply as is · pick Apply as is, Show diff or Discard`. Its confirmation lists the open findings and offers **Apply as is** or **Back**. See [Accept as is](./APPROVAL-AND-RECOVERY.md#accept-as-is).
 

@@ -8,6 +8,10 @@ interface EditorArgv {
   args: string[];
 }
 
+export interface ViewerArgv extends EditorArgv {
+  kind: 'editor' | 'pager';
+}
+
 interface ResolveEditorArgvOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
@@ -52,11 +56,16 @@ export function editorDisplayLabel(command: string): string {
   return basename(command).replace(/\.(cmd|exe|bat)$/i, '');
 }
 
-export function editorWaitingMessage({ command, args }: EditorArgv, filePath: string): string {
+export function editorWaitingMessage(
+  { command, args, kind }: ViewerArgv,
+  filePath: string,
+): string {
   const returnInstruction =
-    editorName(command) === 'open' && (args.includes('-W') || args.includes('--wait-apps'))
-      ? 'Quit the editor app to return.'
-      : 'Close the file to return.';
+    kind === 'pager'
+      ? 'Press q to return.'
+      : editorName(command) === 'open' && (args.includes('-W') || args.includes('--wait-apps'))
+        ? 'Quit the editor app to return.'
+        : 'Close the file to return.';
   return oneLineDisplayText(
     `${basename(filePath)} open in ${editorDisplayLabel(command)}. ${returnInstruction}`,
   );
@@ -154,4 +163,21 @@ export function resolveEditorArgv(options: ResolveEditorArgvOptions = {}): Edito
 
   if (editor) return editor;
   return { command: 'vi', args: [] };
+}
+
+// `-+F` keeps `less` open on a short file when `LESS` carries `F`. `less` covers the TUI's return
+// hint with the alternate screen, so its prompt repeats the hint. `PAGER` arguments follow and win.
+const lessViewerArgs = ['-+F', '-Ps?e(END) .Press q to return\\.'];
+
+/**
+ * What reads a file without editing it: the editor you set, else your pager. No GUI editor is
+ * guessed here: its `--wait` holds the TUI until the whole app quits.
+ */
+export function resolveViewerArgv(env: NodeJS.ProcessEnv = process.env): ViewerArgv {
+  const editor = parseEditor(env.VISUAL) ?? parseEditor(env.EDITOR);
+  if (editor) return { ...editor, kind: 'editor' };
+  const { command, args } = parseEditor(env.PAGER) ?? { command: 'less', args: [] };
+  if (editorName(command) === 'less')
+    return { command, args: [...lessViewerArgs, ...args], kind: 'pager' };
+  return { command, args, kind: 'pager' };
 }
