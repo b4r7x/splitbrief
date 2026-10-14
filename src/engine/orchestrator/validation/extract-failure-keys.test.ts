@@ -1,4 +1,7 @@
+import { mkdirSync, realpathSync, symlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { extractFailureKeys, failureKeys } from './extract-failure-keys.js';
 
 function keysOf(output: string): string[] {
@@ -224,7 +227,7 @@ describe('failureKeys', () => {
     ).toEqual({ keys: ['src/a.ts', 'src/b.ts'] });
   });
 
-  it('quotes the first error line of a red that names no failure, never claiming no diagnostics', () => {
+  it('keys a node --test path that fails to load by the path, with the error line Node printed', () => {
     expect(
       failureKeys(
         {
@@ -235,7 +238,19 @@ describe('failureKeys', () => {
               "# Error: Cannot find module '/repo/src'",
               '#     at Function._resolveFilename (node:internal/modules/cjs/loader:1383:15)',
               "#   code: 'MODULE_NOT_FOUND',",
+              '# Subtest: src',
               'not ok 1 - src',
+              '  ---',
+              '  duration_ms: 22.205916',
+              "  type: 'test'",
+              "  location: '/repo/src:1:1'",
+              "  failureType: 'testCodeFailure'",
+              '  exitCode: 1',
+              '  signal: ~',
+              "  error: 'test failed'",
+              "  code: 'ERR_TEST_FAILURE'",
+              '  ...',
+              '1..1',
             ].join('\n'),
             complete: true,
           },
@@ -244,8 +259,8 @@ describe('failureKeys', () => {
         '/repo',
       ),
     ).toEqual({
-      keys: ['exited with code 1'],
-      placeholder: "exited with code 1: Error: Cannot find module 'src'",
+      keys: ['src'],
+      messages: new Map([['src', "Error: Cannot find module 'src'"]]),
     });
   });
 
@@ -262,5 +277,138 @@ describe('failureKeys', () => {
       keys: ['exited with code 1'],
       placeholder: 'exited with code 1: fatal: runner crashed',
     });
+  });
+
+  it('keys one red node --test test by its file and name, never its location or stack line', () => {
+    const output = [
+      '> shop@1.0.0 test',
+      '> node --test',
+      '',
+      'TAP version 13',
+      '# Subtest: truncateText keeps short text unchanged',
+      'not ok 1 - truncateText keeps short text unchanged',
+      '  ---',
+      '  duration_ms: 0.602083',
+      "  type: 'test'",
+      "  location: '/repo/test/legacy.test.mjs:6:1'",
+      "  failureType: 'testCodeFailure'",
+      '  error: |-',
+      '    Expected values to be strictly equal:',
+      "    '...' !== 'hello'",
+      "  code: 'ERR_ASSERTION'",
+      '  stack: |-',
+      '    TestContext.<anonymous> (file:///repo/test/legacy.test.mjs:7:10)',
+      '    Test.runInAsyncScope (node:async_hooks:214:14)',
+      '  ...',
+      '# Subtest: clamp returns the value when it is inside the range',
+      'ok 2 - clamp returns the value when it is inside the range',
+      '  ---',
+      '  duration_ms: 0.349084',
+      "  type: 'test'",
+      '  ...',
+      '1..2',
+      '# tests 2',
+      '# pass 1',
+      '# fail 1',
+    ].join('\n');
+    const key = 'test/legacy.test.mjs::truncateText keeps short text unchanged';
+    expect(
+      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo'),
+    ).toEqual({
+      keys: [key],
+      messages: new Map([[key, 'Expected values to be strictly equal:']]),
+    });
+    expect(extractFailureKeys(output).diagnostics).toBe(false);
+  });
+
+  it('keeps a diagnostic printed after a node --test stream', () => {
+    const diagnostic = 'src/a.ts(1,1): error TS2322: Type mismatch.';
+    const output = [
+      'TAP version 13',
+      '# Subtest: adds',
+      'not ok 1 - adds',
+      '  ---',
+      "  location: '/repo/test/a.test.mjs:3:1'",
+      "  error: 'boom'",
+      '  stack: |-',
+      '    TestContext.<anonymous> (file:///repo/test/a.test.mjs:4:9)',
+      '  ...',
+      '1..1',
+      diagnostic,
+    ].join('\n');
+    expect(
+      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo').keys,
+    ).toEqual(['test/a.test.mjs::adds', diagnostic]);
+  });
+
+  it('keys a node --test file the run made fail to load by its file beside a red test, never by its stack lines', () => {
+    const output = [
+      'TAP version 13',
+      '# file:///repo/lib/x.mjs:1',
+      "# export const x = 1; throw new Error('lib boom');",
+      '#                           ^',
+      '# Error: lib boom',
+      '#     at file:///repo/lib/x.mjs:1:27',
+      '#     at ModuleJob.run (node:internal/modules/esm/module_job:343:25)',
+      '# Node.js v22.22.2',
+      '# Subtest: test/i.test.mjs',
+      'not ok 1 - test/i.test.mjs',
+      '  ---',
+      '  duration_ms: 29.149458',
+      "  type: 'test'",
+      "  location: '/repo/test/i.test.mjs:1:1'",
+      "  failureType: 'testCodeFailure'",
+      '  exitCode: 1',
+      '  signal: ~',
+      "  error: 'test failed'",
+      "  code: 'ERR_TEST_FAILURE'",
+      '  ...',
+      '# Subtest: legacy red',
+      'not ok 2 - legacy red',
+      '  ---',
+      '  duration_ms: 0.228917',
+      "  type: 'test'",
+      "  location: '/repo/test/legacy.test.mjs:2:1'",
+      "  failureType: 'testCodeFailure'",
+      `  error: "can't do it"`,
+      "  code: 'ERR_TEST_FAILURE'",
+      '  stack: |-',
+      '    TestContext.<anonymous> (file:///repo/test/legacy.test.mjs:2:34)',
+      '  ...',
+      '1..2',
+    ].join('\n');
+    expect(
+      failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, '/repo'),
+    ).toEqual({
+      keys: ['test/i.test.mjs', 'test/legacy.test.mjs::legacy red'],
+      messages: new Map([
+        ['test/i.test.mjs', 'Error: lib boom'],
+        ['test/legacy.test.mjs::legacy red', "can't do it"],
+      ]),
+    });
+  });
+
+  it('reads node --test paths relative to a symlinked dir, which Node prints by its real path', () => {
+    const root = createTempDir('failure-keys');
+    try {
+      mkdirSync(join(root, 'real'));
+      const dir = join(root, 'link');
+      symlinkSync(join(root, 'real'), dir);
+      const output = [
+        'TAP version 13',
+        '# Subtest: adds',
+        'not ok 1 - adds',
+        '  ---',
+        `  location: '${realpathSync(dir)}/test/a.test.mjs:3:1'`,
+        "  error: 'boom'",
+        '  ...',
+        '1..1',
+      ].join('\n');
+      expect(
+        failureKeys({ capture: { text: output, complete: true }, exitCode: 1 }, dir).keys,
+      ).toEqual(['test/a.test.mjs::adds']);
+    } finally {
+      cleanupTempDir(root);
+    }
   });
 });
