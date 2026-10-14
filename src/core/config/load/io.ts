@@ -298,6 +298,6 @@ export async function initConfig(
     confinedAtomicWriteFile,
     opts.force === true,
   );
-  if (result.kind === 'saved') ensureConfigGitignore(projectDir);
+  if (result.kind === 'saved') await ensureConfigGitignore(projectDir);
   return result.kind;
 }

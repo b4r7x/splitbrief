@@ -26,6 +26,11 @@ import { getKnownProviderBaseURL } from '../core/providers/catalog.js';
 import { CREW_SEAT_LABELS } from '../core/crew/identity.js';
 import { PICKER_ROLE_SEAT_IDS } from '../core/runners/seat-roles.js';
 
+vi.mock('../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../lib/git/files.js')>()),
+  checkIgnoredPaths: async () => [],
+}));
+
 // The production effects this card takes off the interactive path. Each one is replaced at its
 // own module boundary, so a test can say of a whole mounted App that it was never reached.
 const production = vi.hoisted(() => ({

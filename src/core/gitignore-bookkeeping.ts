@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { SPLITBRIEF_DIR, TREES_DIR } from '../../../core/paths.js';
-import { showFileAtHead } from '../../../lib/git/refs.js';
+import { SPLITBRIEF_DIR, TREES_DIR } from './paths.js';
+import { showFileAtHead } from '../lib/git/refs.js';
 
 const SPLITBRIEF_GITIGNORE_LINES = new Set([`${SPLITBRIEF_DIR}/`, `${TREES_DIR}/`]);
 

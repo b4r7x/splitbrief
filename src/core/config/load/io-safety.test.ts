@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +17,11 @@ import { createDefaultConfig } from './defaults.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs-atomic.js';
+
+vi.mock('../../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/git/files.js')>()),
+  checkIgnoredPaths: async () => [],
+}));
 
 let TMP: string;
 

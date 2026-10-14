@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import YAML, { isMap, isScalar, parseDocument, type Document } from 'yaml';
 import { SPLITBRIEF_DIR, CONFIG_FILE, getSplitbriefPath } from '../../paths.js';
 import { ensureGitignore } from '../../../lib/fs.js';
+import { checkIgnoredPaths } from '../../../lib/git/files.js';
 import type { ConfigRevision, ExpectedConfigRevision } from '../../../lib/confined-fs-atomic.js';
 import { assertWritablePathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
 import { isENOENT, isNodeError } from '../../../lib/process/errors.js';
@@ -36,8 +37,17 @@ export interface ConfigDocumentEdit {
   value: unknown;
 }
 
-export function ensureConfigGitignore(projectDir: string): void {
-  ensureGitignore(projectDir, `${SPLITBRIEF_DIR}/`);
+/**
+ * A rule git already applies — a parent `.gitignore`, `.git/info/exclude`, the global excludes
+ * file, or a spelling the text check does not know — leaves a clean checkout clean. The config
+ * file is asked apart from the directory: a rule that ignores only the subdirectories of an
+ * existing `.splitbrief/` matches the directory probe and still leaves the config file reported.
+ */
+export async function ensureConfigGitignore(projectDir: string): Promise<void> {
+  const entry = `${SPLITBRIEF_DIR}/`;
+  const probes = [entry, CONFIG_RELATIVE_PATH];
+  if ((await checkIgnoredPaths(projectDir, probes)).length === probes.length) return;
+  ensureGitignore(projectDir, entry);
 }
 
 function configRevision(rawBytes: Uint8Array, stat: BigIntStats): ConfigRevision {

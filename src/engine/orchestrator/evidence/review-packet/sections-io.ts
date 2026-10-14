@@ -21,7 +21,7 @@ import { error } from '../../../../utils/error.js';
 import { readConfinedEntry } from '../../approval/file-snapshots/entry.js';
 import { createRunBaseReader, type RunBaseFile } from '../../isolation/acquisition.js';
 import type { RunBase } from '../../isolation/base-tree.js';
-import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../isolation/cleanliness.js';
+import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../../../core/gitignore-bookkeeping.js';
 import { userVisibleChangedFiles } from '../../changed-files-baseline.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { extractFrontmatter } from '../../../../utils/frontmatter.js';

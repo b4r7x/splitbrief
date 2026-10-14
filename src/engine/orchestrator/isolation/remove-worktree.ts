@@ -12,7 +12,7 @@ import { worktreeError } from './errors.js';
 import {
   gitignoreDiffersOnlyBySplitbriefBookkeeping,
   shouldIgnoreWorktreeUncommittedPath,
-} from './cleanliness.js';
+} from '../../../core/gitignore-bookkeeping.js';
 import { resolveConfinedIsolationWorktreePath, resolveConfinedWorktreePath } from './path.js';
 import { findLiveWorktreeSession } from './worktree-status.js';
 

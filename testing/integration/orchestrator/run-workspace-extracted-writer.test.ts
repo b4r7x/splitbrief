@@ -42,7 +42,7 @@ describe('an extracted-code writer in the run workspace', { timeout: 90_000 }, (
     dirs.push(projectDir);
     const original = 'export const value = 1;\n';
     createTestGitRepo(projectDir, { 'src/value.ts': original });
-    ensureConfigGitignore(projectDir);
+    await ensureConfigGitignore(projectDir);
     const statusBefore = checkoutStatus(projectDir);
     const entriesBefore = checkoutEntries(projectDir);
     const sessionId = 'sess-run-workspace-api';

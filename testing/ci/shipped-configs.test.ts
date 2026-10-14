@@ -10,6 +10,11 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { writeConfigYamlText } from '#testing/helpers/config-io.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 
+vi.mock('../../src/lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/lib/git/files.js')>()),
+  checkIgnoredPaths: async () => [],
+}));
+
 const REPO_ROOT = join(import.meta.dirname, '../..');
 const EVAL_FIXTURE_ROOT = join(REPO_ROOT, 'evals/fixtures');
 const EXAMPLE_CONFIG_ROOT = join(REPO_ROOT, 'testing/fixtures/configs');

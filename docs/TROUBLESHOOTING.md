@@ -195,7 +195,7 @@ Related refusals name their own cause: `does not exist on this machine`, `is not
 
 ### Symptom: Run Readiness warns that the working tree is dirty
 
-**Likely cause:** Files are modified or untracked before Task Briefs exist. Readiness cannot know yet whether those files overlap the future task scope, so ordinary dirty state is a warning rather than a blocker.
+**Likely cause:** Files are modified or untracked before Task Briefs exist. Readiness cannot know yet whether those files overlap the future task scope, so ordinary dirty state is a warning rather than a blocker. SPLITBRIEF's own files do not count: the `.splitbrief/` folder, and a `.gitignore` whose only change is the `.splitbrief/` line that `init` or Setup added.
 
 **Fix:**
 1. Run `git status` and decide whether the local edits should be part of this run.
