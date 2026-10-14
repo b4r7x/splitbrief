@@ -32,6 +32,7 @@ import { canonicalizeProjectDir } from '../../../src/cli/setup.js';
 import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
 import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
+import type { OrchestratorCallbacks } from '../../../src/engine/orchestrator/types.js';
 import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { canSignalProcess } from '../../../src/lib/process/liveness.js';
 import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
@@ -107,19 +108,29 @@ const REVIEW_REPLY = JSON.stringify(
 );
 
 /**
- * Both planner calls of a run reach this one script: the typed plan and the
- * final review. Only `buildFinalReviewPrompt` titles its prompt "Final
- * Implementation Review", so the title is what the script branches on.
+ * Every planner call of a run reaches this one script: the typed plan, the final review and,
+ * when a test passes `consult`, the consults. `consult` is the source of a function that takes
+ * the prompt and returns the reply, or undefined for a call it does not answer. Only
+ * `buildFinalReviewPrompt` titles its prompt "Final Implementation Review", so the title is
+ * what the script branches on.
  */
-const PLANNER_SCRIPT = `const chunks = [];
+function plannerScript(consult = '() => undefined'): string {
+  return `const chunks = [];
 for await (const chunk of process.stdin) chunks.push(chunk);
 const prompt = Buffer.concat(chunks).toString('utf-8');
 
 const PLAN = ${JSON.stringify(JSON.stringify(PLAN_ANSWER))};
 const REVIEW = ${JSON.stringify(REVIEW_REPLY)};
+const consult = ${consult};
 
-process.stdout.write(prompt.includes('Final Implementation Review') ? REVIEW : PLAN);
+const consulted = consult(prompt);
+if (consulted !== undefined) {
+  process.stdout.write(consulted);
+} else {
+  process.stdout.write(prompt.includes('Final Implementation Review') ? REVIEW : PLAN);
+}
 `;
+}
 
 /**
  * The first invocation writes the marker and then holds for the fixture's release file, so the
@@ -342,8 +353,13 @@ export async function continueWithCorrection(
   target: StopContinueFixture,
   sessionId: string,
   correction: string,
-  action?: string,
+  options: {
+    action?: string | undefined;
+    /** What the operator answers when a seat asks a question; no answer takes its default. */
+    onPlannerReply?: OrchestratorCallbacks['onPlannerReply'];
+  } = {},
 ): Promise<PersistedWorkflowState> {
+  const { action } = options;
   // The CLI runs on the canonical project path; the run records its workspace under it.
   const projectDir = await canonicalizeProjectDir({ project: target.projectDir });
   const ref = { projectDir, sessionId };
@@ -393,6 +409,7 @@ export async function continueWithCorrection(
       callbacks: {
         onApprovalNeeded: async () => ({ approved: true }),
         onComplete: () => undefined,
+        ...(options.onPlannerReply !== undefined && { onPlannerReply: options.onPlannerReply }),
       },
     });
     return readState(target, sessionId);
@@ -457,7 +474,7 @@ export function applyRun(
  */
 export function createStopContinueFixture(
   implementerScript?: (projectDir: string) => string,
-  options: { isolation?: IsolationStrategy } = {},
+  options: { isolation?: IsolationStrategy; consult?: (tmpDir: string) => string } = {},
 ): StopContinueFixture {
   const tmpDir = mkdtempSync(join(tmpdir(), 'splitbrief-stop-continue-'));
   const projectDir = join(tmpDir, 'project');
@@ -466,7 +483,7 @@ export function createStopContinueFixture(
 
   createTestGitRepo(projectDir, {
     '.gitignore': 'node_modules\n',
-    'tools/planner.mjs': PLANNER_SCRIPT,
+    'tools/planner.mjs': plannerScript(options.consult?.(tmpDir)),
     'tools/implementer.mjs': script(projectDir),
   });
 

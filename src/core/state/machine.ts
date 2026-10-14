@@ -903,10 +903,6 @@ export function transition(
         ...state,
         messageQueue: state.messageQueue.map((m) => {
           if (ids !== undefined && !ids.has(m.id)) return m;
-          if (destination === 'consult') {
-            if (m.deliveredTo?.consult !== undefined) return m;
-            return { ...m, deliveredTo: { ...m.deliveredTo, consult: ts } };
-          }
           if (destination === 'reviewer') {
             if (m.deliveredTo?.reviewer !== undefined) return m;
             return {

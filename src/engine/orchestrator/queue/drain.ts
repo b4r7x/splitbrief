@@ -5,7 +5,6 @@ import {
   transitionAndSave,
 } from '../state-ops.js';
 import {
-  isQueuedMessagePendingConsult,
   isQueuedMessagePendingDelivery,
   isQueuedMessagePendingReviewer,
 } from '../../../core/queue-state.js';
@@ -74,38 +73,6 @@ function releaseQueueMessagesForPrompt(
   messages: readonly Pick<QueuedMessage, 'id'>[],
 ): void {
   for (const message of messages) releaseQueuedMessage(ref, message.id, 'prompt');
-}
-
-export function readQueueForConsult({
-  projectDir,
-  sessionId,
-  state,
-}: Omit<QueueStateMutationOptions, 'bus'>): {
-  state: WorkflowState;
-  messages: QueuedMessage[];
-} {
-  const base = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state, {
-    keepUnsaved: true,
-  });
-  return { state: base, messages: base.messageQueue.filter(isQueuedMessagePendingConsult) };
-}
-
-export function commitQueueMessagesConsulted({
-  projectDir,
-  sessionId,
-  state,
-  ids,
-}: Omit<QueueStateMutationOptions, 'bus'> & { ids: readonly string[] }): {
-  state: WorkflowState;
-  count: number;
-} {
-  if (ids.length === 0) return { state, count: 0 };
-  const next = transitionAndSave({ projectDir, sessionId }, state, {
-    type: 'DRAIN_QUEUE',
-    ids: [...ids],
-    destination: 'consult',
-  });
-  return { state: next, count: ids.length };
 }
 
 export async function drainQueueForReview({

@@ -2192,6 +2192,88 @@ const consultQuestionProjection: WorkflowFixtureProjection = {
   },
 };
 
+const DECISION_QUESTION = 'Did you ask for greet to also be a default export of src/greet.ts?';
+const DECISION_KEEP = 'Yes, keep the default export';
+
+/** A decision confirm that asks about a decision the user's own correction caused. */
+const decisionConfirmEvents: WorkflowFixtureProjection['events'] = [
+  { type: 'workflow_started', ts: FIXED_TS, phase: 'implementing', feature: WORKFLOW_FEATURE },
+  {
+    type: 'task_started',
+    ts: FIXED_TS + 100,
+    phase: 'implementing',
+    taskId: WORKFLOW_FIXTURE_TASK_ID,
+    title: 'Add the greeting',
+    action: 'modify',
+    index: 0,
+    total: 1,
+    file: 'src/greet.ts',
+  },
+  {
+    type: 'consult_answered',
+    ts: FIXED_TS + 38_100,
+    phase: 'implementing',
+    taskId: WORKFLOW_FIXTURE_TASK_ID,
+    reason: 'deviation',
+    action: 'ask-user',
+    diagnosis: 'The default export changes what is built.',
+    newTaskIds: null,
+  },
+];
+
+const decisionQuestionProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-decision-question'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'question',
+  sidebarVisible: false,
+  events: decisionConfirmEvents,
+  question: {
+    prompt: 'Type your answer…',
+    answer: '',
+    questions: [
+      {
+        id: 'ask-user',
+        type: 'choice',
+        text: [
+          `Your instructions for ${WORKFLOW_FIXTURE_TASK_ID}:`,
+          '- also export a default from src/greet.ts',
+          '',
+          DECISION_QUESTION,
+        ].join('\n'),
+        options: [DECISION_KEEP, 'No, remove the default export'],
+        default: DECISION_KEEP,
+      },
+    ],
+  },
+};
+
+const decisionGuidanceProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-decision-guidance'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  events: [
+    ...decisionConfirmEvents,
+    {
+      type: 'user_message',
+      ts: FIXED_TS + 40_000,
+      phase: 'implementing',
+      text: DECISION_KEEP,
+      qa: [{ question: DECISION_QUESTION, answer: DECISION_KEEP }],
+    },
+    {
+      type: 'consult_answered',
+      ts: FIXED_TS + 44_000,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      reason: 'deviation',
+      action: 'guidance',
+      diagnosis: 'The user keeps the default export.',
+      newTaskIds: null,
+    },
+  ],
+};
+
 const failureProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_FAILURE_ID,
   feature: WORKFLOW_FEATURE,
@@ -5332,6 +5414,8 @@ const projections = [
   plannerReplyProjection,
   answeredQuestionsProjection,
   consultQuestionProjection,
+  decisionQuestionProjection,
+  decisionGuidanceProjection,
   {
     ...buildReviewConsultProjection,
     scenarioId: scenarioId('workflow-reviewer-question'),

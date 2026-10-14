@@ -207,6 +207,7 @@ export async function runLocalRetries(
       state,
       lastError,
       attempts,
+      deliversAnswer: answer !== undefined,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
       usageCategory: 'implementer',

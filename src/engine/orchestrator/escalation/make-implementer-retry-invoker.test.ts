@@ -28,7 +28,6 @@ import {
 } from '../evidence/task.js';
 import { withContinuationLoop } from '../continuation.js';
 import { addUsageAndSave } from '../state-ops.js';
-import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 import { makeImplementerRetryInvoker } from './make-implementer-retry-invoker.js';
 
 const directories: string[] = [];
@@ -49,9 +48,14 @@ function makeRecordingImplementer() {
 }
 
 describe('makeImplementerRetryInvoker', () => {
-  it.each(['local', 'consult'] as const)(
-    'allows unchanged output for a %s correction after checks',
-    async (kind) => {
+  it.each([
+    ['local', true],
+    ['consult', true],
+    ['local', false],
+    ['consult', false],
+  ] as const)(
+    'allows unchanged output for a %s attempt only when it delivers an answer (%s)',
+    async (kind, deliversAnswer) => {
       const ref = setupProject(directories);
       const task = makeTask();
       const { implementer, getReceived } = makeRecordingImplementer();
@@ -65,8 +69,9 @@ describe('makeImplementerRetryInvoker', () => {
 
       const result = await invoker({
         task,
-        lastError: CORRECTION_AFTER_CHECKS,
+        lastError: 'Keep the default export.',
         attempts: 0,
+        deliversAnswer,
         projectDir: ref.projectDir,
         implementer,
         config: makeConfig(),
@@ -78,7 +83,7 @@ describe('makeImplementerRetryInvoker', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(getReceived()).toMatchObject({ kind, allowNoChange: true });
+      expect(getReceived()).toMatchObject({ kind, allowNoChange: deliversAnswer });
     },
   );
 

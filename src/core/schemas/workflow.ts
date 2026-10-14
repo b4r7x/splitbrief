@@ -71,7 +71,6 @@ export const QueuedMessageSchema = z
     deliveredTo: z
       .object({
         implementer: z.string().optional(),
-        consult: z.string().optional(),
         reviewer: z.string().optional(),
       })
       .optional(),

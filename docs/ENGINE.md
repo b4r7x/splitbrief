@@ -307,6 +307,8 @@ If the checks fail, the ordinary retry path delivers pending messages and spends
 
 BUILD delivery requires both the drain through `DRAIN_QUEUE` and the brief correction through `RECORD_CORRECTION`. `count` is the number of messages delivered by this call. Later correction passes act only on messages still pending.
 
+The brief's corrections are its operator-instruction log. A queued message, a message during a call, the correction typed on a stopped run (`recordCorrection` in `runImplementation`) and an answer to a consult question (`applyAskUser`) all reach it through `recordBriefCorrection`. BUILD reads it as its steer, every consult reads it in `requestConsult`, and every review reads it as its *Operator Instructions* section. No seat reads operator text from the queue directly.
+
 REVIEW reads messages that it has not read at the start of each verdict call. `drainQueueForReview` publishes `queue_drained` with seat `review` when it drains messages. After a successful call, SPLITBRIEF issues another verdict call if the run continues and messages remain unread by REVIEW. SPLITBRIEF uses the new verdict. After failure or stop, unread messages wait for retry or continuation.
 
 A message that REVIEW read also goes to the next fix brief's BUILD call. Its reviewer delivery record prevents another REVIEW drain. Its implementer delivery record remains absent until BUILD absorbs it as a correction.

@@ -17,8 +17,6 @@ import {
 import { raisePendingRecovery, transitionAndSave } from '../state-ops.js';
 import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
-import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
-import { formatMessage } from '../queue/prompt.js';
 import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
 import { captureWorkspaceSnapshot, revertedDir } from '../isolation/entry-snapshot.js';
 import {
@@ -372,6 +370,7 @@ export async function handleRetryAndEscalation(
 
   const attempt = async (
     attemptError: string,
+    deliversAnswer: boolean,
   ): Promise<{ state: WorkflowState; result: RetryResult } | null> => {
     if (ctx.signal?.aborted) return { state, result: failedRetry(attempts) };
     const spentBeforeAttempt = attemptBoundSpent(state, task);
@@ -395,6 +394,7 @@ export async function handleRetryAndEscalation(
       state,
       lastError: attemptError,
       attempts: nextAttempts,
+      deliversAnswer,
       method: 'consulted',
       transitionType: 'VALIDATION_PASS',
       commitSuffix: 'after consult',
@@ -434,7 +434,7 @@ export async function handleRetryAndEscalation(
 
     // The user's answer is not a consult: the next attempt delivers it.
     if (answer !== undefined) {
-      const halted = await attempt(answer);
+      const halted = await attempt(answer, true);
       if (halted) return halted;
       continue;
     }
@@ -457,13 +457,6 @@ export async function handleRetryAndEscalation(
     const changedFiles = await attemptChangedFiles(ctx.workspaceDir, snapshot);
     const reason: ConsultReason = blocked !== undefined ? 'blocked' : 'failed';
     const seat = consultSeat(task, reason);
-    const queued = readQueueForConsult({
-      projectDir: ctx.projectDir,
-      sessionId: ctx.sessionId,
-      state,
-    });
-    const userText =
-      queued.messages.length === 0 ? undefined : queued.messages.map(formatMessage).join('\n\n');
     const consult = await requestConsult(
       {
         projectDir: ctx.projectDir,
@@ -485,18 +478,9 @@ export async function handleRetryAndEscalation(
         report: blocked ?? null,
         snapshot,
         changedFiles,
-        ...(userText !== undefined && { userText }),
       },
     );
     if ('error' in consult) throw consult.error;
-    if (queued.messages.length > 0) {
-      state = commitQueueMessagesConsulted({
-        projectDir: ctx.projectDir,
-        sessionId: ctx.sessionId,
-        state,
-        ids: queued.messages.map((message) => message.id),
-      }).state;
-    }
     lastDiagnosis = consult.answer.answer.diagnosis;
 
     const applied = await applyConsultAnswer(
@@ -562,7 +546,7 @@ export async function handleRetryAndEscalation(
         : `The ${consultSeatRunner(seat)} confirmed the reported decisions:\n${applied.decisions
             .map((decision) => `- ${decision.what} — ${decision.why}`)
             .join('\n')}`;
-    const halted = await attempt(consultAttemptError({ lastError, instructions, seat }));
+    const halted = await attempt(consultAttemptError({ lastError, instructions, seat }), false);
     if (halted) return halted;
   }
 }

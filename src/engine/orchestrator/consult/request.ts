@@ -1,4 +1,5 @@
 import {
+  ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   CONSULT_ANSWER_JSON_SCHEMA,
   DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
@@ -52,8 +53,8 @@ export type ConsultRequestInput = Readonly<{
   snapshot: ChangedFilesSnapshot;
   /** The files the attempt changed since `snapshot`. */
   changedFiles: readonly string[];
-  /** Text the operator queued during an earlier brief, delivered with this task's consult. */
-  userText?: string | undefined;
+  /** Deviation only: the user answered the planner's question about the attempt's decisions. */
+  answered?: boolean | undefined;
 }>;
 
 export type ConsultOutcome =
@@ -82,12 +83,19 @@ export function consultSeat(task: Task, reason: ConsultReason): ConsultSeat {
 }
 
 /** The answer contract a consult reason takes: stale and deviation narrow the actions. */
-function answerContract(task: Task, reason: ConsultReason) {
+function answerContract(task: Task, reason: ConsultReason, answered: boolean) {
   if (reason === 'stale') {
     return {
       schema: consultAnswerSchemaFor(task, 'stale'),
       jsonSchema: STALE_CONSULT_ANSWER_JSON_SCHEMA,
       schemaName: 'stale_consult_answer',
+    };
+  }
+  if (reason === 'deviation' && answered) {
+    return {
+      schema: consultAnswerSchemaFor(task, 'deviation', true),
+      jsonSchema: ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+      schemaName: 'answered_deviation_consult_answer',
     };
   }
   if (reason === 'deviation') {
@@ -163,7 +171,8 @@ function promptInput(
     report: input.report ?? null,
     earlierConsults: lineage?.consultRecords ?? [],
     otherTasks: state.tasks.filter((task) => task.id !== input.task.id),
-    ...(input.userText !== undefined && { userText: input.userText }),
+    operatorInstructions: lineage?.corrections ?? [],
+    answered: input.answered === true,
   };
 }
 
@@ -217,7 +226,7 @@ export async function requestConsult(
   const seat = consultSeat(input.task, input.reason);
   const diff = await attemptDiff(ctx.workspaceDir, input.snapshot, input.changedFiles, ref);
   const prompt = promptInput(ctx.state, input, diff, ctx.workspaceDir, seat);
-  const contract = answerContract(input.task, input.reason);
+  const contract = answerContract(input.task, input.reason, input.answered === true);
   const onCallEvent = (event: RunnerCallEvent): void =>
     publishRunnerCallEvent(
       { bus: ctx.bus, phase: state.phase, rootDir: ctx.projectDir, taskId: input.task.id },

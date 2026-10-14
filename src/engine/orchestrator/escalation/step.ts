@@ -151,6 +151,7 @@ async function runRetryStepAttempt(
           fileIgnoreProjectDir: ctx.projectDir,
           changeDetection: workspace.changeDetection,
           createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
+          deliversAnswer: opts.deliversAnswer,
           seat: { ref: ctx, state, usageCategory },
         }),
     });

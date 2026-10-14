@@ -10,6 +10,7 @@ import type {
   PlannerConversation,
   WorkflowState,
 } from '../../../core/schemas/workflow.js';
+import { briefCorrections } from '../../../core/state/machine.js';
 import { insertTasks } from '../../../core/state/task-insert.js';
 import { error } from '../../../utils/error.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -18,7 +19,7 @@ import { taskFromSpec } from '../../spec/plan-tasks.js';
 import { consultSeatRunner } from '../escalation/consult-guidance.js';
 import { publishTaskReplaced, publishTasksInserted, publishTasksPlanned } from '../events.js';
 import { waitForPlannerReply } from '../planning/call-loop.js';
-import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
+import { recordBriefCorrection, transitionAndSave } from '../state-ops.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { restoreAttemptFiles } from '../task/rollback.js';
 import { runBriefGate } from '../task/brief-gate.js';
@@ -133,7 +134,7 @@ async function applyGuardQuestion(
   const specs = action.action === 'rewrite-task' ? [action.task] : action.tasks;
   const dropped = droppedCriteria(task, specs);
   const droppedText = dropped.length > 0 ? dropped.join(', ') : 'none';
-  return applyAskUser(ctx, {
+  return applyAskUser(ctx, task, {
     action: 'ask-user',
     diagnosis: action.diagnosis,
     question: `SPLITBRIEF asked the ${runner} to fix ${task.id}, but ${reason}. Dropped criteria: ${droppedText}. How should ${task.id} proceed?`,
@@ -281,12 +282,29 @@ async function applyVerify(
   return { action: 'completed', task: completed, durationMs: commit.durationMs };
 }
 
-function askUserQuestion(action: AskUserAction): ClarificationQuestion {
+/**
+ * The question the user sees: the brief's operator instructions, then the seat's question next to
+ * its choices, so the user sees which of their own instructions the question concerns.
+ */
+function askUserQuestion(
+  action: AskUserAction,
+  taskId: string,
+  instructions: readonly string[],
+): ClarificationQuestion {
+  const text =
+    instructions.length === 0
+      ? action.question
+      : [
+          `Your instructions for ${taskId}:`,
+          ...instructions.map((instruction) => `- ${instruction.replaceAll('\n', '\n  ')}`),
+          '',
+          action.question,
+        ].join('\n');
   if (action.choices !== null && action.choices.length > 0) {
     return {
       id: ASK_USER_QUESTION_ID,
       type: 'choice',
-      text: action.question,
+      text,
       options: action.choices,
       ...(action.default !== null && { default: action.default }),
     };
@@ -294,7 +312,7 @@ function askUserQuestion(action: AskUserAction): ClarificationQuestion {
   return {
     id: ASK_USER_QUESTION_ID,
     type: 'input',
-    text: action.question,
+    text,
     ...(action.default !== null && { default: action.default }),
   };
 }
@@ -335,11 +353,16 @@ function applyConfirm(
   return { action: 'confirm', decisions: action.decisions };
 }
 
+/**
+ * Puts the seat's question to the user. The answer joins the brief's operator instructions,
+ * so every later call on the brief, build or consult, reads it with the user's corrections.
+ */
 async function applyAskUser(
   ctx: ConsultApplyContext,
+  task: Task,
   action: AskUserAction,
 ): Promise<ConsultApplyOutcome> {
-  const question = askUserQuestion(action);
+  const question = askUserQuestion(action, task.id, briefCorrections(ctx.state, task.id));
   const asked: PlannerConversation = {
     call: 'plan',
     seat: ctx.seat,
@@ -355,6 +378,8 @@ async function applyAskUser(
       reason: `The ${consultSeatRunner(ctx.seat)}'s question remains unanswered.`,
     };
   const answered = consultReplyAnswer(question, reply);
+  // The transcript and the brief's log keep the seat's question; the instructions were context.
+  const qa = answered.qa.map((pair) => ({ question: action.question, answer: pair.answer }));
   const recorded = transitionAndSave(ctx, ctx.state, {
     type: 'SET_PLANNER_CONVERSATION',
     conversation: {
@@ -365,10 +390,16 @@ async function applyAskUser(
   });
   const cleared = transitionAndSave(ctx, recorded, { type: 'CLEAR_PLANNER_CONVERSATION' });
   recordUserMessage({ ...ctx, phase: cleared.phase }, answered.message, {
-    qa: answered.qa,
+    qa,
     answerIndex: (cleared.userAnswers?.length ?? 0) - 1,
   });
-  ctx.onStateChange?.(rebaseOnPersistedWorkflowState(ctx, cleared));
+  const instructed = recordBriefCorrection(
+    ctx,
+    cleared,
+    task.id,
+    qa.map((pair) => `Question: ${pair.question}\nAnswer: ${pair.answer}`).join('\n\n'),
+  );
+  ctx.onStateChange?.(instructed);
   return { action: 'guidance', instructions: answered.message.text, context: null };
 }
 
@@ -404,7 +435,7 @@ export async function applyConsultAnswer(
     case 'verify':
       return applyVerify(ctx, task, action, attempt);
     case 'ask-user':
-      return applyAskUser(ctx, action);
+      return applyAskUser(ctx, task, action);
     case 'confirm':
       return applyConfirm(ctx, task, action);
     default:

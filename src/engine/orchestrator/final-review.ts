@@ -41,7 +41,7 @@ import {
   type ReviewPlanData,
   type ReviewTouchedNotSuggested,
 } from '../spec/prompts/review.js';
-import { workspaceReadInstructions } from '../spec/prompts/builder.js';
+import { fenced, workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { readPacketEvents } from './evidence/review-packet/artifacts.js';
 import { renderChecksLogForPrompt, renderWholeChecksLog } from './evidence/review-packet/render.js';
@@ -249,6 +249,15 @@ function reviewPlanningAnswers(state: WorkflowState): string {
   return (state.userAnswers ?? [])
     .map((answer) => `- ${answer.reply} → ${answer.answer}`)
     .join('\n');
+}
+
+/** Each brief's operator-instruction log, fenced under the task its lineage started from. */
+function reviewOperatorInstructions(state: WorkflowState): string {
+  return Object.entries(state.lineages ?? {})
+    .flatMap(([taskId, lineage]) =>
+      (lineage.corrections ?? []).map((text) => `${taskId}:\n${fenced(text)}`),
+    )
+    .join('\n\n');
 }
 
 type ReviewVerification = {
@@ -642,6 +651,7 @@ export async function runFinalReviewPhase(opts: {
     const pendingInputs = state.pendingTriage?.inputs ?? [];
     const fixCycle = fixCyclesOf(state).used + 1;
     const planningAnswers = reviewPlanningAnswers(state);
+    const operatorInstructions = reviewOperatorInstructions(state);
     const promptScope = reviewScope;
     const messagesForReview = () =>
       state.messageQueue.filter(
@@ -684,6 +694,7 @@ export async function runFinalReviewPhase(opts: {
           consultLog,
           triageLog,
           planningAnswers,
+          operatorInstructions,
           pendingInputs,
           fixCycle,
           ...(renders.section !== undefined && { renders: renders.section }),
@@ -721,6 +732,7 @@ export async function runFinalReviewPhase(opts: {
             consultLog,
             triageLog,
             planningAnswers,
+            operatorInstructions,
             pendingInputs,
             fixCycle,
             taskIds: scope.taskIds,

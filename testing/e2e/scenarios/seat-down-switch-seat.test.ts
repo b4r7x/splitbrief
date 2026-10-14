@@ -302,12 +302,9 @@ describe('e2e: seat down after the brief wrote its files', { timeout: 240_000 },
       throw new Error('Network disabled in seat switch E2E');
     });
 
-    const resumed = await continueWithCorrection(
-      target,
-      sessionId,
-      correction,
-      `switch-seat:claude-code:${SWITCHED_MODEL}`,
-    );
+    const resumed = await continueWithCorrection(target, sessionId, correction, {
+      action: `switch-seat:claude-code:${SWITCHED_MODEL}`,
+    });
     expect(resumed.tasks).toMatchObject([{ id: 'T001', status: 'done' }]);
     expect(recordedCalls(claudeCalls)).toEqual([
       { model: SWITCHED_MODEL, prompt: expect.stringContaining(correction) },

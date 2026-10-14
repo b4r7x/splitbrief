@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { isRecord } from '../../utils/type-guards.js';
 import {
+  ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+  AnsweredDeviationConsultAnswerSchema,
   CONSULT_ANSWER_JSON_SCHEMA,
   ConsultAnswerSchema,
   DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
@@ -93,17 +95,20 @@ describe('StaleConsultAnswerSchema', () => {
   });
 });
 
-describe('DeviationConsultAnswerSchema', () => {
-  const takes = (value: unknown): boolean => DeviationConsultAnswerSchema.safeParse(value).success;
+describe.each([
+  ['DeviationConsultAnswerSchema', DeviationConsultAnswerSchema, false],
+  ['AnsweredDeviationConsultAnswerSchema', AnsweredDeviationConsultAnswerSchema, true],
+] as const)('%s', (_name, schema, takesGuidance) => {
+  const takes = (value: unknown): boolean => schema.safeParse(value).success;
   const confirm = answer({
     action: 'confirm',
     decisions: [{ what: 'Used node:crypto', why: 'The dependency is standard' }],
   });
 
-  it('takes only confirm and ask-user', () => {
+  it(`takes confirm and ask-user, and guidance only once the user answered (${takesGuidance})`, () => {
     expect(takes(confirm)).toBe(true);
     expect(takes(answer({ action: 'guidance', instructions: 'Narrow it', context: null }))).toBe(
-      false,
+      takesGuidance,
     );
     expect(takes(answer({ action: 'rewrite-task', task: makeTaskSpec() }))).toBe(false);
     expect(
@@ -167,6 +172,7 @@ describe('typed seat contracts', () => {
       consult: CONSULT_ANSWER_JSON_SCHEMA,
       staleConsult: STALE_CONSULT_ANSWER_JSON_SCHEMA,
       deviationConsult: DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+      answeredDeviationConsult: ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
       plan: PLAN_ANSWER_JSON_SCHEMA,
       implementerReport: z.toJSONSchema(ImplementerReportSchema),
     };
@@ -180,6 +186,8 @@ describe('typed seat contracts', () => {
     expect(variant).toBeDefined();
     expect(variant?.additionalProperties).toBe(false);
     expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'split-task')).toBeUndefined();
+    expect(variantFor(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'guidance')).toBeUndefined();
+    expect(variantFor(ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA, 'guidance')).toBeDefined();
   });
 });
 

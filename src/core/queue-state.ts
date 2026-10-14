@@ -9,15 +9,6 @@ export function isQueuedMessagePendingDelivery(message: QueuedMessage): boolean 
   );
 }
 
-export function isQueuedMessagePendingConsult(message: QueuedMessage): boolean {
-  const deliveredToImplementer =
-    message.deliveredTo?.implementer !== undefined ||
-    message.drainedAt !== undefined ||
-    message.deliveredViaNative ||
-    message.nativeDeliveryState === 'delivered';
-  return deliveredToImplementer && message.deliveredTo?.consult === undefined;
-}
-
 export function isQueuedMessagePendingReviewer(message: QueuedMessage): boolean {
   return isQueuedMessagePendingDelivery(message) && message.deliveredTo?.reviewer === undefined;
 }

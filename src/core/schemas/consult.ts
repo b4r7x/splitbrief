@@ -59,13 +59,23 @@ export const ConsultAnswerSchema = z.object({
 });
 export type ConsultAnswer = z.infer<typeof ConsultAnswerSchema>;
 
-export function consultAnswerSchemaFor(task: Task, reason: ConsultReason = 'failed') {
+/**
+ * The answer schema of one consult. A deviation consult takes `guidance` only once the user
+ * answered its question (`answered`): the guidance carries out that answer.
+ */
+export function consultAnswerSchemaFor(
+  task: Task,
+  reason: ConsultReason = 'failed',
+  answered = false,
+) {
   const schema =
     reason === 'stale'
       ? StaleConsultAnswerSchema
-      : reason === 'deviation'
-        ? DeviationConsultAnswerSchema
-        : ConsultAnswerSchema;
+      : reason !== 'deviation'
+        ? ConsultAnswerSchema
+        : answered
+          ? AnsweredDeviationConsultAnswerSchema
+          : DeviationConsultAnswerSchema;
   return schema.superRefine((value, ctx) => {
     if (value.answer.action === 'rewrite-task' && value.answer.task.id !== task.id) {
       ctx.addIssue({
@@ -90,6 +100,10 @@ export const StaleConsultAnswerSchema = z.object({
 
 export const DeviationConsultAnswerSchema = z.object({
   answer: z.union([ConfirmActionSchema, AskUserActionSchema]),
+});
+
+export const AnsweredDeviationConsultAnswerSchema = z.object({
+  answer: z.union([ConfirmActionSchema, AskUserActionSchema, GuidanceActionSchema]),
 });
 
 export const ImplementerReportSchema = z.discriminatedUnion('status', [
@@ -127,3 +141,8 @@ const { $schema: _deviationDraftRef, ...deviationConsultAnswerJsonSchema } = z.t
   DeviationConsultAnswerSchema,
 );
 export const DEVIATION_CONSULT_ANSWER_JSON_SCHEMA = deviationConsultAnswerJsonSchema;
+
+const { $schema: _answeredDeviationDraftRef, ...answeredDeviationConsultAnswerJsonSchema } =
+  z.toJSONSchema(AnsweredDeviationConsultAnswerSchema);
+export const ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA =
+  answeredDeviationConsultAnswerJsonSchema;

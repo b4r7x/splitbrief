@@ -130,7 +130,7 @@ export type StateAction =
   | {
       type: 'DRAIN_QUEUE';
       ids?: string[];
-      destination?: 'implementer' | 'consult' | 'reviewer';
+      destination?: 'implementer' | 'reviewer';
       via?: 'mid-call';
     }
   | { type: 'CLEAR_QUEUE' }

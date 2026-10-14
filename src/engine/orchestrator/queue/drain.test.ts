@@ -14,12 +14,10 @@ import {
 } from '#testing/helpers/queue.js';
 import {
   claimQueuedMessage,
-  commitQueueMessagesConsulted,
   commitQueueMessagesDrained,
   drainQueue,
   drainQueueForReview,
   releaseQueuedMessage,
-  readQueueForConsult,
   readQueueForPrompt,
 } from './drain.js';
 import { transitionAndSave } from '../state-ops.js';
@@ -543,7 +541,7 @@ describe('drain', () => {
     expect(result.state.messageQueue[0]?.drainedAt).toBeDefined();
   });
 
-  it('marks only the implementer destination on drain and still offers the message to the consult', () => {
+  it('marks the implementer destination on drain', () => {
     const { projectDir, sessionId } = setupProject(dirs);
     const ref = { projectDir, sessionId };
     const state = makeStateWithQueue([makeMessage('use UTC everywhere')]);
@@ -554,10 +552,6 @@ describe('drain', () => {
     expect(drained.messages.map((message) => message.text)).toEqual(['use UTC everywhere']);
     const persisted = loadState(ref)?.messageQueue ?? [];
     expect(persisted[0]?.deliveredTo?.implementer).toBeDefined();
-    expect(persisted[0]?.deliveredTo?.consult).toBeUndefined();
-
-    const consult = readQueueForConsult({ projectDir, sessionId, state: drained.state });
-    expect(consult.messages.map((message) => message.text)).toEqual(['use UTC everywhere']);
   });
 
   it('does not drain a message again once the implementer destination is recorded', () => {
@@ -568,44 +562,6 @@ describe('drain', () => {
     const first = drainQueue({ projectDir, sessionId, state, bus });
     const second = drainQueue({ projectDir, sessionId, state: first.state, bus });
 
-    expect(second.messages).toEqual([]);
-  });
-
-  it('keeps a drained message available to the consult across a reload', () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const state = makeStateWithQueue([makeMessage('use UTC everywhere')]);
-    const { bus } = makeBusRecorder();
-    drainQueue({ projectDir, sessionId, state, bus });
-
-    const reloaded = loadState({ projectDir, sessionId });
-    if (reloaded === null) throw new Error('expected persisted workflow state');
-
-    const consult = readQueueForConsult({ projectDir, sessionId, state: reloaded });
-    expect(consult.messages.map((message) => message.text)).toEqual(['use UTC everywhere']);
-  });
-
-  it('does not offer a message to the consult twice once its consult destination is recorded', () => {
-    const { projectDir, sessionId } = setupProject(dirs);
-    const ref = { projectDir, sessionId };
-    const state = makeStateWithQueue([makeMessage('use UTC everywhere')]);
-    const { bus } = makeBusRecorder();
-    const drained = drainQueue({ projectDir, sessionId, state, bus });
-    const first = readQueueForConsult({ projectDir, sessionId, state: drained.state });
-
-    const committed = commitQueueMessagesConsulted({
-      projectDir,
-      sessionId,
-      state: first.state,
-      ids: first.messages.map((message) => message.id),
-    });
-
-    expect(committed.count).toBe(1);
-    const persisted = loadState(ref)?.messageQueue ?? [];
-    expect(persisted[0]?.deliveredTo).toMatchObject({
-      implementer: expect.any(String),
-      consult: expect.any(String),
-    });
-    const second = readQueueForConsult({ projectDir, sessionId, state: committed.state });
     expect(second.messages).toEqual([]);
   });
 
