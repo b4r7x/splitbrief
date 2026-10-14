@@ -493,7 +493,7 @@ export function runsProjectDefinedCode(argv: readonly string[], projectDir: stri
   return args.length > 1 || !forms.alone.includes(args[0] ?? '');
 }
 
-function realpathOrResolve(path: string): string {
+export function realpathOrResolve(path: string): string {
   try {
     return realpathSync(path);
   } catch {

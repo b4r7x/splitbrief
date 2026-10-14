@@ -3,11 +3,12 @@ import {
   fileFromFailureKey,
   isTestNodeKey,
 } from '../../../core/review/fix-task.js';
+import { realpathOrResolve } from '../../../core/trust/path-classification.js';
 import type { ProcessOutputCapture } from '../../../lib/process/errors.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByChars } from '../../../utils/truncate.js';
-import { failingTestKey, parseFailingTests } from './test-failures.js';
+import { failingTestKey, parseFailingTests, readNodeTap } from './test-failures.js';
 
 /**
  * The keys of a red command: its failing tests by name and its diagnostic lines, else the lines of
@@ -40,7 +41,7 @@ export function failureKeys(
       placeholder: 'output over the capture limit',
     };
   }
-  const output = run.capture.text.replaceAll(`${dir}/`, '');
+  const output = relativeToDir(run.capture.text, dir);
   const tests = parseFailingTests(output);
   const extracted = extractFailureKeys(output);
   const keys = [
@@ -72,6 +73,16 @@ export function failureKeys(
     keys: [key],
     placeholder: said === undefined ? `${key} without diagnostics` : `${key}: ${said}`,
   };
+}
+
+/**
+ * The output with the paths under `dir` relative to it, under `dir` as given and under its real
+ * path, which Node's test runner prints. The longer root goes first, so neither cuts the other.
+ */
+export function relativeToDir(output: string, dir: string): string {
+  return [dir, realpathOrResolve(dir)]
+    .sort((a, b) => b.length - a.length)
+    .reduce((text, root) => text.replaceAll(`${root}/`, ''), output);
 }
 
 const ERROR_WORD = /\b\w*(?:error|exception)\b|\b(?:fatal|panic)\b/i;
@@ -115,12 +126,13 @@ function tokenOf(line: string): string | undefined {
  * The failure keys of a command's output: diagnostic lines from their path token onward, else its
  * non-empty lines. `diagnostics` is false when the keys are those raw lines. Such a key can be
  * runner output (an `npm` script banner, a `make` error summary) that names no failure.
- * A check-mark row, a test node id without FAILED or ERROR, and a warning-severity row are not
- * failure keys; the severity is read where the tool prints it, never from the message text.
+ * A check-mark row, a test node id without FAILED or ERROR, a warning-severity row and a line of
+ * Node's TAP stream are not failure keys; the severity is read where the tool prints it, never
+ * from the message text.
  */
 export function extractFailureKeys(rawOutput: string): { keys: string[]; diagnostics: boolean } {
-  const lines = rawOutput
-    .split('\n')
+  const lines = readNodeTap(rawOutput)
+    .rest.split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const tokens: string[] = [];

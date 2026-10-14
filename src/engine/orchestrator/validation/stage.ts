@@ -7,6 +7,7 @@ import {
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByTailLines } from '../../../utils/truncate.js';
 import { CAPTURE_LIMITS } from '../../../core/pipeline-spec/gates.js';
+import { relativeToDir } from './extract-failure-keys.js';
 import { failingTestLabel, parseFailingTests } from './test-failures.js';
 import type { ValidationResult } from './result.js';
 import type { ValidationCommandRunner } from './types.js';
@@ -82,7 +83,7 @@ export async function runValidationStep(opts: {
       const { output, stderr } = err.data;
       const stdout = String(output ?? '');
       const capture = processOutputCapture(err.data);
-      const failingTests = parseFailingTests(capture.text);
+      const failingTests = parseFailingTests(relativeToDir(capture.text, cwd));
       const detail =
         failingTests.length > 0
           ? failingTests

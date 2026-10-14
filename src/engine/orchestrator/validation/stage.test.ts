@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs';
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { runValidationStep } from './stage.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -105,6 +106,46 @@ describe('validation output redaction', () => {
     expect(result.error).toContain('FAIL  src/totals.test.ts > totals > adds tax');
     expect(result.error).toContain('AssertionError: expected 3 to be 4');
     expect(result.error).not.toContain('Isolation cleanup failed');
+  });
+
+  it('names a red node --test test and a file that fails to load relative to the run dir, as Node prints them by real path', async () => {
+    const real = realpathSync(tempDir);
+    const output = [
+      'TAP version 13',
+      `# file://${real}/lib/x.mjs:1`,
+      "# Error: can't load x",
+      `#     at file://${real}/lib/x.mjs:1:7`,
+      '# Subtest: test/i.test.mjs',
+      'not ok 1 - test/i.test.mjs',
+      '  ---',
+      `  location: '${real}/test/i.test.mjs:1:1'`,
+      "  failureType: 'testCodeFailure'",
+      '  exitCode: 1',
+      "  error: 'test failed'",
+      '  ...',
+      '# Subtest: legacy red',
+      'not ok 2 - legacy red',
+      '  ---',
+      `  location: '${real}/test/legacy.test.mjs:2:1'`,
+      "  failureType: 'testCodeFailure'",
+      `  error: "can't do it"`,
+      '  ...',
+      '1..2',
+    ].join('\n');
+    const result = await runValidationStep({
+      cmd: 'node',
+      args: ['--test'],
+      cwd: tempDir,
+      timeout: 1000,
+      runCommand: makeCommandRunner(
+        processError.exitCode({ command: 'node --test', code: 1, stderr: '', output }),
+      ),
+      command: 'node --test',
+    });
+
+    expect(result.error).toBe(
+      "FAIL  test/i.test.mjs\nError: can't load x\n\nFAIL  test/legacy.test.mjs > legacy red\ncan't do it",
+    );
   });
 
   it('keeps the tail of long passing test output so the runner summary line survives', async () => {
