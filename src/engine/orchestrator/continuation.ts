@@ -13,6 +13,7 @@ import { processError } from '../../lib/process/errors.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { PARTIAL_MAX_CHARS } from '../spec/prompts/continuation.js';
 import { formatMessageInput } from './queue/prompt.js';
+import { keptBriefFiles } from './kept-work.js';
 
 /**
  * The cut call's assistant stream, bounded to the continuation prompt's
@@ -243,12 +244,15 @@ export async function withContinuationLoop<T>(
     source: 'user' | 'watchdog',
   ): Promise<UserMessageInput> => {
     const current = rebaseOnPersistedWorkflowState(persistRef, state);
+    // The cut call's own workspace: what a brief left there is what the stop keeps.
+    const kept = await keptBriefFiles(projectDir, current, step);
     applyState(
       transitionAndSave(persistRef, current, {
         type: 'INTERRUPT_STEP',
         step,
         source,
         cut: 'mid-step',
+        kept,
       }),
     );
     bus.publish({
@@ -259,7 +263,7 @@ export async function withContinuationLoop<T>(
       at: 'mid-step',
       step,
     });
-    const userText = await onContinuationNeeded(partialOutput, 'mid-step');
+    const userText = await onContinuationNeeded(partialOutput, 'mid-step', kept);
     throwIfAborted(ctx.signal);
     applyState(transitionAndSave(persistRef, state, { type: 'RESUME_STEP' }));
     recordSteer(ctx, state.phase, userText);

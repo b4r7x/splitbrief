@@ -17,7 +17,12 @@ export interface StopBylineInput {
   readonly intent: StopIntent;
   readonly phase: StopPhase;
   readonly workflowPhase: Phase;
-  readonly parked: { readonly kind: StopParkKind; readonly taskId: string | null } | null;
+  readonly parked: {
+    readonly kind: StopParkKind;
+    readonly taskId: string | null;
+    /** The declared files the cut brief had changed when the stop parked it. */
+    readonly kept: readonly string[];
+  } | null;
   readonly currentTaskId: string | null;
   readonly nextTaskId: string | null;
   /** The brief the run last finished, named when a pause outlives the brief it was armed on. */
@@ -82,8 +87,9 @@ function subject(input: StopBylineInput): string {
 }
 
 /**
- * Where a stop parked the run, in the words its record uses. Only a brief the stop cut mid-step has
- * partial work to keep: a planner step, a gate or a brief not yet started changed nothing.
+ * Where a stop parked the run, in the words its record uses. Only a brief the stop cut mid-step can
+ * keep partial work, and only when the stop found files it had changed: a planner step, a gate, a
+ * brief not yet started or a brief cut before its first write kept nothing.
  */
 function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSegment[] {
   const status = input.record?.status;
@@ -96,22 +102,26 @@ function stoppedLead(input: StopBylineInput, tone: StateTone): ConversationRowSe
         : input.parked?.kind === 'mid-brief'
           ? 'mid-step'
           : undefined;
+    const kept = cut === 'mid-step' && (input.parked?.kept.length ?? 0) > 0;
     return stopLeadParts(
       'Stopped',
       tone,
       ` ${stopPoint({ kind: 'brief', taskId: taskId(brief), attempt: 0 }, cut)}`,
-      cut === 'mid-step' ? 'Partial changes kept' : undefined,
+      kept ? PARTIAL_KEPT : undefined,
     );
   }
-  const at = status.stop.on.kind === 'paused' ? status.stop.on.at : undefined;
-  const cutBrief = status.resumeAt.kind === 'brief' && at === 'mid-step';
+  const paused = status.stop.on.kind === 'paused' ? status.stop.on : undefined;
+  const kept =
+    status.resumeAt.kind === 'brief' && paused?.at === 'mid-step' && (paused.kept?.length ?? 0) > 0;
   return stopLeadParts(
     'Stopped',
     tone,
-    ` ${stopPoint(status.resumeAt, at)}`,
-    cutBrief ? 'Partial changes kept' : undefined,
+    ` ${stopPoint(status.resumeAt, paused?.at)}`,
+    kept ? PARTIAL_KEPT : undefined,
   );
 }
+
+const PARTIAL_KEPT = 'Partial changes kept';
 
 function stopLeadParts(
   state: string,

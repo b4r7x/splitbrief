@@ -119,6 +119,28 @@ describe('deriveRunStatus', () => {
     ).toMatchObject({ stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } } });
   });
 
+  it('carries the files the stop found the cut brief had changed', () => {
+    const interruptedStep = {
+      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
+      source: 'user',
+      cut: 'mid-step',
+      at: '2026-09-01T00:00:00.000Z',
+    } as const;
+    expect(
+      stopOf({
+        phase: 'implementing',
+        interruptedStep: { ...interruptedStep, kept: ['src/a.ts'] },
+      }),
+    ).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step', kept: ['src/a.ts'] } },
+    });
+    // A state written before the stop recorded its files claims none.
+    expect(stopOf({ phase: 'implementing', interruptedStep })).toMatchObject({
+      stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
+    });
+    expect(stopOf({ phase: 'implementing', interruptedStep })).not.toHaveProperty('stop.on.kept');
+  });
+
   it('reads an interrupted step with no partial as paused at a boundary', () => {
     const status = stopOf({
       phase: 'implementing',

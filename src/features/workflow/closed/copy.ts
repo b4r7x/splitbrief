@@ -40,6 +40,7 @@ export function factSpans(fact: CopyFact): readonly CopySegment[] {
 }
 
 export interface RunRow {
+  /** Empty on a follow-on row, which reads as part of the labelled row above it. */
   label: string;
   seat?: CrewSeatId;
   /** Each fact fits as one unit; the renderer joins facts with ` · `. */
@@ -75,6 +76,7 @@ export function findingCounts(counts: Readonly<{ critical: number; warning: numb
 export function runRows(view: SummaryView): RunRow[] {
   const rows: RunRow[] = [
     { label: 'Review', seat: 'review', segments: reviewSegments(view.review) },
+    ...preExistingRows(view.review),
   ];
   if (view.applyUndo !== null) {
     const conflicts = view.applyUndo.conflicts.length;
@@ -144,6 +146,32 @@ function reviewSegments(review: ReviewView): CopySegment[] {
     });
   }
   return segments;
+}
+
+/**
+ * Each reviewer check the review saw red at the run base too, under the review: the check and its
+ * command, then one indented row per failing test it names, in the words of the transcript's base
+ * row. A test gets a row of its own, so a long name is cut in the middle rather than dropped.
+ */
+function preExistingRows(review: ReviewView): RunRow[] {
+  if (review.kind !== 'written') return [];
+  return review.preExisting.flatMap((check): RunRow[] => [
+    {
+      label: '',
+      segments: [
+        {
+          spans: [
+            { text: `${check.id} `, tone: 'text' },
+            { text: 'pre-existing', tone: stateTone('attention') },
+          ],
+        },
+        { text: check.command, tone: 'textDim' },
+      ],
+    },
+    ...check.tests.map(
+      (test): RunRow => ({ label: '', segments: [{ text: `  ${test}`, tone: 'textDim' }] }),
+    ),
+  ]);
 }
 
 function verdictSegment(verdict: 'pass' | 'pass_with_notes' | 'fail' | null): CopySegment | null {

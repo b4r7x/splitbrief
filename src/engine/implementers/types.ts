@@ -57,6 +57,8 @@ export interface ImplementerPublisher {
     linesRemoved?: number | undefined;
     duration: number;
     noChange?: boolean | undefined;
+    /** The declared files a cut attempt of this brief left, which this call continued on. */
+    kept?: readonly string[] | undefined;
   }): void;
   publishFailed(opts: {
     phase: Phase;
@@ -106,10 +108,16 @@ export interface ImplementerOptions extends UndeclaredWritesPolicy, Pick<InvokeO
   /**
    * The brief restarts on its own prompt; this is what the cut attempt left
    * behind. `extra` carries the declared files that already changed, so the
-   * implementer edits on top of them instead of rewriting from scratch.
+   * implementer edits on top of them instead of rewriting from scratch; `kept`
+   * names them when a cut attempt left them, for the call's own done row.
    */
   continuation?:
-    | { partial?: string | undefined; steer?: string | undefined; extra?: string | undefined }
+    | {
+        partial?: string | undefined;
+        steer?: string | undefined;
+        extra?: string | undefined;
+        kept?: readonly string[] | undefined;
+      }
     | undefined;
   languageContext?: LanguageContext | undefined;
   plan?: PlanContext | undefined;

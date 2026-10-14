@@ -511,6 +511,8 @@ export async function runFinalReviewPhase(opts: {
     const scope = reviewScopeFor(state, opts.scope ?? 'final');
     let reviewChecksSection: string | undefined;
     let dischargedReviewCommands: string[] = [];
+    // A review that only re-answers its question on the same candidate keeps the checks it ran.
+    let preExistingChecks = state.review?.preExistingChecks ?? [];
     if (opts.reviewChecks === true) {
       const changedFiles =
         opts.scope === 'task'
@@ -545,6 +547,7 @@ export async function runFinalReviewPhase(opts: {
       }
       reviewChecksSection = checks.section;
       dischargedReviewCommands = checks.discharged;
+      preExistingChecks = checks.preExistingChecks;
       if (choosingChecks) {
         bus.publish({ type: 'review_step', ts: Date.now(), phase: state.phase, step: 'verdict' });
       }
@@ -943,6 +946,7 @@ export async function runFinalReviewPhase(opts: {
       outcome: outcome.kind,
       verification: verification.entries,
       ...(outcome.redInputs.length > 0 && { redInputs: outcome.redInputs }),
+      ...(preExistingChecks.length > 0 && { preExistingChecks }),
       at: nowIso(),
     };
     state = transitionAndSave({ projectDir, sessionId }, state, {
@@ -986,7 +990,7 @@ export async function runFinalReviewPhase(opts: {
         },
       });
     verdict = { verdict: reviewerVerdict, outcome };
-    reviewText = renderReviewMarkdown(reviewerVerdict, outcome);
+    reviewText = renderReviewMarkdown(reviewerVerdict, outcome, preExistingChecks);
     writeSpecFile(
       { projectDir, sessionId },
       REVIEW_JSON_FILE,

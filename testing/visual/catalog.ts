@@ -730,6 +730,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-resumed-kept-work',
+      title: 'Workflow · a continued brief that kept the work from before the stop',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'resumed-kept-work',
+        title: 'Continued brief verified its kept files',
+        kind: 'implementation',
+        marker: "kept the interrupted attempt's work",
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Implementation transcript' },
+        { id: 'sidebar', title: 'Workflow sidebar' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-final-review',
       title: 'Workflow · final review running',
       surface: screenSurface('workflow'),
@@ -1761,6 +1778,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-closed-pre-existing',
+      title: 'Workflow · closed after a review that saw a pre-existing red',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'closed-pre-existing',
+        title: 'The closed ledger names the reviewer check red at the run base too',
+        kind: 'success',
+        marker: 'visual-closed-pre-existing',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Closed run ledger' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-closed-undone',
       title: 'Workflow · Apply undone',
       surface: screenSurface('workflow'),
@@ -2013,6 +2046,23 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [
         { id: 'header', title: 'Workflow header' },
         { id: 'transcript', title: 'Workspace notice' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-cli-stop-continued',
+      title: 'Workflow · a brief continued after a stop cut its CLI call',
+      surface: screenSurface('workflow'),
+      viewports: [...REQUIRED_VIEWPORTS, viewport({ cols: 120, rows: 60 })],
+      checkpoint: {
+        id: 'cli-stop-continued',
+        title: 'The cut calls read as stops, the brief carries the live mark',
+        kind: 'implementation',
+        marker: 'Run continued',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Stopped calls and continuation' },
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),

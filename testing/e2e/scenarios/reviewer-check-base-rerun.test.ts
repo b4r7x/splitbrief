@@ -5,14 +5,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { readEvidenceLedger } from '../../../src/core/evidence/ledger-storage.js';
 import {
+  REVIEW_FILE,
   reviewPacketJsonPath,
   reviewPacketMarkdownPath,
+  sessionDir,
   sessionsRoot,
 } from '../../../src/core/paths.js';
 import { ReviewPacketSchema } from '../../../src/core/schemas/review-packet.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { factSpans, runRows } from '../../../src/features/workflow/closed/copy.js';
+import { deriveSummaryView } from '../../../src/features/workflow/closed/view-model.js';
+import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
 import { suiteStatusParts } from '../../../src/features/workflow/display/phase-verb.js';
+import { hydrateRun } from '../../../src/features/workflow/run-history.js';
+import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
@@ -140,7 +151,21 @@ afterEach(() => {
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
   fixture = undefined;
   restorePath = undefined;
+  resetAllStores();
 });
+
+/** The transcript rows a run's replayed log paints, one string per row. */
+async function transcriptRows(ref: { projectDir: string; sessionId: string }): Promise<string[]> {
+  await hydrateRun(readRunRecord(ref));
+  return buildConversationRows({
+    sections: groupEventsIntoSections(eventsStore.get().events),
+    expandedDiffs: new Set(),
+    expandedActivityBatches: new Set(),
+    cols: 200,
+    viewportHeight: 50,
+    streaming: { taskId: null, lines: [], active: false },
+  }).rows.map(rowText);
+}
 
 /** Rewrites the fixture's one commit so the run base also holds `committed`. */
 function commitOnBase(projectDir: string, committed: Record<string, string>): void {
@@ -272,6 +297,7 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
       expect(lines).toContain(
         "base re-run V1: pre-existing · the failure also fails before this run's changes",
       );
+      expect(lines).toContain(`base re-run V1 pre-existing: ${red.key}`);
 
       expect(calls.map((call) => call.kind)).toEqual([
         'plan',
@@ -304,9 +330,11 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         passed: false,
         newFailures: 0,
         preExisting: 1,
+        preExistingKeys: [red.key],
       });
       expect(baseDone).not.toHaveProperty('notVerified');
       expect(baseDone).not.toHaveProperty('detail');
+      expect(baseDone).not.toHaveProperty('newKeys');
 
       const baseRunning = rows[2];
       if (baseRunning === undefined) throw new Error('Missing base re-run row');
@@ -348,6 +376,21 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         plan: { commands: [{ id: 'V1', command: red.command }] },
       });
       expect(state.reviewChecks?.skipped).toBeUndefined();
+      expect(state.review?.preExistingChecks).toEqual([
+        { id: 'V1', command: red.command, keys: [red.key] },
+      ]);
+      expect(
+        readFileSync(join(sessionDir(target.projectDir, sessionId), REVIEW_FILE), 'utf8'),
+      ).toContain(
+        [
+          '### Pre-existing failures',
+          '',
+          "These reviewer checks failed at the run base too. Their failures below also fail before this run's changes, so they raise no finding.",
+          '',
+          `- V1 \`${red.command}\``,
+          `  - ${red.key}`,
+        ].join('\n'),
+      );
       expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
         kind: 'ready-to-apply',
         override: false,
@@ -369,9 +412,17 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         taskId: brief.id,
         preExisting: [red.key],
       });
-      expect(readFileSync(reviewPacketMarkdownPath(ref), 'utf8')).toContain(
-        `pre-existing (also red at the run base): ${red.key}`,
-      );
+      const packetMarkdown = readFileSync(reviewPacketMarkdownPath(ref), 'utf8');
+      expect(packetMarkdown).toContain(`pre-existing (also red at the run base): ${red.key}`);
+      // The brief's own line agrees with the Checks Log, which lists T001-K1 as passed.
+      expect(packet.validation.tasks).toEqual([
+        expect.objectContaining({
+          taskId: brief.id,
+          checks: [{ id: 'T001-K1', status: 'pass' }],
+        }),
+      ]);
+      expect(packetMarkdown).toContain(`- ${brief.id} done: 1 of 1 checks passed`);
+      expect(packetMarkdown).not.toContain('validation stages passed');
 
       const applied = await applyRun(target, sessionId);
       expect(applied.exitCode, applied.stderr).toBe(0);
@@ -382,6 +433,26 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
         TOTAL_TEST_SOURCE,
       );
       expect(readFileSync(join(target.projectDir, red.file), 'utf8')).toBe(red.source);
+
+      const transcript = await transcriptRows(ref);
+      expect(transcript.some((row) => row.includes(`pre-existing · ${red.key}`))).toBe(true);
+
+      const view = deriveSummaryView({ record: readRunRecord(ref) });
+      expect(view?.review).toMatchObject({
+        kind: 'written',
+        preExisting: [{ id: 'V1', command: red.command, tests: [red.key] }],
+      });
+      const closedText = (view === null ? [] : runRows(view)).map((row) =>
+        row.segments
+          .map((fact) =>
+            factSpans(fact)
+              .map((span) => span.text)
+              .join(''),
+          )
+          .join(' · '),
+      );
+      expect(closedText).toContain(`V1 pre-existing · ${red.command}`);
+      expect(closedText).toContain(`  ${red.key}`);
     },
   );
 
@@ -401,6 +472,8 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
     const lines = run.stdout.split('\n').map((line) => line.trim());
     expect(lines).toContain('base re-run V1: 1\u00a0new, 1\u00a0pre-existing');
+    expect(lines).toContain(`base re-run V1 new: ${LEDGER_SUITE_FILE}`);
+    expect(lines).toContain(`base re-run V1 pre-existing: ${red.key}`);
     expect(lines).not.toContain(
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
     );
@@ -408,7 +481,14 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     const base = events.find(
       (event) => event.type === 'full_suite' && event.moment === 'base' && event.status === 'done',
     );
-    expect(base).toMatchObject({ id: 'V1', passed: false, newFailures: 1, preExisting: 1 });
+    expect(base).toMatchObject({
+      id: 'V1',
+      passed: false,
+      newFailures: 1,
+      preExisting: 1,
+      newKeys: [LEDGER_SUITE_FILE],
+      preExistingKeys: [red.key],
+    });
 
     const verdictPrompt = calls.find((call) => call.kind === 'final-review')?.prompt;
     expect(verdictPrompt).toContain(

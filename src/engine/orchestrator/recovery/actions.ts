@@ -44,7 +44,7 @@ import { endRun } from '../run/close.js';
 import { recordUserMessage } from '../transcript/user-message.js';
 import type { UserMessageInput } from '../../../core/types/user-input.js';
 import { restoreExhaustedTaskFiles } from '../task/rollback.js';
-import { runCodeDir } from '../run/task-execution.js';
+import { runCodeDir } from '../kept-work.js';
 import { isConsultBoundReason } from './builders/consult.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import { SeatAccountCauseSchema } from '../../../core/recovery/account-cause.js';

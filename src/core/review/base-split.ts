@@ -29,3 +29,37 @@ export function baseSplit(counts: {
       : `all ${counts.preExisting} failures also fail`;
   return { verdict: 'pre-existing', why: `${failures} before this run's changes` };
 }
+
+/** The failing tests a base re-run event names per side; the counts say how many are left out. */
+export const BASE_SPLIT_NAMED = 3;
+
+/** The first failing tests of `count`, then the rest counted as one last entry (`+2 more`). */
+export function namedFailures(keys: readonly string[], count: number): string[] {
+  const named = keys.slice(0, BASE_SPLIT_NAMED);
+  const more = count - named.length;
+  return [...named, ...(more > 0 ? [`+${more}\u00a0more`] : [])];
+}
+
+/**
+ * The failing tests of a verified split, per side, in the words every surface uses. A side with no
+ * named failure is left out.
+ */
+export function baseSplitNames(split: {
+  newFailures?: number | undefined;
+  preExisting?: number | undefined;
+  newKeys?: readonly string[] | undefined;
+  preExistingKeys?: readonly string[] | undefined;
+}): { side: 'new' | 'pre-existing'; names: string[] }[] {
+  const side = (
+    name: 'new' | 'pre-existing',
+    keys: readonly string[] | undefined,
+    count: number | undefined,
+  ) =>
+    keys === undefined || keys.length === 0
+      ? []
+      : [{ side: name, names: namedFailures(keys, count ?? keys.length) }];
+  return [
+    ...side('new', split.newKeys, split.newFailures),
+    ...side('pre-existing', split.preExistingKeys, split.preExisting),
+  ];
+}

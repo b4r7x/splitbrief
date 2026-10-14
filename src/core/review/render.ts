@@ -1,7 +1,17 @@
 import type { ReviewVerdict } from '../schemas/review.js';
+import type { ReviewRecord } from '../schemas/workflow.js';
+import { namedFailures } from './base-split.js';
 import { reviewOutcomeWord, type ReviewOutcome } from './verdict.js';
 
-export function renderReviewMarkdown(verdict: ReviewVerdict, outcome: ReviewOutcome): string {
+const PRE_EXISTING_LEAD =
+  "These reviewer checks failed at the run base too. Their failures below also fail before this run's changes, so they raise no finding.";
+
+/** `preExistingChecks` are the reviewer checks that were red at the run base too. */
+export function renderReviewMarkdown(
+  verdict: ReviewVerdict,
+  outcome: ReviewOutcome,
+  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+): string {
   const word = reviewOutcomeWord(outcome);
   const lines = ['### Verdict', '', word, '', '### Tasks', ''];
   if (verdict.tasks.length === 0) {
@@ -38,6 +48,13 @@ export function renderReviewMarkdown(verdict: ReviewVerdict, outcome: ReviewOutc
     for (const finding of outcome.minor) lines.push(`- ${finding.text}`);
     for (const finding of outcome.outOfScope)
       lines.push(`- Outside the task review scope: ${finding.text}`);
+  }
+  if (preExistingChecks.length > 0) {
+    lines.push('', '### Pre-existing failures', '', PRE_EXISTING_LEAD, '');
+    for (const check of preExistingChecks) {
+      lines.push(`- ${check.id} \`${check.command}\``);
+      for (const name of namedFailures(check.keys, check.keys.length)) lines.push(`  - ${name}`);
+    }
   }
   lines.push('');
   return lines.join('\n');

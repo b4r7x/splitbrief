@@ -98,7 +98,7 @@ it.each([false, true])(
             callbacks: {
               ...options.callbacks,
               onContinuationNeeded: async (partial, at) => {
-                const message = await options.callbacks.onContinuationNeeded?.(partial, at);
+                const message = await options.callbacks.onContinuationNeeded?.(partial, at, []);
                 if (message === undefined) throw new Error('Missing continuation callback');
                 parks.push(message);
                 return message;

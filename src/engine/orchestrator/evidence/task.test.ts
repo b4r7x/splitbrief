@@ -32,7 +32,6 @@ describe('recordLocalTaskEvidence', () => {
       status: 'done',
     });
     expect(updated.tasks[0]?.status).toBe('done');
-    expect(updated.tasks[0]?.validation).toEqual([]);
     expect(updated.tasks[0]?.checks).toEqual([]);
   });
 
@@ -161,24 +160,22 @@ describe('recordLocalTaskEvidence', () => {
     ]);
   });
 
-  it('round-trips a ledger without the exempt flag through the schema unchanged', () => {
+  it('loads an older ledger that still carries per-task validation stages and drops them', () => {
     const task = makeTask();
-    const ledger = createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] });
-    const updated = recordLocalTaskEvidence({
-      ledger,
+    const ledger = recordLocalTaskEvidence({
+      ledger: createEvidenceLedger({ sessionId: 'sess-1', feature: 'feat', tasks: [task] }),
       task,
       status: 'done',
     });
-    updated.tasks[0]?.validation.push(
-      { stage: 'typecheck', passed: false, errorSummary: 'error' },
-      { stage: 'lint', passed: true },
-    );
-    expect(EvidenceLedgerSchema.parse(updated)).toEqual(updated);
-    expect(updated.tasks[0]?.validation[0]).toEqual({
-      stage: 'typecheck',
-      passed: false,
-      errorSummary: 'error',
-    });
+    const older = {
+      ...ledger,
+      tasks: ledger.tasks.map((entry) => ({
+        ...entry,
+        validation: [{ stage: 'typecheck', passed: false, errorSummary: 'error' }],
+      })),
+    };
+
+    expect(EvidenceLedgerSchema.parse(older)).toEqual(ledger);
   });
 });
 

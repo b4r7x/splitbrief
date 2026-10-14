@@ -42,7 +42,7 @@ export async function handlePlanningFailure(opts: {
     const ending = workflowCancelledReasonFromSignal(wctx.signal) !== undefined;
     return {
       disposition: 'terminal',
-      state: ending ? latest : parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
+      state: ending ? latest : await parkStoppedRun({ ...ref, bus: wctx.bus }, latest),
       outcome: ending ? 'cancelled' : 'interrupted',
     };
   }

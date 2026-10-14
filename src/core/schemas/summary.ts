@@ -249,7 +249,6 @@ export const SummarySchema = z.object({
     .object({
       path: z.string(),
       totalTasks: z.number().nonnegative(),
-      tasksWithValidationEvidence: z.number().nonnegative(),
       escalatedTasks: z.number().nonnegative(),
       failedTasks: z.number().nonnegative(),
       rejectionCount: z.number().nonnegative().optional(),

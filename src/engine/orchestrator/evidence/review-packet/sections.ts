@@ -67,18 +67,17 @@ export function buildValidation(
   state: WorkflowState,
   ledger: EvidenceLedger | null,
 ): ReviewPacket['validation'] {
+  // The plan checks run before the review are booked on the last brief; they are no brief's own.
+  const planCheckIds = new Set((state.plan?.checks ?? []).map((check) => check.id));
   const tasks = state.tasks.map((task) => {
     const evidence = taskEvidence(task, ledger);
     return {
       taskId: task.id,
       title: task.title,
       status: evidence?.status ?? task.status,
-      validation: (evidence?.validation ?? []).map((entry) => ({
-        stage: entry.stage,
-        passed: entry.passed,
-        ...(entry.errorSummary !== undefined && { errorSummary: entry.errorSummary }),
-        ...(entry.baselineExempt !== undefined && { baselineExempt: entry.baselineExempt }),
-      })),
+      checks: (task.checkResults ?? [])
+        .filter((result) => !planCheckIds.has(result.id))
+        .map((result) => ({ id: result.id, status: result.status })),
     };
   });
 

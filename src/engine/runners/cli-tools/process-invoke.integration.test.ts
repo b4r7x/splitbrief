@@ -1245,7 +1245,7 @@ describe('invokeProcessCli', () => {
     );
 
     expect(timeout).toMatchObject({ status: 'timeout', error: { code: 'timeout' } });
-    expect(aborted).toMatchObject({ status: 'aborted', error: { code: 'user-abort' } });
+    expect(aborted).toMatchObject({ status: 'aborted', error: { code: 'runner_interrupted' } });
     expect(callback).toMatchObject({ status: 'failed', error: { code: 'callback-failure' } });
   });
 
@@ -1615,7 +1615,10 @@ describe('invokeProcessCli', () => {
         }
         expect(existsSync(startedPath)).toBe(true);
         controller.abort();
-        expect(await pending).toMatchObject({ status: 'aborted', error: { code: 'user-abort' } });
+        expect(await pending).toMatchObject({
+          status: 'aborted',
+          error: { code: 'runner_interrupted' },
+        });
         await new Promise((resolveWait) => setTimeout(resolveWait, 1_100));
         expect(existsSync(markerPath)).toBe(false);
       });

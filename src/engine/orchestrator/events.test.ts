@@ -194,6 +194,25 @@ describe('createImplementerPublisher', () => {
     expect(events[0]).toMatchObject({ type: 'implementer_generate_failed', error: cause });
     expect(parseEngineEvent(events[0])).toMatchObject({ error: cause });
   });
+
+  it('publishes the files a continued call kept, and leaves the field off when it kept none', () => {
+    const { bus, events } = makeBusRecorder();
+    const done = {
+      phase: 'implementing' as const,
+      taskId: makeTask().id,
+      file: 'src/a.ts',
+      files: [],
+      duration: 1_200,
+      noChange: true,
+    };
+
+    createImplementerPublisher(bus).publishDone({ ...done, kept: ['src/a.ts', 'src/b.ts'] });
+    createImplementerPublisher(bus).publishDone({ ...done, kept: [] });
+
+    expect(events[0]).toMatchObject({ noChange: true, kept: ['src/a.ts', 'src/b.ts'] });
+    expect(parseEngineEvent(events[0])).toMatchObject({ kept: ['src/a.ts', 'src/b.ts'] });
+    expect(events[1] && 'kept' in events[1]).toBe(false);
+  });
 });
 
 describe('publishReviewChecksPlan', () => {
@@ -285,6 +304,35 @@ describe('publishReviewCheck', () => {
       passed: false,
       duration: 12,
     });
+  });
+
+  it('names the first failing tests of each side of a base split and omits an empty side', () => {
+    const { bus, events } = makeBusRecorder();
+    publishReviewCheck(
+      { bus, phase: 'final-review' },
+      {
+        status: 'done',
+        id: 'V1',
+        command: 'npm test',
+        moment: 'base',
+        passed: false,
+        newFailures: 0,
+        preExisting: 5,
+        newKeys: [],
+        preExistingKeys: [
+          'a.test.ts::one',
+          'a.test.ts::two',
+          'b.test.ts::three',
+          'b.test.ts::four',
+        ],
+      },
+    );
+
+    const event = parseEngineEvent(events[0]);
+    expect(event).toMatchObject({
+      preExistingKeys: ['a.test.ts::one', 'a.test.ts::two', 'b.test.ts::three'],
+    });
+    expect(event).not.toHaveProperty('newKeys');
   });
 });
 

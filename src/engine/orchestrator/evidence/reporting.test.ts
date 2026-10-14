@@ -78,9 +78,8 @@ describe('buildEvidenceSummary', () => {
       task,
       status: 'done',
     });
-    local.tasks[0]?.validation.push({ stage: 'typecheck', passed: true });
     const summary = buildEvidenceSummary(local);
     expect(summary.totalTasks).toBe(1);
-    expect(summary.tasksWithValidationEvidence).toBe(1);
+    expect(summary).not.toHaveProperty('tasksWithValidationEvidence');
   });
 });

@@ -17,7 +17,7 @@ import {
   SeatSwapCandidateSchema,
 } from './recovery/schemas.js';
 import { SeatSwitchRecordSchema } from './workflow.js';
-import { EvidenceValidationStageSchema, EvidenceFinalReviewStatusSchema } from './evidence.js';
+import { EvidenceFinalReviewStatusSchema } from './evidence.js';
 import {
   CostAmountBasisSchema,
   CostBreakdownSchema,
@@ -153,14 +153,8 @@ const ReviewPacketValidationTaskSchema = z.object({
   taskId: TaskIdSchema,
   title: z.string(),
   status: TaskStatusSchema,
-  validation: z.array(
-    z.object({
-      stage: EvidenceValidationStageSchema,
-      passed: z.boolean(),
-      errorSummary: z.string().optional(),
-      baselineExempt: z.boolean().optional(),
-    }),
-  ),
+  /** The latest result of each check the brief itself ran; an older packet has none. */
+  checks: z.array(z.object({ id: z.string(), status: CheckStatusSchema })).default([]),
 });
 
 const ReviewPacketCheckEntrySchema = z.object({

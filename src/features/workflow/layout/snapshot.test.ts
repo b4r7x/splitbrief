@@ -432,7 +432,7 @@ describe('readConversationScrollSnapshot', () => {
       intent: 'stop-now',
       phase: 'parked',
       requestedAt: 0,
-      parked: { kind: 'mid-brief', taskId: taskId('T001'), resolve: null },
+      parked: { kind: 'mid-brief', taskId: taskId('T001'), resolve: null, kept: [] },
     });
 
     try {

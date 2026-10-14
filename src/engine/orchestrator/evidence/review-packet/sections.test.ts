@@ -21,43 +21,62 @@ function ledgerFor(task: ReturnType<typeof makeTask>): EvidenceLedger {
   return createEvidenceLedger({ sessionId: 's', feature: 'feat', tasks: [task] });
 }
 
-describe('buildValidation baselineExempt carry-through', () => {
-  it('carries the baselineExempt flag from the ledger entry and omits it when absent', () => {
-    const task = makeTask({ id: 'T001' });
-    const base = ledgerFor(task);
-    const ledger: EvidenceLedger = {
-      ...base,
-      tasks: base.tasks.map((entry) => ({
-        ...entry,
-        validation: [
-          { stage: 'typecheck', passed: false, baselineExempt: true },
-          { stage: 'lint', passed: true },
-        ],
-      })),
+describe('buildValidation', () => {
+  it("lists each brief's own check results and leaves out the plan checks booked on the last brief", () => {
+    const first = makeTask({
+      id: 'T001',
+      checkResults: [
+        { id: 'T001-K1', status: 'pass' },
+        { id: 'T001-K2', status: 'fail' },
+      ],
+    });
+    const last = makeTask({
+      id: 'T002',
+      checkResults: [
+        { id: 'T002-K1', status: 'pass' },
+        { id: 'K1', status: 'pass' },
+      ],
+    });
+    const state: WorkflowState = {
+      ...stateWith(first, last),
+      plan: {
+        summary: 'Plan',
+        decisions: [],
+        criteria: [],
+        checks: [{ id: 'K1', kind: 'cmd', value: 'npm test', required: true }],
+        validation: null,
+      },
     };
 
-    const result = buildValidation(stateWith(task), ledger);
+    const result = buildValidation(state, ledgerFor(first));
 
-    expect(result.tasks[0]?.validation).toEqual([
-      { stage: 'typecheck', passed: false, baselineExempt: true },
-      { stage: 'lint', passed: true },
+    expect(result.tasks.map((task) => [task.taskId, task.checks])).toEqual([
+      [
+        'T001',
+        [
+          { id: 'T001-K1', status: 'pass' },
+          { id: 'T001-K2', status: 'fail' },
+        ],
+      ],
+      ['T002', [{ id: 'T002-K1', status: 'pass' }]],
     ]);
   });
 
-  it('keeps the raw passed count and names the exempt stage in the rendered packet', () => {
+  it('spells each brief line from its own checks in the words of the plain output', () => {
     const packet = makeReviewPacket({
       validation: {
-        summary: { passed: 1, failed: 1, skipped: 0, escalated: 0 },
+        summary: { passed: 2, failed: 0, skipped: 0, escalated: 0 },
         tasks: [
           {
             taskId: taskId('T001'),
             title: 'Add feature',
             status: 'done',
-            validation: [
-              { stage: 'typecheck', passed: true },
-              { stage: 'lint', passed: false, baselineExempt: true },
+            checks: [
+              { id: 'T001-K1', status: 'pass' },
+              { id: 'T001-K2', status: 'pass' },
             ],
           },
+          { taskId: taskId('T002'), title: 'Wire feature', status: 'done', checks: [] },
         ],
         finalReviewEvidenceStatus: null,
       },
@@ -65,8 +84,9 @@ describe('buildValidation baselineExempt carry-through', () => {
 
     const rendered = renderReviewPacketMarkdown(packet);
 
-    expect(rendered).toContain('T001 done: 1/2 validation stages passed');
-    expect(rendered).toContain('1 baseline-exempt: lint');
+    expect(rendered).toContain('- T001 done: 2 of 2 checks passed');
+    expect(rendered).toContain('- T002 done: no checks');
+    expect(rendered).not.toContain('validation stages passed');
   });
 });
 

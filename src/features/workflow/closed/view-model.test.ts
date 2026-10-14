@@ -26,7 +26,6 @@ function ledgerTask(overrides: Partial<EvidenceTask> & Pick<EvidenceTask, 'id'>)
     status: 'done',
     retries: 0,
     changedFiles: [],
-    validation: [],
     expectedEvidence: [],
     observedEvidence: [],
     escalated: false,
@@ -195,6 +194,43 @@ describe('a run with a workspace', () => {
     expect(view.outcome.kind).toBe('applied');
     expect(view.rail.map((state) => state.status)).toEqual(['done', 'done', 'done', 'done']);
     expect(view.files.patch).toBeNull();
+  });
+
+  it('names the reviewer checks the review record saw red at the run base too', () => {
+    const state = makeWorkflowState({ phase: 'complete', workspace: WORKSPACE });
+    const keys = ['a.test.ts > one', 'a.test.ts > two', 'a.test.ts > three', 'a.test.ts > four'];
+    const view = derive(readySummary({ changedFiles: CHANGED }), {
+      status: { kind: 'closed', as: 'applied' },
+      hydration: {
+        kind: 'loaded',
+        state: {
+          ...state,
+          review: {
+            scope: 'final',
+            cycle: 0,
+            verdict: { tasks: [], criteria: [], findings: [] },
+            outcome: 'pass',
+            verification: [],
+            preExistingChecks: [{ id: 'V1', command: 'npm test', keys }],
+            at: CLOSED_AT,
+          },
+        },
+      },
+    });
+
+    expect(view.review).toMatchObject({
+      kind: 'written',
+      preExisting: [
+        {
+          id: 'V1',
+          command: 'npm test',
+          tests: ['a.test.ts > one', 'a.test.ts > two', 'a.test.ts > three', '+1 more'],
+        },
+      ],
+    });
+    expect(
+      derive(readySummary(), { hydration: workspaceHydration('complete') }).review,
+    ).toMatchObject({ preExisting: [] });
   });
 
   // `/run reject confirm` on a run whose Apply was already undone refuses (`canUndoApply`):

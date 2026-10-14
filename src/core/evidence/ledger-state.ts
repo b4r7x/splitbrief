@@ -16,7 +16,6 @@ export function emptyEvidenceTask(task: Task): EvidenceTask {
     status: task.status,
     retries: 0,
     changedFiles: [],
-    validation: [],
     checks: [],
     escalated: false,
     briefHash: null,
@@ -101,10 +100,6 @@ export function findOrSeed(ledger: EvidenceLedger, task: Task): EvidenceTask {
       title: task.title,
       file: task.suggestedFiles[0],
       changedFiles: [...existing.changedFiles],
-      validation: existing.validation.map((v) => ({
-        ...v,
-        ...(v.changedFiles ? { changedFiles: [...v.changedFiles] } : {}),
-      })),
       checks: (existing.checks ?? []).map((entry) =>
         entry.artifacts
           ? { ...entry, artifacts: entry.artifacts.map((artifact) => ({ ...artifact })) }

@@ -79,6 +79,37 @@ describe('runRows', () => {
     expect(row?.segments.at(-1)).toEqual({ text: '2 missing artifacts', tone: 'warning' });
   });
 
+  it('names each check red at the run base too under the review, one row per test', () => {
+    const view = makeView({
+      review: {
+        ...makeView().review,
+        preExisting: [
+          {
+            id: 'V2',
+            command: 'npm test',
+            tests: ['src/a.test.ts > adds', 'src/a.test.ts > subtracts'],
+          },
+        ],
+      } as SummaryView['review'],
+    });
+    const rows = runRows(view);
+    expect(rows.slice(0, 5).map((row) => row.label)).toEqual(['Review', '', '', '', 'Packet']);
+    expect(rows[1]?.segments).toEqual([
+      {
+        spans: [
+          { text: 'V2 ', tone: 'text' },
+          { text: 'pre-existing', tone: 'warning' },
+        ],
+      },
+      { text: 'npm test', tone: 'textDim' },
+    ]);
+    expect(rows.slice(2, 4).map((row) => row.segments)).toEqual([
+      [{ text: '  src/a.test.ts > adds', tone: 'textDim' }],
+      [{ text: '  src/a.test.ts > subtracts', tone: 'textDim' }],
+    ]);
+    expect(runRows(makeView()).filter((row) => row.label === '')).toEqual([]);
+  });
+
   it('reads a packet that was never written as a review that never ran', () => {
     const view = makeView({ review: { kind: 'missing' } });
     expect(segmentsFor(view, 'Review')).toEqual([

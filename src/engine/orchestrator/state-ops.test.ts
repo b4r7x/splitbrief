@@ -436,7 +436,7 @@ describe('raisePendingRecovery', () => {
 });
 
 describe('parkStoppedRun', () => {
-  it('parks the run at the step it picks up at and records the stop as a row', () => {
+  it('parks the run at the step it picks up at and records the stop as a row', async () => {
     const { projectDir, sessionId } = setupProject();
     try {
       const bus = createEventBus();
@@ -444,7 +444,7 @@ describe('parkStoppedRun', () => {
       bus.subscribe((event) => events.push(event));
       const state = { ...createInitialState('feature'), phase: 'reviewing-spec' as const };
 
-      const next = parkStoppedRun({ projectDir, sessionId, bus }, state);
+      const next = await parkStoppedRun({ projectDir, sessionId, bus }, state);
 
       const gate = { kind: 'gate', gate: 'spec' } as const;
       expect(next.interruptedStep).toMatchObject({ step: gate, source: 'user', cut: 'boundary' });
@@ -467,7 +467,7 @@ describe('parkStoppedRun', () => {
     }
   });
 
-  it('a park already recorded stands: a second stop changes nothing and adds no row', () => {
+  it('a park already recorded stands: a second stop changes nothing and adds no row', async () => {
     const { projectDir, sessionId } = setupProject();
     try {
       const bus = createEventBus();
@@ -484,7 +484,7 @@ describe('parkStoppedRun', () => {
       );
       saveState({ projectDir, sessionId }, parked);
 
-      const next = parkStoppedRun({ projectDir, sessionId, bus }, parked);
+      const next = await parkStoppedRun({ projectDir, sessionId, bus }, parked);
 
       expect(next).toBe(parked);
       expect(loadState({ projectDir, sessionId })?.interruptedStep).toEqual(parked.interruptedStep);

@@ -20,6 +20,7 @@ import type { TokenUsage } from '../../core/schemas/tokens.js';
 import type { Implementer, ImplementerPublisher } from '../implementers/types.js';
 import { formatRecoveryHeadlineSpans } from '../../core/recovery/headline.js';
 import { formatResumeCommand } from '../../core/recovery/resume-command.js';
+import { BASE_SPLIT_NAMED } from '../../core/review/base-split.js';
 import { labelError } from '../../utils/format-errors.js';
 import { redactSecrets } from '../../utils/redact.js';
 import { projectRunnerCallEvents } from '../calls/event-projection.js';
@@ -241,6 +242,8 @@ export function publishReviewCheck(
     newFailures?: number | undefined;
     preExisting?: number | undefined;
     notVerified?: number | undefined;
+    newKeys?: readonly string[] | undefined;
+    preExistingKeys?: readonly string[] | undefined;
     own?: number | undefined;
     ownLeft?: number | undefined;
     others?: number | undefined;
@@ -262,6 +265,12 @@ export function publishReviewCheck(
     ...(opts.newFailures !== undefined && { newFailures: opts.newFailures }),
     ...(opts.preExisting !== undefined && { preExisting: opts.preExisting }),
     ...(opts.notVerified !== undefined && { notVerified: opts.notVerified }),
+    ...(opts.newKeys !== undefined &&
+      opts.newKeys.length > 0 && { newKeys: opts.newKeys.slice(0, BASE_SPLIT_NAMED) }),
+    ...(opts.preExistingKeys !== undefined &&
+      opts.preExistingKeys.length > 0 && {
+        preExistingKeys: opts.preExistingKeys.slice(0, BASE_SPLIT_NAMED),
+      }),
     ...(opts.own !== undefined && { own: opts.own }),
     ...(opts.ownLeft !== undefined && { ownLeft: opts.ownLeft }),
     ...(opts.others !== undefined && { others: opts.others }),
@@ -628,6 +637,7 @@ export function publishImplementerGenerateDone(
     ...(opts.linesRemoved !== undefined && { linesRemoved: opts.linesRemoved }),
     duration: opts.duration,
     ...(opts.noChange === true && { noChange: true }),
+    ...(opts.kept !== undefined && opts.kept.length > 0 && { kept: [...opts.kept] }),
   };
   if (opts.diff !== undefined) event.diff = redactSecrets(opts.diff);
   ctx.bus.publish(event);

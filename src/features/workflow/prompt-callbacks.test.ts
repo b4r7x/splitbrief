@@ -153,7 +153,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
       controller,
     });
 
-    const result = await callbacks.onContinuationNeeded?.('partial output', 'mid-step');
+    const result = await callbacks.onContinuationNeeded?.('partial output', 'mid-step', []);
 
     expect(result).toEqual(plainUserMessage(''));
     expect(setQuestionMode).not.toHaveBeenCalled();
@@ -164,14 +164,14 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     const setQuestionMode = vi.fn<UseInputModeResult['setQuestionMode']>();
     const callbacks = makeCallbacksWithInputMode({ ...makeInputMode(''), setQuestionMode });
 
-    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step');
+    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step', ['src/kept.ts']);
     await Promise.resolve();
 
     expect(setQuestionMode).not.toHaveBeenCalled();
     expect(lifecycleStore.get().status).toBe('paused');
     expect(stopStore.get()).toMatchObject({
       phase: 'parked',
-      parked: { kind: 'mid-brief', taskId: 'T002' },
+      parked: { kind: 'mid-brief', taskId: 'T002', kept: ['src/kept.ts'] },
     });
 
     stopStore.resume(plainUserMessage('focus on retries'));
@@ -182,7 +182,7 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
   it('resumes with an empty steer when /resume settles the park', async () => {
     const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
 
-    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step');
+    const pending = callbacks.onContinuationNeeded?.('partial output', 'mid-step', []);
     await Promise.resolve();
     stopStore.resume(plainUserMessage(''));
 
@@ -199,12 +199,12 @@ describe('buildPromptCallbacks onContinuationNeeded', () => {
     });
     const callbacks = makeCallbacksWithInputMode(makeInputMode(''));
 
-    const pending = callbacks.onContinuationNeeded?.('', 'boundary');
+    const pending = callbacks.onContinuationNeeded?.('', 'boundary', []);
     await Promise.resolve();
 
     expect(stopStore.get()).toMatchObject({
       phase: 'parked',
-      parked: { kind: 'boundary', taskId: 'T001' },
+      parked: { kind: 'boundary', taskId: 'T001', kept: [] },
     });
 
     stopStore.resume(plainUserMessage(''));
@@ -362,7 +362,7 @@ it('keeps the full parked continuation payload', async () => {
     images: [],
     attachedInputs: [{ kind: 'text', path: '/outside/a.txt' }],
   };
-  const pending = makeCallbacks('').onContinuationNeeded?.('', 'mid-step');
+  const pending = makeCallbacks('').onContinuationNeeded?.('', 'mid-step', []);
   stopStore.resume(original);
   await expect(pending).resolves.toBe(original);
   stopStore.reset();

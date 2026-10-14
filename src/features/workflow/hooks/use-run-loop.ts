@@ -226,7 +226,7 @@ export function useRunLoop({
             : current.pendingRecovery !== undefined
               ? // A halt is not a cut step: the panel owns what happens next.
                 current
-              : parkStoppedRun(
+              : await parkStoppedRun(
                   { ...session.ref, bus: createRecoveryBus({ ...session.ref, sink: addTuiEvent }) },
                   current,
                 );
@@ -259,13 +259,15 @@ export function useRunLoop({
     const promptCallbacks = buildPromptCallbacks({ inputMode, abortedRef, controller });
     const callbacks: OrchestratorCallbacks = {
       ...promptCallbacks,
-      onContinuationNeeded: async (partial, at) => {
+      onContinuationNeeded: async (partial, at, kept) => {
         if (at === 'boundary' && consumeSeatChange()) {
           seatChangedAtBoundary = true;
           controller.abort();
           return plainUserMessage('');
         }
-        return (await promptCallbacks.onContinuationNeeded?.(partial, at)) ?? plainUserMessage('');
+        return (
+          (await promptCallbacks.onContinuationNeeded?.(partial, at, kept)) ?? plainUserMessage('')
+        );
       },
     };
 

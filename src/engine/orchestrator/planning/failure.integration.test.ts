@@ -426,7 +426,7 @@ function cliAdapterCall(timeoutMs?: number) {
       error:
         status === 'timeout'
           ? { code: 'timeout', message: 'CLI invocation timed out' }
-          : { code: 'user-abort', message: 'CLI invocation was aborted' },
+          : { code: 'runner_interrupted', message: 'CLI invocation was aborted' },
     });
   };
 }

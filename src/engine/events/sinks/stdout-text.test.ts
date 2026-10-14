@@ -456,8 +456,18 @@ describe('createStdoutTextSink', () => {
       ...fields,
     });
     const lines = collect([
-      check({ newFailures: 0, preExisting: 2 }),
-      check({ id: 'V2', newFailures: 1, preExisting: 1 }),
+      check({
+        newFailures: 0,
+        preExisting: 2,
+        preExistingKeys: ['src/a.test.ts::adds', 'src/a.test.ts::subtracts'],
+      }),
+      check({
+        id: 'V2',
+        newFailures: 1,
+        preExisting: 4,
+        newKeys: ['src/ledger.test.ts'],
+        preExistingKeys: ['b.test.ts::one', 'b.test.ts::two', 'b.test.ts::three'],
+      }),
       check({ moment: 'brief', status: 'running' }),
       check({ moment: 'brief', duration: 3 }),
       check({ newFailures: 0, preExisting: 1 }),
@@ -478,7 +488,10 @@ describe('createStdoutTextSink', () => {
     expect(lines).toEqual([
       'phase: final-review',
       "base re-run V1: pre-existing · all 2 failures also fail before this run's changes",
-      'base re-run V2: 1\u00a0new, 1\u00a0pre-existing',
+      'base re-run V1 pre-existing: src/a.test.ts::adds · src/a.test.ts::subtracts',
+      'base re-run V2: 1\u00a0new, 4\u00a0pre-existing',
+      'base re-run V2 new: src/ledger.test.ts',
+      'base re-run V2 pre-existing: b.test.ts::one · b.test.ts::two · b.test.ts::three · +1\u00a0more',
       'fix check V1: failed (npm test)',
       "base re-run V1: pre-existing · the failure also fails before this run's changes",
       'fix check V1: refused (names no program)',

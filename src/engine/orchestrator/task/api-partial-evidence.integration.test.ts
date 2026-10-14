@@ -218,7 +218,7 @@ describe('partial evidence and resume', () => {
     expect(existsSync(join(projectDir, SECOND))).toBe(false);
   });
 
-  it('records no validation for a partial apply and refuses to complete on one', async () => {
+  it('records no check for a partial apply and refuses to complete on one', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = bundleTask();
     const implementer = stoppingImplementer([]);
@@ -226,7 +226,7 @@ describe('partial evidence and resume', () => {
     const wctx = makeWorkflowContext({ projectDir, sessionId, implementer, bus });
 
     const { implState, ledger } = await runAttempt(wctx, task);
-    expect(ledgerTask(ledger)?.validation).toEqual([]);
+    expect(ledgerTask(ledger)?.checks).toEqual([]);
 
     const commit = await validateCommitAndAdvance({
       taskStartTime: Date.now(),

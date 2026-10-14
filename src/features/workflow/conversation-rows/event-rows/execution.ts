@@ -6,10 +6,12 @@ import {
   implementerDoneFilesBlock,
   implementerExpandedDiffCardBlock,
 } from '../implementer-diff-card-block.js';
-import type { ConversationRowBlock, RowBuildContext } from '../types.js';
+import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from '../types.js';
 import { preformattedOutputBlock } from '../row-format/preformatted-block.js';
 import { segmentedRow } from '../row-format/rows.js';
+import { sanitizeRowDisplayText } from '../row-format/text.js';
 import {
+  fullSuiteNameRows,
   fullSuiteSegments,
   reviewChecksDeclinedRows,
   reviewChecksSegments,
@@ -59,7 +61,16 @@ export function implementerDoneRowBlock(
   expanded: boolean,
 ): ConversationRowBlock | null {
   const header = implementerDoneFilesBlock(keyPrefix, event, ctx.width, false);
+  const kept = event.kept ?? [];
   if (event.noChange === true) {
+    const verdict: ConversationRowSegment[] =
+      kept.length === 0
+        ? [{ text: 'no change needed', tone: 'textDim' }]
+        : [
+            { text: KEPT_WORK, tone: 'textDim' },
+            { text: SOFT_SEP, tone: 'textDim' },
+            { text: 'no further change', tone: 'textDim' },
+          ];
     return compositeBlock(keyPrefix, [
       header,
       wrappedSegmentsBlock({
@@ -67,15 +78,34 @@ export function implementerDoneRowBlock(
         segments: [
           { text: 'verified', tone: stateTone('passed') },
           { text: SOFT_SEP, tone: 'textDim' },
-          { text: 'no change needed', tone: 'textDim' },
+          ...verdict,
         ],
         width: ctx.width,
       }),
     ]);
   }
 
-  return expanded ? (implementerExpandedDiffCardBlock(keyPrefix, event, ctx) ?? header) : header;
+  const body = expanded
+    ? (implementerExpandedDiffCardBlock(keyPrefix, event, ctx) ?? header)
+    : header;
+  if (kept.length === 0) return body;
+  // The header names what this call changed; the kept files it did not touch again follow here,
+  // so no file is named twice.
+  const changed = new Set(event.files ?? []);
+  const keptOnly = kept.filter((file) => !changed.has(file));
+  return compositeBlock(keyPrefix, [
+    body,
+    wrappedTextBlock({
+      keyPrefix: `${keyPrefix}-kept`,
+      text: [KEPT_WORK, ...keptOnly.map(sanitizeRowDisplayText)].join(SOFT_SEP),
+      width: ctx.width,
+      tone: 'textDim',
+    }),
+  ]);
 }
+
+/** A call that continued an interrupted attempt of its brief kept that attempt's files. */
+const KEPT_WORK = "kept the interrupted attempt's work";
 
 export function validateRowBlock(
   keyPrefix: string,
@@ -134,12 +164,22 @@ export function fullSuiteRowBlock(
   event: Extract<EngineEvent, { type: 'full_suite' }>,
   width: number,
 ): ConversationRowBlock | null {
-  return wrappedSegmentsBlock({
-    keyPrefix,
-    segments: fullSuiteSegments(event),
-    width,
-    continuationIndent: 2,
-  });
+  return compositeBlock(keyPrefix, [
+    wrappedSegmentsBlock({
+      keyPrefix,
+      segments: fullSuiteSegments(event),
+      width,
+      continuationIndent: 2,
+    }),
+    ...fullSuiteNameRows(event).map((row, index) =>
+      wrappedTextBlock({
+        keyPrefix: `${keyPrefix}-names-${index}`,
+        ...row,
+        width,
+        tone: 'textDim',
+      }),
+    ),
+  ]);
 }
 
 export function reviewChecksRowBlock(

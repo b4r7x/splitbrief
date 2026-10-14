@@ -54,18 +54,6 @@ const BRIEFS = Object.freeze({
   docs: { id: taskId('T005'), title: 'Add docs for the validation error codes', file: FILES.docs },
 });
 
-const PASSED_STAGES: readonly EvidenceTask['validation'][number][] = [
-  { stage: 'typecheck', passed: true, command: 'npm run typecheck' },
-  { stage: 'lint', passed: true, command: 'npm run lint' },
-  { stage: 'test', passed: true, command: 'npm test' },
-];
-
-const ESCALATED_STAGES: readonly EvidenceTask['validation'][number][] = [
-  { stage: 'typecheck', passed: true, command: 'npm run typecheck' },
-  { stage: 'lint', passed: true, command: 'npm run lint' },
-  { stage: 'test', passed: true, command: 'npm test', retryState: 'escalated' },
-];
-
 interface FixtureRunnerBilling {
   /** What the runner was metered for, or `null` when its offering never meters a token. */
   readonly meteredCost: number | null;
@@ -195,7 +183,6 @@ const INTERRUPTED_BUILD_LEDGER: EvidenceLedger = ledger({
       retries: 0,
       durationMs: 84_200,
       changedFiles: [FILES.validate],
-      validation: [...PASSED_STAGES],
       expectedEvidence: [FILES.validate],
       observedEvidence: [FILES.validate],
       escalated: false,
@@ -209,7 +196,6 @@ const INTERRUPTED_BUILD_LEDGER: EvidenceLedger = ledger({
       retries: 2,
       durationMs: 312_600,
       changedFiles: [FILES.form, FILES.formTest],
-      validation: [...ESCALATED_STAGES],
       expectedEvidence: [FILES.form],
       observedEvidence: [FILES.form, FILES.formTest],
       escalated: true,
@@ -221,7 +207,6 @@ const INTERRUPTED_BUILD_LEDGER: EvidenceLedger = ledger({
       status: 'in_progress',
       retries: 0,
       changedFiles: [FILES.signup, FILES.signupTest],
-      validation: [],
       expectedEvidence: [FILES.signupTest],
       observedEvidence: [FILES.signup, FILES.signupTest],
       escalated: false,
@@ -233,7 +218,6 @@ const INTERRUPTED_BUILD_LEDGER: EvidenceLedger = ledger({
       status: 'pending',
       retries: 0,
       changedFiles: [],
-      validation: [],
       expectedEvidence: [FILES.form],
       observedEvidence: [],
       escalated: false,
@@ -245,7 +229,6 @@ const INTERRUPTED_BUILD_LEDGER: EvidenceLedger = ledger({
       status: 'pending',
       retries: 0,
       changedFiles: [],
-      validation: [],
       expectedEvidence: [FILES.docs],
       observedEvidence: [],
       escalated: false,
@@ -342,7 +325,6 @@ function settledLocalTasks(
       retries: 0,
       durationMs: durations[0],
       changedFiles: [FILES.validate],
-      validation: [...PASSED_STAGES],
       expectedEvidence: [FILES.validate],
       observedEvidence: [FILES.validate],
       escalated: false,
@@ -356,7 +338,6 @@ function settledLocalTasks(
       retries: 1,
       durationMs: durations[1],
       changedFiles: [FILES.form, FILES.formTest],
-      validation: [...PASSED_STAGES],
       expectedEvidence: [FILES.form],
       observedEvidence: [FILES.form, FILES.formTest],
       escalated: false,
@@ -370,7 +351,6 @@ function settledLocalTasks(
       retries: 0,
       durationMs: durations[2],
       changedFiles: [FILES.signupTest],
-      validation: [...PASSED_STAGES],
       expectedEvidence: [FILES.signupTest],
       observedEvidence: [FILES.signupTest],
       escalated: false,
@@ -494,7 +474,6 @@ const NEEDS_ATTENTION_LEDGER: EvidenceLedger = ledger({
           status: 'escalated',
           method: 'escalated-full',
           retries: 2,
-          validation: [...ESCALATED_STAGES],
           escalated: true,
         }
       : task,
@@ -662,7 +641,6 @@ const AT_REST_CLOSED_ELSEWHERE = record({
               method: 'local',
               retries: 0,
               durationMs: 10_000,
-              validation: [...PASSED_STAGES],
               escalated: false,
             }
           : task,
@@ -1127,6 +1105,49 @@ const CLOSED_APPLIED = record({
     closed: { at: GENERATED_AT, as: 'applied' },
   }),
   summary: workspaceSummary('visual-closed-applied'),
+  ledger: READY_LEDGER,
+});
+
+/**
+ * An applied run whose final review ran a reviewer check that was red at the run base too: the
+ * review raised no finding for it, and the closed block names the check and its failing tests.
+ */
+const CLOSED_PRE_EXISTING = record({
+  sessionId: 'visual-closed-pre-existing',
+  status: { kind: 'closed', as: 'applied' },
+  state: savedState({
+    phase: 'complete',
+    briefs: WORKSPACE_BRIEFS,
+    reviewStatus: 'passed',
+    workspace: RUN_WORKSPACE,
+    review: {
+      scope: 'final',
+      cycle: 0,
+      verdict: { tasks: [], criteria: [], findings: [] },
+      outcome: 'pass',
+      verification: [],
+      preExistingChecks: [
+        {
+          id: 'V2',
+          command: 'npx --no-install vitest run legacy',
+          keys: [
+            'legacy/report.test.ts > legacy report > total matches the ledger',
+            'legacy/report.test.ts > legacy report > rounds the tax',
+            'legacy/ledger.test.ts > legacy ledger > opens the ledger',
+            'legacy/ledger.test.ts > legacy ledger > closes the ledger',
+          ],
+        },
+      ],
+      at: GENERATED_AT,
+    },
+    applied: {
+      at: GENERATED_AT,
+      backupId: 'visual-backup',
+      files: [FILES.formTest, FILES.form, FILES.signupTest, FILES.validate],
+    },
+    closed: { at: GENERATED_AT, as: 'applied' },
+  }),
+  summary: workspaceSummary('visual-closed-pre-existing'),
   ledger: READY_LEDGER,
 });
 
@@ -2070,6 +2091,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     route: { record: READY_OVERRIDE, log: READY_OVERRIDE_LOG },
   }),
   atRestProjection({ id: 'workflow-closed-applied', route: { record: CLOSED_APPLIED } }),
+  atRestProjection({
+    id: 'workflow-closed-pre-existing',
+    route: { record: CLOSED_PRE_EXISTING },
+  }),
   atRestProjection({ id: 'workflow-closed-undone', route: { record: undoneApplyRecord([]) } }),
   atRestProjection({
     id: 'workflow-closed-undo-conflicts',

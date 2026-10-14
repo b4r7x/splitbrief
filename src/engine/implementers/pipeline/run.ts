@@ -369,6 +369,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         linesAdded: aggregate.linesAdded,
         linesRemoved: aggregate.linesRemoved,
         duration: Date.now() - input.startTime,
+        kept: opts.continuation?.kept,
       });
     }
     return {
@@ -760,6 +761,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
             linesAdded: result.linesAdded,
             linesRemoved: result.linesRemoved,
             duration: Date.now() - startTime,
+            kept: opts.continuation?.kept,
           });
         }
         return { success: true, output: outputText, ...usageField };
@@ -810,6 +812,7 @@ export function createImplementerBase(baseConfig: ImplementerBaseConfig): Implem
         ...changes,
         duration: Date.now() - startTime,
         ...(noChange && { noChange: true }),
+        kept: opts.continuation?.kept,
       });
     }
     return {

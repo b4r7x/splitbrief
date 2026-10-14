@@ -263,7 +263,7 @@ type ReviewVerdict = {
 };
 ```
 
-Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`, a `render` check running the configured `validation.render` command; a render criterion stays unverified when no image of its check reached the reviewer. The reviewer gets at most 4 PNGs per render check: every `frame.png` first, then the other PNGs, each group in path order; the prompt names the PNGs not attached. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`; a red check or Apply input that still blocks (`blockingRedInputs`) fails it and stays in the record as `redInputs`. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`). A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
+Coverage is a contract rule: the answer carries exactly one result for every task and criterion in scope, and an `unverified` finding names non-empty `checkIds` or a `criterionId` whose criterion has registered checks. A missing, duplicated or invented id, or a `partial`/`missed` task or `fail` criterion with no blocking finding naming it, fails the schema and the seat gets its one repair. The checks behind an unverified claim run through `runChecks`, a `render` check running the configured `validation.render` command; a render criterion stays unverified when no image of its check reached the reviewer. The reviewer gets at most 4 PNGs per render check: every `frame.png` first, then the other PNGs, each group in path order; the prompt names the PNGs not attached. `deriveReviewOutcome` turns the answer plus those results into `pass`, `pass-with-notes` or `fail`; a red check or Apply input that still blocks (`blockingRedInputs`) fails it and stays in the record as `redInputs`. A reviewer check of the review that was red at the run base too stays in the record as `preExistingChecks` (`{ id, command, keys }`, the failures that also fail before the run's changes); it raises no finding. The record lives in `state.review` and `review.json`; `review.md` is its rendering from `renderReviewMarkdown` (`src/core/review/render.ts`), with a `### Pre-existing failures` section that names each such check, its command and its first three failures. A session saved before the typed review still reads through `parseFinalReview()` (`src/engine/parsers/final-review.ts`).
 
 The same review call also returns the fix part, with the persisted `TriageResult` shape:
 
@@ -379,7 +379,7 @@ If two tools need to coordinate, they agree on a key (e.g., `external.vcs-sync`)
 | `WorkflowState.triage` | no review answer recorded fix work |
 | `WorkflowState.pendingTriage` | no check, operator or Apply input waits for the reviewer |
 | `WorkflowState.reviewStatus` | the final review has not resolved |
-| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief |
+| `WorkflowState.interruptedStep` | nothing recorded where the run was cut; `cut` says which — `mid-step` inside a call, `boundary` where it cut nothing: between two briefs, or at a gate — and a record written before `cut` existed falls back to the presence of a `partialRef`. `source` is `user`, `watchdog` or `seat`, the last for a seat halt that cut a brief. `kept` lists the declared files a cut brief had changed when a stop parked it; a record without it claims no kept changes |
 | `WorkflowState.closed` | the run was never explicitly ended, so it is still continuable |
 | `WorkflowState.lastFailure` | the run recorded no failure; it stopped for some other reason |
 | `WorkflowState.reviewChecks.skipped` | every chosen reviewer check ran or was refused. Present (`{ reason }`) when none of them ran: `validation.approve_checks: ask` and Skip all, a card closed without an answer, or a headless run. The `review_checks` event then has `status: 'skipped'` with the commands and the reason; SPLITBRIEF registers none of the skipped commands as a check, and the review never counts them as a pass |
@@ -599,7 +599,6 @@ closed run can render counts without re-reading the ledger:
 {
   path: 'evidence.json',
   totalTasks: number,
-  tasksWithValidationEvidence: number,
   escalatedTasks: number,
   failedTasks: number,
 }

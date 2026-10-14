@@ -16,6 +16,8 @@ describe('EngineEvent alias colocation with EngineEventSchema', () => {
     const current = { ...event, files: ['src/text.js', 'test/text.test.js'] };
     expect(parseEngineEvent(current)).toMatchObject(current);
     expect(parseEngineEvent({ ...event, files: [123] })).toBeNull();
+    const continued = { ...event, files: [], noChange: true, kept: ['src/text.js'] };
+    expect(parseEngineEvent(continued)).toMatchObject(continued);
   });
 
   it('parseEngineEvent (schema.ts) yields a value usable as the EngineEvent alias (types.ts)', () => {
@@ -634,6 +636,21 @@ describe('parseEngineEvent', () => {
     );
     expect(parseEngineEvent({ ...event, moment: 'base', newFailures: 1, preExisting: 2 })).toEqual(
       expect.objectContaining({ moment: 'base', newFailures: 1, preExisting: 2 }),
+    );
+    expect(
+      parseEngineEvent({
+        ...event,
+        moment: 'base',
+        newFailures: 1,
+        preExisting: 2,
+        newKeys: ['src/a.test.ts::adds'],
+        preExistingKeys: ['src/b.test.ts::subtracts', 'src/b.test.ts::divides'],
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        newKeys: ['src/a.test.ts::adds'],
+        preExistingKeys: ['src/b.test.ts::subtracts', 'src/b.test.ts::divides'],
+      }),
     );
     expect(
       parseEngineEvent({

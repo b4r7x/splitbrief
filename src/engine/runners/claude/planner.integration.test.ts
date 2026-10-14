@@ -700,7 +700,7 @@ process.stdout.write(JSON.stringify({
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatchObject({
       status: 'aborted',
-      error: { code: 'user-abort', message: 'CLI invocation was aborted' },
+      error: { code: 'runner_interrupted', message: 'CLI invocation was aborted' },
       nativeSessionId: 'sess-interrupt',
       partial: true,
     });

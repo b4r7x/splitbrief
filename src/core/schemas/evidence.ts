@@ -4,7 +4,6 @@ import {
   ActionClassSchema,
   TaskStatusSchema,
   TaskCompletionMethodSchema,
-  ValidationStageSchema,
   WorkflowModeSchema,
 } from './enums.js';
 
@@ -27,23 +26,6 @@ const EvidenceApprovalSchema = z.object({
   reason: z.string(),
 });
 export type EvidenceApproval = z.infer<typeof EvidenceApprovalSchema>;
-
-export const EvidenceValidationStageSchema = ValidationStageSchema;
-
-const EvidenceValidationEntrySchema = z.object({
-  stage: EvidenceValidationStageSchema,
-  passed: z.boolean(),
-  /** The exact command the orchestrator ran for this stage. */
-  command: z.string().optional(),
-  /** Recorded command output (already redacted and truncated at capture). */
-  output: z.string().optional(),
-  errorSummary: z.string().optional(),
-  retryState: z.enum(['initial-failure', 'retry', 'escalated', 'failed']).optional(),
-  changedFiles: z.array(z.string()).optional(),
-  baselineExempt: z.boolean().optional(),
-  skipped: z.boolean().optional(),
-  skippedReason: z.string().optional(),
-});
 
 const EvidenceCheckEntrySchema = z.object({
   id: z.string(),
@@ -122,7 +104,6 @@ const EvidenceTaskSchema = z.object({
   retries: z.number().nonnegative(),
   durationMs: z.number().nonnegative().optional(),
   changedFiles: z.array(z.string()),
-  validation: z.array(EvidenceValidationEntrySchema),
   checks: z.array(EvidenceCheckEntrySchema).optional(),
   expectedEvidence: z.array(z.string()).optional(),
   observedEvidence: z.array(z.string()).optional(),

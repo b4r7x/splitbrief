@@ -1,8 +1,8 @@
-import { baseSplit } from '../../../core/review/base-split.js';
+import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
 import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
-import type { CheckStatus } from '../../../core/schemas/task.js';
 import { SOFT_SEP } from '../../../core/separators.js';
+import { checksSummary } from '../../../core/validation/checks-summary.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { formatDuration, formatElapsedClock } from '../../../utils/format-time.js';
 import { boundEngineEventForConsumer } from '../bound.js';
@@ -10,22 +10,6 @@ import type { EngineEvent, EventSink } from '../types.js';
 
 export interface StdoutTextSinkOptions {
   output?: NodeJS.WritableStream | undefined;
-}
-
-// A check that did not run is counted apart: it is neither a pass nor a failure.
-function checksSummary(event: Extract<EngineEvent, { type: 'checks_run' }>): string {
-  if (event.results.length === 0) return 'no checks';
-  const count = (status: CheckStatus) =>
-    event.results.filter((result) => result.status === status).length;
-  const passed = count('pass');
-  const ran = passed + count('fail');
-  const refused = count('refused');
-  const notRun = event.results.length - ran - refused;
-  return [
-    ...(ran > 0 ? [`${passed} of ${ran} checks passed`] : []),
-    ...(refused > 0 ? [`${refused} refused`] : []),
-    ...(notRun > 0 ? [`${notRun} not run`] : []),
-  ].join(', ');
 }
 
 function reviewChecksLines(event: Extract<EngineEvent, { type: 'review_checks' }>): string[] {
@@ -55,6 +39,14 @@ function stalledLine(event: Extract<EngineEvent, { type: 'runner_call_stalled' }
       ? ''
       : ` (${event.backendKind === 'cli' ? (cliToolIdForCommand(name) ?? name) : name})`;
   return `stalled: ${event.role}${tool}${SOFT_SEP}no output for ${formatElapsedClock(event.silentMs)}`;
+}
+
+/** The failing tests a base re-run names, one line per side, under its verdict line. */
+function baseNameLines(event: Extract<EngineEvent, { type: 'full_suite' }>): string[] {
+  if (event.id === undefined) return [];
+  return baseSplitNames(event).map(
+    ({ side, names }) => `base re-run ${event.id} ${side}: ${names.join(SOFT_SEP)}`,
+  );
 }
 
 function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): string | null {
@@ -137,6 +129,8 @@ function reviewCheckLine(event: Extract<EngineEvent, { type: 'full_suite' }>): s
  *   base re-run V1: [<M> new, <N> pre-existing, ]<K> not verified at the run base · <reason>
  *   base re-run V1: pre-existing · all <N> failures also fail before this run's changes
  *   base re-run V1: pre-existing · the failure also fails before this run's changes
+ *   base re-run V1 new: <test>[ · <test> …][ · +<N> more]
+ *   base re-run V1 pre-existing: <test>[ · <test> …][ · +<N> more]
  *   base re-run V1: refused (<detail>) | not run (<detail>)
  *   fix check V1: passed (<command>) | failed (<command>)
  *   fix check V1: your <N> failures gone · <M> others left (<command>)
@@ -181,7 +175,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
           );
         return;
       case 'checks_run':
-        checks.set(bounded.taskId, checksSummary(bounded));
+        checks.set(bounded.taskId, checksSummary(bounded.results));
         return;
       case 'review_checks':
         for (const line of reviewChecksLines(bounded)) write(line);
@@ -189,6 +183,7 @@ export function createStdoutTextSink(opts: StdoutTextSinkOptions = {}): EventSin
       case 'full_suite': {
         const line = reviewCheckLine(bounded);
         if (line !== null) write(line);
+        for (const names of baseNameLines(bounded)) write(names);
         return;
       }
       case 'runner_call_stalled':

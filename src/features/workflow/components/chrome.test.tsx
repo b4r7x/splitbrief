@@ -264,6 +264,7 @@ describe('WorkflowFooter', () => {
         kind: 'mid-brief',
         taskId: 'T003',
         resolve: (message) => resumed.push(message.text),
+        kept: [],
       },
     });
     setResumeHandler((message) => resumed.push(message.text));

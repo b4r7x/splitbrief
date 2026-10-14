@@ -13,7 +13,12 @@ export type WaitingOn =
 
 /** How a stopped run came to rest: a stop it was asked for, an error, or a process that went away. */
 export type StoppedOn =
-  | { kind: 'paused'; at: StepCut }
+  | {
+      kind: 'paused';
+      at: StepCut;
+      /** The declared files the cut brief had changed; absent when the stop recorded none. */
+      kept?: readonly string[];
+    }
   | { kind: 'failed'; message: string }
   | { kind: 'seat-wait'; seat: CrewSeatId; tool: string; resetAt: string }
   | { kind: 'interrupted' };
@@ -210,10 +215,11 @@ export function deriveRunStatus(
   // The stop records where it landed. States written before it did fall back to
   // the captured partial: only a call cut in flight leaves one.
   if (state.interruptedStep !== undefined) {
-    const { cut, partialRef } = state.interruptedStep;
+    const { cut, partialRef, kept } = state.interruptedStep;
     return stopped({
       kind: 'paused',
       at: cut ?? (partialRef === undefined ? 'boundary' : 'mid-step'),
+      ...(kept !== undefined && kept.length > 0 && { kept }),
     });
   }
   if (state.awaitingContinue) return stopped({ kind: 'paused', at: 'mid-step' });

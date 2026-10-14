@@ -1313,7 +1313,7 @@ describe('useRunLoop', () => {
       // The engine's side of a boundary pause: consume it and ask how to continue.
       await seatChanged;
       options.sinks.consumeBoundaryPause?.();
-      await options.callbacks.onContinuationNeeded?.('', 'boundary');
+      await options.callbacks.onContinuationNeeded?.('', 'boundary', []);
       return makeSummary();
     });
 

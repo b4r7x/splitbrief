@@ -161,7 +161,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   // Every other abort parks the step it cut, so the run reads `open · paused`.
   // A crash that never reached this point still reads `interrupted`, which is
   // the honest answer for a run that had no chance to say where it stopped.
-  const parkRun = (state: WorkflowState): WorkflowState => {
+  const parkRun = async (state: WorkflowState): Promise<WorkflowState> => {
     const latest = rebaseOnPersistedWorkflowState({ projectDir, sessionId }, state);
     if (
       latest.closed !== undefined ||
@@ -411,7 +411,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
         }
         if (closure.closedNow) publishWorkflowCancellation(signalCancellationReason);
       } else if (opts.signal?.aborted) {
-        trackedState = parkRun(stoppedState);
+        trackedState = await parkRun(stoppedState);
       }
     }
     if (cancelled && signalCancellationReason === undefined) {

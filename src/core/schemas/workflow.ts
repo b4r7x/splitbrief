@@ -199,6 +199,13 @@ export const ReviewRecordSchema = z.object({
   ),
   /** The red check and Apply inputs the answer left blocking; each one fails the review. */
   redInputs: z.array(TriageInputSchema.pick({ id: true, text: true })).optional(),
+  /**
+   * The reviewer checks of this review that were red at the run base too: each check, its command
+   * and the failures that also fail before the run's changes. They raise no finding.
+   */
+  preExistingChecks: z
+    .array(z.object({ id: z.string(), command: z.string(), keys: z.array(z.string()) }))
+    .optional(),
   at: z.string(),
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
@@ -344,6 +351,11 @@ const WorkflowStateFields = {
       source: z.enum(['user', 'watchdog', 'seat']),
       cut: StepCutSchema.optional(),
       partialRef: z.object({ kind: z.literal('session-log'), index: z.number().int() }).optional(),
+      /**
+       * The declared files the cut brief had changed when the stop parked it. Absent when it had
+       * changed none, when the step is no brief, and on a state written before the field.
+       */
+      kept: z.array(z.string()).optional(),
       at: z.string(),
     })
     .optional(),

@@ -32,6 +32,7 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       markdownPath: 'review-packet.md',
       evidence: { validated: 3, total: 3 },
       missingArtifacts: 0,
+      preExisting: [],
     },
     scope: { kind: 'checked', passed: true, errors: 0, warnings: 0 },
     quality: null,

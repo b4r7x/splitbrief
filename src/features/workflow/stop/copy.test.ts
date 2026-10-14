@@ -51,15 +51,26 @@ it('keeps a check seat word and separators distinct during a requested pause', (
   ]);
 });
 
-/** A stop the run settled from: the park names no brief, and the record says where it stopped. */
-function settled(resumeAt: StepRef, at: 'mid-step' | 'boundary' = 'mid-step') {
+/**
+ * A stop the run settled from: the park names no brief, and the record says where it stopped and
+ * which files the cut brief kept.
+ */
+function settled(
+  resumeAt: StepRef,
+  at: 'mid-step' | 'boundary' = 'mid-step',
+  kept?: readonly string[],
+) {
   return input({
     intent: 'stop-now',
     phase: 'parked',
-    parked: { kind: 'mid-brief', taskId: null },
+    parked: { kind: 'mid-brief', taskId: null, kept: [] },
     currentTaskId: null,
     record: makeRunRecord({
-      status: { kind: 'open', stop: { kind: 'stopped', on: { kind: 'paused', at } }, resumeAt },
+      status: {
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'paused', at, ...(kept !== undefined && { kept }) } },
+        resumeAt,
+      },
     }),
   });
 }
@@ -283,7 +294,7 @@ describe('stopByline', () => {
         input({
           intent: 'stop-now',
           phase: 'parked',
-          parked: { kind: 'mid-brief', taskId: 'T002' },
+          parked: { kind: 'mid-brief', taskId: 'T002', kept: ['src/a.ts'] },
         }),
       ),
     ).toEqual({
@@ -298,6 +309,22 @@ describe('stopByline', () => {
     });
   });
 
+  // In a real run, a stop that cut a brief before its first write still read `Partial changes kept`.
+  it('claims no partial changes for a brief the stop cut before it changed a file', () => {
+    expect(
+      stopByline(
+        input({
+          intent: 'stop-now',
+          phase: 'parked',
+          parked: { kind: 'mid-brief', taskId: 'T002', kept: [] },
+        }),
+      )?.parts,
+    ).toEqual([
+      { text: 'Stopped', tone: 'warning' },
+      { text: ' at T002', tone: 'text' },
+    ]);
+  });
+
   // UI debt #57: the transcript named the brief the stop held back, this byline the brief that passed.
   it("parks at a boundary with the next brief and the count, in the transcript row's words", () => {
     expect(
@@ -305,7 +332,7 @@ describe('stopByline', () => {
         input({
           intent: 'pause-after-brief',
           phase: 'parked',
-          parked: { kind: 'boundary', taskId: 'T002' },
+          parked: { kind: 'boundary', taskId: 'T002', kept: [] },
           passed: 2,
         }),
       ),
@@ -327,7 +354,7 @@ describe('stopByline', () => {
         input({
           intent: 'pause-after-brief',
           phase: 'parked',
-          parked: { kind: 'boundary', taskId: 'T005' },
+          parked: { kind: 'boundary', taskId: 'T005', kept: [] },
           nextTaskId: null,
           passed: 5,
         }),
@@ -363,12 +390,25 @@ describe('stopByline', () => {
     ).toBe('Stopped at the plan');
   });
 
-  it('keeps the partial-changes claim for a brief the stop cut mid-step', () => {
+  it('keeps the partial-changes claim for a brief the stop cut after it changed files', () => {
     expect(
-      stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }))
+      stopByline(
+        settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'mid-step', ['src/a.ts']),
+      )
         ?.parts.map((part) => part.text)
         .join(''),
     ).toBe('Stopped at T003 · Partial changes kept');
+  });
+
+  it.each([
+    ['records no kept files', undefined],
+    ['kept no file', []],
+  ] as const)('claims no partial changes for a cut brief whose stop %s', (_label, kept) => {
+    expect(
+      stopByline(settled({ kind: 'brief', taskId: taskId('T003'), attempt: 0 }, 'mid-step', kept))
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Stopped at T003');
   });
 
   it('claims no partial changes for a brief the run stopped before', () => {
@@ -408,7 +448,7 @@ describe('stopByline', () => {
         input({
           intent: 'stop-now',
           phase: 'parked',
-          parked: { kind: 'mid-brief', taskId: null },
+          parked: { kind: 'mid-brief', taskId: null, kept: [] },
           currentTaskId: null,
         }),
       )

@@ -978,6 +978,44 @@ describe('runImplementation continuation note', () => {
         'These declared files changed since this brief started (an earlier attempt of this brief left them): src/reseed.ts',
     });
   });
+
+  it('names the files a cut attempt kept, in brief order, and lets the call change nothing', async () => {
+    const { projectDir } = setupProject('reseed-note-kept');
+    const sessionId = 'reseed-note-kept-session';
+    ensureSessionDir(projectDir, sessionId);
+    const task = makeTask({
+      id: 'T044',
+      suggestedFiles: ['src/z-first.ts', 'src/a-second.ts'],
+      action: 'create',
+    });
+    const taskStartSnapshot = await taskStartBaseline(projectDir);
+    mkdirSync(join(projectDir, 'src'), { recursive: true });
+    writeFileSync(join(projectDir, 'src/a-second.ts'), 'export const second = 2;\n');
+    writeFileSync(join(projectDir, 'src/z-first.ts'), 'export const first = 1;\n');
+    const implementer = makeImplementer({ capabilities: { writesFiles: 'direct' } });
+
+    await runImplementation({
+      wctx: makeWctx({
+        projectDir,
+        sessionId,
+        implementer,
+        isolation: noteIsolation(projectDir, await workspaceBaseline(projectDir, {})),
+        continuation: createContinuationHolder({
+          step: { kind: 'brief', taskId: task.id, attempt: 0 },
+          partial: 'half a brief',
+        }),
+      }),
+      task,
+      state: makeImplState([task]),
+      taskStartSnapshot,
+      setTrackedState: vi.fn(),
+      recordApprovalDenial: vi.fn(),
+    });
+
+    const call = vi.mocked(implementer.implement).mock.calls[0]?.[0];
+    expect(call?.continuation?.kept).toEqual(['src/z-first.ts', 'src/a-second.ts']);
+    expect(call?.allowNoChange).toBe(true);
+  });
 });
 
 describe('runImplementation plan context', () => {
