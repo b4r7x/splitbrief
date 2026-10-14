@@ -14,6 +14,10 @@ import { resolveEffectiveConfig } from '../config/runtime/effective-config.js';
 import { readActive } from '../sessions/active-pointer.js';
 import { isSessionLive } from '../sessions/liveness.js';
 import { isInternalGitStatusPath } from '../paths.js';
+import {
+  gitignoreDiffersOnlyBySplitbriefBookkeeping,
+  shouldIgnoreWorktreeUncommittedPath,
+} from '../gitignore-bookkeeping.js';
 import { isGitRepo, hasCommits, getInProgressGitOp } from '../../lib/git/repository.js';
 import { getGitStatus } from '../../lib/git/files.js';
 import { getCurrentBranch } from '../../lib/git/refs.js';
@@ -356,13 +360,19 @@ async function readRepoPosture(
   const status = await getGitStatus(projectDir);
   const untracked = new Set(status.not_added);
   // The dirty-worktree check is about the operator's own edits. SPLITBRIEF's
-  // state directory and old `.trees/` directories can show up in git status, so counting
-  // them would report the tool's own bookkeeping as local work the run might
-  // overwrite.
+  // state directory, old `.trees/` directories and its own `.gitignore` lines can show up
+  // in git status, so counting them would report the tool's own bookkeeping as local work
+  // the run might overwrite. The run sets the same files apart from its pre-run changes.
+  const gitignoreOnlyBookkeeping =
+    status.files.some((file) => file.path === '.gitignore') &&
+    (await gitignoreDiffersOnlyBySplitbriefBookkeeping(projectDir));
+  const isOperatorChange = (path: string) =>
+    !isInternalGitStatusPath(path) &&
+    !shouldIgnoreWorktreeUncommittedPath(path, gitignoreOnlyBookkeeping);
   const dirtyFiles = status.files
     .map((file) => file.path)
-    .filter((path) => !untracked.has(path) && !isInternalGitStatusPath(path));
-  const untrackedFiles = status.not_added.filter((path) => !isInternalGitStatusPath(path));
+    .filter((path) => !untracked.has(path) && isOperatorChange(path));
+  const untrackedFiles = status.not_added.filter(isOperatorChange);
   const inProgressGitOp = await getInProgressGitOp(projectDir).catch(() => null);
   const onDetachedHead = (await getCurrentBranch(projectDir).catch(() => '')) === 'HEAD';
   const activeSession = readActive(projectDir);

@@ -617,7 +617,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     if (reportConfigSaveFailure(result)) return;
     if (!ignoreInitialized.current) {
       try {
-        ensureConfigGitignore(projectDir);
+        await ensureConfigGitignore(projectDir);
         ignoreInitialized.current = true;
       } catch (err) {
         reportConfigSaveFailure({

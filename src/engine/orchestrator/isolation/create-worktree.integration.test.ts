@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, mkdir, readFile, chmod } from 'node:fs/promises';
+import { appendFile, mkdtemp, rm, writeFile, mkdir, readFile, chmod } from 'node:fs/promises';
 import { existsSync, rmSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -111,6 +111,29 @@ describe('createWorktree', () => {
     expect(ignoreLines).toContain(`${SPLITBRIEF_DIR}/`);
     expect(ignoreLines).not.toContain(`${TREES_DIR}/`);
     expect(existsSync(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
+  });
+
+  it('leaves the worktree .gitignore unchanged when the shared exclude file ignores .splitbrief/', async () => {
+    const excludedRepo = await mkdtemp(join(tmpdir(), 'worktree-excluded-'));
+    try {
+      createTestGitRepo(excludedRepo, { 'README.md': '# test\n', '.gitignore': 'node_modules/\n' });
+      await appendFile(join(excludedRepo, '.git', 'info', 'exclude'), `${SPLITBRIEF_DIR}/\n`);
+      await initConfig(excludedRepo, createDefaultConfig());
+
+      const wtPath = await createWorktree({
+        projectDir: excludedRepo,
+        slug: 'feat-excluded',
+        git: simpleGit(excludedRepo),
+      });
+
+      expect(existsSync(join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE))).toBe(true);
+      expect(await readFile(join(wtPath, '.gitignore'), 'utf-8')).toBe('node_modules/\n');
+      expect(
+        execFileSync('git', ['status', '--porcelain'], { cwd: wtPath, encoding: 'utf-8' }),
+      ).toBe('');
+    } finally {
+      await rm(excludedRepo, { recursive: true, force: true });
+    }
   });
 
   it('populates submodules in the new worktree instead of leaving empty dirs (F-405)', async () => {

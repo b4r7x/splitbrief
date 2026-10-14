@@ -21,7 +21,7 @@ import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.
 import { recordedTargetOutput } from './evidence/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
 import { listWorkspaceEntries } from './isolation/entry-snapshot.js';
-import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from './isolation/cleanliness.js';
+import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../core/gitignore-bookkeeping.js';
 
 export type ChangedFilesBaseline = {
   head: string | null;

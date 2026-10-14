@@ -54,7 +54,7 @@ describe('run with no reviewer configured', () => {
     const projectDir = createTempDir('orch-int-unconfigured-reviewer');
     dirs.push(projectDir);
     createTestGitRepo(projectDir);
-    ensureConfigGitignore(projectDir);
+    await ensureConfigGitignore(projectDir);
     seedValidationProject(projectDir, IMPLEMENTED_MARKER);
     const sessionId = 'sess-unconfigured-reviewer';
     const targetFile = 'src/loop.ts';

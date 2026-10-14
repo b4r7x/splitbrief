@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createElement } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -39,12 +40,12 @@ afterEach(() => {
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
 });
 
-function freshProject() {
+function freshProject(gitignore = 'node_modules/\n.splitbrief/\n') {
   const base = createStopContinueFixture(() => '');
   const projectDir = join(base.tmpDir, 'onboarding');
   mkdirSync(projectDir);
   createTestGitRepo(projectDir, {
-    '.gitignore': 'node_modules/\n.splitbrief/\n',
+    '.gitignore': gitignore,
     'package.json': '{"scripts":{"test":"node --test"}}\n',
   });
   fixture = { ...base, projectDir };
@@ -91,6 +92,41 @@ describe('e2e: first-run diagnostics', () => {
     const report = await cli(target, ['doctor']);
     expect(report.stdout).not.toContain('repo.dirty-worktree');
     expect(report.stdout).not.toContain('.trees');
+  });
+
+  it('initializes a clean checkout that ignores .splitbrief/ outside .gitignore without dirtying it', async () => {
+    const target = freshProject('node_modules/\n');
+    appendFileSync(join(target.projectDir, '.git', 'info', 'exclude'), '.splitbrief/\n');
+    const status = () =>
+      execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+        cwd: target.projectDir,
+        encoding: 'utf8',
+      });
+    expect(status()).toBe('');
+
+    const initialized = await cli(target, ['init', '--yes']);
+    expect(initialized.exitCode, initialized.stderr).toBe(0);
+    expect(existsSync(configPath(target.projectDir))).toBe(true);
+    expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).toBe('node_modules/\n');
+    expect(status()).toBe('');
+    const report = await cli(target, ['doctor'], { json: true, timeoutMs: 60_000 });
+    expect(
+      JSON.parse(report.stdout).report.checks.map((check: { id: string }) => check.id),
+    ).not.toContain('repo.dirty-worktree');
+  });
+
+  it('adds the .splitbrief/ rule on a clean checkout that lacks one without a dirty-worktree warning', async () => {
+    const target = freshProject('node_modules/\n');
+
+    const initialized = await cli(target, ['init', '--yes']);
+    expect(initialized.exitCode, initialized.stderr).toBe(0);
+    expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).toBe(
+      'node_modules/\n.splitbrief/\n',
+    );
+    const report = await cli(target, ['doctor'], { json: true, timeoutMs: 60_000 });
+    expect(
+      JSON.parse(report.stdout).report.checks.map((check: { id: string }) => check.id),
+    ).not.toContain('repo.dirty-worktree');
   });
 
   it('diagnoses the config saved by Continue in Setup with actionable warnings and accurate approval copy', async () => {

@@ -22,6 +22,11 @@ import { createDefaultConfig } from '../config/load/defaults.js';
 import { configPath } from '../config/load/document.js';
 import { flattenReadinessChecks } from './status.js';
 
+vi.mock('../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
+  checkIgnoredPaths: async () => [],
+}));
+
 // Stands in for the git binary so repository posture is read from a scripted
 // repository instead of a fixture that writes commits. `commands` records every
 // git invocation readiness makes.
@@ -30,11 +35,13 @@ const scriptedGit = vi.hoisted<{
   commands: string[][];
   files: { path: string }[];
   notAdded: string[];
+  headFiles: Record<string, string>;
 }>(() => ({
   repo: undefined,
   commands: [],
   files: [],
   notAdded: [],
+  headFiles: {},
 }));
 
 vi.mock('../../lib/git/client.js', async (importOriginal) => {
@@ -57,6 +64,12 @@ vi.mock('../../lib/git/client.js', async (importOriginal) => {
           record(['status']);
           return { files: scriptedGit.files, not_added: scriptedGit.notAdded };
         },
+        showBuffer: async ([spec]: string[]) => {
+          record(['show', spec ?? '']);
+          const file = scriptedGit.headFiles[(spec ?? '').replace(/^HEAD:/, '')];
+          if (file === undefined) throw new Error(`fatal: path '${spec}' does not exist in HEAD`);
+          return Buffer.from(file);
+        },
         raw: async (args: string[]) => {
           record(args);
           if (args.includes('--verify')) return `${'a'.repeat(40)}\n`;
@@ -73,6 +86,7 @@ beforeEach(() => {
   scriptedGit.commands = [];
   scriptedGit.files = [];
   scriptedGit.notAdded = [];
+  scriptedGit.headFiles = {};
 });
 
 function writeSessionState(projectDir: string, sessionId: string, phase: string): void {
@@ -463,6 +477,29 @@ describe('collectReadiness git posture', () => {
     expect(dirty?.metadata).toEqual({ dirtyCount: 1, untrackedCount: 0 });
     expect(dirty?.details).toEqual(['Examples: src/edited.ts']);
   });
+
+  it.each([
+    ['the .splitbrief/ line SPLITBRIEF added', 'node_modules/\n.splitbrief/\n', undefined],
+    [
+      'an operator edit beside it',
+      'node_modules/\ndist/\n.splitbrief/\n',
+      { dirtyCount: 1, untrackedCount: 0 },
+    ],
+  ])(
+    'counts a changed .gitignore holding %s as dirty only for the operator edit',
+    async (_case, working, metadata) => {
+      writeFileSync(join(tempDir, '.gitignore'), working);
+      scriptedGit.headFiles = { '.gitignore': 'node_modules/\n' };
+      scriptedGit.files = [{ path: '.gitignore' }];
+
+      const { report } = await collectReadiness({ projectDir: tempDir });
+
+      const dirty = flattenReadinessChecks(report.sections).find(
+        (check) => check.id === 'repo.dirty-worktree',
+      );
+      expect(dirty?.metadata).toEqual(metadata);
+    },
+  );
 
   it('ignores only the explicit session being resumed', async () => {
     const sessionId = '2026-04-18-resume-session';

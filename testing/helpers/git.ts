@@ -134,6 +134,8 @@ export function createTestGitRepo(dir: string, files: RepoFiles = {}): void {
     '\tfilemode = true',
     '\tbare = false',
     '\tlogallrefupdates = true',
+    // The host's global ignore file would decide what a fixture repository ignores.
+    '\texcludesFile = /dev/null',
   ];
   writeFileSync(configPath, `${coreConfig.join('\n')}\n`);
   if (existsSync(join(dir, '.git', 'CONFIG'))) coreConfig.push('\tignorecase = true');

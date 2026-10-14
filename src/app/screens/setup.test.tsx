@@ -47,6 +47,11 @@ import { glyph } from '../../lib/glyphs.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { PRESET_SECTION, SetupScreen } from './setup.js';
 
+vi.mock('../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../lib/git/files.js')>()),
+  checkIgnoredPaths: async () => [],
+}));
+
 const ENTER = '\r';
 const ESC = '\u001B';
 const DOWN = '\u001B[B';

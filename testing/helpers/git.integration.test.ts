@@ -6,7 +6,7 @@ import { cleanupTempDir, createTempDir } from './temp-dir.js';
 import { createTestGitRepo } from './git.js';
 
 describe('createTestGitRepo', () => {
-  it('matches git init configuration and excludes and supports another commit on main', () => {
+  it('matches git init configuration without the host excludes file and supports another commit on main', () => {
     const fixtureDir = createTempDir('git-helper-fixture');
     const initializedDir = createTempDir('git-helper-initialized');
     try {
@@ -37,7 +37,9 @@ describe('createTestGitRepo', () => {
           .split('\n')
           .sort();
 
-      expect(config(fixtureDir)).toEqual(config(initializedDir));
+      expect(config(fixtureDir)).toEqual(
+        [...config(initializedDir), 'core.excludesfile=/dev/null'].sort(),
+      );
       expect(
         execSync('git rev-parse --abbrev-ref HEAD', { cwd: fixtureDir, encoding: 'utf8' }).trim(),
       ).toBe('main');

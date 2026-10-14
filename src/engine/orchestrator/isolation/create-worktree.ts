@@ -22,7 +22,7 @@ export type CreateWorktreeOptions = {
 async function propagateSplitbriefState(projectDir: string, wtPath: string): Promise<void> {
   const baseConfig = join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE);
   if (existsSync(baseConfig)) {
-    ensureConfigGitignore(wtPath);
+    await ensureConfigGitignore(wtPath);
     await mkdir(join(wtPath, SPLITBRIEF_DIR), { recursive: true });
     await cp(baseConfig, join(wtPath, SPLITBRIEF_DIR, CONFIG_FILE));
   }

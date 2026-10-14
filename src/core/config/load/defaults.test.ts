@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
@@ -9,6 +9,11 @@ import { DEFAULT_IMPLEMENTER_TEMPERATURE } from '../../schemas/runner-fields.js'
 import { expectApi } from '#testing/helpers/config-narrowing.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
+
+vi.mock('../../../lib/git/files.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../lib/git/files.js')>()),
+  checkIgnoredPaths: async () => [],
+}));
 
 let TMP: string;
 
