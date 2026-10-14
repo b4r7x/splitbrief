@@ -13,6 +13,8 @@ it.each([
   { editor: 'cursor', code: 3, fullscreen: false },
   { editor: 'open', code: 0, fullscreen: true },
   { editor: 'open', code: 0, fullscreen: false },
+  { editor: 'less', code: 0, fullscreen: true },
+  { editor: 'less', code: 1, fullscreen: false },
 ] as const)(
   'shows how to return while $editor waits, then restores fullscreen=$fullscreen after exit $code',
   async ({ editor, code, fullscreen }) => {
@@ -24,7 +26,11 @@ it.each([
     });
     const { child, terminal, screen, rawIo, statePath, before, projectDir, sessionId } = fixture;
     const instruction =
-      editor === 'open' ? 'Quit the editor app to return.' : 'Close the file to return.';
+      editor === 'open'
+        ? 'Quit the editor app to return.'
+        : editor === 'less'
+          ? 'Press q to return.'
+          : 'Close the file to return.';
     const message = `run.patch open in ${editor}. ${instruction}`;
     try {
       const openingAt = await fixture.openDiff();
@@ -47,13 +53,14 @@ it.each([
           rawIo().slice(openingAt).indexOf(`run.patch open in ${editor}.`),
         );
       }
+      expect(fixture.guiEditorStarted()).toBe(false);
       expect(fixture.didExit()).toBe(false);
-      fixture.release();
+      fixture.quit();
       await vi.waitFor(() => {
         expect(terminal.buffer.active.type).toBe(fullscreen ? 'alternate' : 'normal');
         expect(screen()).toContain('Ready to apply');
         expect(screen()).not.toContain(instruction);
-        if (code !== 0) expect(screen()).toContain(`Editor exited with code ${code}`);
+        if (code !== 0) expect(screen()).toContain(`${editor} exited with code ${code}`);
       });
       expect(readFileSync(statePath, 'utf8')).toBe(before);
       expect(readFileSync(join(projectDir, 'greeting.txt'), 'utf8')).toBe('hello\n');

@@ -7,7 +7,12 @@ import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { requestEnqueue } from './handlers.js';
 import { openReviewEditor, reviewEditPath } from './review-editor.js';
-import { editorDisplayLabel, editorWaitingMessage, resolveEditorArgv } from './editor-command.js';
+import {
+  editorDisplayLabel,
+  editorWaitingMessage,
+  resolveEditorArgv,
+  type ViewerArgv,
+} from './editor-command.js';
 import { isImplementerPhase, isLivePhase } from '../../core/phases.js';
 import { phaseStage } from '../../core/rail-stages.js';
 import { selectRunningBrief, tasksStore } from '../../stores/workflow/tasks.js';
@@ -51,9 +56,7 @@ export type SpawnEditor = (command: string, args: string[]) => EditorProcess;
 export const spawnEditorProcess: SpawnEditor = (command, args) =>
   spawn(command, args, { stdio: 'inherit' });
 
-interface RunEditorOptions {
-  command: string;
-  args: string[];
+interface RunEditorOptions extends ViewerArgv {
   filePath: string;
   spawnEditor: SpawnEditor;
 }
@@ -61,12 +64,13 @@ interface RunEditorOptions {
 export function runEditor({
   command,
   args,
+  kind,
   filePath,
   spawnEditor,
 }: RunEditorOptions): Promise<EditorExit> {
   suspendTerminalForEditor();
   return new Promise<EditorExit>((resolve, reject) => {
-    process.stdout.write(`\r\n${editorWaitingMessage({ command, args }, filePath)}\n`);
+    process.stdout.write(`\r\n${editorWaitingMessage({ command, args, kind }, filePath)}\n`);
     const child = spawnEditor(command, [...args, filePath]);
     child.once('error', reject);
     child.once('close', (code, signal) => resolve({ code, signal }));
@@ -147,7 +151,7 @@ export async function openReviewFileExternally(
     }
     let exit: EditorExit;
     try {
-      exit = await runEditor({ command, args, filePath, spawnEditor });
+      exit = await runEditor({ command, args, kind: 'editor', filePath, spawnEditor });
     } catch (err) {
       const failure = `Failed to open editor (${editorLabel}): ${toErrorMessage(err)}`;
       // The overlay saved its edit before the handover: that edit still settles the card.

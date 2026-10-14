@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PassThrough } from 'node:stream';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { terminalSequences } from './control.js';
 import {
   resumeTerminalAfterEditor,
@@ -189,6 +190,24 @@ describe('terminal handover for $EDITOR', () => {
 
     expect(stdin.isRaw).toBe(true);
     expect(rawModes).toEqual([false, true]);
+  });
+
+  it('stops a stdin that Ink reads through readable events, then reads it again', async () => {
+    const stdin = new PassThrough();
+    const read: string[] = [];
+    stdin.on('readable', () => {
+      for (let chunk = stdin.read(); chunk !== null; chunk = stdin.read()) read.push(String(chunk));
+    });
+    const paused = vi.fn();
+    stdin.on('pause', paused);
+    const config: TerminalHandoverConfig = { fullscreen: false, mouse: false, sourceStdin: stdin };
+
+    suspendTerminalForEditor(config);
+    expect(paused).toHaveBeenCalledOnce();
+
+    resumeTerminalAfterEditor(config);
+    stdin.write('x');
+    await vi.waitFor(() => expect(read).toEqual(['x']));
   });
 
   it('leaves raw mode untouched when source stdin was not raw', () => {

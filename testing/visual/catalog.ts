@@ -1746,6 +1746,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       elements: [{ id: 'activity', title: 'External editor return instruction' }],
     }),
     defineScenario({
+      id: 'workflow-external-pager',
+      title: 'Workflow · run diff handed to the pager, before the pager draws over it',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'external-pager',
+        title: 'Return hint the TUI writes as it hands the terminal to the pager',
+        kind: 'ready',
+        marker: 'Press q to return.',
+      },
+      elements: [{ id: 'activity', title: 'Pager return instruction' }],
+    }),
+    defineScenario({
       id: 'workflow-ready-override',
       title: 'Workflow · a reviewed workspace accepted as is',
       surface: screenSurface('workflow'),

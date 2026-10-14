@@ -52,7 +52,7 @@ export function resultMenuRows(input: ResultMenuInput): ResultRow[] {
     {
       id: 'show-diff',
       label: 'Show diff',
-      consequence: 'open the run’s changes in your editor',
+      consequence: 'open the run’s changes as a patch',
     },
     {
       id: 'discard',

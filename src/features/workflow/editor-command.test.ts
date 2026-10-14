@@ -3,7 +3,12 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { chdir, cwd } from 'node:process';
-import { editorDisplayLabel, editorWaitingMessage, resolveEditorArgv } from './editor-command.js';
+import {
+  editorDisplayLabel,
+  editorWaitingMessage,
+  resolveEditorArgv,
+  resolveViewerArgv,
+} from './editor-command.js';
 
 function withBinDir<T>(executables: readonly string[], run: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'editor-command-test-'));
@@ -71,7 +76,7 @@ describe('resolveEditorArgv', () => {
         platform: 'darwin',
       });
       expect(editor).toEqual({ command: join(dir, 'open'), args: ['-W', '-t'] });
-      expect(editorWaitingMessage(editor, '/tmp/run.patch')).toBe(
+      expect(editorWaitingMessage({ ...editor, kind: 'editor' }, '/tmp/run.patch')).toBe(
         'run.patch open in open. Quit the editor app to return.',
       );
     });
@@ -192,6 +197,53 @@ describe('resolveEditorArgv', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('resolveViewerArgv', () => {
+  it('opens the pager, not a detected GUI editor, when no editor is set', () => {
+    withBinDir(['cursor', 'code'], (dir) => {
+      const viewer = resolveViewerArgv({ VISUAL: '', EDITOR: '  ', PATH: dir });
+      expect(viewer).toEqual({
+        command: 'less',
+        args: ['-+F', '-Ps?e(END) .Press q to return\\.'],
+        kind: 'pager',
+      });
+      expect(editorWaitingMessage(viewer, '/tmp/run.patch')).toBe(
+        'run.patch open in less. Press q to return.',
+      );
+    });
+  });
+
+  it('takes PAGER with its arguments over less', () => {
+    expect(resolveViewerArgv({ PAGER: 'bat --paging=always' })).toEqual({
+      command: 'bat',
+      args: ['--paging=always'],
+      kind: 'pager',
+    });
+  });
+
+  it('keeps a less PAGER open on a short patch and lets its own arguments win', () => {
+    expect(resolveViewerArgv({ PAGER: '/usr/bin/less -R', LESS: 'FRX' })).toEqual({
+      command: '/usr/bin/less',
+      args: ['-+F', '-Ps?e(END) .Press q to return\\.', '-R'],
+      kind: 'pager',
+    });
+  });
+
+  it('takes VISUAL, then a terminal EDITOR as it is, over PAGER', () => {
+    withBinDir(['cursor'], (dir) => {
+      expect(resolveViewerArgv({ VISUAL: 'code --wait', EDITOR: 'vim', PAGER: 'more' })).toEqual({
+        command: 'code',
+        args: ['--wait'],
+        kind: 'editor',
+      });
+      const editor = resolveViewerArgv({ EDITOR: 'vim', PAGER: 'more', PATH: dir });
+      expect(editor).toEqual({ command: 'vim', args: [], kind: 'editor' });
+      expect(editorWaitingMessage(editor, '/tmp/run.patch')).toBe(
+        'run.patch open in vim. Close the file to return.',
+      );
+    });
   });
 });
 

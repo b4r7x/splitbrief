@@ -8,6 +8,7 @@ type Editor = Parameters<typeof mountShowDiffEditor>[0]['editor'];
 export const editorHandoverScenarios: ReadonlyMap<ScenarioId, Editor> = new Map([
   [scenarioId('workflow-external-editor'), 'cursor'],
   [scenarioId('workflow-external-editor-macos'), 'open'],
+  [scenarioId('workflow-external-pager'), 'less'],
 ]);
 
 export async function mountEditorHandover(
