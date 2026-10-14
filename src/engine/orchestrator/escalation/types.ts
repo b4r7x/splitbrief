@@ -104,6 +104,11 @@ export type RetryInvokeArgs = {
   /** Baseline the acquired workspace declares; sniffed from the directory when absent. */
   changeDetection?: ChangeDetectionKind | undefined;
   createdByThisTask?: readonly string[] | undefined;
+  /**
+   * The attempt delivers the user's answer or correction to the kept work: it may find that work
+   * already right and change nothing.
+   */
+  deliversAnswer?: boolean | undefined;
   /** The seat-trouble wrapper's target; the step supplies the live state and usage category. */
   seat: RetrySeatTarget;
 };
@@ -126,6 +131,8 @@ export type RetryStepOpts = {
   state: WorkflowState;
   lastError: string;
   attempts: number;
+  /** `lastError` is the user's answer or correction this attempt delivers. */
+  deliversAnswer?: boolean | undefined;
   method: SuccessMethod;
   transitionType: 'VALIDATION_PASS';
   commitSuffix?: string | undefined;

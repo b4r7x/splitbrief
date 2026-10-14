@@ -35,8 +35,13 @@ export type ConsultPromptInput = Readonly<{
   earlierConsults: readonly ConsultRecord[];
   /** Every task of the run except the one being consulted about. */
   otherTasks: readonly Task[];
-  /** Text the operator queued during an earlier brief, delivered with the task it concerns. */
-  userText?: string | undefined;
+  /**
+   * The brief's operator-instruction log, oldest first: every correction the user sent this
+   * brief, by queue, mid-call or on resume, and every answer to a question about it.
+   */
+  operatorInstructions: readonly string[];
+  /** Deviation only: the user answered the planner's question, so `guidance` is offered. */
+  answered?: boolean | undefined;
   /**
    * Planner consults only: the planner's session already holds this run's plan and brief,
    * so the new attempt's evidence goes as a short turn instead of the whole prompt. A
@@ -51,7 +56,7 @@ const REASON_TEXT: Record<ConsultReason, string> = {
   stale:
     'The task went stale: files it captured moved under it since the brief was compiled. Only guidance or a rewritten task can answer this reason.',
   deviation:
-    "The implementer reported new decisions. Confirm changes of how that keep every criterion, or ask the user about a change of what. Validation follows confirm; ask-user carries the user's answer into a retry.",
+    'The implementer reported new decisions. Confirm changes of how that keep every criterion, and every decision that carries out an operator instruction. Ask the user about any other change of what. Validation follows confirm. After the user answers, you are asked again with the answer in the operator instructions.',
 };
 
 const CONSULT_ROLE: Record<ConsultSeat, string> = {
@@ -69,21 +74,35 @@ Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": 
 - \`verify\` — \`checkIds\` and \`reason\`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
 - \`ask-user\` — \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 
+The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
+
 The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs \`ask-user\`.`;
 
 function consultContract(seat: ConsultSeat): string {
   return `${CONSULT_ROLE[seat]} ${CONSULT_CONTRACT_BODY}`;
 }
 
-const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
+const RESUME_CONTRACT = `Answer again with exactly one JSON object in the consult shape: \`answer.diagnosis\` and exactly one action. The call stays read-only. The operator rule still holds: no action undoes an operator instruction. The criteria rule still holds: a rewrite or a split never drops a criterion id, and a split never splits a subtask. The checks rule still holds too: a defective check command may be repaired under the same check id, but removing a check id a served criterion names needs \`ask-user\`.`;
 
-const DECISION_CONFIRM_CONTRACT = `You are the run's planner. This call confirms the new decisions in the implementer's report before validation. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
+/** The decision-confirm contract; `guidance` is offered only after the user answered. */
+function decisionConfirmContract(answered: boolean): string {
+  return `You are the run's planner. This call confirms the new decisions in the implementer's report before validation. This call is read-only: do not write, edit or delete any file, and do not run commands that change the project.
 
 Answer with exactly one JSON object \`{ "answer": { "diagnosis": …, "action": … } }\`. \`answer.diagnosis\` states your assessment in one or two sentences. Answer with exactly one of these actions:
-- \`confirm\` with the exact \`decisions\` list you accept. Accept only changes of how that keep every criterion. The accepted entries extend the plan's confirmed decisions ledger. An empty list is valid.
-- \`ask-user\` with \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null). A change of what is built is \`ask-user\`. The user's answer goes into the next retry.
+- \`confirm\` with the exact \`decisions\` list you accept. Accept changes of how that keep every criterion. Accept every decision that carries out an operator instruction: the user made that decision. Accept a change that the user's answer keeps. The accepted entries extend the plan's confirmed decisions ledger. An empty list is valid.
+- \`ask-user\` with \`question\`, \`whyOnlyUserCanAnswer\`, \`choices\` (or null) and \`default\` (or null). Any other change of what is built is \`ask-user\`. Never ask about a decision that an operator instruction or an earlier answer already settles. A question that concerns an operator instruction quotes it, and its default keeps it.${
+    answered
+      ? `
+- \`guidance\` with \`instructions\` and \`context\` (or null), only when the user's answer asks for a change to this attempt. The instructions carry out that answer, and the retry follows them.`
+      : ''
+  }
 
-Validation runs after a \`confirm\` answer. It has not run for this attempt yet. An \`ask-user\` answer sends this attempt to a retry without validation.`;
+Validation runs after a \`confirm\` answer. It has not run for this attempt yet. ${
+    answered
+      ? 'The user answered your question: the answer is the last operator instruction. A `guidance` answer sends this attempt to a retry without validation.'
+      : 'After the user answers an `ask-user` question, SPLITBRIEF asks you again with the answer in the operator instructions.'
+  }`;
+}
 
 function checkLine(check: Check): string {
   return `\`${check.id}\` (${check.kind} \`${check.value}\`${check.required ? '' : ', optional'})`;
@@ -249,11 +268,19 @@ function reasonSection(input: ConsultPromptInput): PromptPart {
   return { heading: 'Reason', body: `${input.reason} — ${REASON_TEXT[input.reason]}` };
 }
 
-/** What the operator typed while earlier briefs ran, when it concerns this task. */
-function operatorNotesPart(input: ConsultPromptInput): PromptPart[] {
-  const text = input.userText?.trim();
-  if (text === undefined || text === '') return [];
-  return [{ heading: 'Operator Notes', body: text }];
+/** The user's own instructions for this brief; they outrank the brief where the two differ. */
+function operatorInstructionsPart(input: ConsultPromptInput): PromptPart[] {
+  if (input.operatorInstructions.length === 0) return [];
+  return [
+    {
+      heading: 'Operator Instructions',
+      body: [
+        "The user gave these instructions for this task after the brief was written, oldest first. They are the user's own decisions and outrank the brief where the two differ.",
+        '',
+        ...input.operatorInstructions.map((text) => fenced(text)),
+      ].join('\n'),
+    },
+  ];
 }
 
 /**
@@ -274,10 +301,10 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
           body: taskBody(input.task),
         },
         reasonSection(input),
-        ...operatorNotesPart(input),
+        ...operatorInstructionsPart(input),
         ...attemptLines(input),
         instructionsSection(
-          `${DECISION_CONFIRM_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
+          `${decisionConfirmContract(input.answered === true)}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
         ),
       ],
     });
@@ -295,7 +322,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
           body: `**${input.task.id}** (revision ${input.task.revision ?? 1}) — ${input.task.title}`,
         },
         reasonSection(input),
-        ...operatorNotesPart(input),
+        ...operatorInstructionsPart(input),
         ...attemptLines(input),
         instructionsSection(
           `${RESUME_CONTRACT}\n\n${workspaceReadInstructions(input.workspaceDir)}`,
@@ -312,7 +339,7 @@ export function buildConsultPrompt(input: ConsultPromptInput): string {
   });
   for (const revision of input.revisions) sections.push(revisionSection(revision));
   sections.push(reasonSection(input));
-  sections.push(...operatorNotesPart(input));
+  sections.push(...operatorInstructionsPart(input));
   sections.push(...attemptLines(input));
   if (input.earlierConsults.length > 0) {
     sections.push({

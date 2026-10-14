@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import {
   CONSULT_ANSWER_JSON_SCHEMA,
+  ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
   STALE_CONSULT_ANSWER_JSON_SCHEMA,
 } from '../../core/schemas/consult.js';
@@ -38,6 +39,7 @@ describe('isStrictJsonSchema', () => {
     expect(isStrictJsonSchema(CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
     expect(isStrictJsonSchema(STALE_CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
     expect(isStrictJsonSchema(DEVIATION_CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
+    expect(isStrictJsonSchema(ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA)).toBe(true);
   });
 
   it('emits the consult answers as anyOf, which OpenAI strict mode takes', () => {
@@ -46,6 +48,7 @@ describe('isStrictJsonSchema', () => {
       CONSULT_ANSWER_JSON_SCHEMA,
       STALE_CONSULT_ANSWER_JSON_SCHEMA,
       DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
+      ANSWERED_DEVIATION_CONSULT_ANSWER_JSON_SCHEMA,
     ]) {
       expect(JSON.stringify(schema)).not.toContain('"oneOf"');
     }

@@ -1392,6 +1392,38 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-decision-question',
+      title: 'Workflow · planner asks about a reported decision',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'decision-question',
+        title: "The question shows the brief's operator instructions",
+        kind: 'question',
+        marker: 'Did you ask for greet',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Decision confirm transcript' },
+        { id: 'question-panel', title: 'Question panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-decision-guidance',
+      title: 'Workflow · planner guidance after the user answered',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'decision-guidance',
+        title: 'Question, answer and guidance rows of one decision confirm',
+        kind: 'implementation',
+        marker: 'guidance',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Decision confirm transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-consult-answer-typed',
       title: 'Workflow · typed consult answer',
       surface: screenSurface('workflow'),

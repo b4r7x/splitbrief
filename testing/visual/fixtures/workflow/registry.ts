@@ -525,6 +525,8 @@ const checkpointPredicates = [
   [checkpointId('question-answered'), includesAll('Simplify/clean up existing code')],
   [checkpointId('consult-answer-default'), includesAll('Which store?', 'You → memory')],
   [checkpointId('consult-answer-typed'), includesAll('Which store?', 'You → redis')],
+  [checkpointId('decision-question'), includesAll('Did you ask for greet')],
+  [checkpointId('decision-guidance'), includesAll('guidance', 'Yes, keep the default export')],
   [checkpointId('paused-mid-brief'), includesAll('⏎ resume', 'Stopped at T')],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],

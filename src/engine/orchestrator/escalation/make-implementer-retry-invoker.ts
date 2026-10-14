@@ -17,7 +17,6 @@ import type { RetryInvokeArgs, RetryInvokeResult } from './types.js';
 import { createImplementerTextHandler } from '../events.js';
 import type { SteeringPort } from '../../calls/steering.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
-import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 
 export function makeImplementerRetryInvoker(opts: {
   context: ProjectContext;
@@ -41,6 +40,7 @@ export function makeImplementerRetryInvoker(opts: {
     fileIgnoreProjectDir,
     changeDetection,
     createdByThisTask,
+    deliversAnswer,
     seat,
   }) => {
     const effectiveConfig = opts.config ?? config;
@@ -85,7 +85,7 @@ export function makeImplementerRetryInvoker(opts: {
         changeDetection,
         plan: state.plan,
         ...buildCorrectionInput(state, task, imageContext),
-        allowNoChange: task.fix !== undefined || lastError === CORRECTION_AFTER_CHECKS,
+        allowNoChange: task.fix !== undefined || deliversAnswer === true,
         ...creationOwnership(),
       };
       const result = await runWithCorrectionPasses({

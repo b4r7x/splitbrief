@@ -29,6 +29,7 @@ import type { Validator } from '../validation/types.js';
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { applyRecoveryAction } from '../recovery/actions.js';
+import { enqueueUserMessage } from '../queue/submit.js';
 import { runTaskLoop } from './loop.js';
 import { ABSENT_INPUT_HASH } from './stale-inputs.js';
 
@@ -177,6 +178,23 @@ function askUser(): ConsultAnswer {
   };
 }
 
+/** The planner's second decision confirm turns the user's answer into the retry's guidance. */
+function guideAnswer(): ConsultAnswer {
+  return {
+    answer: {
+      diagnosis: 'The user keeps the flag.',
+      action: 'guidance',
+      instructions: ANSWER,
+      context: null,
+    },
+  };
+}
+
+/** Asks about the change of what until the prompt carries the user's answer, then guides. */
+function askThenGuide(prompt: string): ConsultAnswer {
+  return prompt.includes(`Answer: ${ANSWER}`) ? guideAnswer() : askUser();
+}
+
 function guidance(): ConsultAnswer {
   return {
     answer: {
@@ -189,12 +207,15 @@ function guidance(): ConsultAnswer {
 }
 
 /** The planner's prompts, and an answer per kind: decision-confirm prompts carry the deviation reason. */
-function scriptedPlanner(answers: { confirm: () => ConsultAnswer; consult?: () => ConsultAnswer }) {
+function scriptedPlanner(answers: {
+  confirm: (prompt: string) => ConsultAnswer;
+  consult?: () => ConsultAnswer;
+}) {
   const prompts: string[] = [];
   const planner = makePlanner({
     typedCall: consultCallAnswering((prompt) => {
       prompts.push(prompt);
-      if (prompt.includes('deviation —')) return answers.confirm();
+      if (prompt.includes('deviation —')) return answers.confirm(prompt);
       if (answers.consult === undefined) throw new Error('the ladder consulted the planner');
       return answers.consult();
     }),
@@ -370,12 +391,12 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     );
   });
 
-  it('puts a change of what to the user and delivers the answer, without a retry row or a consult', async () => {
+  it('puts a change of what to the user, asks the planner again with the answer, and retries on its guidance without a retry row or a consult', async () => {
     const { projectDir, sessionId } = setupProject();
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[WHAT], []]);
     const validator = scriptedValidator({});
-    const { planner, prompts } = scriptedPlanner({ confirm: askUser });
+    const { planner, prompts } = scriptedPlanner({ confirm: askThenGuide });
     const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
@@ -392,12 +413,19 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(result.status).toBe('complete');
     expect(onPlannerReply).toHaveBeenCalledTimes(1);
-    expect(prompts).toHaveLength(1);
+    expect(prompts).toHaveLength(2);
+    expect(prompts[1]).toContain(`Question: Keep the --json flag?\nAnswer: ${ANSWER}`);
+    expect(result.state.lineages?.T001?.corrections).toEqual([
+      `Question: Keep the --json flag?\nAnswer: ${ANSWER}`,
+    ]);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
     expect(retries).toHaveLength(1);
     expect(retries[0]?.error).toContain(ANSWER);
-    // The answer is delivered outside the retry rung: the ask-user row records it, no task_retry.
-    expect(eventTypes(events)).toEqual(['consult:deviation:ask-user']);
+    // The answer is delivered outside the retry rung: the consult rows record it, no task_retry.
+    expect(eventTypes(events)).toEqual([
+      'consult:deviation:ask-user',
+      'consult:deviation:guidance',
+    ]);
     expect(result.state.plan?.decisions).toEqual([]);
     expect(result.state.plannerCalls?.used ?? 0).toBe(0);
   });
@@ -409,7 +437,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     // fails typecheck; the one local retry passes. This is T005 of a real run.
     const implementer = decidingImplementer([[WHAT], [HOW], [HOW]]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
-    const confirms = [askUser, () => confirm([HOW])];
+    const confirms = [askUser, guideAnswer, () => confirm([HOW])];
     const { planner, prompts } = scriptedPlanner({
       confirm: () => (confirms.shift() ?? askUser)(),
     });
@@ -429,6 +457,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
 
     expect(eventTypes(events)).toEqual([
       'consult:deviation:ask-user',
+      'consult:deviation:guidance',
       'consult:deviation:confirm',
       'retry',
     ]);
@@ -460,7 +489,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
     const consults = [guidance];
     const { planner, prompts } = scriptedPlanner({
-      confirm: askUser,
+      confirm: askThenGuide,
       consult: () => {
         const next = consults.shift();
         if (next === undefined) throw new Error('the ladder consulted the planner twice');
@@ -485,6 +514,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       'retry',
       'consult:failed:guidance',
       'consult:deviation:ask-user',
+      'consult:deviation:guidance',
     ]);
     expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toHaveLength(1);
     expect(result.state.pendingRecovery).toBeUndefined();
@@ -503,7 +533,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     // would be the ninth.
     const implementer = decidingImplementer([[], [], [WHAT], []]);
     const validator = scriptedValidator({ T001: [TS_ERROR, LINT_ERROR, null] });
-    const { planner, prompts } = scriptedPlanner({ confirm: askUser, consult: guidance });
+    const { planner, prompts } = scriptedPlanner({ confirm: askThenGuide, consult: guidance });
     const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
 
@@ -522,6 +552,7 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       'retry',
       'consult:failed:guidance',
       'consult:deviation:ask-user',
+      'consult:deviation:guidance',
       'bound-spent',
     ]);
     expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toHaveLength(1);
@@ -569,6 +600,43 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
     const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
     const implementer = decidingImplementer([[], [WHAT], []]);
     const validator = scriptedValidator({ T001: [TS_ERROR, null] });
+    const { planner, prompts } = scriptedPlanner({ confirm: askThenGuide });
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      bus,
+    });
+
+    expect(eventTypes(events)).toEqual([
+      'retry',
+      'consult:deviation:ask-user',
+      'consult:deviation:guidance',
+    ]);
+    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
+    expect(result.status).toBe('complete');
+    expect(onPlannerReply).toHaveBeenCalledTimes(1);
+    // The attempt that reported the change of what was not validated.
+    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
+    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
+    expect(retries).toHaveLength(2);
+    expect(retries[1]?.error).toContain(ANSWER);
+    expect(result.state.plan?.decisions).toEqual([]);
+    expect(result.state.lineages?.T001?.consults ?? 0).toBe(0);
+  });
+
+  it("asks the planner again once at most: a second question's answer goes to the retry", async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[WHAT], []]);
+    const validator = scriptedValidator({});
     const { planner, prompts } = scriptedPlanner({ confirm: askUser });
     const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
     const { bus, events } = makeBusRecorder();
@@ -584,17 +652,187 @@ describe('runTaskLoop with reported decisions', { timeout: 90_000 }, () => {
       bus,
     });
 
-    expect(eventTypes(events)).toEqual(['retry', 'consult:deviation:ask-user']);
-    expect(prompts.filter((prompt) => !isDecisionConfirm(prompt))).toEqual([]);
+    expect(result.status).toBe('complete');
+    expect(onPlannerReply).toHaveBeenCalledTimes(2);
+    expect(prompts).toHaveLength(2);
+    expect(eventTypes(events)).toEqual([
+      'consult:deviation:ask-user',
+      'consult:deviation:ask-user',
+    ]);
+    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.error).toContain(ANSWER);
+    // The attempt that delivers the answer may find the kept work right and change nothing.
+    expect(retries[0]?.allowNoChange).toBe(true);
+  });
+
+  it("delivers the user's first answer to the retry when the second question stays unanswered", async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[WHAT], []]);
+    const validator = scriptedValidator({});
+    const { planner } = scriptedPlanner({ confirm: askUser });
+    const onPlannerReply = vi
+      .fn()
+      .mockResolvedValueOnce(plainUserMessage(ANSWER))
+      .mockResolvedValueOnce(undefined);
+    const { bus } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      bus,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(onPlannerReply).toHaveBeenCalledTimes(2);
+    const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.error).toContain(ANSWER);
+    expect(retries[0]?.allowNoChange).toBe(true);
+  });
+
+  it("delivers the user's answer to the retry when the planner's second answer is malformed", async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[WHAT], []]);
+    const validator = scriptedValidator({});
+    let confirms = 0;
+    const planner = makePlanner({
+      typedCall: (ctx) => ({
+        seat: ctx.seat,
+        typedOutput: 'fallback',
+        canResume: false,
+        invoke: async ({ prompt }) => {
+          if (ctx.seat === 'reviewer') {
+            return makeRunnerCallResult({
+              status: 'completed',
+              text: JSON.stringify(passingReviewVerdict(prompt)),
+            });
+          }
+          confirms += 1;
+          return makeRunnerCallResult({
+            status: 'completed',
+            text: confirms === 1 ? JSON.stringify(askUser()) : '{}',
+          });
+        },
+      }),
+    });
+    const onPlannerReply = vi.fn().mockResolvedValue(plainUserMessage(ANSWER));
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      bus,
+    });
+
     expect(result.status).toBe('complete');
     expect(onPlannerReply).toHaveBeenCalledTimes(1);
-    // The attempt that reported the change of what was not validated.
-    expect(validator.checkRuns).toHaveBeenCalledTimes(2);
     const retries = vi.mocked(implementer.retry).mock.calls.map(([opts]) => opts);
-    expect(retries).toHaveLength(2);
-    expect(retries[1]?.error).toContain(ANSWER);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.error).toContain(ANSWER);
+    expect(retries[0]?.allowNoChange).toBe(true);
+    // The check runs once, on the retry: the attempt the user answered about is not validated.
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
+    );
+  });
+
+  it('refuses guidance before the user answered: the first decision confirm validates with a warning', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const implementer = decidingImplementer([[WHAT]]);
+    const validator = scriptedValidator({});
+    const { planner, prompts } = scriptedPlanner({ confirm: guideAnswer });
+    const onPlannerReply = vi.fn();
+    const { bus, events } = makeBusRecorder();
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      callbacks: makeCallbacks({ onPlannerReply }).callbacks,
+      bus,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(prompts.filter(isDecisionConfirm).length).toBeGreaterThan(0);
+    expect(onPlannerReply).not.toHaveBeenCalled();
+    expect(implementer.retry).not.toHaveBeenCalled();
+    expect(validator.checkRuns).toHaveBeenCalledTimes(1);
     expect(result.state.plan?.decisions).toEqual([]);
-    expect(result.state.lineages?.T001?.consults ?? 0).toBe(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'warning', message: expect.stringContaining('T001') }),
+    );
+  });
+
+  it('shows a message the build absorbed under the operator instructions of the next consult', async () => {
+    const { projectDir, sessionId } = setupProject();
+    const task = makeTask({ id: 'T001', suggestedFiles: ['src/a.ts'] });
+    const note = 'also log the flag value';
+    const { bus } = makeBusRecorder();
+    let calls = 0;
+    const implementer = makeImplementer({
+      implement: vi.fn(async (opts: ImplementerOptions) => {
+        calls += 1;
+        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(opts.projectDir, 'src/a.ts'), `implement ${calls}\n`);
+        if (calls === 1) {
+          const state = loadState({ projectDir, sessionId });
+          if (state === null) throw new Error('missing state during the build call');
+          enqueueUserMessage({
+            projectDir,
+            sessionId,
+            state,
+            message: plainUserMessage(note),
+            phase: state.phase,
+            bus,
+          });
+        }
+        return {
+          success: true,
+          output: 'implemented',
+          usage: { inputTokens: 10, outputTokens: 5 },
+          report: doneReport([HOW], 'src/a.ts'),
+        };
+      }),
+    });
+    const validator = scriptedValidator({});
+    const { planner, prompts } = scriptedPlanner({ confirm: () => confirm([HOW]) });
+
+    const result = await runLoop({
+      projectDir,
+      sessionId,
+      state: stateWithPlan([task]),
+      implementer,
+      validator,
+      planner,
+      bus,
+    });
+
+    expect(result.status).toBe('complete');
+    expect(implementer.implement).toHaveBeenCalledTimes(2);
+    const confirmPrompt = prompts.find(isDecisionConfirm) ?? '';
+    const instructions = confirmPrompt.slice(confirmPrompt.indexOf('## Operator Instructions'));
+    expect(confirmPrompt).toContain('## Operator Instructions');
+    expect(instructions).toContain(
+      `[user also says during implementing]\n${note}\n[/user also says]`,
+    );
   });
 
   it('validates with a warning when the decision-confirm answer is malformed', async () => {

@@ -137,6 +137,8 @@ Use this typed engine contract. Register no render checks despite their presence
     - `verify` — `checkIds` and `reason`: re-run exactly those checks before any retry, for when the failure may predate this task's own edits.
     - `ask-user` — `question`, `whyOnlyUserCanAnswer`, `choices` (or null) and `default` (or null): only when no other action can unblock the task and the user alone holds the missing decision.
 
+    The operator rule: the Operator Instructions are the user's own decisions for this task. No action undoes one of them. A question that concerns one of them quotes it, and its default keeps it.
+
     The criteria rule: a rewrite or a split never drops a criterion id; a split never splits a subtask. Every criterion id the task serves stays with its replacement, or with the union of the split tasks, and each replacement keeps a complete, verifiable brief. The checks rule: a defective check command may be repaired under the same check id, but a rewrite or a split never drops a check id that one of the task's criteria names; removing the requirement it checks needs `ask-user`.
 
     The run workspace is `<the run workspace>`. Read project files from this directory and resolve project-relative code paths there.

@@ -78,6 +78,7 @@ function consultInput(overrides: Partial<ConsultPromptInput> = {}): ConsultPromp
       makeTask({ id: 'T001', title: 'Scaffold the module', status: 'done' }),
       makeTask({ id: 'T004', title: 'Document the greeting' }),
     ],
+    operatorInstructions: [],
     ...overrides,
   };
 }
@@ -130,6 +131,7 @@ describe('buildConsultPrompt', () => {
     expect(prompt).toContain(
       'a rewrite or a split never drops a criterion id; a split never splits a subtask',
     );
+    expect(prompt).toContain('No action undoes one of them.');
     expect(prompt).toContain('This call is read-only');
   });
 
@@ -165,13 +167,14 @@ describe('buildConsultPrompt', () => {
       expect(prompt).toContain('### Decisions');
       expect(prompt).toContain('- Use node:crypto (T003)');
       expect(prompt).toContain('`confirm`');
-      expect(prompt).toContain('A change of what is built is `ask-user`');
+      expect(prompt).toContain('Any other change of what is built is `ask-user`');
       expect(prompt).toContain('## Plan');
       expect(prompt).toContain('**C1**: A greeting is returned');
       expect(prompt).toContain('## Task T003');
       expect(prompt).toContain('## Attempt Diff');
       expect(prompt).toContain('## Implementer Report');
       expect(prompt).toContain('Validation runs after a `confirm` answer');
+      expect(prompt).toContain('its default keeps it');
       for (const action of ['guidance', 'rewrite-task', 'split-task', 'verify']) {
         expect(prompt).not.toContain(`\`${action}\``);
       }
@@ -180,6 +183,49 @@ describe('buildConsultPrompt', () => {
       }
     },
   );
+
+  it.each([false, true])(
+    'offers a decision confirm guidance only once the user answered (%s)',
+    (answered) => {
+      const prompt = buildConsultPrompt(consultInput({ reason: 'deviation', answered }));
+
+      expect(prompt.includes('- `guidance` with `instructions`')).toBe(answered);
+      expect(prompt.includes('The user answered your question')).toBe(answered);
+      expect(prompt.includes('SPLITBRIEF asks you again with the answer')).toBe(!answered);
+    },
+  );
+
+  it.each([
+    ['failed', false],
+    ['failed', true],
+    ['stale', false],
+    ['deviation', false],
+    ['deviation', true],
+  ] as const)(
+    "shows the brief's operator instructions to a %s consult, resumed=%s",
+    (reason, resumed) => {
+      const prompt = buildConsultPrompt(
+        consultInput({
+          reason,
+          resumed,
+          operatorInstructions: [
+            'also export a default from src/greet.ts',
+            'Question: Keep the default export?\nAnswer: Yes, keep it',
+          ],
+        }),
+      );
+
+      expect(prompt).toContain('## Operator Instructions');
+      expect(prompt).toContain('```\nalso export a default from src/greet.ts\n```');
+      expect(prompt).toContain(
+        '```\nQuestion: Keep the default export?\nAnswer: Yes, keep it\n```',
+      );
+    },
+  );
+
+  it('shows no operator instructions section when the brief has none', () => {
+    expect(buildConsultPrompt(consultInput())).not.toContain('## Operator Instructions');
+  });
 
   it('names the planner when the planner answers a plan task', () => {
     const prompt = buildConsultPrompt(consultInput());

@@ -79,6 +79,7 @@ export type ApiReviewContextInput = Readonly<{
   consultLog?: string | undefined;
   triageLog?: string | undefined;
   planningAnswers?: string | undefined;
+  operatorInstructions?: string | undefined;
   /** The render scenarios the checks log recorded, attached or as a manifest. */
   renders?: string | undefined;
   /** The run's skills block; counted against the seat like every other part it carries. */
@@ -265,6 +266,9 @@ export function buildApiReviewContext(input: ApiReviewContextInput): ApiReviewCo
     ...(input.consultLog !== undefined && { consultLog: input.consultLog }),
     ...(input.triageLog !== undefined && { triageLog: input.triageLog }),
     ...(input.planningAnswers !== undefined && { planningAnswers: input.planningAnswers }),
+    ...(input.operatorInstructions !== undefined && {
+      operatorInstructions: input.operatorInstructions,
+    }),
     ...(input.renders !== undefined && { renders: input.renders }),
     ...(input.taskIds !== undefined && { taskIds: input.taskIds }),
     ...(input.criterionIds !== undefined && { criterionIds: input.criterionIds }),

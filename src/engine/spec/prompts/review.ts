@@ -165,6 +165,8 @@ export type FinalReviewPromptInput = {
   triageLog?: string | undefined;
   /** What the operator answered during planning. */
   planningAnswers?: string | undefined;
+  /** Each brief's operator instructions: what the user told it after the plan was written. */
+  operatorInstructions?: string | undefined;
   /** The ids the verdict must answer for; derived from `plan` when omitted. */
   taskIds?: readonly string[] | undefined;
   criterionIds?: readonly string[] | undefined;
@@ -263,6 +265,12 @@ export function buildFinalReviewPrompt(opts: FinalReviewPromptInput): string {
   }
   if (opts.planningAnswers) {
     sections.push({ heading: 'Planning Answers', body: opts.planningAnswers });
+  }
+  if (opts.operatorInstructions) {
+    sections.push({
+      heading: 'Operator Instructions',
+      body: `The user gave these instructions to a task after its brief was written. They are the user's own decisions: work that carries one out is in scope.\n\n${opts.operatorInstructions}`,
+    });
   }
   if (opts.driftReport) {
     sections.push({ heading: 'Deterministic Drift Report', body: opts.driftReport });

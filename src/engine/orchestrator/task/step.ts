@@ -48,8 +48,6 @@ import { inputHashesNow, inputsMovedUnexpectedly, taskInputFiles } from './stale
 import { lineageIdOf } from '../../../core/state/task-insert.js';
 import { consultSeat, requestConsult } from '../consult/request.js';
 import { applyConsultAnswer } from '../consult/apply.js';
-import { commitQueueMessagesConsulted, readQueueForConsult } from '../queue/drain.js';
-import { formatMessage } from '../queue/prompt.js';
 import { consultAttemptError, guidanceInstructions } from '../escalation/consult-guidance.js';
 import { hashTaskBrief } from '../../../core/evidence/brief-hash.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
@@ -178,13 +176,6 @@ async function refreshStaleTask(input: {
     return { kind: 'dispatch', state, task, guidance: undefined };
   }
   const files = taskInputFiles(task);
-  const queued = readQueueForConsult({
-    projectDir: opts.wctx.projectDir,
-    sessionId: opts.wctx.sessionId,
-    state,
-  });
-  const userText =
-    queued.messages.length === 0 ? undefined : queued.messages.map(formatMessage).join('\n\n');
   const refreshed = await requestConsult(
     {
       projectDir: opts.wctx.projectDir,
@@ -206,19 +197,9 @@ async function refreshStaleTask(input: {
       failingOutput: `The task's inputs changed since the brief was compiled: ${files.join(', ')}`,
       snapshot: noAttemptSnapshot(),
       changedFiles: [],
-      ...(userText !== undefined && { userText }),
     },
   );
   if ('error' in refreshed) throw refreshed.error;
-  if (queued.messages.length > 0) {
-    state = commitQueueMessagesConsulted({
-      projectDir: opts.wctx.projectDir,
-      sessionId: opts.wctx.sessionId,
-      state,
-      ids: queued.messages.map((message) => message.id),
-    }).state;
-    opts.setTrackedState(state);
-  }
   const applied = await applyConsultAnswer(
     {
       projectDir: opts.wctx.projectDir,
