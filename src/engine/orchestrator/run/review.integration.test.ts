@@ -111,23 +111,59 @@ describe('review answer follower', () => {
     text: 'Typecheck failed',
   };
 
+  const passing = {
+    kind: 'pass' as const,
+    blocking: [],
+    minor: [],
+    outOfScope: [],
+    unverifiedCriteria: [],
+    coverageErrors: [],
+    criteria: [],
+    redInputs: [],
+  };
+  const notVerifiedInput = {
+    id: 'V1.1',
+    kind: 'defect' as const,
+    source: 'check' as const,
+    file: null,
+    text: 'Reviewer check V1 (node tools/run.mjs) failed and failed at the run base too',
+    notVerified: 'both runs exited with code 1 without diagnostics',
+  };
+  const newFailureInput = {
+    id: 'V1.1',
+    kind: 'defect' as const,
+    source: 'check' as const,
+    file: 'src/a.test.ts',
+    text: 'Reviewer check V1 (npm test) failed with new failures.',
+  };
+  const applyConflictInput = {
+    id: 'A1',
+    kind: 'defect' as const,
+    source: 'apply' as const,
+    file: 'src/a.ts',
+    text: 'Apply wrote conflict markers into src/a.ts',
+  };
+  const rejecting = (id: string) => ({
+    ...fixWork,
+    rejected: [{ findingId: id, reason: 'No change needed' }],
+  });
+
+  it('passes a passing verdict whose answer rejects a red the run base could not verify', () => {
+    expect(reviewPassed(passing, rejecting(notVerifiedInput.id), [notVerifiedInput], [])).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['a red plan check', input],
+    ['a reviewer check with new failures', newFailureInput],
+    ['an Apply conflict', applyConflictInput],
+  ])('does not pass a passing verdict whose answer rejects %s', (_name, red) => {
+    expect(reviewPassed(passing, rejecting(red.id), [red], [])).toBe(false);
+  });
+
   it('does not pass a passing verdict while a check input remains pending', () => {
-    expect(
-      reviewPassed(
-        {
-          kind: 'pass',
-          blocking: [],
-          minor: [],
-          outOfScope: [],
-          unverifiedCriteria: [],
-          coverageErrors: [],
-          criteria: [],
-        },
-        fixWork,
-        [input],
-        [],
-      ),
-    ).toBe(false);
+    expect(reviewPassed(passing, fixWork, [input], [])).toBe(false);
   });
 
   it('queues the answer to a reviewer question for another review without a planner call', async () => {
@@ -239,45 +275,102 @@ describe('review answer follower', () => {
     ]);
   });
 
-  it.each(['rejected', 'ask'] as const)(
-    'keeps a pending red input blocking when the reviewer returns %s',
-    async (answer) => {
-      const ref = setupProject();
-      const state: WorkflowState = {
-        ...pendingReview(),
-        phase: 'final-review',
-        fixCycles: { used: 0, allowance: 2, notes: [] },
-        pendingTriage: { inputs: [input] },
-      };
-      saveState(ref, state);
-      const { bus, events } = makeBusRecorder();
-      const callbacks = makeCallbacks().callbacks;
-      const result = await followReviewAnswer({
-        wctx: makeWctx({ ...ref, bus, callbacks }),
-        state,
-        callbacks,
-        setTrackedState: vi.fn(),
-        candidate: undefined,
-        recheckFailures: ['Typecheck failed'],
-        fixWork: {
-          ...fixWork,
-          rejected: answer === 'rejected' ? [{ findingId: 'P1', reason: 'No change needed' }] : [],
-          ask:
-            answer === 'ask'
-              ? { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' }
-              : null,
-        },
-      });
-      expect(result.stopped).toBe(true);
-      expect(result.state.phase).toBe('final-review');
-      expect(result.state.reviewStatus).toBeUndefined();
-      expect(result.state.completedAt).toBeUndefined();
-      expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
-      expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1: Typecheck failed');
-      expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
-      expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
-    },
-  );
+  it('keeps a pending red input blocking when the reviewer asks a question', async () => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...pendingReview(),
+      phase: 'final-review',
+      fixCycles: { used: 0, allowance: 2, notes: [] },
+      pendingTriage: { inputs: [input] },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const callbacks = makeCallbacks().callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      recheckFailures: ['Typecheck failed'],
+      fixWork: {
+        ...fixWork,
+        ask: { question: 'Change the API?', whyOnlyUserCanAnswer: 'The API is public.' },
+      },
+    });
+    expect(result.stopped).toBe(true);
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.reviewStatus).toBeUndefined();
+    expect(result.state.completedAt).toBeUndefined();
+    expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
+    expect(result.state.pendingRecovery?.details?.join('\n')).toContain('P1: Typecheck failed');
+    expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
+
+  it('stops counting a red the run base could not verify once the reviewer rejects it', async () => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...pendingReview(),
+      phase: 'final-review',
+      fixCycles: { used: 0, allowance: 2, notes: [] },
+      pendingTriage: { inputs: [notVerifiedInput] },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const callbacks = makeCallbacks().callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork: rejecting(notVerifiedInput.id),
+    });
+    expect(result.stopped).toBe(true);
+    expect(result.state.phase).toBe('complete');
+    expect(result.state.reviewStatus).toBe('failed');
+    expect(result.state.pendingRecovery?.availableActions).toContain('accept-as-is');
+    expect(result.state.pendingRecovery?.details?.join('\n') ?? '').not.toContain('V1.1:');
+    expect(result.state.pendingRecovery?.facts?.blocking).toBe(1);
+    expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+      { review: 'failed', blocking: 1 },
+    ]);
+  });
+
+  it.each([
+    ['a red plan check', input],
+    ['a reviewer check with new failures', newFailureInput],
+    ['an Apply conflict', applyConflictInput],
+  ])('keeps %s blocking when the reviewer rejects it', async (_name, red) => {
+    const ref = setupProject();
+    const state: WorkflowState = {
+      ...pendingReview(),
+      phase: 'final-review',
+      fixCycles: { used: 0, allowance: 2, notes: [] },
+      pendingTriage: { inputs: [red] },
+    };
+    saveState(ref, state);
+    const { bus, events } = makeBusRecorder();
+    const callbacks = makeCallbacks().callbacks;
+    const result = await followReviewAnswer({
+      wctx: makeWctx({ ...ref, bus, callbacks }),
+      state,
+      callbacks,
+      setTrackedState: vi.fn(),
+      candidate: undefined,
+      recheckFailures: [],
+      fixWork: rejecting(red.id),
+    });
+    expect(result.stopped).toBe(true);
+    expect(result.state.phase).toBe('final-review');
+    expect(result.state.reviewStatus).toBeUndefined();
+    expect(result.state.pendingRecovery?.availableActions).not.toContain('accept-as-is');
+    expect(result.state.pendingRecovery?.details?.join('\n')).toContain(`${red.id}: ${red.text}`);
+    expect(result.state.pendingRecovery?.facts?.blocking).toBe(2);
+    expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+  });
 });
 
 function pendingReview(): WorkflowState {

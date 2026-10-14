@@ -1,4 +1,4 @@
-import type { ReviewVerdict } from '../schemas/review.js';
+import type { ReviewVerdict, TriageInput, TriageResult } from '../schemas/review.js';
 import { isTaskCompleted } from '../schemas/task.js';
 import type { ReviewRecord, WorkflowState } from '../schemas/workflow.js';
 
@@ -52,7 +52,27 @@ export type ReviewOutcome = {
   unverifiedCriteria: string[];
   coverageErrors: string[];
   criteria: ReviewVerdict['criteria'];
+  redInputs: RedInput[];
 };
+
+export type RedInput = Pick<TriageInput, 'id' | 'text'>;
+
+/**
+ * The red inputs that still block a review: each failed check or Apply re-check, except a reviewer
+ * check SPLITBRIEF could not verify at the run base that the answer rejects. The reviewer decides
+ * only that one; every other red stays blocking whatever the answer says.
+ */
+export function blockingRedInputs(
+  inputs: readonly TriageInput[],
+  fixWork: TriageResult,
+): TriageInput[] {
+  const rejected = new Set(fixWork.rejected.map((entry) => entry.findingId));
+  return inputs.filter(
+    (input) =>
+      (input.source === 'check' || input.source === 'apply') &&
+      !(input.notVerified !== undefined && rejected.has(input.id)),
+  );
+}
 
 export function verificationKey(kind: 'criterion' | 'finding', id: string): string {
   return `${kind}:${id}`;
@@ -67,6 +87,7 @@ export function reviewOutcomeOf(record: ReviewRecord): ReviewOutcome {
       criterionIds: record.verdict.criteria.map((criterion) => criterion.id),
     },
     new Map(record.verification.map((entry) => [entry.id, entry.status])),
+    record.redInputs,
   );
 }
 
@@ -76,7 +97,7 @@ export function reviewOutcomeWord(outcome: ReviewOutcome): 'pass' | 'pass_with_n
 
 export function reviewFindingCounts(outcome: ReviewOutcome) {
   return {
-    critical: outcome.blocking.length,
+    critical: outcome.blocking.length + outcome.redInputs.length,
     warning: outcome.minor.length,
     note: outcome.outOfScope.length,
   };
@@ -148,6 +169,7 @@ export function deriveReviewOutcome(
   verdict: ReviewVerdict,
   scope: ReviewScope,
   verification: ReadonlyMap<string, 'pass' | 'fail' | 'unverified'>,
+  redInputs: readonly RedInput[] = [],
 ): ReviewOutcome {
   const coverageErrors = verdictCoverageErrors(verdict, scope);
   const unverifiedCriteria: string[] = [];
@@ -179,6 +201,7 @@ export function deriveReviewOutcome(
     coverageErrors.length > 0 ||
     unverifiedCriteria.length > 0 ||
     blocking.length > 0 ||
+    redInputs.length > 0 ||
     verdict.tasks.some((task) => task.plan !== 'met') ||
     criteria.some((criterion) => criterion.status !== 'pass');
   if (failed)
@@ -190,6 +213,7 @@ export function deriveReviewOutcome(
       unverifiedCriteria,
       coverageErrors,
       criteria,
+      redInputs: redInputs.map(({ id, text }) => ({ id, text })),
     };
   return {
     kind: minor.length === 0 && outOfScope.length === 0 ? 'pass' : 'pass-with-notes',
@@ -199,5 +223,6 @@ export function deriveReviewOutcome(
     unverifiedCriteria,
     coverageErrors,
     criteria,
+    redInputs: [],
   };
 }

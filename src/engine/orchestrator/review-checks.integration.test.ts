@@ -597,6 +597,7 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({ id: 'V1.1', file: null }),
       ]);
+      expect(outcome.state.pendingTriage?.inputs[0]?.notVerified).toBeUndefined();
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
         'failed with new failures. No task changed it.\ncheck V1 did not pass (fail):',
       );
@@ -635,7 +636,12 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         detail: 'both runs timed out',
       });
       expect(outcome.state.pendingTriage?.inputs).toEqual([
-        expect.objectContaining({ id: 'V1.1', file: null, checkIds: ['V1'] }),
+        expect.objectContaining({
+          id: 'V1.1',
+          file: null,
+          checkIds: ['V1'],
+          notVerified: 'both runs timed out',
+        }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
         'failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs timed out); the reviewer decides.',
@@ -695,12 +701,14 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
       command: 'npm test',
       files: FILES,
       red: '> x@1.0.0 test\n> node -e "process.exit(1)"',
+      reason: 'both runs exited with code 1 without diagnostics',
     },
     {
       name: 'a make error summary',
       command: 'make check',
       files: { ...FILES, Makefile: 'check:\n\t@exit 1\n' },
       red: 'make: *** [Makefile:2: check] Error 1',
+      reason: 'both runs exited with code 1: make: *** [Makefile:2: check] Error 1',
     },
   ])('marks two reds that print only $name not verified, never pre-existing', async (red) => {
     await withApplyRun(red.files, { sessionId: 'sess-checks-runner-lines' }, async (run) => {
@@ -721,16 +729,22 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         newFailures: 0,
         preExisting: 0,
         notVerified: 1,
-        detail: 'both runs exited with code 1 without diagnostics',
+        detail: red.reason,
       });
       expect(outcome.state.pendingTriage?.inputs).toEqual([
-        expect.objectContaining({ id: 'V1.1', file: null, checkIds: ['V1'], output: red.red }),
+        expect.objectContaining({
+          id: 'V1.1',
+          file: null,
+          checkIds: ['V1'],
+          output: red.red,
+          notVerified: red.reason,
+        }),
       ]);
       expect(outcome.state.pendingTriage?.inputs[0]?.text).toContain(
-        'failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (both runs exited with code 1 without diagnostics); the reviewer decides.',
+        `failed and failed at the run base too, but SPLITBRIEF could not verify it is the same failure (${red.reason}); the reviewer decides.`,
       );
       expect(sectionOf(outcome)).toContain(
-        `- V1 \`${red.command}\`: failed, not verified at the run base (both runs exited with code 1 without diagnostics); the reviewer decides\ncheck V1 did not pass (fail): ${red.red}`,
+        `- V1 \`${red.command}\`: failed, not verified at the run base (${red.reason}); the reviewer decides\ncheck V1 did not pass (fail): ${red.red}`,
       );
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')?.preExisting).toBeUndefined();

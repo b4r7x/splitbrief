@@ -24,10 +24,12 @@ export function renderReviewMarkdown(verdict: ReviewVerdict, outcome: ReviewOutc
     }
   }
   lines.push('', '### Findings', '', '**Critical**', '');
-  if (outcome.blocking.length === 0) {
+  if (outcome.blocking.length === 0 && outcome.redInputs.length === 0) {
     lines.push('None.');
   } else {
     for (const finding of outcome.blocking) lines.push(`- ${finding.text}`);
+    for (const input of outcome.redInputs)
+      lines.push(`- ${input.id}: ${input.text.split('\n', 1)[0]}`);
   }
   lines.push('', '**Note**', '');
   if (outcome.minor.length === 0 && outcome.outOfScope.length === 0) {

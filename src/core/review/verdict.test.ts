@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ReviewVerdict } from '../schemas/review.js';
+import type { ReviewVerdict, TriageInput } from '../schemas/review.js';
 import { taskId } from '../schemas/task.js';
 import type { ReviewRecord } from '../schemas/workflow.js';
 import {
   deriveReviewOutcome,
   findingInReviewScope,
+  reviewFindingCounts,
   reviewOutcomeOf,
   type ReviewScope,
   verdictCoverageErrors,
@@ -283,6 +284,31 @@ describe('deriveReviewOutcome', () => {
     expect(outcome.minor).toEqual([]);
     expect(outcome.unverifiedCriteria).toEqual([]);
     expect(outcome.coverageErrors).toEqual([]);
+  });
+
+  it('fails an all-met verdict while a red input still blocks, and a stored review keeps it', () => {
+    const red = { id: 'V1.1', text: 'Reviewer check V1 (npm test) failed with new failures.' };
+    const input: TriageInput = { ...red, kind: 'defect', source: 'check', file: null, output: 'x' };
+    const outcome = deriveReviewOutcome(
+      makeVerdict({ findings: [finding()] }),
+      scope,
+      verification(),
+      [input],
+    );
+    expect(outcome.kind).toBe('fail');
+    expect(outcome.redInputs).toEqual([red]);
+    expect(reviewFindingCounts(outcome)).toEqual({ critical: 1, warning: 1, note: 0 });
+    const record: ReviewRecord = {
+      scope: 'final',
+      cycle: 0,
+      verdict: makeVerdict({ findings: [finding()] }),
+      outcome: outcome.kind,
+      verification: [],
+      redInputs: outcome.redInputs,
+      at: '2026-10-10T10:00:00.000Z',
+    };
+    expect(reviewOutcomeOf(record)).toEqual(outcome);
+    expect(reviewOutcomeOf({ ...record, redInputs: undefined }).kind).toBe('pass-with-notes');
   });
 
   it('derives pass-with-notes from a complete all-met verdict with only minor findings', () => {

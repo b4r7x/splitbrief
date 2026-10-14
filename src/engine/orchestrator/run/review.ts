@@ -1,6 +1,6 @@
 import { isTaskCompleted, type TaskId } from '../../../core/schemas/task.js';
 import { fixCyclesOf, type WorkflowState } from '../../../core/schemas/workflow.js';
-import { reviewOutcomeOf } from '../../../core/review/verdict.js';
+import { blockingRedInputs, reviewOutcomeOf } from '../../../core/review/verdict.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
 import { getRunnerCatalogDisplayName } from '../../../core/config/accessors/runner-config.js';
 import { REVIEW_FILE } from '../../../core/paths.js';
@@ -67,24 +67,20 @@ function queueScheduledTriage(
   });
 }
 
-function isRedInput(input: TriageInput): boolean {
-  return input.source === 'check' || input.source === 'apply';
-}
-
 async function haltFailedReview(args: {
   wctx: WorkflowContext;
   state: WorkflowState;
   setTrackedState: (s: WorkflowState) => void;
   candidate: Record<string, string> | undefined;
   blocking: number;
+  redInputs: readonly TriageInput[];
   fixCycles?: number | undefined;
   unverified?: number | undefined;
   detail?: string | undefined;
 }): Promise<WorkflowState> {
   const ref = { projectDir: args.wctx.projectDir, sessionId: args.wctx.sessionId };
   const scheduled = args.state.review?.scope === 'task' && args.state.phase === 'implementing';
-  const redInputs = (args.state.pendingTriage?.inputs ?? []).filter(isRedInput);
-  const redPending = redInputs.length > 0;
+  const redPending = args.redInputs.length > 0;
   const state = scheduled
     ? queueScheduledTriage(ref, args.state)
     : redPending
@@ -104,7 +100,7 @@ async function haltFailedReview(args: {
       blocking: args.blocking,
       completedTasks: state.tasks.filter((task) => isTaskCompleted(task.status)).length,
     });
-  const detail = [args.detail, ...redInputs.map((input) => `${input.id}: ${input.text}`)]
+  const detail = [args.detail, ...args.redInputs.map((input) => `${input.id}: ${input.text}`)]
     .filter(Boolean)
     .join('\n');
   const issue = buildReviewFailedRecoveryIssue({
@@ -213,7 +209,7 @@ export function reviewPassed(
     fixWork.fixTasks.length === 0 &&
     fixWork.verify.length === 0 &&
     fixWork.ask === null &&
-    !pendingInputs.some(isRedInput) &&
+    blockingRedInputs(pendingInputs, fixWork).length === 0 &&
     recheckFailures.length === 0
   );
 }
@@ -237,7 +233,8 @@ export async function followReviewAnswer(args: {
   const findings = reviewOutcomeOf(judged).blocking;
   const inputs = state.pendingTriage?.inputs ?? [];
   const cycles = fixCyclesOf(state);
-  const blocking = findings.length + inputs.filter(isRedInput).length;
+  const redInputs = blockingRedInputs(inputs, fixWork);
+  const blocking = findings.length + redInputs.length;
   if (fixWork.ask !== null) {
     state = transitionAndSave(wctx, state, {
       type: 'QUEUE_TRIAGE',
@@ -263,6 +260,7 @@ export async function followReviewAnswer(args: {
         setTrackedState,
         candidate: args.candidate,
         blocking,
+        redInputs,
         detail: 'The review asked a question this run has no way to answer.',
       });
       return { state, stopped: true, reviewAgain: false };
@@ -296,6 +294,7 @@ export async function followReviewAnswer(args: {
       setTrackedState,
       candidate: args.candidate,
       blocking,
+      redInputs,
       fixCycles: cycles.used,
     });
     return { state, stopped: true, reviewAgain: false };
@@ -314,6 +313,7 @@ export async function followReviewAnswer(args: {
       setTrackedState,
       candidate: args.candidate,
       blocking,
+      redInputs,
       ...(unverified.length > 0 && { unverified: unverified.length }),
       ...(detail !== undefined && { detail }),
     });

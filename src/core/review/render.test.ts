@@ -84,6 +84,18 @@ describe('renderReviewMarkdown', () => {
     expect(verdictWord(renderReviewMarkdown(failed, failing))).toBe('fail');
   });
 
+  it('lists each red input that still blocks under Critical with the first line of its text', () => {
+    const verdict = makeVerdict();
+    const outcome = deriveReviewOutcome(verdict, scope, new Map(), [
+      { id: 'A1', text: 'Apply wrote conflict markers into src/a.ts\n<<<<<<< ours' },
+    ]);
+    const markdown = renderReviewMarkdown(verdict, outcome);
+    expect(verdictWord(markdown)).toBe('fail');
+    expect(markdown).toContain(
+      '**Critical**\n\n- A1: Apply wrote conflict markers into src/a.ts\n\n**Note**',
+    );
+  });
+
   it('renders the tasks, the criteria marks and the findings under their labels', () => {
     const verdict = makeVerdict({
       criteria: [

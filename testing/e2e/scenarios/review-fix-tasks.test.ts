@@ -386,7 +386,7 @@ describe('e2e: failed task review creates fix tasks', { timeout: 300_000 }, () =
     ]);
     expect(
       events.find((event) => event.type === 'review_completed' && event.afterTaskId === 'T001'),
-    ).toMatchObject({ findings: { blocking: 1, minor: 0 } });
+    ).toMatchObject({ findings: { blocking: 2, minor: 0 } });
 
     const reviewCheckRows = events.flatMap((event) =>
       event.type === 'full_suite' && event.status === 'done' && event.id === 'V1'

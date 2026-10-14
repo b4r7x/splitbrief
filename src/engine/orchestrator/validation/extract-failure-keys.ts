@@ -5,16 +5,19 @@ import {
 } from '../../../core/review/fix-task.js';
 import type { ProcessOutputCapture } from '../../../lib/process/errors.js';
 import { normalizeProjectRelativePath } from '../../../utils/path-patterns.js';
+import { redactSecrets } from '../../../utils/redact.js';
+import { truncateByChars } from '../../../utils/truncate.js';
 import { failingTestKey, parseFailingTests } from './test-failures.js';
 
 /**
  * The keys of a red command: its failing tests by name and its diagnostic lines, else the lines of
  * an output that lists only whole paths. A timeout, an incomplete capture or a red that names no
  * failure has one placeholder key, and `placeholder` says how it failed, since that key names no
- * failure. Output lines that name no file, such as an `npm` script banner or a `make` error
- * summary, are not diagnostic lines. `messages` holds, per failing test key, the first line the
- * runner printed under it (its assertion message), read from the whole capture; a diagnostic key
- * is its own line and has no entry.
+ * failure; it quotes the output's first error line when there is one. Output lines that name no
+ * file, such as an `npm` script banner or a `make` error summary, are not diagnostic lines.
+ * `messages` holds, per failing test key, the first line the runner printed under it (its
+ * assertion message), read from the whole capture; a diagnostic key is its own line and has no
+ * entry.
  */
 export type FailureKeys = {
   keys: string[];
@@ -57,11 +60,32 @@ export function failureKeys(
   ) {
     return { keys: [...new Set(extracted.keys.map(normalizeProjectRelativePath))] };
   }
+  const said = errorLine(output);
   if (run.exitCode === undefined) {
-    return { keys: ['failed without diagnostics'], placeholder: 'failed without diagnostics' };
+    return {
+      keys: ['failed without diagnostics'],
+      placeholder: said === undefined ? 'failed without diagnostics' : `failed: ${said}`,
+    };
   }
   const key = `exited with code ${run.exitCode}`;
-  return { keys: [key], placeholder: `${key} without diagnostics` };
+  return {
+    keys: [key],
+    placeholder: said === undefined ? `${key} without diagnostics` : `${key}: ${said}`,
+  };
+}
+
+const ERROR_WORD = /\b\w*(?:error|exception)\b|\b(?:fatal|panic)\b/i;
+const ERROR_LINE_CHARS = 200;
+
+/** The first output line that reports an error, without a TAP `#` prefix; never a stack frame. */
+function errorLine(output: string): string | undefined {
+  for (const raw of output.split('\n')) {
+    const line = raw.replace(/^\s*#?\s*/, '').trimEnd();
+    if (ERROR_WORD.test(line) && !STACK_FRAME.test(line)) {
+      return truncateByChars(redactSecrets(line), ERROR_LINE_CHARS);
+    }
+  }
+  return undefined;
 }
 
 /** A stack frame row: `at fn (file:1:2)`, vitest's `❯ file:1:2`, jest's `→ file:1:2`. */

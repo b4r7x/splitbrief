@@ -721,6 +721,11 @@ const checkpointPredicates = [
     // The reason wraps at narrow widths; the last row settles the transcript.
     includesAll('Base re-run V1', 'npm test · not\u00a0run'),
   ],
+  [
+    checkpointId('review-base-rejected'),
+    // The final review row settles the transcript; earlier rows scroll out of a 60x18 transcript.
+    includesAll('Final review passed'),
+  ],
   [checkpointId('planner-session-expired'), includesAll('Planner session expired')],
 ] as const satisfies readonly (readonly [CheckpointId, CheckpointPredicate])[];
 
