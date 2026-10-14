@@ -1,5 +1,4 @@
-import { isInDeclaredSet, taskDeclaredPatterns } from '../../../core/scope/declared-set.js';
-import { getChangedFilesSinceSnapshot } from '../approval/file-snapshots/capture.js';
+import { changedDeclaredFiles } from '../kept-work.js';
 import type { Task } from '../../../core/schemas/task.js';
 import {
   lineageAttemptsOf,
@@ -36,23 +35,6 @@ import {
 } from '../queue/build-corrections.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
 import { formatMessageInput } from '../queue/prompt.js';
-
-/** The brief's own declared files that already moved since it started. */
-async function changedDeclaredFiles(
-  projectDir: string,
-  task: Task,
-  taskStartSnapshot: ChangedFilesSnapshot,
-): Promise<string[]> {
-  try {
-    const patterns = taskDeclaredPatterns(task);
-    return (await getChangedFilesSinceSnapshot(projectDir, taskStartSnapshot)).filter((file) =>
-      isInDeclaredSet(file, patterns),
-    );
-  } catch {
-    // Best-effort: a snapshot head the operator rewrote must not stop the restart.
-    return [];
-  }
-}
 
 /**
  * A restarted attempt is told about the declared files that already moved, so it
@@ -228,19 +210,21 @@ export async function runImplementation(opts: {
           const changed = continues
             ? await changedDeclaredFiles(workspace.projectDir, task, opts.taskStartSnapshot)
             : [];
+          // A cut attempt continues on the files it wrote before the cut; the call's own row
+          // names them, since a call that finds them complete changes nothing of its own.
+          const kept = partial !== undefined && changed.length > 0 ? changed : undefined;
           const continuation = continues
             ? {
                 ...(partial !== undefined && { partial }),
                 ...(combinedSteer !== undefined && { steer: combinedSteer }),
                 ...changedDeclaredFilesNote(changed),
+                ...(kept !== undefined && { kept }),
               }
             : undefined;
           // A fix task may already have its code on disk when none of its findings needs a change,
-          // and a cut attempt continues on the files it wrote before the cut: either call may
-          // find the work complete and change nothing.
+          // and a cut attempt may find its kept work complete: either call may change nothing.
           const allowNoChange =
-            (task.fix !== undefined && opts.retryError === undefined) ||
-            (partial !== undefined && changed.length > 0);
+            (task.fix !== undefined && opts.retryError === undefined) || kept !== undefined;
           const firstCall: ImplementerOptions = {
             ...call,
             ...correction,

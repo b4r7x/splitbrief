@@ -30,9 +30,13 @@ export function runSectionRows(
   const rows: ScrollableDocumentRow[] = [
     { key: 'run-heading', node: <LedgerRule label="Run" width={width} /> },
   ];
-  for (const row of [...crewRows(view, valueWidth, crewNamed), ...runRows(view)]) {
+  for (const [index, row] of [
+    ...crewRows(view, valueWidth, crewNamed),
+    ...runRows(view),
+  ].entries()) {
     rows.push({
-      key: `run:${row.label}`,
+      // A follow-on row has no label of its own; its place keys it.
+      key: `run:${row.label === '' ? index : row.label}`,
       node: <RunValueRow row={row} theme={theme} width={valueWidth} />,
     });
   }

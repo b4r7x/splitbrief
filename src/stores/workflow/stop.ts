@@ -19,6 +19,8 @@ export interface StopParked {
   kind: StopParkKind;
   taskId: string | null;
   resolve: StopResolver | null;
+  /** The declared files a brief cut mid-step had changed, as the engine read them at the cut. */
+  kept: readonly string[];
 }
 
 export interface StopState {
@@ -52,8 +54,13 @@ function markForcing(): void {
   store.set((s) => ({ ...s, phase: 'forcing' }));
 }
 
-function park(kind: StopParkKind, taskId: string | null, resolve: StopResolver | null): void {
-  store.set((s) => ({ ...s, phase: 'parked', parked: { kind, taskId, resolve } }));
+function park(
+  kind: StopParkKind,
+  taskId: string | null,
+  resolve: StopResolver | null,
+  kept: readonly string[] = [],
+): void {
+  store.set((s) => ({ ...s, phase: 'parked', parked: { kind, taskId, resolve, kept } }));
 }
 
 function resume(steer: UserMessageInput): boolean {

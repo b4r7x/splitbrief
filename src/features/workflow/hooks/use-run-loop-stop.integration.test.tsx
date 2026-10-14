@@ -626,7 +626,8 @@ describe('run-loop stop completion', () => {
     const cleanup = Promise.withResolvers<void>();
     const prepared = prepare();
     const engine = waitingEngine(
-      (options) => options.callbacks.onContinuationNeeded?.('', 'boundary') ?? Promise.resolve(),
+      (options) =>
+        options.callbacks.onContinuationNeeded?.('', 'boundary', []) ?? Promise.resolve(),
       cleanup.promise,
     );
     const exit = vi.fn();

@@ -3,7 +3,15 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { plainUserMessage } from '../../../src/core/types/user-input.js';
 import type { PlannerConversation } from '../../../src/core/schemas/workflow.js';
+import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
+import { rowText } from '../../../src/features/workflow/conversation-rows/row-format/rows.js';
+import { hydrateRun } from '../../../src/features/workflow/run-history.js';
+import { stopByline } from '../../../src/features/workflow/stop/copy.js';
+import { eventsStore } from '../../../src/stores/workflow/events.js';
+import { buildConversationRows } from '#testing/helpers/event-rows.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import {
   applyRun,
@@ -30,6 +38,7 @@ afterEach(async () => {
     cleanupTempDir(fixture.tmpDir);
   }
   fixture = undefined;
+  resetAllStores();
 });
 
 /**
@@ -43,6 +52,15 @@ type ImplementerCall = Readonly<{
 }>;
 
 const BOTH_FILES = { [GREET_FILE]: GREET_SOURCE, [MARKER_FILE]: MARKER_SOURCE };
+
+/** The report a call prints when it ends with nothing left to change. */
+const IDLE_REPORT = {
+  status: 'done',
+  filesChanged: [],
+  touchedNotSuggested: [],
+  notes: null,
+  decisions: [],
+};
 
 /** A greet the corrected call writes over the kept one. */
 const TRIMMED_GREET_SOURCE = `export function greet(name: string): string {
@@ -119,24 +137,92 @@ async function endRunPatch(target: StopContinueFixture, sessionId: string): Prom
   return readFileSync(join(target.projectDir, closed.patch), 'utf8');
 }
 
+/** The run's transcript as the run screen replays it at `cols` columns, one string per row. */
+async function transcriptRows(
+  target: StopContinueFixture,
+  sessionId: string,
+  cols: number,
+): Promise<string[]> {
+  await hydrateRun(readRunRecord({ projectDir: target.projectDir, sessionId }));
+  return buildConversationRows({
+    sections: groupEventsIntoSections(eventsStore.get().events),
+    expandedDiffs: new Set(),
+    expandedActivityBatches: new Set(),
+    cols,
+    viewportHeight: 50,
+    streaming: { taskId: null, lines: [], active: false },
+  }).rows.map((row) => rowText(row).trimEnd());
+}
+
+/** The rows after the run continued, at 120 and at 200 columns: the resumed brief's own rows. */
+async function resumedRows(target: StopContinueFixture, sessionId: string): Promise<string[][]> {
+  return Promise.all(
+    [120, 200].map(async (cols) => {
+      const rows = await transcriptRows(target, sessionId, cols);
+      return rows.slice(rows.indexOf('Run continued'));
+    }),
+  );
+}
+
+/** What the stopped byline says once the stop settled the run at rest on its re-read record. */
+function settledStopLead(target: StopContinueFixture, sessionId: string): string {
+  const byline = stopByline({
+    intent: 'stop-now',
+    phase: 'parked',
+    workflowPhase: 'implementing',
+    parked: { kind: 'mid-brief', taskId: null, kept: [] },
+    currentTaskId: null,
+    nextTaskId: null,
+    passed: 0,
+    total: 1,
+    elapsedMs: 0,
+    questionPending: false,
+    suite: null,
+    record: readRunRecord({ projectDir: target.projectDir, sessionId }),
+  });
+  return byline?.parts.map((part) => part.text).join('') ?? '';
+}
+
 const KEPT_GREET = '+export function greet(name: string): string {';
 const KEPT_MARKER = "+export const RUN_MARKER = 'implementer-started';";
 
 describe('stop after the brief wrote its files → continue', { timeout: 240_000 }, () => {
   it('passes the brief on the kept work when the resumed call changes nothing', async () => {
     fixture = createStopContinueFixture(
-      implementerCalls([{ writes: BOTH_FILES, holds: true }, {}]),
+      implementerCalls([
+        { writes: BOTH_FILES, holds: true },
+        { report: { ...IDLE_REPORT, filesChanged: [GREET_FILE, MARKER_FILE] } },
+      ]),
     );
     const target = fixture;
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
     expect(parked.exitCode).toBe(0);
+    expect(readState(target, parked.sessionId).interruptedStep?.kept).toEqual([
+      GREET_FILE,
+      MARKER_FILE,
+    ]);
+    expect(settledStopLead(target, parked.sessionId)).toBe(
+      'Stopped at T001 · Partial changes kept',
+    );
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (no checks)');
     expect(invocations(target)).toBe(2);
     expect(await retries(target, parked.sessionId)).toEqual([]);
+    // The implementer's own report counts the two files the brief holds; the call's row names
+    // them both, and says this call kept them rather than wrote them.
+    for (const rows of await resumedRows(target, parked.sessionId)) {
+      const report = rows.indexOf('Report  done · 2 files · 0 decisions');
+      expect(report).toBeGreaterThan(0);
+      expect(rows.slice(report + 1, report + 4)).toEqual([
+        '',
+        expect.stringMatching(/^src\/greet\.ts · src\/marker\.ts {2}\d+\.\ds$/),
+        "verified · kept the interrupted attempt's work · no further change",
+      ]);
+      expect(rows.join('\n')).not.toContain('no change needed');
+    }
 
     const patch = await endRunPatch(target, parked.sessionId);
     expect(patch).toContain(KEPT_GREET);
@@ -223,12 +309,19 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
     expect(parked.exitCode).toBe(0);
+    expect(readState(target, parked.sessionId).interruptedStep?.kept).toEqual([MARKER_FILE]);
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
     expect(resumed.stdout).toContain('task T001: done (no checks)');
     expect(invocations(target)).toBe(2);
     expect(await retries(target, parked.sessionId)).toEqual([]);
+    // The call names the file it wrote, and the file the stopped attempt left beside it, once.
+    for (const rows of await resumedRows(target, parked.sessionId)) {
+      const done = rows.findIndex((row) => /^src\/greet\.ts {2}\d+\.\ds/.test(row));
+      expect(done).toBeGreaterThan(0);
+      expect(rows[done + 1]).toBe(`kept the interrupted attempt's work · ${MARKER_FILE}`);
+    }
 
     const patch = await endRunPatch(target, parked.sessionId);
     expect(patch).toContain(KEPT_GREET);
@@ -241,6 +334,13 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
 
     const parked = await startAndSignal(target, 'SIGINT', signalDir(target, 0));
     expect(parked.exitCode).toBe(0);
+    // The stop cut the brief before it wrote a file: it kept nothing, and says so by saying nothing.
+    expect(readState(target, parked.sessionId).interruptedStep).toMatchObject({
+      step: { kind: 'brief', taskId: 'T001' },
+      cut: 'mid-step',
+    });
+    expect(readState(target, parked.sessionId).interruptedStep).not.toHaveProperty('kept');
+    expect(settledStopLead(target, parked.sessionId)).toBe('Stopped at T001');
 
     const resumed = await continueRun(target);
     expect(resumed.exitCode, resumed.stderr).toBe(0);
@@ -273,9 +373,7 @@ const CORRECTED_CALL: ImplementerCall = {
 };
 
 /** A later call writes nothing, as a seat with nothing left to do does. */
-const IDLE_CALL: ImplementerCall = {
-  report: { status: 'done', filesChanged: [], touchedNotSuggested: [], notes: null, decisions: [] },
-};
+const IDLE_CALL: ImplementerCall = { report: IDLE_REPORT };
 
 const KEEP_ANSWER = 'Yes, keep the default export';
 

@@ -24,6 +24,7 @@ import { addUsage, type UsageCategory } from './tokens.js';
 import { publishCostUpdate, publishRecoveryPrompted } from './events.js';
 import type { WorkflowPersistenceContext } from './types.js';
 import { imagesFromMessages } from './queue/prompt.js';
+import { keptBriefFiles, runCodeDir } from './kept-work.js';
 
 export const MAX_STATE_CONFLICT_RETRIES = 3;
 const DEFAULT_STATE_CONFLICT_RETRIES = 1;
@@ -654,21 +655,24 @@ export function raisePendingRecovery(
 /**
  * A stop the operator asked for parks the run at the step it picks up at, and the log holds the stop
  * as a row, not only the state. A run stopped before it had a bus still parks. A gate runs no call,
- * so a stop there cuts nothing. A park already recorded stands: leaving a run parked in place is
- * the same stop, so the state and the row stay the first stop's.
+ * so a stop there cuts nothing. A cut brief records the declared files it had changed, read from
+ * the run's code as the stop leaves it. A park already recorded stands: leaving a run parked in
+ * place is the same stop, so the state and the row stay the first stop's.
  */
-export function parkStoppedRun(
+export async function parkStoppedRun(
   scope: SessionRef & { bus?: EventBus | undefined },
   state: WorkflowState,
-): WorkflowState {
+): Promise<WorkflowState> {
   if (state.interruptedStep !== undefined) return state;
   const step = resumeStep(state);
   const cut = step.kind === 'gate' ? 'boundary' : 'mid-step';
+  const kept = await keptBriefFiles(runCodeDir(scope.projectDir, state.workspace), state, step);
   const next = transitionAndSave(scope, state, {
     type: 'INTERRUPT_STEP',
     step,
     source: 'user',
     cut,
+    kept,
   });
   scope.bus?.publish({
     type: 'turn_interrupted',

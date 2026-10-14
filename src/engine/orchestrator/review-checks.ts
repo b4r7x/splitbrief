@@ -15,6 +15,7 @@ import {
 import {
   fixCyclesOf,
   type ReviewChecksRecord,
+  type ReviewRecord,
   type WorkflowState,
 } from '../../core/schemas/workflow.js';
 import { namesListedIn } from '../../lib/fs.js';
@@ -99,7 +100,14 @@ export type ReviewChecksOptions = {
 };
 
 export type ReviewChecksOutcome =
-  | { kind: 'ran'; state: WorkflowState; section: string; discharged: string[] }
+  | {
+      kind: 'ran';
+      state: WorkflowState;
+      section: string;
+      discharged: string[];
+      /** The chosen commands that were red at the run base too, with those failures. */
+      preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
+    }
   | { kind: 'protocol-error'; state: WorkflowState; error: SeatProtocolError };
 
 async function readText(path: string): Promise<string | null> {
@@ -245,6 +253,10 @@ async function preExistingKeys(input: {
     newFailures: reason === undefined ? input.failure.keys.length - keys.length : 0,
     preExisting: keys.length,
     notVerified: reason === undefined ? undefined : input.failure.keys.length,
+    ...(reason === undefined && {
+      newKeys: input.failure.keys.filter((key) => !known.has(key)),
+      preExistingKeys: keys,
+    }),
   });
   return { keys, run: atBase.run, notVerified: reason };
 }
@@ -459,7 +471,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const notices = { bus: opts.bus, phase: state.phase };
   if (!resolveEndChecks(opts.config)) {
     publishReviewChecksPlan(notices, { scope: opts.scope, status: 'off' });
-    return { kind: 'ran', state, section: OFF_SECTION, discharged: [] };
+    return { kind: 'ran', state, section: OFF_SECTION, discharged: [], preExistingChecks: [] };
   }
 
   const npmScriptsApproved = planApprovesNpmScripts({ config: opts.config, state });
@@ -533,6 +545,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       state,
       section: skippedSection(plan, skipped, waitingLines),
       discharged: [],
+      preExistingChecks: [],
     };
   }
 
@@ -557,6 +570,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const inputs: TriageInput[] = [];
   const lines: string[] = [];
   const ranRequiredCommands = new Set<string>();
+  const preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']> = [];
   let stoppedBy: string | undefined;
   for (const chosen of plan.commands) {
     const label = `${chosen.id} \`${chosen.command}\``;
@@ -587,6 +601,9 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
       continue;
     }
     const preExisting = run.preExisting ?? [];
+    if (preExisting.length > 0) {
+      preExistingChecks.push({ id: chosen.id, command: chosen.command, keys: [...preExisting] });
+    }
     lines.push(
       notVerified === undefined
         ? `- ${label}: failed, ${fresh.length} new failure(s)${
@@ -649,5 +666,11 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
     ...waitingLines,
     ...planLines(plan),
   ].join('\n');
-  return { kind: 'ran', state, section, discharged: [...ranRequiredCommands] };
+  return {
+    kind: 'ran',
+    state,
+    section,
+    discharged: [...ranRequiredCommands],
+    preExistingChecks,
+  };
 }

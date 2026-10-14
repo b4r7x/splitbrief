@@ -53,7 +53,7 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
     // A stopped brief parks rather than asking a question: blank Enter never resumes it, and the
     // composer keeps its own meaning until /resume or a typed steer settles this promise.
     // A boundary park holds the run between briefs; the byline names the one it stopped after.
-    onContinuationNeeded: async (_partial, at) => {
+    onContinuationNeeded: async (_partial, at, kept) => {
       if (controller.signal.aborted || abortedRef.current) return plainUserMessage('');
       markWorkflowPaused();
       return new Promise<UserMessageInput>((resolve) => {
@@ -61,7 +61,7 @@ export function buildPromptCallbacks(opts: BuildCallbacksOptions): OrchestratorC
           stopStore.park('boundary', lastCompletedBriefId(), resolve);
           return;
         }
-        stopStore.park('mid-brief', runningTaskId(), resolve);
+        stopStore.park('mid-brief', runningTaskId(), resolve, kept);
       });
     },
     onTieredApproval: (request) => openApprovalPrompt(request),

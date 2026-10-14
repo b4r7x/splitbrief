@@ -205,13 +205,37 @@ describe('fullSuiteRowBlock', () => {
       width: 65,
       expected: ['Base re-run V2 · npm run test-ci · passes at the run base ', '  3m\u00a00s'],
     },
+    {
+      name: 'base re-run with its failing tests',
+      event: {
+        type: 'full_suite',
+        ts: 0,
+        phase: 'final-review',
+        moment: 'base',
+        id: 'V2',
+        command: 'npm run test-ci',
+        status: 'done',
+        passed: false,
+        newFailures: 0,
+        preExisting: 1,
+        preExistingKeys: ['legacy/report-suite.mjs::legacy report > total matches the ledger'],
+        duration: 2_000,
+      },
+      width: 65,
+      expected: [
+        'Base re-run V2 · npm run test-ci · pre-existing · 2.0s · the ',
+        "  failure also fails before this run's changes",
+        '  pre-existing · legacy/report-suite.mjs::legacy report > ',
+        '                 total matches the ledger',
+      ],
+    },
   ])('hangs the continuation under its $name', ({ event, width, expected }) => {
     const block = fullSuiteRowBlock('check', event, width);
     if (block === null) throw new Error('Expected a check block');
     const rows = block.createRows(0, block.rowCount);
 
     expect(rows.map(rowText)).toEqual(expected);
-    expect(block.createRows(1, 2).map(rowText)).toEqual(expected.slice(1));
+    expect(block.createRows(1, 2).map(rowText)).toEqual(expected.slice(1, 2));
     for (const row of rows) {
       expect(getTerminalCellWidth(rowText(row))).toBeLessThanOrEqual(
         wrapWidthFor('message', width),
@@ -278,6 +302,48 @@ describe('implementerDoneRowBlock', () => {
     expect(linesFor({ files: [], noChange: true, linesAdded: 0, linesRemoved: 0 })).toEqual([
       'src/text.js  15.4s',
       'verified · no change needed',
+    ]);
+  });
+
+  // In a real run, a brief continued after a stop verified the two files it had written before
+  // the stop. Its row named one file under the implementer's `2 files` report, as if this call
+  // had made the edits.
+  it('names every kept file when a continued call verified the work and changed nothing', () => {
+    expect(
+      linesFor({ files: [], noChange: true, kept: ['src/text.js', 'test/text.test.js'] }),
+    ).toEqual([
+      'src/text.js · test/text.test.js  15.4s',
+      "verified · kept the interrupted attempt's work · no further change",
+    ]);
+  });
+
+  it.each([false, true])(
+    'names only the kept files the continued call did not change again, expanded=%s',
+    (expanded) => {
+      const lines = linesFor(
+        {
+          files: ['src/text.js'],
+          diff: '+ added',
+          linesAdded: 1,
+          linesRemoved: 0,
+          kept: ['src/text.js', 'test/text.test.js'],
+        },
+        120,
+        expanded,
+      );
+      expect(lines[0]).toBe(`src/text.js  15.4s  +1 -0${expanded ? '' : '  ctrl+d'}`);
+      expect(lines.at(-1)).toBe("kept the interrupted attempt's work · test/text.test.js");
+      const text = lines.join('\n');
+      for (const file of ['src/text.js', 'test/text.test.js']) {
+        expect(text.split(file)).toHaveLength(2);
+      }
+    },
+  );
+
+  it('says the work was kept without a file list when the call changed every kept file', () => {
+    expect(linesFor({ files: ['src/text.js'], kept: ['src/text.js'] })).toEqual([
+      'src/text.js  15.4s',
+      "kept the interrupted attempt's work",
     ]);
   });
 

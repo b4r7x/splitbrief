@@ -444,6 +444,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ['V1', 'base', 'done', true, undefined],
         ['V2', 'pre-review', 'not-run', undefined, 'V1 failed'],
       ]);
+      const baseDone = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+      expect(baseDone).toMatchObject({ newKeys: [NEW_RED] });
+      expect(baseDone).not.toHaveProperty('preExistingKeys');
       const state = outcome.state;
       expect(state.pendingReviewCommands).toEqual(['npm test', 'npx --no-install vitest run']);
       expect(loadState(ref)?.pendingReviewCommands).toEqual(state.pendingReviewCommands);
@@ -496,12 +499,17 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
           passed: false,
           newFailures: 0,
           preExisting: 1,
+          preExistingKeys: [OLD_RED],
         }),
         expect.objectContaining({ id: 'V2', moment: 'pre-review', passed: true }),
       ]);
-      expect(
-        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
-      ).not.toHaveProperty('detail');
+      const baseDone = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+      expect(baseDone).not.toHaveProperty('detail');
+      expect(baseDone).not.toHaveProperty('newKeys');
+      expect(outcome).toMatchObject({
+        kind: 'ran',
+        preExistingChecks: [{ id: 'V1', command: 'npm test', keys: [OLD_RED] }],
+      });
       expect(outcome.state.pendingTriage).toBeUndefined();
       const logged = readEvidenceLedger(ref)?.tasks[0]?.checks ?? [];
       expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
@@ -542,6 +550,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         ['V1', 'base', 'done', 1, 1],
         ['V2', 'pre-review', 'not-run', undefined, undefined],
       ]);
+      expect(
+        rows(events).find((row) => row.moment === 'base' && row.status === 'done'),
+      ).toMatchObject({ newKeys: [NEW_RED], preExistingKeys: [OLD_RED] });
       const listing = sectionOf(outcome).split('Output tail:')[0] ?? '';
       expect(listing).toContain(
         `New failures:\n- ${NEW_RED}\nPre-existing failures (also red at the run base):\n- ${OLD_RED}`,
@@ -636,6 +647,9 @@ describe('runReviewChecks', { timeout: 60_000 }, () => {
         notVerified: 1,
         detail: 'both runs timed out',
       });
+      const baseDone = rows(events).find((row) => row.moment === 'base' && row.status === 'done');
+      expect(baseDone).not.toHaveProperty('newKeys');
+      expect(baseDone).not.toHaveProperty('preExistingKeys');
       expect(outcome.state.pendingTriage?.inputs).toEqual([
         expect.objectContaining({
           id: 'V1.1',

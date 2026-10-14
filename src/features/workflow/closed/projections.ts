@@ -3,7 +3,8 @@ import type { EvidenceLedger, EvidenceTask } from '../../../core/schemas/evidenc
 import type { Summary } from '../../../core/schemas/summary.js';
 import type { Task, TaskId } from '../../../core/schemas/task.js';
 import type { TaskTokenUsage } from '../../../core/schemas/tokens.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ReviewRecord, WorkflowState } from '../../../core/schemas/workflow.js';
+import { namedFailures } from '../../../core/review/base-split.js';
 import type {
   BriefRow,
   BriefRowState,
@@ -374,8 +375,21 @@ function briefRowState(input: {
   return 'pending';
 }
 
-/** The packet is the review of record; `summary.review` only answers for sessions written before it. */
-export function reviewView(summary: Summary): ReviewView {
+/**
+ * The packet is the review of record; `summary.review` only answers for sessions written before it.
+ * `preExistingChecks` are the reviewer checks the review's own record saw red at the run base too.
+ */
+export function reviewView(
+  summary: Summary,
+  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+): ReviewView {
+  const preExisting = preExistingChecks.map((check) => ({
+    id: sanitizeTerminalDisplayText(check.id),
+    command: sanitizeTerminalDisplayText(check.command),
+    tests: namedFailures(check.keys, check.keys.length).map((name) =>
+      sanitizeTerminalDisplayText(name),
+    ),
+  }));
   const packet = summary.reviewPacket;
   if (packet === undefined) {
     const legacy = summary.review;
@@ -386,10 +400,11 @@ export function reviewView(summary: Summary): ReviewView {
       counts: { critical: legacy.critical, warning: legacy.warnings, note: legacy.notes },
       markdownPath: '',
       evidence: {
-        validated: summary.evidenceSummary?.tasksWithValidationEvidence ?? 0,
+        validated: summary.completedByLocal,
         total: summary.evidenceSummary?.totalTasks ?? summary.totalTasks,
       },
       missingArtifacts: 0,
+      preExisting,
     };
   }
   if (packet.finalReviewStatus !== 'written') return { kind: packet.finalReviewStatus };
@@ -400,6 +415,7 @@ export function reviewView(summary: Summary): ReviewView {
     markdownPath: sanitizeTerminalDisplayText(packet.markdownPath),
     evidence: { validated: packet.evidenceValidatedTasks, total: packet.evidenceTotalTasks },
     missingArtifacts: packet.missingArtifactCount,
+    preExisting,
   };
 }
 

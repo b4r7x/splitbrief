@@ -75,7 +75,6 @@ describe('closed-run evidence ledger (integration)', () => {
       status: 'done',
       method: 'local',
     });
-    ledger.tasks[0]?.validation.push({ stage: 'test', passed: true });
     ledger = recordFinalReviewEvidence({
       ledger,
       status: 'written',
@@ -105,7 +104,6 @@ describe('closed-run evidence ledger (integration)', () => {
         evidenceSummary: {
           path: 'evidence\u001b]52;c;clipboard-ledger\u0007.json',
           totalTasks: 1,
-          tasksWithValidationEvidence: 1,
           escalatedTasks: 0,
           failedTasks: 0,
         },

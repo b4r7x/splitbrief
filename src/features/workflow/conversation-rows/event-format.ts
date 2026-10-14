@@ -1,4 +1,4 @@
-import { baseSplit } from '../../../core/review/base-split.js';
+import { baseSplit, baseSplitNames } from '../../../core/review/base-split.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { stateTone } from '../../../core/theme/state-tone.js';
 import { fixCheckVerdict } from '../../../core/review/fix-task.js';
@@ -195,6 +195,28 @@ export function fullSuiteSegments(
       ? []
       : [{ text: split.why, tone: 'textDim' as const }]),
   ]);
+}
+
+/**
+ * The failing tests a base re-run names, one row per test under the strip rather than on it, so a
+ * long test name never cuts the verdict. Each side's label leads its first test, right-aligned
+ * with the other side's label, so every test of both sides and every wrapped line hang in one
+ * column.
+ */
+export function fullSuiteNameRows(
+  event: Extract<EngineEvent, { type: 'full_suite' }>,
+): { text: string; indent: number; continuationIndent: number }[] {
+  const sides = baseSplitNames(event);
+  const labelWidth = Math.max(0, ...sides.map(({ side }) => side.length));
+  const column = 2 + labelWidth + SOFT_SEP.length;
+  return sides.flatMap(({ side, names }) => {
+    const lead = `${side}${SOFT_SEP}`;
+    return names.map((name, index) =>
+      index === 0
+        ? { text: `${lead}${name}`, indent: column - lead.length, continuationIndent: lead.length }
+        : { text: name, indent: column, continuationIndent: 0 },
+    );
+  });
 }
 
 function separatedSegments(parts: readonly ConversationRowSegment[]): ConversationRowSegment[] {

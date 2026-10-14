@@ -189,7 +189,7 @@ export async function runPtyChild(
         if (options.signal?.aborted) return summary;
         await whileAppLives(
           options,
-          Promise.resolve(options.callbacks.onContinuationNeeded?.('', cut) ?? ''),
+          Promise.resolve(options.callbacks.onContinuationNeeded?.('', cut, []) ?? ''),
         );
         return summary;
       } finally {

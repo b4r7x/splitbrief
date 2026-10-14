@@ -74,7 +74,7 @@ describe('recordCheckRuns', () => {
     expect(entry?.checks?.map((check) => check.id)).toEqual(['V1']);
   });
 
-  it('appends checks without changing terminal status, files or legacy validation', async () => {
+  it('appends checks without changing terminal status or files', async () => {
     const { projectDir, sessionId, task, state } = await setup('record-checks-only');
     const ledger = recordLocalTaskEvidence({
       ledger: createEvidenceLedger({ sessionId, feature: state.feature, tasks: [task] }),
@@ -85,7 +85,6 @@ describe('recordCheckRuns', () => {
       durationMs: 123,
       changedFiles: ['src/done.ts'],
     });
-    ledger.tasks[0]?.validation.push({ stage: 'test', passed: true });
     ledger.tasks[0]?.checks?.push({ id: 'test', ts: '2026-10-06T00:00:00.000Z' });
     writeEvidenceLedger({ projectDir, sessionId }, ledger);
 

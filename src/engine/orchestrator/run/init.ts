@@ -87,7 +87,7 @@ import { attachRunSinks } from './init-sinks.js';
 import { createPlannerSeat, createImplementerSeat } from './init-seats.js';
 import { buildSkillsContext } from './skills-context.js';
 import { resumeSeatWait } from '../escalation/seat-wait.js';
-import { runCodeDir } from './task-execution.js';
+import { runCodeDir } from '../kept-work.js';
 import { sessionDir } from '../../../core/paths.js';
 
 // TUI and headless recovery turns share their loop's signal; a restart owns a new one.

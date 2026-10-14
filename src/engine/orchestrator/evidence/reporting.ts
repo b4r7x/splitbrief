@@ -30,16 +30,12 @@ export function buildEvidenceSummary(
   ledger: EvidenceLedger,
 ): NonNullable<Summary['evidenceSummary']> {
   const totalTasks = ledger.tasks.length;
-  const tasksWithValidationEvidence = ledger.tasks.filter((t) =>
-    t.validation.some((v) => v.passed),
-  ).length;
   const escalatedTasks = ledger.tasks.filter((t) => t.status === 'escalated' || t.escalated).length;
   const failedTasks = ledger.tasks.filter((t) => t.status === 'failed').length;
   const rejectionCount = ledger.rejections?.length ?? 0;
   return {
     path: EVIDENCE_FILE,
     totalTasks,
-    tasksWithValidationEvidence,
     escalatedTasks,
     failedTasks,
     rejectionCount,

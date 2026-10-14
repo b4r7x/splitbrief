@@ -81,18 +81,18 @@ export type TranscriptWalkStep =
 // A prompt the error row before it already states opens nothing. A brief its recovery restarted
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
-// A workspace kept for Continue drops out once a close (End run, Discard or Apply) let it go.
+// A workspace kept for Continue drops out once the run continues or a close (End run, Discard or
+// Apply) lets it go; a later stop that keeps it again shows its own notice.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
   const automatic = automaticRecoveryFolds(sections);
-  const workspaceClosed = sections.some((section) =>
-    section.items.some((event) => event.type === 'workspace_closed'),
-  );
   let workspaceNotice: EngineEventOf<'warning'> | undefined;
   for (const section of sections) {
     for (const event of section.items) {
       if (event.type === 'warning' && event.code === WORKSPACE_KEPT_CODE) workspaceNotice = event;
+      if (event.type === 'workflow_resumed' || event.type === 'workspace_closed')
+        workspaceNotice = undefined;
     }
   }
   const endedAttempts = endedImplementerAttempts(sections);
@@ -145,8 +145,7 @@ export function* walkTranscript(
         seatSwitches.clear();
       if (event.type === 'seat_switched') seatSwitches.set(event.seat, event);
       if (event.type === 'warning') {
-        if (event.code === WORKSPACE_KEPT_CODE && (workspaceClosed || event !== workspaceNotice))
-          continue;
+        if (event.code === WORKSPACE_KEPT_CODE && event !== workspaceNotice) continue;
         const switched = [...seatSwitches.values()].find((switchEvent) =>
           restatesSeatSwitch(event, switchEvent),
         );

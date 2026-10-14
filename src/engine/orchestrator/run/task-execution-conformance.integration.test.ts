@@ -7,7 +7,8 @@ import { makeCopyingIsolation, makeWctx } from '#testing/helpers/orchestrator-fa
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePreparedExecution } from '#testing/helpers/factories/prepared-execution.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { runCodeDir, runTasksAndReview } from './task-execution.js';
+import { runCodeDir } from '../kept-work.js';
+import { runTasksAndReview } from './task-execution.js';
 import { initializeWorkflow } from './init.js';
 import { baselineDir, snapshotManifestPath } from '../../../core/paths.js';
 

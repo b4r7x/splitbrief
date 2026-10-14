@@ -41,10 +41,7 @@ import { createSnapshot } from '../../snapshots/create.js';
 import { reconcileWorkspaceToBase } from '../isolation/acquisition.js';
 import { error } from '../../../utils/error.js';
 import { hasBaseline } from '../../snapshots/manifest.js';
-
-export function runCodeDir(projectDir: string, workspace: WorkflowState['workspace']): string {
-  return workspace?.path ?? projectDir;
-}
+import { runCodeDir } from '../kept-work.js';
 
 export type RunTasksAndReviewOptions = {
   wctx: WorkflowContext;
@@ -95,7 +92,7 @@ async function parkAtBoundary(args: {
   // recorded and the run ends, resumable at the brief it stopped before.
   if (onContinuationNeeded === undefined) return { state, continued: false };
 
-  const steer = await onContinuationNeeded('', 'boundary');
+  const steer = await onContinuationNeeded('', 'boundary', []);
   if (wctx.signal?.aborted) return { state, continued: false };
   const resumedAt = wctx.sinks.getContinuationResumedAt?.() ?? Date.now();
   state = transitionAndSave(ref, state, { type: 'RESUME_STEP' });

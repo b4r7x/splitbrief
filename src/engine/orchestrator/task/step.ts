@@ -431,7 +431,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
   });
   if (gate.outcome === 'aborted') return state;
   if (gate.outcome === 'cancelled') {
-    state = parkStoppedRun({ projectDir, sessionId, bus: wctx.bus }, state);
+    state = await parkStoppedRun({ projectDir, sessionId, bus: wctx.bus }, state);
     setTrackedState(state);
     return state;
   }

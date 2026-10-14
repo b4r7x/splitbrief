@@ -60,7 +60,11 @@ export type ReviewView =
       markdownPath: string;
       evidence: Readonly<{ validated: number; total: number }>;
       missingArtifacts: number;
+      /** The reviewer checks the review saw red at the run base too, with their first failures. */
+      preExisting: readonly PreExistingCheckView[];
     }>;
+
+export type PreExistingCheckView = Readonly<{ id: string; command: string; tests: string[] }>;
 
 export type ScopeView =
   | Readonly<{ kind: 'not-run' }>
@@ -147,7 +151,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
       rows: rows.current,
       earlierRows: rows.earlier,
     },
-    review: reviewView(summary),
+    review: reviewView(summary, state?.review?.preExistingChecks ?? []),
     scope: scopeView(summary),
     quality: summary.briefQuality ?? null,
     files: { ...files, patch: savedPatch(state, files.changed) },

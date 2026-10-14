@@ -374,6 +374,28 @@ describe('transition', () => {
     expect(next.interruptedStep?.source).toBe('watchdog');
   });
 
+  it('INTERRUPT_STEP records the files a cut brief kept, and nothing when it kept none', () => {
+    const step = { kind: 'brief', taskId: taskId('T001'), attempt: 0 } as const;
+    const base: WorkflowState = { ...createInitialState('feat'), phase: 'implementing' };
+    const kept = transition(base, {
+      type: 'INTERRUPT_STEP',
+      step,
+      source: 'user',
+      cut: 'mid-step',
+      kept: ['src/a.ts', 'src/b.ts'],
+    });
+    expect(kept.interruptedStep?.kept).toEqual(['src/a.ts', 'src/b.ts']);
+
+    const none = transition(base, {
+      type: 'INTERRUPT_STEP',
+      step,
+      source: 'user',
+      cut: 'mid-step',
+      kept: [],
+    });
+    expect(none.interruptedStep).not.toHaveProperty('kept');
+  });
+
   it('INTERRUPT_STEP records a pause between briefs as a boundary cut', () => {
     const next = transition(
       { ...createInitialState('feat'), phase: 'implementing' },

@@ -399,7 +399,7 @@ type Summary = {
   // Quality signals
   briefQuality?: { score: number; passed: boolean; errorCount: number; warningCount: number }
   driftSummary?: { passed: boolean; errorCount: number; warningCount: number }
-  evidenceSummary?: { path: string; totalTasks: number; tasksWithValidationEvidence: number; ... }
+  evidenceSummary?: { path: string; totalTasks: number; escalatedTasks: number; ... }
   reviewPacket?: ReviewPacketSummary
   checkpointSummary?: CheckpointSummaryRollup
 }
@@ -470,6 +470,7 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
   moment: 'pre-review' | 'base' | 'brief' | 'plan'; scenario?: string;
   passed?: boolean; detail?: string; duration?: number;
   newFailures?: number; preExisting?: number; notVerified?: number;
+  newKeys?: string[]; preExistingKeys?: string[];
   own?: number; ownLeft?: number; others?: number; proven?: boolean }
 // One reviewer command run, or a judged plan or task check in a fix brief.
 // `id` names the check (V1, K1, …); an event

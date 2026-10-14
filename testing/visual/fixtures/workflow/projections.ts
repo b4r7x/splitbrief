@@ -9,6 +9,7 @@ import type { RunRecord } from '../../../../src/core/sessions/run-record.js';
 import type { Summary } from '../../../../src/core/schemas/summary.js';
 import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retained-workspace.js';
 import { closedQueueProjection } from './closed-queue-projection.js';
+import { cliStopContinuedProjection } from './cli-stop-continued.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
 import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
@@ -192,7 +193,11 @@ interface FixtureStreaming {
 export interface FixtureStopState {
   readonly intent: StopIntent;
   readonly phase: StopPhase;
-  readonly parked?: { readonly kind: StopParkKind; readonly taskId: string };
+  readonly parked?: {
+    readonly kind: StopParkKind;
+    readonly taskId: string;
+    readonly kept?: readonly string[];
+  };
 }
 
 /**
@@ -254,6 +259,7 @@ const WORKFLOW_FINAL_REVIEW_ID = scenarioId('workflow-final-review');
 const WORKFLOW_APPROVAL_CONFIRM_ID = scenarioId('workflow-approval-confirm');
 const WORKFLOW_QUESTION_ID = scenarioId('workflow-question');
 const WORKFLOW_PAUSED_MID_BRIEF_ID = scenarioId('workflow-paused-mid-brief');
+const WORKFLOW_RESUMED_KEPT_WORK_ID = scenarioId('workflow-resumed-kept-work');
 const WORKFLOW_PAUSED_BOUNDARY_ID = scenarioId('workflow-paused-boundary');
 const WORKFLOW_STOPPING_ID = scenarioId('workflow-stopping');
 const WORKFLOW_FAILURE_ID = scenarioId('workflow-failure');
@@ -1369,6 +1375,8 @@ function reviewCheck(
         newFailures?: number;
         preExisting?: number;
         notVerified?: number;
+        newKeys?: string[];
+        preExistingKeys?: string[];
         own?: number;
         ownLeft?: number;
         others?: number;
@@ -4084,8 +4092,61 @@ const pausedMidBriefProjection: WorkflowFixtureProjection = {
   stop: {
     intent: 'stop-now',
     phase: 'parked',
-    parked: { kind: 'mid-brief', taskId: WORKFLOW_FIXTURE_TASK_ID },
+    parked: {
+      kind: 'mid-brief',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      kept: [WORKFLOW_FIXTURE_REVIEW_FILE],
+    },
   },
+};
+
+const RESUMED_REPORT_TEXT = JSON.stringify({
+  status: 'done',
+  filesChanged: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+  touchedNotSuggested: [],
+  notes: null,
+  decisions: [],
+});
+
+/**
+ * A stop cut the brief after it wrote both its files; the continued call found that work complete
+ * and changed nothing more, after the implementer's own report counted the two files.
+ */
+const resumedKeptWorkProjection: WorkflowFixtureProjection = {
+  scenarioId: WORKFLOW_RESUMED_KEPT_WORK_ID,
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: true,
+  events: [
+    ...STOPPED_RUN_EVENTS,
+    {
+      type: 'turn_interrupted',
+      ts: FIXED_TS + 101,
+      phase: 'implementing',
+      source: 'user',
+      at: 'mid-step',
+      step: { kind: 'brief', taskId: WORKFLOW_FIXTURE_TASK_ID, attempt: 0 },
+    },
+    { type: 'workflow_resumed', ts: FIXED_TS + 30_000, phase: 'implementing' },
+    {
+      type: 'planner_text',
+      ts: FIXED_TS + 30_400,
+      phase: 'implementing',
+      role: 'implementer',
+      text: RESUMED_REPORT_TEXT,
+    },
+    {
+      type: 'implementer_generate_done',
+      ts: FIXED_TS + 30_500,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      file: WORKFLOW_FIXTURE_REVIEW_FILE,
+      files: [],
+      duration: 1_200,
+      noChange: true,
+      kept: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+    },
+  ],
 };
 
 const pausedBoundaryProjection: WorkflowFixtureProjection = {
@@ -4900,6 +4961,11 @@ const reviewBaseRerunProjection: WorkflowFixtureProjection = {
       duration: 13_000,
       newFailures: 0,
       preExisting: 3,
+      preExistingKeys: [
+        'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.',
+        'src/legacy.ts(9,3): error TS2554: Expected 2 arguments, but got 1.',
+        'src/report.ts(14,5): error TS2339: Property total does not exist on type Ledger.',
+      ],
     }),
     reviewCheck(FIXED_TS + 1_500, BASE_RERUN_TEST, {
       status: 'done',
@@ -4946,6 +5012,13 @@ const reviewBaseMixedProjection: WorkflowFixtureProjection = {
       duration: 13_000,
       newFailures: 2,
       preExisting: 1,
+      newKeys: [
+        'src/a.ts(1,14): error TS2322: Type number is not assignable to type string.',
+        'src/b.ts(4,2): error TS2304: Cannot find name total.',
+      ],
+      preExistingKeys: [
+        'src/legacy.ts(3,7): error TS2322: Type number is not assignable to type string.',
+      ],
     }),
     reviewCheck(FIXED_TS + 1_300, BASE_RERUN_TEST, { status: 'not-run', detail: 'V1 failed' }),
   ],
@@ -5495,6 +5568,7 @@ const projections = [
     },
   },
   pausedMidBriefProjection,
+  resumedKeptWorkProjection,
   pausedBoundaryProjection,
   stoppingProjection,
   failureProjection,
@@ -5560,6 +5634,7 @@ export const workflowFixtureProjections: ReadonlyMap<ScenarioId, WorkflowFixture
       ...projections,
       spentB2ReplayProjection,
       retainedWorkspaceProjection,
+      cliStopContinuedProjection,
       closedQueueProjection,
       ...atRestProjections,
     ].map((projection) => [projection.scenarioId, projection]),
@@ -5634,7 +5709,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
   const oversized = projectionStrings(projection).find(
     // The answered card's flat text joins its bounded qa pairs; it is not independent content.
     // Nor is a halt the engine composed around the tool's own bounded words, or the plan card's
-    // plan.md and plan.json, which the plan formatter and the plan schema write whole.
+    // plan.md and plan.json, which the plan formatter and the plan schema write whole, or the
+    // implementer's JSON report, which the transcript reads as one summary line.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -5643,6 +5719,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== planCardSharedCommandProjection.review?.source &&
       value !== planCardSharedCommandProjection.review?.planJson &&
       value !== ANSWERED_QUESTIONS_TEXT &&
+      value !== RESUMED_REPORT_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&

@@ -6,6 +6,7 @@ import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import { wrapHard } from '../../../utils/wrap.js';
 import {
   formatTaskStartedParts,
+  fullSuiteNameRows,
   fullSuiteSegments,
   fullSuiteTone,
   reviewChecksDeclinedRows,
@@ -547,6 +548,27 @@ describe('fullSuiteRow for a reviewer check', () => {
     );
     expect(fullSuiteTone(allOld)).toBe('warning');
     expect(fullSuiteTone(mixed)).toBe('error');
+  });
+
+  it('names the failing tests of each side under the strip and counts the rest', () => {
+    const base = reviewCheck({ moment: 'base', status: 'done', passed: false, duration: 2_000 });
+    const mixed = {
+      ...base,
+      newFailures: 1,
+      preExisting: 5,
+      newKeys: ['src/ledger.test.ts'],
+      preExistingKeys: ['a.test.ts::one', 'a.test.ts::two', 'b.test.ts::three'],
+    };
+
+    expect(fullSuiteRow(mixed)).toBe('Base re-run V1 · npm test · 1 new, 5 pre-existing · 2.0s');
+    expect(fullSuiteNameRows(mixed)).toEqual([
+      { text: 'new · src/ledger.test.ts', indent: 11, continuationIndent: 6 },
+      { text: 'pre-existing · a.test.ts::one', indent: 2, continuationIndent: 15 },
+      { text: 'a.test.ts::two', indent: 17, continuationIndent: 0 },
+      { text: 'b.test.ts::three', indent: 17, continuationIndent: 0 },
+      { text: '+2\u00a0more', indent: 17, continuationIndent: 0 },
+    ]);
+    expect(fullSuiteNameRows({ ...base, newFailures: 0, preExisting: 2 })).toEqual([]);
   });
 
   // A red the run base cannot verify as the same failure is neither new nor pre-existing.

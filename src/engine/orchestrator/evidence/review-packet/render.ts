@@ -9,6 +9,7 @@ import {
   formatSeatCandidateIdentity,
   formatSeatIdentity,
 } from '../../../../core/crew/identity.js';
+import { checksSummary } from '../../../../core/validation/checks-summary.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
 import { labelSeatChange } from '../../../providers/model/display-names.js';
 import { NULL_CACHE } from '../../../providers/model/resolution.js';
@@ -220,14 +221,9 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     ...switchLines,
   ];
   if (recoveryLines.length === 0) recoveryLines.push('- No recovery decisions recorded.');
-  const taskValidationLines = packet.validation.tasks.map((task) => {
-    const passed = task.validation.filter((entry) => entry.passed).length;
-    const exempt = task.validation.filter((entry) => entry.baselineExempt === true);
-    const base = `- ${task.taskId} ${task.status}: ${passed}/${task.validation.length} validation stages passed`;
-    if (exempt.length === 0) return base;
-    const stages = exempt.map((entry) => entry.stage).join(', ');
-    return `${base} (${exempt.length} baseline-exempt: ${stages})`;
-  });
+  const taskValidationLines = packet.validation.tasks.map(
+    (task) => `- ${task.taskId} ${task.status}: ${checksSummary(task.checks)}`,
+  );
 
   return [
     '# Review Packet',

@@ -605,7 +605,7 @@ describe('InputFooter', () => {
     terminalSizeStore.__testReset({ cols: 120, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ status: 'paused', phase: 'implementing' });
     stopStore.request('stop-now');
-    stopStore.park('mid-brief', 'T002', null);
+    stopStore.park('mid-brief', 'T002', null, ['src/a.ts']);
 
     const ui = renderFeature(<InputFooter />);
     const frame = stripAnsiStyles(ui.lastFrame() ?? '');

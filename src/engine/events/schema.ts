@@ -622,6 +622,11 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     duration: z.number(),
     /** An allowed no-change attempt that verified its brief and changed nothing. */
     noChange: z.literal(true).optional(),
+    /**
+     * The declared files an interrupted attempt of this brief left, which this call continued on.
+     * Absent on every other call, and on a log written before the field.
+     */
+    kept: z.array(z.string()).optional(),
   }),
   phaseEvent('implementer_generate_failed').extend({
     taskId: TaskIdSchema,
@@ -698,6 +703,12 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
     newFailures: z.number().int().nonnegative().optional(),
     preExisting: z.number().int().nonnegative().optional(),
     notVerified: z.number().int().nonnegative().optional(),
+    /**
+     * On base done events with a verified split, the first failing tests that are new and those
+     * also red at the run base (`BASE_SPLIT_NAMED` per side); the counts above say how many more.
+     */
+    newKeys: z.array(z.string()).optional(),
+    preExistingKeys: z.array(z.string()).optional(),
     /** On fix check done events: carried failures, those still present, and other re-run failures. */
     own: z.number().int().nonnegative().optional(),
     ownLeft: z.number().int().nonnegative().optional(),

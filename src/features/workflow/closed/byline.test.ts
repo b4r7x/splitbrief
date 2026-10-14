@@ -91,6 +91,7 @@ describe('bylineText', () => {
         markdownPath: 'review-packet.md',
         evidence: { validated: 3, total: 3 },
         missingArtifacts: 0,
+        preExisting: [],
       },
       scope: { kind: 'checked', passed: false, errors: 1, warnings: 1 },
     });

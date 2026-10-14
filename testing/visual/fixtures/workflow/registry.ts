@@ -49,7 +49,7 @@ function applyStop(stop: FixtureStopState): void {
     intent: stop.intent,
     phase: stop.phase,
     requestedAt: Date.now(),
-    parked: stop.parked === undefined ? null : { ...stop.parked, resolve: null },
+    parked: stop.parked === undefined ? null : { kept: [], ...stop.parked, resolve: null },
   });
   if (stop.phase === 'parked') markWorkflowPaused();
 }
@@ -447,6 +447,15 @@ const checkpointPredicates = [
   ],
   [checkpointId('complete-after-fix-tasks'), includesAll('4/4 briefs passed')],
   [checkpointId('review-fix-no-change'), includesAll('no change needed')],
+  [
+    checkpointId('resumed-kept-work'),
+    // At 60 columns the verdict wraps before "further change".
+    includesTranscript(
+      'Report  done · 2 files',
+      "verified · kept the interrupted attempt's work",
+      'further change',
+    ),
+  ],
   [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
     checkpointId('review-render-running'),
@@ -527,7 +536,10 @@ const checkpointPredicates = [
   [checkpointId('consult-answer-typed'), includesAll('Which store?', 'You → redis')],
   [checkpointId('decision-question'), includesAll('Did you ask for greet')],
   [checkpointId('decision-guidance'), includesAll('guidance', 'Yes, keep the default export')],
-  [checkpointId('paused-mid-brief'), includesAll('⏎ resume', 'Stopped at T')],
+  [
+    checkpointId('paused-mid-brief'),
+    includesAll('⏎ resume', 'Stopped at T', 'Partial changes kept'),
+  ],
   [checkpointId('paused-boundary'), includesAll('briefs complete', 'before T902')],
   [checkpointId('stopping'), includesAll('esc back after stop')],
   // A run at rest carries its own name: the marker is the session the record names, which the
@@ -553,12 +565,23 @@ const checkpointPredicates = [
   [checkpointId('at-rest-crashed-build'), includesAll('interrupted', 'Stopped at T002')],
   [checkpointId('at-rest-crashed-review'), includesAll('interrupted', 'Stopped at the review')],
   [checkpointId('retained-workspace'), includesAll('Workspace kept')],
+  [
+    checkpointId('cli-stop-continued'),
+    (context) => {
+      const text = workflowTranscriptText();
+      return (
+        includesTranscript('interrupted')(context) &&
+        !/Workspace kept|user-abort|\berr\b/i.test(text)
+      );
+    },
+  ],
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],
+  [checkpointId('closed-pre-existing'), includesAll('V2 pre-existing')],
   [checkpointId('closed-undone'), includesAll('Apply undone')],
   [checkpointId('closed-undo-conflicts'), includesAll('1 conflict kept')],
   [checkpointId('closed-discarded'), includesAll()],
@@ -697,8 +720,22 @@ const checkpointPredicates = [
       'Review · OpenAI Codex CLI',
     ),
   ],
-  [checkpointId('review-base-rerun'), includesAll('Base re-run', 'src/legacy.test.ts')],
-  [checkpointId('review-base-mixed'), includesAll('2\u00a0new,', 'V1 failed')],
+  [
+    checkpointId('review-base-rerun'),
+    (context) =>
+      includesAll('Base re-run', 'src/legacy.test.ts')(context) &&
+      includesTranscript('pre-existing · src/legacy.ts(3,7)', 'src/report.ts(14,5)')(context),
+  ],
+  [
+    checkpointId('review-base-mixed'),
+    includesTranscript(
+      '2\u00a0new,',
+      'V1 failed',
+      'new · src/a.ts(1,14)',
+      'src/b.ts(4,2)',
+      'pre-existing · src/legacy.ts(3,7)',
+    ),
+  ],
   [checkpointId('fix-check-running'), includesAll('Fix check V2 · npm test')],
   [
     checkpointId('fix-check-stopped-continued'),

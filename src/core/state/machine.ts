@@ -573,6 +573,7 @@ export function transition(
           source: action.source,
           cut: action.cut,
           ...(action.partialRef ? { partialRef: action.partialRef } : {}),
+          ...(action.kept !== undefined && action.kept.length > 0 && { kept: [...action.kept] }),
           at: now.toISOString(),
         },
         awaitingContinue: true,

@@ -903,7 +903,7 @@ describe.each(ADMITTED_IMPLEMENTER_IDS)('%s admitted implementer staged contract
       controller.abort();
       const aborted = await invokePromise;
       expect(aborted.status).toBe('aborted');
-      expect(aborted.error?.code).toBe('user-abort');
+      expect(aborted.error?.code).toBe('runner_interrupted');
       await vi.waitFor(() => expect(processIsAbsent(descendantPid)).toBe(true), {
         timeout: 1_100,
         interval: 10,

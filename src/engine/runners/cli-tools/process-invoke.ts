@@ -717,7 +717,7 @@ export async function invokeProcessCli(
         credentialValues,
         status,
         error: {
-          code: status === 'timeout' ? 'timeout' : 'user-abort',
+          code: status === 'timeout' ? 'timeout' : 'runner_interrupted',
           message: status === 'timeout' ? 'CLI invocation timed out' : 'CLI invocation was aborted',
         },
       });

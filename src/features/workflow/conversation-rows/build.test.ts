@@ -29,6 +29,7 @@ import { buildConversationRowsProjection } from './build.js';
 import { buildConversationRowActions } from './row-actions.js';
 import { EngineEventSchema } from '../../../engine/events/schema.js';
 import { materializeConversationRowsWindow } from './materialize-window.js';
+import { computeConversationRowsWindowFromProjection } from './scroll.js';
 import { wrappedTextBlock } from './row-block-compose.js';
 import { rowText } from './row-format/rows.js';
 import { wrapWidthFor } from './row-markers.js';
@@ -689,6 +690,53 @@ describe('buildConversationRows', () => {
       streaming,
     });
     expect(settled.activeTaskHeaderKey).toBeNull();
+  });
+
+  it('moves the live mark from a batch a stop cut back to its brief once the run continues', () => {
+    const buildActivity = (overrides: Partial<EngineEventOf<'runner_call_activity'>>) =>
+      activity({
+        role: 'implementer',
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        ...overrides,
+      });
+    const resumed: EngineEvent = { type: 'workflow_resumed', ts: 2_000, phase: 'implementing' };
+    const sections = groupEventsIntoSections([
+      makeTaskStart(),
+      buildActivity({ label: 'tool Read', target: 'src/greet.ts' }),
+      buildActivity({
+        stage: 'aborted',
+        kind: 'error',
+        label: 'aborted runner_interrupted',
+        diagnosticPartial: 'CLI invocation was aborted',
+      }),
+      resumed,
+    ]);
+    const projection = buildConversationRowsProjection({
+      sections,
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 100,
+      viewportHeight: 20,
+      streaming,
+    });
+    const rows = materializeConversationRowsWindow({
+      projection,
+      windowStart: 0,
+      windowEnd: projection.totalRows,
+    });
+    const batch = rows.find((row) => row.kind === 'activity');
+    expect(batch?.interrupted).toBe(true);
+    const { activeRowKey } = computeConversationRowsWindowFromProjection({
+      projection,
+      viewportHeight: 20,
+      rawScrollOffset: 0,
+      renderableCountAtScroll: 0,
+      heightAtScroll: 0,
+    });
+    expect(activeRowKey).not.toBe(batch?.key);
+    expect(activeRowKey).toBe(projection.activeTaskHeaderKey);
+    expect(activeRowKey).not.toBeNull();
   });
 
   it('retains the target label once above the crew after a started brief is skipped', () => {

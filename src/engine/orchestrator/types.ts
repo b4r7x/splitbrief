@@ -42,10 +42,12 @@ export interface OrchestratorCallbacks {
   /**
    * Parks the run until the operator continues it, resolving with their steer.
    * `at` says what they are looking at: a call cut in flight, or a run held
-   * between two briefs.
+   * between two briefs. `kept` names the declared files a cut brief had already
+   * changed; it is empty for a boundary, a step that is no brief, or a brief that
+   * changed nothing yet.
    */
   onContinuationNeeded?:
-    | ((partialResponse: string, at: StepCut) => Promise<UserMessageInput>)
+    | ((partialResponse: string, at: StepCut, kept: readonly string[]) => Promise<UserMessageInput>)
     | undefined;
   onTieredApproval?:
     | ((request: TieredApprovalRequest) => Promise<TieredApprovalResponse>)

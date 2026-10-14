@@ -17,7 +17,14 @@ export function implementerDoneFilesBlock(
   width: number,
   expanded: boolean,
 ): ConversationRowBlock | null {
-  const files = event.files !== undefined && event.files.length > 0 ? event.files : [event.file];
+  // A call that changed nothing names the files it was given: the kept ones an interrupted attempt
+  // left, else the brief's first file.
+  const files =
+    event.files !== undefined && event.files.length > 0
+      ? event.files
+      : event.kept !== undefined && event.kept.length > 0
+        ? event.kept
+        : [event.file];
   const kind = expanded ? 'card-top' : 'message';
   const budget = wrapWidthFor(kind, width);
   const chunks: ConversationRowSegment[][] = [];
