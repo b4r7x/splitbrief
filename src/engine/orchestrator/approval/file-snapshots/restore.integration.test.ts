@@ -254,6 +254,40 @@ describe('restoreDirtyFilesFromSnapshot', () => {
     },
   );
 
+  itUnix('puts back a committed symlink the task retargeted, removed or replaced', async () => {
+    const dir = createTempDir('snapshot-restore-committed-link');
+    createTestGitRepo(dir, { 'real.txt': 'real\n', 'other.txt': 'other\n' });
+    try {
+      for (const link of ['retargeted', 'removed', 'replaced']) {
+        symlinkSync('real.txt', join(dir, link));
+      }
+      execSync('git add -A && git commit -q -m links', { cwd: dir, stdio: 'pipe' });
+      const snapshot = await getChangedFilesSnapshot(dir);
+      rmSync(join(dir, 'retargeted'));
+      symlinkSync('other.txt', join(dir, 'retargeted'));
+      rmSync(join(dir, 'removed'));
+      rmSync(join(dir, 'replaced'));
+      writeFileSync(join(dir, 'replaced'), 'task\n');
+
+      const result = await restoreDirtyFilesFromSnapshot(dir, snapshot, [
+        'removed',
+        'replaced',
+        'retargeted',
+      ]);
+
+      expect(result).toEqual({
+        restoredFiles: ['removed', 'replaced', 'retargeted'],
+        conflictedFiles: [],
+        removedPaths: [],
+      });
+      for (const link of ['retargeted', 'removed', 'replaced']) {
+        expect(readlinkSync(join(dir, link)), link).toBe('real.txt');
+      }
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
   itUnix('keeps an edit made over a recorded symlink during approval as a conflict', async () => {
     const dir = createTempDir('snapshot-restore-link-conflict');
     createTestGitRepo(dir, { 'real.txt': 'real\n' });

@@ -2,7 +2,11 @@ import type { CliImplementerConfig } from '../../core/schemas/implementer-config
 import type { CliExecutableIdentity } from '../../core/discovery/detection.js';
 import type { OutputFormat } from '../../core/schemas/enums.js';
 import type { Implementer, ImplementerFactoryOptions, InvokeOpts } from './types.js';
-import { createChangeDetector } from '../change-detection.js';
+import {
+  captureChangeDetectorBaseline,
+  createChangeDetector,
+  summarizeChanges,
+} from '../change-detection.js';
 import { createImplementerBase } from './pipeline/run.js';
 import { processError } from '../../lib/process/errors.js';
 import { invokeCliAdapter, toCliEnvironment } from '../runners/invoke-cli-adapter.js';
@@ -18,14 +22,6 @@ import { withCliInvocationIdentity } from '../runners/invocation-identity.js';
 import { lookupCliImplementerAdapter } from '../runners/cli-tools/registry.js';
 import type { CliImplementerAdapter } from '../runners/cli-tools/contract.js';
 import type { RunnerCallResult } from '../calls/types.js';
-import {
-  captureChangeDetectorBaseline,
-  hashFiles,
-  type ChangeDetectorBaseline,
-} from '../change-detection.js';
-import { collectTrackedFiles } from '../snapshots/files.js';
-import { getCurrentChangedFiles } from '../../lib/git/files.js';
-import { isInternalGitStatusPath } from '../../core/paths.js';
 import type { Task } from '../../core/schemas/task.js';
 import { undeclaredFiles } from '../../core/scope/declared-set.js';
 import { stderrUsageLimit } from '../runners/usage-limit.js';
@@ -39,40 +35,6 @@ const isCliExecutableUnavailable = matches('cli-executable-unavailable');
 
 function cliNotFoundMessage(displayName: string, installUrl: string): string {
   return `${displayName} not found. Install it from ${installUrl}`;
-}
-
-/**
- * The files the child changed since the baseline. Git-status diffs drop
- * internal sandbox/state paths, matching the isolation retention scan, and the
- * declared files are judged by content so a file that was already dirty before
- * the call still counts as changed; the file-hashes branch re-walks the project
- * so files created or deleted since the baseline count as changes, mirroring
- * the shared detector.
- */
-async function changedFilesSince(
-  projectDir: string,
-  baseline: ChangeDetectorBaseline,
-  declared: { files: readonly string[]; hashes: Record<string, string | null> },
-): Promise<string[]> {
-  if (baseline.kind === 'git-status') {
-    const current = (await getCurrentChangedFiles(projectDir)).filter(
-      (file) => !isInternalGitStatusPath(file),
-    );
-    const beforeSet = new Set(baseline.files);
-    const declaredSet = new Set(declared.files);
-    const others = current.filter((file) => !beforeSet.has(file) && !declaredSet.has(file));
-    const after = await hashFiles(projectDir, [...declared.files]);
-    const changedDeclared = declared.files.filter(
-      (file) => (after[file] ?? null) !== declared.hashes[file],
-    );
-    return [...changedDeclared, ...others];
-  }
-  const files = await collectTrackedFiles(projectDir, {
-    ignoreProjectDir: baseline.ignoreProjectDir,
-  });
-  const after = await hashFiles(projectDir, files);
-  const candidates = new Set([...Object.keys(baseline.hashes), ...files]);
-  return [...candidates].filter((file) => baseline.hashes[file] !== after[file]);
 }
 
 /**
@@ -178,8 +140,6 @@ export function createCliImplementer(
         kind: opts.changeDetection,
         ignoreProjectDir: opts.checkoutDir,
       });
-      const declaredPaths = [...opts.task.suggestedFiles];
-      const declaredHashes = await hashFiles(projectDir, declaredPaths);
       const boundary =
         opts.checkoutDir === undefined
           ? undefined
@@ -268,13 +228,9 @@ export function createCliImplementer(
           });
         }
         if (result.status === 'completed') {
-          const changed = await changedFilesSince(projectDir, effectBaseline, {
-            files: declaredPaths,
-            hashes: declaredHashes,
-          });
           return assertDeclaredEffect({
             result,
-            changed,
+            changed: (await summarizeChanges(projectDir, effectBaseline)).files,
             task: opts.task,
             label: runnerLabel,
             undeclaredWrites: opts.undeclaredWrites ?? 'gate',

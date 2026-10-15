@@ -899,6 +899,42 @@ describe('createCliImplementer (exact-effect gate fixtures)', () => {
     expect(readFileSync(join(projectDir, 'notes.md'), 'utf8')).toBe('edited by the call');
   });
 
+  it.each(['git-status', 'file-hashes'] as const)(
+    'counts a call that only makes the declared file executable on the %s path',
+    async (changeDetection) => {
+      mkdirSync(join(projectDir, 'src'), { recursive: true });
+      writeFileSync(join(projectDir, 'src/hello.ts'), 'original', 'utf8');
+      chmodSync(join(projectDir, 'src/hello.ts'), 0o644);
+      const shimPath = join(shimDir, 'claude');
+      writeFileSync(
+        shimPath,
+        [
+          '#!/bin/bash',
+          'cat > /dev/null',
+          'chmod 755 src/hello.ts',
+          `printf '%s\\n' '{"type":"result","result":"done"}'`,
+          '',
+        ].join('\n'),
+        'utf8',
+      );
+      chmodSync(shimPath, 0o755);
+
+      const implementer = createCliImplementer(cliClaudeImplementer);
+      const result = await implementer.implement({
+        task: makeTask(),
+        projectDir,
+        config: makeClaudeConfig(),
+        context: { ...defaultContext, dir: projectDir },
+        onOutput: () => {},
+        changeDetection,
+        undeclaredWrites: 'reject',
+      });
+
+      expect(result.outcome).not.toBe('no-staged-change');
+      expect(result.success).toBe(true);
+    },
+  );
+
   it('passes on the git-status path when the child writes to its sandbox home beside the declared file', async () => {
     const target = join(projectDir, 'src/hello.ts');
     const sandboxHomeFile = join(

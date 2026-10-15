@@ -1,7 +1,7 @@
 import type { ChangedFilesSnapshot } from '../../../../core/schemas/workflow.js';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { readFileEntryAtRef } from '../../../../lib/git/refs.js';
+import { readEntryAtRef } from '../../../../lib/git/refs.js';
 import { sha256Hex } from '../../../../utils/sha256.js';
 import { error } from '../../../../utils/error.js';
 import { isPathConfinementError, readCurrentFileContent } from './contents.js';
@@ -10,6 +10,7 @@ import {
   sameFileEntry,
   writeConfinedEntry,
   writeConfinedSymlink,
+  type ChangeEntry,
   type FileSnapshotEntry,
 } from './entry.js';
 import type { FileContentSnapshot, RestoreChangedFilesResult } from './types.js';
@@ -27,7 +28,9 @@ export async function entryToRestore(
   snapshot: ChangedFilesSnapshot,
   file: string,
   store: string | undefined,
-): Promise<FileSnapshotEntry> {
+): Promise<ChangeEntry> {
+  const link = snapshot.symlinks?.[file];
+  if (link !== undefined) return { kind: 'symlink', target: link };
   if (snapshot.baselineFileModes !== undefined) {
     const hash = snapshot.baselineFileHashes?.[file];
     if (hash == null) return { kind: 'absent' };
@@ -58,14 +61,11 @@ export async function entryToRestore(
       mode: current.kind === 'file' ? current.mode : 0o644,
     };
   }
-  const committed = await readFileEntryAtRef(projectDir, snapshot.head, file);
-  return committed === null
-    ? { kind: 'absent' }
-    : {
-        kind: 'file',
-        ...committed,
-        sha256: sha256Hex(committed.bytes),
-      };
+  const committed = await readEntryAtRef(projectDir, snapshot.head, file);
+  if (committed === null) return { kind: 'absent' };
+  return committed.kind === 'symlink'
+    ? committed
+    : { ...committed, sha256: sha256Hex(committed.bytes) };
 }
 
 export async function restoreDirtyFilesFromSnapshot(
@@ -104,15 +104,14 @@ export async function restoreDirtyFilesFromSnapshot(
       }
     };
     try {
-      const link = snapshot.symlinks?.[file];
-      if (link !== undefined) {
-        // A project symlink is recorded by its target; the entry reads refuse links.
+      const entry = await entryToRestore(projectDir, snapshot, file, store);
+      if (entry.kind === 'symlink') {
+        // The entry reads refuse links, so a link is put back by its target.
         await assertUnchanged();
-        await writeConfinedSymlink(projectDir, file, link);
+        await writeConfinedSymlink(projectDir, file, entry.target);
       } else {
         // Reject unsafe paths even when the stored entry is absent.
         await readConfinedEntry(projectDir, file);
-        const entry = await entryToRestore(projectDir, snapshot, file, store);
         await writeConfinedEntry(projectDir, file, entry, assertUnchanged);
         if (entry.kind === 'absent') removedPaths.push(file);
       }

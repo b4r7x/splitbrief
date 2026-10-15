@@ -119,3 +119,34 @@ describe('review changes confinement', () => {
     expect(readError).toBeDefined();
   });
 });
+
+describe('review change entries', () => {
+  it('round-trips a symlink side by its target without a digest', () => {
+    const { ref, change } = fixture();
+    const link: ReviewChange = {
+      ...change,
+      path: 'docs/readme.md',
+      after: { symlink: '../README.md' },
+    };
+    appendReviewChanges(ref, [change, link]);
+    expect(readReviewChanges(ref)?.changes).toEqual([change, link]);
+  });
+
+  it('still reads a file-only artifact and refuses an empty link target', () => {
+    const { ref, path, change } = fixture();
+    writeFileSync(
+      path,
+      JSON.stringify({ version: 1, sessionId: ref.sessionId, changes: [change] }),
+    );
+    expect(readReviewChanges(ref)?.changes).toEqual([change]);
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        sessionId: ref.sessionId,
+        changes: [{ ...change, after: { symlink: '' } }],
+      }),
+    );
+    expect(() => readReviewChanges(ref)).toThrow();
+  });
+});

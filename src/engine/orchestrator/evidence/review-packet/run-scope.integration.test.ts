@@ -1,4 +1,4 @@
-import { writeFileSync } from 'node:fs';
+import { rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -70,5 +70,40 @@ describe('resolveRunReviewScope with Apply-merged paths', () => {
     expect(diff).toContain('+export const checkoutFix = true;');
     expect(mergedScope.laterDiff).toBe('');
     expect(mergedScope.provenance.uncertainFiles).toEqual([]);
+  });
+});
+
+describe('resolveRunReviewScope with symlinks', () => {
+  it('records a link the run created as a run effect and a later retarget as a later edit', async () => {
+    const p = project();
+    const taskStartSnapshot = await getChangedFilesSnapshot(p.projectDir);
+    symlinkSync('mixed.ts', join(p.projectDir, 'src/link.ts'));
+    await captureTaskReviewChanges({
+      ref: p.ref,
+      workspaceDir: p.projectDir,
+      task: p.task,
+      taskStartSnapshot,
+    });
+    const base = {
+      ref: p.ref,
+      workspaceDir: p.projectDir,
+      tasks: [p.task],
+      workspaceFiles: ['src/link.ts'],
+      workspaceDiff: '',
+      preRunFiles: [],
+    };
+
+    const created = await resolveRunReviewScope(base);
+    expect(created.provenance.promotedFiles).toEqual(['src/link.ts']);
+    expect(created.provenance.uncertainFiles).toEqual([]);
+    expect(created.files[0]?.diff).toContain('new file mode 120000');
+    expect(created.laterDiff).toBe('');
+
+    rmSync(join(p.projectDir, 'src/link.ts'));
+    symlinkSync('../init.txt', join(p.projectDir, 'src/link.ts'));
+    const retargeted = await resolveRunReviewScope(base);
+    expect(retargeted.provenance.uncertainFiles).toEqual(['src/link.ts']);
+    expect(retargeted.laterDiff).toContain('-mixed.ts');
+    expect(retargeted.laterDiff).toContain('+../init.txt');
   });
 });

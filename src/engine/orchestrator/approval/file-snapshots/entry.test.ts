@@ -16,9 +16,11 @@ import {
   captureAcquisitionBaseline,
   entriesMatch,
   matchesAcquisitionBaseline,
+  readChangeEntry,
   readConfinedEntry,
   linkStaysInProject,
   readProjectSymlink,
+  sameChangeEntry,
   sameFileEntry,
   writeConfinedEntry,
   writeConfinedSymlink,
@@ -380,4 +382,37 @@ describe('confined file snapshot entries', () => {
       }
     },
   );
+
+  itUnix('reads a change entry with a link by its target, never through it', async () => {
+    const dir = createTempDir('change-entry');
+    try {
+      writeFileSync(join(dir, 'run.sh'), '#!/bin/sh\n');
+      chmodSync(join(dir, 'run.sh'), 0o755);
+      symlinkSync('run.sh', join(dir, 'live'));
+      symlinkSync('missing.txt', join(dir, 'dangling'));
+
+      expect(await readChangeEntry(dir, 'live')).toEqual({ kind: 'symlink', target: 'run.sh' });
+      expect(await readChangeEntry(dir, 'dangling')).toEqual({
+        kind: 'symlink',
+        target: 'missing.txt',
+      });
+      expect(await readChangeEntry(dir, 'run.sh')).toEqual(
+        fileEntry(Buffer.from('#!/bin/sh\n'), 0o755),
+      );
+      expect(await readChangeEntry(dir, 'absent.txt')).toEqual({ kind: 'absent' });
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('compares change entries by link target, kind, bytes and mode', () => {
+    const bytes = Buffer.from('same\n');
+    const link = { kind: 'symlink', target: 'a.txt' } as const;
+    expect(sameChangeEntry(link, { kind: 'symlink', target: 'a.txt' })).toBe(true);
+    expect(sameChangeEntry(link, { kind: 'symlink', target: 'b.txt' })).toBe(false);
+    expect(sameChangeEntry(link, fileEntry(Buffer.from('a.txt'), 0o644))).toBe(false);
+    expect(sameChangeEntry({ kind: 'absent' }, link)).toBe(false);
+    expect(sameChangeEntry(fileEntry(bytes, 0o644), fileEntry(bytes, 0o755))).toBe(false);
+    expect(sameChangeEntry(fileEntry(bytes, 0o644), fileEntry(bytes, 0o644))).toBe(true);
+  });
 });

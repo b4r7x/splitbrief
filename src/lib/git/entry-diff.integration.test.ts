@@ -33,4 +33,40 @@ describe('diffFileEntries', () => {
       }),
     ).rejects.toMatchObject({ kind: 'path-confined-escape' });
   });
+
+  it('diffs a symlink by its target: create, retarget, delete and a file it replaced', async () => {
+    const file = { bytes: Buffer.from('readme\n'), mode: 0o644 };
+    const created = await diffFileEntries({
+      path: 'docs/readme.md',
+      before: null,
+      after: { target: '../README.md' },
+    });
+    expect(created).toContain('new file mode 120000');
+    expect(created).toContain('+../README.md');
+    const retargeted = await diffFileEntries({
+      path: 'docs/readme.md',
+      before: { target: '../README.md' },
+      after: { target: '../CHANGELOG.md' },
+    });
+    expect(retargeted).toMatch(/^index [0-9a-f]+\.\.[0-9a-f]+ 120000$/m);
+    expect(retargeted).toContain('-../README.md');
+    expect(retargeted).toContain('+../CHANGELOG.md');
+    const deleted = await diffFileEntries({
+      path: 'docs/readme.md',
+      before: { target: '../README.md' },
+      after: null,
+    });
+    expect(deleted).toContain('deleted file mode 120000');
+    const replaced = await diffFileEntries({
+      path: 'docs/readme.md',
+      before: file,
+      after: { target: '../README.md' },
+    });
+    expect(replaced).toContain('deleted file mode 100644');
+    expect(replaced).toContain('new file mode 120000');
+    expect(replaced.match(/^diff --git .*$/gm)).toEqual([
+      'diff --git "a/docs/readme.md" "b/docs/readme.md"',
+      'diff --git "a/docs/readme.md" "b/docs/readme.md"',
+    ]);
+  });
 });

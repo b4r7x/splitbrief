@@ -13,9 +13,10 @@ import { readManifest } from '../../snapshots/manifest.js';
 import {
   type AcquisitionBaseline,
   captureAcquisitionBaseline,
-  type ConfinedEntry,
+  type ChangeEntry,
+  linkStaysInProject,
+  readChangeEntry,
   readConfinedEntry,
-  readConfinedEntryOrLink,
 } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
 
@@ -49,10 +50,10 @@ export async function readBaseBytes(path: string, entry: BaseEntry): Promise<Buf
 }
 
 async function normalizeWorkspaceEntry(
-  entry: ConfinedEntry,
+  entry: ChangeEntry,
   path: string,
   base: ReadonlyMap<string, BaseEntry>,
-): Promise<ConfinedEntry> {
+): Promise<ChangeEntry> {
   if (path !== '.gitignore' || entry.kind !== 'file') return entry;
   const baseEntry = base.get(path) ?? { kind: 'absent' };
   const baseBytes = await readBaseBytes(path, baseEntry);
@@ -283,10 +284,14 @@ export function unsafeEntryError(cause: unknown): boolean {
 }
 
 /** The entry at `path`: a file, nothing, or a project symlink; null for any other entry. */
-export async function readApplyEntry(dir: string, path: string): Promise<ConfinedEntry | null> {
+export async function readApplyEntry(dir: string, path: string): Promise<ChangeEntry | null> {
   assertPathConfined(path, dir);
   try {
-    return await readConfinedEntryOrLink(dir, path);
+    const entry = await readChangeEntry(dir, path);
+    if (entry.kind === 'symlink' && !(await linkStaysInProject(dir, path, entry.target))) {
+      return null;
+    }
+    return entry;
   } catch (cause) {
     if (isENOENT(cause)) return { kind: 'absent' };
     if (unsafeEntryError(cause)) return null;
@@ -296,7 +301,7 @@ export async function readApplyEntry(dir: string, path: string): Promise<Confine
 
 export async function readSideEntry(
   input: SideReadInput,
-): Promise<Extract<ConfinedEntry, { kind: 'file' }>> {
+): Promise<Extract<ChangeEntry, { kind: 'file' }>> {
   const { states, path, side } = input;
   const dir = side === 'ours' ? states.workspaceDir : states.projectDir;
   const observed = await readApplyEntry(dir, path);

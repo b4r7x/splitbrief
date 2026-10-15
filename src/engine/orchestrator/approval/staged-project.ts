@@ -12,6 +12,7 @@ import { isGitRepo } from '../../../lib/git/repository.js';
 import {
   assertPathConfined,
   assertWritablePathConfined,
+  pathConfinementError,
   reachesControlPlane,
 } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
@@ -24,9 +25,10 @@ import { readCurrentFileContent } from './file-snapshots/contents.js';
 import {
   type AcquisitionBaseline,
   captureAcquisitionBaseline,
-  type ConfinedEntry,
+  type ChangeEntry,
+  linkStaysInProject,
   matchesAcquisitionBaseline,
-  readConfinedEntryOrLink,
+  readChangeEntry,
   readProjectSymlink,
   sameFileEntry,
   writeConfinedEntryOrLink,
@@ -206,9 +208,15 @@ async function entryToPromote(opts: {
   targetProjectDir: string;
   stagedProjectDir: string;
   file: string;
-}): Promise<ConfinedEntry> {
+}): Promise<ChangeEntry> {
   const { targetProjectDir, stagedProjectDir, file } = opts;
-  const staged = await readConfinedEntryOrLink(stagedProjectDir, file);
+  const staged = await readChangeEntry(stagedProjectDir, file);
+  if (
+    staged.kind === 'symlink' &&
+    !(await linkStaysInProject(stagedProjectDir, file, staged.target))
+  ) {
+    throw pathConfinementError.symlinkRead(join(stagedProjectDir, file));
+  }
   if (file !== GITIGNORE_FILE || staged.kind !== 'file') return staged;
   // The .gitignore is the only promoted file whose bytes are decoded: it keeps
   // its bookkeeping strip; every other file is carried byte for byte with its
@@ -234,7 +242,7 @@ async function targetHoldsStagedEntry(opts: {
   file: string;
 }): Promise<boolean> {
   const staged = await entryToPromote(opts);
-  const current = await readConfinedEntryOrLink(opts.targetProjectDir, opts.file);
+  const current = await readChangeEntry(opts.targetProjectDir, opts.file);
   if (staged.kind === 'symlink')
     return current.kind === 'symlink' && current.target === staged.target;
   return current.kind !== 'symlink' && sameFileEntry(current, staged);

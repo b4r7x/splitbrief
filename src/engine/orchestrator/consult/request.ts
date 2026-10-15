@@ -19,7 +19,7 @@ import type { Planner } from '../../planners/types.js';
 import type { Reviewer } from '../../reviewers/types.js';
 import type { RequestTypedResult, SeatProtocolError } from '../../runners/typed-output.js';
 import { buildConsultPrompt, type ConsultPromptInput } from '../../spec/prompts/consult.js';
-import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { readChangeEntry } from '../approval/file-snapshots/entry.js';
 import { entryToRestore } from '../approval/file-snapshots/restore.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { entryStoreDir } from '../isolation/entry-snapshot.js';
@@ -120,11 +120,11 @@ async function attemptFileDiff(
 ): Promise<string> {
   try {
     const before = await entryToRestore(projectDir, snapshot, file, entryStoreDir(ref));
-    const after = await readConfinedEntry(projectDir, file);
+    const after = await readChangeEntry(projectDir, file);
     return await diffFileEntries({
       path: file,
-      before: before.kind === 'file' ? { bytes: before.bytes, mode: before.mode } : null,
-      after: after.kind === 'file' ? { bytes: after.bytes, mode: after.mode } : null,
+      before: before.kind === 'absent' ? null : before,
+      after: after.kind === 'absent' ? null : after,
     });
   } catch {
     // The diff is context for the answer; a file that cannot be read must not stop the call.

@@ -94,20 +94,24 @@ export async function readFileModeAtHead(dir: string, file: string): Promise<num
   return row === undefined ? null : Number.parseInt(row.slice(0, 6), 8);
 }
 
-/** Read restoration material without checking out or modifying any index. */
-export async function readFileEntryAtRef(
+/** Read restoration material without checking out or modifying any index; a symlink by its target. */
+export async function readEntryAtRef(
   dir: string,
   ref: string,
   file: string,
-): Promise<{ bytes: Buffer; mode: number } | null> {
+): Promise<
+  { kind: 'file'; bytes: Buffer; mode: number } | { kind: 'symlink'; target: string } | null
+> {
   if (ref === GIT_EMPTY_TREE_HASH) return null;
   const row = await readTreeEntryAtRef(dir, ref, file);
   if (row === undefined) return null;
-  const match = /^(100644|100755) blob ([a-f0-9]+)\t/.exec(row);
+  const match = /^(100644|100755|120000) blob ([a-f0-9]+)\t/.exec(row);
   if (match === null || match[1] === undefined || match[2] === undefined) {
     throw gitError.commandFailed('ls-tree', `Cannot restore nonregular file: ${file}`);
   }
   const object = match[2];
   const bytes = await runGit('show', () => getGitForDir(dir).showBuffer([object]));
-  return { bytes, mode: Number.parseInt(match[1], 8) & 0o777 };
+  return match[1] === '120000'
+    ? { kind: 'symlink', target: bytes.toString('utf8') }
+    : { kind: 'file', bytes, mode: Number.parseInt(match[1], 8) & 0o777 };
 }

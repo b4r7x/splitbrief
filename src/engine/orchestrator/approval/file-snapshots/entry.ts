@@ -33,8 +33,8 @@ export type FileSnapshotEntry =
 
 type ConfinedFileEntry = Extract<FileSnapshotEntry, { kind: 'file' }>;
 
-/** A snapshot entry, or a symlink that stays inside its project. */
-export type ConfinedEntry = FileSnapshotEntry | { kind: 'symlink'; target: string };
+/** An entry as a change record holds it: a symlink by its target, the way git records it. */
+export type ChangeEntry = FileSnapshotEntry | { kind: 'symlink'; target: string };
 
 function assertRegularEntry(fullPath: string, stat: Stats): void {
   if (!stat.isFile()) {
@@ -83,15 +83,17 @@ export async function readConfinedEntry(
   return { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: observed.mode };
 }
 
-/** A project symlink by its target; any other entry as `readConfinedEntry` reads it. */
-export async function readConfinedEntryOrLink(
+/** The confined entry, a symlink by its target and never read through. */
+export async function readChangeEntry(
   projectDir: string,
   relativePath: string,
-): Promise<ConfinedEntry> {
-  const target = await readProjectSymlink(projectDir, relativePath);
-  return target === null
-    ? readConfinedEntry(projectDir, relativePath)
-    : { kind: 'symlink', target };
+): Promise<ChangeEntry> {
+  const entry = await lstatConfinedEntry(projectDir, relativePath);
+  if (entry?.stat.isSymbolicLink()) {
+    assertExistingPathConfined(dirname(relativePath), projectDir);
+    return { kind: 'symlink', target: await readlink(entry.fullPath) };
+  }
+  return readConfinedEntry(projectDir, relativePath);
 }
 
 // Where the kernel lands `path` once its missing directories exist: name by
@@ -133,7 +135,7 @@ async function nameLanding(path: string, links: { left: number }): Promise<strin
  * so it names the same place in the worktree and the staged copy; and that the
  * kernel lands inside the root and outside the control plane, following every
  * link on the way, dangling or not.
- * Null for any other entry; the entry reads above refuse those links.
+ * Null for any other entry; `readConfinedEntry` refuses every link.
  */
 export async function readProjectSymlink(
   projectDir: string,
@@ -220,6 +222,13 @@ export async function matchesAcquisitionBaseline(
 export function sameFileEntry(a: FileSnapshotEntry, b: FileSnapshotEntry): boolean {
   if (a.kind === 'absent' || b.kind === 'absent') return a.kind === b.kind;
   return a.sha256 === b.sha256 && (a.mode & 0o777) === (b.mode & 0o777);
+}
+
+export function sameChangeEntry(a: ChangeEntry, b: ChangeEntry): boolean {
+  if (a.kind === 'symlink' || b.kind === 'symlink') {
+    return a.kind === 'symlink' && b.kind === 'symlink' && a.target === b.target;
+  }
+  return sameFileEntry(a, b);
 }
 
 /**
@@ -352,7 +361,7 @@ export async function writeConfinedSymlink(
 export async function writeConfinedEntryOrLink(
   projectDir: string,
   relativePath: string,
-  entry: ConfinedEntry,
+  entry: ChangeEntry,
   beforeWrite?: () => Promise<void>,
 ): Promise<void> {
   if (entry.kind === 'symlink') {

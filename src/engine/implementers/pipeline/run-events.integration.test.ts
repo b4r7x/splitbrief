@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, writeFileSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createImplementerBase } from './run.js';
 import type { ImplementerPublisher } from '../types.js';
@@ -168,6 +168,40 @@ describe('createImplementerBase — bus events', () => {
           events.find((event) => event.type === 'implementer_generate_done'),
         ).not.toHaveProperty('linesAdded');
       }
+    },
+  );
+
+  it.each(['git-status', 'file-hashes'] as const)(
+    'publishes a mode-only change and a new symlink from a %s baseline',
+    async (changeDetection) => {
+      chmodSync(join(projectDir, 'init.txt'), 0o644);
+      const events: PublisherEvent[] = [];
+      const implementer = createImplementerBase(
+        makeBaseConfig({
+          extractsCode: false,
+          detectChanges: createChangeDetector('Direct implementer'),
+          publisher: makePublisher(events),
+          invoke: async () => {
+            chmodSync(join(projectDir, 'init.txt'), 0o755);
+            symlinkSync('init.txt', join(projectDir, 'readme.md'));
+            return makeRunnerCallResult({ status: 'completed', text: 'done' });
+          },
+        }),
+      );
+      const result = await implementer.implement({
+        task: makeTask({ suggestedFiles: ['init.txt'] }),
+        projectDir,
+        changeDetection,
+        config: makeConfig(),
+        context: defaultContext,
+        onOutput: () => {},
+        phase: 'implementing',
+      });
+
+      expect(result.success).toBe(true);
+      expect(events.find((event) => event.type === 'implementer_generate_done')).toMatchObject({
+        files: ['init.txt', 'readme.md'],
+      });
     },
   );
 

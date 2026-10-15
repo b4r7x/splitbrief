@@ -17,10 +17,10 @@ import type {
   PersistedChangedFilesBaseline,
 } from '../../core/schemas/workflow.js';
 import { readProjectSymlink } from './approval/file-snapshots/entry.js';
+import { listWorkspaceEntries } from '../snapshots/files.js';
 import { getChangedFilesSinceSnapshot } from './approval/file-snapshots/capture.js';
 import { recordedTargetOutput } from './evidence/task.js';
 import type { SessionRef } from '../../core/types/session-ref.js';
-import { listWorkspaceEntries } from './isolation/entry-snapshot.js';
 import { gitignoreDiffersOnlyBySplitbriefBookkeeping } from '../../core/gitignore-bookkeeping.js';
 
 export type ChangedFilesBaseline = {
@@ -85,7 +85,7 @@ async function captureHead(projectDir: string): Promise<string | null> {
 }
 
 async function candidateChangedFiles(projectDir: string, head: string | null): Promise<string[]> {
-  if (!existsSync(join(projectDir, '.git'))) return listWorkspaceEntries(projectDir, projectDir);
+  if (!existsSync(join(projectDir, '.git'))) return listWorkspaceEntries(projectDir);
   const base = await resolveRunStartBase({ projectDir, head });
   const working = userVisibleChangedFiles(await getCurrentChangedFiles(projectDir));
   const committed =

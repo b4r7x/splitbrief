@@ -64,7 +64,11 @@ export function readReviewChanges(ref: SessionRef): ReviewChanges | null {
   for (const change of result.changes) {
     if (change.kind !== 'captured') continue;
     for (const entry of [change.before, change.after]) {
-      if (entry !== null && sha256Hex(Buffer.from(entry.base64, 'base64')) !== entry.sha256) {
+      if (
+        entry !== null &&
+        'base64' in entry &&
+        sha256Hex(Buffer.from(entry.base64, 'base64')) !== entry.sha256
+      ) {
         throw error('review-changes-invalid', 'Review change bytes do not match their digest.');
       }
     }

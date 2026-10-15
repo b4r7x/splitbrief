@@ -10,7 +10,7 @@ import { diffFileEntries } from '../../../../lib/git/entry-diff.js';
 import { splitDiffByFile } from '../../../../lib/git/diff-sections.js';
 import { uniqueSorted } from '../../../../utils/collections.js';
 import { hashTaskBrief } from '../../../../core/evidence/brief-hash.js';
-import { readConfinedEntry } from '../../approval/file-snapshots/entry.js';
+import { readChangeEntry } from '../../approval/file-snapshots/entry.js';
 
 export type RunReviewFile = { path: string; taskIds: string[]; diff: string };
 
@@ -25,8 +25,12 @@ export type RunReviewScope = {
   provenance: ReviewProvenance;
 };
 
-function bytes(entry: ReviewFileEntry): { bytes: Buffer; mode: number } | null {
-  return entry === null ? null : { bytes: Buffer.from(entry.base64, 'base64'), mode: entry.mode };
+function diffEntry(
+  entry: ReviewFileEntry,
+): { bytes: Buffer; mode: number } | { target: string } | null {
+  if (entry === null) return null;
+  if ('symlink' in entry) return { target: entry.symlink };
+  return { bytes: Buffer.from(entry.base64, 'base64'), mode: entry.mode };
 }
 
 export async function resolveRunReviewScope(opts: {
@@ -87,8 +91,8 @@ export async function resolveRunReviewScope(opts: {
         override ??
         (await diffFileEntries({
           path,
-          before: bytes(change.before),
-          after: bytes(change.after),
+          before: diffEntry(change.before),
+          after: diffEntry(change.after),
         }));
       if (diff !== '') {
         files.push({ path, taskIds: [...change.taskIds], diff });
@@ -101,21 +105,23 @@ export async function resolveRunReviewScope(opts: {
   for (const [path, expected] of lastOutputs) {
     if (mergedPaths.has(path)) continue;
     try {
-      const current = await readConfinedEntry(opts.workspaceDir, path);
+      const current = await readChangeEntry(opts.workspaceDir, path);
       const matches =
         expected === null
           ? current.kind === 'absent'
-          : current.kind === 'file' &&
-            current.sha256 === expected.sha256 &&
-            (current.mode & 0o777) === expected.mode;
+          : 'symlink' in expected
+            ? current.kind === 'symlink' && current.target === expected.symlink
+            : current.kind === 'file' &&
+              current.sha256 === expected.sha256 &&
+              (current.mode & 0o777) === expected.mode;
       if (!matches) {
         uncertainFiles.add(path);
         if (promotedFiles.has(path)) {
           laterDiffs.push(
             await diffFileEntries({
               path,
-              before: bytes(expected),
-              after: current.kind === 'file' ? current : null,
+              before: diffEntry(expected),
+              after: current.kind === 'absent' ? null : current,
             }),
           );
         }

@@ -2,11 +2,14 @@ import { z } from 'zod';
 import { TaskIdSchema } from './task.js';
 
 const ReviewFileEntrySchema = z
-  .object({
-    base64: z.string(),
-    sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    mode: z.number().int().min(0).max(0o777),
-  })
+  .union([
+    z.object({
+      base64: z.string(),
+      sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      mode: z.number().int().min(0).max(0o777),
+    }),
+    z.object({ symlink: z.string().min(1) }),
+  ])
   .nullable();
 export type ReviewFileEntry = z.infer<typeof ReviewFileEntrySchema>;
 
