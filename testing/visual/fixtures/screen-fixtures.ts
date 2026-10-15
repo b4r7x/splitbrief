@@ -20,6 +20,7 @@ import { terminalSizeStore } from '../../../src/stores/ui/terminal-size.js';
 import { resetWorkflow } from '../../../src/stores/workflow/actions/reset.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../src/core/readiness/types.js';
 import { buildIsolationChecks } from '../../../src/core/readiness/checks/isolation.js';
+import { buildRepoChecks } from '../../../src/core/readiness/checks/repo.js';
 import { selectNextAction } from '../../../src/core/readiness/status.js';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import type { PreparationOutcome } from '../../../src/engine/runners/prepared-execution.js';
@@ -718,6 +719,32 @@ function createHomePreparationFailedFixture(): FixtureLifecycle {
   };
 }
 
+function createHomePreparationCheckoutWarningFixture(): FixtureLifecycle {
+  const home = createHomeFixture();
+  return {
+    setup: async (context) => {
+      await home.setup(context);
+      submitSettledCheck({
+        kind: 'failed',
+        report: preparationReport(
+          buildRepoChecks(
+            {
+              isGitRepo: true,
+              hasCommits: true,
+              dirtyFiles: ['src/app.ts'],
+              untrackedFiles: ['scratch.txt'],
+            },
+            'none',
+          ),
+          { section: { id: 'repo', title: 'Repository' } },
+        ),
+        error: new Error('Session ownership could not be taken over.'),
+      });
+    },
+    teardown: home.teardown,
+  };
+}
+
 function createHomePreparationBlockedFixture(): FixtureLifecycle {
   const home = createHomeFixture();
   return {
@@ -1023,6 +1050,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   ],
   [scenarioId('home-preparing'), createHomePreparingFixture],
   [scenarioId('home-preparation-failed'), createHomePreparationFailedFixture],
+  [scenarioId('home-preparation-checkout-warning'), createHomePreparationCheckoutWarningFixture],
   [scenarioId('home-preparation-blocked'), createHomePreparationBlockedFixture],
   [scenarioId('home-preparation-isolation-blocked'), createHomePreparationIsolationBlockedFixture],
   [scenarioId('home-skills-completion'), createSkillsCompletionFixture],

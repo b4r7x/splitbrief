@@ -1,5 +1,5 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -16,6 +16,13 @@ import { enqueueUserMessage } from '../queue/submit.js';
 import { clearPendingQueue } from '../queue/clear.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { CORRECTION_AFTER_CHECKS, runBriefGate } from './brief-gate.js';
+import { captureWorkspaceSnapshot } from '../isolation/entry-snapshot.js';
+import { restoreAttemptFiles } from './rollback.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
+import { createHookSink } from '../../hooks/sink.js';
+import * as hookProcess from '../../../lib/process/spawn/progress.js';
 
 const FILES = {
   'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
@@ -24,6 +31,7 @@ const FILES = {
 
 const dirs: string[] = [];
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
@@ -34,6 +42,179 @@ function setup() {
 }
 
 describe('brief gate', () => {
+  it.each(['check', 'format', 'pre_validation'] as const)(
+    'records output from %s in both restore scopes before returning',
+    async (stage) => {
+      const ref = setup();
+      const trustHome = useTrustHome('validation-restore');
+      try {
+        writeFileSync(join(ref.projectDir, 'source.txt'), 'before attempt\n');
+        writeFileSync(
+          join(ref.projectDir, 'validation-hook.mjs'),
+          "import { writeFileSync } from 'node:fs';\nwriteFileSync('generated.txt', 'hook output');\n",
+        );
+        const hooks: HooksConfig = {};
+        if (stage === 'pre_validation') {
+          hooks[stage] = [
+            {
+              kind: 'command',
+              command: 'node',
+              args: ['validation-hook.mjs'],
+              timeout_ms: 30_000,
+              on_failure: 'block',
+            },
+          ];
+        }
+        markHooksConfigTrusted(ref.projectDir, hooks);
+        const task = makeTask({
+          suggestedFiles: ['source.txt'],
+          checks: [{ id: 'check', kind: 'cmd', value: 'node --version', required: true }],
+        });
+        const taskStartSnapshot = {
+          ...(await captureWorkspaceSnapshot(ref.projectDir, ref)),
+          restoreFiles: ['source.txt'],
+        };
+        const attemptSnapshot = {
+          ...(await captureWorkspaceSnapshot(ref.projectDir, ref)),
+          restoreFiles: ['source.txt'],
+        };
+        const state = {
+          ...makeImplState([task]),
+          changedFilesBaseline: {
+            head: taskStartSnapshot.head,
+            fingerprints: {},
+            activeTaskSnapshot: taskStartSnapshot,
+          },
+        };
+        saveState(ref, state);
+        writeFileSync(join(ref.projectDir, 'source.txt'), 'attempt edit\n');
+        const { bus } = makeBusRecorder();
+        bus.subscribe(createHookSink(hooks, () => ({ ...ref, workspaceDir: ref.projectDir }), bus));
+        const wctx = makeWctx({
+          ...ref,
+          bus,
+          config: makeNoValidationConfig({
+            hooks,
+            workflow: { isolation: 'none', review: 'task' },
+          }),
+          validator: {
+            formatChangedFiles: async () => {
+              if (stage === 'format')
+                writeFileSync(join(ref.projectDir, 'generated.txt'), 'format output');
+            },
+          },
+        });
+
+        const result = await runBriefGate({
+          wctx,
+          state,
+          task,
+          changedFiles: ['source.txt'],
+          taskStartSnapshot,
+          attemptSnapshot,
+          runCommand: async () => {
+            if (stage === 'check')
+              writeFileSync(join(ref.projectDir, 'generated.txt'), 'check output');
+            throw processError.exitCode({ command: 'node', code: 1, stderr: 'check failed' });
+          },
+        });
+
+        expect(result.acceptance.accepted).toBe(false);
+        expect(existsSync(join(ref.projectDir, 'generated.txt'))).toBe(true);
+        expect(taskStartSnapshot.restoreFiles).toContain('generated.txt');
+        expect(attemptSnapshot.restoreFiles).toContain('generated.txt');
+        expect(loadState(ref)?.changedFilesBaseline?.activeTaskSnapshot?.restoreFiles).toContain(
+          'generated.txt',
+        );
+        writeFileSync(join(ref.projectDir, 'user.txt'), 'user notes\n');
+        await restoreAttemptFiles({ wctx, phase: result.state.phase, attemptSnapshot });
+        expect(existsSync(join(ref.projectDir, 'generated.txt'))).toBe(false);
+        expect(readFileSync(join(ref.projectDir, 'source.txt'), 'utf8')).toBe('before attempt\n');
+        expect(readFileSync(join(ref.projectDir, 'user.txt'), 'utf8')).toBe('user notes\n');
+      } finally {
+        trustHome.restore();
+      }
+    },
+  );
+
+  it('returns after Stop while a post-validation hook runs and preserves its output on rollback', async () => {
+    const ref = setup();
+    const trustHome = useTrustHome('post-validation-output');
+    const hookFinished = Promise.withResolvers<void>();
+    const hooks: HooksConfig = {
+      post_validation: [
+        {
+          kind: 'command',
+          command: 'node',
+          args: ['--version'],
+          timeout_ms: 300_000,
+          on_failure: 'warn',
+        },
+      ],
+    };
+    markHooksConfigTrusted(ref.projectDir, hooks);
+    const spawnHook = vi.spyOn(hookProcess, 'spawnWithTimeout').mockImplementation(async () => {
+      writeFileSync(join(ref.projectDir, 'hook-output.txt'), 'user hook output\n');
+      await hookFinished.promise;
+      return { output: '', stderr: '', code: 0, timedOut: false };
+    });
+    const snapshot = {
+      ...(await captureWorkspaceSnapshot(ref.projectDir, ref)),
+      restoreFiles: ['attempt.txt'],
+    };
+    const task = makeTask({
+      checks: [{ id: 'check', kind: 'cmd', value: 'node --version', required: true }],
+    });
+    const state = {
+      ...makeImplState([task]),
+      changedFilesBaseline: { head: snapshot.head, fingerprints: {}, activeTaskSnapshot: snapshot },
+    };
+    saveState(ref, state);
+    writeFileSync(join(ref.projectDir, 'attempt.txt'), 'attempt output\n');
+    const { bus } = makeBusRecorder();
+    bus.subscribe(createHookSink(hooks, () => ({ ...ref, workspaceDir: ref.projectDir }), bus));
+    const controller = new AbortController();
+    const wctx = makeWctx({
+      ...ref,
+      bus,
+      signal: controller.signal,
+      config: makeNoValidationConfig({ hooks, workflow: { isolation: 'none', review: 'task' } }),
+    });
+    let returned = false;
+    const gated = runBriefGate({
+      wctx,
+      state,
+      task,
+      changedFiles: ['attempt.txt'],
+      taskStartSnapshot: snapshot,
+      attemptSnapshot: snapshot,
+      runCommand: async () => {
+        throw processError.exitCode({ command: 'node', code: 1, stderr: 'check failed' });
+      },
+    }).then((result) => {
+      returned = true;
+      return result;
+    });
+    try {
+      await vi.waitFor(() => expect(spawnHook).toHaveBeenCalledOnce());
+      controller.abort();
+      await vi.waitFor(() => expect(returned).toBe(true));
+      const result = await gated;
+      await restoreAttemptFiles({ wctx, phase: result.state.phase, attemptSnapshot: snapshot });
+      expect(existsSync(join(ref.projectDir, 'attempt.txt'))).toBe(false);
+      expect(readFileSync(join(ref.projectDir, 'hook-output.txt'), 'utf8')).toBe(
+        'user hook output\n',
+      );
+      expect(loadState(ref)?.changedFilesBaseline?.activeTaskSnapshot?.restoreFiles).not.toContain(
+        'hook-output.txt',
+      );
+    } finally {
+      hookFinished.resolve();
+      await gated;
+      trustHome.restore();
+    }
+  });
+
   it.each([
     { name: 'green checks with a pending message', green: true, queued: true },
     { name: 'green checks without a message', green: true, queued: false },

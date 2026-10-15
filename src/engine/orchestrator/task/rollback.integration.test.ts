@@ -38,6 +38,8 @@ describe('restoreInterruptedTaskFiles', () => {
     const taskStartSnapshot = await getChangedFilesSnapshot(workspaceDir);
     writeFileSync(join(workspaceDir, 'a.ts'), 'export const a = 3;\n');
     writeFileSync(join(workspaceDir, 'c.ts'), 'unfinished task\n');
+    writeFileSync(join(workspaceDir, 'd.ts'), 'unplanned attempt write\n');
+    taskStartSnapshot.restoreFiles = ['a.ts', 'c.ts', 'd.ts'];
     const task = makeTask({ id: 'T002', suggestedFiles: ['a.ts'] });
     const sessionId = 'interrupted-rollback';
     ensureSessionDir(projectDir, sessionId);
@@ -62,6 +64,7 @@ describe('restoreInterruptedTaskFiles', () => {
 
     expect(readFileSync(join(workspaceDir, 'a.ts'), 'utf8')).toBe('export const a = 2;\n');
     expect(existsSync(join(workspaceDir, 'c.ts'))).toBe(false);
+    expect(existsSync(join(workspaceDir, 'd.ts'))).toBe(false);
     expect(readFileSync(join(workspaceDir, 'b.ts'), 'utf8')).toBe('earlier task\n');
     expect(readFileSync(join(projectDir, 'a.ts'), 'utf8')).toBe('export const a = 1;\n');
     expect(readFileSync(join(projectDir, 'operator.txt'), 'utf8')).toBe('checkout edit\n');
@@ -70,7 +73,7 @@ describe('restoreInterruptedTaskFiles', () => {
     expect(existsSync(join(workspaceDir, '.splitbrief'))).toBe(false);
     expect(events.filter((event) => event.type === 'warning')).toEqual([
       expect.objectContaining({
-        message: 'Restored 2 unfinished change(s) from the interrupted T002: a.ts, c.ts',
+        message: 'Restored 3 unfinished change(s) from the interrupted T002: a.ts, c.ts, d.ts',
       }),
     ]);
   });
@@ -98,7 +101,7 @@ describe('restoreAttemptFiles', () => {
     await restoreAttemptFiles({
       wctx: { projectDir: dir, workspaceDir: dir, sessionId: 'attempt-rollback', bus },
       phase: 'escalating',
-      attemptSnapshot,
+      attemptSnapshot: { ...attemptSnapshot, restoreFiles: ['a.ts', 'c.ts'] },
     });
 
     // a.ts goes back to what it held after T001, c.ts is removed, and the

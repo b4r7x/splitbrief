@@ -1,5 +1,5 @@
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { TaskCompletionMethod } from '../../../core/schemas/enums.js';
 import { validateCommitAndAdvance } from '../task/commit.js';
 import { runBriefGate } from '../task/brief-gate.js';
@@ -14,6 +14,7 @@ export type ValidateAndCommitOptions = {
   retryCount: number;
   commitSuffix?: string | undefined;
   preApprovedChangedFiles: string[];
+  attemptSnapshot: ChangedFilesSnapshot;
 };
 
 export async function validateAndCommit(opts: ValidateAndCommitOptions) {
@@ -34,6 +35,7 @@ export async function validateAndCommit(opts: ValidateAndCommitOptions) {
     state,
     changedFiles: preApprovedChangedFiles,
     taskStartSnapshot: ctx.taskStartSnapshot,
+    attemptSnapshot: opts.attemptSnapshot,
   });
   state = gated.state;
   const { acceptance } = gated;

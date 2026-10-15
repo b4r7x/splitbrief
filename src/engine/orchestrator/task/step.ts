@@ -530,6 +530,7 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       task,
       changedFiles: taskChangedFiles,
       taskStartSnapshot,
+      attemptSnapshot: implState.workspace.snapshot,
       setTrackedState,
     });
   } catch (err) {

@@ -1,9 +1,9 @@
 import { fixCheckKeys, fixReviewChecks, judgeFixCheck } from '../../../core/review/fix-task.js';
 import type { Task } from '../../../core/schemas/task.js';
-import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { ChangedFilesSnapshot, WorkflowState } from '../../../core/schemas/workflow.js';
 import type { WorkflowContext } from '../types.js';
 import { planCheckRow, publishChecksRun, publishReviewCheck, unranCheckRow } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { runBaseOf } from '../isolation/base-tree.js';
 import { runReviewCheck } from '../review-checks.js';
 import {
@@ -15,6 +15,7 @@ import {
 } from '../validation/run-checks.js';
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { recordCheckRuns } from '../evidence/record-checks.js';
+import { withAttemptRestoreScope } from './restore-scope.js';
 
 export type TaskChecksResult = Readonly<{
   state: WorkflowState;
@@ -73,13 +74,33 @@ export async function runTaskChecks(opts: {
   state: WorkflowState;
   task: Task;
   checkIds: readonly string[];
+  taskStartSnapshot?: ChangedFilesSnapshot | null | undefined;
+  attemptSnapshot?: ChangedFilesSnapshot | undefined;
   runCommand?: ValidationCommandRunner | undefined;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
 }): Promise<TaskChecksResult> {
+  if (opts.checkIds.length === 0) return { state: opts.state, runs: [], settled: new Set() };
+  const checked = await withAttemptRestoreScope({
+    ref: opts.wctx,
+    dir: opts.wctx.workspaceDir,
+    taskStartSnapshot: opts.taskStartSnapshot ?? null,
+    attemptSnapshot: opts.attemptSnapshot,
+    run: () => runTaskCheckCommands(opts),
+  });
+  const state = await recordTaskCheckRuns({
+    ...opts,
+    ...checked,
+    state: rebaseOnPersistedWorkflowState(opts.wctx, checked.state, { keepUnsaved: true }),
+  });
+  return { ...checked, state };
+}
+
+async function runTaskCheckCommands(
+  opts: Parameters<typeof runTaskChecks>[0],
+): Promise<TaskChecksResult> {
   const { wctx, task } = opts;
   let state = opts.state;
   const settled = new Set<string>();
-  if (opts.checkIds.length === 0) return { state, runs: [], settled };
   const checkOptions = taskCheckOptions(opts);
   const carried = fixCheckKeys(task);
   const reviewCommands = new Map(
@@ -147,14 +168,6 @@ export async function runTaskChecks(opts: {
       commands: [...new Set([...(state.pendingReviewCommands ?? []), ...ranReviewCommands])],
     });
   }
-  state = await recordTaskCheckRuns({
-    wctx,
-    state,
-    task,
-    runs,
-    settled,
-    setTrackedState: opts.setTrackedState,
-  });
   return { state, runs, settled };
 }
 

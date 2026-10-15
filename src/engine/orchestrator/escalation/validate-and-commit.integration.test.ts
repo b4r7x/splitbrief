@@ -111,6 +111,7 @@ describe('validateAndCommit', () => {
 
     const result = await validateAndCommit({
       ctx: { ...ctx, bus },
+      attemptSnapshot: ctx.taskStartSnapshot,
       task,
       state,
       method: 'local',
@@ -155,6 +156,7 @@ describe('validateAndCommit', () => {
 
     const result = await validateAndCommit({
       ctx: { ...ctx, bus },
+      attemptSnapshot: ctx.taskStartSnapshot,
       task,
       state,
       method: 'local',
@@ -187,6 +189,7 @@ describe('validateAndCommit', () => {
         validator,
         signal: controller.signal,
       }),
+      attemptSnapshot: await getChangedFilesSnapshot(projectDir),
       task,
       state: makeImplState([task]),
       method: 'local',
@@ -220,6 +223,7 @@ describe('validateAndCommit', () => {
 
     const result = await validateAndCommit({
       ctx: await makeValidateCtx({ projectDir, sessionId, validator }),
+      attemptSnapshot: await getChangedFilesSnapshot(projectDir),
       task,
       state: makeImplState([task]),
       method: 'local',

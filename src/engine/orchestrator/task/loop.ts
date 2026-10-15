@@ -241,6 +241,10 @@ export async function runTaskLoop(opts: RunTaskLoopOptions): Promise<TaskLoopRes
         for (const file of files) taskAcceptedFiles.add(file);
       },
     });
+    const activeTaskSnapshot = state.changedFilesBaseline?.activeTaskSnapshot;
+    if (activeTaskSnapshot !== undefined) {
+      changedFilesBaseline = withActiveTaskSnapshot(changedFilesBaseline, activeTaskSnapshot);
+    }
     const completedTask = state.tasks[i];
     changedFilesBaseline = await absorbAcceptedFiles({
       projectDir,

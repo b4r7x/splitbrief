@@ -5,7 +5,9 @@ import { getGitForDir, gitBinary, parseNulSeparated, runGit } from './client.js'
 const GITLINK_MODE = '160000';
 
 function getStatusPaths(status: Awaited<ReturnType<GitClient['status']>>): string[] {
-  return status.files.map((file) => file.path);
+  return [
+    ...new Set(status.files.flatMap((file) => (file.from ? [file.from, file.path] : [file.path]))),
+  ];
 }
 
 export async function getGitStatus(dir: string): Promise<{
@@ -31,6 +33,24 @@ export async function listTrackedAndUntrackedFiles(dir: string): Promise<string[
     return parseNulSeparated(output);
   } catch {
     return null;
+  }
+}
+
+/** Ignored untracked paths; a wholly ignored directory is one `dir/` entry. */
+export async function listIgnoredPaths(dir: string): Promise<string[]> {
+  try {
+    return parseNulSeparated(
+      await getGitForDir(dir).raw([
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--directory',
+        '-z',
+      ]),
+    );
+  } catch {
+    return [];
   }
 }
 

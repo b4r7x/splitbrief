@@ -11,6 +11,10 @@ import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js
 import { makePlanProposal, makeTaskSpec } from '#testing/helpers/factories/plan.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { passingVerdict } from '#testing/helpers/typed-planner.js';
+import type { IsolationStrategy } from '../../../src/core/schemas/enums.js';
+import { plainUserMessage } from '../../../src/core/types/user-input.js';
+import { applyRecoveryAction } from '../../../src/engine/orchestrator/recovery/actions.js';
+import { createRecoveryBus } from '../../../src/engine/orchestrator/recovery/bus.js';
 import {
   cli,
   createStopContinueFixture,
@@ -185,8 +189,8 @@ function readCalls(callsPath: string): string[] {
 }
 
 /** Starts the run headless and returns once T002 has spent its consults and the run halted. */
-async function startEscalatingRun() {
-  const target = createStopContinueFixture(() => '');
+async function startEscalatingRun(isolation: IsolationStrategy = 'worktree') {
+  const target = createStopContinueFixture(() => '', { isolation });
   fixture = target;
   restorePath = activateSafeCliShimPath(target.tmpDir);
   const offlinePath = join(target.tmpDir, 'offline.mjs');
@@ -210,6 +214,53 @@ async function startEscalatingRun() {
 }
 
 describe('e2e: brief escalation', { timeout: 240_000 }, () => {
+  it.each([1, 2])(
+    'skips a checkout brief after %i halt(s) and preserves later user edits',
+    async (halts) => {
+      const { target, halted, sessionId, ref } = await startEscalatingRun('none');
+      expect(halted.exitCode, `${halted.stdout}\n${halted.stderr}`).toBe(1);
+      expect(readState(target, sessionId).pendingRecovery?.reason).toBe('consult-bound-spent');
+      expect(existsSync(join(target.projectDir, 'src/beta.mjs'))).toBe(true);
+      writeFileSync(join(target.projectDir, 'init.txt'), 'edited while halted\n');
+      writeFileSync(join(target.projectDir, 'scratch.txt'), 'notes while halted\n');
+
+      if (halts === 2) {
+        const resumed = await applyRecoveryAction({
+          ...ref,
+          state: readState(target, sessionId),
+          action: 'continue',
+          comment: plainUserMessage('Try the brief again.'),
+          bus: createRecoveryBus(ref),
+          config: loadConfig(target.projectDir).config,
+        });
+        expect(resumed.ok).toBe(true);
+        const haltedAgain = await cli(target, ['continue', sessionId], {
+          timeoutMs: RUN_TIMEOUT_MS,
+        });
+        expect(haltedAgain.exitCode, haltedAgain.stderr).toBe(1);
+        expect(readState(target, sessionId).pendingRecovery?.reason).toBe('consult-bound-spent');
+      }
+
+      const continued = await cli(target, ['continue', sessionId, '--action', 'skip'], {
+        timeoutMs: RUN_TIMEOUT_MS,
+      });
+
+      expect(continued.exitCode, `${continued.stdout}\n${continued.stderr}`).toBe(0);
+      expect(readState(target, sessionId).tasks[1]?.status).toBe('skipped');
+      expect(existsSync(join(target.projectDir, 'src/beta.mjs'))).toBe(false);
+      expect(existsSync(join(target.projectDir, 'src/beta.test.mjs'))).toBe(false);
+      expect(readFileSync(join(target.projectDir, 'src/alpha.mjs'), 'utf8')).toBe(
+        ALPHA_FILES['src/alpha.mjs'],
+      );
+      expect(readFileSync(join(target.projectDir, 'init.txt'), 'utf8')).toBe(
+        'edited while halted\n',
+      );
+      expect(readFileSync(join(target.projectDir, 'scratch.txt'), 'utf8')).toBe(
+        'notes while halted\n',
+      );
+    },
+  );
+
   it('halts Needs you when a brief spends its consults, waiting for you with its files kept', async () => {
     const { target, callsPath, halted, sessionId, ref } = await startEscalatingRun();
 

@@ -104,6 +104,8 @@ export const ChangedFilesSnapshotSchema = z.object({
   baselineFileHashes: z.record(z.string(), z.string().nullable()).optional(),
   baselineFileModes: z.record(z.string(), z.number().int().min(0).max(0o777)).optional(),
   ignoreProjectDir: z.string().optional(),
+  /** Paths the task changed before returning control; later checkout edits do not grant restore authority. */
+  restoreFiles: z.array(z.string()).optional(),
 });
 
 export type ChangedFilesSnapshot = z.infer<typeof ChangedFilesSnapshotSchema>;

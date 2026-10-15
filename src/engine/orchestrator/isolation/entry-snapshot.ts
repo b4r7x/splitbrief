@@ -11,7 +11,10 @@ import { getGitForDir } from '../../../lib/git/client.js';
 import { GIT_EMPTY_TREE_HASH } from '../../../lib/git/refs.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { walkProjectEntries } from '../../snapshots/files.js';
-import { getChangedFilesSnapshot } from '../approval/file-snapshots/capture.js';
+import {
+  getChangedFilesSinceSnapshot,
+  getChangedFilesSnapshot,
+} from '../approval/file-snapshots/capture.js';
 import {
   readConfinedEntry,
   readProjectSymlink,
@@ -179,16 +182,24 @@ export async function saveReplacedEntries(
 }
 
 /**
- * Puts `files` back to what `snapshot` recorded in the run workspace. In the
- * checkout itself the replaced bytes are saved first, and the result names where.
+ * Puts back the paths `snapshot.restoreFiles` records as the task's writes that changed since
+ * `snapshot`, limited to `files` when given. In the checkout itself the replaced bytes are saved
+ * first, and the result names where.
  */
 export async function restoreWorkspaceFiles(input: {
   ref: SessionRef;
   dir: string;
   snapshot: ChangedFilesSnapshot;
-  files: readonly string[];
+  files: readonly string[] | undefined;
 }): Promise<{ restoredFiles: string[]; savedTo?: string | undefined }> {
-  const { ref, dir, snapshot, files } = input;
+  const { ref, dir, snapshot, files: requested } = input;
+  if (requested?.length === 0) return { restoredFiles: [] };
+  const restoreFiles = snapshot.restoreFiles ?? [];
+  if (restoreFiles.length === 0) return { restoredFiles: [] };
+  const changed = await getChangedFilesSinceSnapshot(dir, snapshot);
+  const files = changed.filter(
+    (file) => (requested === undefined || requested.includes(file)) && restoreFiles.includes(file),
+  );
   if (files.length === 0) return { restoredFiles: [] };
   const savedTo =
     (await realpath(dir)) === (await realpath(ref.projectDir))

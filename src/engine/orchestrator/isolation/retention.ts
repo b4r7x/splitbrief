@@ -182,6 +182,9 @@ export async function retainWorkspaceRecord(
           head: workspace.snapshot.head,
           files: [],
           dirtyFileContents: {},
+          ...(workspace.snapshot.restoreFiles !== undefined && {
+            restoreFiles: workspace.snapshot.restoreFiles,
+          }),
           baselineFileHashes: workspace.snapshot.baselineFileHashes,
           ...(workspace.snapshot.baselineFileModes !== undefined && {
             baselineFileModes: workspace.snapshot.baselineFileModes,

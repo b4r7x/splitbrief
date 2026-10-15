@@ -73,7 +73,9 @@ export async function getDiffSince(
 }
 
 export async function getCommittedFilesSince(dir: string, baseRef: string): Promise<string[]> {
-  return runGit(`diff --name-only -z ${baseRef} HEAD`, async () =>
-    parseNulSeparated(await getGitForDir(dir).diff(['--name-only', '-z', baseRef, 'HEAD'])),
+  return runGit(`diff --no-renames --name-only -z ${baseRef} HEAD`, async () =>
+    parseNulSeparated(
+      await getGitForDir(dir).diff(['--no-renames', '--name-only', '-z', baseRef, 'HEAD']),
+    ),
   );
 }

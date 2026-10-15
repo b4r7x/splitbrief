@@ -4,20 +4,21 @@ import type { WorkflowContext } from '../types.js';
 import type { HookPayload } from '../../hooks/types.js';
 import { runPreHooks } from '../../hooks/run-pre.js';
 import { publishTaskSkipped, publishWarning } from '../events.js';
-import { transitionAndSave } from '../state-ops.js';
+import { rebaseOnPersistedWorkflowState, transitionAndSave } from '../state-ops.js';
 import { persistTaskEvidence } from '../evidence/persistence.js';
 import { restoreDeniedPreValidationFiles } from './rollback.js';
+import { withAttemptRestoreScope } from './restore-scope.js';
 
 export async function runPreValidationGate(opts: {
   wctx: Pick<WorkflowContext, 'projectDir' | 'workspaceDir' | 'sessionId' | 'bus' | 'config'>;
   task: Task;
   state: WorkflowState;
-  taskChangedFiles: string[];
   /** Null when no attempt ran: there is nothing to roll back. */
   taskStartSnapshot: ChangedFilesSnapshot | null;
+  attemptSnapshot?: ChangedFilesSnapshot | undefined;
   setTrackedState: (s: WorkflowState) => void;
 }): Promise<{ proceed: boolean; state: WorkflowState }> {
-  const { wctx, task, taskChangedFiles, taskStartSnapshot, setTrackedState } = opts;
+  const { wctx, task, taskStartSnapshot, setTrackedState } = opts;
   const { projectDir, workspaceDir, sessionId } = wctx;
   let state = opts.state;
 
@@ -31,11 +32,19 @@ export async function runPreValidationGate(opts: {
     status: 'running',
     passed: false,
   };
-  const preVal = await runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, {
-    projectDir,
-    workspaceDir,
-    sessionId,
+  const preVal = await withAttemptRestoreScope({
+    ref: wctx,
+    dir: workspaceDir,
+    taskStartSnapshot,
+    attemptSnapshot: opts.attemptSnapshot,
+    run: () =>
+      runPreHooks(wctx.config.hooks, 'pre_validation', preValidationPayload, {
+        projectDir,
+        workspaceDir,
+        sessionId,
+      }),
   });
+  state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
   if (preVal.allow) return { proceed: true, state };
 
   const reason = preVal.reason ?? 'pre_validation hook denied';
@@ -43,7 +52,6 @@ export async function runPreValidationGate(opts: {
     await restoreDeniedPreValidationFiles({
       wctx,
       phase: state.phase,
-      taskChangedFiles,
       taskStartSnapshot,
     });
   publishWarning({

@@ -1,7 +1,15 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { sessionDir } from '../../../src/core/paths.js';
 import { readActive } from '../../../src/core/sessions/active-pointer.js';
 import { deriveRunStatus } from '../../../src/core/sessions/run-status.js';
@@ -21,6 +29,19 @@ import {
 
 let fixture: StopContinueFixture | undefined;
 
+const DoctorRecordSchema = z.object({
+  type: z.literal('readiness_report'),
+  report: z.object({
+    checks: z.array(
+      z.object({
+        id: z.string(),
+        severity: z.string(),
+        remediation: z.string().nullable(),
+      }),
+    ),
+  }),
+});
+
 afterEach(() => {
   if (fixture !== undefined) cleanupTempDir(fixture.tmpDir);
   fixture = undefined;
@@ -29,6 +50,20 @@ afterEach(() => {
 describe('e2e: a checkout whose git state changes during an in-place implementer call', () => {
   it('halts with the evidence, puts the attempt back and retries to a close in the checkout', async () => {
     fixture = createStopContinueFixture(escapingImplementerScript, { isolation: 'none' });
+    const userFile = join(fixture.projectDir, 'init.txt');
+    const untrackedFile = join(fixture.projectDir, 'scratch.txt');
+    writeFileSync(userFile, 'my uncommitted edit\n');
+    writeFileSync(untrackedFile, 'my untracked work\n');
+    const timestamp = new Date('2020-01-01T00:00:00Z');
+    for (const file of [userFile, untrackedFile]) utimesSync(file, timestamp, timestamp);
+    const userStat = statSync(userFile, { bigint: true });
+    const untrackedStat = statSync(untrackedFile, { bigint: true });
+    const doctor = await cli(fixture, ['doctor'], { json: true, timeoutMs: 30_000 });
+    expect(doctor.stdout, doctor.stderr).not.toBe('');
+    const readiness = DoctorRecordSchema.parse(JSON.parse(doctor.stdout.trim()));
+    const warning = readiness.report.checks.find((check) => check.id === 'repo.dirty-worktree');
+    expect(warning?.severity).toBe('warning');
+    expect(warning?.remediation).toContain('.splitbrief/sessions/<id>/reverted/');
 
     const halted = await cli(fixture, ['start', 'smoke']);
 
@@ -60,6 +95,12 @@ describe('e2e: a checkout whose git state changes during an in-place implementer
     if (stamp === undefined) throw new Error('the halt saved nothing under reverted/');
     expect(readFileSync(join(reverted, stamp, MARKER_FILE), 'utf-8')).toBe(MARKER_SOURCE);
     expect(readFileSync(join(reverted, stamp, GREET_FILE), 'utf-8')).toBe(GREET_SOURCE);
+    expect(readFileSync(userFile, 'utf8')).toBe('my uncommitted edit\n');
+    expect(readFileSync(untrackedFile, 'utf8')).toBe('my untracked work\n');
+    expect(statSync(userFile, { bigint: true }).mtimeNs).toBe(userStat.mtimeNs);
+    expect(statSync(untrackedFile, { bigint: true }).mtimeNs).toBe(untrackedStat.mtimeNs);
+    expect(existsSync(join(reverted, stamp, 'init.txt'))).toBe(false);
+    expect(existsSync(join(reverted, stamp, 'scratch.txt'))).toBe(false);
 
     const continued = await cli(fixture, ['continue', sessionId, '--action', 'retry']);
 

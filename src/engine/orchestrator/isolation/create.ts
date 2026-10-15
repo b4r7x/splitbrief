@@ -376,17 +376,16 @@ export function createRunIsolation(opts: {
     files?: readonly string[],
   ): Promise<void> {
     await assertAttemptDir(dir);
-    const changed = await getChangedFilesSinceSnapshot(dir, snapshot);
-    const selected = files === undefined ? changed : changed.filter((file) => files.includes(file));
-    const { savedTo } = await restoreWorkspaceFiles({
+    snapshot.restoreFiles ??= await getChangedFilesSinceSnapshot(dir, snapshot);
+    const { restoredFiles, savedTo } = await restoreWorkspaceFiles({
       ref: { projectDir, sessionId },
       dir,
       snapshot,
-      files: selected,
+      files,
     });
     if (savedTo !== undefined) {
       warningPublisher?.(
-        `Put back what the attempt changed in your checkout: ${selected.join(', ')}. The replaced bytes are in ${relative(projectDir, savedTo)}.`,
+        `Put back what the attempt changed in your checkout: ${restoredFiles.join(', ')}. The replaced bytes are in ${relative(projectDir, savedTo)}.`,
       );
     }
   }
@@ -477,6 +476,7 @@ export function createRunIsolation(opts: {
             try {
               await assertWorkspaceIdentity(dir);
               if (disposed || ownedWorkspace !== workspace) throw retentionError.unavailable();
+              snapshot.restoreFiles ??= await getChangedFilesSinceSnapshot(dir, snapshot);
               await saveRecord(workspace, true);
             } catch (cause) {
               const failure = retentionError.failed(dir, cause);

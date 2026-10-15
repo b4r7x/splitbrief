@@ -11,6 +11,7 @@ import { checkRegistry, type CheckRunResult } from '../validation/run-checks.js'
 import type { ValidationCommandRunner } from '../validation/types.js';
 import { runPreValidationGate } from './pre-validation-gate.js';
 import { runTaskChecks } from './task-checks.js';
+import { withAttemptRestoreScope } from './restore-scope.js';
 
 type BriefGateContext = Pick<
   WorkflowContext,
@@ -25,14 +26,23 @@ export async function runBriefGate(opts: {
   state: WorkflowState;
   task: Task;
   changedFiles: readonly string[];
-  /** What `changedFiles` are measured from: a pre_validation deny restores them to it. */
+  /** A pre_validation denial restores the task's recorded writes to this baseline. */
   taskStartSnapshot: ChangedFilesSnapshot | null;
+  attemptSnapshot?: ChangedFilesSnapshot | undefined;
   /** Checks the caller selected: each must pass, whatever its status or `required` flag. */
   checkIds?: readonly string[] | undefined;
   runCommand?: ValidationCommandRunner | undefined;
   setTrackedState?: ((state: WorkflowState) => void) | undefined;
 }) {
   const { wctx, task, changedFiles } = opts;
+  const runScoped = <T>(run: () => Promise<T>): Promise<T> =>
+    withAttemptRestoreScope({
+      ref: wctx,
+      dir: wctx.workspaceDir,
+      taskStartSnapshot: opts.taskStartSnapshot,
+      attemptSnapshot: opts.attemptSnapshot,
+      run,
+    });
   let state = opts.state;
   const track = opts.setTrackedState ?? (() => {});
   // A fix task runs the checks of the red it answers again on top of what its cadence runs.
@@ -58,15 +68,18 @@ export async function runBriefGate(opts: {
       ...(opts.checkIds ?? []),
     ]),
   ];
-  await wctx.validator.formatChangedFiles({
-    task,
-    projectDir: wctx.workspaceDir,
-    config: wctx.config,
-    bus: wctx.bus,
-    phase: state.phase,
-    signal: wctx.signal,
-    changedFiles,
-  });
+  await runScoped(() =>
+    wctx.validator.formatChangedFiles({
+      task,
+      projectDir: wctx.workspaceDir,
+      config: wctx.config,
+      bus: wctx.bus,
+      phase: state.phase,
+      signal: wctx.signal,
+      changedFiles,
+    }),
+  );
+  state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
   let runs: CheckRunResult[] = [];
   let settled: ReadonlySet<string> = new Set();
   if (checkIds.length > 0) {
@@ -74,8 +87,8 @@ export async function runBriefGate(opts: {
       wctx,
       state,
       task,
-      taskChangedFiles: [...changedFiles],
       taskStartSnapshot: opts.taskStartSnapshot,
+      attemptSnapshot: opts.attemptSnapshot,
       setTrackedState: track,
     });
     state = pre.state;
@@ -93,6 +106,8 @@ export async function runBriefGate(opts: {
       state,
       task,
       checkIds,
+      taskStartSnapshot: opts.taskStartSnapshot,
+      attemptSnapshot: opts.attemptSnapshot,
       runCommand: opts.runCommand,
       setTrackedState: track,
     });
@@ -110,10 +125,8 @@ export async function runBriefGate(opts: {
         registry.get(run.checkId)?.required === true,
   );
   const checksAccepted = failedChecks.length === 0 && !wctx.signal?.aborted;
-  if (checksAccepted) {
-    state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
-    track(state);
-  }
+  state = rebaseOnPersistedWorkflowState(wctx, state, { keepUnsaved: true });
+  track(state);
   const correction = checksAccepted && state.messageQueue.some(isQueuedMessagePendingDelivery);
   const acceptance: ValidationAcceptance = { accepted: checksAccepted && !correction };
   const carried = fixCheckKeys(task);

@@ -542,7 +542,10 @@ describe('applyConsultAnswer', () => {
       status: 'failed',
     });
     const { ctx, states, events } = contextFor(projectDir, sessionId, task);
-    const attempt = await getChangedFilesSnapshot(projectDir);
+    const attempt = {
+      ...(await getChangedFilesSnapshot(projectDir)),
+      restoreFiles: ['src/greet.ts'],
+    };
     writeFileSync(join(projectDir, 'src/greet.ts'), ATTEMPT_GREET);
 
     const result = await applyConsultAnswer(
@@ -625,7 +628,10 @@ describe('applyConsultAnswer', () => {
       status: 'failed',
     });
     const { ctx, states, events } = contextFor(projectDir, sessionId, task);
-    const attempt = await getChangedFilesSnapshot(projectDir);
+    const attempt = {
+      ...(await getChangedFilesSnapshot(projectDir)),
+      restoreFiles: ['src/greet.ts'],
+    };
     writeFileSync(join(projectDir, 'src/greet.ts'), ATTEMPT_GREET);
 
     const result = await applyConsultAnswer(
