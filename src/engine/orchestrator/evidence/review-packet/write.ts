@@ -4,8 +4,11 @@ import { buildReviewPacket } from './build.js';
 import { stringifyReviewPacket, renderReviewPacketMarkdown } from './render.js';
 import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import type { BuildReviewPacketOptions } from './types.js';
+import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
 
-export async function writeReviewPacket(opts: BuildReviewPacketOptions): Promise<ReviewPacket> {
+export async function writeReviewPacket(
+  opts: BuildReviewPacketOptions & Readonly<{ modelCache: ModelCacheAccessor }>,
+): Promise<ReviewPacket> {
   const packet = await buildReviewPacket(opts);
   writeSecureFile(
     reviewPacketJsonPath({ projectDir: opts.projectDir, sessionId: opts.sessionId }),
@@ -13,7 +16,7 @@ export async function writeReviewPacket(opts: BuildReviewPacketOptions): Promise
   );
   writeSecureFile(
     reviewPacketMarkdownPath({ projectDir: opts.projectDir, sessionId: opts.sessionId }),
-    renderReviewPacketMarkdown(packet),
+    renderReviewPacketMarkdown(packet, opts.modelCache),
   );
   return packet;
 }

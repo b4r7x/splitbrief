@@ -11,6 +11,7 @@ import type { PacketEvent } from './types.js';
 import { buildReviewPacket } from './build.js';
 import { makeRecoveryWithSources } from './recovery.js';
 import { renderReviewPacketMarkdown } from './render.js';
+import { NULL_CACHE } from '../../../providers/model/resolution.js';
 
 const switched: PacketEvent = {
   type: 'seat_switched',
@@ -276,7 +277,7 @@ describe('packet recovery evidence', () => {
           to: { tool: 'opencode', model: 'deepseek/deepseek-flash' },
         }),
       ]);
-      const rows = renderReviewPacketMarkdown(packet)
+      const rows = renderReviewPacketMarkdown(packet, NULL_CACHE)
         .split('\n')
         .filter((line) => line.startsWith('- BUILD switched'));
       expect(rows).toEqual([

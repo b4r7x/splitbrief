@@ -472,8 +472,8 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         ),
         modelCache: PRICED_MODEL_CACHE,
         metadata: {
-          planner: { tool: 'custom-endpoint', model: 'claude-opus-5' },
-          implementer: { tool: 'custom-cloud', model: 'deepseek-v4-flash' },
+          planner: 'custom-endpoint · Claude Opus 5',
+          implementer: 'custom-cloud · DeepSeek V4 Flash',
         },
         sinks: TEST_SINKS,
         validator: createValidator(),

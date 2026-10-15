@@ -40,6 +40,8 @@ import {
 import { checkFullPlan, planTurnText } from '../../engine/orchestrator/planning/session.js';
 import { questionsText } from '../../core/state/planning-conversation.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { loadRememberedCatalog } from '../bootstrap/discovery.js';
+import { resolveSpecMetadata } from '../../engine/providers/model/display-names.js';
 import {
   emitEffectiveConfigWarnings,
   resolveEffectiveConfig,
@@ -129,6 +131,7 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
         loaderDiagnostics: loaded.loaderDiagnostics,
       });
       emitEffectiveConfigWarnings(warnings);
+      await loadRememberedCatalog(projectDir);
 
       const interaction = process.stdin.isTTY ? 'interactive' : 'headless';
       const execution = preparedExecutionOrThrow(
@@ -241,13 +244,15 @@ export function registerSpecCommand(program: Command, deps: SpecCommandDeps = {}
       releasePreparedExecutionOwnership(execution);
 
       const tasks = plan.tasks.map((spec) => taskFromSpec(spec, projectDir));
+      const metadata = resolveSpecMetadata(execution.config, modelCacheStore);
       writePlanJson(ref, plan);
       writeSpecFile(
         ref,
         PLAN_FILE,
         formatPlanMarkdown(plan, renderCheckNotes(plan, execution.config.validation.render)),
+        metadata,
       );
-      writeSpecFile(ref, TASKS_FILE, formatTasks(tasks));
+      writeSpecFile(ref, TASKS_FILE, formatTasks(tasks), metadata);
 
       const sessionPath = sessionDir(projectDir, sessionId);
       console.log('\nPlanning complete.');

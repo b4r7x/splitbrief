@@ -55,6 +55,9 @@ import { clearBridgedCliState } from '../../engine/runners/sandbox-state-bridge.
 import { sandboxCredentialValues } from '../../engine/runners/sandbox-credential-values.js';
 import { createRunnerSandboxEnv } from '../../engine/runners/sandbox-env.js';
 import { resolveCliExecutableAliases } from '../../engine/runners/resolve-cli-executable.js';
+import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 
 interface DoctorOpts {
   project?: string | undefined;
@@ -410,11 +413,13 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
       // consent verdict is the headless one.
       const interaction =
         opts.json === true || process.stdin.isTTY !== true ? 'headless' : 'interactive';
+      await loadRememberedCatalog(projectDir);
       const collected = await collectReadiness({
         projectDir,
         interaction,
         detectCliReadiness: deps.detectCliReadiness ?? detectConfiguredCliReadiness,
         probeRunnerAvailability: deps.probeRunnerAvailability ?? probeRunnerAvailability,
+        seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),
       });
       const report = await withPreparationPreflights({
         collected,

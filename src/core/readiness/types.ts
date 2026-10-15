@@ -5,6 +5,8 @@ import type {
   ReadinessSeverity,
   ReadinessStatus,
 } from '../schemas/readiness.js';
+import type { RunnerConfig } from '../config/accessors/runner-config.js';
+import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 
 export interface ReadinessNextAction {
   kind: ReadinessNextActionKind;
@@ -51,3 +53,6 @@ export interface ReadinessReport {
     configExists?: boolean | undefined;
   };
 }
+
+/** A seat's identity as a readiness check names it. */
+export type SeatNamer = (runner: RunnerConfig, role: ActiveRunnerRole) => string;

@@ -15,6 +15,7 @@ import { nowIso } from '../../../utils/format-time.js';
 import type { Config } from '../../schemas/config.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
 import type { ReadinessReport, ReadinessSection } from '../types.js';
+import type { SeatDisplayName } from '../../crew/identity.js';
 import type { RunnerAvailabilityFact } from './availability.js';
 import type { ConfigReadinessInput } from './config.js';
 import type { PackageScriptsReadinessInput } from './validation.js';
@@ -30,6 +31,7 @@ export interface BuildReadinessReportInput {
   availability?: readonly RunnerAvailabilityFact[] | undefined;
   /** How the run the report describes starts; a headless one approves its plan card unattended. */
   interaction?: 'interactive' | 'headless' | undefined;
+  seatDisplayName?: SeatDisplayName | undefined;
 }
 
 export function buildReadinessReport(input: BuildReadinessReportInput): ReadinessReport {
@@ -82,12 +84,13 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
     {
       id: 'runners',
       title: 'Runners',
-      checks: buildRunnerChecks(
-        input.config,
-        input.cliReadiness,
-        input.availability,
-        input.interaction,
-      ),
+      checks: buildRunnerChecks({
+        config: input.config,
+        cliReadiness: input.cliReadiness,
+        availability: input.availability,
+        interaction: input.interaction,
+        seatDisplayName: input.seatDisplayName,
+      }),
     },
     {
       id: 'context',

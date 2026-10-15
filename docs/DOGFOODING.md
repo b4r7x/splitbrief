@@ -25,7 +25,7 @@ Seats live in `.splitbrief/config.yaml` (gitignored). The implementer is the sea
 ```yaml
 version: 3
 planner: { kind: cli, tool: claude-code, model: opus, effort: high }   # fallback: fable
-implementer: { kind: cli, tool: antigravity, model: gemini-3.8-flash-high, effort: high }
+implementer: { kind: cli, tool: antigravity, model: gemini-3.8-flash-high }
 # implementer: { kind: cli, tool: claude-code, model: sonnet, effort: medium }
 # implementer: { kind: cli, tool: codex, model: <id> }
 validation: { end_checks: true }

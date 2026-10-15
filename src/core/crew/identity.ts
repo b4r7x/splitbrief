@@ -14,10 +14,10 @@ import {
   resolveCliModel,
 } from '../providers/automatic-model.js';
 import type { EffortLevel, RunnerKind } from '../schemas/enums.js';
+import type { ActiveRunnerRole } from '../runners/seat-roles.js';
 import { SOFT_SEP } from '../separators.js';
-import { isCliToolId } from '../runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
 import {
-  modelIdSpellsAxes,
   peelAxisTokensFromModelId,
   recordedAxisWords,
   seatAxisWords,
@@ -26,6 +26,9 @@ import {
 export const CREW_SEAT_IDS = ['plan', 'build', 'review'] as const;
 
 export type CrewSeatId = (typeof CREW_SEAT_IDS)[number];
+
+/** The catalog label a seat's model goes by; undefined where no catalog names it. */
+export type SeatDisplayName = (runner: RunnerConfig, role: ActiveRunnerRole) => string | undefined;
 
 export const CREW_SEAT_LABELS: Readonly<Record<CrewSeatId, string>> = {
   plan: 'PLAN',
@@ -72,10 +75,10 @@ export function isSeatIdentity(
   return model === undefined || model === resolveCliModel(seat.model, seat.tool);
 }
 
-function ranAxes(seat: SeatIds): string {
-  const tool = cliVocabularyTool(seat.tool, seat.kind);
+function recordedAxes(seat: SeatIds, kind: RunnerKind | undefined): readonly string[] {
+  const tool = cliVocabularyTool(seat.tool, kind);
   const axes = seat.axes ?? [];
-  return (tool === undefined ? axes : recordedAxisWords(tool, seat.model, axes)).join(' ');
+  return tool === undefined ? axes : recordedAxisWords(tool, seat.model, axes);
 }
 
 /**
@@ -88,7 +91,7 @@ export function sameSeatIds(left: SeatIds, right: SeatIds): boolean {
   return (
     left.tool === right.tool &&
     resolveCliModel(left.model, left.tool) === resolveCliModel(right.model, right.tool) &&
-    ranAxes(left) === ranAxes(right) &&
+    recordedAxes(left, left.kind).join(' ') === recordedAxes(right, right.kind).join(' ') &&
     (left.kind === undefined || right.kind === undefined || left.kind === right.kind)
   );
 }
@@ -145,7 +148,9 @@ function toolWord(seat: SeatIds, kind: RunnerKind | undefined): string {
 function modelIdOf(seat: SeatIds, kind: RunnerKind | undefined): string | undefined {
   const tool = cliVocabularyTool(seat.tool, kind);
   const model = normalizeConfiguredModel(seat.model, tool);
-  return model !== undefined && tool !== undefined && modelIdSpellsAxes(tool)
+  return model !== undefined &&
+    tool !== undefined &&
+    CLI_TOOL_CATALOG[tool].effortChannel === 'model-id'
     ? peelAxisTokensFromModelId(model)
     : model;
 }
@@ -159,7 +164,7 @@ function modelWord(
   const model = modelIdOf(seat, kind);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
   if (tool === 'opencode' && model.includes('/')) return redactSecrets(model);
-  if (tool !== undefined && modelIdSpellsAxes(tool)) {
+  if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
     return formatModelName(model, tool);
@@ -174,7 +179,7 @@ function formatIdentity(
   kind: RunnerKind | undefined,
 ): string {
   return sanitizeTerminalDisplayText(
-    [toolWord(ids, kind), ...(model === undefined ? [] : [model]), ...(ids.axes ?? [])].join(
+    [toolWord(ids, kind), ...(model === undefined ? [] : [model]), ...recordedAxes(ids, kind)].join(
       CREW_IDENTITY_SEPARATOR,
     ),
   );

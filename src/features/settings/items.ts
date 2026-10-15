@@ -1,4 +1,4 @@
-import type { CrewSeatId } from '../../core/crew/identity.js';
+import type { CrewSeatId, SeatDisplayName } from '../../core/crew/identity.js';
 import {
   deriveFallbackRows,
   fallbackRowKey,
@@ -32,13 +32,14 @@ export function buildSettingsItems(
     defs: readonly SettingDef[];
     cliTools: readonly CliToolDetection[];
     displayNames?: Partial<Record<CrewSeatId, string>> | undefined;
+    seatDisplayName?: SeatDisplayName | undefined;
   }>,
 ): SettingsItem[] {
   const crew = deriveCrewRows({
     config: input.config,
     displayNames: input.displayNames,
   }).map((row): SettingsItem => ({ kind: 'crew', row, key: crewRowKey(row) }));
-  const fallbacks = deriveFallbackRows({ config: input.config, cliTools: input.cliTools }).map(
+  const fallbacks = deriveFallbackRows(input).map(
     (row): SettingsItem => ({ kind: 'fallback', row, key: fallbackRowKey(row) }),
   );
   const settings = input.defs

@@ -249,7 +249,7 @@ describe('reconcileSeatIdentities', () => {
     ids: { plan: legacyIds, build: legacyIds, review: legacyIds },
   };
 
-  it('reads an effort-flag seat recorded without the level its id spells as the same seat', () => {
+  it('reads a model-id seat recorded without the level its id spells as the same seat', () => {
     const ref = session('seats-reconcile-id-level');
     writeFileSync(
       join(sessionDir(ref.projectDir, ref.sessionId), SEATS_FILE),
@@ -260,11 +260,30 @@ describe('reconcileSeatIdentities', () => {
     expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(idLevelConfig));
   });
 
-  it('reports an effort flag that overrides the level a recorded id spells', () => {
+  it('reports a resume change from a recorded low effort flag to the high model id', () => {
+    const ref = session('seats-reconcile-recorded-effort');
+    writeSeatIdentities(ref, {
+      ...idLevelLegacy,
+      build: 'Google Antigravity CLI · Gemini 3.8 Flash · low',
+      ids: {
+        ...idLevelLegacy.ids,
+        build: { ...legacyIds, axes: ['low'] },
+      },
+    });
+
+    const changes = reconcileSeatIdentities(ref, idLevelConfig);
+
+    expect(changes.map(formatSeatChangeNotice)).toEqual([
+      'BUILD seat changed Google Antigravity CLI · Gemini 3.8 Flash · low → Google Antigravity CLI · Gemini 3.8 Flash · high; the rest of the run uses the new seat',
+    ]);
+    expect(readSeatIdentities(ref)).toEqual(seatIdentitiesFromConfig(idLevelConfig));
+  });
+
+  it('reports a move to the id of another level', () => {
     const current = seatIdentitiesFromConfig(
       makeConfig({
         planner: idLevelSeat,
-        implementer: { ...idLevelSeat, effort: 'low' },
+        implementer: { ...idLevelSeat, model: 'gemini-3.8-flash-low' },
         reviewer: idLevelSeat,
       }),
     );

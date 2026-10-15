@@ -8,12 +8,116 @@ import {
   type SeatChange,
 } from '../../../core/state/seats.js';
 import { NULL_CACHE, type ModelCacheAccessor } from './resolution.js';
+import { formatSeatIdentity } from '../../../core/crew/identity.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import {
   labelSeatChange,
+  recordedSeatIdentityInput,
   resolveCrewDisplayNames,
   resolveModelDisplayName,
   resolveSeatDisplayName,
+  resolveSeatChangeIdentities,
+  resolveSpecMetadata,
 } from './display-names.js';
+
+describe('resolveSeatChangeIdentities', () => {
+  const cache = makeModelCacheAccessor({
+    providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+  });
+
+  it('preserves tool-default candidates and resolves an explicit model from the catalog', () => {
+    expect(
+      resolveSeatChangeIdentities({
+        from: { tool: 'claude-code' },
+        to: { tool: 'codex', model: 'gpt-6-luna' },
+        role: 'implementer',
+        cache,
+      }),
+    ).toEqual({ from: 'Claude Code CLI', to: 'OpenAI Codex CLI · GPT-6-Luna' });
+  });
+
+  it('preserves a recorded label and resolves the structured side independently', () => {
+    expect(
+      resolveSeatChangeIdentities({
+        from: 'Recorded seat',
+        to: { tool: 'codex', model: 'gpt-6-luna' },
+        role: 'implementer',
+        cache,
+      }),
+    ).toEqual({ from: 'Recorded seat', to: 'OpenAI Codex CLI · GPT-6-Luna' });
+  });
+});
+
+describe('recordedSeatIdentityInput', () => {
+  const cache = makeModelCacheAccessor({
+    providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+  });
+
+  it('names a recorded CLI command through its catalog and preserves its axes', () => {
+    const input = recordedSeatIdentityInput({
+      seat: { tool: 'codex', model: 'gpt-6-luna', kind: 'cli', axes: ['high'] },
+      role: 'implementer',
+      cache,
+    });
+    expect(formatSeatIdentity(input)).toBe('OpenAI Codex CLI · GPT-6-Luna · high');
+  });
+
+  it('keeps an API provider separate from a CLI tool with the same name', () => {
+    const input = recordedSeatIdentityInput({
+      seat: { tool: 'codex', model: 'gpt-6-luna', kind: 'api', axes: [] },
+      role: 'planner',
+      cache,
+    });
+    expect(formatSeatIdentity(input)).toBe('codex · GPT-6 Luna');
+  });
+
+  it('retains automatic selection when the record has no model', () => {
+    expect(
+      formatSeatIdentity(
+        recordedSeatIdentityInput({ seat: { tool: 'codex' }, role: 'planner', cache }),
+      ),
+    ).toBe('OpenAI Codex CLI · auto');
+  });
+});
+
+describe('resolveSpecMetadata', () => {
+  it('uses the crew catalog identities for frontmatter, including the default build profile', () => {
+    const runner = { kind: 'cli', tool: 'codex', model: 'gpt-6-luna', effort: 'high' } as const;
+    const config = makeConfig({
+      planner: runner,
+      implementerProfiles: { default: 'selected', profiles: { selected: runner } },
+    });
+    const cache = makeModelCacheAccessor({
+      providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+    });
+    const crew = seatIdentitiesFromConfig(config, resolveCrewDisplayNames(config, cache));
+    expect(resolveSpecMetadata(config, cache)).toEqual({
+      planner: crew.plan,
+      implementer: crew.build,
+    });
+    expect(crew.plan).toBe('OpenAI Codex CLI · GPT-6-Luna · high');
+  });
+
+  it('preserves distinct OpenCode routes and automatic models', () => {
+    const identities = ['deepseek/deepseek-flash', 'opencode-go/deepseek-v4.1-flash'].map((model) =>
+      resolveSpecMetadata(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'claude-code' },
+          implementer: { kind: 'cli', tool: 'opencode', model, variant: 'high' },
+        }),
+        NULL_CACHE,
+      ),
+    );
+    expect(identities.map((metadata) => metadata.planner)).toEqual([
+      'Claude Code CLI · auto',
+      'Claude Code CLI · auto',
+    ]);
+    expect(identities.map((metadata) => metadata.implementer)).toEqual([
+      'OpenCode CLI · deepseek/deepseek-flash · high',
+      'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+    ]);
+  });
+});
 
 describe('resolveSeatDisplayName', () => {
   const cache: ModelCacheAccessor = {

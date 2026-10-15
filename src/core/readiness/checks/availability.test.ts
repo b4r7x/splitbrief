@@ -31,7 +31,7 @@ function availabilityChecks(
   config: ReturnType<typeof makeConfig>,
   facts: readonly RunnerAvailabilityFact[],
 ) {
-  return buildRunnerChecks(config, [], facts).filter((check) =>
+  return buildRunnerChecks({ config, cliReadiness: [], availability: facts }).filter((check) =>
     check.id.startsWith('runners.availability'),
   );
 }
@@ -280,7 +280,7 @@ describe('runner availability checks', () => {
   });
 
   it('keeps the no-claim notice when no probe ran', () => {
-    const checks = buildRunnerChecks(ollamaConfig(), []).filter((check) =>
+    const checks = buildRunnerChecks({ config: ollamaConfig(), cliReadiness: [] }).filter((check) =>
       check.id.startsWith('runners.availability'),
     );
 

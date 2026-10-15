@@ -30,6 +30,8 @@ import type { RunnerEvidence } from '../../core/discovery/runner-evidence.js';
 import { runnerDiscoveryContextKey } from '../../engine/detection/runner-evidence.js';
 import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execution/prepare-execution.js';
 import { registerDoctorCommand, type SeatProbeCall } from './doctor.js';
+import { saveDetectionCache } from '../../engine/detection/cache.js';
+import { resetAllStores } from '#testing/helpers/stores.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const codexExecutable = CliExecutableReceiptSchema.parse({
@@ -92,6 +94,7 @@ afterEach(() => {
   cleanupTempDir(shimDir);
   cleanupTempDir(tmp);
   vi.restoreAllMocks();
+  resetAllStores();
 });
 
 function initGitRepo(projectDir: string): void {
@@ -393,6 +396,40 @@ describe('doctor command', () => {
 
     const implementer = checks.find((check) => check.id === 'runners.implementer.default');
     expect(implementer?.summary).toBe('BUILD Ollama · Qwen2.5 Coder 7B configured.');
+  });
+
+  it('names a seat by the catalog label the last discovery remembered', async () => {
+    writeConfig(tmp);
+    await saveDetectionCache({
+      projectDir: tmp,
+      snapshot: {
+        contextKey: 'remembered',
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [],
+        cliCatalogs: [
+          { tool: 'codex', models: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }], probedAt: 1 },
+        ],
+      },
+    });
+    const checks = await doctorJsonChecks(
+      validConfigYaml().replace(
+        /implementer:\n( {2}.*\n)+/,
+        'implementer:\n  kind: cli\n  tool: codex\n  model: gpt-6-luna\n',
+      ),
+    );
+
+    const summaries = checks
+      .filter((check) => check.id.startsWith('runners.implementer.'))
+      .map((check) => check.summary);
+    expect(summaries).toContain('BUILD OpenAI Codex CLI · GPT-6-Luna configured.');
+    expect(summaries).toContain(
+      'BUILD OpenAI Codex CLI · GPT-6-Luna can run commands on this machine.',
+    );
+    expect(summaries.join('\n')).not.toContain('GPT-6 Luna');
   });
 
   it.each([

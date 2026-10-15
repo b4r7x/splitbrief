@@ -780,6 +780,20 @@ describe('formatModelsByline', () => {
 });
 
 describe('modelBylineAxes', () => {
+  it('states only the selected Antigravity id level beside an unused effort draft', () => {
+    const flash: ModelOption = {
+      id: 'gemini-3.8-flash-high',
+      variants: ['high', 'medium', 'low'].map((level) => ({
+        fullId: `gemini-3.8-flash-${level}`,
+        providerPrefix: '',
+        tag: level,
+      })),
+    };
+    expect(
+      modelBylineAxes({ model: flash, id: 'gemini-3.8-flash-low', effortDraft: 'high' }),
+    ).toEqual(['low']);
+  });
+
   it('states only the axes the row has actually chosen', () => {
     const sol: ModelOption = {
       id: 'gpt-5.6-sol',
@@ -789,28 +803,17 @@ describe('modelBylineAxes', () => {
         { fullId: 'gpt-5.6-sol-high-fast', providerPrefix: '', tag: 'gpt-5.6-sol-high-fast' },
       ],
     };
-    const axes = (id: string) =>
-      modelBylineAxes({ model: sol, id, effortDraft: null, idSpellsEffort: true });
-    expect(axes('gpt-5.6-sol-high-fast')).toEqual(['high', 'fast']);
-    expect(axes('gpt-5.6-sol')).toEqual([]);
+    expect(modelBylineAxes({ model: sol, id: 'gpt-5.6-sol-high-fast', effortDraft: null })).toEqual(
+      ['high', 'fast'],
+    );
+    expect(modelBylineAxes({ model: sol, id: 'gpt-5.6-sol', effortDraft: null })).toEqual([]);
   });
 
   it("prefers the tool's own ladder over the id's tokens", () => {
     const option: ModelOption = { id: 'opus', effortChoices: ['low', 'medium', 'high'] };
-    const axes = (effortDraft: string | null) =>
-      modelBylineAxes({ model: option, id: 'opus', effortDraft, idSpellsEffort: false });
-    expect(axes('high')).toEqual(['high']);
-    expect(axes(null)).toEqual([]);
-    expect(axes('ultra')).toEqual([]);
-  });
-
-  it('states the level an id spells when the ladder is unset on a tool that lists one id per level', () => {
-    const flash: ModelOption = { id: 'gemini-3.8-flash-high', effortChoices: ['low', 'high'] };
-    const axes = (effortDraft: string | null, idSpellsEffort: boolean) =>
-      modelBylineAxes({ model: flash, id: flash.id, effortDraft, idSpellsEffort });
-    expect(axes(null, true)).toEqual(['high']);
-    expect(axes('low', true)).toEqual(['low']);
-    expect(axes(null, false)).toEqual([]);
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'high' })).toEqual(['high']);
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: null })).toEqual([]);
+    expect(modelBylineAxes({ model: option, id: 'opus', effortDraft: 'ultra' })).toEqual([]);
   });
 });
 

@@ -89,6 +89,53 @@ afterEach(() => {
 });
 
 describe('visual catalog', () => {
+  it('shows a catalog model with the same name in the Settings crew and fallback rows', async () => {
+    const scenario = findVisualScenario('overlay-settings-fallback-catalog');
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (!scenario || !checkpoint || !viewport) throw new Error('Missing catalog fallback scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('Crew');
+      expect(frame).toContain('Fallback');
+      expect(frame.match(/OpenAI Codex CLI · GPT-6-Luna/g)?.length).toBeGreaterThanOrEqual(2);
+      expect(frame).not.toContain('GPT-6 Luna');
+    } finally {
+      await handle.unmount();
+    }
+  });
+
+  it.each([
+    ['overlay-planner-picker-antigravity', 'medium'],
+    ['overlay-planner-picker-antigravity-listed', 'high'],
+    ['overlay-planner-picker-antigravity-low', 'low'],
+    ['overlay-settings-antigravity-low', 'low'],
+  ])('shows the saved Antigravity level in %s', async (id, level) => {
+    const scenario = findVisualScenario(id);
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports.find((size) => size.cols === 120);
+    if (!scenario || !checkpoint || !viewport) throw new Error('Missing Antigravity scenario');
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(configStore.get().config?.planner).toMatchObject({
+        model: `gemini-3.8-flash-${level}`,
+      });
+      expect(configStore.get().config?.planner).not.toHaveProperty('effort');
+      if (id.startsWith('overlay-planner-picker')) {
+        expect(frame).toContain(`gemini-3.8-flash-${level} · ${level}`);
+        expect(frame).toContain('Claude Opus 5.5');
+        expect(frame).toContain('Claude Sonnet 5.5');
+        expect(frame).not.toContain('Gemini 3.7');
+      } else {
+        expect(frame).toContain(`Google Antigravity CLI · Gemini 3.8 Flash · ${level}`);
+      }
+    } finally {
+      await handle.unmount();
+    }
+  });
+
   it('registers the historical smoke replay and expanded recovery checkpoints', () => {
     const replay = findVisualScenario('workflow-spent-b2-replay');
     expect(replay?.viewports.map(formatViewport)).toEqual(['200x50', '60x18']);

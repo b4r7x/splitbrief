@@ -75,8 +75,6 @@ export type RightRow =
       value: string;
       /** The ladder this axis steps through; empty when the axis is spelled by the model id. */
       choices: readonly string[];
-      /** A ladder's reading with no rung drafted: `auto`, or the level the model id spells. */
-      unset?: string;
       /** Whether the ladder has anywhere to step, so no surface promises a key that cannot move. */
       steps: boolean;
       /** Picks the tree glyph that closes the parent's child block. */
@@ -234,14 +232,6 @@ export function effortLadderFor(
 }
 
 /**
- * What a ladder route runs with no rung drafted: the level its id spells on a tool that lists one
- * id per level (`modelIdSpellsAxes`), else the tool's own default.
- */
-export function unsetEffortWord(id: string, idSpellsEffort: boolean): string {
-  return idSpellsEffort ? parseOptionSelection(id).effort : UNSET_EFFORT_WORD;
-}
-
-/**
  * The steppable dimensions of one route: the ladder its model publishes in the
  * `effort` slot, then the axes the id spells. A single draft serves every route, so
  * it reads as set only under the route whose vocabulary contains it.
@@ -251,7 +241,6 @@ function axisRowsFor(input: {
   providerPrefix: string;
   optionDraftId: string | null | undefined;
   effortDraft: string | null | undefined;
-  idSpellsEffort: boolean;
 }): AxisRow[] {
   const { model, providerPrefix } = input;
   const variants = model.variants ?? [];
@@ -263,17 +252,15 @@ function axisRowsFor(input: {
   // axes, so `effort · fast · thinking` reads the same whichever channel spelled it.
   if (choices.length > 0) {
     const draft = input.effortDraft ?? '';
-    const unset = unsetEffortWord(drafted, input.idSpellsEffort);
     rows.push({
       kind: 'axis',
       model,
       axis: 'effort',
       providerPrefix,
-      value: choices.includes(draft) ? draft : unset,
+      value: choices.includes(draft) ? draft : UNSET_EFFORT_WORD,
       choices,
-      unset,
-      // The picker walks unset and the ladder (`nextEffortDraft`), so even a lone
-      // preset steps — between unset and itself.
+      // The ladder the picker walks is `[null, ...choices]`, so even a lone preset
+      // steps — between unset and itself.
       steps: true,
       last: false,
     });
@@ -388,8 +375,6 @@ export function buildRightRows(input: {
   browseCatalog: boolean;
   optionDraftId?: string | null;
   effortDraft?: string | null;
-  /** The tool's model ids spell the effort an unset ladder runs (`modelIdSpellsAxes`). */
-  idSpellsEffort?: boolean;
   /** The seat's own method offer; absent where no CLI invocation is being configured. */
   authMethod?: AuthMethodOffer | undefined;
   authDraft?: AuthMethodChoice | null;
@@ -456,7 +441,6 @@ export function buildRightRows(input: {
         providerPrefix,
         optionDraftId: input.optionDraftId,
         effortDraft: input.effortDraft,
-        idSpellsEffort: input.idSpellsEffort === true,
       });
     // An option family and a variant-less row both hold one route: their axes hang
     // off the model itself rather than off a route row.

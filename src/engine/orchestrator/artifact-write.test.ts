@@ -6,13 +6,13 @@ import { makeBusRecorder } from '#testing/helpers/orchestrator-factories.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { writeAndPublishPlanArtifacts } from './artifact-write.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { specMetadataOf } from '../../core/providers/seat-identity.js';
+import { seatIdentitiesFromConfig } from '../../core/state/seats.js';
 import { formatSeatIdentity } from '../../core/crew/identity.js';
 
 const SESSION_ID = 'artifact-write-test';
 const METADATA: SpecMetadata = {
-  planner: { tool: 'claude-code', model: 'opus' },
-  implementer: { tool: 'codex', model: 'gpt-5' },
+  planner: 'Claude Code CLI · Opus',
+  implementer: 'OpenAI Codex CLI · GPT-5',
 };
 
 let tempDir: string | undefined;
@@ -44,12 +44,13 @@ describe('writeAndPublishPlanArtifacts', () => {
     });
     const projectDir = fixtureDir();
     const { bus } = makeBusRecorder();
+    const crew = seatIdentitiesFromConfig(config);
     writeAndPublishPlanArtifacts({
       projectDir,
       sessionId: SESSION_ID,
       bus,
       phase: 'planning',
-      metadata: specMetadataOf(config),
+      metadata: { planner: crew.plan, implementer: crew.build },
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
     });

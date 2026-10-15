@@ -89,6 +89,7 @@ async function seatDownHalt(
   const failingProfile = ctx.retryProfileOverride ?? ctx.implementerProfile;
   const seatSwap = await loadSeatSwapContext({
     projectDir: ctx.projectDir,
+    modelCache: ctx.modelCache,
     seat: 'build',
     runner: failure.runner,
     config: ctx.config,

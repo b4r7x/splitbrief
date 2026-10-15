@@ -10,6 +10,7 @@ import {
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
 import { loadRememberedSnapshot } from '../../detection/cache.js';
 import type { DetectedSeatTool, SeatSwapContext } from './builders/task.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
 type SeatRunner = Config['planner'] | Config['implementer'] | NonNullable<Config['reviewer']>;
 
@@ -61,6 +62,7 @@ export async function loadSeatSwapContext(
     seat: CrewSeatId;
     runner: SeatRunner;
     config: Config;
+    modelCache?: ModelCacheAccessor | undefined;
     implementerProfile?: string | undefined;
   }>,
 ): Promise<SeatSwapContext | undefined> {
@@ -98,6 +100,7 @@ export async function loadSeatSwapContext(
     return undefined;
   return {
     seat: input.seat,
+    ...(input.modelCache !== undefined && { modelCache: input.modelCache }),
     currentTool: currentSeatTool(input.runner),
     ...(input.runner.model !== undefined && { currentModel: input.runner.model }),
     detectedTools,

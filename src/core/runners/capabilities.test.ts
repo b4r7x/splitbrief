@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   detectedModelFact,
   plannerSupportsImages,
+  seatConfiguredEffort,
   seatEffortChannel,
   seatSupportsImages,
 } from './capabilities.js';
@@ -37,6 +38,7 @@ describe('seatEffortChannel', () => {
     expect(seatEffortChannel({ runner: claudeCode, role: 'implementer' })).toBe('effort-flag');
     expect(seatEffortChannel({ runner: opencode, role: 'planner' })).toBe('variant');
     expect(seatEffortChannel({ runner: cursor, role: 'planner' })).toBe('model-id');
+    expect(seatEffortChannel({ runner: antigravity, role: 'planner' })).toBe('model-id');
     expect(seatEffortChannel({ runner: codex, role: 'planner' })).toBe('effort-flag');
   });
 
@@ -50,6 +52,17 @@ describe('seatEffortChannel', () => {
     expect(seatEffortChannel({ runner: shell, role: 'planner' })).toBe('none');
     expect(seatEffortChannel({ runner: agent, role: 'implementer' })).toBe('none');
   });
+});
+
+it('does not seed a separate effort draft for an Antigravity model-id seat', () => {
+  const runner = {
+    ...antigravity,
+    model: 'gemini-3.8-flash-high',
+    effort: 'low',
+  } as const;
+  for (const role of ['planner', 'implementer', 'reviewer'] as const) {
+    expect(seatConfiguredEffort({ runner, role })).toBeNull();
+  }
 });
 
 describe('seatSupportsImages', () => {

@@ -1,4 +1,6 @@
 import { setupWorkflow } from '../../setup.js';
+import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { initStores } from '../../bootstrap/init.js';
 import { renderApp } from '../../render/app.js';
 import { cliError } from '../../errors.js';
@@ -84,6 +86,7 @@ async function applyPendingRecoveryAction(args: {
   opts: ContinueOpts;
 }): Promise<{ state: WorkflowState; config?: Config; seatSwitch?: SwitchedSeat }> {
   const projectDir = args.opts.projectDir;
+  if (args.action.action === 'switch-seat') await loadRememberedCatalog(projectDir);
   const result = await applyRecoveryAction({
     projectDir,
     sessionId: args.sessionId,
@@ -97,6 +100,7 @@ async function applyPendingRecoveryAction(args: {
       },
     }),
     config: resolveRunConfig({ projectDir, opts: args.opts }),
+    modelCache: modelCacheStore,
     ...(args.action.candidate !== undefined && { candidate: args.action.candidate }),
   });
   if (!result.ok) throw cliError(result.message, 1);

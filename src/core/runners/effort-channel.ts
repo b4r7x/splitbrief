@@ -76,35 +76,15 @@ export function optionTokensOfModelId(model: string | undefined): readonly strin
   return model === undefined ? [] : axisWords(trailingAxisRun(idTokens(model)));
 }
 
-/** Whether the tool's model ids spell the seat's axes: its only channel, or beside an effort flag. */
-export function modelIdSpellsAxes(tool: CliToolId): boolean {
-  const entry = CLI_TOOL_CATALOG[tool];
-  return entry.effortChannel === 'model-id' || entry.effortVariantIds === true;
-}
-
-/** An effort-flag seat's axes: the flag outranks the level its id spells; with no flag the id's level runs. */
-function flagAxisWords(
-  tool: CliToolId,
-  model: string | undefined,
-  effort: EffortLevel | undefined,
-): readonly string[] {
-  if (model === undefined || !modelIdSpellsAxes(tool)) return effort === undefined ? [] : [effort];
-  const run = trailingAxisRun(idTokens(model));
-  return axisWords({ ...run, effort: effort ?? run.effort });
-}
-
-/**
- * The axes a recorded seat ran on. An effort-flag seat recorded before its axes kept the level
- * its id spells holds the flag alone, so the level is read back from the id.
- */
+/** Recorded axes take precedence; infer model-id axes only when the record has none. */
 export function recordedAxisWords(
   tool: CliToolId,
   model: string | undefined,
   axes: readonly string[],
 ): readonly string[] {
-  if (CLI_TOOL_CATALOG[tool].effortChannel !== 'effort-flag') return axes;
-  const effort = axes.find((word): word is EffortLevel => includes(EFFORT_LEVELS, word));
-  return flagAxisWords(tool, model, effort);
+  return axes.length === 0 && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id'
+    ? optionTokensOfModelId(model)
+    : axes;
 }
 
 /** The same id with its trailing run of axis words taken back out. */
@@ -133,8 +113,7 @@ export function seatAxisWords(runner: RunnerConfig): readonly string[] {
   switch (channel) {
     case 'effort-flag': {
       const effort = 'effort' in runner ? runner.effort : undefined;
-      if (runner.kind !== 'cli') return effort === undefined ? [] : [effort];
-      return flagAxisWords(runner.tool, runner.model, effort);
+      return effort === undefined ? [] : [effort];
     }
     case 'variant': {
       const variant = 'variant' in runner ? runner.variant : undefined;

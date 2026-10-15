@@ -82,6 +82,24 @@ function readyInput(overrides: Partial<BuildReadinessReportInput> = {}): BuildRe
 }
 
 describe('readiness checks', () => {
+  it('uses the supplied catalog label in runner checks', () => {
+    const runner = { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } as const;
+    const report = buildReadinessReport(
+      baseInput({
+        config: makeConfig({ planner: runner, implementer: runner, reviewer: runner }),
+        seatDisplayName: () => 'GPT-6-Luna',
+      }),
+    );
+    const checks = report.sections.flatMap((section) => section.checks);
+    expect(checks).toContainEqual(
+      expect.objectContaining({
+        id: 'runners.planner.configured',
+        summary: 'Planner OpenAI Codex CLI · GPT-6-Luna configured.',
+      }),
+    );
+    expect(JSON.stringify(report)).not.toContain('GPT-6 Luna');
+  });
+
   it('blocks start when a configured CLI has no probe result', () => {
     const report = buildReadinessReport(
       baseInput({

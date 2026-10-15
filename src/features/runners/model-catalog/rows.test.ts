@@ -82,28 +82,26 @@ function effortRow(rows: readonly RightRow[]) {
 }
 
 describe('buildRightRows', () => {
-  it.each([
-    [null, true, 'high'],
-    ['low', true, 'low'],
-    [null, false, 'auto'],
-  ] as const)(
-    'reads the effort ladder with draft %s and id-spelled levels %s as %s',
-    (effortDraft, idSpellsEffort, value) => {
-      const [model] = mergeOptionFamilies([
-        { id: 'gemini-3.8-flash-high' },
-        { id: 'gemini-3.8-flash-low' },
-      ]);
-      if (model === undefined) throw new Error('Missing model family');
+  it('reads Antigravity effort from the selected id without a second ladder', () => {
+    const [model] = mergeOptionFamilies([
+      { id: 'gemini-3.8-flash-high' },
+      { id: 'gemini-3.8-flash-medium' },
+      { id: 'gemini-3.8-flash-low' },
+    ]);
+    if (model === undefined) throw new Error('Missing model family');
+    for (const level of ['high', 'medium', 'low']) {
       const rows = buildRightRows({
         ...BASE,
-        models: [{ ...model, effortChoices: ['low', 'medium', 'high'] }],
+        models: [model],
         expandedModelId: model.id,
-        effortDraft,
-        idSpellsEffort,
+        optionDraftId: `gemini-3.8-flash-${level}`,
+        effortDraft: 'high',
       });
-      expect(effortRow(rows)).toMatchObject({ value });
-    },
-  );
+      expect(rows.filter((row) => row.kind === 'axis')).toMatchObject([
+        { axis: 'effort', value: level, choices: [], steps: true },
+      ]);
+    }
+  });
 
   it('leaves a short list unsectioned and still words every row provenance', () => {
     const rows = buildRightRows({

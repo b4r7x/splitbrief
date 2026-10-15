@@ -68,6 +68,7 @@ export async function handleFailedImplementation(opts: {
     const toolMessage = implState.implResult.error ?? 'The runner rejected its stored credentials';
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
+      modelCache: wctx.modelCache,
       seat: 'build',
       runner: wctx.config.implementer,
       config: wctx.config,
@@ -109,6 +110,7 @@ export async function handleFailedImplementation(opts: {
     const toolMessage = implState.implResult.error ?? 'The runner reported a usage limit';
     const seatSwap = await loadSeatSwapContext({
       projectDir: wctx.projectDir,
+      modelCache: wctx.modelCache,
       seat: 'build',
       runner: wctx.config.implementer,
       config: wctx.config,

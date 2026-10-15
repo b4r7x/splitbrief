@@ -9,9 +9,6 @@ import {
   type SpecMetadata,
 } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
-import { makeConfig } from '#testing/helpers/factories/config.js';
-import { formatSeatIdentity } from './crew/identity.js';
-import { specMetadataOf } from './providers/seat-identity.js';
 import { extractFrontmatter } from '../utils/frontmatter.js';
 
 let tmp: string;
@@ -28,30 +25,9 @@ afterEach(() => {
 
 describe('buildSpecFrontmatter', () => {
   const fullMeta: SpecMetadata = {
-    planner: { tool: 'claude-code', model: 'opus-4' },
-    implementer: { tool: 'ollama', model: 'qwen3:32b' },
+    planner: 'Claude Code CLI · Opus 4',
+    implementer: 'Ollama · Qwen3 32B',
   };
-
-  it('matches the configured seat identities and keeps OpenCode routes distinct', () => {
-    const routes = ['deepseek/deepseek-flash', 'opencode-go/deepseek-v4.1-flash'];
-    const identities = routes.map((model) => {
-      const config = makeConfig({
-        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
-        implementer: { kind: 'cli', tool: 'opencode', model, variant: 'high' },
-      });
-      const fm = buildSpecFrontmatter(specMetadataOf(config));
-      const planner = formatSeatIdentity({ seat: config.planner });
-      const implementer = formatSeatIdentity({
-        seat: config.implementer,
-        displayName: 'DeepSeek V4.1 Flash',
-      });
-      expect(fm.split('\n')).toContain(`planner: ${planner}`);
-      expect(fm.split('\n')).toContain(`implementer: ${implementer}`);
-      expect(extractFrontmatter(fm).frontmatter).toMatchObject({ planner, implementer });
-      return implementer;
-    });
-    expect(new Set(identities).size).toBe(routes.length);
-  });
 
   it('includes all fields when provided', () => {
     const fm = buildSpecFrontmatter(fullMeta);
@@ -63,29 +39,11 @@ describe('buildSpecFrontmatter', () => {
   });
 
   it('keeps YAML punctuation in custom seat identities readable', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'team: planner',
-        model: 'model #1',
-        apiBase: 'http://localhost:11434/v1',
-      },
-      implementer: { kind: 'shell', command: 'worker', model: 'model #2' },
-    });
-    const fm = buildSpecFrontmatter(specMetadataOf(config));
-    expect(extractFrontmatter(fm).frontmatter).toMatchObject({
-      planner: formatSeatIdentity({ seat: config.planner }),
-      implementer: formatSeatIdentity({ seat: config.implementer }),
-    });
-  });
-
-  it('uses the automatic model word when no model is configured', () => {
-    const fm = buildSpecFrontmatter({
-      planner: { tool: 'claude-code' },
-      implementer: { tool: 'ollama' },
-    });
-    expect(fm.split('\n')).toContain('planner: Claude Code CLI · auto');
-    expect(fm.split('\n')).toContain('implementer: Ollama · auto');
+    const meta: SpecMetadata = {
+      planner: 'team: planner · Model #1',
+      implementer: 'worker · Model #2',
+    };
+    expect(extractFrontmatter(buildSpecFrontmatter(meta)).frontmatter).toMatchObject(meta);
   });
 
   it('starts with --- and ends with ---', () => {
@@ -114,8 +72,8 @@ describe('getSplitbriefVersion', () => {
 
 describe('writeSpecFile with metadata', () => {
   const meta: SpecMetadata = {
-    planner: { tool: 'claude-code' },
-    implementer: { tool: 'ollama' },
+    planner: 'Claude Code CLI · auto',
+    implementer: 'Ollama · auto',
   };
 
   it('prepends frontmatter to spec files when metadata is passed', () => {

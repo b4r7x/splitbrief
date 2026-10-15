@@ -56,6 +56,7 @@ export async function handlePlanningFailure(opts: {
     publishError({ bus: wctx.bus, phase: latest.phase, message });
     const issue = await plannerCallHaltIssue({
       projectDir,
+      modelCache: wctx.modelCache,
       config: wctx.config,
       diagnosis: { failure: 'call-failed', message },
       phase: latest.phase,
@@ -85,6 +86,7 @@ export async function handlePlanningFailure(opts: {
   });
   const issue = await plannerCallHaltIssue({
     projectDir,
+    modelCache: wctx.modelCache,
     config: wctx.config,
     diagnosis,
     phase: latest.phase,

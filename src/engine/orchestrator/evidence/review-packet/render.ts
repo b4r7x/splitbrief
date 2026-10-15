@@ -3,16 +3,16 @@ import type {
   ReviewPacketCheckpoint,
 } from '../../../../core/schemas/review-packet.js';
 import { narrowRecord } from '../../../../utils/type-guards.js';
-import {
-  CREW_SEAT_LABELS,
-  candidateIdsOf,
-  formatSeatCandidateIdentity,
-  formatSeatIdentity,
-} from '../../../../core/crew/identity.js';
+import { CREW_SEAT_LABELS, formatSeatIdentity } from '../../../../core/crew/identity.js';
 import { checksSummary } from '../../../../core/validation/checks-summary.js';
 import { formatSeatSwitchCause } from '../../../../core/recovery/headline.js';
-import { labelSeatChange } from '../../../providers/model/display-names.js';
-import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import {
+  recordedSeatIdentityInput,
+  resolveSeatChangeIdentities,
+} from '../../../providers/model/display-names.js';
+import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import type { ModelCacheAccessor } from '../../../providers/model/resolution.js';
+import type { ActiveRunnerRole } from '../../../../core/runners/seat-roles.js';
 
 function sortJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortJson);
@@ -161,19 +161,30 @@ function formatCheckpointKind(checkpoint: ReviewPacketCheckpoint): string {
     : checkpoint.kind;
 }
 
-function packetSeatIdentity(seat: ReviewPacket['run']['reviewer']): string {
+function packetSeatIdentity(
+  seat: ReviewPacket['run']['reviewer'],
+  role: ActiveRunnerRole,
+  cache: ModelCacheAccessor,
+): string {
   if (seat?.tool === undefined || seat.tool === null) return 'n/a';
-  return formatSeatIdentity({
-    seat: {
-      tool: seat.tool,
-      model: seat.model ?? undefined,
-      kind: seat.kind ?? undefined,
-      axes: seat.axes ?? [],
-    },
-  });
+  return formatSeatIdentity(
+    recordedSeatIdentityInput({
+      seat: {
+        tool: seat.tool,
+        model: seat.model ?? undefined,
+        kind: seat.kind ?? undefined,
+        axes: seat.axes ?? [],
+      },
+      role,
+      cache,
+    }),
+  );
 }
 
-export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
+export function renderReviewPacketMarkdown(
+  packet: ReviewPacket,
+  cache: ModelCacheAccessor,
+): string {
   const restoreSafety = packet.checkpoints.safety;
   const checkpointLines =
     packet.checkpoints.items.length === 0
@@ -198,19 +209,14 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
       event.auto === undefined
     )
       return [];
-    const change = labelSeatChange(
-      {
-        seat: event.seat,
-        before:
-          typeof event.from === 'string' ? event.from : formatSeatCandidateIdentity(event.from),
-        after: typeof event.to === 'string' ? event.to : formatSeatCandidateIdentity(event.to),
-        ...(typeof event.from !== 'string' && { beforeIds: candidateIdsOf(event.from) }),
-        ...(typeof event.to !== 'string' && { afterIds: candidateIdsOf(event.to) }),
-      },
-      NULL_CACHE,
-    );
+    const change = resolveSeatChangeIdentities({
+      from: event.from,
+      to: event.to,
+      role: CREW_SEAT_ROLES[event.seat],
+      cache,
+    });
     return [
-      `- ${CREW_SEAT_LABELS[event.seat]} switched ${event.auto ? 'automatically' : 'manually'}: ${change.before} → ${change.after}; ${formatSeatSwitchCause({ cause: event.cause, headline: event.headline })}`,
+      `- ${CREW_SEAT_LABELS[event.seat]} switched ${event.auto ? 'automatically' : 'manually'}: ${change.from} → ${change.to}; ${formatSeatSwitchCause({ cause: event.cause, headline: event.headline })}`,
     ];
   });
   const recoveryLines = [
@@ -231,9 +237,9 @@ export function renderReviewPacketMarkdown(packet: ReviewPacket): string {
     '## Run Header',
     `- Session: ${packet.sessionId}`,
     `- Feature: ${packet.run.feature}`,
-    `- Planner: ${packetSeatIdentity(packet.run.planner)}`,
-    `- Implementer: ${packetSeatIdentity(packet.run.implementer)}`,
-    `- Reviewer: ${packetSeatIdentity(packet.run.reviewer)}`,
+    `- Planner: ${packetSeatIdentity(packet.run.planner, 'planner', cache)}`,
+    `- Implementer: ${packetSeatIdentity(packet.run.implementer, 'implementer', cache)}`,
+    `- Reviewer: ${packetSeatIdentity(packet.run.reviewer, 'reviewer', cache)}`,
     `- Tasks: ${packet.run.totalTasks} total, ${packet.run.escalated} escalated, ${packet.run.skipped} skipped, ${packet.run.failed} failed`,
     `- Generated: ${packet.generatedAt}`,
     '',

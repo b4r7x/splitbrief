@@ -89,6 +89,7 @@ function commit(
     action: 'switch-seat' as const,
     bus: input.bus,
     config: input.config,
+    modelCache: input.policy.modelCache,
   };
   return commitSeatSwitch(opts, plan, { auto, configRevision }).state;
 }

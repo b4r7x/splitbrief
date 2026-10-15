@@ -12,6 +12,7 @@ import type { ReviewPacket } from '../../../../core/schemas/review-packet.js';
 import { buildFinalReview, resolveChangedFiles, resolveRunUniverse } from './sections-io.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
+import { NULL_CACHE } from '../../../providers/model/resolution.js';
 import { createSnapshot } from '../../../snapshots/create.js';
 
 let dirs: string[] = [];
@@ -548,6 +549,7 @@ describe('renderReviewPacketMarkdown final review block', () => {
         criteriaFailed: 1,
         findingCounts: { critical: 1, warning: 0, note: 0 },
       }),
+      NULL_CACHE,
     );
 
     expect(rendered).toContain('- Verdict: fail');
@@ -568,6 +570,7 @@ describe('renderReviewPacketMarkdown final review block', () => {
         criteriaFailed: 0,
         findingCounts: { critical: 0, warning: 0, note: 0 },
       }),
+      NULL_CACHE,
     );
 
     expect(rendered).toContain('- Verdict: unknown');

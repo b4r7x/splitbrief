@@ -37,6 +37,7 @@ import {
   typedCallFromTasks,
 } from '#testing/helpers/typed-planner.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { saveDetectionCache } from '../../engine/detection/cache.js';
 import { registerSpecCommand } from './spec.js';
 
 const createPlannerMock = vi.fn<(config: Config) => Promise<Planner>>();
@@ -77,6 +78,7 @@ afterEach(() => {
   cleanupTempDir(shimDir);
   if (tmp) cleanupTempDir(tmp);
   consoleSpy.mockRestore();
+  modelCacheStore.reset();
 });
 
 function sessionsRoot(): string {
@@ -89,6 +91,35 @@ function writeConfig(config: Config): void {
 }
 
 describe('spec command', () => {
+  it('writes frontmatter with the remembered catalog name in both documents', async () => {
+    writeConfig(makeConfig({ implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } }));
+    await saveDetectionCache({
+      projectDir: tmp,
+      snapshot: {
+        contextKey: 'remembered',
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [],
+        cliCatalogs: [
+          { tool: 'codex', models: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }], probedAt: 1 },
+        ],
+      },
+    });
+    const program = new Command();
+    registerSpecCommand(program, { createPlanner: createPlannerMock });
+    await program.parseAsync(['node', 'splitbrief', 'spec', '--project', tmp, 'catalog names']);
+    const [session] = readdirSync(sessionsRoot());
+    if (session === undefined) throw new Error('Expected a planning session');
+    for (const name of [PLAN_FILE, TASKS_FILE]) {
+      const text = readFileSync(join(sessionsRoot(), session, name), 'utf8');
+      expect(text).toContain('implementer: OpenAI Codex CLI · GPT-6-Luna');
+      expect(text).not.toContain('GPT-6 Luna');
+    }
+  });
+
   it('constructs the planner from the resolved config', async () => {
     const program = new Command();
     program.exitOverride();

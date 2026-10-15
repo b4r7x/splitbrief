@@ -561,7 +561,7 @@ describe('effort support', () => {
       'kilo-code': 'variant',
       cursor: 'model-id',
       'command-code': 'effort-flag',
-      antigravity: 'effort-flag',
+      antigravity: 'model-id',
     });
   });
 

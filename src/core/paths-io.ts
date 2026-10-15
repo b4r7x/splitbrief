@@ -21,7 +21,6 @@ import { assertPathConfined, assertModelWritablePathConfined } from '../lib/path
 import { validateSafeIdentifier } from '../utils/validate-identifier.js';
 import { nowIso } from '../utils/format-time.js';
 import { error, matches } from '../utils/error.js';
-import { formatSeatIdentity, type SeatIds } from './crew/identity.js';
 
 export const pathError = {
   escapesProject: (filePath: string, cause?: unknown) =>
@@ -52,9 +51,10 @@ export function getSplitbriefVersion(): string {
   return cachedVersion;
 }
 
+/** Catalog seat identities for document frontmatter. */
 export type SpecMetadata = {
-  planner: SeatIds;
-  implementer: SeatIds;
+  planner: string;
+  implementer: string;
 };
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
@@ -65,13 +65,11 @@ function hasFileFrontmatter(content: string): boolean {
 }
 
 export function buildSpecFrontmatter(opts: SpecMetadata): string {
-  const planner = formatSeatIdentity({ seat: opts.planner });
-  const implementer = formatSeatIdentity({ seat: opts.implementer });
   const lines = [
     '---',
     `generated_by: splitbrief v${getSplitbriefVersion()}`,
-    `planner: ${stringify(planner, { lineWidth: 0 }).trimEnd()}`,
-    `implementer: ${stringify(implementer, { lineWidth: 0 }).trimEnd()}`,
+    `planner: ${stringify(opts.planner, { lineWidth: 0 }).trimEnd()}`,
+    `implementer: ${stringify(opts.implementer, { lineWidth: 0 }).trimEnd()}`,
     `created_at: ${nowIso()}`,
     '---',
     '',

@@ -1,12 +1,13 @@
 import {
-  candidateIdsOf,
-  formatSeatChangeIdentities,
+  type candidateIdsOf,
   formatSeatIdentity,
   type SeatIds,
 } from '../../../core/crew/identity.js';
-import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
-import { resolveModelDisplayName } from '../../../engine/providers/model/display-names.js';
+import {
+  recordedSeatIdentityInput,
+  resolveSeatChangeIdentities,
+} from '../../../engine/providers/model/display-names.js';
 import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 
 export function formatRecordedSeatIdentity(
@@ -20,15 +21,16 @@ export function formatRecordedSeatIdentity(
 ): string | null {
   if (input.runnerName === undefined) return null;
   return formatSeatIdentity(
-    recordedIdentityInput(
-      {
+    recordedSeatIdentityInput({
+      seat: {
         tool: input.runnerName,
         model: input.model,
         axes: input.axes ?? [],
         kind: input.backendKind,
       },
-      input.role,
-    ),
+      role: input.role,
+      cache: modelCacheStore,
+    }),
   );
 }
 
@@ -37,32 +39,5 @@ export function formatRecordedSeatChangeIdentities(
   to: Parameters<typeof candidateIdsOf>[0],
   role: ActiveRunnerRole,
 ): Readonly<{ from: string; to: string }> {
-  return formatSeatChangeIdentities(
-    from.model === undefined ? from : recordedIdentityInput(candidateIdsOf(from), role),
-    to.model === undefined ? to : recordedIdentityInput(candidateIdsOf(to), role),
-  );
-}
-
-function recordedIdentityInput(
-  seat: SeatIds,
-  role: ActiveRunnerRole,
-): Parameters<typeof formatSeatIdentity>[0] {
-  const tool =
-    seat.kind === 'cli' || seat.kind === undefined
-      ? (cliToolIdForCommand(seat.tool) ?? seat.tool)
-      : seat.tool;
-  const displayName =
-    seat.model === undefined
-      ? undefined
-      : resolveModelDisplayName({
-          providerId: tool,
-          model: seat.model,
-          role,
-          kind: seat.kind,
-          cache: modelCacheStore,
-        });
-  return {
-    seat: { ...seat, tool },
-    displayName,
-  };
+  return resolveSeatChangeIdentities({ from, to, role, cache: modelCacheStore });
 }

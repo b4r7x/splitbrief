@@ -10,11 +10,14 @@ import type { RunnerGate } from '../prepared-execution.js';
 import type { probeRunnerAvailability } from '../probe-availability.js';
 import type { resolveCliExecutableAliases } from '../resolve-cli-executable.js';
 import type { CustomRunnerAdmissionPolicy } from '../types.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 
 type CommonPreparationPolicy = CustomRunnerAdmissionPolicy &
   Readonly<{
     unverifiedAuth: 'denied' | 'disclosed' | 'allowed';
     allowHooks: boolean;
+    /** The host's model catalog: the readiness report names each seat by its catalog label. */
+    modelCache?: ModelCacheAccessor | undefined;
   }>;
 
 export type PreparationPolicy =

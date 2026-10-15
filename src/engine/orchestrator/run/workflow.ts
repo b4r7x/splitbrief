@@ -8,7 +8,9 @@ import type { Config } from '../../../core/schemas/config.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import { pruneOrphanSessions } from '../../../core/sessions/orphans.js';
 import { recordRunnerPid, releaseRunnerPid } from '../../../core/sessions/runner-pids.js';
-import { runSeatIdentity, specMetadataOf } from '../../../core/providers/seat-identity.js';
+import { runSeatIdentity } from '../../../core/providers/seat-identity.js';
+import { resolveSpecMetadata } from '../../providers/model/display-names.js';
+import { NULL_CACHE } from '../../providers/model/resolution.js';
 import {
   clearProcessLedger,
   killAllProcesses,
@@ -135,7 +137,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   };
   const summaryBase = seatIdentityOf(config);
 
-  const metadata: SpecMetadata = specMetadataOf(config);
+  const metadata: SpecMetadata = resolveSpecMetadata(config, opts.modelCache ?? NULL_CACHE);
 
   let trackedState: WorkflowState | undefined;
   let currentTask: Pick<Task, 'suggestedFiles' | 'action'> | undefined;

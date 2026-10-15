@@ -21,6 +21,8 @@ import type { SessionRef } from '../../../core/types/session-ref.js';
 import { isAbortError, throwIfAborted } from '../../../utils/abort.js';
 import { error, matches } from '../../../utils/error.js';
 import { detectRunnerEvidence } from '../../detection/runner-evidence.js';
+import { resolveSeatDisplayName } from '../../providers/model/display-names.js';
+import { NULL_CACHE } from '../../providers/model/resolution.js';
 import { collectArgVectorPreflightChecks } from '../arg-vector-preflight.js';
 import {
   CUSTOM_RUNNER_TRUST_PERSISTED_AFTER_ABORT,
@@ -229,6 +231,8 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     probeRunnerAvailability: (probe) =>
       deps.probeRunnerAvailability({ ...probe, roles, signal: input.signal }),
     ...(input.resumeSession !== undefined && { resumeSession: input.resumeSession }),
+    seatDisplayName: (runner, role) =>
+      resolveSeatDisplayName(runner, role, input.policy.modelCache ?? NULL_CACHE),
   });
   throwIfAborted(input.signal);
   // collectReadiness is given no probe results, so it emits a placeholder

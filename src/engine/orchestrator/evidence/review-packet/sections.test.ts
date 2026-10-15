@@ -12,6 +12,7 @@ import type { WorkflowState } from '../../../../core/schemas/workflow.js';
 import { buildChanges, buildChecks, buildRun, buildValidation } from './sections.js';
 import { renderReviewPacketMarkdown } from './render.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
+import { NULL_CACHE } from '../../../providers/model/resolution.js';
 
 function stateWith(...tasks: ReturnType<typeof makeTask>[]): WorkflowState {
   return { ...createInitialState('feat'), tasks };
@@ -82,7 +83,7 @@ describe('buildValidation', () => {
       },
     });
 
-    const rendered = renderReviewPacketMarkdown(packet);
+    const rendered = renderReviewPacketMarkdown(packet, NULL_CACHE);
 
     expect(rendered).toContain('- T001 done: 2 of 2 checks passed');
     expect(rendered).toContain('- T002 done: no checks');
@@ -250,7 +251,7 @@ describe('buildRun seat identity kinds', () => {
     );
 
     expect(run.reviewer).toEqual({ tool: 'claude-code', model: 'sonnet', kind: 'cli' });
-    expect(renderReviewPacketMarkdown(makeReviewPacket({ run }))).toContain(
+    expect(renderReviewPacketMarkdown(makeReviewPacket({ run }), NULL_CACHE)).toContain(
       '- Reviewer: Claude Code CLI · Sonnet 5',
     );
   });
@@ -275,7 +276,7 @@ describe('buildRun seat identity kinds', () => {
         model: plannerModel ?? null,
         kind: plannerKind ?? null,
       });
-      const markdown = renderReviewPacketMarkdown(makeReviewPacket({ run }));
+      const markdown = renderReviewPacketMarkdown(makeReviewPacket({ run }), NULL_CACHE);
       expect(markdown).toContain('- Reviewer: Claude Code CLI');
       expect(markdown).not.toContain('old-endpoint');
     },
@@ -285,7 +286,9 @@ describe('buildRun seat identity kinds', () => {
     const run = makeRun(makeSummary(), createInitialState('feat'));
 
     expect(run.reviewer).toEqual({ tool: null, model: null, kind: null });
-    expect(renderReviewPacketMarkdown(makeReviewPacket({ run }))).toContain('- Reviewer: n/a\n');
+    expect(renderReviewPacketMarkdown(makeReviewPacket({ run }), NULL_CACHE)).toContain(
+      '- Reviewer: n/a\n',
+    );
   });
 
   it('carries each seat kind from the summary record that named its tool', () => {

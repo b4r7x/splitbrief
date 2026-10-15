@@ -3,18 +3,63 @@ import { taskId } from '../../../../core/schemas/task.js';
 import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderChecksLogForPrompt, renderReviewPacketMarkdown } from './render.js';
+import { NULL_CACHE } from '../../../providers/model/resolution.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 
 const EVIDENCE_PATH = '/project/.splitbrief/sessions/sess/evidence.json';
 const SESSION_LOG_PATH = '/project/.splitbrief/sessions/sess/session.jsonl';
 const EVIDENCE_PATHS = { validation: EVIDENCE_PATH, sessionLog: SESSION_LOG_PATH };
 
 describe('renderReviewPacketMarkdown review seat', () => {
+  it('uses catalog names for every recorded seat and a switched seat', () => {
+    const packet = makeReviewPacket();
+    const seat = { tool: 'codex', model: 'gpt-6-luna', kind: 'cli', axes: ['high'] } as const;
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        run: {
+          ...packet.run,
+          planner: { ...seat, axes: [...seat.axes] },
+          implementer: { ...seat, axes: [...seat.axes] },
+          reviewer: { ...seat, axes: [...seat.axes] },
+        },
+        recoveryDecisions: {
+          ...packet.recoveryDecisions,
+          events: [
+            {
+              type: 'seat_switched',
+              ts: '2026-10-15T00:00:00Z',
+              seat: 'build',
+              from: { tool: 'codex', model: 'gpt-6-luna', effort: 'low' },
+              to: { tool: 'codex', model: 'gpt-6-luna', effort: 'high' },
+              cause: 'runner-usage-limit',
+              auto: false,
+            },
+          ],
+        },
+      },
+      makeModelCacheAccessor({
+        providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+      }),
+    );
+    for (const role of ['Planner', 'Implementer', 'Reviewer']) {
+      expect(rendered).toContain(`- ${role}: OpenAI Codex CLI · GPT-6-Luna · high`);
+    }
+    expect(rendered).toContain(
+      'OpenAI Codex CLI · GPT-6-Luna · low → OpenAI Codex CLI · GPT-6-Luna · high',
+    );
+    expect(rendered).not.toContain('GPT-6 Luna');
+  });
+
   it('lists the task tally without a local count', () => {
     const packet = makeReviewPacket();
-    const rendered = renderReviewPacketMarkdown({
-      ...packet,
-      run: { ...packet.run, totalTasks: 7, escalated: 2, skipped: 1, failed: 1 },
-    });
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        run: { ...packet.run, totalTasks: 7, escalated: 2, skipped: 1, failed: 1 },
+      },
+      NULL_CACHE,
+    );
 
     const tally = rendered.split('\n').find((line) => line.startsWith('- Tasks:'));
     expect(tally).toBe('- Tasks: 7 total, 2 escalated, 1 skipped, 1 failed');
@@ -22,14 +67,17 @@ describe('renderReviewPacketMarkdown review seat', () => {
 
   it('heads the verdict with the review seat and names the runner that held it', () => {
     const packet = makeReviewPacket();
-    const rendered = renderReviewPacketMarkdown({
-      ...packet,
-      run: {
-        ...packet.run,
-        planner: { tool: 'claude-code', model: 'sonnet' },
-        reviewer: { tool: 'codex', model: 'gpt-5' },
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        run: {
+          ...packet.run,
+          planner: { tool: 'claude-code', model: 'sonnet' },
+          reviewer: { tool: 'codex', model: 'gpt-5' },
+        },
       },
-    });
+      NULL_CACHE,
+    );
 
     expect(rendered).toContain('## Reviewer Final Review');
     expect(rendered).toContain('- Reviewer: OpenAI Codex CLI · GPT-5');
@@ -44,11 +92,36 @@ describe('renderReviewPacketMarkdown review seat', () => {
     });
 
     expect(saved.run.reviewer).toBeUndefined();
-    expect(renderReviewPacketMarkdown(saved)).toContain('- Reviewer: n/a\n');
+    expect(renderReviewPacketMarkdown(saved, NULL_CACHE)).toContain('- Reviewer: n/a\n');
   });
 });
 
 describe('packet switch and admission evidence', () => {
+  it('keeps tool-default candidates without a model word on both sides of a switch', () => {
+    const packet = makeReviewPacket();
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        recoveryDecisions: {
+          ...packet.recoveryDecisions,
+          events: [
+            {
+              type: 'seat_switched',
+              ts: '2026-10-15T00:00:00Z',
+              seat: 'build',
+              from: { tool: 'codex' },
+              to: { tool: 'claude-code' },
+              cause: 'runner-usage-limit',
+              auto: false,
+            },
+          ],
+        },
+      },
+      NULL_CACHE,
+    );
+    expect(rendered).toContain('OpenAI Codex CLI → Claude Code CLI; usage limit');
+  });
+
   it('renders the switch, recorded seat axes, and admission scope', () => {
     const packet = makeReviewPacket();
     const rendered = renderReviewPacketMarkdown(
@@ -104,6 +177,7 @@ describe('packet switch and admission evidence', () => {
           ],
         },
       }),
+      NULL_CACHE,
     );
 
     expect(rendered).toContain('- Planner: OpenAI Codex CLI · GPT-5 · xhigh');
@@ -129,25 +203,28 @@ describe('packet switch and admission evidence', () => {
 
   it('preserves Cursor model-ID axes on both sides of an axis-only switch', () => {
     const packet = makeReviewPacket();
-    const rendered = renderReviewPacketMarkdown({
-      ...packet,
-      recoveryDecisions: {
-        ...packet.recoveryDecisions,
-        events: [
-          {
-            type: 'seat_switched',
-            ts: '2026-10-10T12:57:12.126Z',
-            seat: 'build',
-            from: { tool: 'cursor', model: 'claude-opus-5-thinking' },
-            to: { tool: 'cursor', model: 'claude-opus-5-thinking-high-fast' },
-            cause: 'runner-usage-limit',
-            accountCause: 'balance',
-            headline: 'Balance spent on Cursor Agent CLI',
-            auto: true,
-          },
-        ],
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        recoveryDecisions: {
+          ...packet.recoveryDecisions,
+          events: [
+            {
+              type: 'seat_switched',
+              ts: '2026-10-10T12:57:12.126Z',
+              seat: 'build',
+              from: { tool: 'cursor', model: 'claude-opus-5-thinking' },
+              to: { tool: 'cursor', model: 'claude-opus-5-thinking-high-fast' },
+              cause: 'runner-usage-limit',
+              accountCause: 'balance',
+              headline: 'Balance spent on Cursor Agent CLI',
+              auto: true,
+            },
+          ],
+        },
       },
-    });
+      NULL_CACHE,
+    );
 
     expect(rendered).toContain(
       '- BUILD switched automatically: Cursor Agent CLI · Claude Opus 5 · thinking → Cursor Agent CLI · Claude Opus 5 · high · thinking · fast; Balance spent on Cursor Agent CLI',
@@ -156,23 +233,26 @@ describe('packet switch and admission evidence', () => {
 
   it('renders a manual legacy switch from state labels without inventing a cause', () => {
     const packet = makeReviewPacket();
-    const rendered = renderReviewPacketMarkdown({
-      ...packet,
-      recoveryDecisions: {
-        ...packet.recoveryDecisions,
-        events: [
-          {
-            type: 'seat_switched',
-            ts: '2026-10-10T12:57:12.126Z',
-            seat: 'plan',
-            from: 'old recorded seat',
-            to: 'new recorded seat',
-            cause: 'runner-usage-limit',
-            auto: false,
-          },
-        ],
+    const rendered = renderReviewPacketMarkdown(
+      {
+        ...packet,
+        recoveryDecisions: {
+          ...packet.recoveryDecisions,
+          events: [
+            {
+              type: 'seat_switched',
+              ts: '2026-10-10T12:57:12.126Z',
+              seat: 'plan',
+              from: 'old recorded seat',
+              to: 'new recorded seat',
+              cause: 'runner-usage-limit',
+              auto: false,
+            },
+          ],
+        },
       },
-    });
+      NULL_CACHE,
+    );
 
     expect(rendered).toContain(
       '- PLAN switched manually: old recorded seat → new recorded seat; usage limit',
@@ -201,7 +281,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
       },
     });
 
-    const rendered = renderReviewPacketMarkdown(packet);
+    const rendered = renderReviewPacketMarkdown(packet, NULL_CACHE);
 
     expect(rendered).toContain('## Checks Log');
     expect(rendered).toContain('- K1 T001 (exit 0): npm test');
@@ -227,7 +307,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
       },
     });
 
-    const rendered = renderReviewPacketMarkdown(packet);
+    const rendered = renderReviewPacketMarkdown(packet, NULL_CACHE);
 
     expect(rendered).toContain('- K1 T001 (exit 1): render overlay-picker /tmp/out');
     expect(rendered).toContain('  output: failed to render');
@@ -254,7 +334,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
       },
     });
 
-    const rendered = renderReviewPacketMarkdown(packet);
+    const rendered = renderReviewPacketMarkdown(packet, NULL_CACHE);
 
     expect(rendered).toContain('- K2 T001 (refused): npm run test');
     expect(rendered).toContain('  reason: runs a package script or binary');
@@ -272,7 +352,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
       },
     });
 
-    const rendered = renderReviewPacketMarkdown(packet);
+    const rendered = renderReviewPacketMarkdown(packet, NULL_CACHE);
 
     expect(rendered).toContain(
       '- outside read: Task T004 searched ~ with run_command: find ~ -name "process-invoke.ts"',
@@ -284,7 +364,7 @@ describe('renderReviewPacketMarkdown checks log', () => {
 
   it('says no checks were recorded for an empty log', () => {
     const packet = makeReviewPacket();
-    expect(renderReviewPacketMarkdown(packet)).toContain('- No checks recorded.');
+    expect(renderReviewPacketMarkdown(packet, NULL_CACHE)).toContain('- No checks recorded.');
   });
 });
 
@@ -332,7 +412,7 @@ describe('renderChecksLogForPrompt', () => {
     }).checks;
 
     const rendered = renderChecksLogForPrompt(checks, EVIDENCE_PATHS);
-    const packet = renderReviewPacketMarkdown(makeReviewPacket({ checks }));
+    const packet = renderReviewPacketMarkdown(makeReviewPacket({ checks }), NULL_CACHE);
     expect(packet).toContain(`## Checks Log\n${rendered}\n`);
     expect(rendered).toContain('- K1 T001 (exit 1): npm test');
     expect(rendered).toContain('output: Test Files  1 failed (1)');

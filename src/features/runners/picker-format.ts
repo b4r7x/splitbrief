@@ -12,7 +12,6 @@ import {
   CATALOG_FETCH_FAILED,
   CATALOG_LANE_PENDING,
   effortLadderFor,
-  unsetEffortWord,
   type CatalogLane,
   type RightRow,
   type RouteAuthState,
@@ -623,7 +622,6 @@ export function modelBylineAxes(input: {
   model: ModelOption;
   id: string;
   effortDraft: string | null;
-  idSpellsEffort: boolean;
 }): string[] {
   const variants = input.model.variants ?? [];
   const providerPrefix =
@@ -631,11 +629,8 @@ export function modelBylineAxes(input: {
   const ladder = effortLadderFor(input.model, input.id);
   const selection = parseOptionSelection(input.id);
   const words: string[] = [];
-  if (ladder.length > 0) {
-    const draft = input.effortDraft ?? '';
-    const effort = ladder.includes(draft) ? draft : unsetEffortWord(input.id, input.idSpellsEffort);
-    if (effort !== UNSET_EFFORT_WORD) words.push(effort);
-  }
+  const draft = input.effortDraft ?? '';
+  if (ladder.length > 0 && ladder.includes(draft)) words.push(draft);
   for (const axis of optionAxesOf(variants, providerPrefix)) {
     if (axis.axis === 'effort') {
       if (ladder.length > 0) continue;

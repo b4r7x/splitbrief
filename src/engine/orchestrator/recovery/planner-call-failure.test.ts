@@ -1,9 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { cliDetectionFor, rememberDetectedTools } from '#testing/helpers/factories/detection.js';
+import { withTempDir } from '#testing/helpers/temp-dir.js';
 import { defaultCliAuthChannel, type CliToolId } from '../../../core/runners/cli-tool-catalog.js';
 import { error } from '../../../utils/error.js';
 import { streamError } from '../../streaming/stream-errors.js';
-import { diagnosePlannerCallFailure } from './planner-call-failure.js';
+import { diagnosePlannerCallFailure, plannerCallHaltIssue } from './planner-call-failure.js';
+
+it('carries the catalog name through the planner halt and fallback context', async () => {
+  await withTempDir('catalog-planner-halt', async (projectDir) => {
+    await rememberDetectedTools(projectDir, [cliDetectionFor('ready', 'codex')]);
+    const config = makeConfig({
+      planner: {
+        kind: 'cli',
+        tool: 'claude-code',
+        fallback: { tool: 'codex', model: 'gpt-6-luna' },
+      },
+    });
+    const issue = await plannerCallHaltIssue({
+      projectDir,
+      config,
+      modelCache: makeModelCacheAccessor({
+        providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+      }),
+      diagnosis: {
+        failure: 'usage-limit',
+        message: 'Balance spent',
+        seatDown: {
+          classification: { class: 'account', cause: 'balance' },
+          words: 'Balance spent',
+        },
+      },
+      phase: 'planning',
+      swap: { seat: 'plan', runner: config.planner },
+    });
+    expect(issue.details).toContain('fallback: OpenAI Codex CLI · GPT-6-Luna');
+    expect(issue.facts?.fallback).toBe('OpenAI Codex CLI · GPT-6-Luna');
+  });
+});
 
 function cliSeat(tool: CliToolId) {
   return { kind: 'cli', tool, authChannel: defaultCliAuthChannel(tool).id } as const;

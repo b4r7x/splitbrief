@@ -74,11 +74,12 @@ function implementerArgs(
 }
 
 describe('Antigravity role adapters', () => {
-  it('is an admitted catalog tool with the agy binary and an effort flag', () => {
+  it('is an admitted catalog tool with the agy binary and model-id effort', () => {
     expect(ANTIGRAVITY_CLI_ADMISSION_VERDICT).toBe('PASS');
     expect(CLI_TOOL_CATALOG.antigravity.command).toBe('agy');
     expect(CLI_TOOL_CATALOG.antigravity.executableAliases).toEqual(['agy']);
-    expect(CLI_TOOL_CATALOG.antigravity.effortChannel).toBe('effort-flag');
+    expect(CLI_TOOL_CATALOG.antigravity.effortChannel).toBe('model-id');
+    expect(antigravityPlannerAdapter.supportsEffort).toBe(false);
     expect(CLI_TOOL_CATALOG.antigravity.compatibility.versionScheme).toBe('semver');
     expect(CLI_TOOL_CATALOG.antigravity.compatibility.testedVersion).toBe('1.2.9');
     expect(CLI_TOOL_CATALOG.antigravity.compatibility.evidence.asOf).toBe('2026-09-23');
@@ -90,7 +91,7 @@ describe('Antigravity role adapters', () => {
   });
 
   it('builds the planner argv with the read-only plan mode', () => {
-    expect(plannerArgs({ model: 'gemini-3-pro', effort: 'high' })).toEqual([
+    expect(plannerArgs({ model: 'gemini-3.8-flash-low' })).toEqual([
       '-p',
       PROMPT,
       '--mode',
@@ -100,11 +101,19 @@ describe('Antigravity role adapters', () => {
       '--output-format',
       'stream-json',
       '--model',
-      'gemini-3-pro',
-      '--effort',
-      'high',
+      'gemini-3.8-flash-low',
     ]);
   });
+
+  it.each([plannerArgs, implementerArgs])(
+    'sends only the model id when an old config also carries an effort',
+    (args) => {
+      const argv = args({ model: 'gemini-3.8-flash-high', effort: 'low' });
+      expect(argv.slice(-2)).toEqual(['--model', 'gemini-3.8-flash-high']);
+      expect(argv).not.toContain('--effort');
+      expect(args({ effort: 'low' })).not.toContain('--effort');
+    },
+  );
 
   it('builds the implementer argv with the write flag', () => {
     expect(implementerArgs()).toEqual([
