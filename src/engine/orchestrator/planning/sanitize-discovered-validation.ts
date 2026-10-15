@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import type { PackageScriptsReadinessInput } from '../../../core/readiness/checks/validation.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { VALIDATION_STAGES, type Phase } from '../../../core/schemas/enums.js';
@@ -5,7 +6,7 @@ import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { isPackageManager } from '../../../core/trust/path-classification.js';
 import type { ManifestCommands } from '../../../core/validation/manifest-commands.js';
 import { pythonStack } from '../../../core/validation/stacks/python.js';
-import { STACKS } from '../../../core/validation/stacks/registry.js';
+import { isTestScript, STACKS } from '../../../core/validation/stacks/registry.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
 import { resolveTestCommand } from '../../../core/validation/stage-command.js';
 import { isTestPatternSafe } from '../../../core/validation/test-discovery.js';
@@ -26,7 +27,7 @@ const SHELL_OPERATORS = /[|&;`$(){}]/;
 const INTERPRETERS = new Set(['node', 'python', 'python3']);
 
 /** The interpreter options that load code other than a script file. */
-export const CODE_LOAD_FLAGS: ReadonlySet<string> = new Set([
+const CODE_LOAD_FLAGS: ReadonlySet<string> = new Set([
   '-e',
   '--eval',
   '-r',
@@ -40,6 +41,46 @@ export const CODE_LOAD_FLAGS: ReadonlySet<string> = new Set([
   '--print',
   '--run',
 ]);
+
+export const INLINE_CODE_FLAGS: ReadonlySet<string> = new Set([
+  ...CODE_LOAD_FLAGS,
+  '-E',
+  '--loader',
+  '--experimental-loader',
+]);
+
+const NODE_TEST_REPORTERS = new Set(['dot', 'junit', 'spec', 'tap', 'lcov']);
+const NODE_TEST_BOOLEAN_FLAGS = new Set([
+  '--test',
+  '--test-only',
+  '--test-force-exit',
+  '--test-update-snapshots',
+]);
+const NODE_TEST_VALUE_FLAGS = new Set([
+  '--test-concurrency',
+  '--test-coverage-branches',
+  '--test-coverage-exclude',
+  '--test-coverage-functions',
+  '--test-coverage-include',
+  '--test-coverage-lines',
+  '--test-name-pattern',
+  '--test-reporter',
+  '--test-reporter-destination',
+  '--test-shard',
+  '--test-skip-pattern',
+  '--test-timeout',
+]);
+
+/** Node's options that only parse the script: node runs no code of it. */
+export const NODE_SYNTAX_CHECK_FLAGS: ReadonlySet<string> = new Set(['-c', '--check']);
+
+/**
+ * Whether node's options before its script only parse the script (`node --check x.js`). Any
+ * other option can run it: `node --check --build-snapshot x.js` runs `x.js`.
+ */
+export function nodeParsesOnly(options: readonly string[]): boolean {
+  return options.length > 0 && options.every((option) => NODE_SYNTAX_CHECK_FLAGS.has(option));
+}
 
 const NPX_CODE_LOAD_PACKAGES = new Set(['tsx', 'ts-node', 'ts-node/esm', 'node']);
 
@@ -104,14 +145,60 @@ function executedProgramPositions(tokens: string[]): number[] {
   return positions;
 }
 
-function interpreterRefusal(tokens: string[], start: number): string | null {
+const NODE_TEST_STACKS = STACKS.filter((stack) => stack.allowedCommands.includes('node'));
+
+function isWorkspacePath(arg: string): boolean {
+  return !isAbsolute(arg) && !arg.split(/[\\/]/).includes('..');
+}
+
+function isWorkspaceFile(arg: string): boolean {
+  return isWorkspacePath(arg) && !/[*?[\]]/.test(arg) && !arg.endsWith('/');
+}
+
+/** `executed`: the command runs this interpreter, rather than passing its name as an argument. */
+function interpreterRefusal({
+  tokens,
+  start,
+  executed,
+}: {
+  tokens: string[];
+  start: number;
+  executed: boolean;
+}): string | null {
   const program = commandFamily(tokens[start] ?? '');
+  const node = executed && program === 'node';
+  const operandAt = tokens.findIndex((arg, index) => index > start && !arg.startsWith('-'));
+  const options = tokens.slice(start + 1, operandAt === -1 ? undefined : operandAt);
+  const parsesOnly = node && nodeParsesOnly(options);
+  const nodeTestFiles =
+    node &&
+    operandAt !== -1 &&
+    options.includes('--test') &&
+    !options.some((option) => option.startsWith('-m'));
+  const codeFlags = nodeTestFiles ? INLINE_CODE_FLAGS : CODE_LOAD_FLAGS;
+  let testRunner = false;
   for (let index = start + 1; index < tokens.length; index++) {
     const arg = tokens[index];
     if (!arg) continue;
     if (arg === '-') return `reads code from standard input (${program} -)`;
     if (arg === '--') return `uses the script separator ${program} --`;
-    if (!arg.startsWith('-')) return `passes an operand to ${program} (${arg})`;
+    if (!arg.startsWith('-')) {
+      if (parsesOnly) {
+        if (!isWorkspacePath(arg)) {
+          return `passes a path outside the workspace to ${program} (${arg})`;
+        }
+        return isWorkspaceFile(arg) ? null : `passes an operand to ${program} (${arg})`;
+      }
+      // node's test runner reads every word after its options as a file to run.
+      const operand = testRunner
+        ? tokens
+            .slice(index)
+            .find((token) => !isWorkspaceFile(token) || !isTestScript(token, NODE_TEST_STACKS))
+        : arg;
+      return operand === undefined ? null : `passes an operand to ${program} (${operand})`;
+    }
+    if (parsesOnly && NODE_SYNTAX_CHECK_FLAGS.has(arg)) continue;
+    if (node && arg === '--test') testRunner = true;
     const flag = arg.startsWith('--') ? arg.replace(/=.*$/s, '') : arg.slice(0, 2);
     if (flag === '-m') {
       const module = arg === '-m' ? tokens[index + 1] : arg.slice(2);
@@ -120,7 +207,19 @@ function interpreterRefusal(tokens: string[], start: number): string | null {
         ? null
         : `runs a Python module outside the stack tools (${module})`;
     }
-    if (CODE_LOAD_FLAGS.has(flag)) return `uses the code-loading option ${program} ${flag}`;
+    if (codeFlags.has(flag)) return `uses the code-loading option ${program} ${flag}`;
+    if (nodeTestFiles && !NODE_TEST_BOOLEAN_FLAGS.has(flag) && !NODE_TEST_VALUE_FLAGS.has(flag)) {
+      return `uses an unsupported test-file option ${program} ${flag}`;
+    }
+    if (nodeTestFiles && !arg.includes('=') && !NODE_TEST_BOOLEAN_FLAGS.has(flag)) {
+      return `requires ${flag}=<value> before a test file`;
+    }
+    if (nodeTestFiles && flag === '--test-reporter') {
+      const reporter = arg.slice('--test-reporter='.length);
+      if (!NODE_TEST_REPORTERS.has(reporter)) {
+        return `loads a test reporter outside Node's built-in reporters (${reporter})`;
+      }
+    }
   }
   return null;
 }
@@ -258,7 +357,7 @@ function programRefusal(tokens: string[], positions: number[]): string | null {
   check(0, testRunnerConfigRefusal);
   check(
     tokens.findIndex((token) => INTERPRETERS.has(commandFamily(token))),
-    interpreterRefusal,
+    (_, start) => interpreterRefusal({ tokens, start, executed: positions.includes(start) }),
   );
 
   const executed = refusals.find(({ start }) => positions.includes(start));

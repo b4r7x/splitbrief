@@ -50,6 +50,20 @@ describe('planTestCheck', () => {
     expect(planned).toMatchObject({ kind: 'run', command: 'cargo test' });
   });
 
+  it.each(['node --test test/unit/parse.mjs', 'node --check src/a.js', 'node -c src/a.js'])(
+    'runs the same discovered command for every test check: %s',
+    (testCommand) => {
+      writeFileSync(join(tempDir, 'tsconfig.json'), '{}');
+      for (const file of ['src/a.test.ts', 'src/b.test.ts']) {
+        expect(plan(file, makeConfig({ testCommand: undefined }), { testCommand })).toMatchObject({
+          kind: 'run',
+          command: testCommand,
+          resolved: { source: 'discovered' },
+        });
+      }
+    },
+  );
+
   it('takes the manifest test script over the planner command', () => {
     writeFileSync(join(tempDir, 'package.json'), '{"scripts":{"test":"vitest run"}}');
     mkdirSync(join(tempDir, 'src'), { recursive: true });
@@ -105,6 +119,22 @@ describe('planTestCheck', () => {
     expect(plan('src/a.ts', makeConfig({ testCommand: undefined }))).toMatchObject({
       kind: 'run',
       args: ['test', '--', 'src/a.test.ts'],
+    });
+  });
+
+  it.each([
+    'node --test test/unit && node --test test/e2e',
+    'node --test; eslint .',
+    'node --test | tap-spec',
+  ])('runs a chained package test script as written, never with a file after --: %s', (script) => {
+    writeFileSync(join(tempDir, 'package.json'), JSON.stringify({ scripts: { test: script } }));
+    mkdirSync(join(tempDir, 'test', 'unit'), { recursive: true });
+    writeFileSync(join(tempDir, 'test', 'unit', 'a.test.js'), '');
+
+    expect(plan('test/unit/a.test.js', makeConfig({ testCommand: undefined }))).toMatchObject({
+      kind: 'run',
+      command: 'npm test',
+      args: ['test'],
     });
   });
 

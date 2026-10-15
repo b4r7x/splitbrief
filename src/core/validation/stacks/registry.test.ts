@@ -2,7 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
-import { buildTestArgs, detectStack, findAffectedTestFiles, isTestFile } from './registry.js';
+import { buildTestArgs, detectStack, findAffectedTestFiles, isTestScript } from './registry.js';
 import { pythonStack } from './python.js';
 import { rustStack } from './rust.js';
 import { typescriptStack } from './typescript.js';
@@ -48,12 +48,19 @@ describe('detectStack', () => {
   });
 });
 
-describe('isTestFile', () => {
-  it('recognises colocated and __tests__ conventions', () => {
-    expect(isTestFile('src/a.test.ts', typescriptStack)).toBe(true);
-    expect(isTestFile('src/__tests__/a.ts', typescriptStack)).toBe(true);
-    expect(isTestFile('src/a.ts', typescriptStack)).toBe(false);
-    expect(isTestFile('tests/test_a.py', pythonStack)).toBe(true);
+describe('isTestScript', () => {
+  it('recognises test patterns and test directories across stacks', () => {
+    expect(isTestScript('test/unit/parse.mjs')).toBe(true);
+    expect(isTestScript('src/a.test.ts')).toBe(true);
+    expect(isTestScript('src/test_a.py')).toBe(true);
+    expect(isTestScript('src/__tests__/a.ts')).toBe(true);
+    expect(isTestScript('tests/conftest.py', [pythonStack])).toBe(true);
+    expect(isTestScript('src/a.ts')).toBe(false);
+  });
+
+  it('uses only the supplied stacks for a runner', () => {
+    expect(isTestScript('test/unit/parse.mjs', [typescriptStack])).toBe(true);
+    expect(isTestScript('src/test_a.py', [typescriptStack])).toBe(false);
   });
 });
 

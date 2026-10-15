@@ -253,6 +253,60 @@ describe('changedDefinitionRefusal', { timeout: 60_000 }, () => {
     );
   });
 
+  it('admits node --check on a script this run changed or created: it parses the file, never runs it', async () => {
+    await withApplyRun(
+      { 'src/old.js': 'export const a = 1;\n' },
+      { sessionId: 'sess-script-syntax-check' },
+      async (run) => {
+        writeFileSync(join(run.ws, 'src/old.js'), 'export const a = 2;\n');
+        writeFileSync(join(run.ws, 'src/new.js'), 'export const b = 1;\n');
+
+        expect(await refusal(run, 'node --check src/old.js')).toBeNull();
+        expect(await refusal(run, 'node -c src/new.js')).toBeNull();
+        expect(await refusal(run, 'node src/old.js')).toBe(
+          'runs src/old.js, which this run changed',
+        );
+      },
+    );
+  });
+
+  it('compares a package script named node even when its arguments request a syntax check', async () => {
+    await withApplyRun(
+      {
+        'src/a.js': 'export const a = 1;\n',
+        'package.json': JSON.stringify({ scripts: { node: 'node src/a.js' } }),
+      },
+      { sessionId: 'sess-forwarded-syntax-check' },
+      async (run) => {
+        const commands = [
+          'pnpm',
+          'yarn',
+          'bun',
+          'npm run',
+          'pnpm run',
+          'yarn run',
+          'bun run',
+          'npm exec --no-install pnpm',
+          'npx --no-install pnpm',
+          'pnpm exec yarn',
+          'uv run pnpm',
+        ].flatMap((runner) => ['-c', '--check'].map((flag) => `${runner} node ${flag} src/a.js`));
+        writeFileSync(join(run.ws, 'src/a.js'), 'export const a = 2;\n');
+        for (const command of commands) expect(await refusal(run, command), command).toBeNull();
+
+        writePackage(run, { node: 'echo changed' });
+        for (const command of commands) {
+          expect(await refusal(run, command), command).toBe(
+            'runs the package script node, which this run changed',
+          );
+        }
+        for (const runner of ['', 'pnpm exec', 'yarn exec', 'npm exec --no-install']) {
+          expect(await refusal(run, `${runner} node -c src/a.js`.trim())).toBeNull();
+        }
+      },
+    );
+  });
+
   it('refuses a bun or deno script file this run created', async () => {
     await withApplyRun(
       { 'src/a.ts': 'export {};\n' },

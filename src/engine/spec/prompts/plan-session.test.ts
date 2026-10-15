@@ -84,6 +84,16 @@ describe('buildPlanSessionPrompt', () => {
     );
   });
 
+  it('names the cmd check that runs one test file when a chained test script runs whole', () => {
+    const prompt = buildPlanSessionPrompt(input);
+    expect(prompt).toContain(
+      'A `test` check narrows `npm test` to its file (`npm test -- <file>`) only when the `package.json` test script is one command.',
+    );
+    expect(prompt).toContain(
+      "use a `cmd` check that runs the project's test runner on the file directly: `node --test <test file>`, `npx --no-install vitest run <test file>` or `npx --no-install jest <test file>`.",
+    );
+  });
+
   it('asks for the test file pattern as a file name pattern without a directory', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain('`testPattern`');

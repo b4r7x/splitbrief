@@ -3,6 +3,10 @@ import type { Config } from '../../../core/schemas/config.js';
 import type { DiscoveredValidation } from '../../../core/schemas/workflow.js';
 import { findAffectedTestFiles } from '../../../core/validation/stacks/registry.js';
 import type { Stack } from '../../../core/validation/stacks/types.js';
+import {
+  chainsTestScript,
+  PACKAGE_TEST_COMMAND,
+} from '../../../core/validation/stacks/typescript.js';
 import type { ResolvedCommand } from '../../../core/validation/stage-command.js';
 import { redactSecrets } from '../../../utils/redact.js';
 import { truncateByChars } from '../../../utils/truncate.js';
@@ -13,7 +17,7 @@ type TestTarget = { run: true; targets: string[] } | { run: false; skipReason: s
 
 /**
  * The test files a planner `test` check runs. A command the stack can narrow takes the files it
- * affects; any other command runs as written.
+ * affects; any other command, a chained package test script too, runs as written.
  */
 export function resolveTestTarget(opts: {
   resolved: ResolvedCommand;
@@ -26,7 +30,13 @@ export function resolveTestTarget(opts: {
   const { resolved, projectDir, config, discovered, stack } = opts;
   const narrows =
     resolved.source === 'default' || (resolved.source === 'manifest' && stack !== null);
-  if (!narrows || stack === null || stack.narrowing.kind === 'none') {
+  if (
+    !narrows ||
+    stack === null ||
+    stack.narrowing.kind === 'none' ||
+    ([resolved.cmd, ...resolved.args].join(' ') === PACKAGE_TEST_COMMAND &&
+      chainsTestScript(projectDir))
+  ) {
     return { run: true, targets: [] };
   }
   const testPattern = config.validation.testPattern ?? discovered?.testPattern;

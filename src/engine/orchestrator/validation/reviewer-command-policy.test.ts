@@ -31,9 +31,77 @@ describe('reviewerCommandRefusal', () => {
     ['node -e 1', 'uses the code-loading option node -e'],
     ['uv run python -c1', 'uses the code-loading option python -c'],
     ['python -Ic1', 'uses the code-loading option python -c'],
+    ['node --check --import ./x.mjs src/a.js', 'uses the code-loading option node --import'],
+    ['node -c -r ./x.js src/a.js', 'uses the code-loading option node -c'],
+    ['node --build-snapshot -c scripts/check.js', 'uses the code-loading option node -c'],
+    ['node -c --build-snapshot scripts/check.js', 'uses the code-loading option node -c'],
+    ['node --test -c src/a.test.js', 'uses the code-loading option node -c'],
+    ['node -c --trace-warnings src/a.js', 'uses the code-loading option node -c'],
   ])('names the interpreter rule that refuses %s', (command, reason) => {
     expect(reviewerCommandRefusal(command)).toBe(reason);
     expect(checkDefinition(command)).toBeNull();
+  });
+
+  it.each([
+    'node --check src/a.js',
+    'node -c src/a.js',
+    'nodejs --check src/a.js',
+    'pnpm exec node --check src/a.js',
+    'pnpm exec node -c src/a.js',
+    'yarn exec node --check src/a.js',
+    'yarn exec node -c src/a.js',
+    'npx --no-install node -c src/a.js',
+    'npm exec --no-install node -c src/a.js',
+  ])('admits the parse-only %s and names no script it runs', (command) => {
+    expect(reviewerCommandRefusal(command)).toBeNull();
+    expect(checkDefinition(command)).toBeNull();
+  });
+
+  it.each([
+    '',
+    'npx --no-install',
+    'npm exec --no-install',
+    'npm x --no-install',
+    'pnpm exec',
+    'yarn exec',
+    'bundle exec',
+    'uv run',
+    'poetry run',
+    'pipenv run',
+    'pdm run',
+    'hatch run',
+    'conda run',
+    'pixi run',
+    'rye run',
+    'mise exec --',
+    'mise x --',
+    'composer exec',
+  ])('retains package-script comparison for syntax flags through %s', (forwarder) => {
+    for (const [invocation, runner, dir] of [
+      ['pnpm', 'pnpm', '.'],
+      ['yarn', 'yarn', '.'],
+      ['bun', 'bun', '.'],
+      ['npm run', 'npm', '.'],
+      ['npm run-script', 'npm', '.'],
+      ['pnpm run', 'pnpm', '.'],
+      ['yarn run', 'yarn', '.'],
+      ['bun run', 'bun', '.'],
+      ['pnpm --filter x', 'pnpm', '.'],
+      ['yarn workspace x', 'yarn', '.'],
+      ['pnpm -C packages/x', 'pnpm', 'packages/x'],
+    ]) {
+      for (const flag of ['-c', '--check']) {
+        const command = `${forwarder} ${invocation} node ${flag} src/a.js`.trim();
+        expect(reviewerCommandRefusal(command), command).toBeNull();
+        expect(checkDefinition(command), command).toEqual({
+          kind: 'package-script',
+          runner,
+          manifest: 'package.json',
+          script: 'node',
+          dir,
+        });
+      }
+    }
   });
 
   it.each([
@@ -858,6 +926,7 @@ describe('checkDefinition', () => {
     ['python3.12 manage.py test', 'manage.py'],
     ['pnpm node scripts/check.js', 'scripts/check.js'],
     ['node --test test/new.test.js', 'test/new.test.js'],
+    ['node --check --build-snapshot scripts/check.js', 'scripts/check.js'],
     ['groovy -cp lib test/check.groovy', 'test/check.groovy'],
     ['elixir -pa ebin test/x.exs', 'test/x.exs'],
     ['bun scripts/check.ts', 'scripts/check.ts'],

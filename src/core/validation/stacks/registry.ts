@@ -49,8 +49,14 @@ function matchesPattern(path: string, pattern: string): boolean {
   );
 }
 
-export function isTestFile(path: string, stack: Stack): boolean {
-  return stack.testFilePatterns.some((pattern) => matchesPattern(path, pattern));
+/** A file by a stack's test file pattern, or any file under one of its test folders. */
+export function isTestScript(file: string, stacks: readonly Stack[] = STACKS): boolean {
+  const dirs = file.split('/').slice(0, -1);
+  return stacks.some(
+    (stack) =>
+      stack.testFilePatterns.some((pattern) => matchesPattern(file, pattern)) ||
+      stack.testDirs.some((dir) => dirs.includes(dir)),
+  );
 }
 
 function hasInlineTests(absolutePath: string, pattern: RegExp): boolean {

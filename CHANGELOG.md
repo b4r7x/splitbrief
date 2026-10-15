@@ -87,6 +87,7 @@
 
 ### Fixed
 
+- A plan can check one test file with `node --test <test file>`, and a check can check a file's syntax with `node --check <file>`, also on a file the run changed. A plan `test` check no longer adds its file to a `package.json` test script that chains commands, where the file reached only the last command; it runs the script as written.
 - Saved files, reports, screens and fallback notices use the same model names. Choosing an Antigravity effort level saves the model that runs at that level.
 - The home list and `/sessions` show when a stopped run last stopped or ended, not when it started. The plan card keeps **Request changes** marked while you type.
 - Reviewer check selection now sees the task briefs, plan decisions and your later instructions, including requests for specific checks.

@@ -54,7 +54,7 @@ Append every check and every reviewer check to `validation.md` under `## T00N â€
 
 A test check whose command resolves to nothing cannot run. The column shows the default with the language's own tooling present; the resolution order above still wins over it.
 
-A planner `test` check runs only the tests its file affects when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config runs as written.
+A planner `test` check runs only the tests its file affects when the resolved command comes from the stack default, or from the manifest with a recognised stack; a command pinned in config and a chained `package.json` test script run as written.
 
 | Language | test narrowing | allowed commands |
 |---|---|---|
