@@ -76,7 +76,6 @@ function retryTask(opts: {
     task,
     initialError: failed.error,
     ...(reason === 'blocked' && { initialBlocked: blocked }),
-    taskStartTime: Date.now(),
     taskStartSnapshot: { head: 'HEAD', files: [], dirtyFileContents: {} },
     tokensBefore: state.tokenUsage,
     taskBreakdowns: [],

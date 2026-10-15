@@ -26,8 +26,10 @@ import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import type { Check } from '../../../core/schemas/task.js';
 import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { createContinuationHolder } from '../continuation.js';
+import { createJsonlSink } from '../../events/sinks/jsonl.js';
 import { enqueueUserMessage } from '../queue/submit.js';
 
 afterEach(() => {
@@ -116,6 +118,58 @@ describe('runSingleTask — completion, abort and approval evidence', { timeout:
 
     const complete = events.find((e) => e.type === 'task_completed');
     if (complete?.type !== 'task_completed') throw new Error('expected task_completed');
+    expect(readEvidenceLedger(wctx)?.tasks[0]?.durationMs).toBe(complete.duration);
+  });
+
+  it('books the time a stopped brief worked before it continued', async () => {
+    const task = makeTask({ id: 'T001' });
+    const { bus, events } = makeBusRecorder();
+    const implementer = makeImplementer({
+      implement: vi.fn().mockResolvedValue({ success: true, output: 'ok' }),
+    });
+    const wctx = makeWorkflowContext({ implementer, bus });
+    bus.subscribe(createJsonlSink({ projectDir: wctx.projectDir, sessionId: wctx.sessionId }));
+    const started = Date.now() - 60_000;
+    const logDir = sessionDir(wctx.projectDir, wctx.sessionId);
+    mkdirSync(logDir, { recursive: true });
+    writeFileSync(
+      join(logDir, SESSION_LOG_FILE),
+      [
+        {
+          ts: new Date(started).toISOString(),
+          kind: 'event',
+          type: 'task_started',
+          taskId: 'T001',
+          data: {},
+        },
+        {
+          ts: new Date(started + 38_727).toISOString(),
+          kind: 'event',
+          type: 'turn_interrupted',
+          data: {},
+        },
+      ]
+        .map((entry) => `${JSON.stringify(entry)}\n`)
+        .join(''),
+    );
+
+    await runSingleTask({
+      wctx,
+      task,
+      index: 0,
+      totalTasks: 1,
+      state: implementingState([task]),
+      taskBreakdowns: [],
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+
+    const complete = events.find((e) => e.type === 'task_completed');
+    if (complete?.type !== 'task_completed') throw new Error('expected task_completed');
+    const restart = events.find((e) => e.type === 'task_started');
+    if (restart === undefined) throw new Error('expected task_started');
+    expect(complete.duration).toBeGreaterThanOrEqual(38_727);
+    expect(complete.duration).toBeLessThanOrEqual(38_727 + (complete.ts - restart.ts));
     expect(readEvidenceLedger(wctx)?.tasks[0]?.durationMs).toBe(complete.duration);
   });
 

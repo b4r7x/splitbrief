@@ -147,9 +147,8 @@ async function refreshStaleTask(input: {
   opts: RunSingleTaskOptions;
   task: Task;
   state: WorkflowState;
-  taskStartTime: number;
 }): Promise<StaleRefresh> {
-  const { opts, task, taskStartTime } = input;
+  const { opts, task } = input;
   let state = input.state;
   const revision = task.revision ?? 1;
   const lineage = state.lineages?.[lineageIdOf(task)];
@@ -212,7 +211,6 @@ async function refreshStaleTask(input: {
       sinks: opts.wctx.sinks,
       state,
       seat: consultSeat(task, 'stale'),
-      taskStartTime,
       ...(opts.wctx.signal !== undefined && { signal: opts.wctx.signal }),
       changedFiles: [],
       onStateChange: (next) => {
@@ -274,18 +272,16 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     setTrackedState(state);
   }
 
-  const taskStartTime = Date.now();
   // A successful stale refresh marks the revision; a halted refresh must consult again on Retry.
   let staleRefresh: StaleRefresh;
   try {
-    staleRefresh = await refreshStaleTask({ opts, task, state, taskStartTime });
+    staleRefresh = await refreshStaleTask({ opts, task, state });
   } catch (err) {
     const seat = consultSeat(task, 'stale');
     return handleTaskPlannerCallFailure({
       wctx,
       task,
       state,
-      taskStartTime,
       setTrackedState,
       err,
       seat,
@@ -360,7 +356,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       task,
       initialError: toErrorMessage(err),
       state,
-      taskStartTime,
       taskStartSnapshot,
       tokensBefore,
       taskBreakdowns,
@@ -407,7 +402,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       task,
       state,
       implState,
-      taskStartTime,
       taskStartSnapshot,
       tokensBefore,
       taskBreakdowns,
@@ -475,7 +469,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       report: report?.status === 'done' ? report : undefined,
       snapshot: implState.workspace.snapshot,
       changedFiles: gate.approvedFiles,
-      taskStartTime,
       onStateChange: (next) => {
         state = next;
         setTrackedState(next);
@@ -490,7 +483,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       wctx,
       task,
       state,
-      taskStartTime,
       initialChangedFiles: taskChangedFiles,
       setTrackedState,
       err,
@@ -503,7 +495,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       wctx,
       task,
       state,
-      taskStartTime,
       taskStartSnapshot,
       initialError: confirmed.kind === 'answer' ? confirmed.answer : confirmed.error,
       ...(confirmed.kind === 'answer' && { initialAnswer: confirmed.answer }),
@@ -551,7 +542,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
       state,
       method: 'local',
       transitionType: 'VALIDATION_PASS',
-      taskStartTime,
       acceptance,
       implementerProfile: wctx.implementerProfile,
       taskChangedFiles,
@@ -612,7 +602,6 @@ export async function runSingleTask(opts: RunSingleTaskOptions): Promise<Workflo
     ...(gated.correction && { initialAnswer: gated.error }),
     initialDiagnosis: gated.diagnosis,
     state,
-    taskStartTime,
     taskStartSnapshot,
     tokensBefore,
     taskBreakdowns,

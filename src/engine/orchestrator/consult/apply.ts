@@ -40,8 +40,6 @@ export type ConsultApplyContext = Readonly<{
   state: WorkflowState;
   /** The seat that answered the consult, which the operator's question names. */
   seat: ConsultSeat;
-  /** When the brief started: a verify that completes it books the time since. */
-  taskStartTime: number;
   signal?: AbortSignal | undefined;
   changedFiles?: readonly string[] | undefined;
   runCommand?: ValidationCommandRunner | undefined;
@@ -271,7 +269,6 @@ async function applyVerify(
     state: gated.state,
     method: 'consulted',
     transitionType: 'VALIDATION_PASS',
-    taskStartTime: ctx.taskStartTime,
     taskChangedFiles: [...changedFiles],
   });
   if (!commit.completed) {

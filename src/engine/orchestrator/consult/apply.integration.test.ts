@@ -71,7 +71,6 @@ function contextFor(
   const states: WorkflowState[] = [];
   return {
     ctx: {
-      taskStartTime: Date.now(),
       projectDir,
       workspaceDir: projectDir,
       sessionId,

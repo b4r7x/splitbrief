@@ -183,7 +183,6 @@ export async function runTargetWriteRetry(opts: {
       ...wctx,
       taskStartSnapshot: opts.taskStartSnapshot,
       dependsOnFiles: [],
-      taskStartTime: Date.now(),
     },
     task: opts.task,
     state: makeImplState([opts.task]),

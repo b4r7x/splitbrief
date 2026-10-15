@@ -48,7 +48,6 @@ async function makeRetryEvidenceCtx(
   const { bus } = makeBusRecorder();
   const { callbacks } = makeCallbacks();
   const ctx: EscalationContext = {
-    taskStartTime: Date.now(),
     projectDir,
     workspaceDir: projectDir,
     sessionId,

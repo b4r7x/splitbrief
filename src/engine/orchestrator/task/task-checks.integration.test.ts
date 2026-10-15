@@ -58,7 +58,6 @@ async function makeEscalationCtx(opts: {
 }): Promise<EscalationContext> {
   const { bus } = makeBusRecorder();
   return {
-    taskStartTime: Date.now(),
     ...makeWctx({
       projectDir: opts.projectDir,
       sessionId: opts.sessionId,

@@ -103,7 +103,7 @@ args: ["${event.file}", "--task=${event.taskId}"]
 | `${event.message}`   | error, warning             | String                                   |
 | `${event.results}`   | checks_run                             | JSON-stringified `{ id, status }[]`      |
 | `${event.feature}`   | workflow_started                       | The user's feature prompt                |
-| `${event.duration}`  | task_completed                         | Number (ms)                              |
+| `${event.duration}`  | task_completed                         | Number (ms): the brief's working time; time the run sat stopped, parked or halted is left out |
 | `${event.method}`    | task_completed, task_tokens            | One of `'local'`, `'consulted'`, `'escalated-intermediate'`, `'escalated-hint'`, `'escalated-full'` (older runs), `'failed'`, `'skipped'` |
 | `${event.reason}`    | recovery_prompted                      | The halt's `RecoveryReason`, e.g. `'retry-exhausted'` |
 | `${event.headline}`  | recovery_prompted                      | The operator-facing sentence, e.g. `T003 failed` |

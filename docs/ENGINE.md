@@ -431,8 +431,12 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 { type: 'task_completed'; taskId: TaskId; title: string;
   method: TaskCompletionMethod; retries: number; duration: number;
   tool?: string; model?: string; implementerProfile?: string }
-// `duration` is measured once, at completion, from the brief's start time
-// (`validateCommitAndAdvance`). The ledger entry's `durationMs` carries the same value.
+// `duration` is the brief's working time, read once from the session log at completion
+// (`readBriefWorkedMs` in `validateCommitAndAdvance`): every stretch from the brief's
+// `task_started` to the stop, halt or end that closed it. A stop that cut the brief mid-call and
+// that the same process continued (a steer, `/resume`, a watchdog park) opens a stretch again at
+// the brief's next `runner_call_started`. The time the run sat stopped, parked or halted is not
+// counted. The ledger entry's `durationMs`, and a failed brief's, come from the same read.
 
 // Review lifecycle
 { type: 'review_started'; scope: 'final' | 'task'; afterTaskId?: string;

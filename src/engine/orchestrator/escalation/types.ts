@@ -54,7 +54,6 @@ export function boundedHandBack(text: string | undefined): string | undefined {
 }
 
 export type EscalationContext = WorkflowContext & {
-  taskStartTime: number;
   taskStartSnapshot: ChangedFilesSnapshot;
   dependsOnFiles: string[];
 };
