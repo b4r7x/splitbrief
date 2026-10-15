@@ -6,7 +6,7 @@ import { crewLine } from './copy.js';
 import type { SummaryView } from './view-model.js';
 
 export interface ClosedHeader {
-  /** The crew that actually ran, fitted to the room the rail and the clock leave. */
+  /** The crew that actually ran, fitted to the room the rail leaves. */
   seatLine: readonly SeatLineSpan[];
   /** True when that line names all three seats, so the Run block does not name them again. */
   crewNamed: boolean;

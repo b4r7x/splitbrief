@@ -1,7 +1,7 @@
 import { existsSync, createReadStream, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import * as readline from 'node:readline';
-import { parseJsonlLine } from '../../lib/fs.js';
+import { forEachLineSync, parseJsonlLine } from '../../lib/fs.js';
 import type {
   SessionLogEntry,
   SessionLogEventEntry,
@@ -82,6 +82,31 @@ async function* readSessionLogFile(
       diagnostics.skippedInvalid += 1;
     }
   }
+}
+
+/**
+ * The JSON values of a session log, read synchronously for the summary paths that cannot await the
+ * streaming reader. It keeps that reader's two guards: a symlinked log is refused and an oversized
+ * entry is skipped. `keep` passes over a raw line before it is parsed. Null when there is no log,
+ * or it cannot be read: a summary never fails on its log.
+ */
+export function readSessionLogValuesSync(
+  ref: SessionRef,
+  keep: (line: string) => boolean,
+): unknown[] | null {
+  const values: unknown[] = [];
+  try {
+    const filePath = join(sessionDir(ref.projectDir, ref.sessionId), SESSION_LOG_FILE);
+    if (!existsSync(filePath) || lstatSync(filePath).isSymbolicLink()) return null;
+    forEachLineSync(filePath, (line) => {
+      if (!keep(line) || Buffer.byteLength(line, 'utf8') > SESSION_LOG_MAX_ENTRY_BYTES) return;
+      const parsed = parseJsonlLine(line);
+      if (parsed.kind === 'value') values.push(parsed.value);
+    });
+  } catch {
+    return null;
+  }
+  return values;
 }
 
 export async function* readSessionLogFromDir(dir: string): AsyncIterable<SessionLogEntry> {

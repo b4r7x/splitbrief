@@ -115,6 +115,12 @@ export function runRows(view: SummaryView): RunRow[] {
     );
     rows.push({ label: 'Briefs', segments: [{ spans }] });
   }
+  rows.push({
+    label: 'Ran',
+    segments: [
+      { text: view.ran === null ? 'not recorded' : formatTime(view.ran), tone: 'textDim' },
+    ],
+  });
   const phases = phaseSegments(view.phases);
   if (phases.length > 0) rows.push({ label: 'Phases', segments: phases });
   rows.push({ label: 'Session', segments: sessionSegments(view.run) });
@@ -214,7 +220,7 @@ function scopeSegments(scope: ScopeView): CopySegment[] {
   ];
 }
 
-/** One phase would only restate the run clock the header already shows. */
+/** One phase would only restate the `Ran` row above it. */
 function phaseSegments(phases: SummaryView['phases']): CopySegment[] {
   if (phases.length < 2) return [];
   return phases.map((timing) => ({

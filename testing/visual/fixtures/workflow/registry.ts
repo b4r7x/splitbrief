@@ -580,7 +580,6 @@ const checkpointPredicates = [
   // byline sheds its reason and then its alternative as the terminal narrows.
   [checkpointId('at-rest-paused'), includesAll()],
   [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
-  [checkpointId('at-rest-long-park'), includesAll('15:00')],
   [checkpointId('at-rest-halted'), includesAll()],
   [checkpointId('resuming'), includesAll('Resuming T')],
   [

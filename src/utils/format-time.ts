@@ -17,7 +17,7 @@ export function formatTime(ms: number): string {
   return `${secs}s`;
 }
 
-/** The header/summary clock: `m:ss`, or `h:mm:ss` once the run passes an hour. */
+/** A running step's clock: `m:ss`, or `h:mm:ss` once it passes an hour. */
 export function formatElapsedClock(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const seconds = String(totalSeconds % 60).padStart(2, '0');

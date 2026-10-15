@@ -371,7 +371,8 @@ type Summary = {
   escalatedToPlanner: number
   skipped: number
   failed: number
-  totalTime: number                       // ms
+  totalTime: number                       // ms, wall time from the first start
+  activeTime?: number                     // ms the run ran, from its log; absent on older records
   tokenUsage: TokenUsage
   escalationRate: number
 

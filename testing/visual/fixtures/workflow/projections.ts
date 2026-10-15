@@ -2456,8 +2456,7 @@ const HALTED_TASK = makeTask({
 
 /**
  * When a resumed run's saved state says it started. Left to the state factory, it is the wall clock
- * the module loaded at: later than the capture clock, so the header clamps to 0:00, and different
- * on every capture.
+ * the module loaded at: later than the capture clock, and different on every capture.
  */
 const RESUMED_RUN_STARTED_AT = new Date(FIXED_TS).toISOString();
 

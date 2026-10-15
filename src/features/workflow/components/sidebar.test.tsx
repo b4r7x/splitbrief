@@ -256,7 +256,7 @@ describe('Sidebar — passed count', () => {
     ui.unmount();
   });
 
-  it('keeps the waiting clock live under reduced motion without advancing the frame', async () => {
+  it('holds the spinner frame under reduced motion and shows no run clock', async () => {
     const previousReduceMotion = process.env.SPLITBRIEF_REDUCE_MOTION;
     process.env.SPLITBRIEF_REDUCE_MOTION = '1';
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
@@ -272,14 +272,13 @@ describe('Sidebar — passed count', () => {
       const firstSpinnerFrame = spinnerFrames()[0] ?? '';
 
       expect(firstFrame).toContain(`${firstSpinnerFrame} Plan`);
-      expect(firstFrame).toContain('0:00');
 
       await vi.advanceTimersByTimeAsync(1000);
       await flushEffects();
 
       const nextFrame = stripAnsiStyles(ui.lastFrame() ?? '');
       expect(nextFrame).toContain(`${firstSpinnerFrame} Plan`);
-      expect(nextFrame).toContain('0:01');
+      expect(nextFrame).not.toMatch(/\d+:\d{2}/);
     } finally {
       ui?.unmount();
       if (previousReduceMotion === undefined) {
@@ -289,24 +288,6 @@ describe('Sidebar — passed count', () => {
       }
       vi.useRealTimers();
     }
-  });
-
-  it('spells the run clock the way the header does once the run passes an hour', async () => {
-    tasksStore.__testReset({ tasks: [] });
-    lifecycleStore.__testReset({
-      phase: 'planning',
-      status: 'running',
-      startedAt: Date.now() - (75 * 60 + 3) * 1000,
-    });
-
-    const ui = renderFeature(<Sidebar width={30} />);
-    await tick();
-    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
-
-    expect(frame).toContain('Plan · 1:15:0');
-    expect(frame).not.toContain('75:0');
-
-    ui.unmount();
   });
 
   it('shows only the empty note when nothing is running', async () => {
@@ -1082,16 +1063,9 @@ describe('Sidebar concept colors', () => {
 
   it('keeps the planning stage in the planner color without the removed local share', () => {
     chalk.level = 3;
-    lifecycleStore.__testReset({
-      status: 'running',
-      phase: 'planning',
-      startedAt: Date.now() - 42_000,
-    });
+    lifecycleStore.__testReset({ status: 'running', phase: 'planning' });
     const ui = renderFeature(<Sidebar width={60} />);
     expect(ui.lastFrame()).toContain(paint(defaultTheme.planner, 'Plan').replace('\u001b[39m', ''));
-    expect(ui.lastFrame()).toContain(
-      paint(defaultTheme.textDim, ' · 0:42').replace('\u001b[39m', ''),
-    );
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).not.toContain('local');
     ui.unmount();
   });

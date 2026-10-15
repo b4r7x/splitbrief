@@ -160,15 +160,21 @@ describe('endRunAtRest', () => {
     };
     saveState(ref, state);
     const { bus, events } = makeBusRecorder();
+    const before = Date.now();
 
     const closure = await endRunAtRest({ ...ref, bus }, state, makeConfig());
 
     expect(closure.closedNow).toBe(true);
     expect(closure.state.closed?.as).toBe('ended');
     expect(loadState(ref)?.closed).toEqual(closure.state.closed);
-    expect(events.filter((event) => event.type === 'workflow_cancelled')).toEqual([
+    const cancels = events.filter((event) => event.type === 'workflow_cancelled');
+    expect(cancels).toEqual([
       expect.objectContaining({ phase: 'implementing', reason: 'user_cancelled' }),
     ]);
+    // The End is marked as taken at rest, from before it wrote anything.
+    const atRestFrom = cancels[0]?.atRestFrom ?? 0;
+    expect(atRestFrom).toBeGreaterThanOrEqual(before);
+    expect(atRestFrom).toBeLessThanOrEqual(cancels[0]?.ts ?? 0);
     expect(readSession(ref)?.status).toBe('ended');
     expect(readActive(projectDir)).toBeNull();
   });

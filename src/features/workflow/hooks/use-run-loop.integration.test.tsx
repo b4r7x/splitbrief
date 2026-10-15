@@ -85,7 +85,6 @@ import type { PrepareExecutionFn, RunWorkflowFn } from './use-run-loop.js';
 // preparation suite's concern.
 
 interface RunnerHandle {
-  startedAt: string;
   handleResume: (message?: UserMessageInput) => void;
   /** Answers the question the recovery panel is asking, as the composer would. */
   answer: (message: UserMessageInput) => void;
@@ -110,7 +109,7 @@ function Harness({
 }: HarnessProps) {
   const inputMode = useInputMode();
   const continuation = useRunContinue({ prepared, inputMode });
-  const runner = useRunLoop({
+  useRunLoop({
     prepared,
     steer,
     inputMode,
@@ -122,7 +121,6 @@ function Harness({
   useEffect(() => {
     if (captureRunner)
       captureRunner.current = {
-        ...runner,
         handleResume: continuation.handleResume,
         answer: inputMode.resolve,
       };
@@ -714,20 +712,16 @@ describe('useRunLoop', () => {
     inst.unmount();
   });
 
-  it('resets workflow stores on mount and produces a valid startedAt timestamp', async () => {
+  it('resets workflow stores on mount', async () => {
     // Seed the stores so the test proves they were reset on mount.
     lifecycleStore.__testReset({ cancelled: true, queueDepth: 5 });
-    const captureRunner: HarnessProps['captureRunner'] = { current: null };
     const prepared = preparedExecution({ projectDir, feature: 'add auth' });
 
-    const inst = renderHarness({ prepared, captureRunner });
+    const inst = renderHarness({ prepared });
     await tick(60);
 
     expect(lifecycleStore.get().cancelled).toBe(false);
     expect(lifecycleStore.get().queueDepth).toBe(0);
-    const runner = captureRunner.current;
-    if (!runner) throw new Error('expected captureRunner.current to be populated');
-    expect(runner.startedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     inst.unmount();
   });
 

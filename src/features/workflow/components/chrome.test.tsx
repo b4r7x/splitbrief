@@ -63,7 +63,7 @@ describe('WorkflowHeader', () => {
   });
 
   it('renders the full rail/chrome frame: three stages, no retired dot labels, one divider', async () => {
-    const ui = renderFeature(<WorkflowHeader startedAt={new Date().toISOString()} />);
+    const ui = renderFeature(<WorkflowHeader />);
     await tick();
     const frame = ui.lastFrame() ?? '';
     const lines = frame.split('\n');
@@ -93,7 +93,7 @@ describe('WorkflowHeader', () => {
 
     const ui = renderFeature(
       <>
-        <WorkflowHeader startedAt={new Date().toISOString()} />
+        <WorkflowHeader />
         <ConversationFlow height={6} conversationWidth={80} contentWidth={80} />
       </>,
     );

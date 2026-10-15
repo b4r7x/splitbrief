@@ -9,14 +9,7 @@ import { renderFeature, tick, flushEffects } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
-import {
-  approvalPromptStore,
-  closeApprovalPrompt,
-  openApprovalPrompt,
-} from '../../../stores/approval-prompt/prompt.js';
-import { addEvent } from '../../../stores/workflow/actions/event.js';
-import { markWorkflowPaused } from '../../../stores/workflow/actions/pause.js';
-import { markWorkflowResumed } from '../../../stores/workflow/actions/resume.js';
+import { approvalPromptStore } from '../../../stores/approval-prompt/prompt.js';
 import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { tokensStore } from '../../../stores/workflow/tokens.js';
@@ -36,7 +29,6 @@ import {
 import { WORKFLOW_GUTTER_X } from '../layout/chrome-rows.js';
 import { getHeaderLayout, Header } from './header.js';
 
-const STARTED_AT = new Date(0).toISOString();
 const originalColorLevel = chalk.level;
 /** Today's local 17:00: the note the bar shows for a same-day reset is the bare clock, in every timezone the suite runs in. */
 const RESET_AT = (() => {
@@ -64,7 +56,7 @@ const HALTED_CREW_CONFIG = makeConfig({
   implementer: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
 });
 
-/** The clock the bar pins right, read off a rendered frame. */
+/** Any clock text on a rendered bar. */
 function clockText(frame: string | undefined): string | undefined {
   return stripAnsiStyles(frame ?? '').match(/\d+:\d{2}(?::\d{2})?/)?.[0];
 }
@@ -91,32 +83,25 @@ afterEach(() => {
 });
 
 describe('Header — layout', () => {
-  it('shows the elapsed tail when there is ample width', () => {
+  it('gives the seat line every cell the rail leaves but the gap between them', () => {
     const layout = getHeaderLayout({ cols: 100, railCells: 40 });
 
-    expect(layout.showElapsed).toBe(true);
-    expect(layout.railWidth).toBeLessThanOrEqual(layout.contentWidth);
+    expect(layout.seatRoom).toBe(layout.contentWidth - 40 - 2);
+    expect(layout.railWidth).toBe(layout.contentWidth);
   });
 
-  it('shrinks the rail cell to leave room for the seat + elapsed tail', () => {
+  it('shrinks the rail cell to leave room for the seat line', () => {
     const withTail = getHeaderLayout({ cols: 160, railCells: 40, seatCells: 44 });
     const withoutTail = getHeaderLayout({ cols: 160, railCells: 40 });
 
     expect(withTail.railWidth).toBeLessThan(withoutTail.railWidth);
   });
 
-  it('keeps the elapsed clock at narrow widths where the status word would still fit', () => {
-    const layout = getHeaderLayout({ cols: 40, railCells: 20 });
+  it('keeps the rail alone at the narrowest widths', () => {
+    const layout = getHeaderLayout({ cols: 22, railCells: 18, seatCells: 10 });
 
-    expect(layout.showElapsed).toBe(true);
-    expect(layout.railWidth).toBeGreaterThan(0);
-  });
-
-  it('keeps the rail alone at the narrowest widths, dropping the elapsed tail', () => {
-    const layout = getHeaderLayout({ cols: 22, railCells: 18 });
-
-    expect(layout.showElapsed).toBe(false);
-    expect(layout.railWidth).toBeGreaterThan(0);
+    expect(layout.showSeats).toBe(false);
+    expect(layout.railWidth).toBe(layout.contentWidth);
   });
 
   it('omits the seat line when no seat width is supplied', () => {
@@ -144,11 +129,11 @@ describe('Header — layout', () => {
 
 describe('Header — seat line', () => {
   it.each(['dark', 'light'] as const)(
-    'paints each seat, the separators and the frozen clock in the %s theme',
+    'paints each seat and the separators in the %s theme',
     (variant) => {
       chalk.level = 3;
       const theme = resolveTheme({ variant, level: 3, terminalBackground: undefined });
-      lifecycleStore.__testReset({ status: 'complete', durationMs: 197_000 });
+      lifecycleStore.__testReset({ status: 'complete' });
       terminalSizeStore.__testReset({ cols: 200, rows: 50, isSmall: false });
       const seatLine = formatCollapsedSeatSpansFromIdentities({
         plan: 'GPT-6-Astra',
@@ -157,7 +142,7 @@ describe('Header — seat line', () => {
       });
       const ui = renderFeature(
         <ThemeProvider theme={theme}>
-          <Header startedAt={STARTED_AT} seatLine={seatLine} />
+          <Header seatLine={seatLine} />
         </ThemeProvider>,
         { cols: 200, rows: 50 },
       );
@@ -167,10 +152,10 @@ describe('Header — seat line', () => {
         ['BUILD Gemini 3.8 Flash (High)', theme.implementer],
         ['REVIEW = PLAN', theme.reviewer],
         [' · ', theme.textDim],
-        ['3:17', theme.textDim],
       ]) {
         expect(frame).toContain(paint(color, text ?? '').replace('\u001b[39m', ''));
       }
+      expect(clockText(frame)).toBeUndefined();
       ui.unmount();
     },
   );
@@ -191,7 +176,7 @@ describe('Header — seat line', () => {
       expect(seatLine.some((span) => span.seat === 'review')).toBe(false);
       const ui = renderFeature(
         <ThemeProvider theme={theme}>
-          <Header startedAt={STARTED_AT} seatLine={seatLine} />
+          <Header seatLine={seatLine} />
         </ThemeProvider>,
         { cols: 200, rows: 50 },
       );
@@ -213,7 +198,7 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols, rows: 24, isSmall: cols < 120 });
     configStore.__testReset({ projectDir: '/tmp/p', config });
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
     instance.unmount();
@@ -262,7 +247,7 @@ describe('Header — seat line', () => {
       config: makeConfig({ implementer: { model: `qwen${hostileSequence}-coder` } }),
     });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     const rawFrame = instance.lastFrame() ?? '';
 
@@ -277,7 +262,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -292,7 +277,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('resets 17:00');
 
@@ -314,7 +299,7 @@ describe('Header — seat line', () => {
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
-        <Header startedAt={STARTED_AT} />
+        <Header />
       </Box>,
       { cols: 80, rows: 24 },
     );
@@ -354,7 +339,7 @@ describe('Header — seat line', () => {
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
-        <Header startedAt={STARTED_AT} />
+        <Header />
       </Box>,
       { cols: 80, rows: 24 },
     );
@@ -370,7 +355,7 @@ describe('Header — seat line', () => {
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
     recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -378,28 +363,26 @@ describe('Header — seat line', () => {
     instance.unmount();
   });
 
-  it('drops the seat line but keeps the elapsed clock when the rail crowds the bar', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(5_000);
+  it('drops the seat line when the rail crowds the bar', async () => {
     lifecycleStore.__testReset({ phase: 'planning', status: 'running', startedAt: 0 });
     terminalSizeStore.__testReset({ cols: 52, rows: 24, isSmall: true });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
     expect(frame).not.toContain('BUILD');
-    expect(frame).toContain('0:05');
+    expect(frame).toContain('Plan');
     instance.unmount();
   });
 });
 
-describe('Header — rail and elapsed', () => {
+describe('Header — rail', () => {
   it('renders the phase rail in place of any task title', async () => {
     terminalSizeStore.__testReset({ cols: 100, rows: 24, isSmall: false });
     lifecycleStore.__testReset({ phase: 'planning', status: 'running', startedAt: 0 });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -425,7 +408,7 @@ describe('Header — rail and elapsed', () => {
     // gutter the workflow header wraps the row in.
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
-        <Header startedAt={new Date().toISOString()} />
+        <Header />
       </Box>,
       { cols: 120, rows: 40 },
     );
@@ -437,7 +420,7 @@ describe('Header — rail and elapsed', () => {
     // follows one marker slot in. A budget error blanks `Plan` while keeping its cells.
     expect(row.indexOf(glyph('stageDone'))).toBe(WORKFLOW_GUTTER_X);
     expect(row).toContain(`${glyph('stageDone')} Plan`);
-    // The seat line and the clock stop short of the right gutter.
+    // The seat line stops short of the right gutter.
     expect(row.length).toBeLessThanOrEqual(120 - WORKFLOW_GUTTER_X);
   });
 
@@ -453,7 +436,7 @@ describe('Header — rail and elapsed', () => {
       reason: 'user_cancelled',
     });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
+    const instance = render(<Header />);
     await tick();
     const frame = stripAnsiStyles(instance.lastFrame() ?? '');
 
@@ -461,183 +444,20 @@ describe('Header — rail and elapsed', () => {
     instance.unmount();
   });
 
-  it('freezes elapsed time when lifecycle is cancelled', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(20_000);
-    lifecycleStore.__testReset({
-      phase: 'researching',
-      status: 'cancelled',
-      cancelled: true,
-      startedAt: 0,
-      endedAt: 5_000,
-      durationMs: 5_000,
-      reason: 'user_cancelled',
-    });
-
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    const firstFrame = instance.lastFrame() ?? '';
-
-    vi.advanceTimersByTime(30_000);
-
-    expect(firstFrame).toContain('0:05');
-    expect(instance.lastFrame() ?? '').toContain('0:05');
-    instance.unmount();
-  });
-
-  it('renders elapsed time from the lifecycle start when resuming an older workflow', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(3_605_000);
-    lifecycleStore.__testReset({
-      phase: 'planning',
-      status: 'running',
-      startedAt: 0,
-    });
-
-    const instance = render(<Header startedAt={new Date(3_600_000).toISOString()} />);
-    const frame = instance.lastFrame() ?? '';
-
-    expect(frame).toContain('1:00:05');
-    instance.unmount();
-  });
-
-  it('renders elapsed time from replayed lifecycle start when resuming an older workflow', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(61_000);
-    addEvent({
-      type: 'workflow_started',
-      ts: 1_000,
-      phase: 'planning',
-      feature: 'resumed workflow',
-    });
-
-    const instance = render(<Header startedAt={new Date(60_000).toISOString()} />);
-    const frame = instance.lastFrame() ?? '';
-
-    expect(frame).toContain('1:00');
-    expect(frame).not.toContain('0:01');
-    instance.unmount();
-  });
-
-  it('freezes elapsed time when lifecycle is complete', () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(30_000);
-    lifecycleStore.__testReset({
-      phase: 'complete',
-      status: 'complete',
-      startedAt: 0,
-      endedAt: 12_000,
-      durationMs: 12_000,
-    });
-
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    const firstFrame = instance.lastFrame() ?? '';
-
-    vi.advanceTimersByTime(30_000);
-
-    expect(firstFrame).toContain('0:12');
-    expect(instance.lastFrame() ?? '').toContain('0:12');
-    instance.unmount();
-  });
-
-  it('freezes the elapsed clock while parked and counts on from there on resume', async () => {
+  it('shows no clock for the whole run, running or done', async () => {
     vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-    vi.setSystemTime(5_000);
-    lifecycleStore.__testReset({
-      phase: 'implementing',
-      status: 'running',
-      startedAt: 0,
-    });
+    vi.setSystemTime(65_000);
+    lifecycleStore.__testReset({ phase: 'implementing', status: 'running', startedAt: 0 });
 
-    const instance = render(<Header startedAt={STARTED_AT} />);
-    expect(instance.lastFrame() ?? '').toContain('0:05');
-
-    await vi.advanceTimersByTimeAsync(5_000);
-    await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-
-    markWorkflowPaused();
-    await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-
-    await vi.advanceTimersByTimeAsync(20_000);
-    await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-
-    // Twenty seconds parked are no run time: the clock picks up where the park stopped it.
-    markWorkflowResumed();
-    await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:10');
-
+    const instance = render(<Header />);
     await vi.advanceTimersByTimeAsync(2_000);
     await flushEffects();
-    expect(instance.lastFrame() ?? '').toContain('0:12');
+    expect(clockText(instance.lastFrame())).toBeUndefined();
     instance.unmount();
+
+    lifecycleStore.__testReset({ phase: 'complete', status: 'complete', startedAt: 0 });
+    const done = render(<Header />);
+    expect(clockText(done.lastFrame())).toBeUndefined();
+    done.unmount();
   });
-
-  // Each of these waits on the user inside a running run. The run clock counts that time, so the
-  // wait never finds it frozen and the answer never makes it jump.
-  it.each([
-    {
-      wait: 'the spec gate',
-      phase: 'reviewing-spec',
-      open: () => controlsStore.setInputMode('review'),
-      answer: () => controlsStore.clearInputMode(),
-    },
-    {
-      wait: 'the plan gate',
-      phase: 'reviewing-plan',
-      open: () => controlsStore.setInputMode('review'),
-      answer: () => controlsStore.clearInputMode(),
-    },
-    {
-      wait: 'a planner question',
-      phase: 'specifying',
-      open: () => controlsStore.setInputMode('question'),
-      answer: () => controlsStore.clearInputMode(),
-    },
-    {
-      wait: 'an approval',
-      phase: 'implementing',
-      open: () => {
-        void openApprovalPrompt({
-          tier: 'confirm',
-          actionClass: 'network',
-          actionDescription: 'push to origin',
-          phase: 'implementing',
-        });
-      },
-      answer: () => closeApprovalPrompt({ decision: 'deny', reason: 'denied' }),
-    },
-    {
-      wait: 'a recovery choice',
-      phase: 'implementing',
-      open: () => recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT }),
-      answer: () => recoveryNoticeStore.clear(),
-    },
-  ] as const)(
-    'keeps the run clock counting while $wait waits on the user',
-    async ({ phase, open, answer }) => {
-      vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
-      vi.setSystemTime(5_000);
-      lifecycleStore.__testReset({ phase, status: 'running', startedAt: 0 });
-
-      const instance = render(<Header startedAt={STARTED_AT} />);
-      expect(clockText(instance.lastFrame())).toBe('0:05');
-
-      open();
-      await flushEffects();
-      await vi.advanceTimersByTimeAsync(60_000);
-      await flushEffects();
-      const whileWaiting = clockText(instance.lastFrame());
-      answer();
-      await flushEffects();
-      const afterAnswer = clockText(instance.lastFrame());
-      expect({ whileWaiting, afterAnswer }).toEqual({ whileWaiting: '1:05', afterAnswer: '1:05' });
-
-      await vi.advanceTimersByTimeAsync(2_000);
-      await flushEffects();
-      expect(clockText(instance.lastFrame())).toBe('1:07');
-      instance.unmount();
-    },
-  );
 });

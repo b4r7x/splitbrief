@@ -45,7 +45,7 @@ Cross-feature primitives only. Flat directory — no subfolders, no barrels.
 | `use-static-selector.ts` | Fixed-list keyboard selector (no filter). Peer of `use-filterable-list` for simpler cases. |
 | `use-spinner-frame.ts` | `useSpinnerFrame(active)` — the spinner glyph frame, slowed under reduced motion. Used by home, setup, the runner picker and the workflow screen. |
 | `use-crew-display-names.ts` | `useCrewDisplayNames(config)` — each seat's display name, re-read when the model cache refreshes. Used by home, Settings, crew, the runner picker and the workflow screen. |
-| `use-shared-clock.ts` | `useSharedClock({ active })` — one shared ticking `now` for the workflow header, sidebar and build progress block and for every session row's age on home and `/sessions`, so no two surfaces sample a different second. |
+| `use-shared-clock.ts` | `useSharedClock({ active })` — one shared ticking `now` for the workflow build progress block and for every session row's age on home and `/sessions`, so no two surfaces sample a different second. |
 
 App-wide keyboard dispatch (`useAppKeys`) lives at `src/app/keys.ts` rather than under `src/hooks/`. App-wide mouse dispatch (`useAppMouse`) lives next to it at `src/app/mouse.ts`. These bind to app-shell concerns (`useApp().exit`, the global router, overlay stack, lifecycle abort, and terminal mouse subscription) and are composed once by `src/app/root.tsx`, so they sit next to the shell they serve.
 

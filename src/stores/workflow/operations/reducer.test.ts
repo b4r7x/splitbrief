@@ -903,7 +903,7 @@ describe('operationsStore', () => {
       expect(operationsStore.get().suiteStage).toBeNull();
       expect(operationsStore.get().validationStage).toBeNull();
 
-      hydrateFromState(makeWorkflowState({ phase: 'implementing' }), { endedAt: 8_000 });
+      hydrateFromState(makeWorkflowState({ phase: 'implementing' }));
       addEvent({ type: 'workflow_resumed', ts: 600_000, phase: 'implementing' });
       suiteRunning(600_000);
       gateRunning(600_000);

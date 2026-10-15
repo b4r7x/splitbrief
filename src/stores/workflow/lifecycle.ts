@@ -48,8 +48,6 @@ interface LifecycleBase {
   waitedMs?: Readonly<Partial<Record<Phase, number>>>;
   /** When a stopped run last started moving again, so the stage clock leaves its park out. */
   resumedAt?: number | null;
-  /** Run time of the stretches before the one the run is on: a park between them is not run. */
-  bankedRunMs?: number;
 }
 
 interface IdleLifecycleState extends LifecycleBase {
@@ -88,8 +86,6 @@ interface InterruptedLifecycleState extends LifecycleBase {
   reason: null;
 }
 
-// A paused run read back from disk knows when it last did anything, so its clock can be frozen
-// there; a live park has no end yet and leaves both null.
 interface PausedLifecycleState extends LifecycleBase {
   phase: RunningPhase;
   status: 'paused';
@@ -271,10 +267,6 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
       phaseFirstSeenTs: withPhaseFirstSeen(state.phaseFirstSeenTs, phase, event.ts),
       startedAt: state.startedAt ?? event.ts,
       resumedAt: event.resumedAt ?? event.ts,
-      bankedRunMs: bankedAtResume(
-        state,
-        event.inProcess === true ? (event.resumedAt ?? event.ts) : undefined,
-      ),
     });
   }
 
@@ -301,7 +293,10 @@ function updatePhaseOnly(state: LifecycleState, event: EngineEvent): LifecycleSt
       markLifecycleInterrupted(applyRunningPhase(state, phase, event.ts)),
     );
     if (event.at === 'boundary' && parked.status === 'interrupted') {
-      return { ...parked, durationMs: parked.durationMs ?? runMsAt(parked, event.ts) };
+      return {
+        ...parked,
+        durationMs: parked.durationMs ?? durationFromStart(parked.startedAt, event.ts),
+      };
     }
     return parked;
   }
@@ -383,7 +378,7 @@ export function markLifecycleCancellationRequested(
     stall: null,
     startedAt: state.startedAt,
     endedAt: cancellation.ts,
-    durationMs: state.durationMs ?? runMsAt(state, cancellation.ts),
+    durationMs: state.durationMs ?? durationFromStart(state.startedAt, cancellation.ts),
     reason: cancellation.reason,
   };
 }
@@ -393,7 +388,6 @@ export function markLifecycleInterrupted(state: LifecycleState): LifecycleState 
   return { ...state, status: 'interrupted' };
 }
 
-// A park stops the run clock where it stands; the park itself is no run time.
 export function markLifecyclePaused(state: LifecycleState, ts: number): LifecycleState {
   if (state.status !== 'running' && state.status !== 'interrupted') return state;
   return {
@@ -401,7 +395,7 @@ export function markLifecyclePaused(state: LifecycleState, ts: number): Lifecycl
     status: 'paused',
     interruptParked: false,
     stall: null,
-    durationMs: state.durationMs ?? runMsAt(state, ts),
+    durationMs: state.durationMs ?? durationFromStart(state.startedAt, ts),
   };
 }
 
@@ -435,16 +429,14 @@ export function clearLifecycleInterrupted(state: LifecycleState): LifecycleState
 // steer landed and the work carried on.
 export function clearLifecyclePaused(state: LifecycleState, ts: number): LifecycleState {
   if (state.status !== 'paused') return state;
-  // A run that is moving again has no end and no duration: the frozen clock a run at rest carried
-  // belongs to the pause it just left. Its stage clock starts again here, so the waits it already
-  // subtracted go with it.
+  // A run that is moving again has no end and no duration. Its stage clock starts again here, so
+  // the waits it already subtracted go with it.
   return {
     ...state,
     status: 'running',
     endedAt: null,
     durationMs: null,
     resumedAt: ts,
-    bankedRunMs: bankedAtResume(state),
     waitedMs: {},
   };
 }
@@ -467,34 +459,9 @@ function markLifecycleComplete(
     stall: null,
     startedAt: state.startedAt,
     endedAt,
-    durationMs: state.durationMs ?? runMsAt(state, endedAt),
+    durationMs: state.durationMs ?? durationFromStart(state.startedAt, endedAt),
     reason: null,
   };
-}
-
-/**
- * The run time at `ts`: the stretches already banked plus the one the run is on, which opened at
- * its start or at its last resume. The time a run sat parked or stopped between them is no run
- * time.
- */
-export function runMsAt(state: LifecycleState, ts: number): number {
-  const stretchStart = state.resumedAt ?? state.startedAt;
-  return (state.bankedRunMs ?? 0) + (stretchStart === null ? 0 : Math.max(0, ts - stretchStart));
-}
-
-/** The run clock: how long the run has run by `now`, or `null` before it started. */
-export function runElapsedMs(state: LifecycleState, now: number): number | null {
-  if (state.durationMs !== null) return state.durationMs;
-  return state.startedAt === null ? null : runMsAt(state, now);
-}
-
-// Recorded in-process continuations include the live wait; restarts end the old stretch at its
-// last runner event. A stopped run already holds its frozen duration.
-function bankedAtResume(state: LifecycleState, continuingAt?: number): number {
-  return (
-    state.durationMs ??
-    runMsAt(state, continuingAt ?? state.lastRunnerEventTs ?? state.resumedAt ?? 0)
-  );
 }
 
 function durationFromStart(startedAt: number | null, endedAt: number): number {
@@ -573,7 +540,7 @@ function lifecycleStateFromReset(next: LifecycleResetState): LifecycleState {
     return {
       ...running,
       status: 'paused',
-      durationMs: next.durationMs ?? runMsAt(running, next.endedAt ?? Date.now()),
+      durationMs: next.durationMs ?? durationFromStart(startedAt, next.endedAt ?? Date.now()),
     };
   }
 
@@ -618,7 +585,6 @@ function runningLifecycleState(input: {
   lastRunnerEventTs?: number | null;
   attemptStartedTs?: number | null;
   resumedAt?: number | null;
-  bankedRunMs?: number;
 }): RunningLifecycleState {
   return {
     phase: runningPhase(input.phase),
@@ -637,7 +603,6 @@ function runningLifecycleState(input: {
     waitingSince: null,
     waitedMs: {},
     resumedAt: input.resumedAt ?? null,
-    ...(input.bankedRunMs !== undefined && { bankedRunMs: input.bankedRunMs }),
     startedAt: input.startedAt,
     endedAt: null,
     durationMs: null,

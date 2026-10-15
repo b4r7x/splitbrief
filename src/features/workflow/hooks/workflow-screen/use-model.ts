@@ -128,7 +128,7 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
   };
 
   const continuation = useRunContinue({ prepared, inputMode });
-  const runner = useRunLoop({
+  useRunLoop({
     prepared,
     ...(local?.steer !== undefined && { steer: local.steer }),
     selectedSkills: selectedSkillMetas,
@@ -186,7 +186,6 @@ export function useWorkflowScreen({ onRuntimeCommand, deps }: UseWorkflowScreenO
     reviewFilePath,
     approvalPromptState,
     promptPending,
-    startedAt: runner.startedAt,
     /** The run on screen, at rest; undefined while a local process is driving it. */
     atRestRecord,
     closed,

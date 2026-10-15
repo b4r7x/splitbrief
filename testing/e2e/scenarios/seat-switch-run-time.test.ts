@@ -5,10 +5,9 @@ import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { sessionsRoot } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { loadState } from '../../../src/core/state/persistence.js';
+import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
 import { readRunEvents } from '../../../src/engine/events/replay.js';
-import { loadEvents } from '../../../src/stores/workflow/actions/load.js';
-import { lifecycleStore, runElapsedMs } from '../../../src/stores/workflow/lifecycle.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
 import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
@@ -38,12 +37,12 @@ afterEach(() => {
   trustHome = undefined;
 });
 
-it('keeps the run clock monotonic through a CLI fallback and its replay', async () => {
+it('records how long a run ran through a CLI fallback, leaving out the halt', async () => {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   const primary = 'gpt-5-codex';
   const fallback = 'gpt-6.1-sol';
-  trustHome = useTrustHome('e2e-seat-switch-clock-home');
+  trustHome = useTrustHome('e2e-seat-switch-run-time-home');
   mkdirSync(join(trustHome.home, '.codex'), { recursive: true });
   writeFileSync(join(trustHome.home, '.codex', 'auth.json'), '{"fixture":true}\n');
   const binDir = join(target.tmpDir, 'bin');
@@ -109,22 +108,17 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
   expect(loadState(ref)?.phase).toBe('complete');
   const { events } = await readRunEvents(ref);
   const started = events.find((event) => event.type === 'workflow_started');
-  const switched = events.findIndex((event) => event.type === 'seat_switched');
-  const resumed = events.findIndex((event) => event.type === 'workflow_resumed');
+  const halted = events.find((event) => event.type === 'recovery_prompted');
+  const resumed = events.find((event) => event.type === 'workflow_resumed');
   const finished = events.find((event) => event.type === 'workflow_complete');
-  if (started === undefined || finished === undefined) throw new Error('Run did not finish');
-  expect(switched).toBeGreaterThan(0);
-  expect(resumed).toBeGreaterThan(switched);
+  if (started === undefined || halted === undefined || finished === undefined) {
+    throw new Error(`Run did not halt and finish: ${events.map((event) => event.type).join(', ')}`);
+  }
+  if (resumed?.type !== 'workflow_resumed') throw new Error('Run did not resume');
+  expect(events.some((event) => event.type === 'seat_switched')).toBe(true);
 
-  const before = events.slice(0, resumed);
-  const resume = events[resumed];
-  if (resume === undefined) throw new Error('Run did not resume');
-  loadEvents(before);
-  const elapsedBefore = runElapsedMs(lifecycleStore.get(), resume.ts);
-  loadEvents([...before, resume]);
-  expect(runElapsedMs(lifecycleStore.get(), resume.ts)).toBe(elapsedBefore);
-  expect(runElapsedMs(lifecycleStore.get(), resume.ts)).toBe(resume.ts - started.ts);
-
-  loadEvents(events);
-  expect(runElapsedMs(lifecycleStore.get(), finished.ts + 60_000)).toBe(finished.ts - started.ts);
+  // The run ran until the halt, then from the seat switch's resume to its end.
+  expect(readRunRecord(ref).summary?.activeTime).toBe(
+    halted.ts - started.ts + finished.ts - (resumed.resumedAt ?? resumed.ts),
+  );
 });

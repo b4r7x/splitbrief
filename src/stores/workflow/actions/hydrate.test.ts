@@ -153,28 +153,24 @@ describe('hydrateFromState', () => {
   });
 
   it('never claims a run read back from disk is still running', () => {
-    hydrateFromState(
-      {
-        stateVersion: 1,
-        phase: 'implementing',
-        feature: 'f',
-        currentTaskIndex: 0,
-        attempt: 0,
-        tasks: [makeTask({ id: 'T001', status: 'pending' })],
-        plannerSessionId: null,
-        startedAt: new Date(1_000_000).toISOString(),
-        tokenUsage: makeUsage(),
-        awaitingContinue: false,
-        messageQueue: [],
-      },
-      { endedAt: 1_060_000 },
-    );
+    hydrateFromState({
+      stateVersion: 1,
+      phase: 'implementing',
+      feature: 'f',
+      currentTaskIndex: 0,
+      attempt: 0,
+      tasks: [makeTask({ id: 'T001', status: 'pending' })],
+      plannerSessionId: null,
+      startedAt: new Date(1_000_000).toISOString(),
+      tokenUsage: makeUsage(),
+      awaitingContinue: false,
+      messageQueue: [],
+    });
 
     expect(lifecycleStore.get().status).toBe('paused');
-    expect(lifecycleStore.get().durationMs).toBe(60_000);
   });
 
-  it('freezes a finished run at the moment it completed', () => {
+  it('reads a finished run back as complete at the moment it completed', () => {
     hydrateFromState({
       stateVersion: 1,
       phase: 'complete',
@@ -192,7 +188,7 @@ describe('hydrateFromState', () => {
 
     expect(lifecycleStore.get().status).toBe('complete');
     expect(lifecycleStore.get().phase).toBe('complete');
-    expect(lifecycleStore.get().durationMs).toBe(120_000);
+    expect(lifecycleStore.get().endedAt).toBe(1_120_000);
   });
 
   it('keeps the phase timestamps the replayed log recorded', () => {
