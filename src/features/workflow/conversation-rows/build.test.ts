@@ -2105,6 +2105,50 @@ describe('buildConversationRows', () => {
     }
     ui.unmount();
   });
+
+  it('gives a settled brief one file list and one duration', () => {
+    const report = JSON.stringify({
+      status: 'done',
+      filesChanged: ['tests/clamp.test.js'],
+      touchedNotSuggested: [],
+      notes: null,
+      decisions: [],
+    });
+    const events: EngineEvent[] = [
+      makeTaskStart({ taskId: taskId('T001'), title: 'Add clamp helper', file: 'src/clamp.js' }),
+      { type: 'planner_text', ts: 1, phase: 'implementing', role: 'implementer', text: report },
+      makeImplementerGenerate({
+        file: 'src/clamp.js',
+        files: [],
+        duration: 9170,
+        noChange: true,
+        kept: ['src/clamp.js', 'tests/clamp.test.js'],
+      }),
+      makeTaskComplete({ taskId: taskId('T001'), duration: 9842 }),
+    ];
+    const { rows } = buildConversationRows({
+      sections: groupEventsIntoSections(events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 30,
+      streaming,
+    });
+    const ui = renderFeature(
+      createElement(
+        Fragment,
+        null,
+        ...rows.map((row) => createElement(ConversationRowView, { key: row.key, row })),
+      ),
+    );
+    const text = stripAnsiStyles(ui.lastFrame() ?? '');
+    ui.unmount();
+
+    expect(text).toContain('src/clamp.js · tests/clamp.test.js');
+    expect(text).toContain('Report  done · 0 decisions');
+    expect(text).not.toContain('1 file');
+    expect(text.match(/\d+\.\ds/g)).toEqual(['9.8s']);
+  });
 });
 
 describe('rows no brief owns stay with the completed briefs', () => {

@@ -4135,7 +4135,7 @@ const pausedMidBriefProjection: WorkflowFixtureProjection = {
 
 const RESUMED_REPORT_TEXT = JSON.stringify({
   status: 'done',
-  filesChanged: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+  filesChanged: [WORKFLOW_FIXTURE_SECOND_FILE],
   touchedNotSuggested: [],
   notes: null,
   decisions: [],
@@ -4143,7 +4143,7 @@ const RESUMED_REPORT_TEXT = JSON.stringify({
 
 /**
  * A stop cut the brief after it wrote both its files; the continued call found that work complete
- * and changed nothing more, after the implementer's own report counted the two files.
+ * and changed nothing more, though the implementer's own report named only one of the two files.
  */
 const resumedKeptWorkProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RESUMED_KEPT_WORK_ID,
@@ -4178,6 +4178,16 @@ const resumedKeptWorkProjection: WorkflowFixtureProjection = {
       duration: 1_200,
       noChange: true,
       kept: [WORKFLOW_FIXTURE_REVIEW_FILE, WORKFLOW_FIXTURE_SECOND_FILE],
+    },
+    {
+      type: 'task_completed',
+      ts: FIXED_TS + 31_000,
+      phase: 'implementing',
+      taskId: WORKFLOW_FIXTURE_TASK_ID,
+      title: WORKFLOW_FIXTURE_TEXT.implementationTask,
+      method: 'local',
+      retries: 0,
+      duration: 1_800,
     },
   ],
 };

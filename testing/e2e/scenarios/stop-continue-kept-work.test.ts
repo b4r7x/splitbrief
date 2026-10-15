@@ -191,7 +191,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     fixture = createStopContinueFixture(
       implementerCalls([
         { writes: BOTH_FILES, holds: true },
-        { report: { ...IDLE_REPORT, filesChanged: [GREET_FILE, MARKER_FILE] } },
+        { report: { ...IDLE_REPORT, filesChanged: [MARKER_FILE] } },
       ]),
     );
     const target = fixture;
@@ -211,14 +211,15 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(resumed.stdout).toContain('task T001: done (no checks)');
     expect(invocations(target)).toBe(2);
     expect(await retries(target, parked.sessionId)).toEqual([]);
-    // The implementer's own report counts the two files the brief holds; the call's row names
-    // them both, and says this call kept them rather than wrote them.
+    // The implementer's own report names one of the two files the brief holds. The call's row is
+    // the one list: it names them both, says this call kept them rather than wrote them, and
+    // carries no call time beside the brief's own.
     for (const rows of await resumedRows(target, parked.sessionId)) {
-      const report = rows.indexOf('Report  done · 2 files · 0 decisions');
+      const report = rows.indexOf('Report  done · 0 decisions');
       expect(report).toBeGreaterThan(0);
       expect(rows.slice(report + 1, report + 4)).toEqual([
         '',
-        expect.stringMatching(/^src\/greet\.ts · src\/marker\.ts {2}\d+\.\ds$/),
+        'src/greet.ts · src/marker.ts',
         "verified · kept the interrupted attempt's work · no further change",
       ]);
       expect(rows.join('\n')).not.toContain('no change needed');
@@ -318,7 +319,7 @@ describe('stop after the brief wrote its files → continue', { timeout: 240_000
     expect(await retries(target, parked.sessionId)).toEqual([]);
     // The call names the file it wrote, and the file the stopped attempt left beside it, once.
     for (const rows of await resumedRows(target, parked.sessionId)) {
-      const done = rows.findIndex((row) => /^src\/greet\.ts {2}\d+\.\ds/.test(row));
+      const done = rows.findIndex((row) => /^src\/greet\.ts(?: {2}|$)/.test(row));
       expect(done).toBeGreaterThan(0);
       expect(rows[done + 1]).toBe(`kept the interrupted attempt's work · ${MARKER_FILE}`);
     }

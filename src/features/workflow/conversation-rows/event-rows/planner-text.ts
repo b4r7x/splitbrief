@@ -131,11 +131,9 @@ function reportSummaryLine(report: ImplementerReport): string {
   if (report.status === 'blocked') {
     return `${head}${SOFT_SEP}${countNoun(report.filesNeeded.length, 'file')} needed`;
   }
-  return [
-    head,
-    countNoun(report.filesChanged.length, 'file'),
-    countNoun(report.decisions.length, 'decision'),
-  ].join(SOFT_SEP);
+  // The files the call changed are listed by its done row, measured from the workspace; a count
+  // of the files the report claims would be a second, possibly different, list.
+  return `${head}${SOFT_SEP}${countNoun(report.decisions.length, 'decision')}`;
 }
 
 export function isPlannerTextRenderedAsMarkdown(event: EngineEventOf<'planner_text'>): boolean {
