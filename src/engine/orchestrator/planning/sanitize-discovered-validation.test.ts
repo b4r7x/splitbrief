@@ -189,6 +189,14 @@ describe('sanitizeDiscoveredValidation', () => {
       'passes node to vitest; a validation command takes no node, python or python3 argument',
     ],
     [
+      'vitest -t node --test a.test.js',
+      'passes node to vitest; a validation command takes no node, python or python3 argument',
+    ],
+    [
+      'vitest -t node --check a.js',
+      'passes node to vitest; a validation command takes no node, python or python3 argument',
+    ],
+    [
       'vitest -t npm test x.py',
       'passes npm to vitest; a validation command takes no npm, pnpm, yarn or bun argument',
     ],
@@ -301,8 +309,101 @@ describe('sanitizeDiscoveredValidation', () => {
   });
 
   it.each([
+    'node --watch --test -m pytest',
+    'node --test --loader=./setup.mjs -m pytest',
+    'node --test --experimental-loader=./setup.mjs -mpytest',
+    'node --test --test-reporter=./setup.mjs -m pytest',
+    'node --test --test-name-pattern -m pytest',
+    'node --build-snapshot --test -mpytest',
+    'node --test -mpytest src/a.js',
+    'node -m pytest --watch --test',
+  ])('preserves base plan and discovery admission for the module form %s', (command) => {
+    expect(unsafeCommandReason(command)).toBeNull();
+    expect(
+      checkCommandRefusal(command, {
+        npmScriptsApproved: false,
+        packageScripts: { packageJsonExists: false, scripts: {} },
+      }),
+    ).toBeNull();
+    expect(sanitize({ testCommand: command })?.testCommand).toBe(command);
+  });
+
+  it.each([
+    'node --test test/a.test.js',
+    'node --test test/unit/parse.mjs',
+    'node --test --test-reporter=tap src/a.test.ts test/b.spec.js',
+    'node --test --test-name-pattern=parse test/unit/parse.mjs',
+    'node --check src/a.js',
+    'node -c scripts/build.js',
+  ])('admits %s: it runs only test files, or only parses its file', (command) => {
+    expect(sanitize({ testCommand: command })?.testCommand).toBe(command);
+    expect(warnings()).toEqual([]);
+    expect(
+      checkCommandRefusal(command, {
+        npmScriptsApproved: false,
+        packageScripts: { packageJsonExists: false, scripts: {} },
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
     ['node --test test/', 'passes an operand to node (test/)'],
-    ['node --test test/a.test.js', 'passes an operand to node (test/a.test.js)'],
+    ['node --test test/unit/', 'passes an operand to node (test/unit/)'],
+    ['node --test src/helper.js', 'passes an operand to node (src/helper.js)'],
+    ['node --test test/a.test.js scripts/x.js', 'passes an operand to node (scripts/x.js)'],
+    ['node --test test/a.test.js --require', 'passes an operand to node (--require)'],
+    ['node --test ../other/a.test.js', 'passes an operand to node (../other/a.test.js)'],
+    ['node --test /tmp/a.test.js', 'passes an operand to node (/tmp/a.test.js)'],
+    ['node --test test/*.test.js', 'passes an operand to node (test/*.test.js)'],
+    ['node --check -r ./setup.js src/a.js', 'uses the code-loading option node -r'],
+    ['node --check --build-snapshot src/a.js', 'passes an operand to node (src/a.js)'],
+    ['node --test src/test_a.py', 'passes an operand to node (src/test_a.py)'],
+    ['node --check /etc/passwd', 'passes a path outside the workspace to node (/etc/passwd)'],
+    ['node --check ../x.js', 'passes a path outside the workspace to node (../x.js)'],
+    ['node -c ../x.js', 'passes a path outside the workspace to node (../x.js)'],
+    ['node --check src/*.js', 'passes an operand to node (src/*.js)'],
+    ['node -c src/a?.js', 'passes an operand to node (src/a?.js)'],
+    ['node --check src/[ab].js', 'passes an operand to node (src/[ab].js)'],
+    ['node --check test/', 'passes an operand to node (test/)'],
+    ['node -c --build-snapshot src/a.js', 'uses the code-loading option node -c'],
+    ['node --test -c src/a.test.js', 'uses the code-loading option node -c'],
+    [
+      'node --test --loader=./setup.mjs test/unit/parse.mjs',
+      'uses the code-loading option node --loader',
+    ],
+    [
+      'node --loader=./setup.mjs --test test/unit/parse.mjs',
+      'uses the code-loading option node --loader',
+    ],
+    [
+      'node --test --experimental-loader=./setup.mjs test/unit/parse.mjs',
+      'uses the code-loading option node --experimental-loader',
+    ],
+    [
+      'node --test --build-snapshot test/unit/parse.mjs',
+      'uses an unsupported test-file option node --build-snapshot',
+    ],
+    [
+      'node --test --build-snapshot-config=./config.json src/a.test.js',
+      'uses an unsupported test-file option node --build-snapshot-config',
+    ],
+    [
+      'node --test --test-reporter=./scripts/reporter.mjs src/a.test.js',
+      "loads a test reporter outside Node's built-in reporters (./scripts/reporter.mjs)",
+    ],
+    [
+      'node --test --experimental-config-file=./config.json src/a.test.js',
+      'uses an unsupported test-file option node --experimental-config-file',
+    ],
+    [
+      'node --test --test-name-pattern test/unit/parse.mjs',
+      'requires --test-name-pattern=<value> before a test file',
+    ],
+    [
+      'node --test --test-global-setup=./scripts/setup.mjs src/a.test.js',
+      'uses an unsupported test-file option node --test-global-setup',
+    ],
+    ['python -c 1', 'uses the code-loading option python -c'],
     ['node scripts/check.js', 'passes an operand to node (scripts/check.js)'],
     ['node -e 1', 'uses the code-loading option node -e'],
     ['node --require=./setup.js --test', 'uses the code-loading option node --require'],
@@ -310,6 +411,11 @@ describe('sanitizeDiscoveredValidation', () => {
     ['node -', 'reads code from standard input (node -)'],
     ['node -- check.js', 'uses the script separator node --'],
     ['python -m custom_check', 'runs a Python module outside the stack tools (custom_check)'],
+    [
+      'node --watch --test -m custom_check',
+      'runs a Python module outside the stack tools (custom_check)',
+    ],
+    ['node --test --loader=./setup.mjs -m', 'runs node -m without a module name'],
     ['python -m', 'runs python -m without a module name'],
     ['uv run python -c1', 'uses the code-loading option python -c'],
     ['uv run poetry run python --eval=1', 'uses the code-loading option python --eval'],

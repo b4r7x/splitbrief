@@ -3,7 +3,7 @@ import { join, posix, relative } from 'node:path';
 import { namesListedIn } from '../../../lib/fs.js';
 import { isPathConfined } from '../../../lib/path-confinement.js';
 import { isNodeError } from '../../../lib/process/errors.js';
-import { isTestFile, STACKS } from '../../../core/validation/stacks/registry.js';
+import { isTestScript } from '../../../core/validation/stacks/registry.js';
 import { isRecord } from '../../../utils/type-guards.js';
 import { collectTrackedFiles } from '../../snapshots/files.js';
 import { createRunBaseReader, type RunBaseFile } from '../isolation/acquisition.js';
@@ -25,17 +25,6 @@ type Manifest = { scripts: Record<string, unknown>; aliases: string | undefined 
 function scriptsRun(definition: PackageScript): string[] {
   const { manifest, script } = definition;
   return manifest === 'package.json' ? [`pre${script}`, script, `post${script}`] : [script];
-}
-
-/**
- * A test file by a registry stack's test pattern or test directory. Running a test is what a
- * review is for, so a test this run wrote or changed is not a check definition.
- */
-function isTestScript(file: string): boolean {
-  const dirs = file.split('/').slice(0, -1);
-  return STACKS.some(
-    (stack) => isTestFile(file, stack) || stack.testDirs.some((dir) => dirs.includes(dir)),
-  );
 }
 
 async function orNoFiles<T>(listing: Promise<T[]>): Promise<T[]> {

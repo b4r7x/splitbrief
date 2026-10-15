@@ -1,6 +1,10 @@
 import { isAbsolute, posix } from 'node:path';
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
-import { CODE_LOAD_FLAGS } from '../planning/sanitize-discovered-validation.js';
+import {
+  INLINE_CODE_FLAGS,
+  NODE_SYNTAX_CHECK_FLAGS,
+  nodeParsesOnly,
+} from '../planning/sanitize-discovered-validation.js';
 
 const SHELL_SYNTAX = /[|&;`$(){}<>]/;
 // biome-ignore lint/suspicious/noControlCharactersInRegex: the rule matches control characters.
@@ -116,7 +120,6 @@ const SUBCOMMAND_INTERPRETERS: Readonly<
   deno: { inline: ['eval', 'repl'], codeOptions: false },
   bun: { inline: ['repl'], codeOptions: true },
 };
-const INLINE_CODE_FLAGS = new Set([...CODE_LOAD_FLAGS, '-E', '--loader', '--experimental-loader']);
 /** elixir and iex take whole-word options; `--erl` hands its value to erl, which can run code. */
 const ELIXIR_OPTIONS = {
   flags: new Set(['-e', '--eval', '-r', '-pr', '--rpc-eval', '--erl']),
@@ -524,7 +527,7 @@ export const REVIEWER_COMMAND_RULES: readonly string[] = [
       .filter(([, options]) => options.definition.length > 0)
       .map(([program]) => program),
   )} run only on the project's own task file, in its directory: ${taskRunnerOptions('definition')} are refused.`,
-  `A package script in any \`package.json\` or \`composer.json\` of the workspace, a \`Makefile\`, \`justfile\`, \`Rakefile\` or \`rakelib\` task, a build wrapper, or an interpreter script that this run changed or created is refused. A test file is not a check definition: a test this run wrote or changed runs (\`node --test test/new.test.js\`). \`deno task\` tasks and \`mix.exs\` aliases are not compared. A \`package.json\` script named ${code(APPLICATION_SCRIPTS)} is refused in every form (\`npm start\`, \`pnpm --filter x start\`, \`yarn workspace x run start\`): it starts or stops the application and does not verify a change.`,
+  `A package script in any \`package.json\` or \`composer.json\` of the workspace, a \`Makefile\`, \`justfile\`, \`Rakefile\` or \`rakelib\` task, a build wrapper, or an interpreter script that this run changed or created is refused. A test file is not a check definition: a test this run wrote or changed runs (\`node --test test/new.test.js\`). \`node --check <file>\` and \`node -c <file>\` with no other option parse the file without running it, so they can check any file, also one this run changed. \`deno task\` tasks and \`mix.exs\` aliases are not compared. A \`package.json\` script named ${code(APPLICATION_SCRIPTS)} is refused in every form (\`npm start\`, \`pnpm --filter x start\`, \`yarn workspace x run start\`): it starts or stops the application and does not verify a change.`,
 ];
 
 function isFlag(token: string): boolean {
@@ -581,14 +584,23 @@ function interpreterName(program: string): string {
 type InterpreterCall =
   | { kind: 'refused'; reason: string }
   | { kind: 'module'; command: string[] }
+  | { kind: 'parse-only' }
   | { kind: 'script'; file: string };
 
+/**
+ * What an interpreter command runs. A parse-only call names no check definition, including when
+ * a package manager forwards it rather than naming a package script.
+ */
 function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
   const program = interpreterName(tokens[0] ?? '');
   const subcommands = lookup(SUBCOMMAND_INTERPRETERS, program);
   if (!SCRIPT_INTERPRETERS.has(program) && subcommands === undefined) return null;
   const codeOptions = lookup(INTERPRETER_CODE_OPTIONS, program);
   const codeFlags = codeOptions?.flags ?? INLINE_CODE_FLAGS;
+  const node = program === 'node' || program === 'nodejs';
+  const operandAt = tokens.findIndex((arg, index) => index > 0 && !isFlag(arg));
+  const parsesOnly =
+    node && nodeParsesOnly(tokens.slice(1, operandAt === -1 ? undefined : operandAt));
   let runs = false;
   for (let index = 1; index < tokens.length; index++) {
     const arg = tokens[index] ?? '';
@@ -600,7 +612,9 @@ function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
       if (arg === '--') index++;
       const operand = tokens[index];
       if (operand === undefined) return null;
-      if (subcommands === undefined) return { kind: 'script', file: operand };
+      if (subcommands === undefined) {
+        return parsesOnly ? { kind: 'parse-only' } : { kind: 'script', file: operand };
+      }
       if (!runs && subcommands.inline.includes(operand)) {
         return { kind: 'refused', reason: `runs the code-execution command ${program} ${operand}` };
       }
@@ -611,6 +625,7 @@ function interpreterCall(tokens: readonly string[]): InterpreterCall | null {
       continue;
     }
     if (subcommands?.codeOptions === false) continue;
+    if (parsesOnly && NODE_SYNTAX_CHECK_FLAGS.has(arg)) continue;
     if ((program === 'python' || program === 'pypy') && arg.startsWith('-m')) {
       const next = arg === '-m' ? index + 2 : index + 1;
       const module = arg === '-m' ? tokens[index + 1] : arg.slice(2);
@@ -1054,7 +1069,7 @@ function packageScript(tokens: readonly string[]): CheckDefinition | null {
   if (runner === 'bun' && script === 'build') return null;
   if (APPLICATION_SCRIPTS.has(script)) return defined(script);
   if (PACKAGE_MANAGER_COMMANDS.has(script)) return null;
-  // A bare word runs a program when one is installed under that name: `pnpm node scripts/x.js`.
+  // A bare word can resolve to a package script even with syntax-check arguments.
   return definitionOf(tokens.slice(word.index)) ?? defined(script);
 }
 
