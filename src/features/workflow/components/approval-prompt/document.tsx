@@ -41,7 +41,6 @@ export function DocumentReviewPrompt({
   const cols = terminalSizeStore.use((s) => s.cols);
   const options = reviewDocumentOptions(artifact);
   const width = approvalTextWidth(cols);
-  const showCursor = !commenting;
   const form = reviewDocumentForm({ artifact, confirms, cols, budgetRows });
   // A comment being typed approves nothing, so where the legend was shed the confirms rows teach
   // the two keys that are still live instead.
@@ -74,7 +73,7 @@ export function DocumentReviewPrompt({
         </Box>
       )}
       {options.map((option, index) => {
-        const active = showCursor && index === selectedIndex;
+        const active = commenting ? option.command === 'comment' : index === selectedIndex;
         return (
           <Text key={option.command}>
             <Text color={active ? t.accent : t.textDim}>

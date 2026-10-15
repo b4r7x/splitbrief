@@ -506,7 +506,7 @@ palette:
 
 ### Sessions picker
 
-**What it does.** Browses summary-backed past sessions from `.splitbrief/sessions/`. Open via `/sessions` or from the home screen. Each row shows a status icon, the feature, the relative start time and the run's state in words (`sessionStatusWord`, `src/core/sessions/display.ts`): `running`, `waiting for you`, `stopped`, `ready to apply`, or the closed outcome `applied`, `discarded`, `ended` or `complete`.
+**What it does.** Browses saved runs from `.splitbrief/sessions/`. Open via `/sessions` or from the home screen. Each row shows a status icon, the feature, the relative time of its latest stop or end, else its start time, and the run's state in words (`sessionStatusWord`, `src/core/sessions/display.ts`): `running`, `waiting for you`, `stopped`, `ready to apply`, or the closed outcome `applied`, `discarded`, `ended` or `complete`.
 
 Applied and complete runs use `●` (`*` on the ASCII tier). Ready, waiting and stopped runs use `◌`. Discarded and ended runs use `×`. Running runs use `◉`.
 

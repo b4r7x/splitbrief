@@ -39,6 +39,22 @@ describe('checkpoint frame text', () => {
     expect(await waitForCheckpoint({ ...context, lastFrame: () => ansi })).toBe(ansi);
   });
 
+  it('waits for the comment draft and its legend on the plan card', () => {
+    const scenario = findVisualScenario('workflow-plan-card-commenting');
+    const checkpoint = scenario?.checkpoints[0];
+    const viewport = scenario?.viewports[0];
+    if (scenario === undefined || checkpoint === undefined || viewport === undefined) {
+      throw new Error('Missing commenting plan-card checkpoint');
+    }
+    const output = `${checkpoint.marker}\nEnd run\nEdit plan.json\nAdd a greeting module and expose it from the CLI.`;
+    const context = { output, scenario, checkpoint, viewport };
+    const ready = checkpointPredicate(scenario, checkpoint);
+    expect(ready(context)).toBe(false);
+    const withDraft = `${output}\ncomment Split the CLI change into a separate task.`;
+    expect(ready({ ...context, output: withDraft })).toBe(false);
+    expect(ready({ ...context, output: `${withDraft}\n⏎ send · esc back` })).toBe(true);
+  });
+
   it('passes plain text to a supplied predicate and returns the original ANSI frame', async () => {
     const scenario = findVisualScenario('home-empty');
     const checkpoint = scenario?.checkpoints[0];

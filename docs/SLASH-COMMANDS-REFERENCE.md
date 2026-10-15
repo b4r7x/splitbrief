@@ -67,6 +67,7 @@ Commands that open an overlay or change which screen is active. `category: 'navi
 
 - **Purpose**: Browse past runs. Opens the sessions overlay backed by `.splitbrief/sessions/`; `⏎` opens the run on the workflow screen at rest, with its history replayed, whatever the run did — an open run is continued from there, a closed one is read.
 - **Screens**: all.
+- **Row time**: Each row shows the latest stop or end time, else the start time.
 - **Args**: none.
 - **Example**: `/sessions`
 - **Behavior**: Opens the `sessions` overlay. Selecting a run reads its record, replays its `session.jsonl` into the workflow stores and opens the workflow screen at rest; the only refusal is a local run this process is already driving.
