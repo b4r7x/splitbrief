@@ -31,6 +31,22 @@ describe('runnerActivityLedgerItem', () => {
     });
   });
 
+  it('tags no stopped call as raw, though its partial output is kept', () => {
+    expect(
+      runnerActivityLedgerItem({
+        stage: 'aborted',
+        kind: 'error',
+        label: 'aborted runner_interrupted',
+        diagnosticPartial: 'stopped by you',
+        rawAvailable: true,
+      }),
+    ).toMatchObject({
+      label: 'STOP',
+      value: 'current turn interrupted: stopped by you',
+      rawMarker: null,
+    });
+  });
+
   it('prettifies recognized shell reads, searches, and listings out of RUN commands', () => {
     expect(
       runnerActivityLedgerItem({

@@ -53,7 +53,7 @@ const activity = (
   ts: number,
   fields: Pick<
     EngineEventOf<'runner_call_activity'>,
-    'activityId' | 'stage' | 'kind' | 'label' | 'target' | 'diagnosticPartial'
+    'activityId' | 'stage' | 'kind' | 'label' | 'target' | 'diagnosticPartial' | 'rawAvailable'
   >,
 ): EngineEvent => ({
   type: 'runner_call_activity',
@@ -152,6 +152,7 @@ export const cliStopContinuedProjection: WorkflowFixtureProjection = {
       kind: 'error',
       label: 'aborted runner_interrupted',
       diagnosticPartial: 'stopped by you',
+      rawAvailable: true,
     }),
     {
       type: 'turn_interrupted',

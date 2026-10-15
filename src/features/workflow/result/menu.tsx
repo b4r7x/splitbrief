@@ -10,6 +10,7 @@ import { stopMenuLayout } from '../stop/options.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import {
   RESULT_MENU_LEGEND,
+  RESULT_MENU_UNFOCUSED_LEGEND,
   resultMenuFindingLines,
   resultMenuRows,
   resultMenuTitle,
@@ -82,7 +83,10 @@ function ResultMenuBody({
     { isActive: focused },
   );
 
-  const legend = fitKeyLegend(RESULT_MENU_LEGEND, Math.max(1, layout.width - 4));
+  const legend = fitKeyLegend(
+    focused ? RESULT_MENU_LEGEND : RESULT_MENU_UNFOCUSED_LEGEND,
+    Math.max(1, layout.width - 4),
+  );
   const boxHeight = height ?? layout.height + (confirming ? findings.length : 0);
   // Border, title and legend take four rows; the actions keep theirs, the findings get the rest.
   const findingLines = confirming
@@ -114,16 +118,20 @@ function ResultMenuBody({
         </Text>
       ))}
       <Box height={layout.bodyRows} flexDirection="column" flexShrink={0}>
-        {layout.options.map(({ row, parts }, index) => (
-          <Box key={row.id} flexDirection="column">
-            {parts.map((line, lineIndex) => (
-              <Text key={lineIndex} color={index === selectedIndex ? t.accent : t.textDim}>
-                {listRowLead(index === selectedIndex && lineIndex === 0 ? 'active' : 'default')}
-                <TextSpans parts={line} selected={index === selectedIndex} />
-              </Text>
-            ))}
-          </Box>
-        ))}
+        {layout.options.map(({ row, parts }, index) => {
+          // The mark follows the keyboard: while the composer holds it, ⏎ answers no row.
+          const marked = focused && index === selectedIndex;
+          return (
+            <Box key={row.id} flexDirection="column">
+              {parts.map((line, lineIndex) => (
+                <Text key={lineIndex} color={marked ? t.accent : t.textDim}>
+                  {listRowLead(marked && lineIndex === 0 ? 'active' : 'default')}
+                  <TextSpans parts={line} selected={marked} />
+                </Text>
+              ))}
+            </Box>
+          );
+        })}
       </Box>
       <Text color={t.textDim}>{legend}</Text>
     </Box>

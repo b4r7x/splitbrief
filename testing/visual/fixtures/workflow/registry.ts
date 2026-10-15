@@ -153,6 +153,9 @@ function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureF
     };
   }
   const atRest = projection.atRest;
+  if (projection.scenarioId === 'workflow-ready-composer-focus') {
+    return () => ({ ...base(), afterMount: (write) => write.press('\t') });
+  }
   if (projection.scenarioId === 'workflow-ready-empty-diff') {
     return () => ({
       ...base(),
@@ -623,6 +626,7 @@ const checkpointPredicates = [
   [checkpointId('at-rest-waiting'), includesAll()],
   [checkpointId('closed-complete'), includesAll()],
   [checkpointId('ready-to-apply'), includesAll()],
+  [checkpointId('ready-composer-focus'), includesAll('Ready to apply')],
   [checkpointId('ready-empty-diff'), includesAll('Ready to apply')],
   [checkpointId('ready-override'), includesAll()],
   [checkpointId('closed-applied'), includesAll()],
