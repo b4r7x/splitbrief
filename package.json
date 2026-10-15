@@ -107,6 +107,7 @@
     "esbuild": "^0.28.1"
   },
   "license": "MIT",
+  "author": "b4r7x (https://github.com/b4r7x)",
   "dependencies": {
     "@xterm/addon-unicode-graphemes": "0.4.0",
     "@xterm/headless": "6.0.0",
