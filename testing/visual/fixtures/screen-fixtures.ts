@@ -384,6 +384,7 @@ export function createSetupFixture(
   state:
     | 'initial'
     | 'saved'
+    | 'saved-ignore-rule'
     | 'unavailable'
     | 'detecting'
     | 'cached-refresh'
@@ -397,6 +398,10 @@ export function createSetupFixture(
   return {
     setup: (context) => {
       setupVisualFixture(context);
+      // Its own repository, so the first save is the one that adds the .splitbrief/ rule.
+      if (state === 'saved-ignore-rule') {
+        createTestGitRepo(VISUAL_FIXTURE_PROJECT_DIR, { '.gitignore': 'node_modules/\n' });
+      }
       if (state !== 'unavailable') {
         configStore.load(VISUAL_FIXTURE_PROJECT_DIR);
       }
@@ -498,7 +503,7 @@ export function createSetupFixture(
       routerStore.init({ screen: 'setup', onComplete: 'home' });
     },
     // The user walks up from PLAN to the first ready-made crew and takes it; the cursor stays there.
-    ...(state === 'saved' && {
+    ...((state === 'saved' || state === 'saved-ignore-rule') && {
       afterMount: async (write) => {
         for (const key of ['\x1b[A', '\x1b[A', '\r']) await write.press(key);
       },
@@ -1081,6 +1086,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
   [scenarioId('setup-initial'), () => createSetupFixture()],
   [scenarioId('setup-saved'), () => createSetupFixture('saved')],
+  [scenarioId('setup-saved-ignore-rule'), () => createSetupFixture('saved-ignore-rule')],
   [scenarioId('setup-unavailable-seat'), () => createSetupFixture('unavailable')],
   [scenarioId('setup-api-endpoint-override'), () => createSetupFixture('api-override')],
   [scenarioId('setup-custom-api'), () => createSetupFixture('custom-api')],

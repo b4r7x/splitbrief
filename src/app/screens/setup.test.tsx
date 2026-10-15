@@ -295,7 +295,7 @@ describe('SetupScreen', () => {
       expect(noticeIndex).toBeGreaterThan(0);
       expect(rows[noticeIndex - 1]?.replace(/[|│]/gu, '').trim()).toBe('');
       expect(feedbackStore.get().message).toBe(
-        'Saved Claude crew, Codex review to .splitbrief/config.yaml',
+        'Saved Claude crew, Codex review to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
       );
       expect(loadConfig(projectDir).config.reviewer).toMatchObject({
         kind: 'cli',
@@ -1234,11 +1234,81 @@ describe('SetupScreen', () => {
 
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
       expect(feedbackStore.get()).toMatchObject({
-        message: 'Saved your crew to .splitbrief/config.yaml',
+        message: 'Saved your crew to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
         isError: false,
       });
       expect(existsSync(configPath(projectDir))).toBe(true);
       expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n');
+      ui.unmount();
+    });
+  });
+
+  it('leaves .gitignore unchanged when Continue saves over an existing config', async () => {
+    await withTempDir('setup-reconfigure-ignore', async (projectDir) => {
+      configStore.load(projectDir);
+      freshDiscovery(beginDiscovery(), 1);
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+      const first = renderFeature(
+        <SetupScreen prepare={async (input) => preparedOutcome(input)} />,
+      );
+      await flushEffects();
+      await continueSetup(first);
+      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      first.unmount();
+      unlinkSync(join(projectDir, '.gitignore'));
+
+      // What `splitbrief init --reconfigure` routes to before rendering the app.
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+      const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+      await flushEffects();
+      await continueSetup(ui);
+
+      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Saved your crew to .splitbrief/config.yaml',
+        isError: false,
+      });
+      expect(existsSync(join(projectDir, '.gitignore'))).toBe(false);
+      ui.unmount();
+    });
+  });
+
+  it('reports the ignore rule on the first save, a ready-made crew, and not on Continue after it', async () => {
+    await withTempDir('setup-first-save-ignore', async (projectDir) => {
+      configStore.load(projectDir);
+      const request = beginDiscovery();
+      freshDiscovery(request, 1);
+      routerStore.init({ screen: 'setup', onComplete: 'home' });
+      terminalSizeStore.__testReset({ cols: 140, rows: 40 });
+      const ui = renderFeature(<SetupScreen prepare={async (input) => preparedOutcome(input)} />);
+      await flushEffects();
+      expect(existsSync(join(projectDir, SPLITBRIEF_DIR))).toBe(false);
+
+      await focusRow(ui, UP, 'Claude crew, Codex review');
+      ui.stdin.write(ENTER);
+
+      const ignorePath = join(projectDir, '.gitignore');
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Added .splitbrief/ to .gitignore'),
+      );
+      expect(feedbackStore.get().message).toBe(
+        'Saved Claude crew, Codex review to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
+      );
+      expect(stripAnsiStyles(ui.lastFrame() ?? '').split('.gitignore')).toHaveLength(2);
+      expect(existsSync(configPath(projectDir))).toBe(true);
+      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n');
+      await vi.waitFor(() =>
+        expect(configStore.get().revision).toEqual(loadConfig(projectDir).revision),
+      );
+
+      await continueSetup(ui);
+
+      await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Saved your crew to .splitbrief/config.yaml',
+        isError: false,
+      });
+      expect(readFileSync(ignorePath, 'utf8')).toBe('.splitbrief/\n');
       ui.unmount();
     });
   });

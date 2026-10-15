@@ -263,7 +263,7 @@ function getWritableGitignorePath(projectDir: string): string {
   return gitignorePath;
 }
 
-export function ensureGitignore(projectDir: string, entry: string): void {
+export function ensureGitignore(projectDir: string, entry: string): boolean {
   const gitignorePath = getWritableGitignorePath(projectDir);
   if (existsSync(gitignorePath)) {
     const content = readFileSync(gitignorePath, 'utf-8');
@@ -272,7 +272,7 @@ export function ensureGitignore(projectDir: string, entry: string): void {
       ? [normalizedEntry, `${normalizedEntry}*`, `${normalizedEntry}**`]
       : [normalizedEntry];
     const lines = content.split('\n');
-    if (lines.some((line) => coveringRules.includes(line.trim().replace(/^\//, '')))) return;
+    if (lines.some((line) => coveringRules.includes(line.trim().replace(/^\//, '')))) return false;
     const exceptionIndex = normalizedEntry.endsWith('/')
       ? lines.findIndex((line) => {
           const rule = line.trim().replace(/^!\//, '!');
@@ -285,7 +285,7 @@ export function ensureGitignore(projectDir: string, entry: string): void {
     if (exceptionIndex >= 0) {
       lines.splice(exceptionIndex, 0, `${entry}*`);
       writeFileSync(gitignorePath, lines.join('\n'));
-      return;
+      return true;
     }
     const prefix = content.endsWith('\n') ? '' : '\n';
     appendFileSync(gitignorePath, `${prefix}${entry}\n`);
@@ -293,4 +293,5 @@ export function ensureGitignore(projectDir: string, entry: string): void {
     getWritableGitignorePath(projectDir);
     writeFileSync(gitignorePath, `${entry}\n`);
   }
+  return true;
 }

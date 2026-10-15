@@ -163,6 +163,7 @@ const previewPicker: PickerEffectDeps = {
         rawSha256: 'preview-fixture-revision',
         fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
       },
+      ignoreRuleAdded: false,
     };
   },
 };

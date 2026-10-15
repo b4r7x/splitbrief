@@ -112,9 +112,10 @@ describe('first-run seat override parity', () => {
           if (separateReviewer)
             expect(saved.reviewer).toMatchObject({ kind: 'shell', command: process.execPath });
           else expect(saved.reviewer).toBeUndefined();
-          expect(notice).toHaveBeenCalledExactlyOnceWith(
-            'No config found. Saved a ready crew to .splitbrief/config.yaml.',
-          );
+          expect(notice.mock.calls).toEqual([
+            ['No config found. Saved a ready crew to .splitbrief/config.yaml.'],
+            ['Added .splitbrief/ to .gitignore.'],
+          ]);
         } finally {
           notice.mockRestore();
         }

@@ -12,6 +12,7 @@ import { glyph } from '../../../src/lib/glyphs.js';
 import { configStore } from '../../../src/stores/project/config.js';
 import { detectionStore } from '../../../src/stores/project/detection.js';
 import { routerStore } from '../../../src/stores/navigation/router.js';
+import { feedbackStore } from '../../../src/stores/ui/feedback.js';
 import { overlayStore } from '../../../src/stores/ui/overlay.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
@@ -86,6 +87,7 @@ describe('e2e: first-run diagnostics', () => {
     expect(missing.stdout).toContain('(1 blocker, 0 warnings)');
     const initialized = await cli(target, ['init', '--yes']);
     expect(initialized.exitCode, initialized.stderr).toBe(0);
+    expect(`${initialized.stdout}${initialized.stderr}`).not.toContain('.gitignore');
     expect(existsSync(configPath(target.projectDir))).toBe(true);
     expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).toBe(before);
     expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).not.toContain('.trees/');
@@ -106,6 +108,7 @@ describe('e2e: first-run diagnostics', () => {
 
     const initialized = await cli(target, ['init', '--yes']);
     expect(initialized.exitCode, initialized.stderr).toBe(0);
+    expect(`${initialized.stdout}${initialized.stderr}`).not.toContain('.gitignore');
     expect(existsSync(configPath(target.projectDir))).toBe(true);
     expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).toBe('node_modules/\n');
     expect(status()).toBe('');
@@ -120,6 +123,12 @@ describe('e2e: first-run diagnostics', () => {
 
     const initialized = await cli(target, ['init', '--yes']);
     expect(initialized.exitCode, initialized.stderr).toBe(0);
+    expect(initialized.stderr.split('\n').filter((line) => line.includes('.splitbrief/'))).toEqual([
+      'No config found. Saved a ready crew to .splitbrief/config.yaml.',
+      'Added .splitbrief/ to .gitignore.',
+    ]);
+    expect(initialized.stdout).not.toContain('Wrote');
+    expect(initialized.stdout).not.toContain('.splitbrief/');
     expect(readFileSync(join(target.projectDir, '.gitignore'), 'utf8')).toBe(
       'node_modules/\n.splitbrief/\n',
     );
@@ -162,9 +171,18 @@ describe('e2e: first-run diagnostics', () => {
       await vi.waitFor(() => expect(existsSync(configPath(target.projectDir))).toBe(true), {
         timeout: 5000,
       });
+      await vi.waitFor(() =>
+        expect(feedbackStore.get().message).toBe('Saved your crew to .splitbrief/config.yaml'),
+      );
     } finally {
       ui.unmount();
     }
+    expect(
+      execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], {
+        cwd: target.projectDir,
+        encoding: 'utf8',
+      }),
+    ).toBe('');
     const saved = readFileSync(configPath(target.projectDir), 'utf8');
     expect(loadConfig(target.projectDir).config.workflow.approve).toBe('plan');
     const text = await cli(target, ['doctor']);

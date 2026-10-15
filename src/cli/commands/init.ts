@@ -37,7 +37,6 @@ export function registerInitCommand(program: Command, deps: InitDeps = defaultIn
 
       if (opts.yes) {
         await ensureHeadlessConfig({ projectDir, reconfigure: opts.reconfigure });
-        console.log(`Wrote ${SPLITBRIEF_DIR}/${CONFIG_FILE}`);
         console.log('Run `splitbrief doctor` to check readiness before your first run.');
         return;
       }

@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { z } from 'zod';
 import { confinedReadFileAsync, confinedUnlinkSync } from '../../lib/confined-fs.js';
@@ -485,7 +486,12 @@ export async function loadRememberedCliRuntime(
   return { installedVersion, fingerprint };
 }
 
+/**
+ * Writes only into an existing `.splitbrief/`. The first config save creates the folder together
+ * with its ignore rule, so discovery before that save leaves the checkout untouched.
+ */
 export async function saveDetectionCache(input: SaveDetectionCacheInput): Promise<void> {
+  if (!existsSync(getSplitbriefPath(input.projectDir))) return;
   const cache = buildCache(input.snapshot);
   if (cache === null) return;
 

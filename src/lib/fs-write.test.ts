@@ -339,7 +339,7 @@ describe('ensureGitignore', () => {
     const before = `node_modules/\n${rule}\n!.splitbrief/config.yaml\n`;
     writeFileSync(ignorePath, before);
 
-    ensureGitignore(projectDir, '.splitbrief/');
+    expect(ensureGitignore(projectDir, '.splitbrief/')).toBe(false);
 
     expect(readFileSync(ignorePath, 'utf8')).toBe(before);
   });
@@ -351,8 +351,8 @@ describe('ensureGitignore', () => {
       const ignorePath = join(projectDir, '.gitignore');
       writeFileSync(ignorePath, `node_modules/\n${exception}\n`);
 
-      ensureGitignore(projectDir, '.splitbrief/');
-      ensureGitignore(projectDir, '.splitbrief/');
+      expect(ensureGitignore(projectDir, '.splitbrief/')).toBe(true);
+      expect(ensureGitignore(projectDir, '.splitbrief/')).toBe(false);
 
       expect(readFileSync(ignorePath, 'utf8')).toBe(`node_modules/\n.splitbrief/*\n${exception}\n`);
     },
@@ -360,7 +360,7 @@ describe('ensureGitignore', () => {
 
   it('creates .gitignore with entry when file does not exist', () => {
     const dir = makeTmp();
-    ensureGitignore(dir, '.splitbrief/');
+    expect(ensureGitignore(dir, '.splitbrief/')).toBe(true);
     const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
     expect(content).toBe('.splitbrief/\n');
   });
@@ -368,7 +368,7 @@ describe('ensureGitignore', () => {
   it('appends entry to existing .gitignore', () => {
     const dir = makeTmp();
     writeFileSync(join(dir, '.gitignore'), 'node_modules/\n');
-    ensureGitignore(dir, '.splitbrief/');
+    expect(ensureGitignore(dir, '.splitbrief/')).toBe(true);
     const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
     expect(content).toContain('node_modules/');
     expect(content).toContain('.splitbrief/');
@@ -377,7 +377,7 @@ describe('ensureGitignore', () => {
   it('does not duplicate entry if already present', () => {
     const dir = makeTmp();
     writeFileSync(join(dir, '.gitignore'), '.splitbrief/\n');
-    ensureGitignore(dir, '.splitbrief/');
+    expect(ensureGitignore(dir, '.splitbrief/')).toBe(false);
     const content = readFileSync(join(dir, '.gitignore'), 'utf-8');
     const lines = content.split('\n').filter((l) => l.trim() === '.splitbrief/');
     expect(lines).toHaveLength(1);

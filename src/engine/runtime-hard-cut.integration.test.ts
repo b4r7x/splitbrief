@@ -77,7 +77,7 @@ describe('runtime hard cut', () => {
 
   it('state-write', async () => {
     const projectDir = join(root, 'state-write');
-    await mkdir(projectDir);
+    await mkdir(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
 
     await saveDetectionCache({ projectDir, snapshot: hardCutSnapshot() });
 

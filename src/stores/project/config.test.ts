@@ -385,6 +385,18 @@ describe('configStore.save', () => {
     expect(warnings.some((w) => w.includes('config.version is missing'))).toBe(false);
   });
 
+  it('reports the ignore rule only on the save that creates the config', async () => {
+    configStore.load(tmpDir);
+
+    await expect(
+      configStore.save({ ...loadedConfig(), escalation: { enabled: true } }),
+    ).resolves.toMatchObject({ kind: 'saved', ignoreRuleAdded: true });
+    expect(readFileSync(join(tmpDir, '.gitignore'), 'utf8')).toBe(`${SPLITBRIEF_DIR}/\n`);
+    await expect(
+      configStore.save({ ...loadedConfig(), escalation: { enabled: false } }),
+    ).resolves.toMatchObject({ kind: 'saved', ignoreRuleAdded: false });
+  });
+
   it('does not publish config state while the atomic save is pending', async () => {
     writeConfigYaml();
     configStore.load(tmpDir);

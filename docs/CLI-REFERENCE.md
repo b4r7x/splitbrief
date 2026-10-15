@@ -486,7 +486,7 @@ Other distinguishable runner outcomes (`spawn-not-found`, `protocol-failure`, `i
 splitbrief init [--project <dir>] [--reconfigure] [--yes]
 ```
 
-Bootstrap a project. Creates `.splitbrief/config.yaml` populated with detected planner / implementer providers and models, then opens the TUI setup screen for review. Safe to re-run with `--reconfigure` to start over.
+Bootstrap a project. Opens the TUI setup screen with the detected planner / implementer providers and models. Until the first save, init writes nothing in your checkout. That save creates `.splitbrief/config.yaml` and adds `.splitbrief/` to `.gitignore` when git does not ignore it yet. Safe to re-run with `--reconfigure` to start over.
 
 `--yes` skips the setup screen, detects ready tools and saves a crew. On a Codex-only machine, Codex fills every seat. If no crew is ready, init asks you to choose and sign in to your tools with `splitbrief init` and writes no config. This mode serves CI, container builds and piped shells: the setup screen needs a TTY, and without `--yes` a non-TTY invocation refuses and points at `--yes`.
 
@@ -528,7 +528,7 @@ splitbrief init --reconfigure
 ### Files affected
 
 - **Reads:** existing `.splitbrief/config.yaml` (to detect collision), provider environment.
-- **Writes:** `.splitbrief/config.yaml`, store directories under `.splitbrief/`.
+- **Writes:** on the first save, `.splitbrief/config.yaml` and the `.splitbrief/` rule in `.gitignore` when git does not ignore `.splitbrief/` yet. After that save, `.splitbrief/detection-cache.json`.
 
 ### See also
 

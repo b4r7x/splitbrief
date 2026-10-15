@@ -43,12 +43,15 @@ export interface ConfigDocumentEdit {
  * file is asked apart from the directory: a rule that ignores only the subdirectories of an
  * existing `.splitbrief/` matches the directory probe and still leaves the config file reported.
  */
-export async function ensureConfigGitignore(projectDir: string): Promise<void> {
+export async function ensureConfigGitignore(projectDir: string): Promise<boolean> {
   const entry = `${SPLITBRIEF_DIR}/`;
   const probes = [entry, CONFIG_RELATIVE_PATH];
-  if ((await checkIgnoredPaths(projectDir, probes)).length === probes.length) return;
-  ensureGitignore(projectDir, entry);
+  if ((await checkIgnoredPaths(projectDir, probes)).length === probes.length) return false;
+  return ensureGitignore(projectDir, entry);
 }
+
+/** The line every surface shows when a save added the `.splitbrief/` rule to `.gitignore`. */
+export const IGNORE_RULE_ADDED = `Added ${SPLITBRIEF_DIR}/ to .gitignore`;
 
 function configRevision(rawBytes: Uint8Array, stat: BigIntStats): ConfigRevision {
   return {

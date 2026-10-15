@@ -55,6 +55,7 @@ const SAVED: ConfigSaveResult = {
     rawSha256: 'runners-overlay-fixture',
     fileIdentity: { dev: 0n, ino: 0n, size: 0n, mtimeNs: 0n },
   },
+  ignoreRuleAdded: false,
 };
 
 /**

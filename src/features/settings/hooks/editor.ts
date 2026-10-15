@@ -77,7 +77,9 @@ async function saveSetting(def: SettingDef, value: unknown): Promise<void> {
   const current = getCurrentConfig();
   const result = await configStore.save(applyEdits(current, { [def.id]: value }));
   if (reportConfigSaveFailure(result)) return;
-  feedbackStore.setMessage(formatConfigSaveSuccess(settingSaveSubject(def, value, current)));
+  feedbackStore.setMessage(
+    formatConfigSaveSuccess(settingSaveSubject(def, value, current), result),
+  );
 }
 
 export function useSettingsEditor({

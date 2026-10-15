@@ -341,7 +341,7 @@ export function usePickerActions(opts: {
         [
           changesRunningSeat(config, updated)
             ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
-            : formatConfigSaveSuccess(subject),
+            : formatConfigSaveSuccess(subject, result),
           ...(notice === undefined ? [] : [notice]),
         ].join(SOFT_SEP),
       );
@@ -653,6 +653,7 @@ export function useLocalConnectionActions(
         feedbackStore.setMessage(
           formatConfigSaveSuccess(
             `${roleLabel}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, 'seat')}`,
+            result,
           ),
         );
         overlayStore.close();

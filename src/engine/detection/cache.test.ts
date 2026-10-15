@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -79,10 +79,19 @@ describe('detection cache', () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-cache-test-'));
+    await mkdir(join(tempDir, SPLITBRIEF_DIR));
   });
 
   afterEach(async () => {
     await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('writes nothing and creates no folder in a project without .splitbrief/', async () => {
+    await rm(join(tempDir, SPLITBRIEF_DIR), { recursive: true });
+
+    await saveDetectionCache({ projectDir: tempDir, snapshot: cacheSnapshot() });
+
+    expect(existsSync(join(tempDir, SPLITBRIEF_DIR))).toBe(false);
   });
 
   it('returns null when no cache exists', async () => {
@@ -793,7 +802,7 @@ describe('detection cache', () => {
     'remembers detection for a project folder named %s',
     async (folder) => {
       const projectDir = join(tempDir, 'work', folder);
-      await mkdir(projectDir, { recursive: true });
+      await mkdir(join(projectDir, SPLITBRIEF_DIR), { recursive: true });
       const contextKey = detectionContextsForCurrentConfig({
         config: createDefaultConfig(),
         projectDir,

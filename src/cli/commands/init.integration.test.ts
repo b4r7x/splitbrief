@@ -43,20 +43,24 @@ describe('init --yes detected crew', () => {
         }),
       );
       const notice = vi.spyOn(console, 'error').mockImplementation(() => {});
-      vi.spyOn(console, 'log').mockImplementation(() => {});
+      const output = vi.spyOn(console, 'log').mockImplementation(() => {});
       try {
         await init(projectDir);
         const config = loadConfig(projectDir).config;
         expect(config.planner).toEqual({ kind: 'cli', tool: 'codex' });
         expect(config.implementer).toEqual({ kind: 'cli', tool: 'codex' });
-        expect(notice).toHaveBeenCalledExactlyOnceWith(
-          'No config found. Saved a ready crew to .splitbrief/config.yaml.',
-        );
+        expect(notice.mock.calls).toEqual([
+          ['No config found. Saved a ready crew to .splitbrief/config.yaml.'],
+          ['Added .splitbrief/ to .gitignore.'],
+        ]);
+        expect(output.mock.calls).toEqual([
+          ['Run `splitbrief doctor` to check readiness before your first run.'],
+        ]);
         const original = `${readFileSync(configPath(projectDir), 'utf8')}# keep this comment\n`;
         writeFileSync(configPath(projectDir), original);
         await init(projectDir);
         expect(readFileSync(configPath(projectDir), 'utf8')).toBe(original);
-        expect(notice).toHaveBeenCalledTimes(1);
+        expect(notice).toHaveBeenCalledTimes(2);
         writeFileSync(
           configPath(projectDir),
           '# previous crew\nversion: 3\n42: retained\nplanner:\n  kind: cli\n  tool: claude-code\nworkflow:\n  approve: none\n',
@@ -64,7 +68,8 @@ describe('init --yes detected crew', () => {
         await init(projectDir, ['--reconfigure']);
         expect(loadConfig(projectDir).config).toEqual(config);
         expect(readFileSync(configPath(projectDir), 'utf8')).not.toMatch(/previous crew|retained/);
-        expect(notice).toHaveBeenCalledTimes(2);
+        expect(notice).toHaveBeenCalledTimes(3);
+        expect(notice).toHaveBeenLastCalledWith('Saved a ready crew to .splitbrief/config.yaml.');
         expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n');
       } finally {
         vi.unstubAllEnvs();

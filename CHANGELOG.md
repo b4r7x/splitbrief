@@ -88,6 +88,7 @@
 
 ### Fixed
 
+- Setup and `splitbrief init` leave your checkout unchanged until the first save. That save adds `.splitbrief/` to `.gitignore` when git does not ignore it yet, and the save line says so. Before, a seat save left `.splitbrief/` untracked, opening `init` and quitting left a `.splitbrief/` folder, and no screen showed the `.gitignore` change. `splitbrief init --yes` reports its save once.
 - After a failed final review, the transcript names the action you chose, **Fix again**, as the recovery menu does. Before, it said **Send a correction**. The `splitbrief continue` line now names **Fix again** without the menu's hint. The transcript also names **Run the checks again** and **Skip review with a note** in the words of the menu.
 - Every Backspace deletes one character in every text field, also when the terminal sends several Backspaces at once.
 - Saved run patches preserve executable permissions and symlink additions, removals and target changes when you apply them with Git.
