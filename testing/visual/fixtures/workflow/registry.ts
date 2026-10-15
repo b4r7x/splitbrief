@@ -589,7 +589,8 @@ const checkpointPredicates = [
       const text = workflowTranscriptText();
       return (
         includesTranscript('interrupted')(context) &&
-        !/Workspace kept|user-abort|\berr\b/i.test(text)
+        !/Workspace kept|user-abort|\berr\b/i.test(text) &&
+        !stripAnsiStyles(context.output).includes('◉ BUILD activity')
       );
     },
   ],

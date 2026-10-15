@@ -77,8 +77,9 @@ const continued = call(epoch + 90_000, 'cli-stop:continued', 0);
 
 /**
  * A run continued twice: the first call was cut when SPLITBRIEF went away, the second when you
- * stopped the CLI tool mid-call. The third call has started and reported nothing yet, so the
- * brief, not a cut batch, carries the live mark, and neither cut reads as an error.
+ * stopped the CLI tool mid-call, after a line of its own text split its activity in two. The
+ * third call has started and reported nothing yet, so the brief, not a batch of a cut call,
+ * carries the live mark, and neither cut reads as an error.
  */
 export const cliStopContinuedProjection: WorkflowFixtureProjection = {
   scenarioId: scenarioId('workflow-cli-stop-continued'),
@@ -123,6 +124,21 @@ export const cliStopContinuedProjection: WorkflowFixtureProjection = {
     { type: 'workflow_resumed', ts: epoch + 30_000, phase: 'implementing' },
     briefStarted(epoch + 30_100),
     stopped,
+    activity(stopped, epoch + 40_500, {
+      activityId: 'cli-stop:stopped:read',
+      stage: 'completed',
+      kind: 'read',
+      label: `reading ${GREET}`,
+      target: GREET,
+    }),
+    {
+      type: 'planner_text',
+      ts: epoch + 40_800,
+      phase: 'implementing',
+      role: 'implementer',
+      content: 'markdown',
+      text: `The first attempt left ${GREET} without its export, so I will add it.`,
+    },
     activity(stopped, epoch + 41_000, {
       activityId: 'cli-stop:stopped:edit',
       stage: 'completed',

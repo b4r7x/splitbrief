@@ -18,6 +18,7 @@ import { normalizeRunnerCallWarning } from '../../engine/calls/warnings.js';
 import { makePlannerText, makePlannerStatus } from '#testing/helpers/events/planner.js';
 import {
   makeRunnerCallActivity,
+  makeRunnerCallCompleted,
   makeRunnerCallHeartbeat,
 } from '#testing/helpers/events/runner-call.js';
 import {
@@ -794,6 +795,19 @@ describe('eventsStore — append via addEvent', () => {
     expect(result[1]).toMatchObject({ text: 'implementer writing', role: 'implementer' });
   });
 
+  it('keeps the text of two calls apart across the end of the first call', () => {
+    const log = mergeEventLog([
+      makePlannerText({ text: 'first call' }),
+      makeRunnerCallCompleted({ role: 'planner' }),
+      makePlannerText({ text: 'second call' }),
+    ]);
+    expect(log.map((event) => event.type)).toEqual([
+      'planner_text',
+      'runner_call_completed',
+      'planner_text',
+    ]);
+  });
+
   it('does not merge planner_text across differing content formats', () => {
     const base = [makePlannerText({ text: 'plain log' })];
     const result = mergeEvent(base, makePlannerText({ text: '### Plan', content: 'markdown' }));
@@ -865,5 +879,36 @@ describe('projectEventForTuiEventLog', () => {
 
   it('drops runner_call_heartbeat, which only moves the freshness clock', () => {
     expect(projectEventForTuiEventLog(makeRunnerCallHeartbeat())).toBeNull();
+  });
+
+  it('keeps the end of a finished call without its session, usage or runner', () => {
+    expect(
+      projectEventForTuiEventLog(
+        makeRunnerCallCompleted({
+          taskId: taskId('T001'),
+          runnerName: 'codex',
+          model: 'gpt-5-mini',
+          usage: { inputTokens: 1, outputTokens: 2 },
+          nativeSessionId: 'native-session-1',
+        }),
+      ),
+    ).toEqual({
+      type: 'runner_call_completed',
+      ts: 2_500,
+      phase: 'implementing',
+      taskId: 'T001',
+      callId: 'call-1',
+      role: 'implementer',
+      backendKind: 'cli',
+      sequence: 2,
+      status: 'completed',
+      error: null,
+      partial: false,
+      startedAt: 1_000,
+      endedAt: 2_500,
+      durationMs: 1_500,
+      usage: null,
+      nativeSessionId: null,
+    });
   });
 });

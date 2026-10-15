@@ -1,7 +1,7 @@
 import { forceUnicodeGlyphs } from '#testing/helpers/glyphs.js';
 import { addEvent } from '../../../stores/workflow/actions/event.js';
 import { resetWorkflow } from '../../../stores/workflow/actions/reset.js';
-import { eventsStore } from '../../../stores/workflow/events.js';
+import { eventsStore, mergeEventLog } from '../../../stores/workflow/events.js';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createElement, Fragment } from 'react';
 import { ConversationRowView } from '../components/conversation-flow/row-view.js';
@@ -12,7 +12,12 @@ import { groupEventsIntoSections, type Section } from '../../../core/sections/ev
 import type { EngineEvent, EngineEventOf } from '../../../engine/events/types.js';
 import type { StreamingOutputState } from '../../../stores/workflow/streaming-output.js';
 import { makePlannerHeartbeat, makePlannerStatus } from '#testing/helpers/events/planner.js';
-import { makeRunnerCallActivity } from '#testing/helpers/events/runner-call.js';
+import {
+  makeRunnerCallActivity,
+  makeRunnerCallCompleted,
+  makeRunnerCallError,
+  makeRunnerCallStarted,
+} from '#testing/helpers/events/runner-call.js';
 import {
   makeTaskComplete,
   makeTaskSkipped,
@@ -737,6 +742,122 @@ describe('buildConversationRows', () => {
     expect(activeRowKey).not.toBe(batch?.key);
     expect(activeRowKey).toBe(projection.activeTaskHeaderKey);
     expect(activeRowKey).not.toBeNull();
+  });
+
+  it('takes the live mark off every batch of a call that ended, read through the retained log', () => {
+    const call = (callId: string) =>
+      ({
+        phase: 'implementing',
+        taskId: taskId('T001'),
+        callId,
+        role: 'implementer',
+        backendKind: 'cli',
+        runnerName: 'codex',
+        attempt: 0,
+      }) as const;
+    const buildActivity = (
+      callId: string,
+      overrides: Partial<EngineEventOf<'runner_call_activity'>>,
+    ) => activity({ ...call(callId), kind: 'read', ...overrides });
+    const running: EngineEvent[] = [
+      makeTaskStart(),
+      makeRunnerCallStarted({ ...call('first'), ts: 0, sequence: 0 }),
+      buildActivity('first', { label: 'reading src/greet.ts', target: 'src/greet.ts' }),
+      {
+        type: 'planner_text',
+        ts: 0,
+        phase: 'implementing',
+        role: 'implementer',
+        text: 'Both files are missing, so I will create them.',
+      },
+      buildActivity('first', { kind: 'edit', label: 'editing src/greet.ts' }),
+    ];
+    const cut: EngineEvent[] = [
+      makeRunnerCallError({
+        ...call('first'),
+        status: 'aborted',
+        error: { code: 'runner_interrupted', message: 'CLI invocation was aborted' },
+      }),
+      buildActivity('first', {
+        activityId: 'first:terminal',
+        stage: 'aborted',
+        kind: 'error',
+        label: 'aborted runner_interrupted',
+        diagnosticPartial: 'CLI invocation was aborted',
+      }),
+    ];
+    const marks = (events: EngineEvent[]) => {
+      const projection = buildConversationRowsProjection({
+        sections: groupEventsIntoSections(mergeEventLog(events)),
+        expandedDiffs: new Set(),
+        expandedActivityBatches: new Set(),
+        cols: 100,
+        viewportHeight: 40,
+        streaming,
+      });
+      const batches = materializeConversationRowsWindow({
+        projection,
+        windowStart: 0,
+        windowEnd: projection.totalRows,
+      }).filter((row) => row.kind === 'activity');
+      const { activeRowKey } = computeConversationRowsWindowFromProjection({
+        projection,
+        viewportHeight: 40,
+        rawScrollOffset: 0,
+        renderableCountAtScroll: 0,
+        heightAtScroll: 0,
+      });
+      expect(projection.activeTaskHeaderKey).not.toBeNull();
+      return { batches, activeRowKey, header: projection.activeTaskHeaderKey };
+    };
+
+    const live = marks(running);
+    expect(live.batches).toHaveLength(2);
+    expect(live.activeRowKey).toBe(live.batches[1]?.key);
+
+    const warned = marks([
+      ...running,
+      buildActivity('first', {
+        activityId: 'first:warning:rate-limit',
+        stage: 'warning',
+        kind: 'error',
+        label: 'error claude_rate_limit',
+        diagnosticPartial: 'Rate limit reached',
+      }),
+    ]);
+    expect(warned.activeRowKey).toBe(warned.batches.at(-1)?.key);
+
+    const finished = marks([...running, makeRunnerCallCompleted({ ...call('first') })]);
+    expect(finished.activeRowKey).toBe(finished.header);
+
+    const cutBeforeStop = marks([...running, ...cut]);
+    expect(cutBeforeStop.batches.map((batch) => batch.interrupted)).toEqual([undefined, true]);
+    expect(cutBeforeStop.activeRowKey).toBe(cutBeforeStop.header);
+
+    const continued: EngineEvent[] = [
+      ...running,
+      ...cut,
+      {
+        type: 'turn_interrupted',
+        ts: 1_000,
+        phase: 'implementing',
+        source: 'user',
+        at: 'mid-step',
+        step: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+      },
+      { type: 'workflow_resumed', ts: 2_000, phase: 'implementing' },
+      makeTaskStart(),
+      makeRunnerCallStarted({ ...call('continued'), ts: 2_100, sequence: 0 }),
+    ];
+    const waiting = marks(continued);
+    expect(waiting.activeRowKey).toBe(waiting.header);
+
+    const painted = marks([
+      ...continued,
+      buildActivity('continued', { label: 'reading src/greet.ts', target: 'src/greet.ts' }),
+    ]);
+    expect(painted.batches).toHaveLength(3);
+    expect(painted.activeRowKey).toBe(painted.batches[2]?.key);
   });
 
   it('retains the target label once above the crew after a started brief is skipped', () => {

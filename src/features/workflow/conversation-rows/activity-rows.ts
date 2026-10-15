@@ -60,9 +60,7 @@ export function runnerActivityBatchRowBlock(
   };
 }
 
-// A batch a stop cut is over: the live mark goes back to its brief, so the batch keeps its stop mark.
 function activityBatchActiveRowKey(model: ActivityBatchViewModel): string | undefined {
-  if (model.interrupted) return undefined;
   if (model.headerSegments.length > 0) return `${model.batchKey}-header`;
   return undefined;
 }

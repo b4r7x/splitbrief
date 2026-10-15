@@ -85,6 +85,7 @@ describe('walkTranscript', () => {
       {
         kind: 'activity-batch',
         batch: { callId: 'c1', firstIndex: 0, events: [first, second], lastEvent: second },
+        callEnded: false,
       },
     ]);
   });
@@ -491,6 +492,23 @@ describe('walkTranscript', () => {
 
     it('shows while its attempt runs', () => {
       expect(runningRows([makeTaskStart({ taskId: T002, ts: 1_000 }), running])).toHaveLength(1);
+    });
+
+    it('stays while an error-severity warning leaves its call running', () => {
+      const warning = makeRunnerCallActivity({
+        ts: 3_000,
+        taskId: T002,
+        role: 'implementer',
+        callId: 'implementer-2',
+        activityId: 'implementer-2:warning:rate-limit',
+        stage: 'warning',
+        kind: 'error',
+        label: 'error claude_rate_limit',
+        diagnosticPartial: 'Rate limit reached',
+      });
+      expect(
+        runningRows([makeTaskStart({ taskId: T002, ts: 1_000 }), running, warning]),
+      ).toHaveLength(1);
     });
 
     it.each([

@@ -60,7 +60,7 @@ export type TranscriptWalkStep =
   | { kind: 'settled'; section: SettledTranscriptSection }
   | { kind: 'settled-end'; section: SettledTranscriptSection }
   | ((
-      | { kind: 'activity-batch'; batch: RunnerActivityBatch }
+      | { kind: 'activity-batch'; batch: RunnerActivityBatch; callEnded: boolean }
       | { kind: 'recovery'; recovery: RecoveryFold }
       | {
           kind: 'event';
@@ -82,7 +82,8 @@ export type TranscriptWalkStep =
 // keeps the one header it opened with: the Recovery row already says it went back to pending.
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
 // A workspace kept for Continue drops out once the run continues or a close (End run, Discard or
-// Apply) lets it go; a later stop that keeps it again shows its own notice.
+// Apply) lets it go; a later stop that keeps it again shows its own notice. A batch of a call that
+// has ended says so, so no batch of a stopped or finished call carries the live mark.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
@@ -96,6 +97,7 @@ export function* walkTranscript(
     }
   }
   const endedAttempts = endedImplementerAttempts(sections);
+  const endedActivity = endedCallActivity(sections);
   let activityBatch: RunnerActivityBatch | null = null;
   let recovery: RecoveryFold | null = null;
   let recoverySwitch: Extract<TranscriptWalkStep, { kind: 'event' }> | null = null;
@@ -107,7 +109,12 @@ export function* walkTranscript(
 
   function* flush(): Generator<TranscriptWalkStep> {
     if (activityBatch !== null)
-      yield { kind: 'activity-batch', batch: activityBatch, ...settledContext };
+      yield {
+        kind: 'activity-batch',
+        batch: activityBatch,
+        callEnded: endedActivity.has(activityBatch.lastEvent),
+        ...settledContext,
+      };
     if (recovery !== null) yield { kind: 'recovery', recovery, ...settledContext };
     if (recoverySwitch !== null) yield recoverySwitch;
     activityBatch = null;
@@ -278,12 +285,53 @@ function endedImplementerAttempts(sections: readonly Section<EngineEvent>[]): Se
           end(undefined);
           break;
         case 'runner_call_activity':
-          if (event.kind === 'error' && event.role === 'implementer') end(event.taskId);
+          if (event.role === 'implementer' && isCallError(event)) end(event.taskId);
           break;
       }
     }
   }
   return ended;
+}
+
+/**
+ * The activity of the calls that have ended. A call ends at its completion or at its error, which
+ * the log keeps as the call's terminal activity, and a stop, a cancel or a continue ends every call
+ * still in flight.
+ */
+function endedCallActivity(sections: readonly Section<EngineEvent>[]): Set<EngineEvent> {
+  const ended = new Set<EngineEvent>();
+  const open = new Map<string, RunnerActivityEvent[]>();
+  const end = (callId: string): void => {
+    for (const activity of open.get(callId) ?? []) ended.add(activity);
+    open.delete(callId);
+  };
+  for (const section of sections) {
+    for (const event of section.items) {
+      switch (event.type) {
+        case 'runner_call_activity': {
+          const activity = open.get(event.callId);
+          if (activity === undefined) open.set(event.callId, [event]);
+          else activity.push(event);
+          if (isCallError(event)) end(event.callId);
+          break;
+        }
+        case 'runner_call_completed':
+          end(event.callId);
+          break;
+        case 'turn_interrupted':
+        case 'workflow_cancelled':
+        case 'workflow_resumed':
+          for (const callId of [...open.keys()]) end(callId);
+          break;
+      }
+    }
+  }
+  return ended;
+}
+
+/** A call's error is its terminal activity; an error-severity warning leaves the call running. */
+function isCallError(activity: RunnerActivityEvent): boolean {
+  return activity.kind === 'error' && activity.stage !== 'warning';
 }
 
 function restatesSeatSwitch(
