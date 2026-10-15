@@ -85,16 +85,22 @@ describe('buildRunnerChecks seat identities', () => {
     const labeledChecks = checks.filter(
       (check) =>
         check.id === 'runners.planner.configured' ||
+        check.id === 'runners.reviewer.configured' ||
         check.id === 'runners.implementer.default' ||
-        check.id.endsWith('.trust-boundary') ||
         check.id.endsWith('.timeout-disables-watchdog') ||
         check.id.startsWith('runners.availability.'),
     );
 
-    expect(labeledChecks).toHaveLength(14);
+    expect(labeledChecks).toHaveLength(11);
     for (const check of labeledChecks) expect(check.summary).toContain(identity);
     expect(checks.find((check) => check.id === 'runners.planner.configured')?.summary).toBe(
-      `Planner ${identity} configured.`,
+      `PLAN ${identity} configured.`,
+    );
+    expect(checks.find((check) => check.id === 'runners.reviewer.configured')?.summary).toBe(
+      `REVIEW ${identity} configured.`,
+    );
+    expect(checks.find((check) => check.id === 'runners.implementer.default')?.summary).toBe(
+      `BUILD (main) ${identity} configured.`,
     );
   });
 });
@@ -125,12 +131,12 @@ describe('buildRunnerChecks catalog labels', () => {
     const labeled = checks.filter(
       (check) =>
         check.id === 'runners.planner.configured' ||
+        check.id === 'runners.reviewer.configured' ||
         check.id === 'runners.implementer.default' ||
-        check.id.endsWith('.trust-boundary') ||
         check.id.endsWith('.timeout-disables-watchdog'),
     );
 
-    expect(labeled).toHaveLength(10);
+    expect(labeled).toHaveLength(7);
     for (const check of labeled) {
       expect(check.summary).toContain('OpenAI Codex CLI · GPT-6-Luna');
       expect(check.summary).not.toContain('GPT-6 Luna');
@@ -179,7 +185,7 @@ describe('buildRunnerChecks availability guidance', () => {
     });
     // The staged runner reads the same credential store the host signs in to,
     // so signing in is the remedy — not a switch to metered billing.
-    expect(check?.fix).toContain('Sign in to claude-code');
+    expect(check?.fix).toContain('Sign in to Claude Code CLI,');
     expect(check?.fix).not.toContain('ANTHROPIC_API_KEY');
   });
 
@@ -211,8 +217,12 @@ describe('buildRunnerChecks availability guidance', () => {
   });
 
   it.each([
-    ['missing-binary', { installation: 'unavailable', executable: null }, 'Install claude-code'],
-    ['untrusted-path', { trust: 'untrusted' }, 'Trust the exact'],
+    [
+      'missing-binary',
+      { installation: 'unavailable', executable: null },
+      'Install Claude Code CLI, then',
+    ],
+    ['untrusted-path', { trust: 'untrusted' }, 'Install Claude Code CLI outside the project'],
     ['incompatible-version', { compatibility: 'incompatible' }, 'Install the tested'],
     [
       'unauthenticated',
@@ -229,6 +239,35 @@ describe('buildRunnerChecks availability guidance', () => {
 
     expect(check?.diagnosticState).toBe(stateId);
     expect(check?.fix).toContain(fix);
+  });
+
+  it('names the seats in PLAN, BUILD, REVIEW order', () => {
+    const runner = { kind: 'cli', tool: 'claude-code' } as const;
+    const config = makeConfig({ planner: runner, implementer: runner, reviewer: runner });
+
+    const configured = buildRunnerChecks({ config })
+      .map((check) => check.summary)
+      .filter((summary) => summary.endsWith(' configured.'));
+
+    expect(configured.map((summary) => summary.split(' ')[0])).toEqual(['PLAN', 'BUILD', 'REVIEW']);
+  });
+
+  it.each([
+    [{ installation: 'unavailable', executable: null }, 'Claude Code CLI is not installed.'],
+    [{ trust: 'untrusted' }, 'Claude Code CLI executable could not be trusted.'],
+    [{ compatibility: 'incompatible' }, 'Claude Code CLI version is not compatible.'],
+    [{ installedVersion: null }, 'Claude Code CLI version could not be confirmed as compatible.'],
+    [{ auth: 'unauthenticated' }, 'Claude Code CLI is not signed in.'],
+    [{ auth: 'unknown' }, 'Claude Code CLI sign-in status is unknown.'],
+    [{ enabled: false }, 'Claude Code CLI is disabled.'],
+  ] as const)('states a CLI that is not ready in plain words: %o', (overrides, summary) => {
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
+
+    const check = buildRunnerChecks({ config, cliReadiness: [cliReadiness(overrides)] }).find(
+      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
+    );
+
+    expect(check?.summary).toBe(summary);
   });
 
   it('publishes no diagnostic state for ready, disabled, or version-unverified CLIs', () => {
@@ -313,96 +352,36 @@ describe('buildRunnerChecks availability guidance', () => {
     );
   });
 
-  it('warns when a command-capable implementer runs with approval auto mode', () => {
+  it('notes once that the coding tools run commands, with no warning a seat choice cannot clear', () => {
     const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'custom-endpoint',
-        service: 'example-llm',
-        offering: 'payg',
-        model: 'qwen2.5-coder:7b',
-        apiBase: 'https://api.example.test/v1',
-      },
-      implementer: { kind: 'cli', tool: 'copilot' },
-      workflow: { approve: 'none' },
-    });
-
-    const check = buildRunnerChecks({ config }).find(
-      (c) => c.id === 'runners.implementer.trust-boundary',
-    );
-
-    expect(check).toMatchObject({
-      severity: 'warning',
-      metadata: {
-        role: 'implementer',
-        kind: 'cli',
-        executesLocalCommand: true,
-        mayUseNetwork: true,
-        mayWriteFilesDirectly: true,
-        autoAllowFlags: ['--allow-all'],
-      },
-    });
-    expect(check?.details?.join('\n')).toContain('do not restrict the commands or network access');
-  });
-
-  it('warns when a command-capable implementer uses auto/allow flags in default standard mode', () => {
-    const config = makeConfig({
-      planner: {
-        kind: 'api',
-        provider: 'custom-endpoint',
-        service: 'example-llm',
-        offering: 'payg',
-        model: 'qwen2.5-coder:7b',
-        apiBase: 'https://api.example.test/v1',
-      },
+      planner: { kind: 'cli', tool: 'claude-code' },
+      reviewer: { kind: 'cli', tool: 'codex' },
       implementer: { kind: 'cli', tool: 'copilot' },
     });
 
-    const check = buildRunnerChecks({ config }).find(
-      (c) => c.id === 'runners.implementer.trust-boundary',
-    );
+    const checks = buildRunnerChecks({ config });
+    const notes = checks.filter((check) => check.id.endsWith('trust-boundary'));
 
-    expect(check).toMatchObject({
-      severity: 'warning',
-      metadata: {
-        approve: 'plan',
-        autoAllowFlags: ['--allow-all'],
-      },
-    });
-    expect(check?.details).toContain('Plan approval: you approve the plan in the TUI.');
-    expect(check?.details).toContain('Writes to protected files ask for confirmation.');
-    expect(check?.summary).toContain('can run commands on this machine');
+    expect(notes).toEqual([
+      expect.objectContaining({
+        id: 'runners.trust-boundary',
+        severity: 'info',
+        summary: 'Your coding tools run commands on this machine with your permissions.',
+      }),
+    ]);
+    expect(notes[0]?.details).toEqual([
+      'Writes to protected files ask for confirmation. Neither that nor plan approval limits the commands or network access of your coding tools.',
+    ]);
   });
 
-  it('discloses planner tier-2 write authority without changing ordinary planning posture', () => {
-    const config = makeConfig({ planner: { kind: 'cli', tool: 'copilot' } });
+  it('claims no PLAN takeover of the brief for any CLI planner', () => {
+    const text = buildRunnerChecks({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'copilot' } }),
+    })
+      .flatMap((check) => [check.summary, ...(check.details ?? []), check.fix ?? ''])
+      .join('\n');
 
-    const check = buildRunnerChecks({ config }).find(
-      (c) => c.id === 'runners.planner.trust-boundary',
-    );
-
-    expect(check).toMatchObject({
-      severity: 'warning',
-      metadata: {
-        role: 'planner',
-        kind: 'cli',
-        mayWriteFilesDirectly: false,
-        autoAllowFlags: [],
-        plannerTier2FullEscalation: {
-          mayWriteFilesDirectly: true,
-          automaticApproval: true,
-          autoAllowFlags: ['--allow-all', '--no-ask-user'],
-        },
-      },
-    });
-    expect(check?.summary).toContain('may edit files if BUILD needs help');
-    expect(check?.details).toContain('Ordinary planning does not edit project files.');
-    expect(check?.details).toContain(
-      'If BUILD cannot finish a task, PLAN may take over and edit files in the run workspace.',
-    );
-    expect(check?.details).toContain(
-      'Permission flags when PLAN takes over: --allow-all, --no-ask-user',
-    );
+    expect(text).not.toMatch(/take over|takes over|needs help|tier-2/i);
   });
 
   it('still warns about a declared command runner under the strictest approval settings', () => {
@@ -423,11 +402,10 @@ describe('buildRunnerChecks availability guidance', () => {
 
     expect(check).toMatchObject({
       severity: 'warning',
-      metadata: { approve: 'plan', kind: 'shell' },
+      summary: 'PLAN runs a command you declared, with your permissions on this machine.',
+      details: ['Command: /bin/sh -c curl https://example.test | sh'],
+      fix: 'Review the command and its arguments in .splitbrief/config.yaml, or choose a coding tool in Settings > Crew > PLAN.',
     });
-    expect(check?.details).toContain('Command: /bin/sh');
-    expect(check?.details).toContain('Arguments: -c curl https://example.test | sh');
-    expect(check?.summary).toBe('PLAN Custom Shell · Shell can run commands on this machine.');
   });
 
   it('redacts credentials and terminal controls out of the declared command disclosure', () => {
@@ -446,13 +424,13 @@ describe('buildRunnerChecks availability guidance', () => {
         ?.details ?? []
     ).join('\n');
 
-    expect(details).toContain('Command: my-tool');
+    expect(details).toBe('Command: my-tool --api-ey=sk-***REDACTED*** --token ***REDACTED***');
     expect(details).not.toContain('\u001b');
     expect(details).not.toContain('sk-live-must-not-appear');
     expect(details).not.toContain('ghp_must-not-appear');
   });
 
-  it('includes claude-code accept-edits metadata in trust warnings', () => {
+  it('describes permissions without printing command arguments', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
@@ -463,18 +441,15 @@ describe('buildRunnerChecks availability guidance', () => {
         apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'cli', tool: 'claude-code' },
-      workflow: { approve: 'none' },
     });
 
-    const check = buildRunnerChecks({ config }).find(
-      (c) => c.id === 'runners.implementer.trust-boundary',
-    );
+    const note = buildRunnerChecks({ config }).find((c) => c.id === 'runners.trust-boundary');
 
-    expect(check?.details).toContain('Tool permission flags: --permission-mode acceptEdits');
-    expect(check?.metadata?.autoAllowFlags).toEqual(['--permission-mode acceptEdits']);
+    expect(note?.summary).toContain('with your permissions');
+    expect(note?.details?.join('\n')).not.toContain('--permission-mode');
   });
 
-  it('says only a protected write asks, with no approval automation', () => {
+  it('warns about a declared agent command and names its seat', () => {
     const config = makeConfig({
       planner: {
         kind: 'api',
@@ -485,19 +460,16 @@ describe('buildRunnerChecks availability guidance', () => {
         apiBase: 'https://api.example.test/v1',
       },
       implementer: { kind: 'agent', command: './agent', model: 'agent-default' },
-      approval: { feedRejectionsToPlanner: true },
     });
 
-    const check = buildRunnerChecks({ config }).find(
-      (c) => c.id === 'runners.implementer.trust-boundary',
-    );
+    const checks = buildRunnerChecks({ config });
 
-    expect(check?.severity).toBe('warning');
-    expect(check?.summary).toBe('BUILD Agent · Agent Default can run commands on this machine.');
-    expect(check?.details).toContain('Writes to protected files ask for confirmation.');
-    expect(check?.details?.join('\n')).not.toContain('Approval automation');
-    expect(check?.details?.join('\n')).not.toContain('File-write approval prompts');
-    expect(check?.metadata).not.toHaveProperty('fileWriteApprovalEnabled');
+    expect(checks.find((c) => c.id === 'runners.implementer.trust-boundary')).toMatchObject({
+      severity: 'warning',
+      summary: 'BUILD runs a command you declared, with your permissions on this machine.',
+      details: ['Command: ./agent'],
+    });
+    expect(checks.find((c) => c.id === 'runners.trust-boundary')?.severity).toBe('info');
   });
 
   it.each([
@@ -521,6 +493,18 @@ describe('buildRunnerChecks availability guidance', () => {
       severity: 'warning',
       metadata: { timeout, idleKillMs },
     });
+  });
+
+  it('states each timeout fact once when the crew shares its timeout settings', () => {
+    const seat = { kind: 'cli', tool: 'claude-code', timeout: 1000, idleKillMs: 300_000 } as const;
+    const checks = buildRunnerChecks({
+      config: makeConfig({ planner: seat, reviewer: seat, implementer: seat }),
+    }).filter((check) => check.id.endsWith('.timeout-disables-watchdog'));
+    const lines = checks
+      .flatMap((check) => [check.summary, ...(check.details ?? []), check.fix ?? ''])
+      .filter(Boolean);
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(checks).toHaveLength(3);
   });
 
   it('does not warn when timeout leaves room above the idle-kill threshold', () => {
@@ -560,25 +544,37 @@ describe('buildRunnerChecks availability guidance', () => {
     const check = (config: ReturnType<typeof makeConfig>) =>
       buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.configured');
 
-    expect(check(automatic)?.summary).toBe('Planner OpenAI Codex CLI · auto configured.');
+    expect(check(automatic)?.summary).toBe('PLAN OpenAI Codex CLI · auto configured.');
     expect(check(automatic)?.metadata).toMatchObject({ model: null, modelSelection: 'auto' });
 
-    expect(check(unset)?.summary).toBe('Planner OpenAI Codex CLI · auto configured.');
+    expect(check(unset)?.summary).toBe('PLAN OpenAI Codex CLI · auto configured.');
     expect(check(unset)?.metadata).toMatchObject({ model: null, modelSelection: 'unset' });
 
-    expect(check(explicit)?.summary).toBe('Planner OpenAI Codex CLI · GPT-5.4 configured.');
+    expect(check(explicit)?.summary).toBe('PLAN OpenAI Codex CLI · GPT-5.4 configured.');
     expect(check(explicit)?.metadata).toMatchObject({
       model: 'gpt-5.4',
       modelSelection: 'explicit',
     });
   });
 
-  it('readiness summaries capitalize roles via formatRoleLabel', () => {
-    const config = makeConfig();
+  it('speaks the seat words PLAN, BUILD and REVIEW in every summary', () => {
+    const config = makeConfig({
+      planner: { kind: 'cli', tool: 'opencode', timeout: 1000, idleKillMs: 300_000 },
+      reviewer: { kind: 'cli', tool: 'opencode', timeout: 1000, idleKillMs: 300_000 },
+      implementer: { kind: 'cli', tool: 'opencode', timeout: 1000, idleKillMs: 300_000 },
+    });
 
-    const check = buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.configured');
+    const summaries = buildRunnerChecks({ config }).map((check) => check.summary);
 
-    expect(check?.summary).toMatch(/^Planner /);
+    expect(summaries.join('\n')).not.toMatch(/\b(Planner|Implementer|Reviewer|implementer)\b/);
+    expect(summaries).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^PLAN OpenCode CLI/),
+        expect.stringMatching(/^REVIEW OpenCode CLI/),
+        expect.stringMatching(/^BUILD OpenCode CLI/),
+        expect.stringMatching(/^PLAN: OpenCode CLI returns answers as text/),
+      ]),
+    );
   });
 });
 
@@ -591,18 +587,19 @@ describe('buildRunnerChecks reviewer seat', () => {
     expect(checks.filter((check) => check.id.startsWith('runners.reviewer.'))).toEqual([]);
   });
 
-  it('reports the trust boundary of a configured reviewer', () => {
+  it('reports a configured reviewer seat in the seat words', () => {
     const checks = buildRunnerChecks({
       config: makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
-        reviewer: { kind: 'cli', tool: 'codex' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' },
       }),
     });
 
-    expect(checks.find((check) => check.id === 'runners.reviewer.trust-boundary')).toMatchObject({
-      severity: 'warning',
-      metadata: { role: 'reviewer', kind: 'cli', executesLocalCommand: true },
+    expect(checks.find((check) => check.id === 'runners.reviewer.configured')).toMatchObject({
+      severity: 'ok',
+      summary: 'REVIEW OpenAI Codex CLI · GPT-5.4 configured.',
     });
+    expect(checks.find((check) => check.id === 'runners.reviewer.trust-boundary')).toBeUndefined();
   });
 
   it('warns when a configured reviewer timeout disables the watchdog', () => {
@@ -631,7 +628,7 @@ describe('buildRunnerChecks typed-output fallback', () => {
         id: 'runners.planner.typed-output-fallback',
         severity: 'warning',
         summary:
-          'Planner: OpenCode CLI returns plans as text; SPLITBRIEF retries once if an answer cannot be read.',
+          'PLAN: OpenCode CLI returns answers as text; SPLITBRIEF retries once if an answer cannot be read.',
       }),
     ]);
   });

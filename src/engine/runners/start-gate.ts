@@ -1,5 +1,5 @@
 import { statSync } from 'node:fs';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
+import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
   CliExecutableReceiptSchema,
   parseDigestBoundExecutableFingerprint,
@@ -164,7 +164,7 @@ export function admitFreshCliStart(options: AdmitFreshCliStartOptions): FreshCli
 function missingCliStartGate(tool: CliToolId): never {
   throw error(
     'cli-executable-untrusted',
-    `CLI runner "${tool}" has no trusted readiness identity; run readiness checks again before execution.`,
+    `${CLI_TOOL_CATALOG[tool].displayName} has no trusted readiness identity; run \`splitbrief doctor\` again before execution.`,
     { tool },
   );
 }
@@ -203,7 +203,7 @@ export function assertCliStartGate(
   if (!receiptStillMatchesDisk(gate.executable)) {
     throw error(
       'cli-executable-identity-drift',
-      `Executable identity changed for ${tool}; run readiness checks again before execution.`,
+      `Executable identity changed for ${CLI_TOOL_CATALOG[tool].displayName}; run \`splitbrief doctor\` again before execution.`,
       { tool },
     );
   }

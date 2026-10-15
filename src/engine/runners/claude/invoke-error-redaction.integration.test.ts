@@ -54,7 +54,6 @@ describe('Claude invoke process diagnostics', () => {
     const caught = await invokeTestClaude({
       prompt: 'prompt',
       projectDir,
-      mode: 'escalate',
       executable,
       onOutput: () => {},
       onCallEvent: (event) => events.push(event),
@@ -102,7 +101,6 @@ describe('Claude invoke process diagnostics', () => {
       invokeTestClaude({
         prompt: 'prompt',
         projectDir,
-        mode: 'escalate',
         executable,
         authChannel: 'api-key',
         env: { PATH: process.env.PATH ?? '', ANTHROPIC_API_KEY: credential },

@@ -77,7 +77,6 @@ write({ type: 'result', result: chunk.repeat(8000), usage: { input_tokens: 1, ou
     const result = await invokeTrustedClaude({
       prompt: 'p',
       projectDir,
-      mode: 'escalate',
       onOutput: () => {},
     });
 
@@ -99,7 +98,6 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     await invokeTrustedClaude({
       prompt: 'p',
       projectDir,
-      mode: 'escalate',
       authChannel: 'session',
       onOutput: () => {},
     });
@@ -116,7 +114,6 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     const result = await invokeTrustedClaude({
       prompt: 'hi',
       projectDir,
-      mode: 'escalate',
       onOutput: () => {},
     });
 
@@ -139,9 +136,8 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     const { argvFile, stdinFile } = installClaudeRecordingShim(shimDir);
 
     await invokeTrustedClaude({
-      prompt: 'escalate me',
+      prompt: 'Review these changes.',
       projectDir,
-      mode: 'escalate',
       onOutput: () => {},
       effort: 'xhigh',
     });
@@ -153,6 +149,6 @@ process.stdout.write(JSON.stringify({ type: 'result', result: 'ok' }) + '\\n');`
     expect(effortIdx).toBeGreaterThanOrEqual(0);
     expect(argv[effortIdx + 1]).toBe('xhigh');
     expect(stdin).not.toContain('/effort');
-    expect(stdin.startsWith('escalate me')).toBe(true);
+    expect(stdin.startsWith('Review these changes.')).toBe(true);
   });
 });

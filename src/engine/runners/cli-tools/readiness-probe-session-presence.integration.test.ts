@@ -140,9 +140,12 @@ describe('session-state presence readiness', () => {
       },
     );
 
-    it.each(['claude-code', 'cursor'] as const)(
+    it.each([
+      ['claude-code', 'Claude Code CLI'],
+      ['cursor', 'Cursor Agent CLI'],
+    ] as const)(
       'stays unauthenticated when %s reports no session, whatever the host home holds',
-      async (tool) => {
+      async (tool, name) => {
         await withTempDir(`readiness-session-keychain-absent-${tool}`, async (hostHome) => {
           const executable = await nodeExecutable();
           // The host home now holds the file a file-bridged channel would carry.
@@ -159,9 +162,9 @@ describe('session-state presence readiness', () => {
           });
 
           expect(result).toMatchObject({ auth: 'unauthenticated', status: 'unauthenticated' });
-          expect(result.remediation).toContain('macOS');
-          expect(result.remediation).toContain('keychain');
-          expect(result.remediation).toContain(`Sign in to ${tool}`);
+          expect(result.remediation).toBe(
+            `SPLITBRIEF looks for the ${name} session in the macOS keychain. Sign in to ${name}, then run \`splitbrief doctor\` again.`,
+          );
         });
       },
     );

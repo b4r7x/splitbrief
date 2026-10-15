@@ -70,7 +70,6 @@ describe('Claude Code role adapters', () => {
       model: 'claude-sonnet-4-6',
       projectDir: '/project',
       configuredArgs: ['--label', 'fixture'],
-      mode: 'plan',
       sessionId: 'session-1',
       effort: 'high',
     });
@@ -192,7 +191,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: 'high',
       schema,
@@ -218,7 +216,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: 'high',
     });
@@ -243,7 +240,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
       schema: { json: PLAN_ANSWER_JSON_SCHEMA },
@@ -276,7 +272,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -294,7 +289,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       effort: undefined,
     } as const;
     const firstCall = claudeCodePlannerAdapter.buildArgs({ ...common, sessionId: null });
@@ -314,7 +308,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -340,7 +333,6 @@ describe('Claude Code role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -507,41 +499,35 @@ describe('Claude Code role adapters', () => {
 
   it('opens attached global skills to the planner and reviewer reads, never to a write', () => {
     const auth = '/home/me/.claude/skills/auth';
-    for (const mode of ['plan', 'escalate'] as const) {
-      const args = claudeCodePlannerAdapter.buildArgs({
-        prompt: '<brief>',
-        model: 'sonnet',
-        projectDir: '/project',
-        configuredArgs: [],
-        mode,
-        sessionId: null,
-        effort: 'high',
-        skillRoots: [auth],
-      });
-      const settings = JSON.parse(args[args.indexOf('--settings') + 1] ?? '');
-      expect(settings).toEqual({
-        permissions: {
-          additionalDirectories: [auth],
-          deny: [`Edit(/${auth})`, `Edit(/${auth}/**)`],
-        },
-        sandbox: { filesystem: { allowRead: [auth], denyWrite: [auth] } },
-      });
-    }
+    const args = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: 'sonnet',
+      projectDir: '/project',
+      configuredArgs: [],
+      sessionId: null,
+      effort: 'high',
+      skillRoots: [auth],
+    });
+    const settings = JSON.parse(args[args.indexOf('--settings') + 1] ?? '');
+    expect(settings).toEqual({
+      permissions: {
+        additionalDirectories: [auth],
+        deny: [`Edit(/${auth})`, `Edit(/${auth}/**)`],
+      },
+      sandbox: { filesystem: { allowRead: [auth], denyWrite: [auth] } },
+    });
   });
 
   it('gives the planner and reviewer vectors no sandbox settings', () => {
-    for (const mode of ['plan', 'escalate'] as const) {
-      const args = claudeCodePlannerAdapter.buildArgs({
-        prompt: '<brief>',
-        model: 'sonnet',
-        projectDir: '/project',
-        configuredArgs: [],
-        mode,
-        sessionId: null,
-        effort: 'high',
-      });
-      expect(args).not.toContain('--settings');
-    }
+    const args = claudeCodePlannerAdapter.buildArgs({
+      prompt: '<brief>',
+      model: 'sonnet',
+      projectDir: '/project',
+      configuredArgs: [],
+      sessionId: null,
+      effort: 'high',
+    });
+    expect(args).not.toContain('--settings');
     expect(CLI_CONFORMANCE_CANDIDATES[0]?.rawContract.rawInvocation).not.toContain('--settings');
   });
 
@@ -992,7 +978,6 @@ describe('Claude steering transport', () => {
         model: undefined,
         projectDir: '/project',
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
         imagePaths: ['/outside/shot.png'],

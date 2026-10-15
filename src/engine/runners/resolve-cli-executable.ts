@@ -13,6 +13,7 @@ import type {
   ExecutableIdentity,
 } from '../../core/discovery/detection.js';
 import type * as Detection from '../../core/discovery/detection.js';
+import { cliExecutableTrustRemediation } from '../../core/schemas/readiness.js';
 import { isENOENT, isNodeError } from '../../lib/process/errors.js';
 import { error, matches } from '../../utils/error.js';
 
@@ -281,7 +282,7 @@ function assertTrustedIdentity(
     if (!exactTrustMatches(identity, trust)) {
       throw error(
         'cli-executable-identity-drift',
-        `Executable identity changed for ${diagnosticCommand(command)}; run readiness checks again before execution.`,
+        `Executable identity changed for ${diagnosticCommand(command)}; run \`splitbrief doctor\` again before execution.`,
         {
           command: diagnosticCommand(command),
           expectedIdentity: diagnosticIdentity(trust),
@@ -294,7 +295,7 @@ function assertTrustedIdentity(
   if (requiresExactTrust) {
     throw error(
       'cli-executable-untrusted',
-      `Refusing untrusted executable for ${diagnosticCommand(command)}. Trust this exact executable identity before execution.`,
+      `Refusing untrusted executable for ${diagnosticCommand(command)}. ${cliExecutableTrustRemediation('the CLI')}`,
       { command: diagnosticCommand(command), identity: diagnosticIdentity(identity) },
     );
   }
@@ -479,7 +480,7 @@ export async function resolveCliExecutable(
   if (trust !== null && trust !== undefined) {
     throw error(
       'cli-executable-identity-drift',
-      `Executable identity changed for ${diagnosticCommand(command)}; run readiness checks again before execution.`,
+      `Executable identity changed for ${diagnosticCommand(command)}; run \`splitbrief doctor\` again before execution.`,
       {
         command: diagnosticCommand(command),
         expectedIdentity: diagnosticIdentity(trust),

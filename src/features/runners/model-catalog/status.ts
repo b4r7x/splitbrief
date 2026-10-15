@@ -112,7 +112,7 @@ export function deriveCliStatus(
   if (!cliDetection) {
     return {
       state: 'unavailable',
-      remediation: `Install ${descriptor.displayName}, then run runner readiness.`,
+      remediation: `Install ${descriptor.displayName}, then run \`splitbrief doctor\` again.`,
     };
   }
   const factStatus = providerFactStatus(descriptor, cliDetection);

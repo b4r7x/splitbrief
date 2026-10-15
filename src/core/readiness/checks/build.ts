@@ -88,7 +88,6 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
         config: input.config,
         cliReadiness: input.cliReadiness,
         availability: input.availability,
-        interaction: input.interaction,
         seatDisplayName: input.seatDisplayName,
       }),
     },

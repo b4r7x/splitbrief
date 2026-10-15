@@ -1,7 +1,8 @@
 import type { RunnerConfigSlot } from '../../config/accessors/runner-config.js';
 import { getApiProviderDescriptor } from '../../providers/api-provider-catalog.js';
 import { assertNever } from '../../../utils/type-guards.js';
-import type { ActiveRunnerRole } from '../../runners/seat-roles.js';
+import { CREW_SEAT_LABELS, formatSlotLabel } from '../../crew/identity.js';
+import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../../runners/seat-roles.js';
 import type { ReadinessCheck } from '../types.js';
 
 export type RunnerAvailabilitySlot = Extract<RunnerConfigSlot, { role: ActiveRunnerRole }>;
@@ -65,7 +66,10 @@ function runnerAvailabilityCheckId(slot: RunnerAvailabilitySlot): string {
 }
 
 function pickAnother(slot: RunnerAvailabilitySlot): string {
-  return `configure a different ${slot.role}`;
+  if (slot.role === 'implementer' && slot.profile !== 'default') {
+    return `change ${formatSlotLabel(slot)} in .splitbrief/config.yaml`;
+  }
+  return `choose another tool in Settings > Crew > ${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[slot.role]]}`;
 }
 
 function unavailableFix(fact: RunnerAvailabilityFact): string {

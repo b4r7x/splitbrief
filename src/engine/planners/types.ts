@@ -1,10 +1,7 @@
 import type { SteeringPort } from '../calls/steering.js';
-import type { Task } from '../../core/schemas/task.js';
 import type { TokenDelta } from '../../core/schemas/tokens.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import type { StructuredSummary } from '../../core/schemas/compaction.js';
-import type { ChangeDetectionKind } from '../change-detection.js';
-import type { LanguageContext } from '../spec/prompts/language-context.js';
 import type { CustomRunnerRuntimePort, RunnerRuntime } from '../runners/types.js';
 import type { RunnerCallContext, RunnerCallEvent } from '../calls/types.js';
 import type { TypedSeatCall } from '../runners/typed-output.js';
@@ -120,28 +117,7 @@ export type TypedCallContext = Readonly<{
   priorMessages?: PriorMessage[] | undefined;
 }>;
 
-export interface EscalationResult {
-  success: boolean;
-  output: string;
-  code: string | null;
-  usage: TokenDelta | null;
-}
-
-export interface EscalateOptions {
-  task: Task;
-  error: string;
-  projectDir: string;
-  callbacks: PlannerOutputCallbacks;
-  languageContext?: LanguageContext | undefined;
-  sandboxEnv?: NodeJS.ProcessEnv | undefined;
-  fileIgnoreProjectDir?: string | undefined;
-  /** Baseline the caller's workspace declares; sniffed from the directory when absent. */
-  changeDetection?: ChangeDetectionKind | undefined;
-}
-
 export interface Planner extends RunnerRuntime {
-  escalateFull(opts: EscalateOptions): Promise<EscalationResult>;
-
   review(
     prompt: string,
     projectDir: string,

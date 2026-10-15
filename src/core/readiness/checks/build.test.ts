@@ -94,7 +94,7 @@ describe('readiness checks', () => {
     expect(checks).toContainEqual(
       expect.objectContaining({
         id: 'runners.planner.configured',
-        summary: 'Planner OpenAI Codex CLI · GPT-6-Luna configured.',
+        summary: 'PLAN OpenAI Codex CLI · GPT-6-Luna configured.',
       }),
     );
     expect(JSON.stringify(report)).not.toContain('GPT-6 Luna');
@@ -175,7 +175,7 @@ describe('readiness checks', () => {
     const input = baseInput({ config });
     const report = buildReadinessReport(input);
 
-    expect(report.status).toBe('ready-with-warnings');
+    expect(report.status).toBe('ready');
     expect(report.nextAction.kind).toBe('continue');
     expect(
       report.sections
@@ -195,7 +195,10 @@ describe('readiness checks', () => {
 
     const section = report.sections.find((candidate) => candidate.id === 'workflow');
     expect(section?.title).toBe('Workflow');
-    expect(section?.checks.map((check) => check.summary)).toEqual(['Plan approval: automatic.']);
+    expect(section?.checks.map((check) => check.summary)).toEqual([
+      'Plan approval: automatic.',
+      'BUILD gets 1 retry after a failed check, then asks PLAN or REVIEW for guidance.',
+    ]);
     expect(report.sections.some((candidate) => candidate.id === 'mode')).toBe(false);
     expect(report.metadata).toEqual(expect.objectContaining({ approve: 'none' }));
     expect(report.metadata).not.toHaveProperty('mode');
@@ -210,11 +213,12 @@ describe('readiness checks', () => {
     expect(checks.find((check) => check.id === 'workflow.plan-approval')?.summary).toBe(
       'Plan approval: you approve the plan in the TUI.',
     );
-    expect(
-      checks.find((check) => check.id === 'runners.planner.trust-boundary')?.details,
-    ).toContain(
-      'Headless runs approve the plan automatically because there is no approval prompt.',
-    );
+    const headless =
+      'Headless runs approve the plan automatically because there is no approval prompt.';
+    expect(checks.find((check) => check.id === 'workflow.plan-approval')?.details).toEqual([
+      headless,
+    ]);
+    expect(checks.filter((check) => check.details?.includes(headless))).toHaveLength(1);
   });
 
   it('asks every config for the same 32000-token context floor', () => {

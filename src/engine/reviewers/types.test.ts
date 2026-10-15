@@ -9,7 +9,7 @@ it('lets a planner hold the review seat', async () => {
 
   const reviewer: Reviewer = createPlannerBase({
     invokePlan: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
-    invokeEscalate: async () =>
+    invokeOneShot: async () =>
       makeRunnerCallResult({
         status: 'completed',
         text: 'VERDICT: ship',

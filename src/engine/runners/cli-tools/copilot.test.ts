@@ -16,13 +16,12 @@ import { invokeProcessCli } from './process-invoke.js';
 const PROMPT = CLI_PROMPT_SENTINEL;
 const PROJECT_DIR = process.cwd();
 
-function plannerArgs(mode: 'plan' | 'escalate', configuredArgs: readonly string[]) {
+function plannerArgs(configuredArgs: readonly string[]) {
   return copilotPlannerAdapter.buildArgs({
     prompt: PROMPT,
     model: undefined,
     projectDir: PROJECT_DIR,
     configuredArgs,
-    mode,
     sessionId: null,
     effort: undefined,
   });
@@ -60,10 +59,9 @@ describe('Copilot role adapters', () => {
     ['absent images', undefined, []],
     ['empty images', [], []],
   ] as const)('passes %s before the prompt in every role', (_label, imagePaths, imageArgs) => {
-    for (const [adapter, mode, approvalArgs] of [
-      [copilotPlannerAdapter, 'plan', ['--plan', '--allow-all-tools', '--no-ask-user']],
-      [copilotPlannerAdapter, 'escalate', ['--allow-all', '--no-ask-user']],
-      [copilotImplementerAdapter, 'plan', ['--allow-all']],
+    for (const [adapter, approvalArgs] of [
+      [copilotPlannerAdapter, ['--plan', '--allow-all-tools', '--no-ask-user']],
+      [copilotImplementerAdapter, ['--allow-all']],
     ] as const) {
       const input = {
         prompt: PROMPT,
@@ -71,7 +69,6 @@ describe('Copilot role adapters', () => {
         effort: 'high',
         projectDir: PROJECT_DIR,
         configuredArgs: ['--label', 'fixture'],
-        mode,
         sessionId: null,
         imagePaths,
       } as const;
@@ -149,7 +146,6 @@ describe('Copilot role adapters', () => {
       model: 'gpt-5.2',
       projectDir: PROJECT_DIR,
       configuredArgs: ['--label', 'fixture'],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -213,7 +209,6 @@ describe('Copilot role adapters', () => {
       model: 'gpt-5.2',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: 'high',
     });
@@ -232,7 +227,7 @@ describe('Copilot role adapters', () => {
   });
 
   it('sends no effort flag on either role when the seat spends none', () => {
-    expect(plannerArgs('plan', [])).not.toContain('--effort');
+    expect(plannerArgs([])).not.toContain('--effort');
     expect(implementerArgs()).not.toContain('--effort');
   });
 
@@ -244,7 +239,6 @@ describe('Copilot role adapters', () => {
         model: undefined,
         projectDir: PROJECT_DIR,
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         effort: 'high',
       });
@@ -258,8 +252,8 @@ describe('Copilot role adapters', () => {
     },
   );
 
-  it('uses plan mode for read-only calls and direct-write approval for full escalation', () => {
-    const planArgs = plannerArgs('plan', []);
+  it('uses plan mode for every planner call', () => {
+    const planArgs = plannerArgs([]);
     expect(planArgs).toEqual([
       '-p',
       PROMPT,
@@ -269,22 +263,6 @@ describe('Copilot role adapters', () => {
       '--output-format',
       'json',
     ]);
-
-    const escalationArgs = plannerArgs('escalate', []);
-    expect(escalationArgs).toEqual([
-      '-p',
-      PROMPT,
-      '--allow-all',
-      '--no-ask-user',
-      '--output-format',
-      'json',
-    ]);
-    expect(
-      copilotPlannerAdapter.validateArgs({
-        invocationArgs: plannerArgs('escalate', ['--plan']),
-        baseArgs: escalationArgs,
-      }),
-    ).toEqual({ valid: false, conflicts: ['--plan'] });
   });
 
   it('rejects reordered, protected, duplicate, embedded, and alternate prompt arguments', () => {

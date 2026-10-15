@@ -30,13 +30,12 @@ const NARRATED_VERDICT_FIXTURE = join(
   '../../../../testing/fixtures/cursor/stream-json-narrated-verdict.ndjson',
 );
 
-function plannerArgs(mode: 'plan' | 'escalate', configuredArgs: readonly string[] = []) {
+function plannerArgs(configuredArgs: readonly string[] = []) {
   return cursorPlannerAdapter.buildArgs({
     prompt: PROMPT,
     model: undefined,
     projectDir: '/project',
     configuredArgs,
-    mode,
     sessionId: null,
     effort: undefined,
   });
@@ -109,7 +108,7 @@ describe('Cursor role adapters', () => {
   });
 
   it('planner args never contain a write-enabling flag', () => {
-    const args = plannerArgs('plan');
+    const args = plannerArgs();
     expect(args).toEqual([
       '--print',
       '--output-format',
@@ -128,22 +127,8 @@ describe('Cursor role adapters', () => {
     expect(implementerArgs()).toContain('--trust');
   });
 
-  it('escalate planner args contain --force and not --mode plan', () => {
-    const args = plannerArgs('escalate');
-    expect(args).toEqual([
-      '--print',
-      '--output-format',
-      'stream-json',
-      '--force',
-      '--trust',
-      '--workspace',
-      '/project',
-      PROMPT,
-    ]);
-  });
-
   it('user args cannot inject a protected flag', () => {
-    const plannerBase = plannerArgs('plan');
+    const plannerBase = plannerArgs();
     const implementerBase = implementerArgs();
     expect(
       cursorPlannerAdapter.validateArgs({
@@ -221,8 +206,7 @@ describe('Cursor role adapters', () => {
 
   it('refuses --stream-partial-output: its deltas carry no field that joins them into one message', () => {
     const vectors = [
-      { validate: cursorPlannerAdapter.validateArgs, base: plannerArgs('plan') },
-      { validate: cursorPlannerAdapter.validateArgs, base: plannerArgs('escalate') },
+      { validate: cursorPlannerAdapter.validateArgs, base: plannerArgs() },
       { validate: cursorImplementerAdapter.validateArgs, base: implementerArgs() },
     ];
     for (const { validate, base } of vectors) {

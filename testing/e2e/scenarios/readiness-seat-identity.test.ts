@@ -76,15 +76,16 @@ it('prints the same Claude alias and effort in human and JSON readiness', async 
   configure('sonnet', 'high');
   const human = await cli(false);
   const out = stripVTControlCharacters(human.stdout);
-  expect(out, human.stderr).toContain('Planner Claude Code CLI · Sonnet 5.5 · high configured.');
-  expect(out).toContain('REVIEW Claude Code CLI · Sonnet 5.5 · high can run commands');
+  expect(out, human.stderr).toContain('PLAN Claude Code CLI · Sonnet 5.5 · high configured.');
+  expect(out).toContain('REVIEW Claude Code CLI · Sonnet 5.5 · high configured.');
   expect(out).toContain('BUILD Claude Code CLI · Sonnet 5.5 · high configured.');
+  expect(out).not.toMatch(/runners\.|context\.|Command options:|00000000-0000/);
 
   const json = await cli(true);
   const record = DoctorRecordSchema.parse(JSON.parse(json.stdout.trim()));
   expect(record.report.checks.find((check) => check.id === 'runners.planner.configured')).toEqual({
     id: 'runners.planner.configured',
-    summary: 'Planner Claude Code CLI · Sonnet 5.5 · high configured.',
+    summary: 'PLAN Claude Code CLI · Sonnet 5.5 · high configured.',
     modelSelection: 'explicit',
   });
 });
@@ -97,7 +98,7 @@ it('prints auto for automatic and unset models while retaining selection metadat
     expect(record.report.checks.find((check) => check.id === 'runners.planner.configured')).toEqual(
       {
         id: 'runners.planner.configured',
-        summary: 'Planner Claude Code CLI · auto configured.',
+        summary: 'PLAN Claude Code CLI · auto configured.',
         modelSelection: model === undefined ? 'unset' : 'auto',
       },
     );

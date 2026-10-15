@@ -9,6 +9,7 @@ import {
   selectNextAction,
 } from '../../../core/readiness/status.js';
 import type { ReadinessCheck, ReadinessReport } from '../../../core/readiness/types.js';
+import { buildRunnerAdmissionChecks } from '../../../core/readiness/runner-causes.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../../core/schemas/config.js';
 import type { AttachedInput } from '../../../core/schemas/attachment.js';
@@ -281,7 +282,7 @@ async function admitRunners(input: AdmissionInput, sink: ReportSink): Promise<Ad
     }
     throwIfPreparationAborted(input.signal, trustPersisted);
   }
-  const slotChecks = evaluated.map((slot) => slot.evaluation.check);
+  const slotChecks = buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check));
   report = applyRunnerPreparationChecks(report, slotChecks);
   sink.report = report;
   if (evaluated.some((slot) => slot.evaluation.kind === 'blocked')) {
@@ -507,5 +508,5 @@ export async function collectRunnerAdmissionChecks(
     evaluated.push({ candidate, evaluation });
     throwIfAborted(signal);
   }
-  return evaluated.map((slot) => slot.evaluation.check);
+  return buildRunnerAdmissionChecks(evaluated.map((slot) => slot.evaluation.check));
 }

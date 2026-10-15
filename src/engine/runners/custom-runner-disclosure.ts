@@ -21,7 +21,7 @@ export type CustomRunnerDisclosure = Readonly<{
   network: 'Network access is not restricted';
   result:
     | 'Parsed output only; stage-local writes are discarded'
-    | 'Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only'
+    | 'Reviewed declared artifact only'
     | 'Reviewed diff only'
     | 'Parsed stdout only; anything it writes in the project is neither staged nor reviewed'
     | 'Reviewed workspace diff; it writes directly into the project directory';
@@ -34,7 +34,7 @@ function disclosureResult(
     case 'parsed-output-only':
       return 'Parsed output only; stage-local writes are discarded';
     case 'reviewed-declared-artifact-or-workspace-diff-only':
-      return 'Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only';
+      return 'Reviewed declared artifact only';
     case 'reviewed-diff-only':
       return 'Reviewed diff only';
     case 'inline-parsed-output-only':

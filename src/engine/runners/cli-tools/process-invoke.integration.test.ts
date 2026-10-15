@@ -2088,7 +2088,6 @@ process.stdin.on('end', () => {
           model: undefined,
           projectDir: dir,
           configuredArgs: [],
-          mode: 'plan',
           sessionId: null,
           effort: undefined,
           imagePaths: [imagePath],

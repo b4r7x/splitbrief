@@ -233,7 +233,7 @@ function cacheDiagnostic(
   state: CliToolDetection['diagnostic']['state'],
 ): CliToolDetection['diagnostic'] {
   if (state === 'ready') return { state, remediation: null };
-  return { state, remediation: 'Run runner readiness again.' };
+  return { state, remediation: 'Run `splitbrief doctor` again.' };
 }
 
 function restoreCliTool(cached: CachedCliToolDetection): CliToolDetection | null {

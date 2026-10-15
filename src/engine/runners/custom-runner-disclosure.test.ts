@@ -50,7 +50,7 @@ Environment names: "REVIEW_TOKEN"
 Environment access: Declared environment references only
 Filesystem: Not an OS sandbox; the process can access files available to the current user
 Network: Network access is not restricted
-Result: Reviewed declared artifact for normal planner calls; reviewed workspace diff for full escalation only`,
+Result: Reviewed declared artifact only`,
   },
   {
     source: 'configured',

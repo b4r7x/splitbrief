@@ -1,10 +1,5 @@
 import { error } from '../../utils/error.js';
-import type {
-  Planner,
-  PlannerCallbacks,
-  EscalationResult,
-  PlannerUserTurnResult,
-} from './types.js';
+import type { Planner, PlannerCallbacks, PlannerUserTurnResult } from './types.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { Attachment } from '../../core/schemas/attachment.js';
 import { CONVERSATIONAL_CAPS } from './types.js';
@@ -12,7 +7,6 @@ import { createPlannerBase } from './base.js';
 import { createPlannerCallContext } from './call-context.js';
 import { seatAxisWords } from '../../core/runners/effort-channel.js';
 import { createCommandAvailability } from '../availability.js';
-import { writeProjectFile } from '../../core/paths-io.js';
 import { invokeClaudePlanner } from './claude-invoke.js';
 import { toTokenDelta } from '../calls/projection.js';
 import { resolveCliModel } from '../../core/providers/automatic-model.js';
@@ -123,7 +117,6 @@ export function createClaudeCodePlanner(opts: {
       const result = await invokeClaudePlanner({
         prompt,
         projectDir,
-        mode: 'plan',
         sessionId: resumeId ?? null,
         callbacks: {
           ...attemptCallbacks,
@@ -190,23 +183,12 @@ export function createClaudeCodePlanner(opts: {
       return invokeOnSession(prompt, projectDir, callbacks, callContext, images, signal, schema);
     },
 
-    async invokeEscalate({
-      prompt,
-      projectDir,
-      callbacks,
-      callContext,
-      accessMode,
-      signal,
-      sandboxEnv,
-      images,
-      schema,
-    }) {
+    async invokeOneShot({ prompt, projectDir, callbacks, callContext, signal, images, schema }) {
       const effectiveSignal = composeAbortSignal(signal, timeout);
-      const env = sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner'));
+      const env = await createRunnerSandboxEnv(projectDir, runnerConfig, 'planner');
       return invokeClaudePlanner({
         prompt,
         projectDir,
-        mode: accessMode === 'write-files' ? 'escalate' : 'plan',
         sessionId: null,
         callbacks,
         callContext,
@@ -236,7 +218,6 @@ export function createClaudeCodePlanner(opts: {
         const result = await invokeClaudePlanner({
           prompt: injection.text,
           projectDir: injection.projectDir,
-          mode: 'plan',
           sessionId,
           callbacks: {
             ...callbackBuffer.callbacks,
@@ -278,10 +259,5 @@ export function createClaudeCodePlanner(opts: {
     },
 
     capabilities: CONVERSATIONAL_CAPS,
-
-    escalateFullPostProcess(task, result, extracted, projectDir): EscalationResult {
-      writeProjectFile(projectDir, task.suggestedFiles[0], extracted.code);
-      return { success: true, output: result.text, code: extracted.code, usage: result.usage };
-    },
   });
 }

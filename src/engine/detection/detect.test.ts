@@ -333,7 +333,10 @@ describe('legacy CLI detection presentation', () => {
       {
         tool: 'codex',
         trust: 'not-checked',
-        diagnostic: { state: 'unavailable', remediation: expect.any(String) },
+        diagnostic: {
+          state: 'unavailable',
+          remediation: 'Install OpenAI Codex CLI, then run `splitbrief doctor` again.',
+        },
         probedAt: 7,
       },
     ]);
@@ -343,6 +346,8 @@ describe('legacy CLI detection presentation', () => {
         installation: 'installed',
         trust: 'untrusted',
         status: 'untrusted',
+        remediation:
+          'Install OpenAI Codex CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again.',
         probedAt: 8,
       },
     ]);

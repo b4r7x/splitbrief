@@ -150,7 +150,6 @@ function toolRecipe(toolId: string): string | null {
   // A skill's review spawn is detached and never resumed.
   const plannerInput = {
     ...implementerInput,
-    mode: 'plan' as const,
     sessionId: null,
     oneShot: true,
   };

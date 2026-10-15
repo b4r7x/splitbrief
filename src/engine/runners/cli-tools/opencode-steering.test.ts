@@ -306,7 +306,6 @@ describe('OpenCode steering HTTP acknowledgement', () => {
         projectDir: process.cwd(),
         configuredArgs: [],
         installedVersion: '2.0.26',
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
       });

@@ -41,15 +41,21 @@ Prefer these stable identifiers in automation and log correlation. Remediation s
 | Symptom (what you see) | `stateId` | Copyable remediation |
 |---|---|---|
 | Configured CLI is not installed or not on `PATH` (`spawn-not-found`, executable was not found). | `missing-binary` | Install the configured CLI, then run `splitbrief doctor` again. |
-| Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | `untrusted-path` | Trust the exact CLI executable identity, then run `splitbrief doctor` again. |
+| Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | `untrusted-path` | Install the configured CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again. |
 | Installed CLI version is outside the tested or qualified range. | `incompatible-version` | Install the tested CLI version, then run `splitbrief doctor` again. |
-| Required auth channel is not satisfied in the staged runner environment. | `unauthenticated` | Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again. |
+| Required credentials are missing or invalid. | `unauthenticated` | Sign in to the configured CLI, then run `splitbrief doctor` again. |
 | Auth probe could not determine login state. | `auth-unknown` | CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again. |
+| The CLI sign-in check timed out. | `auth-timeout` | Check the network connection, then run `splitbrief doctor` again. |
+| The CLI sign-in check could not connect. | `auth-offline` | Check the network connection, then run `splitbrief doctor` again. |
+| SPLITBRIEF could not read the CLI sign-in check result. | `auth-malformed` | Run `splitbrief doctor` again. If the result is still unreadable, update the CLI. |
+| An access policy denied the CLI sign-in check. | `auth-policy-denied` | Check the account and access policy, then run `splitbrief doctor` again. |
 | Provider `apiBase` violates the declared endpoint policy (wrong scheme, origin, or redirect target). | `endpoint-invalid` | Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again. |
 | Environment credential prefix or family does not match the declared provider. | `credential-family-mismatch` | Use a credential that matches the declared provider family, then run `splitbrief doctor` again. |
 | CLI or API output protocol error, including a missing terminal result line. | `protocol-failure` | Check the CLI or provider version and output protocol, then run `splitbrief doctor` again. |
 | Provider returned quota or rate-limit pressure (for example HTTP 429). | `quota-rate-limit` | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
 | Runner configuration contains mutually exclusive CLI arguments. | `conflicting-args` | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
+
+On Linux, Antigravity session authentication reports `auth-policy-denied`. Choose another tool in Settings > Crew, or use macOS. Other policy refusals use the account and access policy remedy above.
 
 A quota that runs out mid-run is not a readiness failure and is not answered here: the run raises a `runner-usage-limit` recovery, and that panel offers `switch-seat` — its recommended action whenever the last readiness pass saw another ready tool for that seat, or the seat declares a `fallback` — beside `retry-later` (when the message names a reset), `retry-same-worker`, skip and end. When the automatic-switch conditions hold, the seat moves to its configured fallback at once and asks nothing; see [Seat down](./APPROVAL-AND-RECOVERY.md#seat-down). SPLITBRIEF reads the limit message of these tools as a usage limit: codex, Claude Code, antigravity (`Individual quota reached … Resets in 2h6m30s` on stderr, with or without a `result` frame), opencode 2.x (the flat `provider.quota` error envelope) and command-code (`You've reached your weekly usage limit`), plus the Gemini API body behind antigravity (`RESOURCE_EXHAUSTED`). The limits of copilot, cursor and kilo-code classify through the shared phrases (`usage limit`, `quota exceeded`, `too many requests`, HTTP 429). A spent account is the same halt with no reset: a provider that will not bill the account (`Insufficient Balance`, HTTP 402, `payment required`, `insufficient_quota`) raises `runner-usage-limit` on the first failed call, with no retry and no planner consult; top up the account, take `switch-seat`, or let a declared `fallback` move the seat. A provider that refuses the login (HTTP 401 or 403, `unauthenticated`, `sign in`) raises `runner-unauthenticated`, which offers `switch-seat` beside the re-login retry.
 
@@ -165,7 +171,7 @@ Run `npm rebuild better-sqlite3` in the SPLITBRIEF installation directory to res
 **Likely cause:** The project's `.splitbrief/config.yaml` names a `shell` or `agent` runner command that this machine has never granted. A config file travels with `git clone`, so a command written there is the repository author's proposal, not your consent — SPLITBRIEF refuses to run it until you say so, whichever approval level is set.
 
 **Fix:**
-1. Read the command first. `splitbrief doctor` prints it under `runners.planner.trust-boundary` / `runners.implementer.trust-boundary` as `Command:` and `Arguments:`.
+1. Read the command first. In `splitbrief doctor`, the seat shows the warning `PLAN runs a command you declared, with your permissions on this machine.` (or `BUILD` or `REVIEW`). The `Command:` line under it shows the command and its arguments. The check ids, such as `runners.planner.trust-boundary`, appear only in `splitbrief doctor --json`.
 2. If you want it, run SPLITBRIEF in a terminal. It shows the resolved executable path, the argv, the working directory, and the environment names the runner declares in `env` (the only variables of your shell it gets), then asks for the confirmation phrase and a reason. Confirming stores an owner-only receipt in `~/.splitbrief/trust/custom-runners.json`.
 3. In CI or any headless run (`--json`), pass `--allow-repo-runners`. It grants that run only and persists nothing.
 4. If the command should not run, replace the runner in `.splitbrief/config.yaml`.
@@ -408,7 +414,7 @@ Files can be inside or outside the project. Relative paths use the project root.
 **Likely cause:** `.splitbrief/config.yaml` carries a `reviewer` block, and that runner failed the same fresh admission the planner and implementer go through. A configured reviewer is a candidate in `prepareExecution()` under its own slot, so a missing binary, an untrusted command, an unverified login, or an unreachable endpoint stops the run before the first planner call — the seat is not quietly skipped just because it is used last.
 
 **Fix:**
-1. Run `splitbrief doctor` and read the reviewer's own checks: `runners.availability.reviewer`, `runners.reviewer.trust-boundary`, and the CLI readiness check for whatever tool the block names.
+1. Run `splitbrief doctor` and read the `REVIEW` lines under `Runners:`. One line says whether REVIEW is ready to start, or why it cannot start. A `cli` reviewer also has the line of its tool, which says whether that tool is installed, compatible and signed in. An `api` reviewer has a line that says whether its endpoint answered. A `shell` or `agent` reviewer shows the warning `REVIEW runs a command you declared, with your permissions on this machine.` and its `Command:` line. `splitbrief doctor --json` gives the same checks with their ids (`runners.preparation.reviewer`, `runners.availability.reviewer`, `runners.reviewer.trust-boundary`).
 2. Fix it the way you would fix the same condition on the planner — the `stateId` families and remediations in the [readiness index](#readiness-stateid-index) apply unchanged.
 3. A `shell` or `agent` reviewer needs its own trust grant on this machine, exactly like a `shell` planner.
 4. If you do not need a separate reviewer right now, delete the `reviewer` block. The planner takes the seat back and the run behaves as it did before the seat was assignable.

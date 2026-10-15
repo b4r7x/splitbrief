@@ -2,6 +2,7 @@ import { resolveImplementerProfiles } from '../../core/config/accessors/implemen
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
 import { inlineRunnerCommand } from '../../core/config/custom-commands.js';
 import { findConfiguredCustomCommand } from '../../core/config/custom-command-catalog.js';
+import { formatSlotLabel } from '../../core/crew/identity.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
 import type { Config } from '../../core/schemas/config.js';
 import type { ImplementerConfig } from '../../core/schemas/implementer-config.js';
@@ -46,7 +47,7 @@ function candidates(config: Config): Candidate[] {
   if (isCommandRunner(config.planner)) {
     found.push({
       checkId: 'runners.consent.planner',
-      label: 'Planner',
+      label: formatSlotLabel({ role: 'planner' }),
       trustRole: 'planner',
       seat: 'planner',
       trustLabel: 'planner',
@@ -57,7 +58,7 @@ function candidates(config: Config): Candidate[] {
   if (reviewer.source === 'configured' && isCommandRunner(reviewer.runner)) {
     found.push({
       checkId: 'runners.consent.reviewer',
-      label: 'Reviewer',
+      label: formatSlotLabel({ role: 'reviewer' }),
       trustRole: 'planner',
       seat: 'reviewer',
       trustLabel: 'reviewer',
@@ -75,7 +76,7 @@ function candidates(config: Config): Candidate[] {
     if (!isCommandRunner(profile.config)) continue;
     found.push({
       checkId: `runners.consent.implementer.${profile.name}`,
-      label: `Implementer profile ${profile.name}`,
+      label: formatSlotLabel({ role: 'implementer', profile: profile.name }),
       trustRole: 'implementer',
       seat: 'implementer',
       trustLabel:

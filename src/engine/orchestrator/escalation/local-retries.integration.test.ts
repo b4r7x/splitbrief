@@ -543,8 +543,7 @@ describe('handleRetryAndEscalation — aborted implementer call', () => {
     const { projectDir, sessionId } = setupProject();
     const retry = vi.fn();
     const implementer = makeImplementer({ retry });
-    const escalateFull = vi.fn();
-    const planner = makePlanner({ escalateFull });
+    const planner = makePlanner();
     const { callbacks } = makeCallbacks();
     const { bus, events } = makeBusRecorder();
     const task = makeTask();
@@ -568,7 +567,6 @@ describe('handleRetryAndEscalation — aborted implementer call', () => {
 
     expect(result).toEqual({ completed: false, method: 'failed', attempts: 0 });
     expect(retry).not.toHaveBeenCalled();
-    expect(escalateFull).not.toHaveBeenCalled();
     expect(events.filter((e) => e.type === 'escalate')).toEqual([]);
     expect(events.filter((e) => e.type === 'task_retry')).toEqual([]);
   });

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { beginDeclaredArtifactReview } from '../orchestrator/approval/planner-artifact.js';
@@ -17,7 +17,6 @@ import {
   reviewCandidateRoot,
   runtimeFor,
 } from '#testing/helpers/planner-command-invoke.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { z } from 'zod';
 import { requestTyped } from '../runners/typed-output.js';
 
@@ -371,58 +370,5 @@ describe('createConfiguredCustomPlanner direct artifact behavior', () => {
       ),
     ).rejects.toMatchObject({ kind: 'custom-runner-admission-denied' });
     expect(existsSync(reviewCandidateRoot(projectDir))).toBe(false);
-  });
-
-  it('uses the supplied outer stage for direct full escalation without a nested stage', async () => {
-    const { projectDir, stateDir } = testProject('configured-direct-full-escalation');
-    const outerStage = await createStagedProject({ projectDir: projectDir });
-    const staleReviewRoot = reviewCandidateRoot(projectDir);
-    const stalePath = join(staleReviewRoot, 'stale-call', 'result');
-    mkdirSync(join(staleReviewRoot, 'stale-call'), { recursive: true });
-    writeFileSync(stalePath, 'stale');
-    const planner = await createConfiguredCustomPlanner(
-      configuredPlanner({
-        contract: 'direct',
-        script: [
-          "require('node:fs').readFileSync(0);",
-          "require('node:fs').writeFileSync('full-escalation-change.txt', 'outer stage only');",
-          "process.stdout.write('full escalation diagnostic');",
-        ].join(''),
-      }),
-      runtimeFor({
-        projectDir,
-        stateDir,
-        createStage: async () => {
-          throw new Error('direct full escalation must not create a nested stage');
-        },
-        beginDeclaredArtifactReview: async () => {
-          throw new Error('direct full escalation must not begin planner artifact review');
-        },
-      }),
-    );
-
-    try {
-      await expect(
-        planner.escalateFull({
-          task: makeTask(),
-          error: 'fix this',
-          projectDir: outerStage.projectDir,
-          callbacks: { onOutput: vi.fn() },
-          fileIgnoreProjectDir: projectDir,
-        }),
-      ).resolves.toEqual(
-        expect.objectContaining({
-          success: true,
-          output: expect.stringContaining('full escalation diagnostic'),
-        }),
-      );
-
-      expect(existsSync(join(outerStage.projectDir, 'full-escalation-change.txt'))).toBe(true);
-      expect(existsSync(join(projectDir, 'full-escalation-change.txt'))).toBe(false);
-      expect(existsSync(stalePath)).toBe(false);
-      expect(existsSync(staleReviewRoot)).toBe(false);
-    } finally {
-      outerStage.cleanup();
-    }
   });
 });

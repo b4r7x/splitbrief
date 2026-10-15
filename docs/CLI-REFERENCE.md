@@ -413,6 +413,7 @@ splitbrief doctor --probe-seat build
 | `details` | Optional detail lines (secret-redacted). |
 | `nextAction` | Optional structured pointer (`kind`, `label`, `command`). |
 | `modelSelection` | On `runners.<role>.configured`: `auto` (automatic selection), `explicit` (a model ID), or `unset` (no `model` key). Absent on other checks. |
+| `seats` | On a check for a CLI problem: every seat it stops (`PLAN`, `BUILD`, `BUILD (<profile>)`, `REVIEW`). One check covers every seat that shares the problem, so a seat `id` such as `runners.preparation.planner` names only the first of them. Absent on other checks. |
 
 Human and JSON output share the same remediation strings. CLI executable identity paths and secrets are redacted from check text; `projectDir` is emitted verbatim as the absolute project directory.
 
@@ -425,15 +426,21 @@ CLI readiness, config validation, and provider posture checks map to stable `sta
 | `stateId` | Condition | Copyable remediation |
 |---|---|---|
 | `missing-binary` | Configured CLI is not installed or not on PATH. | Install the configured CLI, then run `splitbrief doctor` again. |
-| `untrusted-path` | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | Trust the exact CLI executable identity, then run `splitbrief doctor` again. |
+| `untrusted-path` | Executable identity does not match the trusted fingerprint (untrusted project-bin or stale fingerprint). | Install the configured CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again. |
 | `incompatible-version` | Installed CLI version is outside the tested or qualified range. | Install the tested CLI version, then run `splitbrief doctor` again. |
-| `unauthenticated` | Required auth channel is not satisfied in the staged runner environment. | Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again. |
+| `unauthenticated` | Required credentials are missing or invalid. | Sign in to the configured CLI, then run `splitbrief doctor` again. |
 | `auth-unknown` | Auth probe could not determine login state. | CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again. |
+| `auth-timeout` | The CLI sign-in check timed out. | Check the network connection, then run `splitbrief doctor` again. |
+| `auth-offline` | The CLI sign-in check could not connect. | Check the network connection, then run `splitbrief doctor` again. |
+| `auth-malformed` | SPLITBRIEF could not read the CLI sign-in check result. | Run `splitbrief doctor` again. If the result is still unreadable, update the CLI. |
+| `auth-policy-denied` | An access policy denied the CLI sign-in check. | Check the account and access policy, then run `splitbrief doctor` again. |
 | `endpoint-invalid` | Provider `apiBase` violates the declared endpoint policy (wrong scheme, origin, or redirect target). | Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again. |
 | `credential-family-mismatch` | Environment credential prefix or family does not match the declared provider. | Use a credential that matches the declared provider family, then run `splitbrief doctor` again. |
 | `protocol-failure` | CLI or API output protocol error, including a missing terminal result line. | Check the CLI or provider version and output protocol, then run `splitbrief doctor` again. |
 | `quota-rate-limit` | Provider returned quota or rate-limit pressure (for example HTTP 429). | Wait for quota or rate limits to reset, reduce request volume, or switch providers, then run `splitbrief doctor` again. |
 | `conflicting-args` | Runner configuration contains mutually exclusive CLI arguments. | Remove conflicting runner arguments from the config, then run `splitbrief doctor` again. |
+
+On Linux, Antigravity session authentication reports `auth-policy-denied`. Choose another tool in Settings > Crew, or use macOS. Other policy refusals use the account and access policy remedy above.
 
 CLI installation, trust, version, and auth mapping for admitted tools: [PLANNERS-AND-IMPLEMENTERS.md](./PLANNERS-AND-IMPLEMENTERS.md). Endpoint and credential rules: [CONFIGURATION.md](./CONFIGURATION.md), [API-KEYS.md](./API-KEYS.md).
 

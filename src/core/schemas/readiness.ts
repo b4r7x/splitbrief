@@ -42,6 +42,10 @@ export const READINESS_DIAGNOSTIC_STATE_IDS = [
   'incompatible-version',
   'unauthenticated',
   'auth-unknown',
+  'auth-timeout',
+  'auth-offline',
+  'auth-malformed',
+  'auth-policy-denied',
   'endpoint-invalid',
   'credential-family-mismatch',
   'protocol-failure',
@@ -189,12 +193,6 @@ function platformName(platform: NodeJS.Platform): string {
   return PLATFORM_NAMES[platform] ?? platform;
 }
 
-/**
- * Names the credential the staged runner is actually missing and the command
- * that supplies it. A generic "authenticate this tool" is worse than useless
- * here: the reader needs to know which store the staged environment looked in,
- * because that is what decides whether signing in again will change anything.
- */
 export function cliAuthRemediation(
   runner: Readonly<{
     tool: CliReadinessFacts['tool'];
@@ -202,41 +200,54 @@ export function cliAuthRemediation(
   }>,
 ): string {
   const channels = CLI_TOOL_CATALOG[runner.tool].auth.channels;
+  const name = CLI_TOOL_CATALOG[runner.tool].displayName;
   const channel = channels.find((entry) => entry.id === runner.authChannel);
   if (channel === undefined) {
-    return `Select an authentication channel for ${runner.tool}, then run \`splitbrief doctor\` again.`;
+    return `Select an authentication channel for ${name}, then run \`splitbrief doctor\` again.`;
   }
   if (!cliAuthChannelPlatformSupported(channel)) {
     const supported = channel.supportedPlatforms?.map(platformName).join(', ');
-    return `SPLITBRIEF cannot access the ${runner.tool} ${channel.id} credential on ${platformName(process.platform)}. This adapter's credential bridge is supported on ${supported}; signing in again cannot enable it on this platform. Choose another runner or use a supported platform.`;
+    return `${name} ${channel.id} authentication is not supported on ${platformName(process.platform)}. Choose another tool in Settings > Crew, or use ${supported}.`;
   }
   const credentialEnv = channel.env[0];
   if (credentialEnv !== undefined) {
-    return `Export ${credentialEnv} for the ${runner.tool} ${channel.id} channel, then run \`splitbrief doctor\` again.`;
+    return `Export ${credentialEnv} for ${name}, then run \`splitbrief doctor\` again.`;
   }
-  const cause =
-    cliAuthChannelHostStateAccess(channel) === 'host-account'
-      ? `On ${platformName(process.platform)} the ${runner.tool} ${channel.id} credential lives in the OS keychain, which the isolated runner environment reads with the host account, and ${runner.tool} reported no session there.`
-      : `No ${runner.tool} ${channel.id} credential reached the isolated runner environment, which bridges session state only as files.`;
-  return `${cause} Sign in to ${runner.tool} on this host, then run \`splitbrief doctor\` again.`;
+  const signIn = `Sign in to ${name}, then run \`splitbrief doctor\` again.`;
+  switch (cliAuthChannelHostStateAccess(channel)) {
+    case 'host-account':
+      return `SPLITBRIEF looks for the ${name} session in the ${platformName(process.platform)} keychain. ${signIn}`;
+    case 'bridged-files':
+      return `SPLITBRIEF looks for the ${name} session in its session files. ${signIn}`;
+    case 'none':
+      return signIn;
+  }
 }
 
-function cliReadinessRemediation(
-  facts: CliReadinessFacts,
+export function cliExecutableTrustRemediation(name: string): string {
+  return `Install ${name} outside the project. Put its absolute directory first on PATH, then run \`splitbrief doctor\` again.`;
+}
+
+export function cliReadinessRemediation(
+  facts: Pick<
+    CliReadinessFacts,
+    'tool' | 'authChannel' | 'installedVersion' | 'testedVersion' | 'compatibility'
+  >,
   status: Exclude<z.infer<typeof CliReadinessStateSchema>, 'ready'>,
 ): string {
+  const name = CLI_TOOL_CATALOG[facts.tool].displayName;
   switch (status) {
     case 'disabled':
-      return `Enable ${facts.tool} before selecting it as a runner.`;
+      return `Enable ${name} before selecting it as a runner.`;
     case 'unavailable':
-      return `Install ${facts.tool}, then run runner readiness again.`;
+      return `Install ${name}, then run \`splitbrief doctor\` again.`;
     case 'untrusted':
-      return `Trust the exact ${facts.tool} executable identity, then run runner readiness again.`;
+      return cliExecutableTrustRemediation(name);
     case 'incompatible':
-      return `Install the tested ${facts.tool} version (${facts.testedVersion}), then run runner readiness again.`;
+      return `Install the tested ${name} version (${facts.testedVersion}), then run \`splitbrief doctor\` again.`;
     case 'unverified':
       if (facts.installedVersion === null || facts.compatibility !== 'compatible') {
-        return `Verify ${facts.tool} against tested version ${facts.testedVersion}, then run runner readiness again.`;
+        return `Verify ${name} against tested version ${facts.testedVersion}, then run \`splitbrief doctor\` again.`;
       }
       if (
         CLI_TOOL_CATALOG[facts.tool].auth.channels.some(
@@ -248,7 +259,7 @@ function cliReadinessRemediation(
       // Honest about the ceiling of a cheap check: stored credentials prove
       // presence, never a working session, and re-running readiness cannot
       // change that — only a real call can.
-      return `${facts.tool} authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real ${facts.tool} call settles it; if that call fails to authenticate, sign in to ${facts.tool} again.`;
+      return `${name} authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real ${name} call settles it; if that call fails to authenticate, sign in to ${name} again.`;
     case 'unauthenticated':
       return cliAuthRemediation(facts);
   }

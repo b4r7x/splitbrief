@@ -97,12 +97,11 @@ export function createCliPlanner(
     projectDir: string;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onSessionId' | 'onCallEvent' | 'steering'>;
     callContext: RunnerCallContext;
-    mode: 'plan' | 'escalate';
     threaded: boolean;
     resumeId: string | null;
     images?: readonly Attachment[] | undefined;
     signal?: AbortSignal | undefined;
-    sandboxEnv?: NodeJS.ProcessEnv | undefined;
+    sandboxEnv: NodeJS.ProcessEnv;
     schema?: CliSchemaInput | undefined;
   }): Promise<RunnerCallResult> {
     const {
@@ -110,7 +109,6 @@ export function createCliPlanner(
       projectDir,
       callbacks,
       callContext,
-      mode,
       threaded,
       resumeId,
       images,
@@ -135,7 +133,6 @@ export function createCliPlanner(
       model: resolvedModel,
       projectDir,
       configuredArgs: extraArgs,
-      mode,
       sessionId: supportsSessionResume ? resumeId : null,
       oneShot: !threaded,
       effort: supportsEffort ? effort : undefined,
@@ -153,9 +150,7 @@ export function createCliPlanner(
         args: [...baseArgs, ...extraArgs],
         baseArgs,
         promptTransport: adapter.promptTransport,
-        environment: toCliEnvironment(
-          sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner')),
-        ),
+        environment: toCliEnvironment(sandboxEnv),
         cwd: projectDir,
         images,
         timeoutMs: timeout,
@@ -205,38 +200,29 @@ export function createCliPlanner(
       'onOutput' | 'onSessionId' | 'onSessionExpired' | 'onCallEvent' | 'steering'
     >;
     callContext: RunnerCallContext;
-    accessMode: 'planning' | 'read-only' | 'write-files';
+    accessMode: 'planning' | 'read-only';
     images?: readonly Attachment[] | undefined;
     signal?: AbortSignal | undefined;
-    sandboxEnv?: NodeJS.ProcessEnv | undefined;
     schema?: TypedSchemaInput | undefined;
   }): Promise<RunnerCallResult> {
-    const { prompt, projectDir, callbacks, callContext, accessMode, signal, sandboxEnv, schema } =
-      opts;
-    const shouldGuardMutations = accessMode !== 'write-files';
-    if (shouldGuardMutations) await resolveExecutable(projectDir);
-    const environment =
-      sandboxEnv ?? (await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner'));
-    const mutationBaseline = shouldGuardMutations
-      ? await capturePlanningMutationBaseline(projectDir)
-      : null;
-    const adapterMode = accessMode === 'write-files' ? 'escalate' : 'plan';
+    const { prompt, projectDir, callbacks, callContext, accessMode, signal, schema } = opts;
+    await resolveExecutable(projectDir);
+    const environment = await createRunnerSandboxEnv(projectDir, plannerCfg, 'planner');
+    const mutationBaseline = await capturePlanningMutationBaseline(projectDir);
 
     const finish = async (result: RunnerCallResult): Promise<RunnerCallResult> => {
-      if (mutationBaseline !== null) {
-        const unexpected = await findUnexpectedPlanningMutations({
-          projectDir,
-          baseline: mutationBaseline,
-          internalStatePaths: adapter.descriptor.internalStatePaths,
-        });
-        if (unexpected.length > 0) {
-          throw planningMutationError.unexpectedMutations(unexpected);
-        }
+      const unexpected = await findUnexpectedPlanningMutations({
+        projectDir,
+        baseline: mutationBaseline,
+        internalStatePaths: adapter.descriptor.internalStatePaths,
+      });
+      if (unexpected.length > 0) {
+        throw planningMutationError.unexpectedMutations(unexpected);
       }
       return result;
     };
 
-    // Only a planning call is a turn on the planner's thread. A review, a hint and an escalation
+    // Only a planning call is a turn on the planner's thread. A review and a summary
     // are one stateless call each, as Claude Code's are, and leave no session behind.
     const threaded = supportsSessionResume && accessMode === 'planning';
     const resumeId = threaded ? nativeSession.getResumeId() : null;
@@ -255,7 +241,6 @@ export function createCliPlanner(
           projectDir,
           callbacks,
           callContext,
-          mode: adapterMode,
           threaded,
           resumeId,
           ...(opts.images !== undefined && { images: opts.images }),
@@ -284,32 +269,20 @@ export function createCliPlanner(
         signal,
         ...(schema !== undefined && { schema }),
       }),
-    invokeEscalate: ({
-      prompt,
-      projectDir,
-      callbacks,
-      callContext,
-      accessMode,
-      images,
-      signal,
-      sandboxEnv,
-      schema,
-    }) =>
+    invokeOneShot: ({ prompt, projectDir, callbacks, callContext, images, signal, schema }) =>
       invoke({
         prompt,
         projectDir,
         callbacks,
         callContext,
-        accessMode,
+        accessMode: 'read-only',
         ...(images !== undefined && { images }),
         signal,
-        sandboxEnv,
         ...(schema !== undefined && { schema }),
       }),
     runnerName: plannerCfg.tool,
     axes: seatAxisWords(plannerCfg),
     ...(resolvedModel !== undefined && { model: resolvedModel }),
-    escalateFullMode: 'files',
     typedOutput: typedOutputCapability(plannerCfg.tool, trustedCli?.installedVersion),
 
     ...createCommandAvailability(adapter.descriptor.executableAliases, {

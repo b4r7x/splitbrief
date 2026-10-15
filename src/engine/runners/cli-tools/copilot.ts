@@ -164,9 +164,9 @@ function plannerBaseArgs(input: CopilotPlannerBuildInput): string[] {
     ...(input.imagePaths ?? []).flatMap((path) => ['--attachment', path]),
     '-p',
     input.prompt,
-    ...(input.mode === 'plan'
-      ? ['--plan', '--allow-all-tools', '--no-ask-user']
-      : ['--allow-all', '--no-ask-user']),
+    '--plan',
+    '--allow-all-tools',
+    '--no-ask-user',
     '--output-format',
     'json',
   ];

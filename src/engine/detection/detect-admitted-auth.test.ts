@@ -169,7 +169,9 @@ describe('all-admitted-tools auth detection', () => {
           auth: 'unauthenticated',
           diagnostic: { state: 'unauthenticated' },
         });
-        expect(result?.diagnostic.remediation).toContain('Sign in to claude-code');
+        expect(result?.diagnostic.remediation).toContain(
+          'Sign in to Claude Code CLI, then run `splitbrief doctor` again.',
+        );
         expect(result?.diagnostic.remediation).not.toContain('ANTHROPIC_API_KEY');
       } finally {
         for (const [name, value] of saved) {

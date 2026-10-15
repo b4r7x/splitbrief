@@ -68,7 +68,6 @@ type ClaudePlannerBuild = ClaudeBuildCommon &
     prompt: string;
     projectDir: string;
     configuredArgs: readonly string[];
-    mode: 'plan' | 'escalate';
     sessionId: string | null;
     skillRoots?: readonly string[] | undefined;
   }>;
@@ -114,14 +113,12 @@ function skillRootPermissions(skillRoots: readonly string[]) {
 function plannerBaseArgs(opts: ClaudePlannerBuild): string[] {
   const args = buildBaseArgs(opts);
   // SPLITBRIEF collects planner answers after the CLI turn finishes.
-  if (opts.mode === 'plan')
-    args.push('--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion');
+  args.push('--permission-mode', 'plan', '--disallowedTools', 'AskUserQuestion');
   // A non-null sessionId is a handle Claude already minted, so continue that
   // conversation with --resume; --session-id names a NEW session and exits 1
   // ("Session ID <uuid> is already in use.") when given a consumed id.
   if (opts.sessionId !== null) args.push('--resume', opts.sessionId);
-  // In default mode, `-p` cannot answer prompts for reads outside the working directory.
-  // Plan mode permits these reads; grant the skill roots read access here for default mode.
+  // The run's global skills: roots the call may read and never write.
   const skillRoots = opts.skillRoots ?? [];
   if (skillRoots.length > 0) {
     args.push(

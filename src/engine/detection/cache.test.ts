@@ -714,7 +714,7 @@ describe('detection cache', () => {
       cliTools: [
         {
           executable: null,
-          diagnostic: { state: 'incompatible', remediation: 'Run runner readiness again.' },
+          diagnostic: { state: 'incompatible', remediation: 'Run `splitbrief doctor` again.' },
         },
       ],
     });

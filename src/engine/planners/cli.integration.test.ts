@@ -5,7 +5,6 @@ import { writeFileSync, chmodSync, readFileSync, existsSync, unlinkSync } from '
 import { dirname, join } from 'node:path';
 import { createCliPlanner as createCliPlannerImpl } from './cli.js';
 import { makeConfig as makeBaseConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
 import { makePlanProposal } from '#testing/helpers/factories/plan.js';
 import { prependPath, trustedShimGate, writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
@@ -14,7 +13,6 @@ import { processError } from '../../lib/process/errors.js';
 import { TASKS_FILE } from '../../core/paths.js';
 import type { RunnerCallEvent } from '../calls/types.js';
 import { CLI_RAW_OUTPUT_MAX_BYTES } from '../runners/cli-tools/process-invoke.js';
-import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { PlannerFactoryOptions } from './types.js';
 import { callPlanner } from '#testing/helpers/planner-call.js';
 import { z } from 'zod';
@@ -546,135 +544,6 @@ Create the mismatch fallback file.
       expect.objectContaining({ type: 'call_session_id', nativeSessionId: 'sess-fresh' }),
     );
   });
-
-  it('runs Codex write-files full escalation once without replacing the planning session', async () => {
-    const spawnLog = join(shimDir, 'codex-spawns.txt');
-    const writerArgvFile = join(shimDir, 'codex-writer-argv.txt');
-    const shimPath = join(shimDir, 'codex');
-    writeFileSync(
-      shimPath,
-      [
-        '#!/bin/bash',
-        "if printf '%s\\n' \"$@\" | grep -q '^--skip-git-repo-check$'; then",
-        `  printf '%s\\n' 'writer' >> '${spawnLog}'`,
-        `  printf '%s\\n' "$@" > '${writerArgvFile}'`,
-        '  mkdir -p "$PWD/src"',
-        `  printf '%s\\n' 'export const escalated = true;' > "$PWD/src/hello.ts"`,
-        `  printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-writer' }).replace(/'/g, "'\\''")}'`,
-        `  printf '%s\\n' '${JSON.stringify({
-          type: 'item.completed',
-          item: { type: 'agent_message', text: 'Wrote src/hello.ts.' },
-        }).replace(/'/g, "'\\''")}'`,
-        `  printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
-        '  exit 0',
-        'fi',
-        "if printf '%s\\n' \"$@\" | grep -q '^sess-planning$'; then",
-        `  printf '%s\\n' 'resume-planning' >> '${spawnLog}'`,
-        'else',
-        `  printf '%s\\n' 'resume-other' >> '${spawnLog}'`,
-        'fi',
-        `printf '%s\\n' '${JSON.stringify({ type: 'thread.started', thread_id: 'sess-planning' }).replace(/'/g, "'\\''")}'`,
-        `printf '%s\\n' '${JSON.stringify({
-          type: 'item.completed',
-          item: { type: 'agent_message', text: 'Review complete.' },
-        }).replace(/'/g, "'\\''")}'`,
-        `printf '%s\\n' '${CODEX_TURN_COMPLETED.replace(/'/g, "'\\''")}'`,
-        '',
-      ].join('\n'),
-      'utf8',
-    );
-    chmodSync(shimPath, 0o755);
-    const planner = createCliPlanner(
-      makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
-      'sess-planning',
-    );
-
-    const result = await planner.escalateFull({
-      task: makeTask(),
-      error: 'initial implementation failed',
-      projectDir,
-      callbacks: { onOutput: vi.fn() },
-    });
-
-    expect(result).toMatchObject({ success: true, code: null });
-    expect(readFileSync(join(projectDir, 'src', 'hello.ts'), 'utf8')).toBe(
-      'export const escalated = true;\n',
-    );
-    expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual(['writer']);
-    expect(readArgv(writerArgvFile)).not.toContain('resume');
-    expect(readArgv(writerArgvFile)).not.toContain('sess-planning');
-    expect(readArgv(writerArgvFile)).toContain('--ephemeral');
-
-    await callPlanner(planner, { projectDir, callbacks: { onOutput: () => {} } });
-
-    expect(readFileSync(spawnLog, 'utf8').trim().split('\n')).toEqual([
-      'writer',
-      'resume-planning',
-    ]);
-  });
-
-  it.each([
-    {
-      tool: 'opencode',
-      command: 'opencode',
-      output: JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-open',
-        part: { type: 'text', text: 'Wrote src/hello.ts.' },
-      }),
-      requiredArgs: ['run', '--format', 'json', '--agent', 'build'],
-      forbiddenArgs: ['plan'],
-    },
-    {
-      tool: 'copilot',
-      command: 'copilot',
-      output: JSON.stringify({
-        type: 'assistant.message',
-        data: { text: 'Wrote src/hello.ts.' },
-      }),
-      requiredArgs: ['-p', '--output-format', 'json', '--allow-all', '--no-ask-user'],
-      forbiddenArgs: ['--plan', '--allow-all-tools'],
-    },
-    {
-      tool: 'kilo-code',
-      command: 'kilo',
-      output: JSON.stringify({
-        type: 'text',
-        sessionID: 'ses-kilo',
-        part: { type: 'text', text: 'Wrote src/hello.ts.' },
-      }),
-      requiredArgs: ['run', '--format', 'json', '--agent', 'code', '--auto'],
-      forbiddenArgs: ['plan'],
-    },
-  ] satisfies readonly {
-    tool: CliToolId;
-    command: string;
-    output: string;
-    requiredArgs: readonly string[];
-    forbiddenArgs: readonly string[];
-  }[])(
-    '$tool uses its direct-write planner posture only for tier-2 full escalation',
-    async ({ tool, command, output, requiredArgs, forbiddenArgs }) => {
-      const { argvFile } = installDirectWriteRecordingShim(command, [output]);
-      const planner = createCliPlanner(makeConfig({ planner: { kind: 'cli', tool } }));
-
-      const result = await planner.escalateFull({
-        task: makeTask(),
-        error: 'initial implementation failed',
-        projectDir,
-        callbacks: { onOutput: vi.fn() },
-      });
-
-      expect(result).toMatchObject({ success: true, code: null });
-      expect(readFileSync(join(projectDir, 'src', 'hello.ts'), 'utf8')).toBe(
-        'export const escalated = true;\n',
-      );
-      const argv = readArgv(argvFile);
-      for (const requiredArg of requiredArgs) expect(argv).toContain(requiredArg);
-      for (const forbiddenArg of forbiddenArgs) expect(argv).not.toContain(forbiddenArg);
-      expect(argv.some((arg) => arg.includes('Make the changes on disk'))).toBe(true);
-    },
-  );
 
   it.each(['review', 'summarize', 'summarizeStructured'] as const)(
     'keeps OpenCode %s read-only and rejects source mutations',

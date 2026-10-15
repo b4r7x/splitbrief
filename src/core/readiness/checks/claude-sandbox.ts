@@ -1,6 +1,7 @@
 import { resolveBareCommandOnPath } from '../../../lib/process/command-path.js';
 import { absolutePathEntries } from '../../../lib/process/spawn/child-env.js';
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
+import { CREW_SEAT_LABELS } from '../../crew/identity.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
 
@@ -63,9 +64,7 @@ export function buildClaudeSandboxChecks(
       id: 'runners.sandbox.claude-code',
       severity,
       summary: `Claude Code sandbox cannot start: ${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not on PATH.`,
-      details: [
-        "The claude-code implementer runs its shell commands in Claude Code's sandbox. Without it the seat stops at startup instead of running them unconfined.",
-      ],
+      details: [`${CREW_SEAT_LABELS.build} runs commands in the Claude Code sandbox.`],
       fix: SANDBOX_FIX,
       ...(severity === 'blocker' && { nextAction: 'prepare-runner' as const }),
       metadata,

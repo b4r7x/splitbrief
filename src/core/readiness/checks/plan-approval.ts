@@ -1,47 +1,36 @@
-import { resolveApproveLevel, resolveEffortLevel } from '../../config/runtime/resolve.js';
+import { resolveApproveLevel } from '../../config/runtime/resolve.js';
 import { DEFAULT_LOCAL_RETRIES } from '../../pipeline-spec/retries.js';
+import { CREW_SEAT_LABELS } from '../../crew/identity.js';
 import type { Config } from '../../schemas/config.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import type { ReadinessCheck } from '../types.js';
-
-export function planApprovalCopy(
-  config: Config,
-  interaction: 'interactive' | 'headless' | undefined,
-): Pick<ReadinessCheck, 'summary' | 'details'> {
-  const approve = resolveApproveLevel(config);
-  return {
-    summary:
-      approve === 'plan'
-        ? 'Plan approval: you approve the plan in the TUI.'
-        : 'Plan approval: automatic.',
-    details:
-      approve === 'plan' && interaction === 'headless'
-        ? ['Headless runs approve the plan automatically because there is no approval prompt.']
-        : [],
-  };
-}
 
 export function buildPlanApprovalChecks(
   config: Config,
   interaction: 'interactive' | 'headless' | undefined,
 ): ReadinessCheck[] {
   const approve = resolveApproveLevel(config);
-  const effort = resolveEffortLevel({ config });
-  const approval = planApprovalCopy(config, interaction);
   return [
     {
       id: 'workflow.plan-approval',
       severity: 'info',
-      summary: approval.summary,
-      details: [
-        ...(approval.details ?? []),
-        `Retries: ${DEFAULT_LOCAL_RETRIES}`,
-        `Planner effort: ${effort ?? 'provider default'}`,
-      ],
-      metadata: {
-        approve,
-        maxRetries: DEFAULT_LOCAL_RETRIES,
-        effort: effort ?? null,
-      },
+      summary:
+        approve === 'plan'
+          ? 'Plan approval: you approve the plan in the TUI.'
+          : 'Plan approval: automatic.',
+      ...(approve === 'plan' &&
+        interaction === 'headless' && {
+          details: [
+            'Headless runs approve the plan automatically because there is no approval prompt.',
+          ],
+        }),
+      metadata: { approve },
+    },
+    {
+      id: 'workflow.retries',
+      severity: 'info',
+      summary: `${CREW_SEAT_LABELS.build} gets ${countNoun(DEFAULT_LOCAL_RETRIES, 'retry', 'retries')} after a failed check, then asks ${CREW_SEAT_LABELS.plan} or ${CREW_SEAT_LABELS.review} for guidance.`,
+      metadata: { maxRetries: DEFAULT_LOCAL_RETRIES },
     },
   ];
 }

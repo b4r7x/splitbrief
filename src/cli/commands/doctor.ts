@@ -1,4 +1,5 @@
 import type { Command } from 'commander';
+import { CREW_SEAT_LABELS } from '../../core/crew/identity.js';
 import {
   applyRunnerPreparationChecks,
   collectReadiness,
@@ -9,6 +10,7 @@ import {
   serializeReadinessReportJson,
 } from '../../core/readiness/format.js';
 import type { ReadinessCheck, ReadinessReport } from '../../core/readiness/types.js';
+import { sameRunnerCause } from '../../core/readiness/runner-causes.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
 import { cliReadinessCheckId } from '../../core/schemas/readiness.js';
 import {
@@ -227,7 +229,7 @@ async function defaultSeatProbeCall(
   const runner = seatProbeRunner(config, input.seat);
   if (runner.kind !== 'cli') {
     throw cliError(
-      `--probe-seat needs a CLI runner for the ${input.seat} seat; it is "${runner.kind}".`,
+      `--probe-seat needs a CLI runner for ${CREW_SEAT_LABELS[input.seat]}; it is "${runner.kind}".`,
       1,
     );
   }
@@ -301,7 +303,7 @@ function seatProbeArgs(
   };
   const args =
     adapter.role === 'planner'
-      ? adapter.buildArgs({ ...seatArgs, mode: 'plan', sessionId: null, oneShot: true })
+      ? adapter.buildArgs({ ...seatArgs, sessionId: null, oneShot: true })
       : adapter.buildArgs(seatArgs);
   return [...args];
 }
@@ -378,8 +380,19 @@ async function withPreparationPreflights(options: {
         })
       : [];
   return applyRunnerPreparationChecks(collected.report, [
-    ...cliReadinessChecks,
-    ...admissionChecks,
+    ...cliReadinessChecks.filter(
+      (check) =>
+        !admissionChecks.some(
+          (admission) =>
+            check.runnerCause !== undefined &&
+            admission.runnerCause !== undefined &&
+            sameRunnerCause(check.runnerCause, admission.runnerCause),
+        ),
+    ),
+    // The consent replay reports every shell and agent seat, so admission adds the others.
+    ...admissionChecks.filter(
+      (check) => check.metadata?.kind !== 'shell' && check.metadata?.kind !== 'agent',
+    ),
     ...argVectorChecks,
     ...consentChecks,
   ]);
@@ -393,7 +406,7 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
     .option('--json', 'Emit readiness as JSON', false)
     .option(
       '--probe-seat <seat>',
-      'Make one paid call through the plan, build or review seat adapter',
+      `Make one paid call through one seat: ${SEAT_PROBE_SEATS.join(', ')}`,
     )
     .action(async (opts: DoctorOpts) => {
       const projectDir = await canonicalizeProjectDir(opts);
@@ -404,7 +417,7 @@ export function registerDoctorCommand(program: Command, deps: DoctorDeps = {}): 
           seat,
           call: deps.probeSeatCall ?? defaultSeatProbeCall,
         });
-        console.log(`Seat probe ${seat}: ${result.class}`);
+        console.log(`Seat probe ${CREW_SEAT_LABELS[seat]}: ${result.class}`);
         if (result.firstErrorLine !== null) console.log(`First error: ${result.firstErrorLine}`);
         return;
       }

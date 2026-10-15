@@ -140,8 +140,10 @@ describe('start --plain', () => {
 
       expect(streams.rejection).not.toBeNull();
       expect((streams.rejection as Error).message).toContain('Run readiness blocked');
-      expect(streams.stderr).toContain('runners.preparation.planner');
+      expect(streams.stderr).toContain('Run readiness: blocked');
       expect(streams.stderr).toContain('The configured runner could not be admitted.');
+      expect(streams.stderr).not.toContain('runners.preparation.planner');
+      expect(streams.stdout).not.toContain('The configured runner could not be admitted.');
       expect(streams.stdout).not.toContain('runners.preparation.planner');
       expect(runHeadlessMock).not.toHaveBeenCalled();
     } finally {

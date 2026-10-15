@@ -129,7 +129,7 @@ describe('e2e: first-run diagnostics', () => {
     ).not.toContain('repo.dirty-worktree');
   });
 
-  it('diagnoses the config saved by Continue in Setup with actionable warnings and accurate approval copy', async () => {
+  it('diagnoses the config saved by Continue in Setup without warnings or repeated facts', async () => {
     const target = freshProject();
     resetAllStores();
     configStore.load(target.projectDir);
@@ -171,7 +171,17 @@ describe('e2e: first-run diagnostics', () => {
     expect(text.exitCode, `${text.stdout}\n${text.stderr}`).toBe(0);
     expect(text.stdout).toContain('Plan approval: you approve the plan in the TUI.');
     expect(text.stdout).toContain('Headless runs approve the plan automatically');
-    expect(text.stdout).toContain('Settings > Crew > PLAN');
+    expect(text.stdout).toContain('(0 blockers, 0 warnings)');
+    expect(text.stdout).toContain('PLAN Claude Code CLI');
+    expect(text.stdout).toContain('BUILD Claude Code CLI');
+    expect(text.stdout).not.toMatch(
+      /runners\.|context\.|workflow\.|Command options:|00000000-0000|PLAN.*(?:take over|edit files)|1 blockers|1 warnings/,
+    );
+    const lines = text.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    expect(new Set(lines).size).toBe(lines.length);
     expect(text.stdout).not.toMatch(
       /tier-2|approval automation|fresh runner admission|arg vector|via profile|Profiles:|Write mode:|contextLength|auto-approved/,
     );
@@ -179,19 +189,12 @@ describe('e2e: first-run diagnostics', () => {
     expect(json.exitCode, json.stderr).toBe(0);
     const report = JSON.parse(json.stdout).report;
     expect(report.counts.blocker).toBe(0);
+    expect(report.status).toBe('ready');
+    expect(report.counts.warning).toBe(0);
     expect(
       report.checks.filter((check: { severity: string }) => check.severity === 'warning'),
-    ).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ remediation: expect.stringContaining('Settings > Crew') }),
-      ]),
-    );
-    expect(
-      report.checks.filter(
-        (check: { id: string; severity: string }) =>
-          check.severity === 'warning' && !check.id.endsWith('trust-boundary'),
-      ),
     ).toEqual([]);
+    for (const check of report.checks) expect(text.stdout).not.toContain(check.id);
     expect(readFileSync(configPath(target.projectDir), 'utf8')).toBe(saved);
   });
 

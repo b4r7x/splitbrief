@@ -326,7 +326,6 @@ export type CliPlannerBuildArgsInput = Readonly<{
   model: string | undefined;
   projectDir: string;
   configuredArgs: readonly string[];
-  mode: 'plan' | 'escalate';
   sessionId: string | null;
   /** A fresh call nothing will resume, so a tool that keeps a session for every call keeps none. */
   oneShot?: boolean | undefined;

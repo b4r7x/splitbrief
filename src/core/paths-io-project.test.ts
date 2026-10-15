@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, test } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
+import { mkdirSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { writeProjectFile, validateTaskPath, pathError } from './paths-io.js';
+import { validateTaskPath, pathError } from './paths-io.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 
 let tmp: string;
@@ -14,25 +14,6 @@ function makeTmp(): string {
 
 afterEach(() => {
   if (tmp) cleanupTempDir(tmp);
-});
-
-describe('writeProjectFile', () => {
-  it('creates parent directories and writes content', () => {
-    const dir = makeTmp();
-    writeProjectFile(dir, 'src/deep/file.ts', 'export const x = 1;');
-    const written = join(dir, 'src', 'deep', 'file.ts');
-    expect(existsSync(written)).toBe(true);
-    expect(readFileSync(written, 'utf-8')).toBe('export const x = 1;');
-  });
-
-  it.each([['.git/config'], ['.splitbrief/config.yaml']])(
-    'rejects model-named write into the control plane (%s) and leaves nothing on disk',
-    (path) => {
-      const dir = makeTmp();
-      expect(() => writeProjectFile(dir, path, 'malicious')).toThrow('escapes project directory');
-      expect(existsSync(join(dir, path))).toBe(false);
-    },
-  );
 });
 
 describe('validateTaskPath', () => {

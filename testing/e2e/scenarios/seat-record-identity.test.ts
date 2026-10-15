@@ -3,13 +3,7 @@ import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
-import {
-  PLAN_FILE,
-  READINESS_FILE,
-  REVIEW_FILE,
-  TASKS_FILE,
-  sessionDir,
-} from '../../../src/core/paths.js';
+import { PLAN_FILE, REVIEW_FILE, TASKS_FILE, sessionDir } from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
@@ -125,15 +119,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
     build: 'OpenAI Codex CLI · GPT-6-Luna',
     ids: { build: { tool: 'codex', model: MODEL, axes: [], kind: 'cli' } },
   });
-  const documents = [
-    PLAN_FILE,
-    TASKS_FILE,
-    REVIEW_FILE,
-    'review-packet.md',
-    'review-packet.json',
-    READINESS_FILE,
-    'seats.json',
-  ];
+  const documents = [PLAN_FILE, TASKS_FILE, REVIEW_FILE, 'review-packet.md', 'seats.json'];
   for (const name of documents) {
     const text = readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), name), 'utf8');
     expect(text, name).toContain('OpenAI Codex CLI · GPT-6-Luna');

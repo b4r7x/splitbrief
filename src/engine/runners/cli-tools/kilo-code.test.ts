@@ -19,17 +19,12 @@ const STREAM_JSON_FIXTURE = join(
   '../../../../testing/fixtures/kilo/stream-json.ndjson',
 );
 
-function plannerArgs(
-  model: string | undefined,
-  mode: 'plan' | 'escalate',
-  configuredArgs: readonly string[],
-) {
+function plannerArgs(model: string | undefined, configuredArgs: readonly string[]) {
   return kiloPlannerAdapter.buildArgs({
     prompt: PROMPT,
     model,
     projectDir: PROJECT_DIR,
     configuredArgs,
-    mode,
     sessionId: null,
     effort: undefined,
   });
@@ -45,7 +40,7 @@ function implementerArgs(model: string | undefined, configuredArgs: readonly str
 }
 
 const ROLE_SEATS = [
-  ['planner', kiloPlannerAdapter, plannerArgs(undefined, 'plan', []), 'plan'],
+  ['planner', kiloPlannerAdapter, plannerArgs(undefined, []), 'plan'],
   ['implementer', kiloImplementerAdapter, implementerArgs(undefined, []), 'code'],
 ] as const;
 
@@ -69,10 +64,9 @@ describe('Kilo Code role adapters', () => {
     ['absent images', undefined, []],
     ['empty images', [], []],
   ] as const)('passes %s after the prompt in every role', (_label, imagePaths, imageArgs) => {
-    for (const [adapter, mode, agent, approvalArgs] of [
-      [kiloPlannerAdapter, 'plan', 'plan', []],
-      [kiloPlannerAdapter, 'escalate', 'code', ['--auto']],
-      [kiloImplementerAdapter, 'plan', 'code', ['--auto']],
+    for (const [adapter, agent, approvalArgs] of [
+      [kiloPlannerAdapter, 'plan', []],
+      [kiloImplementerAdapter, 'code', ['--auto']],
     ] as const) {
       const input = {
         prompt: PROMPT,
@@ -80,7 +74,6 @@ describe('Kilo Code role adapters', () => {
         variant: 'high',
         projectDir: PROJECT_DIR,
         configuredArgs: ['--verbose'],
-        mode,
         sessionId: null,
         effort: undefined,
         imagePaths,
@@ -192,7 +185,7 @@ describe('Kilo Code role adapters', () => {
   });
 
   it('preserves planner read-only JSON flags, implementer code role, model placement, and order', () => {
-    expect(plannerArgs(undefined, 'plan', ['--verbose'])).toEqual([
+    expect(plannerArgs(undefined, ['--verbose'])).toEqual([
       'run',
       '--format',
       'json',
@@ -201,7 +194,7 @@ describe('Kilo Code role adapters', () => {
       PROMPT,
       '--verbose',
     ]);
-    expect(plannerArgs('claude-sonnet-4-6', 'plan', [])).toEqual([
+    expect(plannerArgs('claude-sonnet-4-6', [])).toEqual([
       'run',
       '--model',
       'claude-sonnet-4-6',
@@ -223,7 +216,7 @@ describe('Kilo Code role adapters', () => {
       PROMPT,
       '--verbose',
     ]);
-    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const plannerBase = plannerArgs(undefined, []);
     const implementerBase = implementerArgs(undefined, []);
     expect(
       kiloPlannerAdapter.validateArgs({ invocationArgs: plannerBase, baseArgs: plannerBase }),
@@ -244,7 +237,6 @@ describe('Kilo Code role adapters', () => {
       model: 'openai/gpt-5.6',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
       variant: 'max',
@@ -264,7 +256,7 @@ describe('Kilo Code role adapters', () => {
   });
 
   it('sends no variant flag on either role when the seat spends none', () => {
-    expect(plannerArgs('openai/gpt-5.6', 'plan', [])).not.toContain('--variant');
+    expect(plannerArgs('openai/gpt-5.6', [])).not.toContain('--variant');
     expect(implementerArgs('openai/gpt-5.6', [])).not.toContain('--variant');
   });
 
@@ -274,7 +266,6 @@ describe('Kilo Code role adapters', () => {
       model: 'openai/gpt-5.6',
       projectDir: PROJECT_DIR,
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
       variant: 'max',
@@ -304,18 +295,6 @@ describe('Kilo Code role adapters', () => {
       ).toEqual({ valid: false, conflicts: ['--agent'] });
     },
   );
-
-  it('overrides read-only agent defaults with the verified code agent for full escalation', () => {
-    const args = plannerArgs(undefined, 'escalate', []);
-
-    expect(args).toEqual(['run', '--format', 'json', '--agent', 'code', '--auto', PROMPT]);
-    expect(
-      kiloPlannerAdapter.validateArgs({
-        invocationArgs: plannerArgs(undefined, 'escalate', ['--agent', 'plan']),
-        baseArgs: args,
-      }),
-    ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
-  });
 
   it('rejects protected flags, reordered args, and alternate prompt placeholders', () => {
     const base = implementerArgs(undefined, []);

@@ -5,6 +5,7 @@ import {
 } from '../../../core/config/accessors/runner-config.js';
 import { resolveImplementerProfiles } from '../../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-runner.js';
+import { formatSlotLabel } from '../../../core/crew/identity.js';
 import type { ReadinessCheck } from '../../../core/readiness/types.js';
 import type { Config } from '../../../core/schemas/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
@@ -34,19 +35,6 @@ function slotId(slot: RunnerConfigSlot): string {
   }
 }
 
-function slotLabel(slot: RunnerConfigSlot): string {
-  switch (slot.role) {
-    case 'planner':
-      return 'Planner';
-    case 'implementer':
-      return slot.profile === 'default' ? 'BUILD' : `BUILD ${slot.profile}`;
-    case 'reviewer':
-      return 'Reviewer';
-    default:
-      return assertNever(slot);
-  }
-}
-
 export function admittedCheck(
   slot: RunnerConfigSlot,
   kind: RunnerConfig['kind'],
@@ -55,7 +43,7 @@ export function admittedCheck(
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'ok',
-    summary: `${slotLabel(slot)} is ready to start.`,
+    summary: `${formatSlotLabel(slot)} is ready to start.`,
     ...(details.length > 0 && { details: [...details] }),
     metadata: { role: slot.role, kind },
   };
@@ -73,7 +61,7 @@ export function warningCheck(
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'warning',
-    summary: `${slotLabel(slot)} is ready with warnings.`,
+    summary: `${formatSlotLabel(slot)} is ready with warnings.`,
     details: [...warnings.map((warning) => warning.message), ...details],
     metadata: { role: slot.role, kind, warnings: warnings.map((warning) => warning.code) },
   };
@@ -88,7 +76,7 @@ export function blockedCheck(
   return {
     id: `runners.preparation.${slotId(slot)}`,
     severity: 'blocker',
-    summary: `${slotLabel(slot)} could not start.`,
+    summary: `${formatSlotLabel(slot)} could not start.`,
     details: [reason],
     fix,
     nextAction: 'fix-config',

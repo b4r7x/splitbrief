@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
   CliInstallationStateSchema,
   CliReadinessResultSchema,
@@ -29,9 +29,60 @@ function readyFacts(overrides: Partial<CliReadinessFacts> = {}): CliReadinessFac
 }
 
 describe('CLI runner readiness', () => {
+  const hostPlatform = process.platform;
+  const setPlatform = (value: NodeJS.Platform): void => {
+    Object.defineProperty(process, 'platform', { value, configurable: true });
+  };
+  afterEach(() => setPlatform(hostPlatform));
+
+  it.each([
+    [
+      'darwin',
+      'SPLITBRIEF looks for the Claude Code CLI session in the macOS keychain. Sign in to Claude Code CLI, then run `splitbrief doctor` again.',
+    ],
+    [
+      'linux',
+      'SPLITBRIEF looks for the Claude Code CLI session in its session files. Sign in to Claude Code CLI, then run `splitbrief doctor` again.',
+    ],
+  ] as const)(
+    'on %s says where it looked for the session and gives the sign-in action',
+    (platform, remediation) => {
+      setPlatform(platform);
+      expect(
+        deriveCliReadiness(
+          readyFacts({
+            tool: 'claude-code',
+            authChannel: 'session',
+            auth: 'unauthenticated',
+          }),
+        ).remediation,
+      ).toBe(remediation);
+    },
+  );
   it('keeps installation state explicit and closed', () => {
     const states: readonly CliInstallationState[] = CliInstallationStateSchema.options;
     expect(states).toEqual(['installed', 'unavailable']);
+  });
+
+  it.each([
+    [
+      { installation: 'unavailable', executable: null },
+      'Install OpenAI Codex CLI, then run `splitbrief doctor` again.',
+    ],
+    [
+      { trust: 'untrusted' },
+      'Install OpenAI Codex CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again.',
+    ],
+    [
+      { compatibility: 'incompatible' },
+      'Install the tested OpenAI Codex CLI version (0.40.0), then run `splitbrief doctor` again.',
+    ],
+    [
+      { installedVersion: null },
+      'Verify OpenAI Codex CLI against tested version 0.40.0, then run `splitbrief doctor` again.',
+    ],
+  ] as const)('names the tool and an available command for %j', (overrides, remediation) => {
+    expect(deriveCliReadiness(readyFacts(overrides)).remediation).toBe(remediation);
   });
 
   it.each([
@@ -106,16 +157,16 @@ describe('CLI runner readiness', () => {
     // The copy must not promise that re-running a cheap check can verify a
     // session: a local status read proves presence, never validity.
     expect(deriveCliReadiness(readyFacts({ auth: 'unknown' })).remediation).toBe(
-      'codex authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real codex call settles it; if that call fails to authenticate, sign in to codex again.',
+      'OpenAI Codex CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real OpenAI Codex CLI call settles it; if that call fails to authenticate, sign in to OpenAI Codex CLI again.',
     );
     expect(deriveCliReadiness(readyFacts({ auth: 'not-checked' })).remediation).toBe(
-      'codex authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real codex call settles it; if that call fails to authenticate, sign in to codex again.',
+      'OpenAI Codex CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real OpenAI Codex CLI call settles it; if that call fails to authenticate, sign in to OpenAI Codex CLI again.',
     );
     expect(deriveCliReadiness(readyFacts({ compatibility: 'unverified' })).remediation).toBe(
-      'Verify codex against tested version 0.40.0, then run runner readiness again.',
+      'Verify OpenAI Codex CLI against tested version 0.40.0, then run `splitbrief doctor` again.',
     );
     expect(deriveCliReadiness(readyFacts({ installedVersion: null })).remediation).toBe(
-      'Verify codex against tested version 0.40.0, then run runner readiness again.',
+      'Verify OpenAI Codex CLI against tested version 0.40.0, then run `splitbrief doctor` again.',
     );
   });
 

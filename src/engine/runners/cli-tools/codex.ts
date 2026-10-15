@@ -84,14 +84,13 @@ function schemaArgs(schema: CliSchemaInput | undefined): string[] {
  * GLOBAL flags in v0.147 and must precede `exec`; `exec resume` does not accept
  * local `--sandbox`/`--ask-for-approval`. Ambient user config and AGENTS.md
  * rules are adapter-owned inputs the planner ignores. A fresh exec is
- * `--ephemeral` only when it is one-shot, so a review, a hint or an escalation
+ * `--ephemeral` only when it is one-shot, so a review or a summary
  * leaves no rollout in the codex home: a planning call is not, because the
  * planner resumes the thread it reports and `exec resume` finds no rollout for
- * an ephemeral one. The escalated planner row keeps its tier-2 workspace-write
- * within the staged project under the same never-approval policy.
+ * an ephemeral one.
  */
 function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
-  if (input.sessionId !== null && input.mode === 'plan') {
+  if (input.sessionId !== null) {
     return [
       ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
       '--sandbox',
@@ -110,22 +109,20 @@ function plannerBaseArgs(input: CodexPlannerBuildInput): string[] {
     ];
   }
 
-  const escalate = input.mode === 'escalate';
   return [
     ...(input.model === undefined ? [] : ['--model', input.model]),
     ...(input.effort === undefined ? [] : ['-c', `model_reasoning_effort=${input.effort}`]),
     '--sandbox',
-    escalate ? 'workspace-write' : 'read-only',
+    'read-only',
     '--ask-for-approval',
     'never',
     'exec',
     ...(input.imagePaths ?? []).flatMap((path) => ['--image', path]),
     '--ignore-user-config',
-    ...(escalate ? [] : ['--ignore-rules']),
+    '--ignore-rules',
     ...(input.oneShot === true ? ['--ephemeral'] : []),
     '--json',
     ...schemaArgs(input.schema),
-    ...(escalate ? ['--skip-git-repo-check'] : []),
     '--cd',
     input.projectDir,
     CODEX_STDIN_PROMPT,

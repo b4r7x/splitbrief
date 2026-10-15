@@ -105,7 +105,8 @@ function plannerBaseArgs(input: KiloPlannerBuildInput): string[] {
     ...(input.variant === undefined ? [] : ['--variant', input.variant]),
     '--format',
     'json',
-    ...(input.mode === 'plan' ? ['--agent', 'plan'] : ['--agent', 'code', '--auto']),
+    '--agent',
+    'plan',
     input.prompt,
     ...(input.imagePaths ?? []).flatMap((path) => ['--file', path]),
   ];

@@ -1,5 +1,5 @@
 import type { Planner, PlannerCallbacks, PlannerCapabilities } from './types.js';
-import { createPlannerBase, type PlannerBaseConfig } from './base.js';
+import { createPlannerBase } from './base.js';
 import {
   invokeCommandBasedRunner,
   invokeCustomCommandBasedRunner,
@@ -49,7 +49,6 @@ export type LegacyCommandInvokeInput = Readonly<{
   callContext: RunnerCallContext;
   callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onCallEvent'>;
   signal?: AbortSignal | undefined;
-  sandboxEnv?: NodeJS.ProcessEnv | undefined;
 }>;
 
 export function createLegacyCommandInvoke(
@@ -64,7 +63,7 @@ export function createLegacyCommandInvoke(
       notFoundMessage: options.notFoundMessage,
       prompt: input.prompt,
       projectDir: input.projectDir,
-      env: input.sandboxEnv ?? (await createRunnerSandboxEnv(input.projectDir, runner, 'planner')),
+      env: await createRunnerSandboxEnv(input.projectDir, runner, 'planner'),
       onOutput: input.callbacks.onOutput,
       onCallEvent: input.callbacks.onCallEvent,
       callContext: input.callContext,
@@ -83,7 +82,6 @@ export function createCommandBasedPlanner(
   label: string,
   overrides?: {
     capabilities?: PlannerCapabilities | undefined;
-    escalateFullMode?: PlannerBaseConfig['escalateFullMode'] | undefined;
     notFoundMessage?: string | undefined;
   },
 ): Planner {
@@ -93,13 +91,12 @@ export function createCommandBasedPlanner(
 
   return createPlannerBase({
     invokePlan: invoke,
-    invokeEscalate: invoke,
+    invokeOneShot: invoke,
     backendKind: config.kind,
     runnerName: config.command,
     model: config.model,
     axes: seatAxisWords(config),
     capabilities: resolveCapabilities(overrides?.capabilities),
-    ...(overrides?.escalateFullMode && { escalateFullMode: overrides.escalateFullMode }),
     ...createCommandExistsAvailability(config.command),
   });
 }
@@ -133,9 +130,8 @@ function declaredArtifactProvenance(callContext: RunnerCallContext): DeclaredArt
 
 /**
  * Runs a configured custom planner with preparation-time admission.
- * Output-contract calls discard a child stage; direct normal calls return one
- * reviewed declared artifact, while direct full escalation writes only to the
- * supplied outer stage for the existing diff gate to review.
+ * Output-contract calls discard a child stage; direct calls return one
+ * reviewed declared artifact.
  */
 export function createConfiguredCustomPlanner(
   runner: ConfiguredCustomRunner,
@@ -157,9 +153,7 @@ export function createConfiguredCustomPlanner(
     callContext: RunnerCallContext;
     callbacks: Pick<PlannerCallbacks, 'onOutput' | 'onCallEvent'>;
     signal?: AbortSignal | undefined;
-    sandboxEnv?: NodeJS.ProcessEnv | undefined;
   }): Promise<RunnerCallResult> => {
-    const requiresDeclaredArtifactReview = direct && callContext.role !== 'escalation';
     await runtime.cleanupStaleArtifactReviews();
 
     try {
@@ -191,10 +185,6 @@ export function createConfiguredCustomPlanner(
           signal,
           timeoutMs,
         });
-
-      if (direct && callContext.role === 'escalation') {
-        return invokeAdmittedRunner({ cwd: projectDir, childPrompt: prompt });
-      }
 
       const staged = await runtime.createStage(projectDir, 'planner');
       try {
@@ -248,7 +238,7 @@ export function createConfiguredCustomPlanner(
         staged.cleanup();
       }
     } finally {
-      if (requiresDeclaredArtifactReview) {
+      if (direct) {
         await runtime.cleanupStaleArtifactReviews();
       }
     }
@@ -256,12 +246,11 @@ export function createConfiguredCustomPlanner(
 
   return createPlannerBase({
     invokePlan: invoke,
-    invokeEscalate: invoke,
+    invokeOneShot: invoke,
     backendKind: direct ? 'agent' : 'shell',
     runnerName: runner.command.label,
     axes: [],
     capabilities: resolveCapabilities(undefined),
-    ...(direct && { escalateFullMode: 'files' as const }),
     ...DEFAULT_AVAILABILITY,
   });
 }

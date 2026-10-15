@@ -11,49 +11,23 @@ export type FauxPlanScript = {
   throws?: Error;
 };
 
-export type FauxEscalationScript = {
-  success: boolean;
-  output?: string;
-  code?: string | null;
-  usage?: TokenDelta | null;
-  throws?: Error;
-};
-
 export type FauxPlannerState = {
   planCallCount: number;
-  escalateFullCallCount: number;
   receivedPrompts: string[];
-  receivedErrors: string[];
 };
 
-export function fauxPlanner(opts?: {
-  plans?: FauxPlanScript[];
-  escalations?: FauxEscalationScript[];
-}): { planner: Planner; state: FauxPlannerState } {
+export function fauxPlanner(opts?: { plans?: FauxPlanScript[] }): {
+  planner: Planner;
+  state: FauxPlannerState;
+} {
   const plans = opts?.plans ?? [];
-  const escalations = opts?.escalations ?? [];
 
   const state: FauxPlannerState = {
     planCallCount: 0,
-    escalateFullCallCount: 0,
     receivedPrompts: [],
-    receivedErrors: [],
   };
 
   const planner: Planner = {
-    async escalateFull({ error }) {
-      state.escalateFullCallCount++;
-      state.receivedErrors.push(error);
-      const script = escalations[(state.escalateFullCallCount - 1) % escalations.length];
-      if (script?.throws) throw script.throws;
-      return {
-        success: script?.success ?? false,
-        output: script?.output ?? '',
-        code: script?.code ?? null,
-        usage: script?.usage ?? null,
-      };
-    },
-
     async review(_prompt, _projectDir, _callbacks) {
       return { text: '', usage: null };
     },

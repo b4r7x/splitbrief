@@ -19,9 +19,7 @@ import { createPlannerCallContext } from './src/engine/planners/call-context.ts'
 import { spawnAndCollect } from './src/engine/streaming/spawn-collect.ts';
 import { invokeCommandBasedRunner } from './src/engine/runners/command-based.ts';
 import { summarize } from './src/engine/planners/summary.ts';
-import { escalateFull } from './src/engine/planners/escalation.ts';
 import { streamCompletion } from './src/engine/providers/openai-stream/completion.ts';
-import { buildLanguageContext } from './src/engine/spec/prompts/language-context.ts';
 
 const projectDir = process.argv[1];
 const ref = { projectDir, sessionId: ${JSON.stringify(SESSION_ID)} };
@@ -42,11 +40,7 @@ await invoke({ callContext: createImplementerCallContext({
 }) });
 await spawnAndCollect({ command, args: [], cwd: projectDir, stdin: 'brief', onCallEvent });
 await invokeCommandBasedRunner({ command, prompt: 'brief', projectDir, onCallEvent });
-await summarize({ invokeEscalate: invoke }, [{ role: 'user', text: 'Summarize the run.' }]);
-await escalateFull({ invokeEscalate: invoke }, {
-  task: makeTask(), error: 'check failed', projectDir, callbacks: { onOutput: () => {} },
-  languageContext: buildLanguageContext('typescript'),
-});
+await summarize({ invokeOneShot: invoke }, [{ role: 'user', text: 'Summarize the run.' }]);
 await streamCompletion({ chat: { completions: { create: async () => (async function* () {
   yield { choices: [{ delta: { content: 'done' }, finish_reason: null }] };
   yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
@@ -67,7 +61,7 @@ it('keeps every call distinct in the same session after a new process resumes it
 
     runProcess();
     const before = resolveCallUsageEvidence({ projectDir, sessionId: SESSION_ID });
-    expect(before).toHaveLength(8);
+    expect(before).toHaveLength(7);
     expect(before?.slice(0, 2)).toEqual([
       expect.objectContaining({ role: 'planner', callId: expect.stringMatching(/^planner-/) }),
       expect.objectContaining({ role: 'review', callId: expect.stringMatching(/^review-/) }),
@@ -75,9 +69,9 @@ it('keeps every call distinct in the same session after a new process resumes it
 
     runProcess();
     const resumed = resolveCallUsageEvidence({ projectDir, sessionId: SESSION_ID });
-    expect(resumed).toHaveLength(16);
-    expect(new Set(resumed?.map((call) => call.callId)).size).toBe(16);
-    expect(resumed?.slice(0, 8).map((call) => call.callId)).toEqual(
+    expect(resumed).toHaveLength(14);
+    expect(new Set(resumed?.map((call) => call.callId)).size).toBe(14);
+    expect(resumed?.slice(0, 7).map((call) => call.callId)).toEqual(
       before?.map((call) => call.callId),
     );
   });

@@ -9,6 +9,7 @@ import {
   type ResolvedImplementerProfile,
 } from '../../core/config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../core/config/accessors/reviewer-runner.js';
+import { formatSlotLabel } from '../../core/crew/identity.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import type { ActiveRunnerRole } from '../../core/runners/seat-roles.js';
 import { createSanitizedChildEnv } from '../../lib/process/spawn/child-env.js';
@@ -314,26 +315,13 @@ export async function collectArgVectorPreflightChecks(
     runners.push({
       tool: input.config.planner.tool,
       role: 'planner',
+      seat: formatSlotLabel({ role: 'planner' }),
       model: input.config.planner.model,
       args: input.config.planner.args,
       effort: input.config.planner.effort,
       variant: input.config.planner.variant,
       installedVersion: input.installedVersions?.[input.config.planner.tool],
     });
-  }
-  if (input.roles.includes('reviewer')) {
-    const reviewer = resolveReviewerRunner(input.config);
-    if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
-      runners.push({
-        tool: reviewer.runner.tool,
-        role: 'reviewer',
-        model: reviewer.runner.model,
-        args: reviewer.runner.args,
-        effort: reviewer.runner.effort,
-        variant: reviewer.runner.variant,
-        installedVersion: input.installedVersions?.[reviewer.runner.tool],
-      });
-    }
   }
   if (input.roles.includes('implementer')) {
     let profiles: ResolvedImplementerProfile[] = [];
@@ -347,6 +335,7 @@ export async function collectArgVectorPreflightChecks(
         runners.push({
           tool: profile.config.tool,
           role: 'implementer',
+          seat: formatSlotLabel({ role: 'implementer', profile: profile.name }),
           model: profile.config.model,
           args: profile.config.args,
           effort: profile.config.effort,
@@ -354,6 +343,21 @@ export async function collectArgVectorPreflightChecks(
           installedVersion: input.installedVersions?.[profile.config.tool],
         });
       }
+    }
+  }
+  if (input.roles.includes('reviewer')) {
+    const reviewer = resolveReviewerRunner(input.config);
+    if (reviewer.source === 'configured' && reviewer.runner.kind === 'cli') {
+      runners.push({
+        tool: reviewer.runner.tool,
+        role: 'reviewer',
+        seat: formatSlotLabel({ role: 'reviewer' }),
+        model: reviewer.runner.model,
+        args: reviewer.runner.args,
+        effort: reviewer.runner.effort,
+        variant: reviewer.runner.variant,
+        installedVersion: input.installedVersions?.[reviewer.runner.tool],
+      });
     }
   }
   const checks: ReadinessCheck[] = [];
@@ -366,6 +370,8 @@ export async function collectArgVectorPreflightChecks(
 type PreflightRunner = Readonly<{
   tool: CliToolId;
   role: ActiveRunnerRole;
+  /** The seat word the report names this runner by. */
+  seat: string;
   model: string | undefined;
   args: readonly string[] | undefined;
   effort: EffortLevel | undefined;
@@ -400,15 +406,13 @@ async function buildPreflightCheck(
   }
   const descriptor = CLI_TOOL_CATALOG[runner.tool];
   const id = argVectorCheckId(runner.tool, runner.role);
-  const argvDetails = argVectors.map((argv) => `Command options: ${argv.join(' ')}`);
   if (unsupported.size === 0 && deprecated.size === 0) {
     return {
       id,
       severity: 'ok',
       summary: compared
-        ? `${descriptor.displayName} ${runner.role} command options are supported by the installed tool.`
-        : `${descriptor.displayName} ${runner.role} command options are configured.`,
-      details: argvDetails,
+        ? `${descriptor.displayName} supports the options ${runner.seat} uses.`
+        : `${descriptor.displayName} options for ${runner.seat} are configured.`,
       metadata: {
         tool: runner.tool,
         role: runner.role,
@@ -420,10 +424,9 @@ async function buildPreflightCheck(
     return {
       id,
       severity: 'blocker',
-      summary: `${descriptor.displayName} ${runner.role} invocation uses flags the installed binary does not support: ${[...unsupported].join(', ')}.`,
+      summary: `${descriptor.displayName} does not support options ${runner.seat} uses: ${[...unsupported].join(', ')}.`,
       details: [
-        ...argvDetails,
-        `The installed binary's help does not list these flags; the first task would fail at attempt one.`,
+        `The installed tool's help does not list these options; the first call would fail.`,
       ],
       fix: 'Upgrade the installed binary, or remove the unsupported flags from the runner configuration.',
       nextAction: 'fix-config',
@@ -438,8 +441,7 @@ async function buildPreflightCheck(
   return {
     id,
     severity: 'warning',
-    summary: `${descriptor.displayName} uses command options the installed tool is retiring: ${[...deprecated].join(', ')}.`,
-    details: argvDetails,
+    summary: `${descriptor.displayName} is retiring options ${runner.seat} uses: ${[...deprecated].join(', ')}.`,
     fix: `Update ${descriptor.displayName}, or remove these options from .splitbrief/config.yaml.`,
     metadata: {
       tool: runner.tool,
@@ -452,12 +454,12 @@ async function buildPreflightCheck(
 
 /**
  * One arg vector per branch the adapter can take for this role, so a flag that
- * only appears on resume or on an escalated planner call is compared too. The
+ * only appears on resume or on a one-shot planner call is compared too. The
  * planner's `effort` is configuration rather than a branch, so it rides on every
- * variant whenever the adapter supports it. A planner's review, hint and
- * escalation calls are one-shot, which is a branch of their own. The review seat
- * takes exactly one branch — a one-shot read-only call, which the CLI planner
- * maps to plan mode — so escalate-mode and resume argv are not its to compare.
+ * variant whenever the adapter supports it. A planner's review, consult and
+ * summary calls are one-shot, which is a branch of their own. The review seat
+ * takes exactly one branch — a one-shot read-only call — so resume argv is not
+ * its to compare.
  */
 type PreflightVector = Readonly<{ argv: readonly string[]; validation: CliArgumentValidation }>;
 
@@ -501,7 +503,6 @@ function emittedArgVectors(
       return [
         checkedVector(adapter, {
           ...plannerCommonArgs(runner, adapter, projectDir),
-          mode: 'plan',
           sessionId: null,
           oneShot: true,
         }),
@@ -511,14 +512,11 @@ function emittedArgVectors(
       const adapter = lookupCliPlannerAdapter(runner.tool);
       const common = plannerCommonArgs(runner, adapter, projectDir);
       const variants = [
-        checkedVector(adapter, { ...common, mode: 'plan', sessionId: null }),
-        checkedVector(adapter, { ...common, mode: 'plan', sessionId: null, oneShot: true }),
-        checkedVector(adapter, { ...common, mode: 'escalate', sessionId: null, oneShot: true }),
+        checkedVector(adapter, { ...common, sessionId: null }),
+        checkedVector(adapter, { ...common, sessionId: null, oneShot: true }),
       ];
       if (adapter.supportsSessionResume) {
-        variants.push(
-          checkedVector(adapter, { ...common, mode: 'plan', sessionId: PREFLIGHT_SESSION_ID }),
-        );
+        variants.push(checkedVector(adapter, { ...common, sessionId: PREFLIGHT_SESSION_ID }));
       }
       const seen = new Set<string>();
       return variants.filter(({ argv }) => {
@@ -566,10 +564,9 @@ function semanticOverrideCheck(
   return {
     id: argVectorCheckId(runner.tool, runner.role),
     severity: 'blocker',
-    summary: `${descriptor.displayName} ${runner.role} configuration overrides authority SPLITBRIEF owns: ${violations.join(', ')}.`,
+    summary: `${runner.seat} options for ${descriptor.displayName} override settings SPLITBRIEF owns: ${violations.join(', ')}.`,
     details: [
-      `Configured args: ${(runner.args ?? []).join(' ')}`,
-      'SPLITBRIEF owns role, permissions, sandbox/containment, cwd and added roots, configuration sources, tools, hooks/plugins/MCP, session selection, prompt transport, output parser/format, terminal protocol, final-output path, updates, and approval behavior; user arguments cannot override them.',
+      'SPLITBRIEF sets seat permissions, workspace access, session selection, and input and output formats. Custom options cannot replace these settings.',
     ],
     fix: 'Remove the authority-bearing flags from the runner configuration.',
     nextAction: 'fix-config',

@@ -25,7 +25,6 @@ const NDJSON_FIXTURE = join(
 );
 
 function plannerArgs(
-  mode: 'plan' | 'escalate',
   options: {
     model?: string | undefined;
     configuredArgs?: readonly string[];
@@ -37,7 +36,6 @@ function plannerArgs(
     model: options.model,
     projectDir: '/project',
     configuredArgs: options.configuredArgs ?? [],
-    mode,
     sessionId: null,
     effort: options.effort,
   });
@@ -96,7 +94,7 @@ describe('Command Code CLI', () => {
 
 describe('Command Code role adapters', () => {
   it('assembles planner plan-mode args without any write-enabling permission flag', () => {
-    const args = plannerArgs('plan');
+    const args = plannerArgs();
     expect(args).toEqual([
       '-p',
       '--output-format',
@@ -124,41 +122,28 @@ describe('Command Code role adapters', () => {
     ]);
   });
 
-  it('escalates a planner call to --yolo only in escalate mode', () => {
-    expect(plannerArgs('escalate')).toEqual([
-      '-p',
-      '--output-format',
-      'json',
-      '--trust',
-      '--skip-onboarding',
-      '--no-auto-update',
-      '--yolo',
-      PROMPT,
-    ]);
-  });
-
   it('appends -m only when a model is configured', () => {
-    const withModel = plannerArgs('plan', { model: 'deepseek/deepseek-v4-flash' });
+    const withModel = plannerArgs({ model: 'deepseek/deepseek-v4-flash' });
     expect(withModel.slice(-3)).toEqual(['-m', 'deepseek/deepseek-v4-flash', PROMPT]);
     expect(implementerArgs({ model: 'deepseek/deepseek-v4-flash' }).slice(-3)).toEqual([
       '-m',
       'deepseek/deepseek-v4-flash',
       PROMPT,
     ]);
-    expect(plannerArgs('plan', { model: undefined })).not.toContain('-m');
+    expect(plannerArgs({ model: undefined })).not.toContain('-m');
     expect(implementerArgs({ model: undefined })).not.toContain('-m');
   });
 
   it('appends --effort only when an effort level is configured', () => {
-    expect(plannerArgs('plan', { effort: 'high' }).slice(-3)).toEqual(['--effort', 'high', PROMPT]);
+    expect(plannerArgs({ effort: 'high' }).slice(-3)).toEqual(['--effort', 'high', PROMPT]);
     expect(implementerArgs({ effort: 'low' }).slice(-3)).toEqual(['--effort', 'low', PROMPT]);
-    expect(plannerArgs('plan')).not.toContain('--effort');
+    expect(plannerArgs()).not.toContain('--effort');
     expect(implementerArgs()).not.toContain('--effort');
   });
 
   it('appends configured args after the adapter-owned base args', () => {
-    const base = plannerArgs('plan');
-    expect(plannerArgs('plan', { configuredArgs: ['--verbose', '--max-turns', '5'] })).toEqual([
+    const base = plannerArgs();
+    expect(plannerArgs({ configuredArgs: ['--verbose', '--max-turns', '5'] })).toEqual([
       ...base,
       '--verbose',
       '--max-turns',
@@ -172,7 +157,7 @@ describe('Command Code role adapters', () => {
   });
 
   it('rejects configured args that collide with a protected flag', () => {
-    const base = plannerArgs('plan');
+    const base = plannerArgs();
     const implementerBase = implementerArgs();
     expect(
       commandCodePlannerAdapter.validateArgs({
@@ -229,8 +214,8 @@ describe('Command Code role adapters', () => {
   });
 
   it('leaves a working-directory flag to the shared authority scan, not its own flag list', () => {
-    const base = plannerArgs('plan');
-    const args = plannerArgs('plan', { configuredArgs: ['--add-dir', '/tmp/x'] });
+    const base = plannerArgs();
+    const args = plannerArgs({ configuredArgs: ['--add-dir', '/tmp/x'] });
     expect(args.slice(base.length)).toEqual(['--add-dir', '/tmp/x']);
 
     const refusal = commandCodePlannerAdapter.validateArgs({
@@ -254,7 +239,7 @@ describe('Command Code role adapters', () => {
     }
     expect(COMMAND_CODE_PROTECTED_SHORT_VALUE_FLAGS.has('-w')).toBe(true);
 
-    const base = plannerArgs('plan');
+    const base = plannerArgs();
     const implementerBase = implementerArgs();
     const conflictingForms = [
       { tail: ['--worktree', 'session'], conflict: '--worktree' },

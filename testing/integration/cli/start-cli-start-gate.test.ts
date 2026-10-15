@@ -111,8 +111,11 @@ describe('CLI integration: fresh CLI runner start gate', () => {
       const { exitCode, run } = await startWithFreshPreparation();
 
       expect(exitCode).not.toBe(0);
-      expect(stdoutWrites.join('')).toContain(
-        'Fresh CLI evidence denied admission: compatibility.',
+      const emitted = stdoutWrites.join('');
+      expect(emitted).toContain('PLAN cannot start with OpenAI Codex CLI.');
+      expect(emitted).toContain('OpenAI Codex CLI version is not compatible.');
+      expect(emitted).toContain(
+        'Install the tested OpenAI Codex CLI version (0.40.0), then run `splitbrief doctor` again.',
       );
       expect(run.gates).toBeUndefined();
       expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
@@ -133,8 +136,11 @@ describe('CLI integration: fresh CLI runner start gate', () => {
     expect(exitCode).not.toBe(0);
     expect(run.gates).toBeUndefined();
     const emitted = stdoutWrites.join('');
-    expect(emitted).toContain('Fresh CLI evidence denied admission: authentication-unverified.');
-    expect(emitted).toContain('--allow-unverified-auth');
+    expect(emitted).toContain('PLAN cannot start with OpenAI Codex CLI.');
+    expect(emitted).toContain('OpenAI Codex CLI sign-in status is unknown.');
+    expect(emitted).toContain(
+      'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.',
+    );
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
 

@@ -7,6 +7,27 @@ import type {
 } from '../schemas/readiness.js';
 import type { RunnerConfig } from '../config/accessors/runner-config.js';
 import type { ActiveRunnerRole } from '../runners/seat-roles.js';
+import type { CliAuthChannelId, CliToolId } from '../runners/cli-tool-catalog.js';
+
+export type RunnerReadinessCauseId =
+  | ReadinessDiagnosticStateId
+  | 'unknown-version'
+  | 'installation-unchecked'
+  | 'disabled'
+  | 'stale-checks'
+  | 'probe-failed'
+  | 'model-unconfirmed'
+  | 'auth-not-selected'
+  | 'auth-check-cancelled'
+  | 'auth-check-not-run';
+
+/** One refusal fact of a CLI. `authChannel` is set only for an authentication cause. */
+export interface RunnerReadinessCause {
+  tool: CliToolId;
+  cause: RunnerReadinessCauseId;
+  authChannel?: CliAuthChannelId | undefined;
+  seats: string[];
+}
 
 export interface ReadinessNextAction {
   kind: ReadinessNextActionKind;
@@ -24,6 +45,7 @@ export interface ReadinessCheck {
   /** Stable failure family, set by the builder that knows why the check failed. */
   diagnosticState?: ReadinessDiagnosticStateId | undefined;
   nextAction?: ReadinessNextActionKind | undefined;
+  runnerCause?: RunnerReadinessCause | undefined;
   metadata?: Record<string, ReadinessMetadata> | undefined;
 }
 

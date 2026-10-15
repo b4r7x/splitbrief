@@ -237,7 +237,6 @@ function buildConformanceAdapterArgs(
           model: undefined,
           projectDir: '/tmp',
           configuredArgs: [] as const,
-          mode: 'plan' as const,
           sessionId: null,
           effort: undefined,
         }
