@@ -145,6 +145,15 @@ export function assertCanCloseRun(state: WorkflowState): void {
   if (state.applying !== undefined) throw endRunError.applying();
 }
 
+/**
+ * A user stop stopped work only when it left the run open or closed it as ended. End run on a
+ * ready run is its Discard, and a complete run had nothing left to stop.
+ */
+export function userStopStoppedWork(state: WorkflowState): boolean {
+  const status = deriveRunStatus({ state, liveness: 'not-alive' });
+  return status.kind === 'open' || (status.kind === 'closed' && status.as === 'ended');
+}
+
 export async function endRun(
   scope: SessionRef & { bus: EventBus },
   state: WorkflowState,
@@ -168,12 +177,14 @@ export async function endRun(
         outcome: 'aborted',
       });
     }
-    scope.bus.publish({
-      type: 'workflow_cancelled',
-      ts: Date.now(),
-      phase: closure.state.phase,
-      reason: WORKFLOW_CANCEL_REASON_USER,
-    });
+    if (userStopStoppedWork(closure.state)) {
+      scope.bus.publish({
+        type: 'workflow_cancelled',
+        ts: Date.now(),
+        phase: closure.state.phase,
+        reason: WORKFLOW_CANCEL_REASON_USER,
+      });
+    }
   }
   return closure;
 }

@@ -24,7 +24,9 @@ import { loadState, saveState } from '../../../core/state/persistence.js';
 import { reactivateExistingSession } from '../../../core/sessions/active-pointer.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
 import { readSession } from '../../../core/sessions/io.js';
+import { deriveRunStatus } from '../../../core/sessions/run-status.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
+import type { SessionRef } from '../../../core/types/session-ref.js';
 import type { EngineEvent } from '../../events/types.js';
 import { readRunEvents } from '../../events/replay.js';
 import { WORKFLOW_USER_CANCELLED_ABORT_REASON } from '../../events/workflow-cancel.js';
@@ -69,6 +71,31 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) cleanupTempDir(dir);
 });
 
+function preparedFinalReview(ref: SessionRef, state: WorkflowState) {
+  return makePreparedExecution({
+    ...ref,
+    feature: state.feature,
+    resumeState: state,
+    active: reactivateExistingSession(ref),
+    config: makeConfig({
+      validation: { endChecks: false, testCommand: 'noop' },
+      planner: {
+        kind: 'shell',
+        command: process.execPath,
+        args: ['-e', ''],
+        outputFormat: 'text',
+      },
+      implementer: {
+        kind: 'shell',
+        model: 'fixture',
+        command: process.execPath,
+        args: ['-e', ''],
+        outputFormat: 'text',
+      },
+    }),
+  });
+}
+
 describe('workflow closure', () => {
   it('retries End run after a newer open failed-review state is saved', async () => {
     const projectDir = createTempDir('workflow-closure-open-race-');
@@ -108,28 +135,7 @@ describe('workflow closure', () => {
       changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
     };
     saveState(ref, state);
-    const prepared = makePreparedExecution({
-      ...ref,
-      feature: state.feature,
-      resumeState: state,
-      active: reactivateExistingSession(ref),
-      config: makeConfig({
-        validation: { endChecks: false, testCommand: 'noop' },
-        planner: {
-          kind: 'shell',
-          command: process.execPath,
-          args: ['-e', ''],
-          outputFormat: 'text',
-        },
-        implementer: {
-          kind: 'shell',
-          model: 'fixture',
-          command: process.execPath,
-          args: ['-e', ''],
-          outputFormat: 'text',
-        },
-      }),
-    });
+    const prepared = preparedFinalReview(ref, state);
     const controller = new AbortController();
     const events: EngineEvent[] = [];
     await runTrackedWorkflow({
@@ -156,10 +162,10 @@ describe('workflow closure', () => {
     expect(loadState(ref)?.reviewStatus).toBe('passed');
     expect(loadState(ref)?.closed?.patch).toBeUndefined();
     expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(false);
-    expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toEqual([]);
     expect(
       (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
-    ).toHaveLength(1);
+    ).toEqual([]);
     expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
     expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
   });
@@ -183,28 +189,7 @@ describe('workflow closure', () => {
         changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
       };
       saveState(ref, state);
-      const prepared = makePreparedExecution({
-        ...ref,
-        feature: state.feature,
-        resumeState: state,
-        active: reactivateExistingSession(ref),
-        config: makeConfig({
-          validation: { endChecks: false, testCommand: 'noop' },
-          planner: {
-            kind: 'shell',
-            command: process.execPath,
-            args: ['-e', ''],
-            outputFormat: 'text',
-          },
-          implementer: {
-            kind: 'shell',
-            model: 'fixture',
-            command: process.execPath,
-            args: ['-e', ''],
-            outputFormat: 'text',
-          },
-        }),
-      });
+      const prepared = preparedFinalReview(ref, state);
       const controller = new AbortController();
       const events: EngineEvent[] = [];
       let firstClosure: WorkflowState | null = null;
@@ -248,12 +233,52 @@ describe('workflow closure', () => {
       expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: closedAs });
       expect(saved?.closed?.patch).toBeUndefined();
       expect(existsSync(join(sessionDir(projectDir, ref.sessionId), 'run.patch'))).toBe(false);
-      expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(1);
+      // End run on the ready run is its Discard: only the failed review had a run left to stop.
+      const stops = closedAs === 'ended' ? 1 : 0;
+      expect(events.filter((event) => event.type === 'workflow_cancelled')).toHaveLength(stops);
       expect(
         (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
-      ).toHaveLength(1);
+      ).toHaveLength(stops);
       expect(existsSync(join(projectDir, '.git', 'index'))).toBe(false);
       expect(readdirSync(join(projectDir, '.git', 'objects'))).toEqual(['info', 'pack']);
     },
   );
+
+  it('a signal that arrives once the review passed leaves the run ready with no stop', async () => {
+    const projectDir = createTempDir('workflow-closure-signal-');
+    dirs.push(projectDir);
+    execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
+    const ref = { projectDir, sessionId: 'review-closure-signal' };
+    ensureSessionDir(projectDir, ref.sessionId);
+    const state: WorkflowState = {
+      ...createInitialState('Review closure signal'),
+      phase: 'final-review',
+      changedFilesBaseline: { head: null, fingerprints: {}, runStartChangedFiles: [] },
+    };
+    saveState(ref, state);
+    const events: EngineEvent[] = [];
+    await runTrackedWorkflow({
+      prepared: preparedFinalReview(ref, state),
+      sinks: TEST_SINKS,
+      callbacks: makeCallbacks().callbacks,
+      _planner: makePlanner({
+        typedCall: typedCallPlanAndReview(
+          () => planFromTasks([]),
+          (prompt) => passingReviewVerdict(prompt),
+        ),
+      }),
+      _implementer: makeImplementer(),
+      _eventSink: (event) => {
+        events.push(event);
+        if (event.type === 'workflow_complete') process.emit('SIGINT');
+      },
+    });
+    const saved = loadState(ref);
+    if (saved === null) throw new Error('the run saved no state');
+    expect(deriveRunStatus({ state: saved, liveness: 'not-alive' }).kind).toBe('ready-to-apply');
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toEqual([]);
+    expect(
+      (await readRunEvents(ref)).events.filter((event) => event.type === 'workflow_cancelled'),
+    ).toEqual([]);
+  });
 });

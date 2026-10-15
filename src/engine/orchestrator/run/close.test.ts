@@ -173,6 +173,40 @@ describe('endRunAtRest', () => {
     expect(readActive(projectDir)).toBeNull();
   });
 
+  it('discards a ready run and publishes no cancellation, because nothing was running', async () => {
+    projectDir = createTempDir('end-run-ready-');
+    const ref = { projectDir, sessionId: 'ready-run' };
+    reactivateExistingSession(ref);
+    const workspacePath = join(projectDir, 'workspace');
+    mkdirSync(workspacePath);
+    const state: WorkflowState = {
+      ...createInitialState('End a ready run'),
+      phase: 'complete',
+      reviewStatus: 'passed',
+      workspace: {
+        kind: 'staged-copy',
+        path: workspacePath,
+        base: { snapshotId: 'base', head: null },
+      },
+    };
+    saveState(ref, state);
+    vi.mocked(writeRunPatch).mockResolvedValueOnce(
+      join(sessionDir(projectDir, ref.sessionId), 'run.patch'),
+    );
+    const { bus, events } = makeBusRecorder();
+
+    const closure = await endRunAtRest({ ...ref, bus }, state, makeConfig());
+
+    expect(closure.closedNow).toBe(true);
+    expect(closure.state.closed).toMatchObject({
+      as: 'discarded',
+      patch: '.splitbrief/sessions/ready-run/run.patch',
+    });
+    expect(events.filter((event) => event.type === 'workflow_cancelled')).toEqual([]);
+    expect(events.map((event) => event.type)).toEqual(['warning', 'workspace_closed']);
+    expect(readSession(ref)?.status).toBe('ended');
+  });
+
   it('leaves an already closed run state unchanged and publishes no cancellation', async () => {
     projectDir = createTempDir('end-run-closed-');
     const ref = { projectDir, sessionId: 'closed-run' };

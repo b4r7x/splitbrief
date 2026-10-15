@@ -295,5 +295,25 @@ describe('headless End run', { timeout: 240_000 }, () => {
     expect(existsSync(target.markerPath)).toBe(false);
     expect(existsSync(target.greetPath)).toBe(false);
     expect(checkoutEntries(target.projectDir)).toEqual(checkoutAtStart);
+
+    // Nothing ran when End run discarded the ready run, so the SIGINT during BUILD is the one stop.
+    const ref = { projectDir: target.projectDir, sessionId: parked.sessionId };
+    const { events } = await readRunEvents(ref);
+    const completedAt = events.findIndex((event) => event.type === 'workflow_complete');
+    expect(completedAt).toBeGreaterThan(-1);
+    expect(events.slice(completedAt).map((event) => event.type)).not.toContain(
+      'workflow_cancelled',
+    );
+    await hydrateRun(readRunRecord(ref));
+    const rows = buildConversationRows({
+      sections: groupEventsIntoSections(eventsStore.get().events),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 200,
+      viewportHeight: 50,
+      streaming: { taskId: null, lines: [], active: false },
+    }).rows.map(rowText);
+    expect(rows.filter((row) => row.includes('Stopped by you'))).toHaveLength(1);
+    expect(rows.some((row) => row.includes('run.patch; apply them with git apply.'))).toBe(true);
   });
 });

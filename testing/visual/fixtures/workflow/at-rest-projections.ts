@@ -374,6 +374,9 @@ const READY_LEDGER: EvidenceLedger = ledger({
   finalReview: { path: packetMarkdownPath(COMPLETE_SESSION), status: 'written' },
 });
 
+const READY_BUILD = { tool: 'custom-endpoint', model: 'gpt-5-mini' } as const;
+const READY_REVIEW = { tool: 'custom-endpoint', model: 'gpt-5-codex' } as const;
+
 /** The finished run every fact agrees on: packet written, verdict allows it, scope clean. */
 const READY_SUMMARY: Readonly<Summary> = Object.freeze({
   feature: SUMMARY_FIXTURE_FEATURE,
@@ -412,10 +415,10 @@ const READY_SUMMARY: Readonly<Summary> = Object.freeze({
   },
   plannerTool: 'custom-endpoint',
   plannerModel: 'gpt-5.1',
-  implementerTool: 'custom-endpoint',
-  implementerModel: 'gpt-5-mini',
-  reviewerTool: 'custom-endpoint',
-  reviewerModel: 'gpt-5-codex',
+  implementerTool: READY_BUILD.tool,
+  implementerModel: READY_BUILD.model,
+  reviewerTool: READY_REVIEW.tool,
+  reviewerModel: READY_REVIEW.model,
   phaseTimings: { planning: 170_000, implementing: 492_000, review: 65_000 },
   mode: 'standard',
   driftSummary: { passed: true, score: 1, errorCount: 0, warningCount: 0 },
@@ -1015,6 +1018,13 @@ const READY_OVERRIDE = record({
   ledger: READY_LEDGER,
 });
 
+/** The transcript names each brief's action the way the saved task the closed block reads names it. */
+function savedAction(state: WorkflowState, id: string): Task['action'] {
+  const task = state.tasks.find((item) => item.id === id);
+  if (task === undefined) throw new Error(`The fixture state has no brief ${id}`);
+  return task.action;
+}
+
 const READY_LOG: readonly EngineEvent[] = [
   {
     type: 'workflow_started',
@@ -1030,7 +1040,7 @@ const READY_LOG: readonly EngineEvent[] = [
       taskId: brief.id,
       title: brief.title,
       file: brief.file,
-      action: 'modify',
+      action: savedAction(READY_TO_APPLY.hydration.state, brief.id),
       index,
       total: READY_LEDGER.tasks.length,
       tool: 'ollama',
@@ -1192,6 +1202,31 @@ const CLOSED_DISCARDED = record({
   summary: workspaceSummary('visual-closed-discarded'),
   ledger: READY_LEDGER,
 });
+/**
+ * End run on the ready run: it discards, saves the patch and stops nothing, so the log has no stop.
+ * A closed run names its own crew, so the briefs and the review ran on the seats its summary names.
+ */
+const CLOSED_DISCARDED_AT = Date.parse(STARTED_AT_ISO) + READY_SUMMARY.totalTime + 40_000;
+const CLOSED_DISCARDED_LOG: readonly EngineEvent[] = [
+  ...READY_LOG.map(
+    (event): EngineEvent =>
+      event.type === 'task_started'
+        ? { ...event, ...READY_BUILD, backendKind: 'api' }
+        : event.type === 'task_completed'
+          ? { ...event, ...READY_BUILD }
+          : event.type === 'review_started' || event.type === 'review_completed'
+            ? { ...event, ...READY_REVIEW }
+            : event,
+  ),
+  {
+    type: 'warning',
+    ts: CLOSED_DISCARDED_AT,
+    phase: 'complete',
+    message:
+      'Run changes not applied are saved in .splitbrief/sessions/visual-closed-discarded/run.patch; apply them with git apply.',
+  },
+  { type: 'workspace_closed', ts: CLOSED_DISCARDED_AT, phase: 'complete' },
+];
 
 /**
  * The ready run with its BUILD seat moved mid-run, as a real run did: the first brief ran on
@@ -2103,7 +2138,10 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
     id: 'workflow-closed-undo-conflicts',
     route: { record: undoneApplyRecord([FILES.form]) },
   }),
-  atRestProjection({ id: 'workflow-closed-discarded', route: { record: CLOSED_DISCARDED } }),
+  atRestProjection({
+    id: 'workflow-closed-discarded',
+    route: { record: CLOSED_DISCARDED, log: CLOSED_DISCARDED_LOG },
+  }),
   atRestProjection({
     id: 'workflow-closed-complete-needs-attention',
     route: { record: CLOSED_NEEDS_ATTENTION },

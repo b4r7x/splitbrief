@@ -47,7 +47,7 @@ import {
   type PlannerCallPublisherContext,
 } from './call-publishing.js';
 import { acquireLiveness } from './liveness.js';
-import { closeRunIfOpen } from './close.js';
+import { closeRunIfOpen, userStopStoppedWork } from './close.js';
 import {
   followCommittedState,
   parkStoppedRun,
@@ -56,7 +56,7 @@ import {
   recordLastFailure,
 } from '../state-ops.js';
 import { sessionDir } from '../../../core/paths.js';
-import { deriveRunStatus, resumeStep } from '../../../core/sessions/run-status.js';
+import { resumeStep } from '../../../core/sessions/run-status.js';
 import { createSteeringPort } from '../../calls/steering.js';
 import { seatForRunningCall } from '../../../core/runners/seat-roles.js';
 
@@ -179,13 +179,7 @@ export async function runWorkflow(opts: RunWorkflowOptions): Promise<Summary> {
   const publishWorkflowCancellation = (reason: typeof WORKFLOW_CANCEL_REASON_USER): void => {
     const bus = wctx?.bus ?? workflowBus;
     if (!bus || cancellationPublished) return;
-    if (trackedState !== undefined) {
-      const status = deriveRunStatus({
-        state: trackedState,
-        liveness: 'not-alive',
-      });
-      if (status.kind === 'closed' && status.as === 'complete') return;
-    }
+    if (trackedState !== undefined && !userStopStoppedWork(trackedState)) return;
     bus.publish({
       type: 'workflow_cancelled',
       ts: Date.now(),

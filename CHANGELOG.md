@@ -120,6 +120,7 @@
 - End run refuses an unfinished Apply until you restore or retry it.
 - A run ended inside a brief lists in its `Files` section every file that `run.patch` holds, and it shows the stopped brief once. Its `Review` row reads `final review not run`.
 - A run closed by End run, Discard or Apply no longer offers its removed workspace for Continue in its transcript.
+- End run on a ready-to-apply run reads only as discarded. The transcript no longer shows `Stopped by you`, because nothing was running.
 - `run.patch` names a created or deleted file `a/<path> b/<path>`, the way git writes a patch.
 - A closed run's byline offers only the commands that the run can still take.
 - The `resume` and `continue` help lines tell the most recent run apart from a run named by id.
