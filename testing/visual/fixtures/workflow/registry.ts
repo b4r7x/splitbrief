@@ -32,6 +32,8 @@ import {
 import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/pause.js';
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
+import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
+import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
 import { overlayStore } from '../../../../src/stores/ui/overlay.js';
@@ -58,9 +60,16 @@ function applyStop(stop: FixtureStopState): void {
 // session-scoped stores from a mount effect (`use-runner.ts`) and replays the projection after it.
 // Stamping on every run start is what survives that replay.
 const CONSULT_BOUND_NOTE = 'run the formatter first';
+const PLAN_CARD_COMMENT_DRAFT = 'comment Split the CLI change into a separate task.';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
+  if (projection.scenarioId === 'workflow-plan-card-commenting') {
+    return () => ({
+      ...base(),
+      afterMount: () => composerDraftStore.request(PLAN_CARD_COMMENT_DRAFT),
+    });
+  }
   if (
     projection.scenarioId === 'workflow-seat-switched' ||
     projection.scenarioId === 'workflow-seat-switched-manual' ||
@@ -520,6 +529,11 @@ const checkpointPredicates = [
   [checkpointId('approval-confirm'), includesAll('Confirm with a reason')],
   [checkpointId('approval-confirm-secret'), includesAll('Confirm with a reason')],
   [checkpointId('plan-card'), planCardReady],
+  [
+    checkpointId('plan-card-commenting'),
+    (context) =>
+      planCardReady(context) && includesAll(PLAN_CARD_COMMENT_DRAFT, REVIEW_COMMENT_HINTS)(context),
+  ],
   [checkpointId('plan-card-render-note'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   // The two briefs whose long headers the card once skipped, beside the first and the last.

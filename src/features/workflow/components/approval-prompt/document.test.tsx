@@ -92,19 +92,25 @@ describe('DocumentReviewPrompt', () => {
     }
   });
 
-  it('shows no highlight while a comment is being typed', () => {
-    const frame = frameOf(
-      <DocumentReviewPrompt
-        artifact="plan"
-        confirms={[]}
-        budgetRows={40}
-        selectedIndex={1}
-        commenting
-      />,
-    );
+  it.each([0, 1, 2, 3])(
+    'marks Request changes while typing with row %i selected before the draft',
+    (selectedIndex) => {
+      const frame = frameOf(
+        <DocumentReviewPrompt
+          artifact="plan"
+          confirms={[]}
+          budgetRows={40}
+          selectedIndex={selectedIndex}
+          commenting
+        />,
+      );
 
-    expect(frame).not.toContain(listRowLead('active'));
-  });
+      expect(frame).toContain(`${listRowLead('active')}Request changes (type what to change)`);
+      expect(frame.split(listRowLead('active')).length - 1).toBe(1);
+      expect(frame).toContain(REVIEW_COMMENT_HINTS);
+      expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
+    },
+  );
 
   it('names only the live keys once a comment is being typed', () => {
     const frame = frameOf(
@@ -172,6 +178,7 @@ describe('DocumentReviewPrompt', () => {
       const frame = shortFrame(['write package.json'], true);
 
       expect(frame).toContain(REVIEW_COMMENT_HINTS);
+      expect(frame).toContain(`${listRowLead('active')}Request changes (type what to change)`);
       expect(frame).not.toContain('Approving also confirms');
       expect(frame.split('\n').length).toBe(budgetRows);
     });

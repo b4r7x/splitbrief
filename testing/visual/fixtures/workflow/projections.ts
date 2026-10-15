@@ -5535,6 +5535,7 @@ const projections = [
   approvalConfirmProjection,
   approvalConfirmSecretProjection,
   planCardProjection,
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
   planCardRenderNoteProjection,
   planCardSharedCommandProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },

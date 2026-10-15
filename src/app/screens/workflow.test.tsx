@@ -32,6 +32,11 @@ import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeCtx, runCommandInTest } from '#testing/helpers/runtime-commands.js';
 import { workflowCommands } from '../../core/runtime/commands/defs/workflow.js';
 import { hydrateResume } from '../../features/workflow/resume-hydration.js';
+import { listRowLead } from '../../components/list-row.js';
+import {
+  REVIEW_COMMENT_HINTS,
+  REVIEW_DOCUMENT_HINTS,
+} from '../../features/workflow/prompt-rows/approval.js';
 
 const runWorkflow = vi.fn<(opts: RunWorkflowOptions) => Promise<Summary>>();
 const workflowDeps = { runWorkflow };
@@ -114,6 +119,7 @@ describe('WorkflowScreen chrome calibration', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     resetAllStores();
     if (projectDir) cleanupTempDir(projectDir);
   });
@@ -256,6 +262,61 @@ describe('WorkflowScreen chrome calibration', () => {
     ui.unmount();
   });
 
+  it('keeps Request changes marked while its composer draft owns the keys', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
+    const reviewPath = join(projectDir, 'plan.md');
+    writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
+    let outcome: ApprovalReviewResult | undefined;
+    configStore.__testReset({ config: makeConfig(), projectDir });
+    terminalSizeStore.__testReset({ cols: 120, rows: 40 });
+    navigatePreparedWorkflow(projectDir, 'plan change request');
+    runWorkflow.mockImplementation(async (opts) => {
+      publishEvent(opts, {
+        type: 'workflow_started',
+        ts: FIXED_TS,
+        phase: 'reviewing-plan',
+        feature: 'plan change request',
+      });
+      outcome = await opts.callbacks.onApprovalNeeded('plan', reviewPath, []);
+      return pendingWorkflow();
+    });
+
+    const ui = renderFeature(
+      <WorkflowScreen commands={[]} onRuntimeCommand={vi.fn()} deps={workflowDeps} />,
+    );
+    await vi.waitFor(() => {
+      expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
+    });
+    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+    ui.stdin.write('\r');
+    await flushEffects();
+    ui.stdin.write('Split the CLI change into a separate task.');
+    await flushEffects();
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${listRowLead('active')}Request changes`);
+    expect(frame).not.toContain(`${listRowLead('active')}Edit plan.json`);
+    expect(frame).toContain('comment Split the CLI change into a separate task.');
+    expect(frame).toContain(REVIEW_COMMENT_HINTS);
+    expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
+    expect(outcome).toBeUndefined();
+
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(outcome).toMatchObject({
+        approved: false,
+        action: 'revise',
+        message: { text: 'Split the CLI change into a separate task.' },
+      });
+    });
+    ui.unmount();
+  });
+
   it('keeps multiline review arrows in the draft without loading command history', async () => {
     const reviewPath = join(projectDir, 'multiline-review.md');
     writeFileSync(reviewPath, '# Multiline review\n\nReview body.', 'utf8');
@@ -331,8 +392,14 @@ describe('WorkflowScreen chrome calibration', () => {
     await flushEffects();
     ui.stdin.write('x');
     await flushEffects();
+    const commentingFrame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(commentingFrame).toContain(`${listRowLead('active')}Request changes`);
+    expect(commentingFrame).not.toContain(`${listRowLead('active')}Edit plan.json`);
     ui.stdin.write('\x7f');
     await flushEffects();
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
+      `${listRowLead('active')}Edit plan.json`,
+    );
     ui.stdin.write('\r');
     await tick();
     expect(outcome).toBeUndefined();
@@ -353,6 +420,7 @@ describe('WorkflowScreen chrome calibration', () => {
     ['edit nothing, just rename T001'],
     ['Split T002 into two tasks'],
   ])('sends "%s" typed at the plan card to the planner as a correction', async (typed) => {
+    vi.useFakeTimers({ toFake: ['Date'], now: FIXED_TS });
     const reviewPath = join(projectDir, 'plan.md');
     writeFileSync(reviewPath, 'Greet people by name.', 'utf8');
     let outcome: ApprovalReviewResult | undefined;
@@ -376,11 +444,17 @@ describe('WorkflowScreen chrome calibration', () => {
     await vi.waitFor(() => {
       expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('Greet people by name.');
     });
-    await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    vi.advanceTimersByTime(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+    await flushEffects();
     for (const char of typed) {
       ui.stdin.write(char);
       await flushEffects();
     }
+    const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+    expect(frame).toContain(`${listRowLead('active')}Request changes`);
+    expect(frame).not.toContain(`${listRowLead('active')}Approve plan`);
+    expect(frame).toContain(REVIEW_COMMENT_HINTS);
+    expect(frame).not.toContain(REVIEW_DOCUMENT_HINTS);
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {

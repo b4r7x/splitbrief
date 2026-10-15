@@ -314,12 +314,12 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
     ),
     defineScenario({
       id: 'home-recent-sessions',
-      title: 'Home · recent sessions focused',
+      title: 'Home · session rows show their latest stop time',
       surface: screenSurface('home'),
       viewports: HOME_RECENT_SESSIONS_VIEWPORTS,
       checkpoint: {
         id: 'ready',
-        title: 'Recent sessions focused',
+        title: 'Recent sessions focused with latest stop times',
         kind: 'ready',
         marker: 'y copy',
       },
@@ -1230,6 +1230,24 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Plan card',
         kind: 'review',
         marker: 'Approve plan and start the build',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'approval-panel', title: 'Plan card panel' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
+      id: 'workflow-plan-card-commenting',
+      title: 'Workflow · plan card with a change request in the composer',
+      surface: screenSurface('workflow'),
+      viewports: WIDE_VIEWPORTS,
+      checkpoint: {
+        id: 'plan-card-commenting',
+        title: 'Plan card while typing a change request',
+        kind: 'review',
+        marker: 'Request changes (type what to change)',
       },
       elements: [
         { id: 'header', title: 'Workflow header' },
@@ -3694,7 +3712,13 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
     underlyingScreen: 'home',
     panelTitle: 'Sessions panel',
     checkpointTitle: 'Sessions ready',
-    scenarios: [{ id: 'overlay-sessions', title: 'Overlay · sessions', marker: 'Sessions' }],
+    scenarios: [
+      {
+        id: 'overlay-sessions',
+        title: 'Overlay · session rows show their latest stop time',
+        marker: 'Sessions',
+      },
+    ],
   }),
   'usage-details': overlayGroup({
     overlay: 'usage-details',

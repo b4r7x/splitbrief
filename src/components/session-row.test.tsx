@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Box } from 'ink';
 import { renderFeature } from '#testing/helpers/ink.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -61,6 +61,7 @@ describe('SessionRow', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     chalk.level = originalColorLevel;
     resetAllStores();
   });
@@ -87,6 +88,32 @@ describe('SessionRow', () => {
     for (const startedAt of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
       const frame = frameOf(<SessionRow session={makeSession({ startedAt })} />);
       expect(frame).toContain('just now');
+    }
+  });
+
+  it.each([
+    { status: 'open', stop: 'stopped' },
+    { status: 'open', stop: 'waiting-for-you' },
+    { status: 'open', apply: 'ready' },
+    { status: 'complete' },
+    { status: 'ended' },
+  ] as const)('shows the last stop or end time for $status $stop $apply', (outcome) => {
+    const now = Date.parse('2026-10-15T14:36:00.000Z');
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const session = makeSession({
+      ...outcome,
+      startedAt: now - 11 * 60_000,
+      completedAt: now - 75_000,
+    });
+    for (const kind of ['none', 'inline', 'outdent'] as const) {
+      const frame = frameOf(
+        <SessionRow
+          session={session}
+          cursor={kind === 'none' ? { kind } : { kind, isCursor: true }}
+        />,
+      );
+      expect(frame).toContain(' 1m ago');
     }
   });
 

@@ -62,7 +62,7 @@ import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { createCommandContext } from '../core/runtime/commands/context-factory.js';
 import { copyToClipboard } from '../lib/clipboard/clipboard.js';
 import { acceptRunSnapshot, rejectRunSnapshot } from '../engine/snapshots/run/lifecycle.js';
-import { runApply } from '../engine/orchestrator/apply/run.js';
+import { runApplyAtRest } from '../engine/orchestrator/apply/at-rest.js';
 import { undoApply } from '../engine/orchestrator/apply/restore.js';
 import { canUndoApply } from '../core/sessions/run-status.js';
 import { createRecoveryBus } from '../engine/orchestrator/recovery/bus.js';
@@ -174,15 +174,18 @@ async function acceptRun(
     }
     return { status: 'ended' };
   }
-  const result = await runApply({
+  const result = await runApplyAtRest({
     wctx: { projectDir, sessionId, bus },
     state,
+    config,
     overrideConfirmed: confirm,
   });
-  if (result.outcome === 'halted') return { status: 'halted' };
+  if (result.outcome === 'halted') {
+    sessionsStore.refresh();
+    return { status: 'halted' };
+  }
   if (result.outcome === 'review') return { status: 'review' };
   if (result.outcome === 'needs-confirmation') return { status: 'confirm-override' };
-  finalizeRunAtRest({ ref: record.ref, config, state: result.state });
   sessionsStore.refresh();
   return { status: 'applied', files: result.files };
 }

@@ -1,6 +1,6 @@
 import type { Config } from '../../../core/schemas/config.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
-import { runApply } from '../../../engine/orchestrator/apply/run.js';
+import { runApplyAtRest } from '../../../engine/orchestrator/apply/at-rest.js';
 import { createRecoveryBus } from '../../../engine/orchestrator/recovery/bus.js';
 import { closeRunIfOpen } from '../../../engine/orchestrator/run/close.js';
 import { finalizeRunAtRest } from '../../../engine/orchestrator/session-lifecycle/finalize.js';
@@ -37,10 +37,9 @@ export async function settleReadyRun(input: {
     return undefined;
   }
 
-  const result = await runApply({ wctx: { projectDir, sessionId, bus }, state });
+  const result = await runApplyAtRest({ wctx: { projectDir, sessionId, bus }, state, config });
   switch (result.outcome) {
     case 'applied':
-      finalize(result.state);
       process.stderr.write(`Applied ${countNoun(result.files.length, 'file')} to your checkout.\n`);
       return undefined;
     case 'review':

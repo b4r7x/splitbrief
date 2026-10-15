@@ -1,4 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { stripAnsiStyles } from '#testing/helpers/ansi.js';
+import { listRowLead } from '../../../src/components/list-row.js';
+import {
+  REVIEW_COMMENT_HINTS,
+  REVIEW_DOCUMENT_HINTS,
+} from '../../../src/features/workflow/prompt-rows/approval.js';
 import { createCropCellGrid } from '../artifacts/crop.js';
 import { findVisualScenario } from '../catalog.js';
 import { viewport } from '../contracts/geometry.js';
@@ -9,9 +15,9 @@ import { createFrameGrid, requireCheckpoint } from './scenario-locators.js';
 
 afterEach(teardownVisualFixture);
 
-describe('plan-card approval crop', () => {
+describe.each(['workflow-plan-card', 'workflow-plan-card-commenting'])('%s approval crop', (id) => {
   it.each([60, 80, 120, 160])('includes every action at %s columns', async (cols) => {
-    const scenario = findVisualScenario('workflow-plan-card');
+    const scenario = findVisualScenario(id);
     if (scenario === undefined) throw new Error('Missing plan-card scenario');
     const checkpoint = requireCheckpoint(scenario);
     const size = viewport({
@@ -34,7 +40,18 @@ describe('plan-card approval crop', () => {
       expect(text).toContain('Request changes');
       expect(text).toContain('Edit plan.json');
       expect(text).toContain('End run');
-      if (cols >= 120) expect(text).toContain('↑↓ select');
+      if (id === 'workflow-plan-card-commenting') {
+        expect(text).toContain(`${listRowLead('active')}Request changes (type what to change)`);
+        expect(text).not.toContain(`${listRowLead('active')}Approve plan`);
+        expect(text).toContain(REVIEW_COMMENT_HINTS);
+        expect(text).not.toContain(REVIEW_DOCUMENT_HINTS);
+        expect(stripAnsiStyles(frame)).toContain(
+          'comment Split the CLI change into a separate task.',
+        );
+      } else {
+        expect(text).toContain(`${listRowLead('active')}Approve plan and start the build`);
+        if (cols >= 120) expect(text).toContain(REVIEW_DOCUMENT_HINTS);
+      }
     } finally {
       await handle.unmount();
     }

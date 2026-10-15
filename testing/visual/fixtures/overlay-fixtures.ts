@@ -71,6 +71,7 @@ import { makeReviewFixInsertedEvents } from '../../helpers/events/task.js';
 import { createEvidenceLedger } from '../../../src/core/evidence/ledger-state.js';
 import { hashTaskBrief } from '../../../src/core/evidence/brief-hash.js';
 import type { FixtureFactory, FixtureLifecycle, FixtureRegistry } from './common.js';
+import { VISUAL_FIXTURE_EPOCH } from './common.js';
 import {
   publishVisualDiscovery,
   seedVisualConfig,
@@ -310,15 +311,17 @@ export function seedSessions(): void {
   });
   const waitingSession = makeSession({
     id: 'visual-session-waiting',
-    feature: 'Retry the flaky upload',
-    startedAt: 1_735_736_000_000,
+    feature: 'Apply the image export',
+    startedAt: VISUAL_FIXTURE_EPOCH - 5 * 60_000,
+    completedAt: VISUAL_FIXTURE_EPOCH - 20_000,
     status: 'open',
     stop: 'waiting-for-you',
   });
   const stoppedSession = makeSession({
     id: 'visual-session-stopped',
     feature: 'Split the settings page',
-    startedAt: 1_735_734_000_000,
+    startedAt: VISUAL_FIXTURE_EPOCH - 11 * 60_000,
+    completedAt: VISUAL_FIXTURE_EPOCH - 33_000,
     status: 'open',
     stop: 'stopped',
   });
@@ -333,8 +336,8 @@ export function seedSessions(): void {
   // session has to exist on disk to survive to the capture.
   const sessions = [
     waitingSession,
-    seatDownSession,
     stoppedSession,
+    seatDownSession,
     session,
     readySession,
     appliedSession,
