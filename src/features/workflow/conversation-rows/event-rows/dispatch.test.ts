@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CREW_SEAT_LABELS, formatSeatCandidateIdentity } from '../../../../core/crew/identity.js';
 import { taskId } from '../../../../core/schemas/task.js';
+import { arrowSep } from '../../../../core/separators.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
 import { parseEngineEvent } from '../../../../engine/events/schema.js';
 import type { EngineEvent, EngineEventOf } from '../../../../engine/events/types.js';
@@ -400,6 +401,30 @@ describe('event row dispatch', () => {
         ?.filter((span) => !span.text.startsWith('Recovery'))
         .every((span) => span.tone === 'textDim'),
     ).toBe(true);
+  });
+
+  it.each([
+    ['review-failed', 'revise', 'Fix again'],
+    ['required-checks-unrunnable', 'retry-same-worker', 'Run the checks again'],
+    ['review-input-too-large', 'accept-as-is', 'Skip review with a note'],
+  ] as const)('names %s %s as its menu row does', (reason, action, label) => {
+    const recorded = { ts: 0, phase: 'final-review', issueId: 'issue', reason, action } as const;
+    const block = recoveryRowBlock(
+      'recovery',
+      {
+        firstIndex: 0,
+        issueId: 'issue',
+        selected: { ...recorded, type: 'recovery_action_selected' },
+        resolved: { ...recorded, type: 'recovery_resolved', outcome: 'continued' },
+      },
+      200,
+    );
+    expect(
+      block
+        ?.createRows(0, block.rowCount)
+        .map((row) => row.segments.map((span) => span.text).join(''))
+        .join('\n'),
+    ).toBe(`Recovery  ${label}${arrowSep()}continued`);
   });
 
   it('colors a reviewer halt during implementing from the prompted seat before any action', () => {

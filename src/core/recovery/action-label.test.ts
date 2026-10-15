@@ -40,3 +40,12 @@ describe('recoveryActionLabel for a wait', () => {
     expect(recoveryActionLabel('retry-later')).toBe('Retry later');
   });
 });
+
+describe('recoveryActionLabel for a correction', () => {
+  it.each([
+    ['review-failed', 'Fix again'],
+    ['plan-checks-failed', 'Send a correction'],
+  ] as const)('names revise on a %s halt as %s', (reason, label) => {
+    expect(recoveryActionLabel('revise', { reason })).toBe(label);
+  });
+});
