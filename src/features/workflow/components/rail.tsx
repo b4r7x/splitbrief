@@ -2,6 +2,7 @@ import { ThemeText as Text, useTheme } from '../../../components/theme.js';
 import { Box } from 'ink';
 import { formatStageLabel } from '../../../core/phase-display.js';
 import type { Phase } from '../../../core/schemas/enums.js';
+import type { StepRef } from '../../../core/schemas/run-step.js';
 import { glyph } from '../../../lib/glyphs.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
@@ -17,6 +18,7 @@ import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
 import {
+  applyStopRailStages,
   getRailStages,
   railStageSeat,
   selectRailStage,
@@ -212,24 +214,29 @@ function railDoneSummary(tasks: TasksState, events: readonly EngineEvent[]): Rai
   return { passed: view.passed, total: view.total, driftPassed: getRailDriftPassed(events) };
 }
 
+const FAILED_REVIEW_STAGES = getRailStages('final-review', { halted: 'failed' });
+const APPLY_HALT_STAGES = applyStopRailStages('failed');
+
 // A run reaches `complete` whichever way its review went. One whose review failed stopped on that
 // review — the log says so, or the halt it raised still waits — so the rail marks the review failed
-// and never calls the run done.
-function reviewFailed(
+// and never calls the run done. A halt at Apply follows a review that passed: the rail marks Apply,
+// the step the run resumes at, as the rail of the same run at rest does.
+function haltedCompleteStages(
   phase: Phase,
   events: readonly EngineEvent[],
-  recoveryPending: boolean,
-): boolean {
-  if (phase !== 'complete') return false;
-  if (recoveryPending) return true;
+  recoveryAt: StepRef | null,
+): readonly RailStageState[] | null {
+  if (phase !== 'complete') return null;
+  if (recoveryAt?.kind === 'apply') return APPLY_HALT_STAGES;
+  if (recoveryAt !== null) return FAILED_REVIEW_STAGES;
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
-    if (event?.type === 'workflow_complete') return event.review === 'failed';
+    if (event?.type === 'workflow_complete') {
+      return event.review === 'failed' ? FAILED_REVIEW_STAGES : null;
+    }
   }
-  return false;
+  return null;
 }
-
-const FAILED_REVIEW_STAGES = getRailStages('final-review', { halted: 'failed' });
 
 // The rail's actually-rendered width, so the header budgets the seat line against what the rail
 // paints — not the full three-stage pipeline. `complete` collapses to a short done line and a
@@ -241,20 +248,18 @@ export function measureRailCells(input: {
   cols: number;
   tasks: TasksState;
   events: readonly EngineEvent[];
-  recoveryPending: boolean;
+  /** The step an open halt resumes at; null while no halt waits. */
+  recoveryAt: StepRef | null;
   buildBlockShown: boolean;
   /** Stages the caller already knows; a run at rest wears the mark its own status earned. */
   stages?: readonly RailStageState[] | undefined;
 }): number {
-  const failedReview = reviewFailed(input.phase, input.events, input.recoveryPending);
-  if (input.stages === undefined && input.phase === 'complete' && !failedReview) {
+  const halted = haltedCompleteStages(input.phase, input.events, input.recoveryAt);
+  if (input.stages === undefined && input.phase === 'complete' && halted === null) {
     return getTerminalCellWidth(railCompleteText(railDoneSummary(input.tasks, input.events)));
   }
   const stages = [
-    ...(input.stages ??
-      (failedReview
-        ? FAILED_REVIEW_STAGES
-        : getRailStages(input.phase, { cancelled: input.cancelled }))),
+    ...(input.stages ?? halted ?? getRailStages(input.phase, { cancelled: input.cancelled })),
   ];
   if (input.form === 'C') {
     const fraction = resolveRailFraction({
@@ -299,15 +304,14 @@ export function Rail({
     pendingRecovery: recovery.issue !== null,
     pendingApproval: approval.status === 'pending',
   });
-  const failedReview = reviewFailed(phase, eventsState.events, recovery.issue !== null);
+  const halted = haltedCompleteStages(phase, eventsState.events, recovery.at);
   const stages = [
     ...(givenStages ??
-      (failedReview
-        ? FAILED_REVIEW_STAGES
-        : getRailStages(phase, {
-            cancelled,
-            ...(display.halted === undefined ? {} : { halted: display.halted }),
-          }))),
+      halted ??
+      getRailStages(phase, {
+        cancelled,
+        ...(display.halted === undefined ? {} : { halted: display.halted }),
+      })),
   ];
   const fraction = resolveRailFraction({
     phase,
@@ -316,7 +320,7 @@ export function Rail({
     buildBlockShown,
   });
 
-  if (givenStages === undefined && phase === 'complete' && !failedReview) {
+  if (givenStages === undefined && phase === 'complete' && halted === null) {
     return <RailComplete summary={railDoneSummary(tasks, eventsState.events)} />;
   }
   if (resolved === 'C') {

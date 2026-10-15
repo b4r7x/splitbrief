@@ -97,6 +97,11 @@ export function getRailStages(
   return stages;
 }
 
+/** A run stopped at Apply passed its review: every stage is done, and Apply wears the stop's mark. */
+export function applyStopRailStages(mark: RailHalt): RailStageState[] {
+  return getRailStages('complete', { apply: mark });
+}
+
 export function getActiveRailStage(phase: Phase): RailStageState | null {
   return getRailStages(phase).find((state) => state.status === 'active') ?? null;
 }

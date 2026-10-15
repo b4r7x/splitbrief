@@ -310,6 +310,7 @@ describe('readStopMenuRows at a recovery halt', () => {
       seat: 'build',
       resetAt: null,
       issue: makeRecoveryIssue({ reason: 'runner-usage-limit', taskId: taskId('T001') }),
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
     });
   });
 

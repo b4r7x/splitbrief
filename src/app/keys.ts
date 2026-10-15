@@ -5,6 +5,7 @@ import { feedbackStore } from '../stores/ui/feedback.js';
 import { overlayStore } from '../stores/ui/overlay.js';
 import { routerStore } from '../stores/navigation/router.js';
 import { lifecycleStore } from '../stores/workflow/lifecycle.js';
+import { recoveryNoticeStore } from '../stores/workflow/recovery-notice.js';
 import { approvalPromptStore } from '../stores/approval-prompt/prompt.js';
 import { completionStore } from '../stores/ui/completion.js';
 import { reviewKeysStore } from '../stores/ui/review-keys.js';
@@ -85,11 +86,18 @@ function applyAction(action: AppKeyAction, exit: () => void, deps: AppKeyDeps) {
 
 // A run that can still be stopped answers esc with the sheet. A question prompt, a review gate and
 // a validation stage are all part of that run, so none of them takes the press for itself. A paused
-// run with no park of its own was continued and is re-entering the engine, as its byline says.
+// run with no park of its own was continued and is re-entering the engine, as its byline says. A
+// halt panel is part of the run too, also after a failed final review or an Apply halt, when every
+// phase has completed.
 function stopSheetReachable(): boolean {
   const { cancelled, status } = lifecycleStore.get();
   if (cancelled) return false;
-  return status === 'running' || status === 'interrupted' || status === 'paused';
+  return (
+    status === 'running' ||
+    status === 'interrupted' ||
+    status === 'paused' ||
+    recoveryNoticeStore.get().issue !== null
+  );
 }
 
 function openStopSheet(): void {

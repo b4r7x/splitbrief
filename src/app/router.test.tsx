@@ -364,7 +364,12 @@ describe('Router usage overlay over a halted run', () => {
     // after it. The panel this process is holding open is where the issue is, and the page reads it
     // there through the same decoder.
     routerStore.init({ screen: 'workflow', run: REPLAYED_RUN, execution: { kind: 'at-rest' } });
-    recoveryNoticeStore.open({ seat: null, resetAt: null, issue: CONTEXT_HALT });
+    recoveryNoticeStore.open({
+      seat: null,
+      resetAt: null,
+      issue: CONTEXT_HALT,
+      at: { kind: 'review', cycle: 0 },
+    });
 
     const ui = renderFeature(<WorkflowRoute deps={{}} />, { cols: 120, rows: 40 });
     await tick(20);

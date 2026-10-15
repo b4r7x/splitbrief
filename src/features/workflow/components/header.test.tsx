@@ -260,7 +260,12 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: RESET_AT,
+      issue: QUOTA_HALT,
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
 
     const instance = render(<Header />);
     await tick();
@@ -275,7 +280,12 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 160, rows: 24, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: RESET_AT,
+      issue: QUOTA_HALT,
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
 
     const instance = render(<Header />);
     await tick();
@@ -295,7 +305,12 @@ describe('Header — seat line', () => {
       status: 'running',
       startedAt: Date.now(),
     });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: null, issue: BUILD_HALT });
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: null,
+      issue: BUILD_HALT,
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
 
     const ui = renderFeature(
       <Box paddingX={WORKFLOW_GUTTER_X}>
@@ -353,7 +368,12 @@ describe('Header — seat line', () => {
     resetStores();
     terminalSizeStore.__testReset({ cols: 120, rows: 40, isSmall: false });
     configStore.__testReset({ projectDir: '/tmp/p', config: makeConfig() });
-    recoveryNoticeStore.open({ seat: 'build', resetAt: RESET_AT, issue: QUOTA_HALT });
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: RESET_AT,
+      issue: QUOTA_HALT,
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
 
     const instance = render(<Header />);
     await tick();

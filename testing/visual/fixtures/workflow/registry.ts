@@ -582,6 +582,17 @@ const checkpointPredicates = [
   [checkpointId('at-rest-paused'), includesAll()],
   [checkpointId('at-rest-queued'), includesAll('Stopped at T003', '1 queued')],
   [checkpointId('at-rest-halted'), includesAll()],
+  [
+    checkpointId('at-rest-apply-conflict'),
+    (context) =>
+      includesAll('Apply found 2 conflicting files')(context) && excludesAll('the review')(context),
+  ],
+  [
+    checkpointId('recovery-apply-conflict'),
+    (context) =>
+      includesAll('Re-run Apply', 'Apply found 2 conflicting files')(context) &&
+      excludesAll('the review')(context),
+  ],
   [checkpointId('resuming'), includesAll('Resuming T')],
   [
     checkpointId('at-rest-closed-elsewhere'),

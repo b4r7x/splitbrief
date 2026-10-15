@@ -245,6 +245,17 @@ describe('atRestRailStages on a run with a workspace', () => {
     expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'failed']);
   });
 
+  it('marks Apply cancelled on a run interrupted inside it', () => {
+    const stages = atRestRailStages(
+      workspaceRecord({
+        kind: 'open',
+        stop: { kind: 'stopped', on: { kind: 'interrupted' } },
+        resumeAt: { kind: 'apply' },
+      }),
+    );
+    expect(stages.map((stage) => stage.status)).toEqual(['done', 'done', 'done', 'cancelled']);
+  });
+
   it('keeps three stages on a run without a workspace', () => {
     expect(atRestRailStages(recordAt({ status: { kind: 'closed', as: 'complete' } }))).toHaveLength(
       3,

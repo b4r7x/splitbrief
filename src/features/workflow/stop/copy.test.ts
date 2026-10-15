@@ -3,6 +3,7 @@ import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
 import { makeSummary } from '#testing/helpers/factories/summary.js';
 import { makeWorkflowState } from '#testing/helpers/factories/workflow-state.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
+import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { createEvidenceLedger } from '../../../core/evidence/ledger-state.js';
 import type { EvidenceLedger } from '../../../core/schemas/evidence.js';
 import type { StepRef } from '../../../core/schemas/run-step.js';
@@ -427,6 +428,30 @@ describe('stopByline', () => {
     ).toBe('Stopped before the review');
   });
 
+  it('names Apply when a stop settles a run whose Apply halted', () => {
+    const halted = input({
+      intent: 'stop-now',
+      phase: 'parked',
+      parked: { kind: 'mid-brief', taskId: null, kept: [] },
+      currentTaskId: null,
+      record: makeRunRecord({
+        status: {
+          kind: 'open',
+          stop: {
+            kind: 'waiting-for-you',
+            on: { kind: 'halt', issue: makeRecoveryIssue({ reason: 'apply-conflict' }) },
+          },
+          resumeAt: { kind: 'apply' },
+        },
+      }),
+    });
+    expect(
+      stopByline(halted)
+        ?.parts.map((part) => part.text)
+        .join(''),
+    ).toBe('Stopped at Apply');
+  });
+
   it('claims kept partial changes only when the cut is mid-step', () => {
     expect(
       stopByline(
@@ -581,6 +606,7 @@ describe('stepWord', () => {
     [{ kind: 'gate', gate: 'briefs' } as const, 'the plan'],
     [{ kind: 'brief', taskId: taskId('T007'), attempt: 0 } as const, 'T007'],
     [{ kind: 'review', cycle: 1 } as const, 'the review'],
+    [{ kind: 'apply' } as const, 'Apply'],
   ])('names %o as %s', (step, word) => {
     expect(stepWord(step)).toBe(word);
   });
@@ -604,6 +630,7 @@ describe('stopPoint', () => {
     [{ kind: 'review', cycle: 0 } as const, undefined, 'at the review'],
     [{ kind: 'gate', gate: 'plan' } as const, 'boundary' as const, 'at the plan'],
     [{ kind: 'planner', call: 'plan' } as const, 'boundary' as const, 'at the plan'],
+    [{ kind: 'apply' } as const, undefined, 'at Apply'],
   ])('phrases %o with cut %s as %s', (step, cut, expected) => {
     expect(stopPoint(step, cut)).toBe(expected);
   });

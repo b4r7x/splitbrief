@@ -1258,7 +1258,12 @@ describe('InputFooter', () => {
 
   it('paints a recovery stop with warning', () => {
     chalk.level = 3;
-    recoveryNoticeStore.open({ seat: 'build', resetAt: null, issue: makeRecoveryIssue() });
+    recoveryNoticeStore.open({
+      seat: 'build',
+      resetAt: null,
+      issue: makeRecoveryIssue(),
+      at: { kind: 'brief', taskId: taskId('T001'), attempt: 0 },
+    });
     const ui = renderFeature(<InputFooter width={120} />);
     expect(ui.lastFrame()).toContain(
       paint(defaultTheme.warning, `${glyph('statusFailed')} Run stopped`),

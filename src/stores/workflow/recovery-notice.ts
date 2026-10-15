@@ -1,5 +1,6 @@
 import type { CrewSeatId } from '../../core/crew/identity.js';
 import type { RecoveryIssue } from '../../core/schemas/recovery/schemas.js';
+import type { StepRef } from '../../core/schemas/run-step.js';
 import { createStore, storeBase } from '../create-store.js';
 
 /**
@@ -13,15 +14,22 @@ export interface RecoveryNoticeState {
   seat: CrewSeatId | null;
   resetAt: number | null;
   issue: RecoveryIssue | null;
+  /** Where the run resumes, as its record names it: a halt reads on one stage live and at rest. */
+  at: StepRef | null;
 }
 
-const initial: RecoveryNoticeState = { seat: null, resetAt: null, issue: null };
+const initial: RecoveryNoticeState = { seat: null, resetAt: null, issue: null, at: null };
 const store = createStore<RecoveryNoticeState>(initial);
 
 function open(
-  notice: Readonly<{ seat: CrewSeatId | null; resetAt: number | null; issue: RecoveryIssue }>,
+  notice: Readonly<{
+    seat: CrewSeatId | null;
+    resetAt: number | null;
+    issue: RecoveryIssue;
+    at: StepRef;
+  }>,
 ): void {
-  store.set({ seat: notice.seat, resetAt: notice.resetAt, issue: notice.issue });
+  store.set({ seat: notice.seat, resetAt: notice.resetAt, issue: notice.issue, at: notice.at });
 }
 
 function clear(): void {
