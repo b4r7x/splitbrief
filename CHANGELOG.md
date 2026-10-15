@@ -88,6 +88,7 @@
 
 ### Fixed
 
+- After a failed final review, the transcript names the action you chose, **Fix again**, as the recovery menu does. Before, it said **Send a correction**. The `splitbrief continue` line now names **Fix again** without the menu's hint. The transcript also names **Run the checks again** and **Skip review with a note** in the words of the menu.
 - Every Backspace deletes one character in every text field, also when the terminal sends several Backspaces at once.
 - Saved run patches preserve executable permissions and symlink additions, removals and target changes when you apply them with Git.
 - A brief that only changes a file's permissions, or adds, removes or retargets a symbolic link, now shows that file in the transcript, in the review and in the review packet. Such a brief no longer fails as "exited without changing any files", and reverting it puts the link back.

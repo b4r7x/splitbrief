@@ -723,6 +723,7 @@ const checkpointPredicates = [
     includesAll('Continue with the typed correction', CONSULT_BOUND_NOTE),
   ],
   [checkpointId('review-failed'), includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is')],
+  [checkpointId('review-fix-again'), includesAll('Recovery  Fix again')],
   [
     checkpointId('review-unverified'),
     includesAll(WORKFLOW_FIXTURE_TEXT.reviewFailed, 'Accept as is', 'unverified criteria'),

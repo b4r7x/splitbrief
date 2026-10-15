@@ -2665,6 +2665,14 @@ const consultBoundRecoveryProjection: WorkflowFixtureProjection = {
   resumeState: haltedResumeState(consultBoundRecoveryIssue),
 };
 
+const reviewFailedRecoveryIssue = buildReviewFailedRecoveryIssue({
+  id: 'rec_visual_review_failed',
+  blocking: 4,
+  phase: 'complete',
+  acceptAsIs: true,
+  createdAt: new Date(FIXED_TS).toISOString(),
+});
+
 /** The final review still failed once its repair cycles ran out; every brief had landed. */
 const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
   scenarioId: WORKFLOW_RECOVERY_REVIEW_FAILED_ID,
@@ -2683,14 +2691,35 @@ const reviewFailedRecoveryProjection: WorkflowFixtureProjection = {
       path: VISUAL_FIXTURE_PROJECT_DIR,
       base: { snapshotId: 'visual-base', head: null },
     },
-    pendingRecovery: buildReviewFailedRecoveryIssue({
-      id: 'rec_visual_review_failed',
-      blocking: 4,
-      phase: 'complete',
-      acceptAsIs: true,
-      createdAt: new Date(FIXED_TS).toISOString(),
-    }),
+    pendingRecovery: reviewFailedRecoveryIssue,
   }),
+};
+
+/** The same halt answered with Fix again and a note: the reviewer judges again with the note. */
+const reviewFixAgainProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-recovery-review-fix-again'),
+  feature: WORKFLOW_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  get events(): EngineEvent[] {
+    return [
+      ...everyBriefPassed(),
+      ...publishedEvents(FIXED_TS + 1_000, (bus) => {
+        const issue = reviewFailedRecoveryIssue;
+        const halt = { bus, phase: 'complete', issue, action: 'revise' } as const;
+        publishError({ bus, phase: issue.phase, message: issue.message });
+        publishRecoveryPrompted({ bus, phase: issue.phase }, VISUAL_WORKFLOW_SESSION_ID, issue);
+        publishRecoveryActionSelected(halt);
+        bus.publish({
+          type: 'user_message',
+          ts: FIXED_TS,
+          phase: 'complete',
+          text: 'Keep the cache key stable across restarts; the review is right about F2.',
+        });
+        publishRecoveryResolved({ ...halt, phase: 'final-review', outcome: 'continued' });
+      }),
+    ];
+  },
 };
 
 /** The final review left six criteria unverified, as in a real run: nothing for the planner to fix. */
@@ -5739,6 +5768,7 @@ const projections = [
     scenarioId: scenarioId('workflow-recovery-consult-bound-note'),
   },
   reviewFailedRecoveryProjection,
+  reviewFixAgainProjection,
   reviewUnverifiedRecoveryProjection,
   applyConflictRecoveryProjection,
   reviewContextRecoveryProjection,

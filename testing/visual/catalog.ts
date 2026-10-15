@@ -2560,6 +2560,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-recovery-review-fix-again',
+      title: 'Workflow · a failed final review answered with Fix again and a note',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'review-fix-again',
+        title: 'Fix again and its note in the transcript',
+        kind: 'review',
+        marker: 'Fix again',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-recovery-apply-conflict',
       title: 'Workflow · a run continued onto its Apply halt',
       surface: screenSurface('workflow'),

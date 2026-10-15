@@ -52,14 +52,7 @@ export function recoveryActionParts(
         : [{ text: 'Change ' }, { text: CREW_SEAT_LABELS[seat], seat }, { text: ' tool' }];
     }
     case 'revise':
-      return [
-        {
-          text:
-            context.reason === 'review-failed'
-              ? 'Fix again · add a note, grant one more fix cycle'
-              : 'Send a correction',
-        },
-      ];
+      return [{ text: context.reason === 'review-failed' ? 'Fix again' : 'Send a correction' }];
     case 'accept-as-is':
       return [
         {

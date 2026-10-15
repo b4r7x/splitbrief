@@ -180,4 +180,91 @@ describe('recovery menu and composer keyboard ownership', () => {
     expect(resumed?.pendingRecovery).toBeUndefined();
     expect(resumed?.messageQueue.map((message) => message.text)).toContain('Refactor src/auth.ts');
   });
+
+  it.each(['menu', 'composer'])(
+    'sends the note of Fix again from the %s after a failed final review',
+    async (source) => {
+      const note = 'Keep the total exact';
+      const ref = { projectDir, sessionId: `recover-review-failed-${source}` };
+      ensureSessionDir(projectDir, ref.sessionId);
+      saveState(
+        ref,
+        makeWorkflowState({
+          phase: 'final-review',
+          pendingRecovery: makeRecoveryIssue({
+            reason: 'review-failed',
+            seat: 'build',
+            phase: 'final-review',
+            taskId: undefined,
+            taskTitle: undefined,
+            selectedImplementerProfile: undefined,
+            files: [],
+            affectedTaskIds: [],
+            message: 'The final review found 1 blocking finding.',
+            details: [],
+            availableActions: ['revise', 'end-run'],
+            recommendedAction: 'revise',
+          }),
+        }),
+      );
+      const saved = loadState(ref);
+      if (saved === null) throw new Error('Missing fixture state');
+      const config = makeConfig();
+      const prepared = prepareWorkflowExecution({
+        ...ref,
+        config,
+        feature: saved.feature,
+        resumeState: saved,
+      });
+      configStore.__testReset({ config, projectDir });
+      terminalSizeStore.__testReset({ cols: 100, rows: 30, isSmall: false });
+      routerStore.navigate({
+        to: 'workflow',
+        run: makeRunRecord({ ref, feature: saved.feature }),
+        execution: { kind: 'local', prepared },
+      });
+      const runWorkflow = vi.fn(() => new Promise<Summary>(() => {}));
+      ui = renderFeature(
+        <WorkflowScreen commands={[]} onRuntimeCommand={() => {}} deps={{ runWorkflow }} />,
+      );
+      const screen = ui;
+      await vi.waitFor(() =>
+        expect(stripAnsiStyles(screen.lastFrame())).toContain(
+          'Fix again · add a note, grant one more fix cycle',
+        ),
+      );
+      await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      await flushEffects();
+
+      if (source === 'menu') {
+        screen.stdin.write('v');
+        await vi.waitFor(() =>
+          expect(stripAnsiStyles(screen.lastFrame())).toContain('What should the fix change?'),
+        );
+        await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
+      } else {
+        screen.stdin.write('\t');
+      }
+      await flushEffects();
+      screen.stdin.write(note);
+      await flushEffects();
+      expect(stripAnsiStyles(screen.lastFrame())).toContain(note);
+      expect(runWorkflow).not.toHaveBeenCalled();
+
+      screen.stdin.write('\r');
+      await vi.waitFor(() => expect(runWorkflow).toHaveBeenCalledOnce());
+      const resumed = loadState(ref);
+      expect(resumed?.phase).toBe('final-review');
+      expect(resumed?.pendingRecovery).toBeUndefined();
+      expect(resumed?.pendingTriage?.inputs).toMatchObject([
+        { kind: 'defect', source: 'user', text: note },
+      ]);
+      const replay = await readRunEvents(ref);
+      expect(
+        replay.events.flatMap((event) =>
+          event.type === 'recovery_action_selected' ? [[event.reason, event.action]] : [],
+        ),
+      ).toEqual([['review-failed', 'revise']]);
+    },
+  );
 });

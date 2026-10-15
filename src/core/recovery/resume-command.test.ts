@@ -67,6 +67,7 @@ describe('formatResumeCommand', () => {
   it.each([
     ['consult-bound-spent', 'continue', 'Continue'],
     ['plan-checks-failed', 'revise', 'Send a correction'],
+    ['review-failed', 'revise', 'Fix again'],
     ['review-input-too-large', 'accept-as-is', 'Skip review with a note'],
     ['apply-partial', 'restore-backup', 'Restore backup'],
   ] as const)(

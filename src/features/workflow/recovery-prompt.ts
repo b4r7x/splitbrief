@@ -258,27 +258,30 @@ export function recoveryMenuParts(
     switchSeat: issue.switchSeat,
     seat: issue.seat,
     resetAt: issue.resetAt,
-  }).flatMap((part) =>
-    part.seat === undefined
-      ? separatedSpans(part.text, 'text').map((span, index) =>
-          index === 0 ? span : ({ ...span, tone: 'textDim' } satisfies ConversationRowSegment),
-        )
-      : [{ text: part.text, tone: CREW_SEAT_ROLES[part.seat] }],
+  }).map(
+    (part): ConversationRowSegment => ({
+      text: part.text,
+      tone: part.seat === undefined ? 'text' : CREW_SEAT_ROLES[part.seat],
+    }),
   );
+  const consequence = recoveryMenuConsequence(action, issue);
+  return consequence === undefined
+    ? label
+    : [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }];
+}
+
+function recoveryMenuConsequence(action: RecoveryAction, issue: RecoveryIssue): string | undefined {
+  if (action === 'revise')
+    return issue.reason === 'review-failed' ? 'add a note, grant one more fix cycle' : undefined;
   const seatLevel = isSeatLevelRetry(issue);
-  const consequence = seatLevel
-    ? issue.phase === 'final-review'
-      ? 'runs the review again'
-      : 'runs this step again'
-    : 'restarts this brief';
   const says =
     action === 'switch-seat' ||
     (action === 'retry-same-worker' &&
       !seatLevel &&
       (issue.seat === 'plan' || issue.seat === 'review'));
-  return says
-    ? [...label, { text: SOFT_SEP, tone: 'textDim' }, { text: consequence, tone: 'textDim' }]
-    : label;
+  if (!says) return undefined;
+  if (!seatLevel) return 'restarts this brief';
+  return issue.phase === 'final-review' ? 'runs the review again' : 'runs this step again';
 }
 
 function switchSeatRowText(seat: CrewSeatId, candidate: SeatSwapCandidate): string {
