@@ -12,6 +12,8 @@ import {
   readEscape,
 } from './escape.js';
 
+const BACKSPACE_BYTE = /([\b\x7f])/;
+
 function bridgeTty(filtered: PassThrough, stdin: NodeJS.ReadStream): NodeJS.ReadStream {
   Object.defineProperty(filtered, 'isTTY', {
     configurable: true,
@@ -46,6 +48,7 @@ export function createFilteredStdin(
     activate?: boolean | undefined;
     mouse?: boolean | undefined;
     hover?: boolean | undefined;
+    paste?: boolean | undefined;
     handleMouse?: ((event: MouseEvent, dispatch: MouseListener) => void) | undefined;
     filterInput?: ((text: string) => string) | undefined;
     onPaste?: (() => void) | undefined;
@@ -55,6 +58,7 @@ export function createFilteredStdin(
   const decoder = new StringDecoder('utf8');
   const mouseEnabled = opts?.mouse ?? true;
   const hoverEnabled = opts?.hover ?? false;
+  const pasteEnabled = opts?.paste ?? true;
   let mouseListeners: MouseListener[] = [];
   let heldPrefix = EMPTY_BUFFER;
   let pasteActive = false;
@@ -80,10 +84,13 @@ export function createFilteredStdin(
     filtered.emit('readable');
   };
 
+  // Ink parses one read as one key unless an ESC starts the next one, so `\x7f\x7f` would reach a
+  // text field as one unknown key and delete nothing. Each backspace byte is written as its own key.
   const writeKeyBytes = (bytes: Buffer) => {
     if (bytes.length === 0) return;
     const text = decoder.write(bytes);
-    emitText(opts?.filterInput ? opts.filterInput(text) : text);
+    const keys = opts?.filterInput ? opts.filterInput(text) : text;
+    for (const key of keys.split(BACKSPACE_BYTE)) emitText(key);
   };
 
   const resetPaste = () => {
@@ -213,7 +220,11 @@ export function createFilteredStdin(
   const activate = () => {
     if (active || disabled) return;
     active = true;
-    setTerminalInputModes('enable', { mouse: mouseEnabled, paste: true, hover: hoverEnabled });
+    setTerminalInputModes('enable', {
+      mouse: mouseEnabled,
+      paste: pasteEnabled,
+      hover: hoverEnabled,
+    });
     stdin.on('data', dataHandler);
     stdin.resume();
   };
@@ -237,7 +248,7 @@ export function createFilteredStdin(
       if (active) {
         active = false;
         stdin.off('data', dataHandler);
-        setTerminalInputModes('disable', { mouse: mouseEnabled, paste: true });
+        setTerminalInputModes('disable', { mouse: mouseEnabled, paste: pasteEnabled });
       }
       flushHeldPrefix();
       emitText(decoder.end());

@@ -63,7 +63,7 @@ describe('renderApp background detection', () => {
     { inputTTY: false, outputTTY: true, fullscreen: true, probe: false },
     { inputTTY: true, outputTTY: false, fullscreen: true, probe: false },
     { inputTTY: true, outputTTY: true, fullscreen: false, probe: false },
-  ])('probes only a filtered TTY: %j', async ({ inputTTY, outputTTY, fullscreen, probe }) => {
+  ])('probes only a fullscreen TTY: %j', async ({ inputTTY, outputTTY, fullscreen, probe }) => {
     const input = new PassThrough();
     Object.assign(input, {
       isTTY: inputTTY,
@@ -109,6 +109,67 @@ describe('renderApp background detection', () => {
       output.destroy();
     }
   });
+});
+
+describe('renderApp key input', () => {
+  it.each(['fullscreen', 'inline', 'fallback'] as const)(
+    'hands Ink one key per backspace byte on the %s path',
+    async (path) => {
+      const input = Object.assign(new PassThrough(), {
+        isTTY: false,
+        isRaw: false,
+        setRawMode: () => input,
+        ref: () => input,
+        unref: () => input,
+      });
+      vi.spyOn(process, 'stdin', 'get').mockReturnValue(input as unknown as typeof process.stdin);
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      const inkExit = Promise.withResolvers<void>();
+      let inkStdin: NodeJS.ReadStream | undefined;
+      vi.mocked(render).mockImplementationOnce((_node, options) => {
+        if (options !== undefined && 'stdin' in options) inkStdin = options.stdin;
+        return inkInstance(() => inkExit.promise);
+      });
+      vi.mocked(withFullScreen).mockImplementationOnce((_node, options) => {
+        if (path === 'fullscreen' && options !== undefined && 'stdin' in options) {
+          inkStdin = options.stdin;
+        }
+        return {
+          start: () =>
+            path === 'fallback'
+              ? Promise.reject(new Error('fullscreen unavailable'))
+              : Promise.resolve(),
+          waitUntilExit: () => inkExit.promise,
+          instance: inkInstance(() => inkExit.promise),
+        };
+      });
+      const rendering = renderApp(
+        createElement(Fragment),
+        { fullscreen: path !== 'inline', mouse: false },
+        { exit: vi.fn() },
+      );
+      try {
+        const stdin = await vi.waitFor(() => {
+          if (inkStdin === undefined) throw new Error('Ink has no stdin');
+          return inkStdin;
+        });
+        expect(stdin).not.toBe(input);
+        const reads: string[] = [];
+        stdin.setEncoding('utf8');
+        stdin.on('readable', () => {
+          for (let read = stdin.read(); read !== null; read = stdin.read()) reads.push(read);
+        });
+        input.write('ab\x7f\x7f');
+        await vi.waitFor(() => expect(reads).toEqual(['ab', '\x7f', '\x7f']));
+      } finally {
+        inkExit.resolve();
+        await rendering;
+        stdout.mockRestore();
+        vi.restoreAllMocks();
+        input.destroy();
+      }
+    },
+  );
 });
 
 describe('renderApp completion', () => {

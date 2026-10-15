@@ -1,26 +1,27 @@
 import type { TerminalHandoverConfig } from '../../lib/terminal/editor-handover.js';
+import type { FilteredStdin } from '../../lib/terminal/filtered-stdin/types.js';
 
 export async function startFullscreenThenActivateHandover(deps: {
   start: () => Promise<void>;
-  publishFilteredStdin?: (() => void) | undefined;
-  activateFilteredStdin?: (() => void) | undefined;
+  publishFilteredStdin: () => void;
+  activateFilteredStdin: () => void;
   handover: TerminalHandoverConfig;
   setHandover: (config: TerminalHandoverConfig | undefined) => void;
 }): Promise<void> {
-  deps.publishFilteredStdin?.();
+  deps.publishFilteredStdin();
   await deps.start();
-  deps.activateFilteredStdin?.();
+  deps.activateFilteredStdin();
   deps.setHandover(deps.handover);
 }
 
 export function prepareInlineFallbackAfterFullscreenFailure(deps: {
-  sourceStdin: NodeJS.ReadStream;
   clearTerminalHandover: () => void;
   clearFilteredStdin: () => void;
   disableFilteredStdin: () => void;
-}): NodeJS.ReadStream {
+  createInlineStdin: () => FilteredStdin;
+}): FilteredStdin {
   deps.clearTerminalHandover();
   deps.clearFilteredStdin();
   deps.disableFilteredStdin();
-  return deps.sourceStdin;
+  return deps.createInlineStdin();
 }

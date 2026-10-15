@@ -598,6 +598,13 @@ describe('createFilteredStdin input filtering', () => {
       terminalSequences.disableBracketedPaste,
     ]);
   });
+
+  it('writes no terminal mode without mouse and paste', () => {
+    const filtered = createFilteredStdin(makeFakeStdin(), { mouse: false, paste: false });
+    filtered.disable();
+
+    expect(written).toEqual([]);
+  });
 });
 
 describe('createFilteredStdin: lone ESC delivery', () => {
@@ -654,6 +661,51 @@ describe('createFilteredStdin: lone ESC delivery', () => {
       source.emit('data', Buffer.from('[A'));
     });
     expect(delivered).toEqual([0x1b, 0x5b, 0x41]);
+  });
+});
+
+describe('createFilteredStdin: one key per backspace byte', () => {
+  let originalWrite: typeof process.stdout.write;
+
+  beforeEach(() => {
+    originalWrite = process.stdout.write.bind(process.stdout);
+    process.stdout.write = (() => true) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = originalWrite;
+  });
+
+  // Ink reads the filtered stream on each `readable` event and parses one read as one key unless
+  // an ESC starts the next one, so each read here is one key as Ink sees it.
+  function readKeys(chunk: string): string[] {
+    const source = makeFakeStdin();
+    const filtered = createFilteredStdin(source);
+    filtered.stdin.setEncoding('utf8');
+    const reads: string[] = [];
+    filtered.stdin.on('readable', () => {
+      let read: string | null = filtered.stdin.read();
+      while (read !== null) {
+        reads.push(read);
+        read = filtered.stdin.read();
+      }
+    });
+    source.emit('data', Buffer.from(chunk));
+    filtered.disable();
+    return reads;
+  }
+
+  it.each([
+    ['three DEL bytes', '\x7f\x7f\x7f', ['\x7f', '\x7f', '\x7f']],
+    ['two BS bytes', '\b\b', ['\b', '\b']],
+    ['DEL bytes after text', 'abc\x7f\x7fd', ['abc', '\x7f', '\x7f', 'd']],
+    ['BS and DEL bytes mixed with text', 'x\b\x7fy\x7f', ['x', '\b', '\x7f', 'y', '\x7f']],
+  ])('reads %s as one key per backspace byte', (_label, chunk, keys) => {
+    expect(readKeys(chunk)).toEqual(keys);
+  });
+
+  it('keeps text without a backspace byte as one read', () => {
+    expect(readKeys('hello\tworld')).toEqual(['hello\tworld']);
   });
 });
 

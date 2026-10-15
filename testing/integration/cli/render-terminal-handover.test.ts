@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TerminalHandoverConfig } from '../../../src/lib/terminal/editor-handover.js';
+import { createFilteredStdin } from '../../../src/lib/terminal/filtered-stdin/create.js';
 import {
   prepareInlineFallbackAfterFullscreenFailure,
   startFullscreenThenActivateHandover,
@@ -77,17 +78,26 @@ describe('startFullscreenThenActivateHandover', () => {
 });
 
 describe('prepareInlineFallbackAfterFullscreenFailure', () => {
-  it('clears fullscreen input state before returning normal stdin for fallback', () => {
+  it('clears fullscreen input state before creating the inline stdin for fallback', () => {
     const calls: string[] = [];
+    const inlineStdin = createFilteredStdin(process.stdin, { activate: false });
 
     const fallbackStdin = prepareInlineFallbackAfterFullscreenFailure({
-      sourceStdin: process.stdin,
       clearTerminalHandover: () => calls.push('clear-handover'),
       clearFilteredStdin: () => calls.push('clear-filtered-stdin'),
       disableFilteredStdin: () => calls.push('disable-filtered-stdin'),
+      createInlineStdin: () => {
+        calls.push('create-inline-stdin');
+        return inlineStdin;
+      },
     });
 
-    expect(fallbackStdin).toBe(process.stdin);
-    expect(calls).toEqual(['clear-handover', 'clear-filtered-stdin', 'disable-filtered-stdin']);
+    expect(fallbackStdin).toBe(inlineStdin);
+    expect(calls).toEqual([
+      'clear-handover',
+      'clear-filtered-stdin',
+      'disable-filtered-stdin',
+      'create-inline-stdin',
+    ]);
   });
 });

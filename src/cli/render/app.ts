@@ -129,12 +129,12 @@ export async function renderApp(
 
   configureSplitbriefKeyDebugLog(projectDir ? { projectDir } : undefined);
 
-  const { useFilteredStdin, useMouse, useHover, usePaste } = resolveRenderInputConfig({
+  const { useMouse, useHover, usePaste } = resolveRenderInputConfig({
     fullscreen,
     mouse,
     hover,
   });
-  if (useFilteredStdin && process.stdin.isTTY && process.stdout.isTTY) {
+  if (fullscreen && process.stdin.isTTY && process.stdout.isTTY) {
     const background = await queryTerminalBackground(
       process.stdin,
       process.stdout,
@@ -142,8 +142,7 @@ export async function renderApp(
     );
     if (background !== undefined) terminalBackgroundStore.detected(background);
   }
-  let filteredStdin: FilteredStdin | undefined;
-  let filteredDisabled = false;
+  let filteredStdin: FilteredStdin;
   const selection =
     fullscreen && useMouse && process.stdout.isTTY
       ? installTerminalSelection({
@@ -151,7 +150,7 @@ export async function renderApp(
           copy: copyToClipboard,
           reportError: (message) => feedbackStore.setError(message),
           onCopyKey: (result) => {
-            filteredStdin?.stdin.emit('selection-copy', result);
+            filteredStdin.stdin.emit('selection-copy', result);
           },
         })
       : undefined;
@@ -163,22 +162,21 @@ export async function renderApp(
     process.stdin.on('data', rawKeyTap);
   }
 
-  if (useFilteredStdin) {
-    filteredStdin = createFilteredStdin(process.stdin, {
-      activate: false,
-      mouse: useMouse,
-      hover: useHover,
-      handleMouse: selection?.handleMouse,
-      filterInput: selection?.filterInput,
-      onPaste: selection?.clear,
-    });
-  }
+  // Ink reads its keys through this stream in both render modes: it writes each backspace byte
+  // as its own key, which Ink would otherwise join with the rest of the read.
+  filteredStdin = createFilteredStdin(process.stdin, {
+    activate: false,
+    mouse: useMouse,
+    hover: useHover,
+    paste: usePaste,
+    handleMouse: selection?.handleMouse,
+    filterInput: selection?.filterInput,
+    onPaste: selection?.clear,
+  });
 
   const disableFilteredStdin = () => {
-    if (filteredDisabled) return;
-    filteredDisabled = true;
     selection?.dispose();
-    filteredStdin?.disable();
+    filteredStdin.disable();
   };
 
   // While the TUI owns the terminal a recoverable diagnostic goes to the debug log and the
@@ -296,7 +294,7 @@ export async function renderApp(
   // output on a TTY outside CI (ink/build/write-synchronized.js) and leaves unbracketed on a
   // pipe. Under CI there is no cost at all: Ink drops every non-static redraw (ink.js:262).
   const editorOutput = createEditorOutput(process.stdout);
-  const renderFallback = (stdin?: NodeJS.ReadStream) => {
+  const renderFallback = (input: FilteredStdin) => {
     setActiveTerminalHandover({
       fullscreen: false,
       mouse: false,
@@ -304,39 +302,37 @@ export async function renderApp(
       beforeSuspend: editorOutput.suspend,
       beforeResume: editorOutput.resume,
     });
-    return render(appElement, {
+    const instance = render(appElement, {
       exitOnCtrlC: false,
       maxFps: 30,
       kittyKeyboard,
       stdout: editorOutput.stdout,
-      ...(stdin ? { stdin } : {}),
+      stdin: input.stdin,
     });
+    input.activate();
+    return instance;
   };
 
   try {
     if (fullscreen) {
-      const inkStdin = filteredStdin?.stdin;
+      const fullscreenStdin = filteredStdin;
       let ink: ReturnType<typeof withFullScreen> | undefined;
       try {
         const fullscreenInk = withFullScreen(appElement, {
           exitOnCtrlC: false,
           kittyKeyboard,
           stdout: editorOutput.stdout,
-          ...(inkStdin ? { stdin: inkStdin } : {}),
+          stdin: fullscreenStdin.stdin,
         });
         ink = fullscreenInk;
         await startFullscreenThenActivateHandover({
           start: () => fullscreenInk.start(),
-          publishFilteredStdin: filteredStdin
-            ? () => {
-                setActiveFilteredStdin(filteredStdin);
-              }
-            : undefined,
-          activateFilteredStdin: filteredStdin
-            ? () => {
-                filteredStdin.activate();
-              }
-            : undefined,
+          publishFilteredStdin: () => {
+            setActiveFilteredStdin(fullscreenStdin);
+          },
+          activateFilteredStdin: () => {
+            fullscreenStdin.activate();
+          },
           handover: {
             fullscreen: true,
             mouse: useMouse,
@@ -358,13 +354,14 @@ export async function renderApp(
         ink = undefined;
         if (!isBrokenOutputError(err)) {
           warnError('Fullscreen init failed, falling back to inline mode', err);
-          const fallbackStdin = prepareInlineFallbackAfterFullscreenFailure({
-            sourceStdin: process.stdin,
+          filteredStdin = prepareInlineFallbackAfterFullscreenFailure({
             clearTerminalHandover: () => setActiveTerminalHandover(undefined),
             clearFilteredStdin: () => setActiveFilteredStdin(undefined),
             disableFilteredStdin,
+            createInlineStdin: () =>
+              createFilteredStdin(process.stdin, { activate: false, mouse: false, paste: false }),
           });
-          const inst = renderFallback(fallbackStdin);
+          const inst = renderFallback(filteredStdin);
           unmountWhenSignalled(inst, unmountSignal);
           try {
             await inst.waitUntilExit();
@@ -382,7 +379,7 @@ export async function renderApp(
         }
       }
     } else {
-      const inst = renderFallback();
+      const inst = renderFallback(filteredStdin);
       unmountWhenSignalled(inst, unmountSignal);
       await inst.waitUntilExit();
     }
