@@ -80,6 +80,8 @@ export const StartReadinessCheckSchema = z.object({
   id: z.string(),
   severity: ReadinessSeveritySchema,
   summary: z.string(),
+  details: z.array(z.string()).optional(),
+  remediation: z.string().optional(),
 });
 
 export const StartReadinessRecordSchema = z.object({

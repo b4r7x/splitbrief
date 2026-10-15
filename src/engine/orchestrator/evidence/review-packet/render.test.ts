@@ -297,6 +297,33 @@ describe('renderReviewPacketMarkdown admission readiness checks', () => {
     expect(rendered).not.toContain('- Checks:');
   });
 
+  it('lists the details and the fix the record keeps under their warning', () => {
+    const rendered = renderReadiness({
+      present: true,
+      status: 'ready-with-warnings',
+      nextAction: 'continue',
+      blockerCount: 0,
+      warningCount: 1,
+      checks: [
+        {
+          id: 'repo.dirty-worktree',
+          severity: 'warning',
+          summary: 'Working tree has 1 changed file.',
+          details: ['Examples: README.md'],
+          remediation:
+            'A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.',
+        },
+      ],
+    });
+    expect(rendered).toContain(
+      [
+        '- warning repo.dirty-worktree: Working tree has 1 changed file.',
+        '  - Examples: README.md',
+        '  - Fix: A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.',
+      ].join('\n'),
+    );
+  });
+
   it('reads a missing readiness record as unavailable', () => {
     const rendered = renderReadiness({ present: false });
     expect(rendered).toContain('- Artifact: missing');

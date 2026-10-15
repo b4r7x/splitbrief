@@ -62,8 +62,10 @@ describe('buildRepoChecks dirty worktree', () => {
       const warning = checks.find((check) => check.id === 'repo.dirty-worktree');
 
       expect(warning?.severity).toBe('warning');
+      expect(warning?.fix).toContain('The run edits this checkout.');
       expect(warning?.fix).toContain('.splitbrief/sessions/<id>/reverted/');
       expect(warning?.details?.join(' ')).toContain('only the paths that attempt changed');
+      expect(warning?.details?.join(' ')).not.toContain('The run edits this checkout');
       expect(checks.some((check) => check.severity === 'blocker')).toBe(false);
     },
   );
@@ -89,7 +91,7 @@ describe('buildRepoChecks dirty worktree', () => {
 
     expect(dirty?.severity).toBe('warning');
     expect(dirty?.nextAction).toBeUndefined();
-    expect(dirty?.fix).toContain('Review local edits before starting');
+    expect(dirty?.fix).toBe('Review local edits if they may overlap the requested change.');
     expect(checks.some((check) => check.severity === 'blocker')).toBe(false);
   });
 

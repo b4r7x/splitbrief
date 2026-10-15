@@ -1,6 +1,10 @@
 import type { Config } from '../../../core/schemas/config.js';
 import { isRetiredRecoveryReason } from '../../../core/recovery/halt.js';
 import { isImplementerPhase, isLivePhase } from '../../../core/phases.js';
+import {
+  createStartReadinessRecord,
+  startReadinessWarnings,
+} from '../../../core/readiness/format.js';
 import type { ProjectContext } from '../../../core/state/types.js';
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -458,6 +462,9 @@ export async function initializeWorkflow(args: InitializeWorkflowArgs): Promise<
     publishUserMessage({ bus: bus, phase: state.phase }, feature, {
       attachedInputs: runtime.attachedInputs,
     });
+    for (const message of startReadinessWarnings(createStartReadinessRecord(prepared.report))) {
+      publishWarning({ bus, phase: state.phase, message });
+    }
 
     if (config.workflow.git?.createBranch) {
       const desired = `${SPLITBRIEF_IDENTITY.branchPrefix}${slugify(feature, 40)}`;

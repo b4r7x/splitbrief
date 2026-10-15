@@ -108,15 +108,11 @@ export function buildRepoChecks(
       ].join(' and ')}.`,
       details: [
         ...(examples.length > 0 ? [`Examples: ${examples.join(', ')}`] : []),
-        ...(inCheckout
-          ? [
-              'The run edits this checkout. An attempt revert restores only the paths that attempt changed.',
-            ]
-          : []),
+        ...(inCheckout ? ['An attempt revert restores only the paths that attempt changed.'] : []),
       ],
       fix: inCheckout
-        ? 'Review local edits before starting. A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.'
-        : 'Review local edits before starting if they may overlap the requested change.',
+        ? 'The run edits this checkout. Commit or stash the edits you do not want this run to touch. A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.'
+        : 'Review local edits if they may overlap the requested change.',
       metadata: { dirtyCount, untrackedCount },
     });
   }

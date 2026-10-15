@@ -38,7 +38,11 @@ function renderList(items: string[]): string {
 function renderReadinessChecks(readiness: ReviewPacket['readiness']): string[] {
   if (!readiness.present) return ['- Checks: unavailable'];
   if (readiness.checks.length === 0) return ['- Checks: no warnings or blockers'];
-  return readiness.checks.map((check) => `- ${check.severity} ${check.id}: ${check.summary}`);
+  return readiness.checks.flatMap((check) => [
+    `- ${check.severity} ${check.id}: ${check.summary}`,
+    ...(check.details ?? []).map((detail) => `  - ${detail}`),
+    ...(check.remediation === undefined ? [] : [`  - Fix: ${check.remediation}`]),
+  ]);
 }
 
 function renderChecksLog(checks: ReviewPacket['checks']): string[] {
