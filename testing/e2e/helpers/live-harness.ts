@@ -264,6 +264,7 @@ export async function executeLiveWorkflow(opts: {
   onPlannerReply?: NonNullable<OrchestratorCallbacks['onPlannerReply']>;
   /** The run's queue and abort handlers go here; a caller that submits a message mid-run passes its own. */
   sinks?: WorkflowSinks;
+  runWorkflow?: typeof runWorkflow;
 }): Promise<{ summary: Summary; sessionId: string }> {
   const preparation = await prepareExecution({
     projectDir: opts.projectDir,
@@ -295,7 +296,7 @@ export async function executeLiveWorkflow(opts: {
   }
   const sessionId = preparation.execution.session.ref.sessionId;
   opts.onSession?.(sessionId);
-  await runWorkflow({
+  await (opts.runWorkflow ?? runWorkflow)({
     prepared: preparation.execution,
     signal: opts.signal,
     callbacks: makeCallbacks(
