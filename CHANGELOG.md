@@ -93,7 +93,7 @@
 - A plan can check one test file with `node --test <test file>`, and a check can check a file's syntax with `node --check <file>`, also on a file the run changed. A plan `test` check no longer adds its file to a `package.json` test script that chains commands, where the file reached only the last command; it runs the script as written.
 - Saved files, reports, screens and fallback notices use the same model names. Choosing an Antigravity effort level saves the model that runs at that level.
 - The home list and `/sessions` show when a stopped run last stopped or ended, not when it started. The plan card keeps **Request changes** marked while you type.
-- Reviewer check selection now sees the task briefs, plan decisions and your later instructions, including requests for specific checks.
+- Reviewer check selection now sees the request you started the run with, the task briefs, plan decisions and your later instructions, including requests for specific checks.
 - `splitbrief doctor` states each setup problem and its fix once, names every affected seat as PLAN, BUILD or REVIEW in that order, and gives specific fixes in text and JSON.
 - Setup starts on the crew it shows, so Enter never applies a different crew, and confirms when it saves your configuration. An OpenCode seat shows its model name on every screen and in `splitbrief status`, not its raw model id. The transcript tells you when a plan sent back to the planner passes its checks.
 - **Show diff** with no `VISUAL` or `EDITOR` set opens the run's changes in your pager (`PAGER`, else `less`) in the terminal, and `q` returns to the run. It no longer starts an installed GUI editor app that held the run screen until the whole app quit.

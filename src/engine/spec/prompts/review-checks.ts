@@ -10,6 +10,8 @@ export type ReviewChecksPromptInput = {
   scope: 'final' | 'task';
   /** The task ids a task-cadence review covers. */
   taskIds: readonly string[];
+  /** The request the run started with, as the planner read it. */
+  request: string;
   plan: ReviewPlanData;
   operatorInstructions?: string | undefined;
   changedFiles: readonly string[];
@@ -47,6 +49,8 @@ export function buildReviewChecksPrompt(input: ReviewChecksPromptInput): string 
     '# Choose the checks for this review',
     'You review a SPLITBRIEF run. Before your review, SPLITBRIEF runs the commands you choose here in the run workspace and gives you every result in the review call. This call is read-only: do not run, write or change anything.',
     scopeText(input),
+    '## Request',
+    `The user started this run with this request. A check it asks for is the user's own decision.\n\n${fenced(input.request)}`,
     '## Plan',
     planBody(input.plan, input.scope === 'task' ? input.taskIds : undefined),
     ...(input.operatorInstructions
@@ -76,7 +80,7 @@ export function buildReviewChecksPrompt(input: ReviewChecksPromptInput): string 
           ].join('\n'),
         ]),
     '## How to choose',
-    'Use the task briefs, plan decisions and operator instructions above when choosing the checks for this review.',
+    'Use the request, the task briefs, plan decisions and operator instructions above when choosing the checks for this review.',
     input.workspaceInstructions === undefined
       ? 'Read the project files below: they are verbatim copies from the run workspace.'
       : `${input.workspaceInstructions} Read what the project has to learn how it verifies a change: its manifests and scripts, a Makefile or justfile, its CI configuration, its README.`,

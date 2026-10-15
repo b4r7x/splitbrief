@@ -33,6 +33,7 @@ import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.
 import { runBaseTreeError } from './isolation/errors.js';
 import { runReviewerCall } from './review-call.js';
 import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
+import { plannerFeature } from './run/planner-callbacks-context.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
@@ -487,6 +488,7 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const prompt = buildReviewChecksPrompt({
     scope: opts.scope,
     taskIds: opts.taskIds,
+    request: plannerFeature(state.feature, state.plannerContext),
     plan: reviewPlanData(state),
     operatorInstructions: reviewOperatorInstructions(
       state,
