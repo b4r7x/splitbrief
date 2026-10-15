@@ -1,5 +1,6 @@
 import { INLINE_LABEL_GAP } from '../row-format/label-card.js';
 import { CREW_SEAT_LABELS } from '../../../../core/crew/identity.js';
+import { SPLITBRIEF_IDENTITY } from '../../../../core/identity.js';
 import { formatRecordedSeatChangeIdentities } from '../../display/recorded-seat-identity.js';
 import { COLLAPSE_HINT } from '../implementer-diff-card-block.js';
 import type { DriftFinding } from '../../../../core/schemas/drift.js';
@@ -470,6 +471,15 @@ export function eventRowBlock(options: {
         width: ctx.width,
         labelTone: 'textDim',
         valueTone: 'textDim',
+      });
+    case 'info':
+      return cardRowsBlock({
+        keyPrefix,
+        label: SPLITBRIEF_IDENTITY.displayName,
+        value: event.message,
+        width: ctx.width,
+        labelTone: 'textDim',
+        valueTone: 'text',
       });
     case 'warning':
       // A planner command the stage did not take is a note on the plan, not a fault to act on.

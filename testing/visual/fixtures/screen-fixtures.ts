@@ -382,6 +382,7 @@ function modelsDevOutcome(
 export function createSetupFixture(
   state:
     | 'initial'
+    | 'saved'
     | 'unavailable'
     | 'detecting'
     | 'cached-refresh'
@@ -495,6 +496,12 @@ export function createSetupFixture(
       }
       routerStore.init({ screen: 'setup', onComplete: 'home' });
     },
+    // The user walks up from PLAN to the first ready-made crew and takes it; the cursor stays there.
+    ...(state === 'saved' && {
+      afterMount: async (write) => {
+        for (const key of ['\x1b[A', '\x1b[A', '\r']) await write.press(key);
+      },
+    }),
     teardown: () => {
       restoreFetch?.();
       teardownVisualFixture();
@@ -1045,6 +1052,7 @@ export const screenFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('workflow-command-argument'), createCommandArgumentFixture],
   [scenarioId('workflow-removed-command'), createRemovedCommandFixture],
   [scenarioId('setup-initial'), () => createSetupFixture()],
+  [scenarioId('setup-saved'), () => createSetupFixture('saved')],
   [scenarioId('setup-unavailable-seat'), () => createSetupFixture('unavailable')],
   [scenarioId('setup-api-endpoint-override'), () => createSetupFixture('api-override')],
   [scenarioId('setup-custom-api'), () => createSetupFixture('custom-api')],

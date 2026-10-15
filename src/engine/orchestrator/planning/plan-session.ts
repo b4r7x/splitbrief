@@ -12,7 +12,7 @@ export type PlanTurn =
   | Readonly<{ kind: 'repair'; errors: readonly PlanCheckError[]; plan: PlanProposal }>;
 
 export type PlanSessionOutcome =
-  | Readonly<{ kind: 'plan'; plan: PlanProposal }>
+  | Readonly<{ kind: 'plan'; plan: PlanProposal; checksRepaired: boolean }>
   | Readonly<{ kind: 'questions-exhausted'; questions: readonly ClarificationQuestion[] }>
   | Readonly<{ kind: 'checks-failed'; errors: readonly PlanCheckError[] }>
   | Readonly<{ kind: 'seat-protocol'; error: SeatProtocolError }>;
@@ -109,10 +109,10 @@ export async function runPlanSession(
     }
 
     const errors = await io.check(result);
-    if (errors.length === 0) return { kind: 'plan', plan: result };
+    if (errors.length === 0) return { kind: 'plan', plan: result, checksRepaired: repaired };
     if (repaired) {
       return errors.every((error) => !blocksPlan(error))
-        ? { kind: 'plan', plan: result }
+        ? { kind: 'plan', plan: result, checksRepaired: false }
         : { kind: 'checks-failed', errors };
     }
     repaired = true;

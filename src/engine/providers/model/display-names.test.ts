@@ -113,8 +113,8 @@ describe('resolveSpecMetadata', () => {
       'Claude Code CLI · auto',
     ]);
     expect(identities.map((metadata) => metadata.implementer)).toEqual([
-      'OpenCode CLI · deepseek/deepseek-flash · high',
-      'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+      'OpenCode CLI · DeepSeek V4.1 Flash · via deepseek · high',
+      'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
     ]);
   });
 });
@@ -340,8 +340,8 @@ describe('labelSeatChange', () => {
     const notice = formatSeatChangeNotice(labelSeatChange(change, cache));
 
     expect(notice).toBe(
-      'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → ' +
-        'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; ' +
+      'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → ' +
+        'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; ' +
         'the rest of the run uses the new seat',
     );
   });
@@ -391,7 +391,7 @@ describe('labelSeatChange', () => {
     expect(labelSeatChange(change, cache)).toEqual({
       ...change,
       before: 'opencode · Test Model',
-      after: 'OpenCode CLI · opencode/test-model',
+      after: 'OpenCode CLI · Opencode Test Model · via opencode',
     });
   });
 

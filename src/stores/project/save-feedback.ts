@@ -16,6 +16,11 @@ function saveFailureReason(error: Error): string {
   return lines.length === 0 ? source.message : lines.join('; ');
 }
 
+/** The one line every surface shows for a save that landed; `subject` names what was saved. */
+export function formatConfigSaveSuccess(subject: string): string {
+  return `Saved ${subject} to .splitbrief/config.yaml`;
+}
+
 /** The one line every surface shows for a failed save. */
 export function formatConfigSaveFailure(error: Error): string {
   return `Failed to save config: ${saveFailureReason(error)}`;

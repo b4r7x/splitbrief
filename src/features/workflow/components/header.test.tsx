@@ -319,7 +319,7 @@ describe('Header — seat line', () => {
       { cols: 80, rows: 24 },
     );
     await tick();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD deepseek/deepseek-flash');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash via deepseek');
     expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
 
     recoveryNoticeStore.clear();
@@ -359,7 +359,7 @@ describe('Header — seat line', () => {
       { cols: 80, rows: 24 },
     );
     await tick();
-    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD deepseek/deepseek-flash');
+    expect(stripAnsiStyles(ui.lastFrame())).toContain('BUILD DeepSeek V4.1 Flash via deepseek');
     expect(stripAnsiStyles(ui.lastFrame())).not.toContain('resets');
     ui.unmount();
   });

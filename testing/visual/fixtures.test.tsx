@@ -11,7 +11,7 @@ import { ModelsDevCatalogSchema } from '../../src/core/schemas/models-dev.js';
 import { resolveModelCatalog } from '../../src/engine/providers/model/catalog.js';
 import { modelCacheStore } from '../../src/stores/discovery/model-cache/state.js';
 import { detectionStore } from '../../src/stores/project/detection.js';
-import { findVisualScenario } from './catalog.js';
+import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
 import { viewport } from './contracts/geometry.js';
 import { scenarioId } from './contracts/identifiers.js';
 import type { FixtureContext, FixtureFactory } from './fixtures/common.js';
@@ -27,6 +27,7 @@ import {
 } from './fixtures/screen-fixtures.js';
 import { createWorkflowFixtureAppDeps } from './fixtures/workflow/setup.js';
 import { enterCaptureEnvironment } from './gallery/environment.js';
+import { mountGalleryScenario } from './gallery/mount.js';
 
 interface FixtureCase {
   readonly scenarioId: string;
@@ -115,6 +116,27 @@ describe('visual screen and overlay fixtures', () => {
 
   afterEach(() => {
     teardownVisualFixture();
+  });
+
+  it.each(REQUIRED_VIEWPORTS)('renders the saved Setup crew at $cols columns', async (size) => {
+    const scenario = findVisualScenario('setup-saved');
+    const checkpoint = scenario?.checkpoints[0];
+    if (scenario === undefined || checkpoint === undefined) {
+      throw new Error('Expected the saved Setup scenario');
+    }
+    const handle = await mountGalleryScenario({ scenario, checkpoint, viewport: size });
+    try {
+      const frame = stripAnsiStyles(await handle.waitForCheckpoint());
+      expect(frame).toContain('Saved Claude crew, Codex review');
+      expect(frame).toContain('.splitbrief/config.yaml');
+      expect(frame).not.toContain('No config.');
+      for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue', '↑↓ select']) {
+        expect(frame).toContain(label);
+      }
+      expect(frame.split('\n').length).toBeLessThanOrEqual(size.rows);
+    } finally {
+      await handle.unmount();
+    }
   });
 
   it('shows unavailable and current-seat notes in the configured fallback scenario', async () => {

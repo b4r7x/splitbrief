@@ -1065,7 +1065,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
         model: 'sonnet',
       });
       expect(feedbackStore.get()).toMatchObject({
-        message: 'PLAN set to: Claude Code CLI · Sonnet 5.5',
+        message: 'Saved PLAN · Claude Code CLI · Sonnet 5.5 to .splitbrief/config.yaml',
         isError: false,
       });
     });
@@ -1183,7 +1183,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
         model: 'sonnet',
       });
       expect(feedbackStore.get()).toMatchObject({
-        message: 'PLAN set to: Claude Code CLI · Sonnet 5.5',
+        message: 'Saved PLAN · Claude Code CLI · Sonnet 5.5 to .splitbrief/config.yaml',
         isError: false,
       });
     } finally {
@@ -1268,7 +1268,7 @@ describe('ToolModelPicker leaving a text-output shell seat', () => {
     });
     expect(saveConfig).toHaveBeenCalledTimes(2);
     expect(feedbackStore.get()).toMatchObject({
-      message: 'PLAN set to: Claude Code CLI · Sonnet 5.5',
+      message: 'Saved PLAN · Claude Code CLI · Sonnet 5.5 to .splitbrief/config.yaml',
       isError: false,
     });
     ui.unmount();

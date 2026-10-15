@@ -143,6 +143,17 @@ function ConfirmAuthProbe({
   return <Text>{catalog.roleLabel}</Text>;
 }
 
+function CustomCommandProbe({ role, command }: { role: SeatPickerRole; command: string }) {
+  const catalog = usePickerCatalog(role, 'seat', 0);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
+
+  useInput(() => {
+    void actions.customCommand(command);
+  });
+
+  return <Text>{catalog.roleLabel}</Text>;
+}
+
 function BrowseOnKeyProbe({ role }: { role: SeatPickerRole }) {
   const catalog = usePickerCatalog(role, 'seat', 0);
   const actions = usePickerActions({ role, slot: 'seat', catalog });
@@ -263,7 +274,7 @@ describe('usePickerActions fallback slot', () => {
       config.implementerProfiles?.profiles.other,
     );
     expect(feedbackStore.get().message).toBe(
-      'BUILD fallback set to: OpenAI Codex CLI · GPT-5 Codex',
+      'Saved BUILD fallback · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml',
     );
     ui.unmount();
   });
@@ -289,7 +300,7 @@ describe('usePickerActions fallback slot', () => {
     });
 
     expect(feedbackStore.get().message).toBe(
-      'BUILD fallback set to: OpenAI Codex CLI · GPT-6-Luna',
+      'Saved BUILD fallback · OpenAI Codex CLI · GPT-6-Luna to .splitbrief/config.yaml',
     );
     ui.unmount();
   });
@@ -307,7 +318,7 @@ describe('usePickerActions fallback slot', () => {
     ui.unmount();
   });
 
-  it('clears the fallback key with None and reports that Seat down pauses and asks', async () => {
+  it('clears the fallback key with None and says a seat down now pauses', async () => {
     configStore.__testReset({
       projectDir,
       config: makeConfig({
@@ -320,7 +331,9 @@ describe('usePickerActions fallback slot', () => {
 
     expect(saveConfig).toHaveBeenCalledTimes(1);
     expect(saveConfig.mock.calls[0]?.[0].implementer).not.toHaveProperty('fallback');
-    expect(feedbackStore.get().message).toBe('BUILD fallback cleared · Seat down pauses and asks');
+    expect(feedbackStore.get().message).toBe(
+      'Saved BUILD fallback · none to .splitbrief/config.yaml · Seat down pauses and asks',
+    );
     ui.unmount();
   });
 
@@ -472,6 +485,62 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
+  it.each([
+    ['planner', 'setup'],
+    ['implementer', 'setup'],
+    ['reviewer', 'setup'],
+    ['planner', 'home'],
+  ] as const)('confirms the saved %s seat and config path on %s', async (role, screen) => {
+    routerStore.init({ screen });
+    overlayStore.open(`${role}-picker`);
+    const ui = renderFeature(
+      <ConfirmOnKeyProbe
+        role={role}
+        selection={realPickerOption(role === 'reviewer' ? 'planner' : role, 'codex')}
+        model="gpt-5-codex"
+      />,
+    );
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    const label = role === 'planner' ? 'PLAN' : role === 'implementer' ? 'BUILD' : 'REVIEW';
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+    expect(feedbackStore.get()).toMatchObject({
+      message: `Saved ${label} · OpenAI Codex CLI · GPT-5 Codex to .splitbrief/config.yaml`,
+      isError: false,
+    });
+    ui.unmount();
+  });
+
+  it.each(['setup', 'home'] as const)(
+    'confirms the saved local seat and config path on %s',
+    async (screen) => {
+      routerStore.init({ screen });
+      overlayStore.open('planner-picker');
+      const ui = renderFeature(
+        <LocalConnectionProbe
+          role="planner"
+          save={{
+            provider: 'ollama',
+            apiBase: 'http://localhost:11434/v1',
+            apiKey: undefined,
+            model: 'modelA',
+          }}
+          onSeat={() => {}}
+        />,
+      );
+      await flushEffects();
+      ui.stdin.write('s');
+
+      await vi.waitFor(() => expect(overlayStore.get().active).toBe('none'));
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Saved PLAN · Ollama · ModelA to .splitbrief/config.yaml',
+        isError: false,
+      });
+      ui.unmount();
+    },
+  );
+
   it('commits a reviewer confirmation to the reviewer block and leaves the planner unchanged', async () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } });
     seed(config);
@@ -537,7 +606,8 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
-  it('leaves the review seat inherited when the pre-selected row is confirmed', async () => {
+  it('leaves the review seat inherited when the pre-selected row is confirmed in Setup', async () => {
+    routerStore.init({ screen: 'setup' });
     seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
 
     const ui = renderFeature(<ConfirmRowProbe role="reviewer" />);
@@ -545,8 +615,9 @@ describe('usePickerActions', () => {
     ui.stdin.write('\r');
 
     await vi.waitFor(() => {
-      expect(feedbackStore.get().message).toContain(CREW_SEAT_LABELS.review);
-      expect(feedbackStore.get().message).toContain(PLANNER_INHERITANCE.mark);
+      expect(feedbackStore.get().message).toBe(
+        `Saved ${CREW_SEAT_LABELS.review} ${PLANNER_INHERITANCE.mark} to .splitbrief/config.yaml`,
+      );
     });
     expect(configStore.get().config?.reviewer).toBeUndefined();
     ui.unmount();
@@ -729,7 +800,7 @@ describe('usePickerActions', () => {
     await vi.waitFor(() => {
       expect(feedbackStore.get().message).toContain('high');
     });
-    expect(feedbackStore.get().message).toContain(`${CREW_SEAT_LABELS.plan} set to:`);
+    expect(feedbackStore.get().message).toContain(`Saved ${CREW_SEAT_LABELS.plan} · `);
     ui.unmount();
   });
 
@@ -753,7 +824,7 @@ describe('usePickerActions', () => {
 
     await vi.waitFor(() => {
       expect(
-        messages.some((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+        messages.some((message) => message.startsWith(`Saved ${CREW_SEAT_LABELS.plan} · `)),
       ).toBe(true);
     });
     stopWatching();
@@ -764,22 +835,30 @@ describe('usePickerActions', () => {
     ui.unmount();
   });
 
-  it('says so when switching tools clears an effort the new tool cannot carry', async () => {
-    seed(
-      makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' } }),
-    );
+  it.each(['home', 'setup'] as const)(
+    'keeps the save notice when switching tools clears an effort from %s',
+    async (screen) => {
+      routerStore.init({ screen });
+      feedbackStore.setMessage('Saved Claude crew to .splitbrief/config.yaml');
+      seed(
+        makeConfig({
+          planner: { kind: 'cli', tool: 'claude-code', model: 'auto', effort: 'high' },
+        }),
+      );
 
-    const ui = renderFeature(
-      <ConfirmOnKeyProbe role="planner" selection={realPickerOption('planner', 'opencode')} />,
-    );
-    await flushEffects();
-    ui.stdin.write('\r');
+      const ui = renderFeature(
+        <ConfirmOnKeyProbe role="planner" selection={realPickerOption('planner', 'opencode')} />,
+      );
+      await flushEffects();
+      ui.stdin.write('\r');
 
-    await vi.waitFor(() => {
-      expect(feedbackStore.get().message).toContain('cleared');
-    });
-    ui.unmount();
-  });
+      await vi.waitFor(() => expect(feedbackStore.get().message).toContain('cleared'));
+      expect(feedbackStore.get().message).toMatch(
+        /^Saved PLAN · OpenCode CLI .* to \.splitbrief\/config\.yaml · .*cleared/,
+      );
+      ui.unmount();
+    },
+  );
 
   it('names the kept level once, as one identity string', async () => {
     seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'opus' } }));
@@ -798,14 +877,16 @@ describe('usePickerActions', () => {
 
     await vi.waitFor(() => {
       expect(
-        messages.some((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+        messages.some((message) => message.startsWith(`Saved ${CREW_SEAT_LABELS.plan} · `)),
       ).toBe(true);
     });
     stopWatching();
 
     expect(
-      messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
-    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus 5.5 · high`]);
+      messages.filter((message) => message.startsWith(`Saved ${CREW_SEAT_LABELS.plan} · `)),
+    ).toEqual([
+      `Saved ${CREW_SEAT_LABELS.plan} · Claude Code CLI · Opus 5.5 · high to .splitbrief/config.yaml`,
+    ]);
     expect(configStore.get().config?.planner).toMatchObject({
       tool: 'claude-code',
       effort: 'high',
@@ -836,15 +917,18 @@ describe('usePickerActions', () => {
 
     await vi.waitFor(() => {
       expect(
-        messages.some((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
+        messages.some((message) => message.startsWith(`Saved ${CREW_SEAT_LABELS.plan} · `)),
       ).toBe(true);
     });
     stopWatching();
 
-    expect(
-      messages.filter((message) => message.startsWith(`${CREW_SEAT_LABELS.plan} set to:`)),
-    ).toEqual([`${CREW_SEAT_LABELS.plan} set to: Claude Code CLI · Opus 5.5`]);
-    expect(messages.some((message) => message.includes('Effort ludicrous'))).toBe(true);
+    const saves = messages.filter((message) =>
+      message.startsWith(`Saved ${CREW_SEAT_LABELS.plan} · `),
+    );
+    expect(saves).toHaveLength(1);
+    expect(saves[0]).toMatch(
+      /^Saved PLAN · Claude Code CLI · Opus 5\.5 to \.splitbrief\/config\.yaml · .*Effort ludicrous/,
+    );
     expect(configStore.get().config?.planner).not.toHaveProperty('effort');
     ui.unmount();
   });
@@ -1039,6 +1123,45 @@ describe('usePickerActions', () => {
     expect(JSON.stringify(detectionStore.get())).toBe(detectionBefore);
     expect(feedbackStore.get().isError).toBe(false);
     expect(feedbackStore.get().message).toContain('api key');
+    ui.unmount();
+  });
+
+  it('confirms a saved method in Setup with the seat and config path', async () => {
+    routerStore.init({ screen: 'setup' });
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
+
+    const ui = renderFeature(<ConfirmAuthProbe role="planner" method="api-key" />);
+    await flushEffects();
+    ui.stdin.write('\r');
+
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Saved PLAN auth · api key to .splitbrief/config.yaml',
+        isError: false,
+      });
+    });
+    ui.unmount();
+  });
+
+  it('confirms a saved custom command with the seat words the crew row shows', async () => {
+    routerStore.init({ screen: 'setup' });
+    seed(makeConfig({ planner: { kind: 'cli', tool: 'claude-code', model: 'auto' } }));
+    pickerViewStore.open({ kind: 'custom-command', intendedKind: 'shell' });
+
+    const ui = renderFeature(<CustomCommandProbe role="planner" command="./plan.sh" />);
+    await flushEffects();
+    ui.stdin.write('x');
+
+    await vi.waitFor(() => {
+      expect(configStore.get().config?.planner).toMatchObject({
+        kind: 'shell',
+        command: './plan.sh',
+      });
+    });
+    expect(feedbackStore.get()).toMatchObject({
+      message: 'Saved PLAN · Custom Shell · auto to .splitbrief/config.yaml',
+      isError: false,
+    });
     ui.unmount();
   });
 

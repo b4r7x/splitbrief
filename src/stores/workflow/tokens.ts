@@ -343,6 +343,7 @@ export function updateTokens(state: TokensState, event: EngineEvent): TokensStat
     case 'replay_started':
     case 'replay_complete':
     case 'review_fix_started':
+    case 'info':
     case 'warning':
     case 'error':
       return state;

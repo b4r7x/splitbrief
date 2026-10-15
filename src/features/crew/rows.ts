@@ -20,7 +20,10 @@ import { AUTOMATIC_MODEL, normalizeConfiguredModel } from '../../core/providers/
 import { seatConfiguredEffort } from '../../core/runners/capabilities.js';
 import type { Config } from '../../core/schemas/config.js';
 import { configStore } from '../../stores/project/config.js';
-import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
+import {
+  formatConfigSaveSuccess,
+  reportConfigSaveFailure,
+} from '../../stores/project/save-feedback.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
@@ -78,7 +81,7 @@ function withPresetSeats(config: Config, preset: CrewPreset): Config {
 async function persistCrew(config: Config, label: string): Promise<void> {
   const result = await configStore.save(config);
   if (reportConfigSaveFailure(result)) return;
-  feedbackStore.setMessage(`Crew set to ${label}`);
+  feedbackStore.setMessage(formatConfigSaveSuccess(label));
 }
 
 function openCrewRow(row: CrewRow, config: Config): CrewActivation {

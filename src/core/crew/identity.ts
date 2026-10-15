@@ -167,7 +167,7 @@ function modelIdOf(seat: SeatIds, kind: RunnerKind | undefined): string | undefi
     : model;
 }
 
-function modelWord(
+function modelName(
   seat: SeatIds,
   displayName: string | undefined,
   kind: RunnerKind | undefined,
@@ -175,14 +175,30 @@ function modelWord(
   const tool = cliVocabularyTool(seat.tool, kind);
   const model = modelIdOf(seat, kind);
   if (model === undefined || model === AUTOMATIC_MODEL) return AUTO_MODEL_WORD;
-  if (tool === 'opencode' && model.includes('/')) return redactSecrets(model);
   if (tool !== undefined && CLI_TOOL_CATALOG[tool].effortChannel === 'model-id') {
     const peeled = displayName ? peelDisplayLabel(displayName) : '';
     if (peeled !== '') return peeled;
     return formatModelName(model, tool);
   }
-  if (displayName) return displayName;
-  return formatModelName(model, tool);
+  return displayName || formatModelName(model, tool);
+}
+
+/** The provider an OpenCode route runs through, as `via <provider>`; two routes of one model differ only here. */
+function providerWord(seat: SeatIds, kind: RunnerKind | undefined): string | undefined {
+  const model = redactSecrets(sanitizeTerminalDisplayText(modelIdOf(seat, kind) ?? ''));
+  return cliVocabularyTool(seat.tool, kind) === 'opencode' && model.includes('/')
+    ? `via ${model.slice(0, model.indexOf('/'))}`
+    : undefined;
+}
+
+function modelWord(
+  seat: SeatIds,
+  displayName: string | undefined,
+  kind: RunnerKind | undefined,
+): string {
+  const provider = providerWord(seat, kind);
+  const name = modelName(seat, displayName, kind);
+  return provider === undefined ? name : [name, provider].join(CREW_IDENTITY_SEPARATOR);
 }
 
 function formatIdentity(
@@ -241,21 +257,25 @@ export function formatSeatChangeIdentities(
   };
 }
 
-/** The collapsed form: the brand is implied by the seat, so it is the one word dropped. */
+/**
+ * The collapsed form names the model without its brand or axes. An OpenCode route keeps its
+ * provider, joined by a space because the middle dot already parts the seats on the line.
+ */
 export function formatShortSeatIdentity(input: {
   seat: RunnerConfig | SeatIds;
   displayName?: string | undefined;
   kind?: RunnerKind | undefined;
 }): string {
-  const { seat, displayName, kind } = input;
-  const words = sanitizeTerminalDisplayText(
-    modelWord(idsOf(seat), displayName, kind ?? runnerKindOf(seat)),
-  )
+  const { seat, displayName } = input;
+  const ids = idsOf(seat);
+  const kind = input.kind ?? runnerKindOf(seat);
+  const words = sanitizeTerminalDisplayText(modelName(ids, displayName, kind))
     .split(' ')
     .filter(Boolean);
   const stripped = words[0] === CLAUDE_BRAND ? words.slice(1) : words;
   const rest = stripped.length === 0 ? words : stripped;
-  return rest.join(' ');
+  const provider = providerWord(ids, kind);
+  return [...rest, ...(provider === undefined ? [] : [provider])].join(' ');
 }
 
 type SeatCandidateAxes = Readonly<{
@@ -509,16 +529,26 @@ export function cutSeatIdentity(identity: string, budget: number): string {
 export function wrapSeatIdentity(identity: string, budget: number): string[] {
   if (getTerminalCellWidth(identity) <= budget) return [identity];
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
-  const route = segments[1];
-  const routeIndex = opencodeRouteIndex(segments);
+  const providerIndex = opencodeProviderIndex(segments);
   if (
-    routeIndex === 1 &&
-    route !== undefined &&
-    getTerminalCellWidth(segments.slice(1).join(CREW_IDENTITY_SEPARATOR)) > budget
+    providerIndex !== undefined &&
+    getTerminalCellWidth(segments.slice(providerIndex - 1).join(CREW_IDENTITY_SEPARATOR)) > budget
   ) {
-    return [[segments[0], ...segments.slice(2)].join(CREW_IDENTITY_SEPARATOR), route].map((row) =>
-      cutSeatIdentity(row, budget),
-    );
+    const fits = (row: readonly string[]): boolean =>
+      getTerminalCellWidth(row.join(CREW_IDENTITY_SEPARATOR)) <= budget;
+    const modelAndProvider = segments.slice(providerIndex - 1, providerIndex + 1);
+    const toolAndModel = segments.slice(0, providerIndex);
+    const providerAndAxes = segments.slice(providerIndex);
+    return (
+      fits(modelAndProvider)
+        ? [
+            [...segments.slice(0, providerIndex - 1), ...segments.slice(providerIndex + 1)],
+            modelAndProvider,
+          ]
+        : fits(toolAndModel)
+          ? [toolAndModel, providerAndAxes]
+          : [toolAndModel.toSpliced(providerIndex - 2, 1), providerAndAxes]
+    ).map((row) => cutSeatIdentity(row.join(CREW_IDENTITY_SEPARATOR), budget));
   }
   return [
     segments.slice(0, 1).join(CREW_IDENTITY_SEPARATOR),
@@ -526,19 +556,20 @@ export function wrapSeatIdentity(identity: string, budget: number): string[] {
   ].map((row) => cutSeatIdentity(row, budget));
 }
 
-function opencodeRouteIndex(segments: readonly string[]): number | undefined {
+function opencodeProviderIndex(segments: readonly string[]): number | undefined {
   const toolIndex = segments.indexOf(toolWord({ tool: 'opencode' }, 'cli'));
-  return toolIndex >= 0 && segments[toolIndex + 1]?.includes('/') ? toolIndex + 1 : undefined;
+  const providerIndex = toolIndex + 2;
+  return toolIndex >= 0 && segments[providerIndex]?.startsWith('via ') ? providerIndex : undefined;
 }
 
 function shedSegments(identity: string, budget: number): string {
   const segments = identity.split(CREW_IDENTITY_SEPARATOR);
   const width = (count: number): number =>
     getTerminalCellWidth(segments.slice(0, count).join(CREW_IDENTITY_SEPARATOR));
-  const routeIndex = opencodeRouteIndex(segments);
-  const keepRoute = routeIndex !== undefined && width(routeIndex + 1) > budget;
-  if (keepRoute) segments.splice(routeIndex - 1, 1);
-  const minimum = keepRoute ? routeIndex : 1;
+  const providerIndex = opencodeProviderIndex(segments);
+  const keepModel = providerIndex !== undefined && width(providerIndex + 1) > budget;
+  if (keepModel) segments.splice(providerIndex - 2, 1);
+  const minimum = keepModel ? providerIndex - 1 : 1;
   let kept = segments.length;
   while (kept > minimum && width(kept) > budget) kept -= 1;
   return segments.slice(0, kept).join(CREW_IDENTITY_SEPARATOR);

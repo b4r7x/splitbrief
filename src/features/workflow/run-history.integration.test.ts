@@ -895,7 +895,7 @@ describe('hydrateRun replaying a seat swap', () => {
       expect(transcript()).toBe(replayed);
       expect(transcript(120)).toBe(replayedWide);
       expect(replayedWide).toContain(
-        `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI${auto ? ' · automatic fallback' : ''}`,
+        `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI${auto ? ' · automatic fallback' : ''}`,
       );
       expect(
         replayed
@@ -906,14 +906,14 @@ describe('hydrateRun replaying a seat swap', () => {
         auto
           ? [
               `Recovery  ${headline}${arrowSep()}continued on fallback`,
-              `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI`,
+              `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI`,
               'automatic fallback',
             ]
           : [
               'Error',
               headline,
               `Recovery  Change BUILD model${arrowSep()}continued on new seat`,
-              `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI`,
+              `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI`,
               headline,
             ],
       );

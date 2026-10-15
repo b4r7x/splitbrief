@@ -78,7 +78,7 @@ it('names recorded seats from the remembered catalog in a fresh command', async 
   expect(run.stdout).not.toContain('GPT-6 Luna');
 });
 
-it('prints distinct OpenCode routes with the same identities as the crew rows', async () => {
+it('prints readable OpenCode models with the same identities as the crew rows', async () => {
   const identities = [];
   for (const model of [
     'deepseek/deepseek-flash',
@@ -99,7 +99,8 @@ it('prints distinct OpenCode routes with the same identities as the crew rows', 
     expect(run.exitCode, run.stderr).toBe(0);
     const out = stripVTControlCharacters(run.stdout);
     const identity = formatSeatIdentity({ seat });
-    expect(identity).toContain(model);
+    expect(identity).toBe(`OpenCode CLI · DeepSeek V4.1 Flash · via ${model.split('/')[0]}`);
+    expect(out).not.toContain(model);
     expect(out).toContain(`Planner:  ${identity}`);
     expect(out).toContain(`Impl:     ${identity}`);
     identities.push(out.split('\n').find((line) => line.startsWith('Impl:')));

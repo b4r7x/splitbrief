@@ -77,6 +77,7 @@ import {
   publishTasksPlanned,
   publishRunnerCallEvent,
   publishWarning,
+  publishInfo,
 } from '../events.js';
 import { askPlannerSession } from '../planner-session.js';
 import { buildPlanSessionHaltRecoveryIssue } from '../recovery/builders/planner.js';
@@ -504,6 +505,9 @@ export async function runPlanningSession(
       answer,
       check: (plan) => checkFullPlan(wctx, plan),
     });
+    if (outcome.kind === 'plan' && outcome.checksRepaired) {
+      publishInfo({ bus, phase: state.phase, message: 'The revised plan passes its checks.' });
+    }
     return await settle(opts, state, outcome);
   } catch (err) {
     return handlePlanningFailure({ err, projectDir, sessionId, state, wctx });

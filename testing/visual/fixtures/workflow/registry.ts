@@ -534,6 +534,10 @@ const checkpointPredicates = [
     (context) =>
       planCardReady(context) && includesAll(PLAN_CARD_COMMENT_DRAFT, REVIEW_COMMENT_HINTS)(context),
   ],
+  [
+    checkpointId('plan-repaired'),
+    includesAll('Warning', 'SPLITBRIEF', 'The revised plan passes its checks.'),
+  ],
   [checkpointId('plan-card-render-note'), planCardReady],
   [checkpointId('plan-card-shared-command'), planCardReady],
   // The two briefs whose long headers the card once skipped, beside the first and the last.
@@ -649,8 +653,8 @@ const checkpointPredicates = [
       return (
         includesTranscript(
           'Recovery  Balance spent on OpenCode CLI',
-          'BUILD  OpenCode CLI · deepseek/deepseek-flash',
-          '→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+          'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
+          '→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
           '● T001',
           '● T002',
         )(context) &&

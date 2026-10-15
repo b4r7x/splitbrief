@@ -182,10 +182,10 @@ describe('packet switch and admission evidence', () => {
 
     expect(rendered).toContain('- Planner: OpenAI Codex CLI · GPT-5 · xhigh');
     expect(rendered).toContain(
-      '- BUILD switched automatically: OpenCode CLI · deepseek/deepseek-flash → OpenAI Codex CLI · GPT-5 · high; Balance spent on OpenCode CLI',
+      '- BUILD switched automatically: OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenAI Codex CLI · GPT-5 · high; Balance spent on OpenCode CLI',
     );
     expect(rendered).toContain(
-      '- Implementer: OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+      '- Implementer: OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
     );
     expect(rendered).toContain('- Reviewer: OpenAI Codex CLI · GPT-5 · high');
     expect(rendered).toContain('## Admission readiness');

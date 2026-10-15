@@ -277,7 +277,7 @@ describe('automatic recovery from the spent-balance smoke', () => {
       ts: 1791727007579,
       phase: 'implementing',
       message:
-        'BUILD seat changed OpenCode CLI \u00b7 deepseek/deepseek-flash \u2192 OpenCode CLI \u00b7 opencode-go/deepseek-v4.1-flash \u00b7 high; the rest of the run uses the new seat',
+        'BUILD seat changed OpenCode CLI \u00b7 DeepSeek V4.1 Flash \u00b7 via deepseek \u2192 OpenCode CLI \u00b7 DeepSeek V4.1 Flash \u00b7 via opencode-go \u00b7 high; the rest of the run uses the new seat',
     },
     {
       type: 'workflow_resumed',
@@ -458,18 +458,18 @@ describe('automatic recovery from the spent-balance smoke', () => {
     const { rows } = project([...events, ...resumedEvents]);
     expect(rows.map(rowText).filter((text) => text !== '')).toEqual([
       `Recovery  Balance spent on OpenCode CLI${arrowSep()}continued on fallback  ctrl+d`,
-      `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI · opencode-go/deepseek-v4.1-flash · high · automatic fallback`,
+      `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high · automatic fallback`,
       'Run continued',
-      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+      'T001 Add wordCount to src/text.js  src/text.js (modify) · +1 file · OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
       'working on src/text.js…',
     ]);
   });
 
   it.each([
     'Unrelated tool warning',
-    'PLAN seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; context will be rebuilt',
-    'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · low; the rest of the run uses the new seat',
-    'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · another/model · high; the rest of the run uses the new seat',
+    'PLAN seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; context will be rebuilt',
+    'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · low; the rest of the run uses the new seat',
+    'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · another/model · high; the rest of the run uses the new seat',
   ])('keeps the unrelated warning %s on replay', (message) => {
     const replay = resumedEvents.map((event) =>
       event.type === 'warning' ? { ...event, message } : event,
@@ -2767,7 +2767,7 @@ describe('one recovery reads as one block', () => {
         : ['Error', headline, `Recovery  Change BUILD model${arrowSep()}T002 resumed on new seat`],
     );
     expect(lines.at(auto ? 1 : 3)).toContain(
-      `BUILD  OpenCode CLI · deepseek/deepseek-flash${arrowSep()}OpenCode CLI`,
+      `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${arrowSep()}OpenCode CLI`,
     );
     expect(lines.join(' ').includes('automatic fallback')).toBe(auto);
     expect(lines.join(' ').match(/Balance spent on OpenCode CLI/gu)).toHaveLength(auto ? 1 : 2);

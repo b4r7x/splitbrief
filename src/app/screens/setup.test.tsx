@@ -244,6 +244,67 @@ describe('SetupScreen', () => {
     approvalPromptStore.__testReset();
   });
 
+  it.each([
+    { cols: 120, rows: 40 },
+    { cols: 80, rows: 24 },
+    { cols: 60, rows: 18 },
+  ])('starts on the shown plan seat at $cols columns', async (size) => {
+    terminalSizeStore.__testReset(size);
+    freshDiscovery(beginDiscovery(), 1);
+    const ui = renderFeature(<SetupScreen />, size);
+    await flushEffects();
+
+    const shownConfig = configStore.get().config;
+    expect(shownConfig?.implementer).toMatchObject({ kind: 'cli', tool: 'codex' });
+    expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('⏎ change seat');
+
+    ui.stdin.write(ENTER);
+    await vi.waitFor(() => expect(overlayStore.get().active).toBe('planner-picker'));
+    expect(configStore.get().config).toBe(shownConfig);
+    expect(configStore.get().revision).toBeNull();
+    ui.unmount();
+  });
+
+  it.each([
+    { cols: 120, rows: 40 },
+    { cols: 80, rows: 24 },
+    { cols: 60, rows: 18 },
+  ])('confirms a preset save and its config path at $cols columns', async (size) => {
+    await withTempDir('setup-saved-crew', async (projectDir) => {
+      configStore.load(projectDir);
+      terminalSizeStore.__testReset(size);
+      freshDiscovery(beginDiscovery(), 1);
+      const ui = renderFeature(<SetupScreen />, size);
+      await flushEffects();
+
+      await focusRow(ui, UP, 'Claude crew, Codex review');
+      ui.stdin.write(ENTER);
+      await vi.waitFor(() => {
+        const frame = stripAnsiStyles(ui.lastFrame() ?? '');
+        expect(frame).toContain('Saved Claude crew, Codex review');
+        expect(frame).toContain('.splitbrief/config.yaml');
+        expect(frame).not.toContain('No config.');
+        expect(frame.split('\n').length).toBeLessThanOrEqual(size.rows);
+        for (const label of ['PLAN', 'BUILD', 'REVIEW', 'Continue', '↑↓ select']) {
+          expect(frame).toContain(label);
+        }
+      });
+      const rows = contentRows(ui);
+      const noticeIndex = rows.findIndex((row) => row.startsWith('Saved '));
+      expect(noticeIndex).toBeGreaterThan(0);
+      expect(rows[noticeIndex - 1]?.replace(/[|│]/gu, '').trim()).toBe('');
+      expect(feedbackStore.get().message).toBe(
+        'Saved Claude crew, Codex review to .splitbrief/config.yaml',
+      );
+      expect(loadConfig(projectDir).config.reviewer).toMatchObject({
+        kind: 'cli',
+        tool: 'codex',
+      });
+      ui.unmount();
+    });
+  });
+
   it('proposes a ready crew without saving it and explains the first save', async () => {
     await withTempDir('setup-ready-default', async (projectDir) => {
       configStore.load(projectDir, { plannerEffort: 'high' });
@@ -815,9 +876,12 @@ describe('SetupScreen', () => {
     if (preset === undefined)
       throw new Error('Expected a ready-made crew for the installed tools.');
 
-    expect(markedRows(ui)).toEqual([expect.stringContaining(preset.label)]);
+    expect(markedRows(ui)).toEqual([expect.stringContaining('PLAN')]);
     const continueRow = contentRows(ui).find((row) => row.includes('Continue'));
     expect(continueRow?.startsWith('  Continue')).toBe(true);
+    expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain('↑↓ select · ⏎ change seat · esc quit');
+
+    await focusRow(ui, UP, preset.label);
     expect(stripAnsiStyles(ui.lastFrame() ?? '')).toContain(
       '↑↓ select · ⏎ use this crew · esc quit',
     );
@@ -850,12 +914,12 @@ describe('SetupScreen', () => {
         .find((row) => row.includes('↑↓ select'))
         ?.replace(/[│|]/gu, '')
         .trimEnd();
-    expect(hintRow()).toBe('↑↓ select · ⏎ use this crew');
+    expect(hintRow()).toBe('↑↓ select · ⏎ change seat');
     expect(hintRow()).not.toContain('…');
     expect(hintRow()).not.toContain('esc quit');
 
-    await focusRow(ui, DOWN, 'PLAN');
-    expect(hintRow()).toBe('↑↓ select · ⏎ change seat');
+    await focusRow(ui, UP, 'Claude crew, Codex review');
+    expect(hintRow()).toBe('↑↓ select · ⏎ use this crew');
 
     await focusRow(ui, DOWN, 'Continue');
     expect(hintRow()).toBe('↑↓ select · ⏎ continue');
@@ -1169,6 +1233,10 @@ describe('SetupScreen', () => {
       await continueSetup(ui);
 
       await vi.waitFor(() => expect(routerStore.get().screen).toBe('home'));
+      expect(feedbackStore.get()).toMatchObject({
+        message: 'Saved your crew to .splitbrief/config.yaml',
+        isError: false,
+      });
       expect(existsSync(configPath(projectDir))).toBe(true);
       expect(readFileSync(join(projectDir, '.gitignore'), 'utf8')).toBe('.splitbrief/\n');
       ui.unmount();

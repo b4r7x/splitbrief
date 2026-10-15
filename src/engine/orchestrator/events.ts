@@ -446,6 +446,11 @@ export function publishError(options: PublishOperationalMessageOptions): void {
   });
 }
 
+export function publishInfo(options: BusContext & { message: string }): void {
+  const { bus, phase, message } = options;
+  bus.publish({ type: 'info', ts: Date.now(), phase, message });
+}
+
 export function publishWarning(options: PublishOperationalMessageOptions): void {
   const { bus, phase, message, taskId, safety, planCheck } = options;
   bus.publish({

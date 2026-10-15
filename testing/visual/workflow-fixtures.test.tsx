@@ -200,11 +200,11 @@ describe('workflow visual fixtures', () => {
     ['workflow-recovery-no-fallback', 'no fallback set'],
     [
       'workflow-recovery-fallback-used',
-      'fallback: OpenCode CLI · deepseek/deepseek-flash · automatic switch already used in this run',
+      'fallback: OpenCode CLI · DeepSeek V4.1 Flash · via deepseek · automatic switch already used in this run',
     ],
     [
       'workflow-recovery-fallback-not-installed',
-      'fallback: OpenCode CLI · opencode-go/deepseek-v4.1-flash · max · not offered: not installed',
+      'fallback: OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · max · not offered: not installed',
     ],
   ])('renders the fallback detail and BUILD action for %s', async (id, detail) => {
     const scenario = findVisualScenario(id);
@@ -263,8 +263,9 @@ describe('workflow visual fixtures', () => {
       const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
       try {
         const frame = stripTerminalControls(await ui.waitForCheckpoint()).replace(/\s+/g, ' ');
-        expect(frame).toContain('BUILD OpenCode CLI · deepseek/deepseek-flash');
-        expect(frame).toContain('→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high');
+        expect(frame).toContain('BUILD OpenCode CLI · DeepSeek V4.1 Flash · via deepseek');
+        expect(frame).toContain('→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go');
+        expect(frame).toContain('high');
         expect(frame.includes('automatic fallback')).toBe(auto);
         expect(frame).toContain('Balance spent on OpenCode CLI');
         expect(frame).not.toContain('usage limit');
@@ -301,7 +302,7 @@ describe('workflow visual fixtures', () => {
     ))
       expect(event).not.toHaveProperty('files');
     expect(projection.events.find((event) => event.type === 'warning')?.message).toBe(
-      'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat',
+      'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; the rest of the run uses the new seat',
     );
     for (const renderViewport of scenario.viewports) {
       const ui = await mountGalleryScenario({ scenario, checkpoint, viewport: renderViewport });
@@ -780,8 +781,9 @@ describe('workflow visual fixtures', () => {
       expect(event.files).toEqual(['src/text.js', 'test/text.test.js']);
     }
     const frame = stripTerminalControls(await renderProjection(projection)).replace(/\s+/g, ' ');
-    expect(frame).toContain('BUILD OpenCode CLI · deepseek/deepseek-flash');
-    expect(frame).toContain('→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high');
+    expect(frame).toContain('BUILD OpenCode CLI · DeepSeek V4.1 Flash · via deepseek');
+    expect(frame).toContain('→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go');
+    expect(frame).toContain('high');
     expect(frame).toContain('automatic fallback');
     expect(frame).not.toContain('BUILD seat changed');
     expect(frame).not.toContain('Add credit');
@@ -868,7 +870,7 @@ describe('workflow visual fixtures', () => {
     expect(frame).toContain('1/1 briefs passed');
     expect(frame).not.toContain('working on T901');
     expect(frame).toContain(
-      'BUILD activity 1 update [OpenCode CLI · opencode-go/deepseek-v4.1-flash]',
+      'BUILD activity 1 update [DeepSeek V4.1 Flash · via opencode-go · high]',
     );
     expect(frame).toContain('Read src/text.js');
     expect(frame).not.toContain('attempt 2 of 8');
@@ -890,8 +892,8 @@ describe('workflow visual fixtures', () => {
         .filter((row) => row.startsWith('│'))
         .map((row) => row.slice(0, row.indexOf('│', 1) + 1))
         .join(' ');
-      expect(sidebar).toContain('BUILD   OpenCode CLI · high');
-      expect(sidebar).toContain('opencode-go/');
+      expect(sidebar).toContain('DeepSeek V4.1 Flash');
+      expect(sidebar).toContain('via opencode-go · high');
       expect(sidebar).not.toContain('deepseek/deepseek-flash');
       expect(frame).toContain('Balance spent on OpenCode CLI');
       expect(frame).not.toContain('worker ');
@@ -915,8 +917,8 @@ describe('workflow visual fixtures', () => {
         expect(frame).not.toContain('Workspace kept');
         const markers = [
           'Recovery  Balance spent on OpenCode CLI',
-          'BUILD  OpenCode CLI · deepseek/deepseek-flash',
-          '→ OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+          'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
+          '→ OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
           'automatic fallback',
         ];
         const reached = await scrollTranscript(ui, markers);
