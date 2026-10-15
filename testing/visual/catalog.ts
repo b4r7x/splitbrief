@@ -1256,6 +1256,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-plan-repaired',
+      title: 'Workflow · revised plan passes its checks',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'plan-repaired',
+        title: 'Revised plan passes',
+        kind: 'planning',
+        marker: 'The revised plan passes its checks.',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Plan transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     // A plan whose render checks have no validation.render: the card opens with the note.
     defineScenario({
       id: 'workflow-plan-card-render-note',
@@ -3041,6 +3057,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         title: 'Crew setup ready',
         kind: 'ready',
         marker: 'Set up your crew',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
+      id: 'setup-saved',
+      title: 'Setup · saved crew',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Crew save confirmed',
+        kind: 'ready',
+        marker: 'Saved Claude crew, Codex review',
       },
       elements: [
         { id: 'header', title: 'Setup header' },

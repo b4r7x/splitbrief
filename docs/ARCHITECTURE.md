@@ -882,7 +882,7 @@ Single `EventBus` port (`src/engine/events/bus.ts`), synchronous fan-out, per-si
 | `createCallEvidenceSink` | `orchestrator/summary/call-evidence.ts` | always | keeps the run's per-call usage record in memory, so the summary reads what the run observed |
 | `tuiSink` option (`addTuiEvent`) | `features/workflow/tui-sink.ts` | interactive runs | bounds every event for the TUI and forwards it to `workflow/actions.addEvent` |
 | `createStdoutJsonSink` | `events/sinks/stdout-json.ts` | `--json` headless | one NDJSON record `{ "type": "event", "data": <event> }` per event on stdout |
-| `createStdoutTextSink` | `events/sinks/stdout-text.ts` | `--plain` headless | one plain line per phase, task, review and completion on stdout; `warning` events also go to stderr |
+| `createStdoutTextSink` | `events/sinks/stdout-text.ts` | `--plain` headless | one plain line per phase, task, review and completion on stdout; `warning` and `info` events also go to stderr |
 | `_eventSink` option | `orchestrator/run/init.ts` | a caller passes it | an observer sink for the caller |
 | `createHookSink` | `hooks/sink.ts` | `config.hooks` declared | dispatches matching `post_*` / `on_*` hooks, `on_halt` among them (`recovery_prompted`) |
 
@@ -964,7 +964,9 @@ Older logs without these fields still render. `message_injected_native` keeps it
 **Session replay (2):**
 `replay_started`, `replay_complete` — published only by `readRunEvents` (`src/engine/events/replay.ts`), which wraps a `session.jsonl` read back into an `EngineEvent[]` for `loadEvents` (`src/stores/workflow/actions/load.ts`). See [ENGINE.md](./ENGINE.md#replay).
 
-**Generic (2):**
+**Generic (3):**
+`info` — a status line: a `message` and the optional `category` / `code` pair below; the planning session publishes `The revised plan passes its checks.` when a plan that went back to the planner passes, and the transcript renders it under the `SPLITBRIEF` label.
+
 `warning`, `error` — both carry an optional `category` / `code` pair naming what produced them. Each `publishWarning` / `publishError` call site sets its pair; examples: `recovery` / `retry_exhausted` · `review_failed` · `review_input_too_large` · `recovery_pending_unresolved`, `planner` / `planner_session_expired` (the planner's thread expired, and the planning call runs again on a fresh session with the rebuilt transcript), `skills` / `skills_truncated` (a selected skill's `SKILL.md` body did not fit the 16 000-character skills budget and is named by path instead) · `skills_unresolved` (a skill id the run saved no longer resolves, or a selected skill's file cannot be read), `validation` / `validation_format_failed` (the formatting of the brief's changed files failed; the checks ran anyway) · `validation_formatted` (the formatting before a brief's checks rewrote files of the brief; the message names them), `workspace` / `workspace_kept` (a stopped run kept its workspace for Continue; `src/core/sessions/workspace-notice.ts`). The `error` of a usage-limit halt also carries `resetAt`, the ISO instant the halt records; its message names no clock, and the transcript row spells the reset when it renders.
 
 ### Exhaustive switch in conversation row rendering

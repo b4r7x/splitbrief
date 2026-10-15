@@ -51,11 +51,11 @@ describe('buildRunnerChecks seat identities', () => {
     },
     {
       runner: { kind: 'cli', tool: 'opencode', model: 'deepseek/deepseek-flash' },
-      identity: 'OpenCode CLI · deepseek/deepseek-flash',
+      identity: 'OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
     },
     {
       runner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
-      identity: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash',
+      identity: 'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
     },
   ] as const)('uses $identity in every runner check', ({ runner, identity }) => {
     const seat = { ...runner, timeout: 1000, idleKillMs: 300_000 };
@@ -92,7 +92,7 @@ describe('buildRunnerChecks seat identities', () => {
     );
 
     expect(labeledChecks).toHaveLength(11);
-    for (const check of labeledChecks) expect(check.summary).toContain(identity);
+    for (const check of labeledChecks) expect(check.summary.split(identity)).toHaveLength(2);
     expect(checks.find((check) => check.id === 'runners.planner.configured')?.summary).toBe(
       `PLAN ${identity} configured.`,
     );

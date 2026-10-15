@@ -92,6 +92,7 @@
 - The home list and `/sessions` show when a stopped run last stopped or ended, not when it started. The plan card keeps **Request changes** marked while you type.
 - Reviewer check selection now sees the task briefs, plan decisions and your later instructions, including requests for specific checks.
 - `splitbrief doctor` states each setup problem and its fix once, names every affected seat as PLAN, BUILD or REVIEW in that order, and gives specific fixes in text and JSON.
+- Setup starts on the crew it shows, so Enter never applies a different crew, and confirms when it saves your configuration. An OpenCode seat shows its model name on every screen and in `splitbrief status`, not its raw model id. The transcript tells you when a plan sent back to the planner passes its checks.
 - **Show diff** with no `VISUAL` or `EDITOR` set opens the run's changes in your pager (`PAGER`, else `less`) in the terminal, and `q` returns to the run. It no longer starts an installed GUI editor app that held the run screen until the whole app quit.
 - A run started with uncommitted edits in your checkout no longer counts those edits as its own. The reviewer sees them as your work, apart from the run's changes, and a file you changed and the run changed too shows only the run's lines. A review can no longer ask to revert or delete your edits, and Apply keeps them.
 - `splitbrief status` shows the same run status as the other screens, including Ready to apply.
@@ -149,7 +150,7 @@
 - A headless halt names the `--action` that `splitbrief continue` can take.
 - A checkout symlink that stays inside the project no longer stops briefs in the worktree.
 - A FIFO in the project can no longer stall the final review, a hook check or the evidence ledger.
-- Two OpenCode seats that use the same model through different providers show the full route, for example `OpenCode CLI · opencode-go/deepseek-v4.1-flash`, so you can tell them apart. A seat switch records that route.
+- Two OpenCode seats that use the same model through different providers show the model name and provider, for example `OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go`, or `DeepSeek V4.1 Flash via opencode-go` on the short seat line, so you can tell them apart. A seat switch records that identity.
 - The review lists each seat switch once.
 - The run clock no longer goes back when a seat switches.
 - An unreadable or newer saved state no longer stops a run before it can report itself, a run cancelled before its first save closes, and a saved rewind survives a stop.

@@ -73,7 +73,7 @@ function noPhaseEvent<T extends string>(type: T) {
   });
 }
 
-function operationalMessageEvent<T extends 'warning' | 'error', S extends z.ZodRawShape>(
+function operationalMessageEvent<T extends 'info' | 'warning' | 'error', S extends z.ZodRawShape>(
   type: T,
   shape: S,
 ) {
@@ -92,6 +92,7 @@ function operationalMessageEvent<T extends 'warning' | 'error', S extends z.ZodR
   return z.union([safe, base]);
 }
 
+const OperationalInfoEventSchema = operationalMessageEvent('info', {});
 const OperationalWarningEventSchema = operationalMessageEvent('warning', {
   planCheck: z
     .object({
@@ -113,6 +114,8 @@ function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown): T | null {
 function parseOperationalMessageEvent(value: unknown): EngineEventFromPayloadSchemas | null {
   if (!isRecord(value)) return null;
   switch (value.type) {
+    case 'info':
+      return parseWithSchema(OperationalInfoEventSchema, value);
     case 'warning':
       return parseWithSchema(OperationalWarningEventSchema, value);
     case 'error':
@@ -826,6 +829,7 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
 
 type EngineEventFromPayloadSchemas =
   | z.infer<typeof EngineEventPayloadSchema>
+  | z.infer<typeof OperationalInfoEventSchema>
   | z.infer<typeof OperationalWarningEventSchema>
   | z.infer<typeof OperationalErrorEventSchema>;
 

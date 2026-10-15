@@ -75,7 +75,7 @@ describe('runPlanSession', () => {
       check: async () => [],
     });
 
-    expect(outcome).toEqual({ kind: 'plan', plan });
+    expect(outcome).toEqual({ kind: 'plan', plan, checksRepaired: false });
     expect(asked[0]).toEqual([
       { id: 'q1a', type: 'input', text: 'Round 1: which module?', default: 'src/a.ts' },
       {
@@ -148,7 +148,7 @@ describe('runPlanSession', () => {
       check: async () => [],
     });
 
-    expect(outcome).toEqual({ kind: 'plan', plan });
+    expect(outcome).toEqual({ kind: 'plan', plan, checksRepaired: false });
     expect(turns).toEqual([
       {
         kind: 'answers',
@@ -184,7 +184,7 @@ describe('runPlanSession', () => {
       check,
     });
 
-    expect(outcome).toEqual({ kind: 'plan', plan: corrected });
+    expect(outcome).toEqual({ kind: 'plan', plan: corrected, checksRepaired: true });
     expect(turns[1]).toEqual({ kind: 'repair', errors: [uncovered], plan: invalid });
   });
 
@@ -210,7 +210,7 @@ describe('runPlanSession', () => {
       check: async () => [unconfiguredRender],
     });
     expect(turns[1]).toEqual({ kind: 'repair', errors: [unconfiguredRender], plan });
-    expect(outcome).toEqual({ kind: 'plan', plan });
+    expect(outcome).toEqual({ kind: 'plan', plan, checksRepaired: false });
     expect(ask).toHaveBeenCalledTimes(2);
   });
 

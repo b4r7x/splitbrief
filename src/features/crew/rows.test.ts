@@ -161,7 +161,7 @@ describe('crew preset application', () => {
       await vi.waitFor(() => {
         expect(feedbackStore.get()).toMatchObject({
           isError: false,
-          message: expect.stringContaining(PRESET.label),
+          message: `Saved ${PRESET.label} to .splitbrief/config.yaml`,
         });
       });
       expect(save).toHaveBeenCalledOnce();
@@ -371,7 +371,9 @@ describe('crew presets keep each seat fallback', () => {
         fallback: { tool: 'opencode' },
       });
       await vi.waitFor(() => {
-        expect(feedbackStore.get().message).toContain(PRESET.label);
+        expect(feedbackStore.get().message).toBe(
+          `Saved ${PRESET.label} to .splitbrief/config.yaml`,
+        );
       });
     });
   });
@@ -391,7 +393,9 @@ describe('crew presets keep each seat fallback', () => {
         fallback: { tool: 'opencode' },
       });
       await vi.waitFor(() => {
-        expect(feedbackStore.get().message).toContain(PRESET.label);
+        expect(feedbackStore.get().message).toBe(
+          `Saved ${PRESET.label} to .splitbrief/config.yaml`,
+        );
       });
     });
   });
@@ -423,7 +427,9 @@ describe('crew presets keep each seat fallback', () => {
       expect(preset.seats.implementer.fallback).toEqual({ tool: 'claude-code' });
       expect(preset.seats.reviewer?.fallback).toEqual({ tool: 'opencode' });
       await vi.waitFor(() => {
-        expect(feedbackStore.get().message).toContain(PRESET.label);
+        expect(feedbackStore.get().message).toBe(
+          `Saved ${PRESET.label} to .splitbrief/config.yaml`,
+        );
       });
     });
   });
@@ -449,7 +455,9 @@ describe('crew presets keep each seat fallback', () => {
       );
       expect(review).toMatchObject({ inherited: true, fallback: { tool: 'codex' } });
       await vi.waitFor(() => {
-        expect(feedbackStore.get().message).toContain(PRESET.label);
+        expect(feedbackStore.get().message).toBe(
+          `Saved ${PRESET.label} to .splitbrief/config.yaml`,
+        );
       });
     });
   });

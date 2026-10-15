@@ -7,7 +7,10 @@ import { overlayStore } from '../../stores/ui/overlay.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { recoveryNoticeStore } from '../../stores/workflow/recovery-notice.js';
-import { reportConfigSaveFailure } from '../../stores/project/save-feedback.js';
+import {
+  formatConfigSaveSuccess,
+  reportConfigSaveFailure,
+} from '../../stores/project/save-feedback.js';
 import { seatIdentitiesFromConfig, seatIdentityChanges } from '../../core/state/seats.js';
 import { SOFT_SEP } from '../../core/separators.js';
 import { error } from '../../utils/error.js';
@@ -322,13 +325,11 @@ export function usePickerActions(opts: {
   const preservedLeftIndex = pickerViewStore.use((s) => s.preservedLeftIndex);
   const saveInFlight = useRef(false);
 
-  const reportNotice = (notice: string | undefined) => {
-    if (notice !== undefined && !feedbackStore.get().isError) {
-      feedbackStore.setMessage(notice);
-    }
-  };
+  const seatSaved = (updated: Config) =>
+    `${catalog.roleLabel}${slot === 'fallback' ? ' fallback' : ''}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, slot)}`;
 
-  const commit = async (updated: Config, message: string) => {
+  // A notice is news the save does not carry, so it joins the save line rather than replacing it.
+  const commit = async (updated: Config, subject: string, notice?: string | undefined) => {
     // Enter can land again before the first save settles; the hold survives
     // re-renders and every outcome releases it so a later retry can save.
     if (saveInFlight.current) return;
@@ -337,9 +338,12 @@ export function usePickerActions(opts: {
       const result = await deps.saveConfig(updated);
       if (reportConfigSaveFailure(result)) return;
       feedbackStore.setMessage(
-        changesRunningSeat(config, updated)
-          ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
-          : message,
+        [
+          changesRunningSeat(config, updated)
+            ? `${CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[role]]} seat changes after this brief`
+            : formatConfigSaveSuccess(subject),
+          ...(notice === undefined ? [] : [notice]),
+        ].join(SOFT_SEP),
       );
       overlayStore.close();
     } finally {
@@ -433,11 +437,7 @@ export function usePickerActions(opts: {
     );
     await commit(
       seat.config,
-      `${catalog.roleLabel}${slot === 'fallback' ? ' fallback' : ''} set to: ${savedSeatIdentity(seat.config, seatRole, slot)}`,
-    );
-    // Both notices are news the save does not carry: neither may overwrite the
-    // other, so they land as one line.
-    reportNotice(
+      seatSaved(seat.config),
       [seat.notice, note].filter((line) => line !== undefined).join(SOFT_SEP) || undefined,
     );
   };
@@ -452,7 +452,8 @@ export function usePickerActions(opts: {
           }
           await commit(
             clearSeatFallback(config, seatRole),
-            `${catalog.roleLabel} fallback cleared${SOFT_SEP}Seat down pauses and asks`,
+            `${catalog.roleLabel} fallback${SOFT_SEP}none`,
+            'Seat down pauses and asks',
           );
           return;
         }
@@ -472,7 +473,7 @@ export function usePickerActions(opts: {
         if (selection.kind === 'inherit-planner') {
           await commit(
             clearReviewerSeat(config),
-            `${catalog.roleLabel} set to: ${PLANNER_INHERITANCE.mark}`,
+            `${catalog.roleLabel} ${PLANNER_INHERITANCE.mark}`,
           );
           return;
         }
@@ -502,7 +503,7 @@ export function usePickerActions(opts: {
       return reportFailure(async () => {
         await commit(
           writeSeatAuthChannel(config, seatRole, method),
-          `${catalog.roleLabel} auth set to: ${AUTH_METHOD_WORDS[method]}`,
+          `${catalog.roleLabel} auth${SOFT_SEP}${AUTH_METHOD_WORDS[method]}`,
         );
       });
     },
@@ -560,7 +561,7 @@ export function usePickerActions(opts: {
           command: cmd,
           kind: view.intendedKind,
         });
-        await commit(updated, `${catalog.roleLabel} set to: ${view.intendedKind}: ${cmd}`);
+        await commit(updated, seatSaved(updated));
       });
     },
     customModel(modelName: string) {
@@ -583,10 +584,7 @@ export function usePickerActions(opts: {
           modelName,
           customModels: catalog.customModels,
         });
-        await commit(
-          updated,
-          `${catalog.roleLabel} set to: ${savedSeatIdentity(updated, seatRole, slot)}`,
-        );
+        await commit(updated, seatSaved(updated));
       });
     },
     openCustomModel(item: PickerOption) {
@@ -653,7 +651,9 @@ export function useLocalConnectionActions(
         const result = await deps.saveConfig(updated);
         if (reportConfigSaveFailure(result)) return;
         feedbackStore.setMessage(
-          `${roleLabel} set to: ${savedSeatIdentity(updated, seatRole, 'seat')}`,
+          formatConfigSaveSuccess(
+            `${roleLabel}${SOFT_SEP}${savedSeatIdentity(updated, seatRole, 'seat')}`,
+          ),
         );
         overlayStore.close();
       });

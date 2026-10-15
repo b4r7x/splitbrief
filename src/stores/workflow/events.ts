@@ -62,6 +62,8 @@ export function projectEventForTuiEventLog(event: EngineEvent): EngineEvent | nu
     // nothing renders.
     case 'tasks_planned':
       return null;
+    case 'info':
+      return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
     case 'warning':
       return { ...event, message: sanitizeTerminalDiagnosticText(event.message) };
     case 'error':

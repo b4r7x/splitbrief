@@ -206,6 +206,24 @@ describe('HomeSeatBlock', () => {
     unmount();
   });
 
+  it('names the provider of each OpenCode route on the collapsed line', async () => {
+    seed(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+        implementer: { kind: 'cli', tool: 'opencode', model: 'ollama-cloud/deepseek-v4.1-flash' },
+        reviewer: { kind: 'cli', tool: 'opencode', model: 'opencode-go/deepseek-v4.1-flash' },
+      }),
+    );
+
+    const { lines, unmount } = await renderBlock(18, 100);
+
+    expect(lines[0]?.trim()).toMatch(
+      /^PLAN DeepSeek V4\.1 Flash via opencode-go · BUILD DeepSeek V4\.1 Flash via ollama-cloud\b/,
+    );
+    expect(getTerminalCellWidth(lines[0] ?? '')).toBeLessThanOrEqual(100);
+    unmount();
+  });
+
   it('drops a whole identity from the collapsed line instead of cutting one', async () => {
     const width = 40;
 

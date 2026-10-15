@@ -701,8 +701,8 @@ describe('applyRecoveryAction: switch-seat', () => {
       });
 
       expect(result.state.seatSwitches?.[0]).toMatchObject({
-        from: `OpenCode CLI · deepseek/deepseek-flash${variant === undefined ? '' : ' · high'}`,
-        to: 'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+        from: `OpenCode CLI · DeepSeek V4.1 Flash · via deepseek${variant === undefined ? '' : ' · high'}`,
+        to: 'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
         cause: 'runner-usage-limit',
         accountCause: 'balance',
         headline: 'Balance spent on OpenCode CLI',

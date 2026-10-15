@@ -506,7 +506,7 @@ describe('seats', () => {
         .map((span) => span.text)
         .join(''),
     ).toBe(
-      `PLAN not recorded · BUILD Gemini 3.8 Flash${arrowSep()}opencode-go/deepseek-v4.1-flash · REVIEW not recorded`,
+      `PLAN not recorded · BUILD Gemini 3.8 Flash${arrowSep()}DeepSeek V4.1 Flash via opencode-go · REVIEW not recorded`,
     );
   });
 
@@ -534,7 +534,7 @@ describe('seats', () => {
       crewLine(view, 200)
         .map((span) => span.text)
         .join(''),
-    ).toContain('BUILD 3 briefs on Gemini 3.8 Flash, 1 on opencode-go/deepseek-v4.1-flash');
+    ).toContain('BUILD 3 briefs on Gemini 3.8 Flash, 1 on DeepSeek V4.1 Flash via opencode-go');
   });
 
   it('marks the review seat as inherited when only the planner was named', () => {

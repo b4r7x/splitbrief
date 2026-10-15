@@ -3415,7 +3415,7 @@ const SPENT_B2_REPLAY_LOG = `
 {"ts":"2026-10-11T13:56:47.504Z","kind":"event","type":"recovery_action_selected","phase":"implementing","data":{"issueId":"rec_20261011135643_runner_usage_limit_implementing_T001","reason":"runner-usage-limit","action":"switch-seat","seat":"build"}}
 {"ts":"2026-10-11T13:56:47.552Z","kind":"event","type":"seat_switched","phase":"implementing","data":{"seat":"build","from":{"tool":"opencode","model":"deepseek/deepseek-flash"},"to":{"tool":"opencode","model":"opencode-go/deepseek-v4.1-flash","variant":"high"},"cause":"runner-usage-limit","accountCause":"balance","headline":"Balance spent on OpenCode CLI","auto":true,"configRevision":"643fca0d8c759fc0e3b5b4957fe3e290aaa87a3e309ec98100fa7cfca9db4aa7"}}
 {"ts":"2026-10-11T13:56:47.552Z","kind":"event","type":"recovery_resolved","phase":"implementing","data":{"issueId":"rec_20261011135643_runner_usage_limit_implementing_T001","reason":"runner-usage-limit","action":"switch-seat","seat":"build","outcome":"retry-current-task","implementerProfile":"default"}}
-{"ts":"2026-10-11T13:56:47.579Z","kind":"event","type":"warning","phase":"implementing","data":{"message":"BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat"}}
+{"ts":"2026-10-11T13:56:47.579Z","kind":"event","type":"warning","phase":"implementing","data":{"message":"BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; the rest of the run uses the new seat"}}
 {"ts":"2026-10-11T13:56:47.599Z","kind":"event","type":"workflow_resumed","phase":"implementing","data":{}}
 {"ts":"2026-10-11T13:56:47.600Z","kind":"event","type":"workflow_config","phase":"implementing","data":{"plannerTool":"claude-code","plannerModel":"claude-opus-5-5","implementerTool":"opencode","implementerModel":"opencode-go/deepseek-v4.1-flash","reviewerTool":"codex","reviewerModel":"gpt-6.1-sol"}}
 {"ts":"2026-10-11T13:56:47.806Z","kind":"event","type":"tasks_planned","phase":"implementing","data":{"tasks":[{"id":"T001","title":"Add wordCount to src/text.js","index":0,"file":"src/text.js","action":"modify"},{"id":"T002","title":"Add optional suffix to truncate in src/preview.js","index":1,"file":"src/preview.js","action":"modify"}],"total":2}}
@@ -5536,6 +5536,25 @@ const projections = [
   approvalConfirmSecretProjection,
   planCardProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
+  {
+    ...planCompiledProjection,
+    scenarioId: scenarioId('workflow-plan-repaired'),
+    events: [
+      { type: 'workflow_started', ts: FIXED_TS, phase: 'planning', feature: WORKFLOW_FEATURE },
+      {
+        type: 'warning',
+        ts: FIXED_TS + 1,
+        phase: 'planning',
+        ...planRepairWarning([{ code: 'task-without-check', message: 'A task has no check.' }]),
+      },
+      {
+        type: 'info',
+        ts: FIXED_TS + 2,
+        phase: 'planning',
+        message: 'The revised plan passes its checks.',
+      },
+    ],
+  },
   planCardRenderNoteProjection,
   planCardSharedCommandProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-selection-copy') },

@@ -626,6 +626,38 @@ describe('the planning session on the live path', () => {
     },
   );
 
+  it('reports one pass after the repaired plan passes its checks', async () => {
+    const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
+    const passes = run.events.filter(
+      (event) => event.type === 'info' && event.message === 'The revised plan passes its checks.',
+    );
+    expect(passes).toEqual([
+      {
+        type: 'info',
+        ts: expect.any(Number),
+        phase: 'planning',
+        message: 'The revised plan passes its checks.',
+      },
+    ]);
+    expect(run.events.findIndex((event) => event.type === 'warning')).toBeLessThan(
+      run.events.findIndex((event) => passes.includes(event)),
+    );
+  });
+
+  it.each([
+    { name: 'an initial pass', script: [makePlanProposal()] },
+    { name: 'a failed retry', script: [uncoveredPlan, uncoveredPlan] },
+  ])('does not report a repair pass for $name', async ({ script }) => {
+    const run = await plan({ script });
+    expect(
+      run.events.filter(
+        (event) =>
+          (event.type === 'info' && event.message === 'The revised plan passes its checks.') ||
+          (event.type === 'planner_text' && event.text === 'The revised plan passes its checks.'),
+      ),
+    ).toEqual([]);
+  });
+
   it('names the check code and reason in the warning on one failing check', async () => {
     const run = await plan({ script: [uncoveredPlan, makePlanProposal()] });
 
@@ -695,6 +727,13 @@ describe('the planning session on the live path', () => {
     expect(card).toContain('## Before you approve');
     expect(card).toContain('K-render');
     expect(card).toContain('validation.render');
+    expect(
+      run.events.filter(
+        (event) =>
+          (event.type === 'info' && event.message === 'The revised plan passes its checks.') ||
+          (event.type === 'planner_text' && event.text === 'The revised plan passes its checks.'),
+      ),
+    ).toEqual([]);
   });
 
   it('takes render checks without a word when validation.render is set', async () => {

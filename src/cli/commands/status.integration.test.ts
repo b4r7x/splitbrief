@@ -483,7 +483,7 @@ describe('status command', () => {
       expect(line).not.toContain('\u001b[32m');
     }
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'Impl:     OpenCode CLI · opencode-go/deepseek-v4.1-flash',
+      'Impl:     OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
     );
   });
 });

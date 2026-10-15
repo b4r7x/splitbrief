@@ -84,6 +84,26 @@ describe('attachRunSinks — stdout sinks', () => {
     ]);
   });
 
+  it('writes a plain info line to stderr after the warning it answers', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const out = publishThroughSinks('sinks-plain-info', { headless: true, plain: true }, [
+      STARTED,
+      { type: 'warning', ts: STARTED.ts + 1, phase: 'planning', message: 'Sent back.' },
+      {
+        type: 'info',
+        ts: STARTED.ts + 2,
+        phase: 'planning',
+        message: 'The revised plan passes its checks.',
+      },
+    ]);
+
+    expect(out).toBe('phase: planning\n');
+    expect(stderr.mock.calls.map(([chunk]) => chunk)).toEqual([
+      'Sent back.\n',
+      'The revised plan passes its checks.\n',
+    ]);
+  });
+
   it('strips terminal controls from plain warnings on stderr', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const out = publishThroughSinks(

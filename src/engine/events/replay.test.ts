@@ -429,6 +429,7 @@ const SAMPLES: Record<string, Record<string, unknown>> = {
   approval_mode_changed: { mode: 'normal' },
   replay_started: { phase: 'idle', totalEvents: 2 },
   replay_complete: { phase: 'idle', totalEvents: 2, durationMs: 5 },
+  info: { phase: 'planning', message: 'The revised plan passes its checks.' },
   warning: {
     phase: 'idle',
     category: 'jsonl',

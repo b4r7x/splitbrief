@@ -810,7 +810,7 @@ describe('formatTaskStartedParts', () => {
 
       expect(parts).toEqual([
         'src/text.js (modify)',
-        'OpenCode CLI · opencode-go/deepseek-v4.1-flash · high',
+        'OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high',
       ]);
     },
   );

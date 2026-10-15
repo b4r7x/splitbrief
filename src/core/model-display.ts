@@ -1,4 +1,4 @@
-import { redactSecrets } from '../utils/redact.js';
+import { sanitizeTerminalDisplayText } from '../utils/display-text.js';
 import { AUTOMATIC_MODEL, isAutomaticModel } from './providers/automatic-model.js';
 import { findKnownModel } from './providers/known-models.js';
 import { prettyModelName } from './providers/pretty-model-name.js';
@@ -22,7 +22,7 @@ export function cliVocabularyTool(
 export function formatModelName(modelId: string, providerId?: string): string {
   if (!modelId) return '';
   if (isAutomaticModel(modelId, providerId)) return AUTOMATIC_MODEL;
-  const redacted = redactSecrets(modelId);
+  const redacted = sanitizeTerminalDisplayText(modelId);
   if (providerId !== undefined && isProviderId(providerId)) {
     const known = findKnownModel(providerId, redacted);
     if (known?.displayName !== undefined) return known.displayName;

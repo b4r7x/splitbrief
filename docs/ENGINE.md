@@ -154,7 +154,7 @@ Several sinks can subscribe to the bus. The JSONL, logger and call-evidence sink
 
 **Stdout JSON sink** (`src/engine/events/sinks/stdout-json.ts`) — writes public NDJSON records to stdout. Live events pass the same payload bounds as every other external consumer before they are wrapped as `{ "type": "event", "data": <EngineEvent> }`; readiness, recovery, final-review, warning, and error records use their own top-level `type`. Only subscribed in `--json` headless mode.
 
-**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` event's bounded message to stderr.
+**Stdout text sink** (`src/engine/events/sinks/stdout-text.ts`) — the `--plain` projection of the same stream: `phase:`, `task <id>:`, `stalled:`, `review:` and `done:` lines and nothing else, so a script can read a run with `grep`. Cost is reported in tokens, not dollars, because a sink holds no price catalog. Only subscribed in `--plain` headless mode, and exactly one of the two stdout sinks is ever installed — `attachRunSinks()` picks by `opts.plain`. Under `--plain` one more sink writes each `warning` and `info` event's bounded message to stderr.
 
 Each `review_completed` prints one `review:` line with its scope, task anchor when present, verdict, and available blocking count. `workflow_complete` prints the run's `done:` line. It prints no review line.
 
@@ -537,8 +537,9 @@ From `src/engine/events/schema.ts` (`EngineEventSchema`). Every event carries `t
 // `at` says where the stop landed: inside the call, or on a boundary (between two briefs,
 // or at a gate). `step` is the step the stop parked. Older logs omit both.
 
-// Operational message — `warning` has the same shape without `resetAt`;
-// `resetAt` is the ISO instant a usage-limit halt's quota comes back
+// Operational message — `warning` and `info` have the same shape without `resetAt`;
+// `resetAt` is the ISO instant a usage-limit halt's quota comes back. `info` is a status
+// line, such as the planning session's `The revised plan passes its checks.`
 { type: 'error'; message: string; category?: string; code?: string; resetAt?: string }
 ```
 

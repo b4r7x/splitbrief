@@ -61,7 +61,7 @@ describe('walkTranscript', () => {
     ts: 5_000,
     phase: 'implementing',
     message:
-      'BUILD seat changed OpenCode CLI · deepseek/deepseek-flash → OpenCode CLI · opencode-go/deepseek-v4.1-flash · high; the rest of the run uses the new seat',
+      'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via deepseek → OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high; the rest of the run uses the new seat',
   };
   const resumed: EngineEventOf<'workflow_resumed'> = {
     type: 'workflow_resumed',
@@ -171,7 +171,7 @@ describe('walkTranscript', () => {
       ...seatChangeWarning,
       ts: 7_000,
       message:
-        'BUILD seat changed OpenCode CLI · opencode-go/deepseek-v4.1-flash · high → OpenCode CLI · deepseek/deepseek-flash; the rest of the run uses the new seat',
+        'BUILD seat changed OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high → OpenCode CLI · DeepSeek V4.1 Flash · via deepseek; the rest of the run uses the new seat',
     };
     const changedAgain = { ...seatChangeWarning, ts: 9_000 };
     const steps = [

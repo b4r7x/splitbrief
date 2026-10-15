@@ -282,7 +282,7 @@ describe('packet recovery evidence', () => {
         .filter((line) => line.startsWith('- BUILD switched'));
       expect(rows).toEqual([
         `- BUILD switched manually: ${first.from} → ${first.to}; usage limit`,
-        '- BUILD switched manually: Claude Code CLI · Sonnet 5.5 → OpenCode CLI · deepseek/deepseek-flash; usage limit',
+        '- BUILD switched manually: Claude Code CLI · Sonnet 5.5 → OpenCode CLI · DeepSeek V4.1 Flash · via deepseek; usage limit',
       ]);
     } finally {
       cleanupTempDir(projectDir);

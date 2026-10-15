@@ -423,9 +423,15 @@ describe('eventsStore — append via addEvent', () => {
     });
   });
 
-  it('sanitizes generic warning and error messages before retaining them', () => {
+  it('sanitizes generic info, warning and error messages before retaining them', () => {
     const secret = 'sk-abcdefghijklmnopqrst';
 
+    addEvent({
+      type: 'info',
+      ts: 999,
+      phase: 'planning',
+      message: `info ${secret}\u001b[31m`,
+    });
     addEvent({
       type: 'warning',
       ts: 1_000,
@@ -440,6 +446,12 @@ describe('eventsStore — append via addEvent', () => {
     });
 
     expect(eventsStore.get().events).toEqual([
+      {
+        type: 'info',
+        ts: 999,
+        phase: 'planning',
+        message: 'info sk-***REDACTED***',
+      },
       {
         type: 'warning',
         ts: 1_000,

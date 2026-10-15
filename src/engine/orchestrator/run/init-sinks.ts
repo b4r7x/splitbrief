@@ -52,9 +52,10 @@ export function attachRunSinks(input: AttachRunSinksInput): EventBus {
     if (opts.plain === true) {
       unsubs.push(
         bus.subscribe((event) => {
-          if (event.type !== 'warning') return;
+          if (event.type !== 'warning' && event.type !== 'info') return;
           const bounded = boundEngineEventForConsumer(event, 'stdout-text');
-          if (bounded.type === 'warning') process.stderr.write(`${bounded.message}\n`);
+          if (bounded.type === 'warning' || bounded.type === 'info')
+            process.stderr.write(`${bounded.message}\n`);
         }),
       );
     }

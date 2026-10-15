@@ -22,6 +22,21 @@ import type { ConversationRow } from '../types.js';
 
 const streaming: StreamingOutputState = { taskId: null, lines: [], active: false };
 
+it.each([60, 120])('shows the repaired plan pass through the transcript at %i columns', (width) => {
+  const rows = eventRows({
+    event: {
+      type: 'info',
+      ts: 0,
+      phase: 'planning',
+      message: 'The revised plan passes its checks.',
+    },
+    globalIndex: 0,
+    expanded: false,
+    ctx: { width, viewportRows: 24, streaming },
+  });
+  expect(rows.map(rowText)).toEqual(['SPLITBRIEF  The revised plan passes its checks.']);
+});
+
 it('moves the whole destination identity after the arrow at 80 columns', () => {
   const rows = eventRows({
     event: {
@@ -41,8 +56,9 @@ it('moves the whole destination identity after the arrow at 80 columns', () => {
     ctx: { width: 80, viewportRows: 24, streaming },
   });
   expect(rows.map(rowText)).toEqual([
-    'BUILD  OpenCode CLI · deepseek/deepseek-flash',
-    `${glyph('connectorHandoff')} OpenCode CLI · opencode-go/deepseek-v4.1-flash · high · automatic fallback`,
+    'BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek',
+    `${glyph('connectorHandoff')} OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high`,
+    'automatic fallback',
   ]);
 });
 
@@ -65,7 +81,7 @@ it.each([true, false])('names both same-name switch endpoints with auto=%s', (au
   });
   const text = rows.map(rowText).join('\n');
   expect(text).toContain(
-    `BUILD  OpenCode CLI · deepseek/deepseek-flash ${glyph('connectorHandoff')} OpenCode CLI · opencode-go/deepseek-v4.1-flash · high`,
+    `BUILD  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek ${glyph('connectorHandoff')} OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go · high`,
   );
   expect(text.includes('automatic fallback')).toBe(auto);
 });
@@ -1222,7 +1238,8 @@ describe('event row dispatch', () => {
     });
 
     expect(rows.map(rowText)).toEqual([
-      `${CREW_SEAT_LABELS.build}  OpenCode CLI · deepseek/deepseek-flash ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback · usage limit`,
+      `${CREW_SEAT_LABELS.build}  OpenCode CLI · DeepSeek V4.1 Flash · via deepseek ${glyph('connectorHandoff')} ${formatSeatCandidateIdentity(to)} · automatic fallback`,
+      'usage limit',
     ]);
     expect(
       rows[0]?.segments
@@ -1231,7 +1248,8 @@ describe('event row dispatch', () => {
     ).toEqual([
       CREW_SEAT_LABELS.build,
       'OpenCode CLI',
-      'deepseek/deepseek-flash',
+      'DeepSeek V4.1 Flash',
+      'via deepseek',
       'Claude Code CLI',
       'Claude Sonnet 4',
     ]);
