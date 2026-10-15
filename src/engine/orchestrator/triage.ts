@@ -35,18 +35,19 @@ import {
 import { recordCheckRuns } from './evidence/record-checks.js';
 import { runBaseOf } from './isolation/base-tree.js';
 import type { ValidationCommandRunner } from './validation/types.js';
-import { checkFailureText } from './validation/failure-text.js';
+import { checkFailureText, newFailureKeys } from './validation/failure-text.js';
 import { uniqueSorted } from '../../utils/collections.js';
 
-export function checkVerificationStatus(
-  runs: readonly CheckRunResult[],
-): 'pass' | 'fail' | 'unverified' {
-  if (runs.some((run) => run.status === 'fail')) return 'fail';
-  if (runs.length > 0 && runs.every((run) => run.status === 'pass')) return 'pass';
+/** A red whose failures were all red at the run base too verifies the claim like a pass. */
+function checkVerificationStatus(runs: readonly CheckRunResult[]): 'pass' | 'fail' | 'unverified' {
+  if (runs.some((run) => newFailureKeys(run).length > 0)) return 'fail';
+  if (runs.length > 0 && runs.every((run) => run.status === 'pass' || run.status === 'fail')) {
+    return 'pass';
+  }
   return 'unverified';
 }
 
-export function checkVerificationOutput(runs: readonly CheckRunResult[]): string {
+function checkVerificationOutput(runs: readonly CheckRunResult[]): string {
   return runs
     .map((run) => {
       if (run.status === 'fail') return checkFailureText(run);
@@ -185,15 +186,18 @@ export function fixTaskTargetErrors(
   );
 }
 
-export async function runTriageVerification(
+/**
+ * Runs the checks behind one claim of a review and records them. A red keeps as pre-existing the
+ * failures `preExistingChecks`, this review's run base split, names for the same check.
+ */
+export async function verifyClaimChecks(
   ctx: TriageContext,
   state: WorkflowState,
-  result: TriageResult,
-): Promise<NonNullable<TriageRecord['verification']>> {
-  if (result.verify.length === 0) return [];
-  const entries: NonNullable<TriageRecord['verification']> = [];
-  for (const entry of result.verify) {
-    const runs = await runChecks(entry.checkIds, {
+  checkIds: readonly string[],
+  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+): Promise<{ status: 'pass' | 'fail' | 'unverified'; output: string }> {
+  const runs = (
+    await runChecks(checkIds, {
       plan: state.plan,
       tasks: state.tasks,
       reviewChecks: enabledReviewChecks(ctx.config, state.reviewChecks),
@@ -210,18 +214,34 @@ export async function runTriageVerification(
       }),
       ...(ctx.signal !== undefined && { signal: ctx.signal }),
       ...(ctx.runCommand !== undefined && { runCommand: ctx.runCommand }),
-    });
-    await recordCheckRuns({
-      projectDir: ctx.projectDir,
-      sessionId: ctx.sessionId,
-      workspaceDir: ctx.workspaceDir,
-      state,
-      runs,
-    });
+    })
+  ).map((run): CheckRunResult => {
+    if (run.status !== 'fail' || run.failure.placeholder !== undefined) return run;
+    const atBase = preExistingChecks.find((check) => check.id === run.checkId)?.keys ?? [];
+    const preExisting = run.failure.keys.filter((key) => atBase.includes(key));
+    return preExisting.length > 0 ? { ...run, preExisting } : run;
+  });
+  await recordCheckRuns({
+    projectDir: ctx.projectDir,
+    sessionId: ctx.sessionId,
+    workspaceDir: ctx.workspaceDir,
+    state,
+    runs,
+  });
+  return { status: checkVerificationStatus(runs), output: checkVerificationOutput(runs) };
+}
+
+export async function runTriageVerification(
+  ctx: TriageContext,
+  state: WorkflowState,
+  result: TriageResult,
+  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+): Promise<NonNullable<TriageRecord['verification']>> {
+  const entries: NonNullable<TriageRecord['verification']> = [];
+  for (const entry of result.verify) {
     entries.push({
       id: verificationKey('finding', entry.findingId),
-      status: checkVerificationStatus(runs),
-      output: checkVerificationOutput(runs),
+      ...(await verifyClaimChecks(ctx, state, entry.checkIds, preExistingChecks)),
     });
   }
   return entries;

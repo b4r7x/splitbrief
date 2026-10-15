@@ -11,6 +11,7 @@ import {
   sessionDir,
   sessionsRoot,
 } from '../../../src/core/paths.js';
+import type { Finding } from '../../../src/core/review/verdict.js';
 import { ReviewPacketSchema } from '../../../src/core/schemas/review-packet.js';
 import { groupEventsIntoSections } from '../../../src/core/sections/event-sections.js';
 import { readRunRecord } from '../../../src/core/sessions/run-record-io.js';
@@ -189,13 +190,14 @@ const PENDING_INPUT = /^- \*\*(\S+)\*\* \(check · defect\)/gm;
 
 /**
  * Starts a run whose base holds `committed`, whose reviewer chooses `command` as V1 and passes the
- * review but keeps each pending red input to verify, and whose implementer writes the total helper
- * and, with `broken`, rewrites the ledger.
+ * review but keeps each pending red input to verify and reports `finding`, and whose implementer
+ * writes the total helper and, with `broken`, rewrites the ledger.
  */
 async function startRun(opts: {
   committed: Record<string, string>;
   command: string;
   broken?: string | undefined;
+  finding?: Finding | undefined;
 }) {
   fixture = createStopContinueFixture(() => '');
   const target = fixture;
@@ -230,6 +232,7 @@ if (prompt.includes('# Choose the checks for this review')) {
   const inputs = [...section.matchAll(new RegExp(${JSON.stringify(PENDING_INPUT.source)}, 'gm'))].map((match) => match[1]);
   answer = { ...${JSON.stringify(verdict)} };
   if (inputs.length > 0) answer.verify = inputs.map((findingId) => ({ findingId, checkIds: ['V1'] }));
+  ${opts.finding === undefined ? '' : `answer.findings = [${JSON.stringify(opts.finding)}];`}
 } else if (prompt.includes('# Plan the change')) {
   kind = 'plan';
   answer = ${JSON.stringify({ result: plan })};
@@ -515,4 +518,113 @@ describe('e2e: reviewer check base re-run', { timeout: 240_000 }, () => {
     expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
     expect(deriveRunStatus({ state, liveness: 'not-alive' }).kind).toBe('open');
   });
+
+  it.each(['minor', 'blocking'] as const)(
+    'passes a correct change with a %s unverified finding on a check red only at the run base',
+    async (severity) => {
+      const red = REDS[1];
+      if (red === undefined) throw new Error('Missing the node --test red');
+      const finding = noteOn(red.file, severity);
+      const { target, run, sessionId, ref, events } = await startRun({
+        committed: { [red.file]: red.source },
+        command: red.command,
+        finding,
+      });
+      expect(run.exitCode, `${run.stdout}\n${run.stderr}`).toBe(0);
+
+      expect(events.some((event) => event.type === 'review_fix_started')).toBe(false);
+      expect(
+        events.filter((event) => event.type === 'review_completed' && event.scope === 'final'),
+      ).toMatchObject([{ verdict: 'pass-with-notes', findings: { blocking: 0, minor: 1 } }]);
+      expect(events.filter((event) => event.type === 'workflow_complete')).toMatchObject([
+        { review: 'passed' },
+      ]);
+
+      const state = readState(target, sessionId);
+      expect(state.pendingRecovery).toBeUndefined();
+      expect(state.review?.verification).toEqual([
+        expect.objectContaining({ id: 'finding:F1', status: 'pass' }),
+      ]);
+      const review = readFileSync(
+        join(sessionDir(target.projectDir, sessionId), REVIEW_FILE),
+        'utf8',
+      );
+      expect(review).toContain(`**Critical**\n\nNone.\n\n**Note**\n\n- ${finding.text}\n`);
+      expect(review).toContain(`### Pre-existing failures`);
+      expect(deriveRunStatus({ state, liveness: 'not-alive' })).toEqual({
+        kind: 'ready-to-apply',
+        override: false,
+      });
+
+      const logged = readEvidenceLedger(ref)?.tasks.flatMap((task) => task.checks ?? []) ?? [];
+      const v1 = logged.filter((entry) => entry.id === 'V1');
+      expect(v1).toHaveLength(2);
+      for (const entry of v1) expect(entry.preExisting).toEqual([red.key]);
+    },
+  );
+
+  it.each([
+    ['minor', 1],
+    ['blocking', 2],
+  ] as const)(
+    'fails the review on a check that newly fails; a %s unverified finding on it makes %d blocking',
+    async (severity, blocking) => {
+      const red = REDS[1];
+      if (red === undefined) throw new Error('Missing the node --test red');
+      const finding = noteOn(red.file, severity);
+      const command = `${red.command} ${LEDGER_SUITE_FILE}`;
+      const { target, run, sessionId, events } = await startRun({
+        committed: {
+          [red.file]: red.source,
+          [LEDGER_FILE]: LEDGER_SOURCE,
+          [LEDGER_SUITE_FILE]: LEDGER_SUITE_SOURCE,
+        },
+        command,
+        broken: BROKEN_LEDGER,
+        finding,
+      });
+      expect(run.exitCode, `${run.stdout}\n${run.stderr}`).not.toBe(0);
+
+      const completed = events.filter(
+        (event) => event.type === 'review_completed' && event.scope === 'final',
+      );
+      expect(completed.length).toBeGreaterThan(0);
+      for (const event of completed) {
+        expect(event).toMatchObject({
+          verdict: 'fail',
+          findings: { blocking, minor: 2 - blocking },
+        });
+      }
+      expect(events.some((event) => event.type === 'workflow_complete')).toBe(false);
+
+      const state = readState(target, sessionId);
+      expect(state.pendingRecovery).toMatchObject({ reason: 'review-failed' });
+      const review = readFileSync(
+        join(sessionDir(target.projectDir, sessionId), REVIEW_FILE),
+        'utf8',
+      );
+      const [critical, note] = review.split('**Critical**')[1]?.split('**Note**') ?? [];
+      expect(critical).toContain(
+        `- V1.1: Reviewer check V1 (${command}) failed with new failures.`,
+      );
+      expect(severity === 'minor' ? note : critical).toContain(`- ${finding.text}`);
+      expect(severity === 'minor' ? critical : note).not.toContain(finding.text);
+    },
+  );
 });
+
+/** An unverified finding on V1 that blames only a failure the run base holds too. */
+function noteOn(file: string, severity: 'minor' | 'blocking'): Finding {
+  return {
+    id: 'F1',
+    kind: 'unverified',
+    severity,
+    taskId: null,
+    file,
+    line: null,
+    text: `V1 fails only on ${file}, which also fails at the run base.`,
+    acceptance: null,
+    checkIds: ['V1'],
+    criterionId: null,
+  };
+}

@@ -429,6 +429,7 @@ describe('review fix work', () => {
       },
       { ...triageState(), reviewChecks: REVIEW_CHECKS },
       { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
+      [],
     );
 
     expect(verification[0]?.status).toBe('fail');
@@ -437,6 +438,57 @@ describe('review fix work', () => {
       'Failures:\n- src/a.test.ts::adds\n  AssertionError: expected 1 to be 2\nOutput tail:\n',
     );
     expect(verification[0]?.output.split('Output tail:')[1]).not.toContain('AssertionError');
+  });
+
+  describe('a red reviewer check against the failures this review saw red at the run base', () => {
+    const ADDS = ' FAIL  src/a.test.ts > adds\nAssertionError: expected 1 to be 2\n';
+    const SUBTRACTS = ' FAIL  src/b.test.ts > subtracts\nAssertionError: expected 3 to be 1\n';
+    const RED_AT_BASE = [{ id: 'V2', command: 'npm test', keys: ['src/a.test.ts::adds'] }];
+    const verifyV2 = async (
+      result: Parameters<typeof makeCommandRunner>[0],
+      preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>,
+    ) => {
+      const ref = setupProject(dirs);
+      const [entry] = await runTriageVerification(
+        {
+          ...ref,
+          workspaceDir: ref.projectDir,
+          config: makeConfig({}),
+          bus: makeBusRecorder().bus,
+          runCommand: makeCommandRunner(result),
+        },
+        { ...triageState(), reviewChecks: REVIEW_CHECKS },
+        { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['V2'] }], ask: null },
+        preExistingChecks,
+      );
+      return entry;
+    };
+    const red = (output: string) =>
+      processError.exitCode({ command: 'npm test', code: 1, stderr: '', output });
+
+    it('passes the claim when every failure was red at the run base too', async () => {
+      const entry = await verifyV2(red(ADDS), RED_AT_BASE);
+      expect(entry?.status).toBe('pass');
+      expect(entry?.output).toContain(
+        'Pre-existing failures (also red at the run base):\n- src/a.test.ts::adds',
+      );
+    });
+
+    it('fails the claim on a failure the run base did not show', async () => {
+      const entry = await verifyV2(red(`${ADDS}${SUBTRACTS}`), RED_AT_BASE);
+      expect(entry?.status).toBe('fail');
+      expect(entry?.output).toContain('New failures:\n- src/b.test.ts::subtracts');
+    });
+
+    it('fails the claim on a red that names no failure', async () => {
+      const entry = await verifyV2(red('npm ERR! something broke\n'), RED_AT_BASE);
+      expect(entry?.status).toBe('fail');
+    });
+
+    it('fails the claim when this review has no run base split for the check', async () => {
+      const entry = await verifyV2(red(ADDS), []);
+      expect(entry?.status).toBe('fail');
+    });
   });
 
   it('verifies the named registered checks without a seat call', async () => {
@@ -453,6 +505,7 @@ describe('review fix work', () => {
       },
       state,
       { fixTasks: [], rejected: [], verify: [{ findingId: 'F1', checkIds: ['K1'] }], ask: null },
+      [],
     );
     expect(runCommand.calls.map((call) => call.cmd)).toEqual(['tsc']);
     expect(verification).toEqual([{ id: 'finding:F1', status: 'pass', output: 'K1: pass — ok' }]);
@@ -473,6 +526,7 @@ describe('review fix work', () => {
         },
         state,
         VERIFY_V1,
+        [],
       );
       return { verification, commands: runCommand.calls.map((call) => call.cmd) };
     };

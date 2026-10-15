@@ -41,6 +41,13 @@ export function failureKeysForFile(input: {
   return input.failure.keys.filter((key) => matchesFile({ key, file: input.file }));
 }
 
+/** The failures of a red that count against the run: every key its `preExisting` does not name. */
+export function newFailureKeys(run: CheckRunResult): string[] {
+  if (run.status !== 'fail') return [];
+  const preExisting = run.preExisting ?? [];
+  return run.failure.keys.filter((key) => !preExisting.includes(key));
+}
+
 /**
  * The text a check that did not pass hands the implementer, the consult and the reviewer. A red
  * with failure keys leads with them, each failing test with its assertion message, before the

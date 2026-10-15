@@ -106,24 +106,18 @@ import {
   type ReviewScope,
 } from '../../core/review/verdict.js';
 import { renderReviewMarkdown } from '../../core/review/render.js';
-import {
-  checkRegistry,
-  enabledReviewChecks,
-  planApprovesNpmScripts,
-  runChecks,
-} from './validation/run-checks.js';
+import { checkRegistry, enabledReviewChecks } from './validation/run-checks.js';
 import { seatSupportsImages } from '../../core/runners/capabilities.js';
 import { forceUnverifiedRenderCriteria, reviewRenders } from './review-renders.js';
-import { currentCandidateId, recordCheckRuns } from './evidence/record-checks.js';
+import { currentCandidateId } from './evidence/record-checks.js';
 import { deserializeChangedFilesBaseline } from './changed-files-baseline.js';
 import type { RequestTypedResult, SeatProtocolError } from '../runners/typed-output.js';
 import { fixCyclesOf } from '../../core/schemas/workflow.js';
 import {
-  checkVerificationOutput,
-  checkVerificationStatus,
   fixTaskTargetErrors,
   runTriageVerification,
   triageContractErrors,
+  verifyClaimChecks,
 } from './triage.js';
 import type { PreReviewResult } from './run/pre-review-checks.js';
 import { runReviewChecks } from './review-checks.js';
@@ -236,13 +230,15 @@ type ReviewVerification = {
 
 /**
  * The checks of every unverified criterion and finding, run through the same
- * runner briefs use. A pass needs every named check to pass; any failure is a
+ * runner briefs use. A pass needs every named check to pass or to fail only on
+ * what `preExistingChecks` saw red at the run base; any other failure is a
  * failure; anything not runnable stays unverified and cannot verify a claim.
  */
 async function verifyReviewClaims(args: {
   verdict: ReviewVerdict;
   scope: ReviewScope;
   state: WorkflowState;
+  preExistingChecks: NonNullable<ReviewRecord['preExistingChecks']>;
   projectDir: string;
   workspaceDir: string;
   sessionId: string;
@@ -263,34 +259,15 @@ async function verifyReviewClaims(args: {
     checkIds: readonly string[],
   ): Promise<void> => {
     if (checkIds.length === 0) return;
-    const runs = await runChecks(checkIds, {
-      plan: args.state.plan,
-      tasks: args.state.tasks,
-      reviewChecks: enabledReviewChecks(args.config, args.state.reviewChecks),
-      base: runBaseOf({ projectDir: args.projectDir, sessionId: args.sessionId }, args.state),
-      projectDir: args.workspaceDir,
-      sessionId: args.sessionId,
-      checkoutDir: args.projectDir,
-      config: args.config,
-      bus: args.bus,
-      phase: args.state.phase,
-      npmScriptsApproved: planApprovesNpmScripts({ config: args.config, state: args.state }),
-      ...(args.state.discoveredValidation !== undefined && {
-        discoveredValidation: args.state.discoveredValidation,
-      }),
-      ...(args.signal !== undefined && { signal: args.signal }),
-    });
-    await recordCheckRuns({
-      projectDir: args.projectDir,
-      sessionId: args.sessionId,
-      workspaceDir: args.workspaceDir,
-      state: args.state,
-      runs,
-    });
-    const status = checkVerificationStatus(runs);
+    const { status, output } = await verifyClaimChecks(
+      args,
+      args.state,
+      checkIds,
+      args.preExistingChecks,
+    );
     const key = verificationKey(kind, id);
     map.set(key, status);
-    entries.push({ id: key, status, output: checkVerificationOutput(runs) });
+    entries.push({ id: key, status, output });
   };
   for (const criterion of args.verdict.criteria) {
     if (criterion.status !== 'unverified') continue;
@@ -869,11 +846,12 @@ export async function runFinalReviewPhase(opts: {
       verify: answer.verify,
       ask: answer.ask,
     };
-    const fixVerification = await runTriageVerification(opts, state, fixWork);
+    const fixVerification = await runTriageVerification(opts, state, fixWork, preExistingChecks);
     const verification = await verifyReviewClaims({
       verdict: reviewerVerdict,
       scope,
       state,
+      preExistingChecks,
       projectDir,
       workspaceDir,
       sessionId,

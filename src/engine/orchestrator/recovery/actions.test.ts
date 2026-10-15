@@ -58,7 +58,7 @@ describe('typed review overrides', () => {
             {
               id: 'F1',
               kind: 'unverified',
-              severity: 'minor',
+              severity: 'blocking',
               taskId: null,
               file: null,
               line: null,

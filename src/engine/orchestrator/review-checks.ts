@@ -37,7 +37,7 @@ import { plannerFeature } from './run/planner-callbacks-context.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
-import { checkFailureText, failureKeysForFile } from './validation/failure-text.js';
+import { checkFailureText, failureKeysForFile, newFailureKeys } from './validation/failure-text.js';
 import {
   planApprovesNpmScripts,
   reviewCheckList,
@@ -280,15 +280,14 @@ function noRunBase(
 
 /**
  * The failures of a red reviewer check split by the run base: `preExisting` are the keys the same
- * command text also shows there, `fresh` the rest. `notVerified` says why a red that is also red at
- * the run base is not shown to be the same failure; its keys stay fresh.
+ * command text also shows there. `notVerified` says why a red that is also red at the run base is
+ * not shown to be the same failure; its keys stay new.
  */
 async function splitAtRunBase(input: {
   run: Extract<CheckRunResult, { status: 'fail' }>;
   command: string;
   checkOptions: RunChecksOptions;
 }): Promise<{
-  fresh: string[];
   preExisting: string[];
   base?: CheckRunResult | undefined;
   unavailable?: string | undefined;
@@ -309,7 +308,6 @@ async function splitAtRunBase(input: {
           notices,
         });
   return {
-    fresh: failure.keys.filter((key) => !atBase.keys.includes(key)),
     preExisting: atBase.keys,
     base: 'run' in atBase ? atBase.run : undefined,
     unavailable: atBase.unavailable,
@@ -372,26 +370,22 @@ export async function runReviewCheck(
   if (moment === 'brief') {
     return { run, fresh: judged === null || !judged.proven ? run.failure.keys : judged.left };
   }
-  const { fresh, preExisting, base, unavailable, notVerified } = await splitAtRunBase({
+  const { preExisting, base, unavailable, notVerified } = await splitAtRunBase({
     run,
     command,
     checkOptions,
   });
-  return {
-    run: {
-      ...run,
-      ...(preExisting.length > 0 && { preExisting }),
-      ...(base !== undefined && {
-        base: {
-          output: base.output,
-          ...(base.exitCode !== undefined && { exitCode: base.exitCode }),
-        },
-      }),
-    },
-    fresh,
-    unavailable,
-    notVerified,
+  const split: CheckRunResult = {
+    ...run,
+    ...(preExisting.length > 0 && { preExisting }),
+    ...(base !== undefined && {
+      base: {
+        output: base.output,
+        ...(base.exitCode !== undefined && { exitCode: base.exitCode }),
+      },
+    }),
   };
+  return { run: split, fresh: newFailureKeys(split), unavailable, notVerified };
 }
 
 /** Why none of the chosen commands ran, as the row, the record and the verdict call name it. */

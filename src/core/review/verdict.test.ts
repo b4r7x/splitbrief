@@ -382,6 +382,21 @@ describe('deriveReviewOutcome', () => {
     expect(passedCheck.blocking).toEqual([]);
     expect(passedCheck.minor).toHaveLength(1);
   });
+
+  it.each([undefined, 'fail', 'unverified', 'pass'] as const)(
+    'keeps a minor unverified finding a note when its verification is %s',
+    (status) => {
+      const note = finding({ kind: 'unverified', severity: 'minor', checkIds: ['K1'] });
+      const outcome = deriveReviewOutcome(
+        makeVerdict({ findings: [note] }),
+        scope,
+        verification(status === undefined ? [] : [['finding:F1', status]]),
+      );
+      expect(outcome.kind).toBe('pass-with-notes');
+      expect(outcome.blocking).toEqual([]);
+      expect(outcome.minor).toEqual([note]);
+    },
+  );
 });
 
 describe('findingInReviewScope', () => {

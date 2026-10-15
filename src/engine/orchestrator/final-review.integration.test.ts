@@ -64,10 +64,14 @@ afterEach(() => {
   dirs = [];
 });
 
-function setupProject(): { projectDir: string; sessionId: string; runStartHead: string } {
+function setupProject(files: Record<string, string> = {}): {
+  projectDir: string;
+  sessionId: string;
+  runStartHead: string;
+} {
   const projectDir = createTempDir('final-review-test');
   dirs.push(projectDir);
-  createTestGitRepo(projectDir);
+  createTestGitRepo(projectDir, files);
   const sessionId = 'sess-final';
   ensureSessionDir(projectDir, sessionId);
   const runStartHead = execSync('git rev-parse HEAD', {
@@ -861,6 +865,88 @@ describe('runFinalReviewPhase', () => {
     expect(record.outcome).toBe('pass-with-notes');
     expect(result.verdict?.outcome.minor).toHaveLength(1);
     expect(result.verdict?.outcome.blocking).toHaveLength(0);
+  });
+
+  it('verifies a claim on a re-review whose check fails only on what the run base failed too', async () => {
+    const key = 'legacy/report.mjs:2:1 AssertionError: legacy total expected 3, received 2';
+    const command = 'node legacy/report.mjs';
+    const { projectDir, sessionId, runStartHead } = setupProject({
+      'legacy/report.mjs': `console.error(${JSON.stringify(key)});\nprocess.exitCode = 1;\n`,
+    });
+    const finding = {
+      id: 'F1',
+      kind: 'unverified' as const,
+      severity: 'blocking' as const,
+      taskId: null,
+      file: null,
+      line: null,
+      text: 'V1 fails only on legacy/report.mjs, which fails at the run base too',
+      acceptance: null,
+      checkIds: ['V1'],
+      criterionId: null,
+    };
+    const { reviewer } = makeReviewer((prompt) => ({
+      ...passingReviewVerdict(prompt),
+      findings: [finding],
+    }));
+    const state = allTasksDoneState([makeTask({ id: 'T001', status: 'done' })], runStartHead);
+
+    const result = await runFinalReviewPhase({
+      projectDir,
+      workspaceDir: projectDir,
+      sessionId,
+      config: makeNoValidationConfig({ validation: { endChecks: true } }),
+      callbacks: makeCallbacks().callbacks,
+      bus: makeBusRecorder().bus,
+      state: {
+        ...state,
+        reviewChecks: {
+          scope: 'final',
+          cycle: 0,
+          plan: {
+            commands: [{ id: 'V1', command, reason: 'the project checks its report total' }],
+            declined: [],
+            reason: null,
+          },
+          at: '2026-10-08T00:00:00.000Z',
+        },
+        review: {
+          cycle: 0,
+          verdict: { tasks: [], criteria: [], findings: [] },
+          outcome: 'fail',
+          verification: [],
+          preExistingChecks: [{ id: 'V1', command, keys: [key] }],
+          at: '2026-10-08T00:00:00.000Z',
+        },
+      },
+      reviewer,
+      metadata: TEST_METADATA,
+      summaryBase: SUMMARY_BASE,
+      taskBreakdowns: [],
+      reviewChecks: false,
+    });
+
+    const record = readReviewRecord(projectDir, sessionId);
+    expect(record.verification).toEqual([
+      {
+        id: 'finding:F1',
+        status: 'pass',
+        output: expect.stringContaining(
+          `Pre-existing failures (also red at the run base):\n- ${key}`,
+        ),
+      },
+    ]);
+    expect(record.outcome).toBe('pass-with-notes');
+    expect(result.verdict?.outcome.blocking).toEqual([]);
+    expect(result.verdict?.outcome.minor).toEqual([finding]);
+    const logged =
+      readEvidenceLedger({ projectDir, sessionId })?.tasks.flatMap((task) => task.checks ?? []) ??
+      [];
+    expect(logged.find((entry) => entry.id === 'V1')).toMatchObject({
+      command,
+      exitCode: 1,
+      preExisting: [key],
+    });
   });
 
   it('verifies nothing for an unverified finding that names no check and no criterion', async () => {
