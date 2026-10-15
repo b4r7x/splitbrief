@@ -18,8 +18,8 @@ import { loadState } from '../../src/core/state/persistence.js';
 import type { SessionRef } from '../../src/core/types/session-ref.js';
 
 export const TEST_METADATA = {
-  planner: { tool: 'claude-code' },
-  implementer: { tool: 'ollama' },
+  planner: 'Claude Code CLI · auto',
+  implementer: 'Ollama · auto',
 } as const;
 
 export const TEST_SINKS: WorkflowSinks = {

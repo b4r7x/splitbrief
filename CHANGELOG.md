@@ -87,6 +87,7 @@
 
 ### Fixed
 
+- Saved files, reports, screens and fallback notices use the same model names. Choosing an Antigravity effort level saves the model that runs at that level.
 - The home list and `/sessions` show when a stopped run last stopped or ended, not when it started. The plan card keeps **Request changes** marked while you type.
 - Reviewer check selection now sees the task briefs, plan decisions and your later instructions, including requests for specific checks.
 - **Show diff** with no `VISUAL` or `EDITOR` set opens the run's changes in your pager (`PAGER`, else `less`) in the terminal, and `q` returns to the run. It no longer starts an installed GUI editor app that held the run screen until the whole app quit.

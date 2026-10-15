@@ -288,6 +288,7 @@ function headlessResumePolicy(
     allowRepoRunners: prepared.runtime.allowRepoRunners,
     allowHooks: prepared.runtime.allowHooks,
     unverifiedAuth: allowUnverifiedAuth ? 'allowed' : 'denied',
+    modelCache: modelCacheStore,
   };
 }
 

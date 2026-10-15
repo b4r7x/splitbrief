@@ -17,6 +17,8 @@ import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { loadRememberedPresentationSnapshot } from '../../engine/detection/cache.js';
 import { loadModelsDevCatalogCache } from '../../engine/providers/models-dev-cache.js';
 import { discoverSkills } from '../../engine/skill-discovery.js';
+import type { Config } from '../../core/schemas/config.js';
+import { loadConfig } from '../../core/config/load/io.js';
 
 const inFlightDiscovery = new Set<Promise<void>>();
 
@@ -50,19 +52,7 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
   }
 
   const current = { config: storeConfig, projectDir };
-  const contexts = detectionContextsForCurrentConfig(current);
-  const remembered = await loadRememberedPresentationSnapshot({
-    projectDir,
-    contextKey: contexts.readiness,
-  });
-  if (remembered !== null) {
-    hydrateDetectionIntoStores({
-      detection: detectionStore,
-      snapshot: remembered.snapshot,
-      contexts,
-      foreignContext: remembered.foreignContext,
-    });
-  }
+  await hydrateRememberedDetection(current);
 
   // For a tool with no native catalog — claude-code, the default planner —
   // models.dev is the only real model source, so the picker shows bundled
@@ -86,6 +76,38 @@ export async function loadDiscovery(projectDir: string): Promise<void> {
 
   const skills = await discoverSkills(projectDir);
   skillsStore.setAvailable(skills);
+}
+
+async function hydrateRememberedDetection(
+  current: Readonly<{ config: Config; projectDir: string }>,
+): Promise<void> {
+  const contexts = detectionContextsForCurrentConfig(current);
+  const remembered = await loadRememberedPresentationSnapshot({
+    projectDir: current.projectDir,
+    contextKey: contexts.readiness,
+  });
+  if (remembered === null) return;
+  hydrateDetectionIntoStores({
+    detection: detectionStore,
+    snapshot: remembered.snapshot,
+    contexts,
+    foreignContext: remembered.foreignContext,
+  });
+}
+
+/**
+ * Loads presentation labels without tool probes.
+ */
+export async function loadRememberedCatalog(projectDir: string): Promise<void> {
+  let config: Config;
+  try {
+    config = loadConfig(projectDir).config;
+  } catch (err) {
+    warnError('Could not load model names', err);
+    return;
+  }
+  await hydrateRememberedDetection({ config, projectDir });
+  await seedModelsDevCatalog();
 }
 
 async function seedModelsDevCatalog(): Promise<void> {

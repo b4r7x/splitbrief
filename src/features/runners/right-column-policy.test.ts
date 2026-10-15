@@ -5,6 +5,8 @@ import { configStore } from '../../stores/project/config.js';
 import { pickerViewStore } from '../../stores/ui/picker-view.js';
 import type { ModelOption, ModelVariant } from './model-catalog/recency.js';
 import type { AuthMethodChoice, RightRow } from './model-catalog/rows.js';
+import { buildRightRows } from './model-catalog/rows.js';
+import { mergeOptionFamilies } from './model-catalog/option-merge.js';
 import {
   confirmRow,
   cycleRightRow,
@@ -22,7 +24,6 @@ function optionAxisRow(input: {
   providerPrefix?: string;
   last?: boolean;
   steps?: boolean;
-  unset?: string;
 }): RightRow {
   return {
     kind: 'axis',
@@ -31,7 +32,6 @@ function optionAxisRow(input: {
     providerPrefix: input.providerPrefix ?? '',
     value: input.value,
     choices: input.choices ?? [],
-    ...(input.unset === undefined ? {} : { unset: input.unset }),
     steps: input.steps ?? true,
     last: input.last ?? false,
     tree: { depth: 1, parentContinues: false },
@@ -409,6 +409,42 @@ describe('cycleRightRow', () => {
     pickerViewStore.reset();
   });
 
+  it('cycles and confirms an Antigravity level through its listed model id alone', () => {
+    const [model] = mergeOptionFamilies([
+      { id: 'gemini-3.8-flash-high' },
+      { id: 'gemini-3.8-flash-medium' },
+      { id: 'gemini-3.8-flash-low' },
+    ]);
+    if (model === undefined) throw new Error('Missing model family');
+    pickerViewStore.expand(model.id, model.id, null);
+    const row = buildRightRows({
+      models: [model],
+      expandedModelId: model.id,
+      optionDraftId: model.id,
+      providerAuth: undefined,
+      hasOracle: false,
+      catalogLane: 'ready',
+      persistedModel: model.id,
+      customModels: [],
+      browseCatalog: false,
+    }).find((entry) => entry.kind === 'axis');
+    if (row === undefined) throw new Error('Missing effort row');
+
+    expect(cycleRightRow(row)).toBe('stepped');
+    expect(pickerViewStore.get().optionDraftId).toBe('gemini-3.8-flash-low');
+    expect(pickerViewStore.get().effortDraft).toBeNull();
+    const saved: { model: string; effort: string | null | undefined }[] = [];
+    const actions = makeActions();
+    actions.confirmProviderSelection = async (model, effort) => {
+      saved.push({ model, effort });
+    };
+    confirmRow(cliTool({ id: 'antigravity', displayName: 'Google Antigravity CLI' }), row, {
+      actions,
+      auth: { hasOracle: false, providerAuth: undefined },
+    });
+    expect(saved).toEqual([{ model: 'gemini-3.8-flash-low', effort: undefined }]);
+  });
+
   it('steps effortDraft through the ladder and wraps back to unset', () => {
     const row = optionAxisRow({
       model: { id: 'opus', effortChoices: ['low', 'high'] },
@@ -429,23 +465,6 @@ describe('cycleRightRow', () => {
 
     expect(cycleRightRow(row)).toBe('stepped');
     expect(pickerViewStore.get().effortDraft).toBe('low');
-  });
-
-  it('walks past unset where unset already reads the level the model id spells', () => {
-    const row = optionAxisRow({
-      model: { id: 'gemini-3.8-flash-high', effortChoices: ['low', 'medium', 'high'] },
-      axis: 'effort',
-      value: 'high',
-      choices: ['low', 'medium', 'high'],
-      unset: 'high',
-    });
-
-    const drafts = [1, 2, 3, 4].map(() => {
-      cycleRightRow(row);
-      return pickerViewStore.get().effortDraft;
-    });
-
-    expect(drafts).toEqual(['low', 'medium', 'high', 'low']);
   });
 
   it('moves optionDraftId and leaves effortDraft alone when the choices list is empty', () => {

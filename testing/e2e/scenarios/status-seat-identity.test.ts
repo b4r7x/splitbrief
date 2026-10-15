@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { stripVTControlCharacters } from 'node:util';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
@@ -44,6 +45,38 @@ function status(): ReturnType<typeof spawnCli> {
     timeoutMs: 30_000,
   });
 }
+
+it('names recorded seats from the remembered catalog in a fresh command', async () => {
+  writeState({
+    plannerTool: 'codex',
+    plannerModel: 'gpt-6-luna',
+    plannerKind: 'cli',
+    implementerTool: 'codex',
+    implementerModel: 'gpt-6-luna',
+    implementerKind: 'cli',
+  });
+  await saveDetectionCache({
+    projectDir,
+    snapshot: {
+      contextKey: 'remembered',
+      fetchedAt: 1,
+      validatedAt: 1,
+      generation: 1,
+      requestId: 1,
+      providers: [],
+      cliTools: [],
+      cliCatalogs: [
+        { tool: 'codex', models: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }], probedAt: 1 },
+      ],
+    },
+  });
+
+  const run = await status();
+  expect(run.exitCode, run.stderr).toBe(0);
+  expect(run.stdout).toContain('Planner:  OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('Impl:     OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).not.toContain('GPT-6 Luna');
+});
 
 it('prints distinct OpenCode routes with the same identities as the crew rows', async () => {
   const identities = [];

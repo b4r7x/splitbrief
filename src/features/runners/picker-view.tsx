@@ -12,7 +12,6 @@ import { configStore } from '../../stores/project/config.js';
 
 import { CREW_SEAT_LABELS, PLANNER_INHERITANCE } from '../../core/crew/identity.js';
 import { CLI_TOOL_CATALOG, CLI_TOOL_IDS } from '../../core/runners/cli-tool-catalog.js';
-import { modelIdSpellsAxes } from '../../core/runners/effort-channel.js';
 import {
   PICKER_ROLE_SEAT_IDS,
   type PickerSlot,
@@ -353,12 +352,7 @@ export function PickerView({
       return formatModelsByline({
         label,
         id,
-        axes: modelBylineAxes({
-          model,
-          id,
-          effortDraft: catalog.effortDraft,
-          idSpellsEffort: toolId !== undefined && modelIdSpellsAxes(toolId),
-        }),
+        axes: modelBylineAxes({ model, id, effortDraft: catalog.effortDraft }),
         contextLength: model.contextLength,
         supportsToolCalls: model.supportsToolCalls,
       });

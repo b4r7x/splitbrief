@@ -14,8 +14,8 @@ let tmp: string;
 const SESSION_ID = '2024-01-01-test-feature';
 
 const meta: SpecMetadata = {
-  planner: { tool: 'claude-code' },
-  implementer: { tool: 'ollama' },
+  planner: 'Claude Code CLI · auto',
+  implementer: 'Ollama · auto',
 };
 
 function makeTmp(): string {

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { unlinkSync } from 'node:fs';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeImplState } from '#testing/helpers/factories/workflow-state.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
@@ -97,6 +98,28 @@ function prepareReturning(outcome: PreparationOutcome) {
 }
 
 describe('switchSeatAndPrepareResume', () => {
+  it('uses the preparation catalog for the saved fallback switch labels', async () => {
+    const candidate = { tool: 'codex', model: 'gpt-6-luna' };
+    const ref = setup('catalog-fallback-resume', true, {
+      config: makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }),
+      switchSeat: { seat: 'build', candidates: [candidate] },
+    });
+    const result = await switchSeatAndPrepareResume({
+      ...ref,
+      candidate,
+      bus: makeBusRecorder().bus,
+      signal: new AbortController().signal,
+      policy: {
+        ...RESUME_POLICY,
+        modelCache: makeModelCacheAccessor({
+          providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+        }),
+      },
+      prepare: async (input) => preparedFor(input.effectiveConfig),
+    });
+    expect(result.state.seatSwitches?.[0]?.to).toBe('OpenAI Codex CLI · GPT-6-Luna');
+  });
+
   it.each(['plan', 'build', 'review'] as const)(
     'keeps a fallback saved after preparation during a manual %s switch',
     async (seat) => {

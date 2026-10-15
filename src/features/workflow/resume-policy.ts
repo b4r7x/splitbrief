@@ -1,6 +1,7 @@
 import type { PreparationPolicy } from '../../engine/runners/prepare-execution/types.js';
 import type { PreparedExecution } from '../../engine/runners/prepared-execution.js';
 import { openApprovalPrompt } from '../../stores/approval-prompt/prompt.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 
 /**
  * The terms this run is admitted under again whenever it is re-prepared — a run started here
@@ -18,5 +19,6 @@ export function runResumePolicy(
     allowHooks: prepared.runtime.allowHooks,
     allowRepoRunners: prepared.runtime.allowRepoRunners,
     onTieredApproval: openApprovalPrompt,
+    modelCache: modelCacheStore,
   };
 }

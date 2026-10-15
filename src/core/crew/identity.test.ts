@@ -40,24 +40,33 @@ const openCodeMax: RunnerConfig = {
   variant: 'max',
 };
 
-it.each([undefined, 'low'] as const)(
-  'states the saved Antigravity effort with override %s',
-  (effort) => {
-    const seat = {
-      kind: 'cli',
-      tool: 'antigravity',
-      model: 'gemini-3.8-flash-high',
-      effort,
-    } as const;
-    const identity = `Google Antigravity CLI · Gemini 3.8 Flash · ${effort ?? 'high'}`;
-    expect(formatSeatIdentity({ seat, displayName: 'Gemini 3.8 Flash (High)' })).toBe(identity);
-    expect(
-      formatSeatIdentity({ seat: seatIdsOf(seat), displayName: 'Gemini 3.8 Flash (High)' }),
-    ).toBe(identity);
-    expect(formatShortSeatIdentity({ seat, displayName: 'Gemini 3.8 Flash (High)' })).toBe(
-      'Gemini 3.8 Flash',
-    );
-    expect(formatSeatCandidateIdentity(seat, 'Gemini 3.8 Flash (High)')).toBe(identity);
+it.each([
+  { model: 'gemini-3.8-flash-high', label: 'Gemini 3.8 Flash (High)', level: 'high' },
+  { model: 'gemini-3.8-flash-low', label: 'Gemini 3.8 Flash (Low)', level: 'low' },
+] as const)('states the Antigravity level its model id $model runs', ({ model, label, level }) => {
+  // A stale effort field beside the id does not reach agy, so no surface states it.
+  const seat = { kind: 'cli', tool: 'antigravity', model, effort: 'medium' } as const;
+  const identity = `Google Antigravity CLI · Gemini 3.8 Flash · ${level}`;
+  expect(formatSeatIdentity({ seat, displayName: label })).toBe(identity);
+  expect(formatSeatIdentity({ seat: seatIdsOf(seat), displayName: label })).toBe(identity);
+  expect(formatShortSeatIdentity({ seat, displayName: label })).toBe('Gemini 3.8 Flash');
+  expect(formatSeatCandidateIdentity(seat, label)).toBe(identity);
+});
+
+it.each([
+  { axes: [], level: 'high' },
+  { axes: ['low'], level: 'low' },
+] as const)(
+  'formats historical Antigravity seats with saved axes $axes as $level',
+  ({ axes, level }) => {
+    const seat = { tool: 'antigravity', model: 'gemini-3.8-flash-high', axes };
+    const displayName = 'Gemini 3.8 Flash (High)';
+    const identity = `Google Antigravity CLI · Gemini 3.8 Flash · ${level}`;
+    expect(formatSeatIdentity({ seat, displayName })).toBe(identity);
+    expect(formatSeatChangeIdentities({ seat, displayName }, { seat, displayName })).toEqual({
+      from: identity,
+      to: identity,
+    });
   },
 );
 

@@ -5,6 +5,7 @@ import {
   EFFORT_AXIS_TOKENS,
   optionTokensOfModelId,
   peelAxisTokensFromModelId,
+  recordedAxisWords,
   runnerEffortChannel,
   seatAxisWords,
 } from './effort-channel.js';
@@ -157,6 +158,23 @@ describe('seatAxisWords', () => {
     expect(seatAxisWords({ kind: 'cli', tool: 'cursor', model: 'gpt-5.5-none' })).toEqual(['none']);
   });
 
+  // `agy models` lists one id per level and `agy --effort` only picks one of them, so the id is
+  // the level that runs and an effort field beside it never reaches the tool.
+  it('reads the level an Antigravity id runs, not an effort field beside it', () => {
+    expect(runnerEffortChannel({ kind: 'cli', tool: 'antigravity' })).toBe('model-id');
+    expect(
+      seatAxisWords({
+        kind: 'cli',
+        tool: 'antigravity',
+        model: 'gemini-3.8-flash-high',
+        effort: 'low',
+      }),
+    ).toEqual(['high']);
+    expect(
+      seatAxisWords({ kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-low' }),
+    ).toEqual(['low']);
+  });
+
   it('says nothing for a seat whose channel carries no effort, whatever the config holds', () => {
     expect(
       seatAxisWords({
@@ -175,5 +193,22 @@ describe('seatAxisWords', () => {
     expect(seatAxisWords({ kind: 'cli', tool: 'opencode', model: 'openai/gpt-5.6-luna' })).toEqual(
       [],
     );
+  });
+});
+
+describe('recordedAxisWords', () => {
+  it('infers a model-id seat level when no axes were recorded', () => {
+    expect(recordedAxisWords('antigravity', 'gemini-3.8-flash-high', [])).toEqual(['high']);
+    expect(recordedAxisWords('cursor', 'gpt-5.3-codex-low', [])).toEqual(['low']);
+  });
+
+  it('preserves explicitly recorded axes on model-id seats', () => {
+    expect(recordedAxisWords('antigravity', 'gemini-3.8-flash-high', ['low'])).toEqual(['low']);
+    expect(recordedAxisWords('cursor', 'gpt-5.3-codex-low', ['high'])).toEqual(['high']);
+  });
+
+  it('keeps the recorded axes of every other channel', () => {
+    expect(recordedAxisWords('claude-code', 'sonnet', ['high'])).toEqual(['high']);
+    expect(recordedAxisWords('opencode', 'openai/gpt-5.6-luna', ['max'])).toEqual(['max']);
   });
 });

@@ -23,6 +23,8 @@ import {
 import { helpTextRows, settingsHelpLines } from '../../features/settings/help.js';
 import { parseSettingsFocus } from '../../features/settings/focus.js';
 import { useCrewDisplayNames } from '../../hooks/use-crew-display-names.js';
+import { resolveSeatDisplayName } from '../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
 import { hintFor, useSettingsEditor } from '../../features/settings/hooks/editor.js';
 import { CrewRowView, CrewVerdictLine } from '../../features/crew/row-view.js';
 import { FallbackRowView } from '../../features/crew/fallback-row-view.js';
@@ -67,7 +69,13 @@ export function SettingsOverlay() {
     chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0),
   });
 
-  const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools, displayNames });
+  const items = buildSettingsItems({
+    config,
+    defs: SETTINGS_DEFS,
+    cliTools,
+    displayNames,
+    seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),
+  });
   const crewRows = items.filter((item) => item.kind === 'crew').map((item) => item.row);
   const verdict = crewVerdict(crewRows);
   const layout = planSeatBlock({

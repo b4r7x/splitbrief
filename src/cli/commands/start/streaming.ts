@@ -7,6 +7,7 @@ import {
 import { writeHeadlessJsonRecord } from '../../../engine/events/public-json.js';
 import { releasePreparedExecutionOwnership } from '../../../engine/runners/prepared-execution.js';
 import { resolveSelectedSkills } from '../../headless.js';
+import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
 import { prepareStartExecution } from './readiness.js';
 import type { RequiredFeatureDispatchArgs } from './types.js';
 
@@ -26,6 +27,7 @@ export async function runHeadlessStart(
     ? await ensureHeadlessConfig({ projectDir, overrides: workflowOptsToCLIOverrides(opts) })
     : undefined;
   const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
+  await loadRememberedCatalog(projectDir);
   const execution = await prepareStartExecution({
     projectDir,
     feature: enrichedFeature ?? feature,

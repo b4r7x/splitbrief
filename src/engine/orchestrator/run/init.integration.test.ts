@@ -201,8 +201,8 @@ async function initializeTestWorkflow(
     sessionId: input.sessionId,
   };
   const metadata: SpecMetadata = {
-    planner: { tool: plannerTool },
-    implementer: { tool: 'test-implementer' },
+    planner: `${plannerTool} · auto`,
+    implementer: 'test-implementer · auto',
   };
   const tracked: { current: WorkflowState | undefined } = { current: undefined };
 

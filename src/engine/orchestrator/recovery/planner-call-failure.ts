@@ -10,6 +10,7 @@ import type { SeatFailureClassification } from '../../runners/seat-failure.js';
 import { usageLimitAdvice } from '../../runners/usage-limit.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
 import type { Config } from '../../../core/schemas/config.js';
+import type { ModelCacheAccessor } from '../../providers/model/resolution.js';
 import { sanitizeTerminalDiagnosticText } from '../../../utils/display-text.js';
 import { labelError } from '../../../utils/format-errors.js';
 import { isRecord } from '../../../utils/type-guards.js';
@@ -130,12 +131,13 @@ export async function plannerCallHaltIssue(
     Readonly<{
       projectDir: string;
       config: Config;
+      modelCache?: ModelCacheAccessor | undefined;
       /** The seat a swap moves, and the runner it runs now. */
-      swap: Omit<Parameters<typeof loadSeatSwapContext>[0], 'projectDir' | 'config'>;
+      swap: Omit<Parameters<typeof loadSeatSwapContext>[0], 'projectDir' | 'config' | 'modelCache'>;
     }>,
 ): Promise<RecoveryIssue> {
-  const { projectDir, config, swap, ...halt } = input;
-  const seatSwap = await loadSeatSwapContext({ projectDir, config, ...swap });
+  const { projectDir, config, modelCache, swap, ...halt } = input;
+  const seatSwap = await loadSeatSwapContext({ projectDir, config, modelCache, ...swap });
   return buildPlannerCallFailedRecoveryIssue({
     ...halt,
     runner: swap.runner,

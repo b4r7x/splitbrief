@@ -189,6 +189,7 @@ export async function handleTaskPlannerCallFailure(
         })
       : await plannerCallHaltIssue({
           projectDir: wctx.projectDir,
+          modelCache: wctx.modelCache,
           config: wctx.config,
           diagnosis,
           task,

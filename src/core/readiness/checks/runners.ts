@@ -1,11 +1,11 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { getRunnerDisplayName, getRunnerModelName } from '../../config/accessors/runner-config.js';
-import { formatSeatIdentity } from '../../crew/identity.js';
+import { formatSeatIdentity, type SeatDisplayName } from '../../crew/identity.js';
 import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
 import type { Config } from '../../schemas/config.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
 import type { CliReadinessResult } from '../../schemas/readiness.js';
-import type { ReadinessCheck } from '../types.js';
+import type { ReadinessCheck, SeatNamer } from '../types.js';
 import { formatRoleLabel } from '../../phase-display.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
@@ -14,16 +14,25 @@ import { configuredCliReadinessChecks } from './cli-readiness.js';
 import { modelSelection } from './runner-label.js';
 import { buildRunnerTrustBoundaryChecks } from './runner-trust-boundary.js';
 
-export function buildRunnerChecks(
-  config: Config,
-  cliReadiness: readonly CliReadinessResult[] = [],
-  availability?: readonly RunnerAvailabilityFact[] | undefined,
-  interaction?: 'interactive' | 'headless' | undefined,
-): ReadinessCheck[] {
+export function buildRunnerChecks({
+  config,
+  cliReadiness = [],
+  availability,
+  interaction,
+  seatDisplayName,
+}: {
+  config: Config;
+  cliReadiness?: readonly CliReadinessResult[] | undefined;
+  availability?: readonly RunnerAvailabilityFact[] | undefined;
+  interaction?: 'interactive' | 'headless' | undefined;
+  seatDisplayName?: SeatDisplayName | undefined;
+}): ReadinessCheck[] {
+  const nameSeat: SeatNamer = (runner, role) =>
+    formatSeatIdentity({ seat: runner, displayName: seatDisplayName?.(runner, role) });
   const checks: ReadinessCheck[] = [];
   const configuredCliTools = new Set<CliToolId>();
   if (config.planner.kind === 'cli') configuredCliTools.add(config.planner.tool);
-  checks.push(plannerCheck(config.planner));
+  checks.push(plannerCheck(config.planner, nameSeat));
   checks.push(...typedOutputFallbackCheck('planner', config.planner));
 
   const reviewer = resolveReviewerRunner(config);
@@ -52,7 +61,7 @@ export function buildRunnerChecks(
     checks.push({
       id: 'runners.implementer.default',
       severity: 'info',
-      summary: `BUILD${defaultProfile.name === 'default' ? '' : ` (${defaultProfile.name})`} ${formatSeatIdentity({ seat: defaultProfile.config })} configured.`,
+      summary: `BUILD${defaultProfile.name === 'default' ? '' : ` (${defaultProfile.name})`} ${nameSeat(defaultProfile.config, 'implementer')} configured.`,
       details: [
         ...(resolved.profiles.length > 1
           ? [`Build choices: ${resolved.profiles.map((profile) => profile.name).join(', ')}`]
@@ -68,10 +77,24 @@ export function buildRunnerChecks(
       },
     });
     checks.push(...buildImplementerProfileMetadataChecks(config, resolved.profiles));
-    checks.push(...buildRunnerTrustBoundaryChecks(config, resolved.profiles, interaction));
-    checks.push(...buildWatchdogTimeoutChecks(config, resolved.profiles));
+    checks.push(
+      ...buildRunnerTrustBoundaryChecks({
+        config,
+        profiles: resolved.profiles,
+        interaction,
+        nameSeat,
+      }),
+    );
+    checks.push(...buildWatchdogTimeoutChecks(config, resolved.profiles, nameSeat));
     if (availability !== undefined) {
-      checks.push(...buildAvailabilityChecks(config, resolved.profiles, availability));
+      checks.push(
+        ...buildAvailabilityChecks({
+          config,
+          profiles: resolved.profiles,
+          facts: availability,
+          nameSeat,
+        }),
+      );
     }
     for (const profile of resolved.profiles) {
       if (profile.config.kind === 'cli') configuredCliTools.add(profile.config.tool);
@@ -116,31 +139,36 @@ function availabilityCheck(): ReadinessCheck {
   };
 }
 
-function buildAvailabilityChecks(
-  config: Config,
-  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
-  facts: readonly RunnerAvailabilityFact[],
-): ReadinessCheck[] {
+function buildAvailabilityChecks({
+  config,
+  profiles,
+  facts,
+  nameSeat,
+}: {
+  config: Config;
+  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'];
+  facts: readonly RunnerAvailabilityFact[];
+  nameSeat: SeatNamer;
+}): ReadinessCheck[] {
   return facts.map((fact) => {
     switch (fact.slot.role) {
       case 'planner':
         return runnerAvailabilityCheck({
           fact,
-          label: `Planner ${formatSeatIdentity({ seat: config.planner })}`,
+          label: `Planner ${nameSeat(config.planner, 'planner')}`,
           isDefaultImplementer: false,
         });
       case 'reviewer':
         return runnerAvailabilityCheck({
           fact,
-          label: `Reviewer ${formatSeatIdentity({ seat: resolveReviewerRunner(config).runner })}`,
+          label: `Reviewer ${nameSeat(resolveReviewerRunner(config).runner, 'reviewer')}`,
           isDefaultImplementer: false,
         });
       case 'implementer': {
         const profileName = fact.slot.profile;
         const profile = profiles.find((candidate) => candidate.name === profileName);
         const isDefault = profile?.isDefault === true;
-        const runner =
-          profile === undefined ? '' : ` ${formatSeatIdentity({ seat: profile.config })}`;
+        const runner = profile === undefined ? '' : ` ${nameSeat(profile.config, 'implementer')}`;
         return runnerAvailabilityCheck({
           fact,
           label: isDefault
@@ -158,12 +186,13 @@ function buildAvailabilityChecks(
 function buildWatchdogTimeoutChecks(
   config: Config,
   profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
+  nameSeat: SeatNamer,
 ): ReadinessCheck[] {
   const checks: ReadinessCheck[] = [];
   checks.push(
     ...watchdogTimeoutCheck({
       id: 'runners.planner.timeout-disables-watchdog',
-      label: `Planner ${formatSeatIdentity({ seat: config.planner })}`,
+      label: `Planner ${nameSeat(config.planner, 'planner')}`,
       runner: config.planner,
     }),
   );
@@ -173,7 +202,7 @@ function buildWatchdogTimeoutChecks(
     checks.push(
       ...watchdogTimeoutCheck({
         id: 'runners.reviewer.timeout-disables-watchdog',
-        label: `Reviewer ${formatSeatIdentity({ seat: reviewer.runner })}`,
+        label: `Reviewer ${nameSeat(reviewer.runner, 'reviewer')}`,
         runner: reviewer.runner,
       }),
     );
@@ -184,8 +213,8 @@ function buildWatchdogTimeoutChecks(
       ...watchdogTimeoutCheck({
         id: 'runners.implementer.timeout-disables-watchdog',
         label: profile.isDefault
-          ? `Default implementer ${formatSeatIdentity({ seat: profile.config })}`
-          : `Implementer profile ${profile.name} ${formatSeatIdentity({ seat: profile.config })}`,
+          ? `Default implementer ${nameSeat(profile.config, 'implementer')}`
+          : `Implementer profile ${profile.name} ${nameSeat(profile.config, 'implementer')}`,
         runner: profile.config,
       }),
     );
@@ -249,11 +278,11 @@ function buildImplementerProfileMetadataChecks(
   });
 }
 
-function plannerCheck(runner: Config['planner']): ReadinessCheck {
+function plannerCheck(runner: Config['planner'], nameSeat: SeatNamer): ReadinessCheck {
   return {
     id: 'runners.planner.configured',
     severity: 'ok',
-    summary: `${formatRoleLabel('planner')} ${formatSeatIdentity({ seat: runner })} configured.`,
+    summary: `${formatRoleLabel('planner')} ${nameSeat(runner, 'planner')} configured.`,
     metadata: {
       role: 'planner',
       kind: runner.kind,

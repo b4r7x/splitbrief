@@ -61,6 +61,7 @@ import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
 import { touchedNotSuggestedFiles } from './task/commit.js';
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
+import { NULL_CACHE } from '../providers/model/resolution.js';
 import { formatTasks } from '../spec/formatter.js';
 import { drainQueueForReview } from './queue/drain.js';
 import { formatDrainedMessages, imagesFromMessages } from './queue/prompt.js';
@@ -1073,6 +1074,7 @@ export async function runFinalReviewPhase(opts: {
         }),
         state,
         finalReviewStatus: writeStatus,
+        modelCache: summaryBase.pricingCache ?? NULL_CACHE,
         ...(reviewScope !== undefined && { provenance: reviewScope.provenance }),
         ...(reviewInput !== undefined && { reviewInput }),
       });

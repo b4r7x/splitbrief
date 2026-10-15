@@ -8,12 +8,15 @@ import type {
   SwitchSeatOffer,
 } from '../../../../core/schemas/recovery/schemas.js';
 import {
+  candidateIdsOf,
   formatSeatCandidateIdentity,
   isSeatIdentity,
   sameSeatCandidate,
   type CrewSeatId,
 } from '../../../../core/crew/identity.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
+import { recordedSeatIdentityInput } from '../../../providers/model/display-names.js';
+import { NULL_CACHE, type ModelCacheAccessor } from '../../../providers/model/resolution.js';
 import { recoveryActionLabel } from '../../../../core/recovery/action-label.js';
 import type {
   DeepReadonly,
@@ -138,6 +141,7 @@ export type SeatSwapContext = Readonly<{
   seat: CrewSeatId;
   currentTool: string;
   currentModel?: string | undefined;
+  modelCache?: ModelCacheAccessor | undefined;
   detectedTools: readonly DetectedSeatTool[];
   fallback?: SeatSwapCandidate | undefined;
   fallbackBlockedReason?: string | undefined;
@@ -214,11 +218,10 @@ export interface SeatDownRecoveryOptions extends RecoveryBuilderBase {
 }
 
 /** The fallback row: the declared fallback's identity, or that the seat declares none. */
-function fallbackDetail(opts: SeatDownRecoveryOptions): string {
+function fallbackDetail(opts: SeatDownRecoveryOptions, identity: string | undefined): string {
   if (opts.seatSwap?.fallbackReadFailed) return 'fallback: not read · config.yaml does not load';
   const fallback = opts.seatSwap?.fallback;
   if (fallback === undefined) return 'no fallback set';
-  const identity = formatSeatCandidateIdentity(fallback);
   const blockedReason = opts.seatSwap?.fallbackBlockedReason;
   if (blockedReason !== undefined) return `fallback: ${identity} · not offered: ${blockedReason}`;
   if ((opts.seatSwitches ?? []).some((record) => record.seat === opts.seat && record.auto)) {
@@ -279,6 +282,18 @@ function autoSwitchIntent(
  */
 export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue {
   const { classification } = opts;
+  const fallback = opts.seatSwap?.fallback;
+  const fallbackIdentity =
+    fallback === undefined
+      ? undefined
+      : formatSeatCandidateIdentity(
+          fallback,
+          recordedSeatIdentityInput({
+            seat: candidateIdsOf(fallback),
+            role: CREW_SEAT_ROLES[opts.seat],
+            cache: opts.seatSwap?.modelCache ?? NULL_CACHE,
+          }).displayName,
+        );
   const displayName = runnerAuthDisplayName(opts.runner);
   const isAuth = classification.class === 'account' && classification.cause === 'auth';
   const reason = isAuth ? 'runner-unauthenticated' : 'runner-usage-limit';
@@ -328,7 +343,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
     message,
     details: [
       reportedDetail(displayName, opts),
-      fallbackDetail(opts),
+      fallbackDetail(opts, fallbackIdentity),
       ...attemptDetails(opts.attempts, opts.maxAttempts),
       ...(opts.details ?? []),
     ],
@@ -342,10 +357,7 @@ export function buildSeatDownIssue(opts: SeatDownRecoveryOptions): RecoveryIssue
       cause,
       providerMessage: opts.words,
       requestId: opts.requestId,
-      fallback:
-        opts.seatSwap?.fallback === undefined
-          ? undefined
-          : formatSeatCandidateIdentity(opts.seatSwap.fallback),
+      fallback: fallbackIdentity,
       ...(resetAt !== undefined && { resetsAt: resetAt.toISOString() }),
     }),
     availableActions: actions,

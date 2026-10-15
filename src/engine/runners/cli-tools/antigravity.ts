@@ -49,13 +49,10 @@ function validateArgs(input: { invocationArgs: readonly string[]; baseArgs: read
   });
 }
 
-function generationArgs(
-  input: Readonly<{ model?: string | undefined; effort?: string | undefined }>,
-): string[] {
-  return [
-    ...(input.model === undefined ? [] : ['--model', input.model]),
-    ...(input.effort === undefined ? [] : ['--effort', input.effort]),
-  ];
+// `agy models` lists level-specific ids; the 1.3.4 changelog says a base name picks its default
+// thinking level without `--effort`. Send the listed id alone so it owns the level that runs.
+function generationArgs(input: Readonly<{ model?: string | undefined }>): string[] {
+  return input.model === undefined ? [] : ['--model', input.model];
 }
 
 function schemaArgs(schema: CliSchemaInput | undefined): string[] {

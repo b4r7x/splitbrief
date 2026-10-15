@@ -1,22 +1,23 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import { loadConfig, writeConfig } from '../../../src/core/config/load/io.js';
 import { ensureSessionDir } from '../../../src/core/paths-io.js';
+import {
+  PLAN_FILE,
+  READINESS_FILE,
+  REVIEW_FILE,
+  TASKS_FILE,
+  sessionDir,
+} from '../../../src/core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../../src/core/runners/cli-tool-catalog.js';
-import { releasePreparedSession } from '../../../src/core/sessions/prepare.js';
 import { createInitialState } from '../../../src/core/state/machine.js';
 import { loadState, saveState } from '../../../src/core/state/persistence.js';
 import { readSeatIdentities, writeSeatIdentities } from '../../../src/core/state/seats.js';
-import { plainUserMessage } from '../../../src/core/types/user-input.js';
+import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
 import { detectAvailableCliTools } from '../../../src/engine/detection/detect.js';
-import { runWorkflow } from '../../../src/engine/orchestrator/run/workflow.js';
-import { prepareExecution } from '../../../src/engine/runners/prepare-execution/prepare-execution.js';
 import { writeFakeNodeCli } from '#testing/helpers/command-shim.js';
 import { activateSafeCliShimPath } from '#testing/helpers/compatible-cli-shim.js';
-import { rememberDetectedTools } from '#testing/helpers/factories/detection.js';
-import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
-import { TEST_WORKFLOW_SINKS } from '#testing/helpers/orchestrator-context.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
@@ -46,9 +47,7 @@ afterEach(() => {
   trustHome = undefined;
 });
 
-// Codex's own listing spells the model `GPT-6-Luna`, which every surface shows; the id alone would
-// read `GPT-6 Luna`. A run the app drives holds that listing, so its record must say the same.
-it('records the BUILD seat in the catalog words every surface shows', async () => {
+it('uses the remembered catalog name in every run artifact and doctor JSON', async () => {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
   trustHome = useTrustHome('e2e-seat-record-identity-home');
@@ -89,53 +88,72 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
     role: 'implementer',
   });
   expect(tools[0]?.diagnostic.state).toBe('ready');
-  await rememberDetectedTools(target.projectDir, tools);
-
-  const preparation = await prepareExecution({
+  await saveDetectionCache({
     projectDir: target.projectDir,
-    feature: 'smoke',
-    effectiveConfig: loadConfig(target.projectDir).config,
-    policy: {
-      purpose: 'new-workflow',
-      interaction: 'headless',
-      unverifiedAuth: 'allowed',
-      allowRepoRunners: true,
-      allowHooks: false,
+    snapshot: {
+      contextKey: 'remembered',
+      fetchedAt: Date.now(),
+      validatedAt: Date.now(),
+      generation: 1,
+      requestId: 1,
+      providers: [],
+      cliTools: tools,
+      cliCatalogs: [
+        {
+          tool: 'codex',
+          models: [{ id: MODEL, displayName: 'GPT-6-Luna', contextLength: 272_000 }],
+          probedAt: Date.now(),
+        },
+      ],
     },
-    signal: new AbortController().signal,
   });
-  if (preparation.kind !== 'prepared') throw new Error(`preparation ended '${preparation.kind}'`);
-  const ref = preparation.execution.session.ref;
-  if (preparation.execution.session.kind === 'new') {
-    releasePreparedSession({ ref, ownership: preparation.execution.session.ownership });
-  }
 
-  await runWorkflow({
-    prepared: preparation.execution,
-    headless: true,
-    sinks: TEST_WORKFLOW_SINKS,
-    modelCache: makeModelCacheAccessor({
-      providerModels: {
-        codex: [{ id: MODEL, displayName: 'GPT-6-Luna', contextLength: 272_000 }],
-      },
-    }),
-    callbacks: {
-      onApprovalNeeded: async () => ({ approved: true }),
-      onPlannerReply: async () => plainUserMessage(''),
-      onContinuationNeeded: async () => plainUserMessage(''),
-      onComplete: () => undefined,
-    },
-  });
+  const doctor = await cli(target, ['doctor', '--json']);
+  expect(JSON.parse(doctor.stdout).report.checks).toContainEqual(
+    expect.objectContaining({ summary: 'BUILD OpenAI Codex CLI · GPT-6-Luna configured.' }),
+  );
+  expect(doctor.stdout).not.toContain('GPT-6 Luna');
+
+  const run = await cli(target, ['start', 'smoke']);
+  expect(run.exitCode, run.stderr).toBe(0);
+  const [sessionId] = readdirSync(join(target.projectDir, '.splitbrief', 'sessions'));
+  if (sessionId === undefined) throw new Error('Expected a run record');
+  const ref = { projectDir: target.projectDir, sessionId };
 
   expect(loadState(ref)?.phase).toBe('complete');
   expect(readSeatIdentities(ref)).toMatchObject({
     build: 'OpenAI Codex CLI · GPT-6-Luna',
     ids: { build: { tool: 'codex', model: MODEL, axes: [], kind: 'cli' } },
   });
+  const documents = [
+    PLAN_FILE,
+    TASKS_FILE,
+    REVIEW_FILE,
+    'review-packet.md',
+    'review-packet.json',
+    READINESS_FILE,
+    'seats.json',
+  ];
+  for (const name of documents) {
+    const text = readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), name), 'utf8');
+    expect(text, name).toContain('OpenAI Codex CLI · GPT-6-Luna');
+    expect(text, name).not.toContain('GPT-6 Luna');
+  }
+
+  const spec = await cli(target, ['spec', 'catalog names']);
+  expect(spec.exitCode, spec.stderr).toBe(0);
+  const specSession = readdirSync(join(target.projectDir, '.splitbrief', 'sessions')).find(
+    (id) => id !== sessionId,
+  );
+  if (specSession === undefined) throw new Error('Expected a planning session');
+  for (const name of [PLAN_FILE, TASKS_FILE]) {
+    const text = readFileSync(join(sessionDir(target.projectDir, specSession), name), 'utf8');
+    expect(text).toContain('implementer: OpenAI Codex CLI · GPT-6-Luna');
+    expect(text).not.toContain('GPT-6 Luna');
+  }
 });
 
-// A record from before the axes kept the level an Antigravity id spells holds the effort flag
-// alone. Resuming on the same seat must not read that as a move.
+// Older records kept no axis for a level encoded in the model id.
 it('resumes a session recorded without the level its id spells without a seat notice', async () => {
   fixture = createStopContinueFixture(() => '', { isolation: 'none' });
   const target = fixture;
@@ -168,7 +186,7 @@ it('resumes a session recorded without the level its id spells without a seat no
   writeConfig(target.projectDir, {
     ...config,
     planner: seat,
-    implementer: { ...seat, effort: 'low' },
+    implementer: { ...seat, model: 'gemini-3.8-flash-low' },
     reviewer: seat,
   });
   const moved = await cli(target, ['continue', ref.sessionId], { timeoutMs: 60_000 });

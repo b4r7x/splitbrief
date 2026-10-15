@@ -242,8 +242,7 @@ function savedSeatIdentity(saved: Config, role: ActiveRunnerRole, slot: PickerSl
   }
   return formatSeatIdentity({
     seat: runner,
-    displayName:
-      slot === 'seat' ? resolveSeatDisplayName(runner, role, modelCacheStore) : undefined,
+    displayName: resolveSeatDisplayName(runner, role, modelCacheStore),
   });
 }
 

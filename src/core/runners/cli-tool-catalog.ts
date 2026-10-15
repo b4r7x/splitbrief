@@ -210,11 +210,6 @@ export type CliToolDeclarationBase<Id extends string = string> = Readonly<{
   supportsEffort: boolean;
   /** How the tool's effort intent reaches it, when it has a channel at all. */
   effortChannel: CliEffortChannel;
-  /**
-   * The tool lists one model id per effort level beside its effort flag (`gemini-3.8-flash-high`),
-   * so a seat with no effort set runs the level its model id spells.
-   */
-  effortVariantIds?: boolean | undefined;
   typedOutput: TypedOutputSupport;
   imageInput: ImageInputSupport;
   /** Largest accepted prompt in characters; omitted when unknown, which means no cap. */
@@ -682,9 +677,8 @@ export const CLI_TOOL_DECLARATIONS = Object.freeze({
     category: 'cli',
     roles: ALL_ROLES,
     modelPolicy: rolePolicy({ planner: 'optional', implementer: 'optional' }),
-    supportsEffort: true,
-    effortChannel: 'effort-flag',
-    effortVariantIds: true,
+    supportsEffort: false,
+    effortChannel: 'model-id',
     typedOutput: { kind: 'native', since: '1.2.14' },
     imageInput: 'none',
     auth: authPolicy('session', [

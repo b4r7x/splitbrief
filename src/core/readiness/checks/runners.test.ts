@@ -35,7 +35,7 @@ function cliReadiness(overrides: Partial<CliReadinessFacts> = {}) {
 }
 
 function availabilityDetails(config: ReturnType<typeof makeConfig>): string[] {
-  const check = buildRunnerChecks(config).find((c) => c.id === 'runners.availability');
+  const check = buildRunnerChecks({ config }).find((c) => c.id === 'runners.availability');
   return check?.details ?? [];
 }
 
@@ -73,11 +73,15 @@ describe('buildRunnerChecks seat identities', () => {
       { role: 'implementer', profile: 'main' },
       { role: 'implementer', profile: 'alternate' },
     ];
-    const checks = buildRunnerChecks(
+    const checks = buildRunnerChecks({
       config,
-      [],
-      slots.map((slot) => ({ slot, provider: runner.tool, verdict: { state: 'available' } })),
-    );
+      cliReadiness: [],
+      availability: slots.map((slot) => ({
+        slot,
+        provider: runner.tool,
+        verdict: { state: 'available' },
+      })),
+    });
     const labeledChecks = checks.filter(
       (check) =>
         check.id === 'runners.planner.configured' ||
@@ -95,11 +99,51 @@ describe('buildRunnerChecks seat identities', () => {
   });
 });
 
+describe('buildRunnerChecks catalog labels', () => {
+  it('names every seat by the catalog label the crew surfaces show', () => {
+    const seat = {
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-6-luna',
+      timeout: 1000,
+      idleKillMs: 300_000,
+    } as const;
+    const config = makeConfig({
+      planner: seat,
+      reviewer: seat,
+      implementerProfiles: { default: 'main', profiles: { main: seat, alternate: seat } },
+    });
+    const roles = new Set<string>();
+    const checks = buildRunnerChecks({
+      config,
+      cliReadiness: [],
+      seatDisplayName: (runner, role) => {
+        roles.add(role);
+        return runner.kind === 'cli' && runner.model === 'gpt-6-luna' ? 'GPT-6-Luna' : undefined;
+      },
+    });
+    const labeled = checks.filter(
+      (check) =>
+        check.id === 'runners.planner.configured' ||
+        check.id === 'runners.implementer.default' ||
+        check.id.endsWith('.trust-boundary') ||
+        check.id.endsWith('.timeout-disables-watchdog'),
+    );
+
+    expect(labeled).toHaveLength(10);
+    for (const check of labeled) {
+      expect(check.summary).toContain('OpenAI Codex CLI · GPT-6-Luna');
+      expect(check.summary).not.toContain('GPT-6 Luna');
+    }
+    expect([...roles].sort()).toEqual(['implementer', 'planner', 'reviewer']);
+  });
+});
+
 describe('buildRunnerChecks availability guidance', () => {
   it('blocks a selected CLI when no canonical probe result is available', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks(config, []).find(
+    const check = buildRunnerChecks({ config, cliReadiness: [] }).find(
       (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
     );
 
@@ -118,9 +162,10 @@ describe('buildRunnerChecks availability guidance', () => {
   it('blocks a selected CLI that requires authentication but is unauthenticated', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks(config, [
-      cliReadiness({ auth: 'unauthenticated', authChannel: 'session' }),
-    ]).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [cliReadiness({ auth: 'unauthenticated', authChannel: 'session' })],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
       severity: 'blocker',
@@ -141,9 +186,10 @@ describe('buildRunnerChecks availability guidance', () => {
   it('warns without claiming readiness when selected CLI authentication is unknown', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks(config, [cliReadiness({ auth: 'unknown' })]).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [cliReadiness({ auth: 'unknown' })],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({
       severity: 'warning',
@@ -155,9 +201,10 @@ describe('buildRunnerChecks availability guidance', () => {
   it('does not claim authentication when the selected CLI does not require it', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks(config, [cliReadiness({ auth: 'not-required' })]).find(
-      (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
-    );
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [cliReadiness({ auth: 'not-required' })],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toMatchObject({ severity: 'ok', metadata: { auth: 'not-required' } });
     expect(check?.summary).toContain('does not require authentication');
@@ -176,7 +223,7 @@ describe('buildRunnerChecks availability guidance', () => {
   ] as const)('publishes %s as a structured diagnostic state', (stateId, overrides, fix) => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const check = buildRunnerChecks(config, [cliReadiness(overrides)]).find(
+    const check = buildRunnerChecks({ config, cliReadiness: [cliReadiness(overrides)] }).find(
       (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
     );
 
@@ -192,7 +239,7 @@ describe('buildRunnerChecks availability guidance', () => {
       cliReadiness({ enabled: false }),
       cliReadiness({ compatibility: 'unverified' }),
     ]) {
-      const check = buildRunnerChecks(config, [result]).find(
+      const check = buildRunnerChecks({ config, cliReadiness: [result] }).find(
         (candidate) => candidate.id === 'runners.cli.claude-code.readiness',
       );
       expect(check?.diagnosticState).toBeUndefined();
@@ -207,9 +254,10 @@ describe('buildRunnerChecks availability guidance', () => {
         fingerprint: { dev: 9, ino: 10, size: 11, mtimeMs: 12 },
       },
     });
-    const check = buildRunnerChecks(makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }), [
-      result,
-    ]).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+    const check = buildRunnerChecks({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      cliReadiness: [result],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check?.metadata?.executablePath).toBe('[redacted executable path]');
     expect(JSON.stringify(check)).not.toContain(executablePath);
@@ -228,9 +276,10 @@ describe('buildRunnerChecks availability guidance', () => {
       },
     });
 
-    const check = buildRunnerChecks(config, [
-      cliReadiness({ installation: 'unavailable', executable: null }),
-    ]).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
+    const check = buildRunnerChecks({
+      config,
+      cliReadiness: [cliReadiness({ installation: 'unavailable', executable: null })],
+    }).find((candidate) => candidate.id === 'runners.cli.claude-code.readiness');
 
     expect(check).toBeUndefined();
   });
@@ -254,7 +303,7 @@ describe('buildRunnerChecks availability guidance', () => {
   it('uses the canonical CLI check instead of generic availability guidance', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
 
-    const checks = buildRunnerChecks(config);
+    const checks = buildRunnerChecks({ config });
 
     expect(checks.find((check) => check.id === 'runners.availability')?.summary).toBe(
       'Provider availability was not probed.',
@@ -278,7 +327,7 @@ describe('buildRunnerChecks availability guidance', () => {
       workflow: { approve: 'none' },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.trust-boundary',
     );
 
@@ -309,7 +358,7 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'cli', tool: 'copilot' },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.trust-boundary',
     );
 
@@ -328,7 +377,9 @@ describe('buildRunnerChecks availability guidance', () => {
   it('discloses planner tier-2 write authority without changing ordinary planning posture', () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'copilot' } });
 
-    const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary');
+    const check = buildRunnerChecks({ config }).find(
+      (c) => c.id === 'runners.planner.trust-boundary',
+    );
 
     expect(check).toMatchObject({
       severity: 'warning',
@@ -366,7 +417,9 @@ describe('buildRunnerChecks availability guidance', () => {
       approval: { feedRejectionsToPlanner: true },
     });
 
-    const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary');
+    const check = buildRunnerChecks({ config }).find(
+      (c) => c.id === 'runners.planner.trust-boundary',
+    );
 
     expect(check).toMatchObject({
       severity: 'warning',
@@ -389,8 +442,8 @@ describe('buildRunnerChecks availability guidance', () => {
     });
 
     const details = (
-      buildRunnerChecks(config).find((c) => c.id === 'runners.planner.trust-boundary')?.details ??
-      []
+      buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.trust-boundary')
+        ?.details ?? []
     ).join('\n');
 
     expect(details).toContain('Command: my-tool');
@@ -413,7 +466,7 @@ describe('buildRunnerChecks availability guidance', () => {
       workflow: { approve: 'none' },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.trust-boundary',
     );
 
@@ -435,7 +488,7 @@ describe('buildRunnerChecks availability guidance', () => {
       approval: { feedRejectionsToPlanner: true },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.trust-boundary',
     );
 
@@ -460,7 +513,7 @@ describe('buildRunnerChecks availability guidance', () => {
       },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
     );
 
@@ -480,7 +533,7 @@ describe('buildRunnerChecks availability guidance', () => {
       },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
     );
 
@@ -492,7 +545,7 @@ describe('buildRunnerChecks availability guidance', () => {
       implementer: { kind: 'cli', tool: 'claude-code', timeout: 1000 },
     });
 
-    const check = buildRunnerChecks(config).find(
+    const check = buildRunnerChecks({ config }).find(
       (c) => c.id === 'runners.implementer.timeout-disables-watchdog',
     );
 
@@ -505,7 +558,7 @@ describe('buildRunnerChecks availability guidance', () => {
     const explicit = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' } });
 
     const check = (config: ReturnType<typeof makeConfig>) =>
-      buildRunnerChecks(config).find((c) => c.id === 'runners.planner.configured');
+      buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.configured');
 
     expect(check(automatic)?.summary).toBe('Planner OpenAI Codex CLI · auto configured.');
     expect(check(automatic)?.metadata).toMatchObject({ model: null, modelSelection: 'auto' });
@@ -523,7 +576,7 @@ describe('buildRunnerChecks availability guidance', () => {
   it('readiness summaries capitalize roles via formatRoleLabel', () => {
     const config = makeConfig();
 
-    const check = buildRunnerChecks(config).find((c) => c.id === 'runners.planner.configured');
+    const check = buildRunnerChecks({ config }).find((c) => c.id === 'runners.planner.configured');
 
     expect(check?.summary).toMatch(/^Planner /);
   });
@@ -531,18 +584,20 @@ describe('buildRunnerChecks availability guidance', () => {
 
 describe('buildRunnerChecks reviewer seat', () => {
   it('reports no reviewer check without a reviewer block', () => {
-    const checks = buildRunnerChecks(makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }));
+    const checks = buildRunnerChecks({
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+    });
 
     expect(checks.filter((check) => check.id.startsWith('runners.reviewer.'))).toEqual([]);
   });
 
   it('reports the trust boundary of a configured reviewer', () => {
-    const checks = buildRunnerChecks(
-      makeConfig({
+    const checks = buildRunnerChecks({
+      config: makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
         reviewer: { kind: 'cli', tool: 'codex' },
       }),
-    );
+    });
 
     expect(checks.find((check) => check.id === 'runners.reviewer.trust-boundary')).toMatchObject({
       severity: 'warning',
@@ -551,12 +606,12 @@ describe('buildRunnerChecks reviewer seat', () => {
   });
 
   it('warns when a configured reviewer timeout disables the watchdog', () => {
-    const checks = buildRunnerChecks(
-      makeConfig({
+    const checks = buildRunnerChecks({
+      config: makeConfig({
         planner: { kind: 'cli', tool: 'claude-code' },
         reviewer: { kind: 'cli', tool: 'codex', timeout: 1000, idleKillMs: 300_000 },
       }),
-    );
+    });
 
     expect(
       checks.find((check) => check.id === 'runners.reviewer.timeout-disables-watchdog'),
@@ -566,7 +621,7 @@ describe('buildRunnerChecks reviewer seat', () => {
 
 describe('buildRunnerChecks typed-output fallback', () => {
   const fallbackChecks = (config: ReturnType<typeof makeConfig>) =>
-    buildRunnerChecks(config).filter((check) => check.id.endsWith('.typed-output-fallback'));
+    buildRunnerChecks({ config }).filter((check) => check.id.endsWith('.typed-output-fallback'));
 
   it('warns once when the planner seat is a tool without a schema flag', () => {
     const checks = fallbackChecks(makeConfig({ planner: { kind: 'cli', tool: 'opencode' } }));

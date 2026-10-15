@@ -168,6 +168,7 @@ export async function haltVerdictlessReview(args: {
     const followsPlan = reviewer.source === 'planner';
     const issue = await plannerCallHaltIssue({
       projectDir: wctx.projectDir,
+      modelCache: wctx.modelCache,
       config: wctx.config,
       diagnosis: failure.diagnosis,
       phase: state.phase,

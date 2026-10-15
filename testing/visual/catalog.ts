@@ -3215,6 +3215,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'Settings',
       },
       {
+        id: 'overlay-settings-antigravity-low',
+        title: 'Overlay · settings · Antigravity low effort seat',
+        marker: 'Settings',
+      },
+      {
         id: 'overlay-settings-fallback-none',
         title: 'Overlay · settings · no fallbacks',
         marker: 'Fallback',
@@ -3222,6 +3227,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-settings-fallback-set',
         title: 'Overlay · settings · configured fallbacks',
+        marker: 'Fallback',
+      },
+      {
+        id: 'overlay-settings-fallback-catalog',
+        title: 'Overlay · settings · matching crew and fallback catalog names',
         marker: 'Fallback',
       },
       {
@@ -3414,12 +3424,17 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       },
       {
         id: 'overlay-planner-picker-antigravity',
-        title: 'Overlay · planner picker · Antigravity effort axis',
+        title: 'Overlay · planner picker · Antigravity medium effort model',
         marker: PICKER_TITLE_MARKER,
       },
       {
         id: 'overlay-planner-picker-antigravity-listed',
-        title: 'Overlay · planner picker · Antigravity effort spelled by the model id',
+        title: 'Overlay · planner picker · Antigravity high effort model',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-planner-picker-antigravity-low',
+        title: 'Overlay · planner picker · Antigravity saved low effort model',
         marker: PICKER_TITLE_MARKER,
       },
       {
@@ -3586,6 +3601,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
       {
         id: 'overlay-fallback-picker-current',
         title: 'Overlay · PLAN fallback · configured effort expanded',
+        marker: PICKER_TITLE_MARKER,
+      },
+      {
+        id: 'overlay-fallback-picker-catalog',
+        title: 'Overlay · PLAN fallback · catalog model name',
         marker: PICKER_TITLE_MARKER,
       },
     ],

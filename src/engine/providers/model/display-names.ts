@@ -1,11 +1,16 @@
 import type { Config } from '../../../core/schemas/config.js';
 import {
+  candidateIdsOf,
+  formatSeatCandidateIdentity,
   formatSeatChangeIdentities,
   type CrewSeatId,
+  type formatSeatIdentity,
   type SeatIds,
 } from '../../../core/crew/identity.js';
+import { cliToolIdForCommand } from '../../../core/runners/cli-tool-catalog.js';
 import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
-import type { SeatChange } from '../../../core/state/seats.js';
+import { seatIdentitiesFromConfig, type SeatChange } from '../../../core/state/seats.js';
+import type { SpecMetadata } from '../../../core/paths-io.js';
 import type { RunnerConfig } from '../../../core/config/accessors/runner-config.js';
 import type { ActiveRunnerRole } from '../../../core/runners/seat-roles.js';
 import type { RunnerKind } from '../../../core/schemas/enums.js';
@@ -14,6 +19,8 @@ import { resolveReviewerRunner } from '../../../core/config/accessors/reviewer-r
 import { cliVocabularyTool, formatModelName } from '../../../core/model-display.js';
 import { resolveModelCatalog } from './catalog.js';
 import type { ModelCacheAccessor } from './resolution.js';
+
+type SeatCandidate = Parameters<typeof candidateIdsOf>[0];
 
 export function resolveSeatDisplayName(
   runner: RunnerConfig,
@@ -55,6 +62,61 @@ export function resolveModelDisplayName(input: {
   return formatModelName(model, cliVocabularyTool(providerId, kind));
 }
 
+/** Resolves a recorded command and model through the same catalog as a configured seat. */
+export function recordedSeatIdentityInput({
+  seat,
+  role,
+  cache,
+}: {
+  seat: SeatIds;
+  role: ActiveRunnerRole;
+  cache: ModelCacheAccessor;
+}): Parameters<typeof formatSeatIdentity>[0] {
+  const tool =
+    seat.kind === 'cli' || seat.kind === undefined
+      ? (cliToolIdForCommand(seat.tool) ?? seat.tool)
+      : seat.tool;
+  const displayName =
+    seat.model === undefined
+      ? undefined
+      : resolveModelDisplayName({
+          providerId: tool,
+          model: seat.model,
+          role,
+          kind: seat.kind,
+          cache,
+        });
+  return { seat: { ...seat, tool }, displayName };
+}
+
+export function resolveSeatChangeIdentities({
+  from,
+  to,
+  role,
+  cache,
+}: {
+  from: SeatCandidate | string;
+  to: SeatCandidate | string;
+  role: ActiveRunnerRole;
+  cache: ModelCacheAccessor;
+}): Readonly<{ from: string; to: string }> {
+  const inputFor = (seat: SeatCandidate) =>
+    seat.model === undefined
+      ? seat
+      : recordedSeatIdentityInput({ seat: candidateIdsOf(seat), role, cache });
+  if (typeof from === 'string' || typeof to === 'string') {
+    const label = (seat: SeatCandidate | string) =>
+      typeof seat === 'string'
+        ? seat
+        : formatSeatCandidateIdentity(
+            seat,
+            recordedSeatIdentityInput({ seat: candidateIdsOf(seat), role, cache }).displayName,
+          );
+    return { from: label(from), to: label(to) };
+  }
+  return formatSeatChangeIdentities(inputFor(from), inputFor(to));
+}
+
 export function resolveCrewDisplayNames(
   config: Config,
   cache: ModelCacheAccessor,
@@ -76,6 +138,11 @@ export function resolveCrewDisplayNames(
   };
 }
 
+export function resolveSpecMetadata(config: Config, cache: ModelCacheAccessor): SpecMetadata {
+  const crew = seatIdentitiesFromConfig(config, resolveCrewDisplayNames(config, cache));
+  return { planner: crew.plan, implementer: crew.build };
+}
+
 /**
  * A moved seat named in the catalog's words, or by configured ids when those words match.
  * The record keeps the identities it compares; a side it kept no ids for stays as recorded, and so does the other, so
@@ -88,20 +155,7 @@ export function labelSeatChange(change: SeatChange, cache: ModelCacheAccessor): 
   if (beforeIds === undefined || afterIds === undefined) return change;
   if (beforeIds.kind === undefined || afterIds.kind === undefined) return change;
   const role = CREW_SEAT_ROLES[change.seat];
-  const inputFor = (ids: SeatIds) => ({
-    seat: ids,
-    displayName:
-      ids.model === undefined
-        ? undefined
-        : resolveModelDisplayName({
-            providerId: ids.tool,
-            model: ids.model,
-            role,
-            cache,
-            kind: ids.kind,
-          }),
-    kind: ids.kind,
-  });
+  const inputFor = (ids: SeatIds) => recordedSeatIdentityInput({ seat: ids, role, cache });
   const identities = formatSeatChangeIdentities(inputFor(beforeIds), inputFor(afterIds));
   return { ...change, before: identities.from, after: identities.to };
 }

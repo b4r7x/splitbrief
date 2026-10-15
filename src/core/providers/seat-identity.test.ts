@@ -1,42 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { runSeatIdentity, specMetadataOf } from './seat-identity.js';
-
-describe('specMetadataOf', () => {
-  it('carries the planner axes and the default implementer profile identity', () => {
-    const metadata = specMetadataOf(
-      makeConfig({
-        planner: { kind: 'cli', tool: 'cursor', model: 'sonnet-high-thinking-fast' },
-        implementer: { kind: 'api', provider: 'ollama', model: 'qwen2.5-coder:7b' },
-        implementerProfiles: {
-          default: 'routed',
-          profiles: {
-            routed: {
-              kind: 'cli',
-              tool: 'opencode',
-              model: 'deepseek/deepseek-flash',
-              variant: 'high',
-            },
-          },
-        },
-      }),
-    );
-    expect(metadata).toEqual({
-      planner: {
-        tool: 'cursor',
-        model: 'sonnet-high-thinking-fast',
-        kind: 'cli',
-        axes: ['high', 'thinking', 'fast'],
-      },
-      implementer: {
-        tool: 'opencode',
-        model: 'deepseek/deepseek-flash',
-        kind: 'cli',
-        axes: ['high'],
-      },
-    });
-  });
-});
+import { runSeatIdentity } from './seat-identity.js';
 
 describe('runSeatIdentity', () => {
   it('keeps each seat tool, model and kind from the same configured runner', () => {

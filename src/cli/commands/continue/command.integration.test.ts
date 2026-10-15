@@ -26,6 +26,7 @@ import { createInitialState } from '../../../core/state/machine.js';
 import { loadState, saveState } from '../../../core/state/persistence.js';
 import { parseContinueActionOption } from '../../options.js';
 import type { RecoveryIssue } from '../../../core/schemas/recovery/schemas.js';
+import { saveDetectionCache } from '../../../engine/detection/cache.js';
 
 type HeadlessRun = {
   feature: string;
@@ -323,6 +324,53 @@ describe('continueCommand', () => {
       expect(resumed, testCase.id).toBeDefined();
       expect(resumed?.state?.pendingRecovery, testCase.id).toBeUndefined();
     }
+  });
+
+  it('records the remembered catalog name when continuing on a fallback', async () => {
+    const projectDir = makeTmpProject();
+    const sessionId = 'catalog-fallback-continue';
+    const sessDir = makeSessionDir(projectDir, sessionId);
+    writeLockfile(sessDir, { exitedAt: 1, sessionId });
+    writeConfig(projectDir, makeConfig({ implementer: { kind: 'cli', tool: 'claude-code' } }));
+    saveState(
+      { projectDir, sessionId },
+      {
+        ...createInitialState('catalog names'),
+        phase: 'implementing',
+        tasks: [makeTask()],
+        pendingRecovery: makeRecoveryIssue({
+          reason: 'runner-usage-limit',
+          availableActions: ['switch-seat'],
+          recommendedAction: 'switch-seat',
+          switchSeat: { seat: 'build', candidates: [{ tool: 'codex', model: 'gpt-6-luna' }] },
+        }),
+      },
+    );
+    await saveDetectionCache({
+      projectDir,
+      snapshot: {
+        contextKey: 'remembered',
+        fetchedAt: 1,
+        validatedAt: 1,
+        generation: 1,
+        requestId: 1,
+        providers: [],
+        cliTools: [],
+        cliCatalogs: [
+          { tool: 'codex', probedAt: 1, models: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+        ],
+      },
+    });
+
+    await continueCommand(
+      sessionId,
+      { projectDir, json: true, action: parseContinueActionOption('switch-seat:codex:gpt-6-luna') },
+      deps,
+    );
+
+    expect(loadState({ projectDir, sessionId })?.seatSwitches?.[0]?.to).toBe(
+      'OpenAI Codex CLI · GPT-6-Luna',
+    );
   });
 
   it('records the switched build seat, the file comment and its fallback kept', async () => {

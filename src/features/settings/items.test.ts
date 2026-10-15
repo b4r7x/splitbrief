@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { SETTINGS_DEFS, type SettingDef } from '../../core/settings/catalog.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import {
+  resolveCrewDisplayNames,
+  resolveSeatDisplayName,
+} from '../../engine/providers/model/display-names.js';
 import {
   buildSettingsItems,
   settingsItemFilterText,
@@ -67,6 +72,35 @@ describe('settingsItemFilterText', () => {
 });
 
 describe('fallback items', () => {
+  it('uses the same catalog name for every crew seat and its fallback', () => {
+    const runner = {
+      kind: 'cli',
+      tool: 'codex',
+      model: 'gpt-6-luna',
+      fallback: { tool: 'codex', model: 'gpt-6-luna' },
+    } as const;
+    const config = makeConfig({ planner: runner, implementer: runner });
+    const cache = makeModelCacheAccessor({
+      providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+    });
+    const items = buildSettingsItems({
+      config,
+      defs: [],
+      cliTools: [],
+      displayNames: resolveCrewDisplayNames(config, cache),
+      seatDisplayName: (seat, role) => resolveSeatDisplayName(seat, role, cache),
+    });
+
+    for (const id of ['plan', 'build', 'review']) {
+      const crew = itemAt(items, `seat:${id}`);
+      const fallback = itemAt(items, `fallback:${id}`);
+      expect(crew.kind === 'crew' && crew.row.seat.model).toBe('OpenAI Codex CLI · GPT-6-Luna');
+      expect(fallback.kind === 'fallback' && fallback.row.identity).toBe(
+        crew.kind === 'crew' && crew.row.seat.model,
+      );
+    }
+  });
+
   it('derives the fallback rows from the config of record and the detection it is given', () => {
     const config = makeConfig({
       implementer: { kind: 'cli', tool: 'codex', fallback: { tool: 'opencode' } },

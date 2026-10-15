@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { App } from '../../../app/root.js';
 import { initStores } from '../../bootstrap/init.js';
+import { loadRememberedCatalog } from '../../bootstrap/discovery.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { readRunRecord } from '../../../core/sessions/run-record-io.js';
@@ -83,6 +84,7 @@ export async function resumeSavedSession(args: {
 
   const config = args.config ?? resolveRunConfig({ projectDir, opts });
   const ref = { projectDir, sessionId };
+  await loadRememberedCatalog(projectDir);
   reportSeatChanges(ref, config);
   const selectedSkills = await resolveSelectedSkills(projectDir, opts.skills);
   const headless = opts.json === true || opts.plain === true;

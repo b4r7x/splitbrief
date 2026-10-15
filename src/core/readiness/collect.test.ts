@@ -144,6 +144,19 @@ describe('collectReadiness runner availability wiring', () => {
     cleanupTempDir(tempDir);
   });
 
+  it('uses catalog names throughout the collected runner report', async () => {
+    const runner = { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } as const;
+    const { report } = await collectReadiness({
+      projectDir: tempDir,
+      config: makeConfig({ planner: runner, implementer: runner, reviewer: runner }),
+      seatDisplayName: () => 'GPT-6-Luna',
+    });
+    const summaries = flattenReadinessChecks(report.sections).map((check) => check.summary);
+    expect(summaries).toContain('Planner OpenAI Codex CLI · GPT-6-Luna configured.');
+    expect(summaries).toContain('BUILD OpenAI Codex CLI · GPT-6-Luna configured.');
+    expect(summaries.join('\n')).not.toContain('GPT-6 Luna');
+  });
+
   it('turns an unreachable default implementer into a blocker', async () => {
     const { report } = await collectReadiness({
       projectDir: tempDir,

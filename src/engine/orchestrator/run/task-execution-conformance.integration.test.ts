@@ -148,7 +148,7 @@ describe('workspace acquisition conformance', () => {
         plannerTool: 'test',
         implementerTool: 'test',
       },
-      metadata: { planner: { tool: 'test' }, implementer: { tool: 'test' } },
+      metadata: { planner: 'test · auto', implementer: 'test · auto' },
       resumeHolder: { messages: [] },
       isolation: wctx.isolation,
     });

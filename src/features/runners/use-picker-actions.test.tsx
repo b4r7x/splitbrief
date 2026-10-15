@@ -4,6 +4,10 @@ import { join } from 'node:path';
 import { Text, useInput } from 'ink';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { configStore } from '../../stores/project/config.js';
+import { loadConfig } from '../../core/config/load/io.js';
+import { readActiveRunner } from '../../core/config/accessors/active-runner.js';
+import { seatAxisFocus } from '../../core/navigation/types.js';
+import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
@@ -34,6 +38,13 @@ import {
   type PickerActions,
 } from './use-picker-actions.js';
 import { usePickerCatalog } from './use-picker-catalog.js';
+import { PickerView } from './picker-view.js';
+
+function AntigravityPickerProbe({ role }: { role: SeatPickerRole }) {
+  const catalog = usePickerCatalog(role, 'seat', 0);
+  const actions = usePickerActions({ role, slot: 'seat', catalog });
+  return <PickerView role={role} slot="seat" catalog={catalog} actions={actions} />;
+}
 
 function ConfirmOnKeyProbe({
   role,
@@ -257,6 +268,32 @@ describe('usePickerActions fallback slot', () => {
     ui.unmount();
   });
 
+  it('reports a saved fallback with the catalog name used by the crew', async () => {
+    modelCacheStore.hydrateDetection({
+      providers: [],
+      cliTools: [],
+      fetchedAt: 1,
+      validatedAt: 1,
+      generation: 0,
+      requestId: 0,
+      contexts: { readiness: 'readiness', modelsDev: 'catalog', cliModels: 'tools' },
+      cliCatalogs: [
+        { tool: 'codex', probedAt: 1, models: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+      ],
+    });
+    const ui = renderFeature(<FallbackProbe />);
+    await flushEffects();
+
+    await currentActions().confirm(realPickerOption('implementer', 'codex'), {
+      id: 'gpt-6-luna',
+    });
+
+    expect(feedbackStore.get().message).toBe(
+      'BUILD fallback set to: OpenAI Codex CLI · GPT-6-Luna',
+    );
+    ui.unmount();
+  });
+
   it('refuses the current seat identity even with a different effort and keeps the picker open', async () => {
     const ui = renderFeature(<FallbackProbe selectedItemId="claude-code" />);
     await flushEffects();
@@ -373,6 +410,66 @@ describe('usePickerActions', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it.each([
+    ['planner', 'plan'],
+    ['implementer', 'build'],
+    ['reviewer', 'review'],
+  ] as const)('saves the Antigravity level chosen in the %s picker', async (role, seat) => {
+    const oldSeat = {
+      kind: 'cli',
+      tool: 'antigravity',
+      model: 'gemini-3.8-flash-high',
+      effort: 'low',
+    } as const;
+    seed(makeConfig({ planner: oldSeat, implementer: oldSeat, reviewer: oldSeat }));
+    terminalSizeStore.__testReset({ cols: 140, rows: 40, isSmall: false });
+    const request = detectionStore.beginRefresh({
+      contexts: { readiness: 'r', modelsDev: 'm', cliModels: 'c' },
+    });
+    detectionStore.publish({
+      request,
+      result: {
+        providers: [],
+        cliTools: [cliDetectionFor('ready', 'antigravity')],
+        catalog: null,
+        cliModels: [
+          {
+            connection: { tool: 'antigravity', contextKey: 'c' },
+            outcome: {
+              kind: 'success',
+              value: ['high', 'medium', 'low'].map((level) => ({
+                id: `gemini-3.8-flash-${level}`,
+                displayName: `Gemini 3.8 Flash (${level})`,
+                nativeReasoningEfforts: ['low', 'medium', 'high'],
+              })),
+            },
+          },
+        ],
+        generation: 1,
+      },
+    });
+    pickerViewStore.expand(oldSeat.model, oldSeat.model, null);
+    overlayStore.open(`${role}-picker`, seatAxisFocus(seat));
+    const ui = renderFeature(<AntigravityPickerProbe role={role} />);
+    await flushEffects();
+
+    expect(ui.lastFrame()).toContain('gemini-3.8-flash-high · high');
+    ui.stdin.write(' ');
+    await flushEffects();
+    expect(ui.lastFrame()).toContain('gemini-3.8-flash-low · low');
+    ui.stdin.write('\r');
+    await vi.waitFor(() => {
+      expect(readActiveRunner({ config: loadConfig(projectDir).config, role })).toMatchObject({
+        model: 'gemini-3.8-flash-low',
+      });
+      expect(readActiveRunner({ config: loadConfig(projectDir).config, role })).not.toHaveProperty(
+        'effort',
+      );
+      expect(feedbackStore.get().message).toContain('Effort low cleared');
+    });
+    ui.unmount();
   });
 
   it('commits a reviewer confirmation to the reviewer block and leaves the planner unchanged', async () => {

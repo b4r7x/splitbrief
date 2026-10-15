@@ -381,9 +381,11 @@ function seedConfig(overrides?: VisualConfigOverrides): OverlaySeed {
 function activateFallbackSeat(id: CrewSeatId): void {
   const config = configStore.get().config;
   if (config === null) throw new Error('Visual overlay fixture requires project config');
-  const row = deriveFallbackRows({ config, cliTools: detectionStore.get().cliTools }).find(
-    (row) => row.id === id,
-  );
+  const row = deriveFallbackRows({
+    config,
+    cliTools: detectionStore.get().cliTools,
+    seatDisplayName: (runner, role) => resolveSeatDisplayName(runner, role, modelCacheStore),
+  }).find((row) => row.id === id);
   if (row === undefined) throw new Error(`Visual overlay fixture requires a ${id} seat`);
   fallbackActivate({ row, config });
 }
@@ -528,30 +530,47 @@ function seedCodexNativeListing(): void {
   });
 }
 
+function seedCatalogFallback(): void {
+  seedConfig({
+    planner: {
+      kind: 'cli',
+      tool: 'claude-code',
+      model: 'opus',
+      fallback: { tool: 'codex', model: 'gpt-6-luna' },
+    },
+    implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' },
+  })();
+  publishVisualDiscovery({
+    cliTools: [cliDetectionFor('ready', 'codex'), cliDetectionFor('ready', 'claude-code')],
+    cliModels: [
+      catalogAttempt({
+        tool: 'codex',
+        outcome: { kind: 'success', value: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+      }),
+    ],
+  });
+}
+
 // `agy models` lists one row per effort variant (`gemini-3.8-flash-high`); the picker merges the
 // variants into one family row whose expanded child is the effort axis, so the render only tells
 // the truth when it is fed the real listing.
 function antigravityModels(): readonly DetectedModel[] {
-  const stdout = readFileSync(
-    join(import.meta.dirname, '../../fixtures/antigravity/models.txt'),
-    'utf8',
-  );
+  const stdout = readFileSync(join(import.meta.dirname, 'antigravity-models.txt'), 'utf8');
   const catalog = parseAntigravityModelCatalog(stdout);
-  if (catalog === null) throw new Error('antigravity/models.txt did not parse');
+  if (catalog === null) throw new Error('antigravity-models.txt did not parse');
   return nativeCliCatalogToDetectedModels(catalog);
 }
 
-function seedAntigravityNativeListing(): void {
+function seedAntigravityNativeListing(level: 'low' | 'medium' | 'high' = 'medium'): void {
   seedConfig({
     planner: {
       kind: 'cli',
       tool: 'antigravity',
-      model: 'gemini-3.8-flash-medium',
-      effort: 'medium',
+      model: `gemini-3.8-flash-${level}`,
     },
   })();
   publishVisualDiscovery({
-    cliTools: [cliDetectionFor('ready', 'antigravity')],
+    cliTools: [cliDetectionFor('ready', 'antigravity', { installedVersion: '1.3.5' })],
     cliModels: [
       catalogAttempt({
         tool: 'antigravity',
@@ -780,8 +799,16 @@ const createSettingsCrewFullFixture: FixtureFactory = () =>
     }),
     focus: 'seat:build',
   });
+const createSettingsAntigravityLowFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'settings',
+    seed: () => seedAntigravityNativeListing('low'),
+    focus: 'seat:plan',
+  });
 const createSettingsFallbackNoneFixture: FixtureFactory = () =>
   createOverlayFixture({ overlay: 'settings', focus: 'fallback:build' });
+const createSettingsFallbackCatalogFixture: FixtureFactory = () =>
+  createOverlayFixture({ overlay: 'settings', seed: seedCatalogFallback, focus: 'fallback:plan' });
 const createSettingsFallbackSetFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -1084,7 +1111,7 @@ const createPlannerPickerAntigravityFixture: FixtureFactory = () =>
     overlay: 'planner-picker',
     seed: () => {
       seedAntigravityNativeListing();
-      pickerViewStore.expand('gemini-3.8-flash-medium', 'gemini-3.8-flash-medium', 'medium');
+      pickerViewStore.expand('gemini-3.8-flash-medium', 'gemini-3.8-flash-medium', null);
     },
     focus: 'tool:antigravity',
   });
@@ -1093,13 +1120,19 @@ const createPlannerPickerAntigravityListedFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'planner-picker',
     seed: () => {
-      seedAntigravityNativeListing();
-      seedConfig({
-        planner: { kind: 'cli', tool: 'antigravity', model: 'gemini-3.8-flash-high' },
-      })();
+      seedAntigravityNativeListing('high');
       pickerViewStore.expand('gemini-3.8-flash-high', 'gemini-3.8-flash-high', null);
     },
     focus: 'tool:antigravity',
+  });
+const createPlannerPickerAntigravityLowFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-picker',
+    seed: () => {
+      seedAntigravityNativeListing('low');
+      pickerViewStore.expand('gemini-3.8-flash-low', 'gemini-3.8-flash-low', null);
+    },
+    focus: seatAxisFocus('plan'),
   });
 // A filter that leaves one model on two routes beside its namesake, as OpenCode 2.0.26 listed
 // them: each row keeps the family and the id that tells it apart.
@@ -1376,6 +1409,15 @@ const createFallbackPickerCurrentFixture: FixtureFactory = () =>
     seed: () => {
       seedCodexNativeListing();
       seedConfig({ planner: PLANNER_WITH_FALLBACK })();
+      activateFallbackSeat('plan');
+    },
+    focus: seatAxisFocus('plan'),
+  });
+const createFallbackPickerCatalogFixture: FixtureFactory = () =>
+  createOverlayFixture({
+    overlay: 'planner-fallback-picker',
+    seed: () => {
+      seedCatalogFallback();
       activateFallbackSeat('plan');
     },
     focus: seatAxisFocus('plan'),
@@ -1971,7 +2013,9 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
       createOverlayFixture({ overlay: 'settings', seed: seedRoutedCrew, focus: 'fallback:build' }),
   ],
   [scenarioId('overlay-settings-crew-full'), createSettingsCrewFullFixture],
+  [scenarioId('overlay-settings-antigravity-low'), createSettingsAntigravityLowFixture],
   [scenarioId('overlay-settings-fallback-none'), createSettingsFallbackNoneFixture],
+  [scenarioId('overlay-settings-fallback-catalog'), createSettingsFallbackCatalogFixture],
   [scenarioId('overlay-settings-fallback-set'), createSettingsFallbackSetFixture],
   [scenarioId('overlay-settings-fallback-filtered'), createSettingsFallbackFilteredFixture],
   [scenarioId('overlay-settings-inherited-effort'), createSettingsInheritedEffortFixture],
@@ -2020,6 +2064,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-planner-picker-command-code'), createPlannerPickerCommandCodeFixture],
   [scenarioId('overlay-planner-picker-codex'), createPlannerPickerCodexFixture],
   [scenarioId('overlay-planner-picker-antigravity'), createPlannerPickerAntigravityFixture],
+  [scenarioId('overlay-planner-picker-antigravity-low'), createPlannerPickerAntigravityLowFixture],
   [
     scenarioId('overlay-planner-picker-antigravity-listed'),
     createPlannerPickerAntigravityListedFixture,
@@ -2114,6 +2159,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-reviewer-picker-tool'), createReviewerPickerToolFixture],
   [scenarioId('overlay-fallback-picker'), createFallbackPickerFixture],
   [scenarioId('overlay-fallback-picker-current'), createFallbackPickerCurrentFixture],
+  [scenarioId('overlay-fallback-picker-catalog'), createFallbackPickerCatalogFixture],
   [scenarioId('overlay-fallback-picker-variant'), createFallbackPickerVariantFixture],
   [
     scenarioId('overlay-fallback-picker-inherited-review'),

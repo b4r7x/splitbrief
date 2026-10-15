@@ -9,11 +9,7 @@ import {
   isRetiredRecoveryReason,
 } from '../../../core/recovery/halt.js';
 import type { RecoveryIssue, SeatSwapCandidate } from '../../../core/schemas/recovery/schemas.js';
-import {
-  formatSeatChangeIdentities,
-  sameSeatCandidate,
-  type CrewSeatId,
-} from '../../../core/crew/identity.js';
+import { sameSeatCandidate, type CrewSeatId } from '../../../core/crew/identity.js';
 import { configWithSwitchedSeat, seatCandidateOfRunner } from './switch-seat.js';
 import { readSeatFallbackOfRecord } from './seat-swap-context.js';
 import type { SeatRunnerValue } from '../../../core/config/load/record-seat.js';
@@ -49,6 +45,9 @@ import { isConsultBoundReason } from './builders/consult.js';
 import { recoveryFactString } from '../../../core/schemas/recovery/facts.js';
 import { SeatAccountCauseSchema } from '../../../core/recovery/account-cause.js';
 import { formatRecoveryHeadline } from '../../../core/recovery/headline.js';
+import { CREW_SEAT_ROLES } from '../../../core/crew/seats.js';
+import { resolveSeatChangeIdentities } from '../../providers/model/display-names.js';
+import { NULL_CACHE, type ModelCacheAccessor } from '../../providers/model/resolution.js';
 
 export type RecoveryActionBlockedCode =
   | 'no-pending-recovery'
@@ -115,6 +114,7 @@ export interface ApplyRecoveryActionOptions {
   action: RecoveryAction;
   bus: EventBus;
   config?: Config | undefined;
+  modelCache?: ModelCacheAccessor | undefined;
   /** `switch-seat` only: which offered tool the seat moves to. Defaults to the first offer. */
   candidate?: SeatSwapCandidate | undefined;
   /** `revise`, `continue` and a seat-level retry: what the operator wants changed. */
@@ -860,7 +860,12 @@ export function commitSeatSwitch(
       type: 'RECORD_SEAT_SWITCH',
       switchId,
       seat,
-      ...formatSeatChangeIdentities(from, candidate),
+      ...resolveSeatChangeIdentities({
+        from,
+        to: candidate,
+        role: CREW_SEAT_ROLES[seat],
+        cache: opts.modelCache ?? NULL_CACHE,
+      }),
       fromSeat: from,
       toSeat: candidate,
       ...switchCause,

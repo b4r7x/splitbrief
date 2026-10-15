@@ -8,11 +8,12 @@ import type { PreparationOutcome } from '../engine/runners/prepared-execution.js
 import { closeApprovalPrompt, openApprovalPrompt } from '../stores/approval-prompt/prompt.js';
 import type { SessionSelectDeps } from '../stores/navigation/session-select.js';
 import { configStore } from '../stores/project/config.js';
+import { modelCacheStore } from '../stores/discovery/model-cache/state.js';
 import { error } from '../utils/error.js';
 
 type InteractivePreparationPolicy = Pick<
   PreparationPolicy,
-  'interaction' | 'allowHooks' | 'unverifiedAuth' | 'onTieredApproval'
+  'interaction' | 'allowHooks' | 'unverifiedAuth' | 'onTieredApproval' | 'modelCache'
 >;
 
 export const appPreparationError = {
@@ -24,6 +25,7 @@ export const interactivePreparationPolicy = {
   allowHooks: false,
   unverifiedAuth: 'disclosed',
   onTieredApproval: openApprovalPrompt,
+  modelCache: modelCacheStore,
 } satisfies InteractivePreparationPolicy;
 
 export async function prepareSessionResume(

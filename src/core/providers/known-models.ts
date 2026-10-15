@@ -74,12 +74,6 @@ export const TOOL_EFFORT_LADDERS: Readonly<Partial<Record<ProviderId, ToolEffort
       provenance:
         'cmd --help 1.50.0 (2026-09-07): "(e.g. low, medium, high) — depends on the model"; cmd --list-models publishes no per-model levels',
     },
-    antigravity: {
-      levels: ['low', 'medium', 'high'],
-      exhaustive: false,
-      provenance:
-        'skills/splitbrief/references/tool-recipes.md:84 (2026-09-13): agy effort `low|medium|high`; agy publishes no per-model level list',
-    },
   });
 
 export const PENDING_EVALUATION_CANDIDATE_IDS = Object.freeze([

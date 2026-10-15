@@ -22,6 +22,9 @@ import type { RunnerKind } from '../../core/schemas/enums.js';
 import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
 import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
+import { recordedSeatIdentityInput } from '../../engine/providers/model/display-names.js';
+import { modelCacheStore } from '../../stores/discovery/model-cache/state.js';
+import { loadRememberedCatalog } from '../bootstrap/discovery.js';
 
 /**
  * The kind the displayed seat's own calls recorded for its tool name, when they
@@ -56,6 +59,7 @@ export function registerStatusCommand(program: Command): void {
     .action(async (opts: { project?: string }) => {
       const projectDir = await canonicalizeProjectDir(opts);
       const theme = plainTheme();
+      await loadRememberedCatalog(projectDir);
 
       const sessionId = readActive(projectDir);
       const state = sessionId ? loadState({ projectDir, sessionId }) : null;
@@ -88,7 +92,15 @@ export function registerStatusCommand(program: Command): void {
               : kind === undefined || kind === 'cli'
                 ? candidateIdsOf(selected)
                 : selected;
-          return stripTerminalControls(formatSeatIdentity({ seat: ids, kind }));
+          return stripTerminalControls(
+            formatSeatIdentity(
+              recordedSeatIdentityInput({
+                seat: { ...ids, kind: kind ?? ids.kind },
+                role,
+                cache: modelCacheStore,
+              }),
+            ),
+          );
         };
         console.log(
           `${paint(theme.textDim, 'Feature:')}  ${chalk.bold(stripTerminalControls(state.feature))}`,

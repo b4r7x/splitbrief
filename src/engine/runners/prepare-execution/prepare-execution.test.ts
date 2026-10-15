@@ -27,6 +27,8 @@ import {
   type PrepareExecutionInput,
 } from './prepare-execution.js';
 import type { PreparationPolicy, PrepareExecutionDependencies } from './types.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
+import { buildReadinessReport } from '../../../core/readiness/checks/build.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const executable = CliExecutableReceiptSchema.parse({
@@ -274,6 +276,40 @@ async function resumeActivation(prior: 'absent' | 'legacy' | 'v1' | 'different' 
 }
 
 describe('prepareExecution', () => {
+  it('names blocked preparation reports with the host catalog', async () => {
+    const project = projectDir();
+    const config = makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna' } });
+    const outcome = await prepareExecution({
+      projectDir: project,
+      feature: 'catalog report',
+      effectiveConfig: config,
+      signal: new AbortController().signal,
+      policy: {
+        ...policy(),
+        modelCache: makeModelCacheAccessor({
+          providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+        }),
+      },
+      deps: {
+        collectReadiness: async (input) => ({
+          config,
+          report: buildReadinessReport({
+            projectDir: project,
+            config,
+            seatDisplayName: input.seatDisplayName,
+            configLoad: { state: 'loaded', path: 'config.yaml', warnings: [] },
+            packageScripts: { packageJsonExists: false, scripts: {} },
+            repo: { isGitRepo: false, hasCommits: false, dirtyFiles: [], untrackedFiles: [] },
+          }),
+        }),
+      },
+    });
+    expect(outcome.kind).toBe('blocked');
+    if (outcome.kind !== 'blocked') throw new Error('Expected repository blocker');
+    expect(JSON.stringify(outcome.report)).toContain('OpenAI Codex CLI · GPT-6-Luna');
+    expect(JSON.stringify(outcome.report)).not.toContain('GPT-6 Luna');
+  });
+
   it('checks planner and every configured profile and derives report and gates from each result', async () => {
     const project = projectDir();
     const config = makeConfig({

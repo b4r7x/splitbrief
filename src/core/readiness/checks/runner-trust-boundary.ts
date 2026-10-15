@@ -1,6 +1,5 @@
 import type { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import { resolveReviewerRunner } from '../../config/accessors/reviewer-runner.js';
-import { formatSeatIdentity } from '../../crew/identity.js';
 import { resolveApproveLevel } from '../../config/runtime/resolve.js';
 import {
   CLI_TOOL_CATALOG,
@@ -10,7 +9,7 @@ import {
 import { runnerRoleForActiveRole, type ActiveRunnerRole } from '../../runners/seat-roles.js';
 import { getRunnerTrustMeta } from '../../runners/trust.js';
 import type { Config } from '../../schemas/config.js';
-import type { ReadinessCheck } from '../types.js';
+import type { ReadinessCheck, SeatNamer } from '../types.js';
 import { stripTerminalControls } from '../../../utils/display-text.js';
 import {
   DEFAULT_REDACTION_MARKER,
@@ -19,11 +18,17 @@ import {
 } from '../../../utils/redact.js';
 import { planApprovalCopy } from './plan-approval.js';
 
-export function buildRunnerTrustBoundaryChecks(
-  config: Config,
-  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'],
-  interaction: 'interactive' | 'headless' | undefined,
-): ReadinessCheck[] {
+export function buildRunnerTrustBoundaryChecks({
+  config,
+  profiles,
+  interaction,
+  nameSeat,
+}: {
+  config: Config;
+  profiles: ReturnType<typeof resolveImplementerProfiles>['profiles'];
+  interaction: 'interactive' | 'headless' | undefined;
+  nameSeat: SeatNamer;
+}): ReadinessCheck[] {
   const approve = resolveApproveLevel(config);
   const approval = planApprovalCopy(config, interaction);
 
@@ -32,7 +37,7 @@ export function buildRunnerTrustBoundaryChecks(
     ...runnerTrustBoundaryCheck({
       id: 'runners.planner.trust-boundary',
       role: 'planner',
-      label: `PLAN ${formatSeatIdentity({ seat: config.planner })}`,
+      label: `PLAN ${nameSeat(config.planner, 'planner')}`,
       trust: getRunnerTrustMeta('planner', config.planner),
       ...(config.planner.kind === 'cli' && {
         plannerTier2FullEscalation:
@@ -50,7 +55,7 @@ export function buildRunnerTrustBoundaryChecks(
       ...runnerTrustBoundaryCheck({
         id: 'runners.reviewer.trust-boundary',
         role: 'reviewer',
-        label: `REVIEW ${formatSeatIdentity({ seat: reviewer.runner })}`,
+        label: `REVIEW ${nameSeat(reviewer.runner, 'reviewer')}`,
         trust: getRunnerTrustMeta(runnerRoleForActiveRole('reviewer'), reviewer.runner),
         runner: reviewer.runner,
         approve,
@@ -65,8 +70,8 @@ export function buildRunnerTrustBoundaryChecks(
         id: 'runners.implementer.trust-boundary',
         role: 'implementer',
         label: profile.isDefault
-          ? `BUILD ${formatSeatIdentity({ seat: profile.config })}`
-          : `BUILD ${profile.name} ${formatSeatIdentity({ seat: profile.config })}`,
+          ? `BUILD ${nameSeat(profile.config, 'implementer')}`
+          : `BUILD ${profile.name} ${nameSeat(profile.config, 'implementer')}`,
         profile: profile.name,
         trust: getRunnerTrustMeta('implementer', profile.config),
         runner: profile.config,

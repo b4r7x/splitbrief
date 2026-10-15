@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { configPath } from '../../../core/config/load/document.js';
 import { writeConfig } from '../../../core/config/load/io.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
+import { makeModelCacheAccessor } from '#testing/helpers/factories/model-cache.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import { makeRecoveryIssue } from '#testing/helpers/factories/recovery.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
@@ -560,6 +561,36 @@ function usageLimitIssue(task: Task): RecoveryIssue {
 }
 
 describe('applyRecoveryAction: switch-seat', () => {
+  it('records the catalog name for both sides of a fallback switch', async () => {
+    const ref = setupSession('catalog-seat-switch');
+    const task = makeTask({ status: 'in_progress' });
+    const candidate = { tool: 'codex', model: 'gpt-6-luna', effort: 'high' } as const;
+    const issue = {
+      ...usageLimitIssue(task),
+      switchSeat: { seat: 'build' as const, candidates: [candidate] },
+    };
+    const state = { ...makeImplState([task]), pendingRecovery: issue };
+    saveState(ref, state);
+    const config = makeConfig({
+      implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna', effort: 'low' },
+    });
+    const result = await applyRecoveryAction({
+      ...ref,
+      state,
+      config,
+      bus: makeBusRecorder().bus,
+      action: 'switch-seat',
+      candidate,
+      modelCache: makeModelCacheAccessor({
+        providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+      }),
+    });
+    expect(result.state.seatSwitches?.[0]).toMatchObject({
+      from: 'OpenAI Codex CLI · GPT-6-Luna · low',
+      to: 'OpenAI Codex CLI · GPT-6-Luna · high',
+    });
+  });
+
   it.each([
     'version: 3\nplanner:\n  kind: cli\n  tool: invalid-tool\n',
     'version: 3\nplanner: [broken\n',

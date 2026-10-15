@@ -30,6 +30,7 @@ import type { CustomRunnerAdmissionPolicy } from '../../../engine/runners/types.
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { WorkflowOpts } from '../../../core/types/config-options.js';
 import { resolveRunConfig } from '../../build-overrides.js';
+import { modelCacheStore } from '../../../stores/discovery/model-cache/state.js';
 import { cliError } from '../../errors.js';
 import { promptCustomRunnerDisclosure } from '../../custom-runner-prompts.js';
 
@@ -146,6 +147,7 @@ export function cliPreparationPolicy(input: CliPreparationPolicyInput): Preparat
         : input.opts.allowUnverifiedAuth === true
           ? 'allowed'
           : 'denied',
+    modelCache: modelCacheStore,
     ...(input.interaction === 'interactive' && {
       onTieredApproval:
         input.onTieredApproval ?? ((request) => promptCustomRunnerDisclosure({ request })),
