@@ -38,7 +38,7 @@ import {
   getSidebarStatusColumnCells,
 } from '../layout/rect.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
-import { useSharedClock } from '../hooks/use-shared-clock.js';
+import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { Divider } from '../../../components/divider.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { controlsStore } from '../../../stores/ui/controls.js';

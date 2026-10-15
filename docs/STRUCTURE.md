@@ -299,7 +299,6 @@ features/workflow/
 │   │   └── use-inline-edit.ts # external-edit handoff
 │   ├── use-run-loop.ts       # runWorkflow + the recovery loop + the process-registry stop watcher
 │   ├── use-run-continue.ts   # how the run is re-entered: the state, the steer, continueRun
-│   ├── use-shared-clock.ts   # one ticking now for header, sidebar and build progress
 │   └── use-keys.ts
 ├── closed/                   # a closed run's ledger: view-model, projections, outcome, byline, copy, rows
 ├── run-history.ts            # hydrateRun — replay the log, lay the saved state over it
@@ -436,7 +435,7 @@ The one sanctioned cross-cutting channel between features is **stores**. Feature
 - **Shared overlays** — `overlays/overlay-panel.tsx`. The runner picker's text input overlay has one consumer, so it lives in its feature: `src/features/runners/text-input-overlay.tsx`. Surface-specific overlay *entries* are FLAT pages in `src/app/overlays/` (e.g. `app/overlays/help.tsx`, `app/overlays/palette.tsx`); their feature-local internals (e.g. `features/palette/{sources,results}.ts`, `features/settings/items.ts`) stay in the feature folder.
 - **Picker primitives** — `pickers/filterable-list.tsx`, `pickers/filtering.ts`, `pickers/single-column.tsx`, `pickers/aligned-option-row.tsx`, `pickers/row-zone.tsx`, `pickers/scroll-window.ts`, `pickers/list-viewport.tsx`, plus the `src/hooks/use-static-selector.ts` selection hook. Sectioned picker display uses the display-window/ListViewport stack: `scroll-window.ts` computes header/gap/item slots, and `list-viewport.tsx` renders them. The two-column runner picker (`two-column-picker/`) lives with its feature under `features/runners/`, not here.
 
-`src/hooks/` holds the shared hooks: `use-spinner-frame.ts` (`useSpinnerFrame`), `use-static-selector.ts` (`useStaticSelector`), `use-filterable-list.ts` (`useFilterableList`) and `use-crew-display-names.ts` (`useCrewDisplayNames`). See [`HOOKS.md`](./HOOKS.md).
+`src/hooks/` holds the shared hooks: `use-spinner-frame.ts` (`useSpinnerFrame`), `use-static-selector.ts` (`useStaticSelector`), `use-filterable-list.ts` (`useFilterableList`), `use-crew-display-names.ts` (`useCrewDisplayNames`) and `use-shared-clock.ts` (`useSharedClock`). See [`HOOKS.md`](./HOOKS.md).
 
 There is **no separate `src/ui/` directory** for primitives. The distinction between "primitive" and "composed" is fuzzy in practice (stateful primitives exist; stateless composed widgets exist). Flat `src/components/` with natural subfolders (`input/`, `overlays/`, `pickers/`) is enough.
 

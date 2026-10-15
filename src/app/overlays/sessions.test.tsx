@@ -43,6 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   if (tmp) cleanupTempDir(tmp);
   sessionsStore.reset();
   configStore.reset();
@@ -103,6 +104,22 @@ describe('SessionsPicker', () => {
     expect(frame).toContain('refactor payments');
     expect(stripAnsiStyles(frame)).toContain('Sessions · 2');
 
+    instance.unmount();
+  });
+
+  it('moves a row age on while the picker stays open, with no key pressed', async () => {
+    const now = 1_700_000_000_000;
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(now);
+    writeSessionSummary(tmp, makeSession({ id: 'sess-age', feature: 'ageing', startedAt: now }));
+
+    const instance = render(<SessionsPicker />);
+    await flushEffects();
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('just now');
+
+    vi.advanceTimersByTime(2 * 60_000);
+    await flushEffects();
+    expect(stripAnsiStyles(instance.lastFrame() ?? '')).toContain('2m ago');
     instance.unmount();
   });
 
