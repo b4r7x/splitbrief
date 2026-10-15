@@ -35,45 +35,55 @@ const REVIEW_PLAN: ReviewPlanData = {
   tasks: [
     {
       id: 'T001',
+      lineageId: 'T001',
       status: 'done',
       title: 'Storage',
       intent: 'Store reminders',
+      steps: ['Reviewer: run npm run check:storage.'],
       criteria: ['C1', 'C2'],
       suggestedFiles: [],
       exclusions: [],
     },
     {
       id: 'T002',
+      lineageId: 'T002',
       status: 'done',
       title: 'Scheduling',
       intent: 'Schedule reminders',
+      steps: [],
       criteria: ['C3', 'C4'],
       suggestedFiles: [],
       exclusions: [],
     },
     {
       id: 'T003',
+      lineageId: 'T003',
       status: 'done',
       title: 'Delivery',
       intent: 'Deliver reminders',
+      steps: [],
       criteria: ['C5'],
       suggestedFiles: [],
       exclusions: [],
     },
     {
       id: 'T004',
+      lineageId: 'T004',
       status: 'done',
       title: 'Time zones',
       intent: 'Handle time zones',
+      steps: [],
       criteria: ['C6', 'C7', 'C8', 'C9'],
       suggestedFiles: [],
       exclusions: [],
     },
     {
       id: 'T005',
+      lineageId: 'T005',
       status: 'pending',
       title: 'Reminder API',
       intent: 'Expose reminders',
+      steps: [],
       criteria: ['C10', 'C11'],
       suggestedFiles: [],
       exclusions: [],
@@ -107,6 +117,10 @@ describe('buildFinalReviewPrompt', () => {
       'Pending tasks (not built yet; context, never a missing implementation):\n- T005 Reminder API — criteria C10, C11',
     );
     expect(result).toContain('- T005 [pending] Reminder API: Expose reminders');
+    expect(result).toContain('  - Steps:\n    1. Reviewer: run npm run check:storage.');
+    expect(result).toContain(
+      '- T002 [done] Scheduling: Schedule reminders\n  - Steps: none\n  - Criteria: C3, C4',
+    );
     expect(result.indexOf('## Review Scope')).toBeLessThan(result.indexOf('## Plan\n'));
     expect(result).toContain(
       'You are reviewing the completed work inside the Review Scope against its specification.',
@@ -142,6 +156,7 @@ describe('buildFinalReviewPrompt', () => {
     expect(result).toContain('every blocking finding that is not unverified');
     expect(result).toContain('- T004 [done] Time zones: Handle time zones');
     expect(result).toContain('- T005 [pending] Reminder API: Expose reminders');
+    expect(result).toContain('Reviewer: run npm run check:storage.');
   });
 
   it('hands the reviewer every pending input and asks it for the fix tasks in the same answer', () => {
@@ -201,9 +216,11 @@ describe('buildFinalReviewPrompt', () => {
         tasks: [
           {
             id: 'T001',
+            lineageId: 'T001',
             status: 'done',
             title: 'Hello module',
             intent: 'Add the hello export',
+            steps: [],
             criteria: ['C1'],
             suggestedFiles: ['src/hello.ts'],
             exclusions: ['docs/**'],

@@ -6,7 +6,6 @@ import type { EventBus } from '../events/types.js';
 import type { TaskTokenUsage } from '../../core/schemas/tokens.js';
 import type { TaskId } from '../../core/schemas/task.js';
 import type { Config } from '../../core/schemas/config.js';
-import { isTaskCompleted } from '../../core/schemas/task.js';
 import { readSpecFileOrEmpty, writeSpecFile, type SpecMetadata } from '../../core/paths-io.js';
 import {
   PLAN_FILE,
@@ -36,12 +35,8 @@ import { nowIso } from '../../utils/format-time.js';
 import { labelError } from '../../utils/format-errors.js';
 import { warnError } from '../../lib/warn.js';
 import { isAbortError, throwIfAborted } from '../../utils/abort.js';
-import {
-  triageLines,
-  type ReviewPlanData,
-  type ReviewTouchedNotSuggested,
-} from '../spec/prompts/review.js';
-import { fenced, workspaceReadInstructions } from '../spec/prompts/builder.js';
+import { triageLines, type ReviewTouchedNotSuggested } from '../spec/prompts/review.js';
+import { workspaceReadInstructions } from '../spec/prompts/builder.js';
 import { recordFinalReviewEvidence } from './evidence/reporting.js';
 import { readPacketEvents } from './evidence/review-packet/artifacts.js';
 import { renderChecksLogForPrompt, renderWholeChecksLog } from './evidence/review-packet/render.js';
@@ -62,6 +57,7 @@ import {
 } from './events.js';
 import { rebaseOnPersistedWorkflowState, transitionAndSave } from './state-ops.js';
 import { runReviewerCall } from './review-call.js';
+import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
 import { touchedNotSuggestedFiles } from './task/commit.js';
 import { hashTaskBrief } from '../../core/evidence/brief-hash.js';
 import { writeReviewPacket } from './evidence/review-packet/write.js';
@@ -194,27 +190,6 @@ export const finalReviewError = {
     ),
 } as const;
 
-/** The plan's own data as the review prompt presents it. */
-function reviewPlanData(state: WorkflowState): ReviewPlanData {
-  return {
-    criteria: (state.plan?.criteria ?? []).map((criterion) => ({
-      id: criterion.id,
-      text: criterion.text,
-      checkIds: criterion.checkIds,
-    })),
-    decisions: state.plan?.decisions ?? [],
-    tasks: state.tasks.map((task) => ({
-      id: task.id,
-      status: isTaskCompleted(task.status) ? 'done' : 'pending',
-      title: task.title,
-      intent: task.description,
-      criteria: task.criteria ?? [],
-      suggestedFiles: task.suggestedFiles,
-      exclusions: task.exclusions ?? task.scope?.outOfBounds ?? [],
-    })),
-  };
-}
-
 /** The recorded check runs: what each brief's checks returned, then the plan's. */
 function reviewCheckResults(state: WorkflowState): string {
   const lines: string[] = [];
@@ -251,15 +226,6 @@ function reviewPlanningAnswers(state: WorkflowState): string {
   return (state.userAnswers ?? [])
     .map((answer) => `- ${answer.reply} → ${answer.answer}`)
     .join('\n');
-}
-
-/** Each brief's operator-instruction log, fenced under the task its lineage started from. */
-function reviewOperatorInstructions(state: WorkflowState): string {
-  return Object.entries(state.lineages ?? {})
-    .flatMap(([taskId, lineage]) =>
-      (lineage.corrections ?? []).map((text) => `${taskId}:\n${fenced(text)}`),
-    )
-    .join('\n\n');
 }
 
 type ReviewVerification = {
