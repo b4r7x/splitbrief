@@ -98,11 +98,6 @@ export function withPlannerCallPublishing(
     isAvailable: () => planner.isAvailable(),
     getVersion: () => planner.getVersion(),
     capabilities: planner.capabilities,
-    escalateFull: (opts) =>
-      planner.escalateFull({
-        ...opts,
-        callbacks: withPlannerOutputCallbacks(opts.callbacks, { ...ctx, rootDir: opts.projectDir }),
-      }),
     review: (prompt, projectDir, callbacks) =>
       review(
         prompt,

@@ -72,13 +72,12 @@ describe('Codex role adapters', () => {
     });
   });
 
-  it('preserves planner exec/resume, model, cd, escalation, and configured argument order', () => {
+  it('preserves planner exec/resume, model, cd, and configured argument order', () => {
     const resumed = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
       model: 'gpt-5',
       projectDir: '/project',
       configuredArgs: ['--label', 'fixture'],
-      mode: 'plan',
       sessionId: 'session-1',
       effort: 'high',
     });
@@ -112,7 +111,6 @@ describe('Codex role adapters', () => {
       model: 'gpt-5',
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -134,29 +132,6 @@ describe('Codex role adapters', () => {
       '/project',
       '-',
     ]);
-
-    const escalation = codexPlannerAdapter.buildArgs({
-      prompt: PROMPT,
-      model: undefined,
-      projectDir: '/project',
-      configuredArgs: [],
-      mode: 'escalate',
-      sessionId: 'session-1',
-      effort: undefined,
-    });
-    expect(escalation).toEqual([
-      '--sandbox',
-      'workspace-write',
-      '--ask-for-approval',
-      'never',
-      'exec',
-      '--ignore-user-config',
-      '--json',
-      '--skip-git-repo-check',
-      '--cd',
-      '/project',
-      '-',
-    ]);
   });
 
   it('spends the configured effort as a config override ahead of exec on every vector', () => {
@@ -170,11 +145,9 @@ describe('Codex role adapters', () => {
     const vectors = {
       'plan · resumed': codexPlannerAdapter.buildArgs({
         ...seat,
-        mode: 'plan',
         sessionId: 'session-1',
       }),
-      'plan · fresh': codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: null }),
-      escalate: codexPlannerAdapter.buildArgs({ ...seat, mode: 'escalate', sessionId: null }),
+      'plan · fresh': codexPlannerAdapter.buildArgs({ ...seat, sessionId: null }),
       implementer: codexImplementerAdapter.buildArgs(seat),
     };
 
@@ -196,11 +169,9 @@ describe('Codex role adapters', () => {
     const vectors = {
       'plan · resumed': codexPlannerAdapter.buildArgs({
         ...seat,
-        mode: 'plan',
         sessionId: 'session-1',
       }),
-      'plan · fresh': codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: null }),
-      escalate: codexPlannerAdapter.buildArgs({ ...seat, mode: 'escalate', sessionId: null }),
+      'plan · fresh': codexPlannerAdapter.buildArgs({ ...seat, sessionId: null }),
       implementer: codexImplementerAdapter.buildArgs(seat),
     };
 
@@ -271,7 +242,6 @@ describe('Codex role adapters', () => {
     const args = codexPlannerAdapter.buildArgs({
       prompt: PROMPT,
       sessionId: 'session-1',
-      mode: 'plan',
       effort: 'high',
       model: 'gpt-5',
       configuredArgs: [],
@@ -304,7 +274,6 @@ describe('Codex role adapters', () => {
       prompt: PROMPT,
       sessionId: null,
       oneShot: true,
-      mode: 'plan',
       model: undefined,
       effort: undefined,
       configuredArgs: [],
@@ -335,7 +304,6 @@ describe('Codex role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -370,7 +338,6 @@ describe('Codex role adapters', () => {
       model: undefined,
       projectDir: '/project',
       configuredArgs: [],
-      mode: 'plan',
       sessionId: null,
       effort: undefined,
     });
@@ -401,17 +368,12 @@ describe('Codex stdin prompt transport', () => {
     [
       'plan · fresh',
       codexPlannerAdapter,
-      codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: null }),
+      codexPlannerAdapter.buildArgs({ ...seat, sessionId: null }),
     ],
     [
       'plan · resumed',
       codexPlannerAdapter,
-      codexPlannerAdapter.buildArgs({ ...seat, mode: 'plan', sessionId: 'session-1' }),
-    ],
-    [
-      'escalate',
-      codexPlannerAdapter,
-      codexPlannerAdapter.buildArgs({ ...seat, mode: 'escalate', sessionId: null }),
+      codexPlannerAdapter.buildArgs({ ...seat, sessionId: 'session-1' }),
     ],
     ['implementer', codexImplementerAdapter, codexImplementerAdapter.buildArgs(seat)],
   ] as const)(

@@ -153,7 +153,7 @@ function runArgs(
 function plannerBaseArgs(input: OpenCodePlannerBuildInput): string[] {
   const args = runArgs(input);
   args.push('--format', 'json');
-  args.push('--agent', input.mode === 'plan' ? 'plan' : 'build');
+  args.push('--agent', 'plan');
   args.push(input.prompt);
   return args;
 }

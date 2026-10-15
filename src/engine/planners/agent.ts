@@ -8,7 +8,6 @@ export function createAgentPlanner(config: Config): Planner {
 
   return createCommandBasedPlanner(plannerCfg, 'Agent planner', {
     notFoundMessage: `Agent planner command not found: ${plannerCfg.command}`,
-    escalateFullMode: 'files',
     capabilities: resolveCapabilities(plannerCfg.capabilities),
   });
 }

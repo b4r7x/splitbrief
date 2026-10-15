@@ -191,7 +191,10 @@ describe('spec command', () => {
 
     const stdout = consoleSpy.mock.calls.map(([line]) => String(line)).join('\n');
     expect(stdout).toContain('Run readiness: blocked');
-    expect(stdout).toContain('runners.preparation.planner');
+    expect(stdout).toContain('PLAN could not start.');
+    expect(stdout).toContain('Configured command is outside the current trust policy.');
+    expect(stdout).toContain('Fix: Review the configured runner, then retry.');
+    expect(stdout).not.toContain('runners.preparation.planner');
   });
 
   it('allows repo-local planner commands with --allow-repo-runners', async () => {

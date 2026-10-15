@@ -50,7 +50,7 @@ describe('runPlanningPhase — attachments capability gate (F-123 seam)', () => 
         seenImages = images;
         return completedRunnerCall(JSON.stringify({ result: makePlanProposal() }));
       },
-      invokeEscalate: async () => completedRunnerCall(''),
+      invokeOneShot: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: { ...defaultCapabilities, supportsImages },
     });

@@ -46,7 +46,6 @@ Defined in `src/engine/planners/types.ts`. Every planner implements:
 ```typescript
 interface Planner extends RunnerRuntime {          // RunnerRuntime: isAvailable(), getVersion()
   typedCall(ctx: TypedCallContext): TypedSeatCall   // the binding requestTyped calls, the consult included
-  escalateFull(opts: EscalateOptions): Promise<EscalationResult> // legacy interface; no rung dispatches it
   review(prompt, projectDir, callbacks): Promise<{ text: string; usage: TokenDelta | null }>
   summarize(messages, opts?): Promise<{ text: string; usage: TokenDelta | null }>
   summarizeStructured?(messages, opts?): Promise<{ text: string; structured: StructuredSummary | null; usage: TokenDelta | null }>
@@ -59,7 +58,7 @@ interface Planner extends RunnerRuntime {          // RunnerRuntime: isAvailable
 
 `typedCall()` is the planner's only planning entry. The planning session (`src/engine/orchestrator/planning/session.ts`) calls it through `requestTyped` with `PlanAnswerSchema`, so each turn returns typed questions or a typed plan; `requestTyped` uses the tool's native schema flag (`--json-schema`, `--output-schema`, `response_format`) where it has one, and repairs a malformed answer once. `runPhase()` and `regenerate()` are deleted: there is no per-document planner call and no artifact regeneration.
 
-The consult of a plan task is a typed call on this same interface: `askPlannerSession` (`src/engine/orchestrator/planner-session.ts`) sends `buildConsultPrompt` (`src/engine/spec/prompts/consult.ts`) through `typedCall` with the `ConsultAnswer` schema, read-only, and the answer moves the task on. The consult of a fix task (`task.fix`) goes to the review seat instead (see [Which calls the reviewer makes](#which-calls-the-reviewer-makes)); `consultSeat` (`src/engine/orchestrator/consult/request.ts`) chooses the seat. The legacy `escalateFull()` interface remains available to old integrations, but no rung dispatches it; historical full-escalation records stay readable. The review is a typed call too: `runReviewerCall` (`src/engine/orchestrator/review-call.ts`) sends it through `requestTyped` and the seat's `typedCall`. The untyped `review()` call remains for the conformance harness (`src/engine/runners/cli-tools/contract-harness-effects.ts`).
+The consult of a plan task is a typed call on this same interface: `askPlannerSession` (`src/engine/orchestrator/planner-session.ts`) sends `buildConsultPrompt` (`src/engine/spec/prompts/consult.ts`) through `typedCall` with the `ConsultAnswer` schema, read-only, and the answer moves the task on. The consult of a fix task (`task.fix`) goes to the review seat instead (see [Which calls the reviewer makes](#which-calls-the-reviewer-makes)); `consultSeat` (`src/engine/orchestrator/consult/request.ts`) chooses the seat. The planner never writes the implementation. The review is a typed call too: `runReviewerCall` (`src/engine/orchestrator/review-call.ts`) sends it through `requestTyped` and the seat's `typedCall`. The untyped `review()` call remains for the conformance harness (`src/engine/runners/cli-tools/contract-harness-effects.ts`).
 
 `PlannerUserTurnResult` distinguishes `{ status: 'delivered', usage }` from `{ status: 'not-delivered', reason: 'not-ready' }`. Usage may be null after successful delivery. The queue retains a not-ready correction for a later prompt and acknowledges only the IDs that prompt actually carried; arrivals during regeneration stay pending.
 
@@ -82,7 +81,7 @@ interface Reviewer {
 }
 ```
 
-It is deliberately narrower than `Planner` — a reviewer cannot run the planning session, escalate, resume a session, or write files. It returns the verdict and the implementer fix work in one answer. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
+It is deliberately narrower than `Planner` — a reviewer cannot run the planning session, resume a session, or write files. It returns the verdict and the implementer fix work in one answer. A `Planner` satisfies it structurally, which is what lets the planner hold the seat unadapted when no `reviewer` block is configured.
 
 The port carries no identity fields on purpose. No runner backend knows its own tool or model, so the identity in a failed-review message comes from the config accessor that resolved the seat (`resolveReviewerRunner`), not from the runner object.
 
@@ -90,7 +89,7 @@ The port carries no identity fields on purpose. No runner backend knows its own 
 
 ### Which calls the reviewer makes
 
-BUILD repair cycles after final review use the selected implementer. These bounded repairs are distinct from planner takeover.
+BUILD repair cycles after final review use the selected implementer.
 
 The review seat has three call types. The first is the plan call before each review: the reviewer reads the project and chooses the reviewer checks that verify the change (`runReviewChecks`, `src/engine/orchestrator/review-checks.ts`). The second is the review of the run diff at the configured cadence. `runFinalReviewPhase()` dispatches it through `runReviewerCall()` (`src/engine/orchestrator/review-call.ts`). The answer returns the verdict, fix tasks, rejections, verification requests and question. The final review makes no planner call. The third is the consult of a fix task. When a fix task stays red after its local retry, is `blocked` or is stale, the review seat answers its consult, because the reviewer judged the change and wrote the fix. This repair consult runs on the review seat through `runReviewerCall()`: one stateless call with the full consult prompt and the findings' `failureKeys` and `redKeys`. Its usage goes to the reviewer bucket, and it spends from the one run consult allowance (`plannerCalls`). With no `reviewer:` block the planner holds the review seat. Planning, the consults of plan tasks, every decision-confirm, summarization and injected user turns stay on the planner.
 
@@ -620,7 +619,7 @@ The implementer extracts code from stdout (`writesFiles: 'extracted-code'`). The
 
 Like shell, but the subprocess writes files to disk directly instead of returning code in stdout. `createChangeDetector()` (`src/engine/change-detection.ts`) compares the workspace after the call with a baseline captured before it (`captureChangeDetectorBaseline`): the changed files with their contents and modes when the directory has `.git`, else a hash of every tracked file. A call that changed nothing fails with `no-files-changed`.
 
-The planner reads its answer from stdout, like the shell planner. A saved custom command (`customCommands`) with `contract: direct` writes its answer to one declared file instead (see [Planner artifact ownership](#planner-artifact-ownership)). Historical full-escalation records remain readable; the workflow no longer dispatches planner code-writing takeover.
+The planner reads its answer from stdout, like the shell planner. A saved custom command (`customCommands`) with `contract: direct` writes its answer to one declared file instead (see [Planner artifact ownership](#planner-artifact-ownership)). The implementation stays with BUILD.
 
 The implementer uses `writesFiles: 'direct'` with that change detection.
 
@@ -697,7 +696,7 @@ Step by step:
 
 2. **Create the planner module** at `src/engine/planners/<name>.ts`. Export a `create<Name>Planner()` function that calls `createPlannerBase()` with:
    - `invokePlan` -- your backend-specific call
-   - `invokeEscalate` -- can be the same function or a separate path
+   - `invokeOneShot` -- the one-shot call for reviews and summaries; can be the same function as `invokePlan`
    - `capabilities` -- declare what your backend supports
    - `isAvailable` / `getVersion` -- runtime checks
 

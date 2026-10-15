@@ -43,15 +43,25 @@ describe('buildValidationChecks End-of-run checks', () => {
     expect(off?.fix).toContain('validation.end_checks: true');
   });
 
-  it('names no test check command for an unrecognised stack', () => {
-    const config = makeConfig({ validation: { testCommand: undefined } });
+  it.each(['empty', 'javascript'])(
+    'explains how to set a test command for a %s project',
+    (stack) => {
+      if (stack === 'javascript') {
+        writeFileSync(join(tempDir, 'package.json'), '{"name":"example"}');
+        expect(detectStack(tempDir)?.id).toBe('javascript');
+      }
+      const config = makeConfig({ validation: { testCommand: undefined } });
 
-    const checks = buildValidationChecks(config, packageScripts, tempDir);
+      const checks = buildValidationChecks(config, packageScripts, tempDir);
 
-    const configured = checks.find((c) => c.id === 'validation.configured');
-    expect(configured?.details?.[1]).toBe('Test check command: none (unrecognised stack)');
-    expect(configured?.metadata?.['testCommand']).toBeNull();
-  });
+      const configured = checks.find((c) => c.id === 'validation.configured');
+      expect(configured?.details?.[1]).toBe('No test command found.');
+      expect(configured?.details?.[2]).toBe(
+        'Set validation.test_command in .splitbrief/config.yaml, or set Test command in Settings.',
+      );
+      expect(configured?.metadata?.['testCommand']).toBeNull();
+    },
+  );
 
   it('warns when the test check command names a package script that does not exist', () => {
     const config = makeConfig({ validation: { testCommand: 'npm run unit' } });

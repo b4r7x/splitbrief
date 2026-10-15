@@ -16,11 +16,10 @@ import { createRunnerCallId } from '../calls/call-id.js';
 import { requireCompletedCall } from './require-completed-call.js';
 
 type PlannerSummaryConfig = {
-  invokeEscalate: (opts: {
+  invokeOneShot: (opts: {
     prompt: string;
     projectDir: string;
     callContext: RunnerCallContext;
-    accessMode: 'read-only';
     callbacks: { onOutput: (text: string) => void } & PlannerCallEventCallbacks;
     signal?: AbortSignal | undefined;
   }) => Promise<RunnerCallResult>;
@@ -94,11 +93,10 @@ export async function summarize(
   throwIfAborted(opts.signal);
   const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
-    await config.invokeEscalate({
+    await config.invokeOneShot({
       prompt: buildSummaryPrompt(messages),
       projectDir: opts.projectDir ?? process.cwd(),
       callContext,
-      accessMode: 'read-only',
       callbacks: {
         onOutput: () => {},
         ...(opts.callbacks?.onCallEvent !== undefined && {
@@ -120,11 +118,10 @@ export async function summarizeStructured(
   throwIfAborted(opts.signal);
   const callContext = createSummaryCallContext(config, opts.role ?? 'summary');
   const result = requireCompletedCall(
-    await config.invokeEscalate({
+    await config.invokeOneShot({
       prompt: buildStructuredSummaryPrompt(messages, opts.previousSummary),
       projectDir: opts.projectDir ?? process.cwd(),
       callContext,
-      accessMode: 'read-only',
       callbacks: {
         onOutput: () => {},
         ...(opts.callbacks?.onCallEvent !== undefined && {

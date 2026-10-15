@@ -30,7 +30,6 @@ describe('OpenCode steering invocation', () => {
         installedVersion: '2.0.26',
         projectDir: PROJECT_DIR,
         configuredArgs: ['--title=fixture'],
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
         imagePaths: ['/tmp/design one.png', '/tmp/design-two.png'],
@@ -119,17 +118,12 @@ describe('OpenCode steering invocation', () => {
   });
 });
 
-function plannerArgs(
-  model: string | undefined,
-  mode: 'plan' | 'escalate',
-  configuredArgs: readonly string[],
-) {
+function plannerArgs(model: string | undefined, configuredArgs: readonly string[]) {
   return opencodePlannerAdapter.buildArgs({
     prompt: PROMPT,
     model,
     projectDir: PROJECT_DIR,
     configuredArgs,
-    mode,
     sessionId: null,
     effort: undefined,
   });
@@ -155,17 +149,15 @@ describe('OpenCode role adapters', () => {
     ['empty images', [], []],
   ] as const)('passes %s before the prompt in every role', (_label, imagePaths, imageArgs) => {
     for (const installedVersion of [undefined, '2.0.26']) {
-      for (const [adapter, mode, agent] of [
-        [opencodePlannerAdapter, 'plan', 'plan'],
-        [opencodePlannerAdapter, 'escalate', 'build'],
-        [opencodeImplementerAdapter, 'plan', 'build'],
+      for (const [adapter, agent] of [
+        [opencodePlannerAdapter, 'plan'],
+        [opencodeImplementerAdapter, 'build'],
       ] as const) {
         const input = {
           prompt: PROMPT,
           model: 'provider/model',
           projectDir: PROJECT_DIR,
           configuredArgs: ['--title=fixture'],
-          mode,
           sessionId: null,
           effort: undefined,
           installedVersion,
@@ -249,7 +241,6 @@ describe('OpenCode role adapters', () => {
         model: undefined,
         projectDir: PROJECT_DIR,
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
         installedVersion,
@@ -303,7 +294,7 @@ describe('OpenCode role adapters', () => {
   });
 
   it('preserves planner agent, model placement, implementer build role, and configured order', () => {
-    expect(plannerArgs(undefined, 'plan', ['--label', 'one'])).toEqual([
+    expect(plannerArgs(undefined, ['--label', 'one'])).toEqual([
       'run',
       '--format',
       'json',
@@ -313,7 +304,7 @@ describe('OpenCode role adapters', () => {
       '--label',
       'one',
     ]);
-    expect(plannerArgs('openai/gpt-5', 'plan', [])).toEqual([
+    expect(plannerArgs('openai/gpt-5', [])).toEqual([
       'run',
       '--model',
       'openai/gpt-5',
@@ -333,7 +324,7 @@ describe('OpenCode role adapters', () => {
       'build',
       PROMPT,
     ]);
-    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const plannerBase = plannerArgs(undefined, []);
     const implementerBase = implementerArgs(undefined, []);
     expect(
       opencodePlannerAdapter.validateArgs({ invocationArgs: plannerBase, baseArgs: plannerBase }),
@@ -353,7 +344,6 @@ describe('OpenCode role adapters', () => {
         model: 'openai/gpt-5.6-luna',
         projectDir: PROJECT_DIR,
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
         variant: 'xhigh',
@@ -407,7 +397,6 @@ describe('OpenCode role adapters', () => {
     const planner = (installedVersion: string) =>
       opencodePlannerAdapter.buildArgs({
         ...seat(installedVersion),
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
       });
@@ -442,7 +431,7 @@ describe('OpenCode role adapters', () => {
   });
 
   it('omits the flag entirely when no variant is configured', () => {
-    expect(plannerArgs('openai/gpt-5.6-luna', 'plan', [])).not.toContain('--variant');
+    expect(plannerArgs('openai/gpt-5.6-luna', [])).not.toContain('--variant');
     expect(implementerArgs('openai/gpt-5.6-luna', [])).not.toContain('--variant');
   });
 
@@ -476,16 +465,13 @@ describe('OpenCode role adapters', () => {
   });
 
   it('pins the effective role on every vector: default-role, fallback, and subagent runs fail', () => {
-    const plannerBase = plannerArgs(undefined, 'plan', []);
+    const plannerBase = plannerArgs(undefined, []);
     const implementerBase = implementerArgs(undefined, []);
-    const escalationArgs = plannerArgs(undefined, 'escalate', []);
 
     expect(plannerBase).toContain('--agent');
     expect(plannerBase[plannerBase.indexOf('--agent') + 1]).toBe('plan');
     expect(implementerBase).toContain('--agent');
     expect(implementerBase[implementerBase.indexOf('--agent') + 1]).toBe('build');
-    expect(escalationArgs).toContain('--agent');
-    expect(escalationArgs[escalationArgs.indexOf('--agent') + 1]).toBe('build');
 
     for (const [adapter, base] of [
       [opencodePlannerAdapter, plannerBase],
@@ -497,38 +483,6 @@ describe('OpenCode role adapters', () => {
         ).toEqual({ valid: false, conflicts: ['--agent'] });
       }
     }
-  });
-
-  it('overrides read-only agent defaults with the verified build agent for full escalation', () => {
-    const input = {
-      prompt: PROMPT,
-      model: undefined,
-      projectDir: '',
-      configuredArgs: [],
-      sessionId: null,
-      effort: undefined,
-    };
-
-    expect(opencodePlannerAdapter.buildArgs({ ...input, mode: 'plan' })).toEqual([
-      'run',
-      '--format',
-      'json',
-      '--agent',
-      'plan',
-      PROMPT,
-    ]);
-    const escalationArgs = opencodePlannerAdapter.buildArgs({ ...input, mode: 'escalate' });
-    expect(escalationArgs).toEqual(['run', '--format', 'json', '--agent', 'build', PROMPT]);
-    expect(
-      opencodePlannerAdapter.validateArgs({
-        invocationArgs: opencodePlannerAdapter.buildArgs({
-          ...input,
-          mode: 'escalate',
-          configuredArgs: ['--agent', 'plan'],
-        }),
-        baseArgs: escalationArgs,
-      }),
-    ).toEqual({ valid: false, conflicts: ['--agent', 'plan'] });
   });
 
   it('rejects prompt placeholders, duplicate sentinels, and reordered protected args', () => {

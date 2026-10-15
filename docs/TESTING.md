@@ -371,7 +371,7 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 - A test asserting width-dependent output must pass the viewport to `renderFeature` (`renderFeature(<WorkflowScreen />, { cols: 120, rows: 40 })`); without one it renders at the 100-column default.
 - Use `testing/helpers/temp-dir.ts:withTempDir()` for filesystem work. Never mock `node:fs`.
 - Use real `git` via `testing/helpers/git.ts:createTestGitRepo()`. Never stub `simple-git`.
-- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `phases`, `steps`, `escalations`, or `retries`, not by copying their shape into a new file.
+- **Zero new fakes.** Use `fauxPlanner` / `fauxImplementer` from `testing/helpers/faux/`. Extend them via `phases`, `steps`, or `retries`, not by copying their shape into a new file.
 - **No `vi.mock()` on internal modules** (`./`, `../`). The sanctioned repo-wide targets are `node:fs/promises` (write-failure / `mkdtemp` interception), `node:fs` (`statSync` ENOENT simulation), and `ink` + `fullscreen-ink` (CLI integration tests only).
 - **Import `testing/helpers/**` from any test — under `src/**`, `testing/**`, or `evals/**` — via the `#testing/*` subpath import** (`import { makeConfig } from '#testing/helpers/factories/config.js'`), never a relative `../../helpers/...` or `../../../testing/helpers/...` path. The alias is defined once in `package.json` `imports` (`"#testing/*": "./testing/*"`), and gate 20 (`scripts/testing-helper-imports.ts`) fails any test in those three roots whose relative import resolves into `testing/helpers/**`.
 - Exit codes via `isCliError`. `commander.exitOverride()` throws; `runCommand()` catches and returns the exit code.
@@ -383,7 +383,6 @@ it('workflow screen shows an escalation card when escalate event arrives', async
 **Planner (`fauxPlanner`):**
 
 - `plans` — each typed planning call consumes the next entry (`tasks`, optional `usage`, or `throws`).
-- `escalations` — entries for the legacy `escalateFull()` (`success`, `output`, `code`, `usage`, or `throws`).
 
 **Implementer (`fauxImplementer`):**
 

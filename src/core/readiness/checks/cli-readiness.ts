@@ -1,10 +1,14 @@
-import { CLI_TOOL_CATALOG, type CliToolId } from '../../runners/cli-tool-catalog.js';
+import {
+  CLI_TOOL_CATALOG,
+  type CliToolId,
+  type CliAuthChannelId,
+} from '../../runners/cli-tool-catalog.js';
 import {
   cliReadinessCheckId,
   type CliReadinessResult,
   type ReadinessDiagnosticStateId,
 } from '../../schemas/readiness.js';
-import type { ReadinessCheck } from '../types.js';
+import type { ReadinessCheck, RunnerReadinessCauseId } from '../types.js';
 import { assertNever } from '../../../utils/type-guards.js';
 
 const REDACTED_EXECUTABLE_PATH = '[redacted executable path]';
@@ -18,14 +22,49 @@ function diagnosticExecutablePath(result: CliReadinessResult): string | null {
 }
 
 export function configuredCliReadinessChecks(
-  configuredTools: ReadonlySet<CliToolId>,
+  configuredTools: ReadonlyMap<
+    CliToolId,
+    readonly { seat: string; authChannel: CliAuthChannelId }[]
+  >,
   results: readonly CliReadinessResult[],
 ): ReadinessCheck[] {
   const resultsByTool = new Map(results.map((result) => [result.tool, result]));
-  return [...configuredTools].map((tool) => {
+  return [...configuredTools].map(([tool, seats]) => {
     const result = resultsByTool.get(tool);
-    return result ? cliReadinessCheck(result) : missingCliReadinessCheck(tool);
+    if (result === undefined) return missingCliReadinessCheck(tool);
+    const check = cliReadinessCheck(result);
+    const cause = cliReadinessCause(result, check.diagnosticState);
+    if (cause === undefined) return check;
+    // Only a sign-in fact depends on the seat's authentication selection; a
+    // missing, untrusted or unproven executable blocks every seat of the tool.
+    const authentication = cause === 'unauthenticated' || cause === 'auth-unknown';
+    const authChannel = authentication ? result.authChannel : undefined;
+    if (authentication && authChannel === undefined) return check;
+    check.runnerCause = {
+      tool,
+      cause,
+      ...(authChannel !== undefined && { authChannel }),
+      seats: seats
+        .filter((seat) => authChannel === undefined || seat.authChannel === authChannel)
+        .map((seat) => seat.seat),
+    };
+    return check;
   });
+}
+
+function cliReadinessCause(
+  result: CliReadinessResult,
+  diagnosticState: ReadinessDiagnosticStateId | undefined,
+): RunnerReadinessCauseId | undefined {
+  if (diagnosticState !== undefined) return diagnosticState;
+  if (result.status === 'disabled') return 'disabled';
+  if (
+    result.status === 'unverified' &&
+    (result.installedVersion === null || result.compatibility !== 'compatible')
+  ) {
+    return 'unknown-version';
+  }
+  return undefined;
 }
 
 function missingCliReadinessCheck(tool: CliToolId): ReadinessCheck {
@@ -35,7 +74,7 @@ function missingCliReadinessCheck(tool: CliToolId): ReadinessCheck {
     severity: 'blocker',
     summary: `${descriptor.displayName} has no current readiness probe result.`,
     nextAction: 'prepare-runner',
-    fix: `Run runner readiness for ${tool}, then start again.`,
+    fix: `Run \`splitbrief doctor\` again to check ${descriptor.displayName}.`,
     metadata: {
       tool,
       status: 'unverified',
@@ -61,7 +100,11 @@ function cliReadinessDiagnosticState(
     case 'unauthenticated':
       return 'unauthenticated';
     case 'unverified':
-      return result.auth === 'unknown' ? 'auth-unknown' : undefined;
+      return result.installedVersion !== null &&
+        result.compatibility === 'compatible' &&
+        result.auth === 'unknown'
+        ? 'auth-unknown'
+        : undefined;
     case 'ready':
     case 'disabled':
       return undefined;
@@ -78,12 +121,7 @@ function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
   return {
     id: result.checkId,
     severity,
-    summary:
-      result.status === 'ready'
-        ? result.auth === 'not-required'
-          ? `${descriptor.displayName} is installed, trusted, compatible, and does not require authentication.`
-          : `${descriptor.displayName} is installed, trusted, compatible, and authenticated.`
-        : `${descriptor.displayName} readiness is ${result.status}.`,
+    summary: cliReadinessSummary(result, descriptor.displayName),
     ...(result.remediation !== null && { fix: result.remediation }),
     ...(diagnosticState !== undefined && { diagnosticState }),
     ...(severity === 'blocker' && { nextAction: 'prepare-runner' as const }),
@@ -100,4 +138,29 @@ function cliReadinessCheck(result: CliReadinessResult): ReadinessCheck {
       probedAt: result.probedAt,
     },
   };
+}
+
+function cliReadinessSummary(result: CliReadinessResult, name: string): string {
+  switch (result.status) {
+    case 'ready':
+      return result.auth === 'not-required'
+        ? `${name} is installed, trusted, compatible, and does not require authentication.`
+        : `${name} is installed, trusted, compatible, and authenticated.`;
+    case 'disabled':
+      return `${name} is disabled.`;
+    case 'unavailable':
+      return `${name} is not installed.`;
+    case 'untrusted':
+      return `${name} executable could not be trusted.`;
+    case 'incompatible':
+      return `${name} version is not compatible.`;
+    case 'unauthenticated':
+      return `${name} is not signed in.`;
+    case 'unverified':
+      return result.installedVersion === null || result.compatibility !== 'compatible'
+        ? `${name} version could not be confirmed as compatible.`
+        : `${name} sign-in status is unknown.`;
+    default:
+      return assertNever(result);
+  }
 }

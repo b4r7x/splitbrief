@@ -653,8 +653,7 @@ src/
 │   ├── planners/                  4 backends: agent, api,
 │   │                              claude-code (cli specialization), cli,
 │   │                              shell + base, api-context, command-invoke,
-│   │                              context, escalation,
-│   │                              summary, types
+│   │                              context, summary, types
 │   ├── providers/                 candidate-contract, capabilities,
 │   │                              catalog-detection,
 │   │                              cli-model-catalog, client, conformance,
@@ -700,9 +699,6 @@ src/
 │   │   ├── prompt-formatter.ts    Implementer task/retry prompt assembly
 │   │   │                          (write-mode aware)
 │   │   ├── prompts/               builder, consult, continuation,
-│   │   │                          escalation (legacy escalateFull prompt;
-│   │   │                          few-shot examples via
-│   │   │                          escalation-examples.ts),
 │   │   │                          language-context, plan-session, review,
 │   │   │                          system (implementer system
 │   │   │                          preamble per write mode),

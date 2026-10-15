@@ -1,13 +1,18 @@
 import { resolveImplementerProfiles } from '../../config/accessors/implementer-profiles.js';
 import type { Config } from '../../schemas/config.js';
 import type { ReadinessCheck } from '../types.js';
-import { formatRoleLabel } from '../../phase-display.js';
+import { formatSlotLabel } from '../../crew/identity.js';
 
 const CONTEXT_FLOOR = 32_000;
 
 export function buildContextChecks(config: Config): ReadinessCheck[] {
   const checks: ReadinessCheck[] = [
-    contextLengthCheck('planner', config.planner.contextLength, 'planner.contextLength'),
+    contextLengthCheck(
+      'planner',
+      formatSlotLabel({ role: 'planner' }),
+      config.planner.contextLength,
+      'planner.contextLength',
+    ),
   ];
 
   try {
@@ -21,6 +26,7 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
     checks.push(
       contextLengthCheck(
         'implementer',
+        formatSlotLabel({ role: 'implementer', profile: profile.name }),
         profile.config.contextLength,
         key,
         key === 'implementer.contextLength' ? `Settings > Tuning > ${label}` : undefined,
@@ -35,6 +41,7 @@ export function buildContextChecks(config: Config): ReadinessCheck[] {
 
 function contextLengthCheck(
   role: 'planner' | 'implementer',
+  seat: string,
   contextLength: number | undefined,
   field: string,
   setting?: string,
@@ -43,7 +50,7 @@ function contextLengthCheck(
     return {
       id: `context.${role}.missing`,
       severity: 'info',
-      summary: `${formatRoleLabel(role)} context window is sized automatically.`,
+      summary: `${seat} context window is sized automatically.`,
       metadata: { role, contextLength: null, recommendedMinimum: CONTEXT_FLOOR },
     };
   }
@@ -52,7 +59,7 @@ function contextLengthCheck(
     return {
       id: `context.${role}.tight`,
       severity: 'warning',
-      summary: `${formatRoleLabel(role)} context length ${contextLength} may be tight.`,
+      summary: `${seat} context length ${contextLength} may be tight.`,
       fix:
         setting !== undefined
           ? `Raise ${setting} to at least ${CONTEXT_FLOOR} tokens.`
@@ -65,7 +72,7 @@ function contextLengthCheck(
   return {
     id: `context.${role}.ok`,
     severity: 'ok',
-    summary: `${formatRoleLabel(role)} context length ${contextLength} is configured.`,
+    summary: `${seat} context length ${contextLength} is configured.`,
     metadata: { role, contextLength, recommendedMinimum: CONTEXT_FLOOR },
   };
 }

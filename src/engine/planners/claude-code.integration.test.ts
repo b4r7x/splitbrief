@@ -7,11 +7,6 @@ import {
   defaultCliAuthChannel,
 } from '../../core/runners/cli-tool-catalog.js';
 import { createClaudeCodePlanner } from './claude-code.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import {
-  activateCompatibleCliShim,
-  installCompatibleCliShim,
-} from '#testing/helpers/compatible-cli-shim.js';
 import { writeCommandShim } from '#testing/helpers/command-shim.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import type { RunnerCallEvent } from '../calls/types.js';
@@ -92,50 +87,6 @@ function installAuthRecordingShim(): string {
   chmodSync(shimPath, 0o755);
   return envFile;
 }
-
-describe('createClaudeCodePlanner escalation', () => {
-  it('forwards sandboxEnv to the spawned claude subprocess during escalateFull', async () => {
-    const envMarkerFile = join(shimDir, 'env-marker.txt');
-    const restoreCompatibleShim = activateCompatibleCliShim(
-      installCompatibleCliShim({
-        directory: shimDir,
-        tool: 'claude-code',
-        authChannel: 'session',
-        invocation: {
-          marker: { path: envMarkerFile, environment: 'SPLITBRIEF_SANDBOX_MARKER' },
-          stdoutLines: [
-            JSON.stringify({
-              type: 'result',
-              result: `\`\`\`ts
-export const x = 1;
-\`\`\``,
-            }),
-          ],
-        },
-      }),
-    );
-
-    try {
-      const planner = await createTrustedClaudeCodePlanner({ authChannel: undefined });
-      const result = await planner.escalateFull({
-        task: makeTask(),
-        error: 'boom',
-        projectDir,
-        callbacks: { onOutput: () => {} },
-        sandboxEnv: {
-          PATH: `${shimDir}:${originalPath ?? ''}`,
-          SPLITBRIEF_SANDBOX_MARKER: 'forwarded',
-        },
-      });
-
-      expect(result).toMatchObject({ success: true, code: 'export const x = 1;' });
-      expect(existsSync(envMarkerFile)).toBe(true);
-      expect(readFileSync(envMarkerFile, 'utf8').trim()).toBe('forwarded');
-    } finally {
-      restoreCompatibleShim();
-    }
-  });
-});
 
 describe('createClaudeCodePlanner planning', () => {
   it('defaults the omitted auth channel to the session channel', async () => {

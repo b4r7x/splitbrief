@@ -603,7 +603,7 @@ describe('handleRetryAndEscalation', () => {
     expect(after.lineages?.T001?.consults).toBe(2);
   });
 
-  it('an exhausted ladder fails without advancing the task or taking the brief over', async () => {
+  it('an exhausted ladder fails without advancing the task', async () => {
     const { projectDir, sessionId } = setupProject();
     // Create a dirty file so the exhausted ladder has real worktree state to leave untouched.
     writeFileSync(join(projectDir, 'task-file.ts'), 'pending content');
@@ -617,12 +617,10 @@ describe('handleRetryAndEscalation', () => {
 
     const { callbacks } = makeCallbacks();
     const implementer = failingImplementer();
-    const escalateFull = vi.fn();
     const { planner } = consultPlanner([
       guidanceAnswer('Try again', 'Try again.'),
       guidanceAnswer('Try again', 'Try again.'),
     ]);
-    const plannerWithTakeover = makePlanner({ ...planner, escalateFull });
 
     const { result, state: finalState } = await handleRetryAndEscalation({
       taskStartTime: Date.now(),
@@ -630,7 +628,7 @@ describe('handleRetryAndEscalation', () => {
         projectDir,
         sessionId,
         config: makeNoValidationConfig(),
-        planner: plannerWithTakeover,
+        planner,
         callbacks,
         implementer,
         bus: makeBusRecorder().bus,
@@ -641,7 +639,6 @@ describe('handleRetryAndEscalation', () => {
     });
 
     expect(result).toMatchObject({ completed: false, method: 'failed', attempts: 3 });
-    expect(escalateFull).not.toHaveBeenCalled();
     expect(finalState.currentTaskIndex).toBe(0);
     expect(finalState.tasks[0]?.status).toBe('pending');
   });

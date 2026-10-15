@@ -8,10 +8,33 @@ import {
   formatReadinessBlockers,
   readinessBlockerMessage,
   readinessBlockerPointer,
+  serializeReadinessCheckJson,
 } from './format.js';
 import { deriveCliReadiness } from '../schemas/readiness.js';
 
 describe('readiness formatting', () => {
+  it('gives a concrete installation action for an untrusted executable', () => {
+    expect(
+      serializeReadinessCheckJson({
+        id: 'runners.planner.admission',
+        severity: 'blocker',
+        summary: 'The CLI executable is not trusted.',
+        diagnosticState: 'untrusted-path',
+      }).remediation,
+    ).toBe(
+      'Install the configured CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again.',
+    );
+  });
+  it('publishes every seat a shared CLI problem stops', () => {
+    expect(
+      serializeReadinessCheckJson({
+        id: 'runners.preparation.planner',
+        severity: 'blocker',
+        summary: 'PLAN and REVIEW cannot start with OpenAI Codex CLI.',
+        runnerCause: { tool: 'codex', cause: 'missing-binary', seats: ['PLAN', 'REVIEW'] },
+      }).seats,
+    ).toEqual(['PLAN', 'REVIEW']);
+  });
   it('uses singular counts for one blocker and one warning', () => {
     const report = buildReadinessReport({
       projectDir: '/tmp/project',
@@ -21,6 +44,19 @@ describe('readiness formatting', () => {
     });
     expect(formatReadinessReport(report)).toContain('(1 blocker, 1 warning)');
     expect(formatReadinessBlockers(report)).toContain('blocked (1 blocker)');
+  });
+  it('states the fix of a blocker once', () => {
+    const report = buildReadinessReport({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      configLoad: { state: 'loaded', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
+      packageScripts: { packageJsonExists: true, scripts: { test: 'node --test' } },
+      repo: { isGitRepo: true, hasCommits: false, dirtyFiles: [], untrackedFiles: [] },
+      cliReadiness: [deriveCliReadiness(cliReadinessFactsFor('ready', 'claude-code'))],
+    });
+    for (const output of [formatReadinessReport(report), formatReadinessBlockers(report)]) {
+      expect(output.match(/Make an initial commit/g)).toHaveLength(1);
+    }
   });
   const blockedReport = () =>
     buildReadinessReport({
@@ -62,11 +98,12 @@ describe('readiness formatting', () => {
     const record = createStartReadinessRecord(report);
 
     expect(human).toContain('Run readiness:');
-    expect(human).toContain('Required action: Set up the configured runner');
+    expect(human).not.toContain('Required action');
+    expect(human.split('Run `splitbrief doctor` again to check Claude Code CLI.')).toHaveLength(2);
     expect(human).not.toContain('Advisory:');
     expect(human).not.toContain('Next action:');
-    expect(human).toContain('runners.cli.claude-code.readiness');
-    expect(human).toContain('validation.end-checks-off');
+    expect(human).not.toContain('runners.cli.claude-code.readiness');
+    expect(human).not.toContain('validation.end-checks-off');
     expect(human).not.toContain('apiKey');
     expect(record).toMatchObject({
       type: 'start-readiness',
@@ -149,14 +186,14 @@ describe('readiness formatting', () => {
       });
 
     const gated = formatReadinessReport(reportWith('ready'));
-    expect(gated).toContain('start can continue');
+    expect(gated).toContain('Run readiness: ready with warnings (0 blockers, 1 warning)');
+    expect(gated).not.toContain('headless start would be refused');
 
     const ungated = formatReadinessReport(reportWith('unverified'));
-    expect(ungated).not.toContain('start can continue');
     expect(ungated).toContain(
       'headless start would be refused; use --allow-unverified-auth or complete verification — interactive start proceeds',
     );
-    expect(ungated).toContain('Fix: Verify claude-code against tested version');
+    expect(ungated).toContain('Fix: Verify Claude Code CLI against tested version');
   });
 
   it("a non-blocked report's output contains no `Start blocked:` line", () => {
@@ -188,17 +225,58 @@ describe('readiness formatting', () => {
     );
   });
 
+  it('prints each check as its severity and its words, without its internal id', () => {
+    const human = formatReadinessReport(blockedReport());
+
+    expect(human).not.toMatch(/config\.invalid|repo\.not-git/);
+    expect(human).toContain('  blocker  Config could not be loaded.');
+    expect(human).toContain('           bad config');
+    expect(human).toContain(
+      '           Fix: Fix .splitbrief/config.yaml or run `splitbrief init --reconfigure`.',
+    );
+  });
+
+  it('names the status in words and states each count once', () => {
+    const report = buildReadinessReport({
+      projectDir: '/tmp/project',
+      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      configLoad: { state: 'loaded', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
+      packageScripts: { packageJsonExists: true, scripts: { test: 'vitest run' } },
+      repo: { isGitRepo: true, hasCommits: true, dirtyFiles: ['a.ts', 'b.ts'], untrackedFiles: [] },
+      cliReadiness: [deriveCliReadiness(cliReadinessFactsFor('ready', 'claude-code'))],
+    });
+
+    const human = formatReadinessReport(report);
+
+    expect(human.split('\n')[0]).toBe('Run readiness: ready with warnings (0 blockers, 1 warning)');
+    expect(human).not.toContain('ready-with-warnings');
+    expect(human).not.toContain('Advisory:');
+    expect(human).toContain('  warning  Working tree has 2 changed files.');
+  });
+
+  it('pluralizes the blocker pointer by its count', () => {
+    const one = buildReadinessReport({
+      projectDir: '/tmp/project',
+      configLoad: { state: 'missing', path: '/tmp/project/.splitbrief/config.yaml', warnings: [] },
+      packageScripts: { packageJsonExists: false, scripts: {} },
+      repo: { isGitRepo: true, hasCommits: true, dirtyFiles: [], untrackedFiles: [] },
+    });
+
+    expect(readinessBlockerPointer(one)).toContain('1 blocker. Resolve the blocker above');
+    expect(readinessBlockerPointer(blockedReport())).toContain(
+      '2 blockers. Resolve the blockers above',
+    );
+  });
+
   it('summarizes blocker messages for CLI errors', () => {
     const report = blockedReport();
 
-    expect(readinessBlockerMessage(report)).toContain('config.invalid');
-    expect(readinessBlockerMessage(report)).toContain('repo.not-git');
-    expect(formatReadinessReport(report)).toContain('Required action:');
+    expect(readinessBlockerMessage(report)).not.toMatch(/config\.invalid|repo\.not-git/);
 
     const lines = readinessBlockerMessage(report).split('\n');
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatch(/^config\.invalid: /);
-    expect(lines[1]).toMatch(/^repo\.not-git: /);
+    expect(lines[0]).toBe('Config could not be loaded.');
+    expect(lines[1]).toBe('Project is not a git repository.');
   });
 
   it('points to the blocker summary in a single line without listing each blocker', () => {
@@ -226,22 +304,15 @@ describe('readiness formatting', () => {
     blocker.summary = rawSummary;
     blocker.details = [`DETVIS${esc}[31mDETRED`];
     blocker.fix = `FIXVIS${esc}]8;;http://evil${bel}FIXLINK`;
-    report.nextAction = {
-      ...report.nextAction,
-      label: `LBLVIS${esc}]0;LBLHIDE${bel}`,
-      command: `cmd${esc}[2J`,
-    };
 
     const human = formatReadinessReport(report);
     expect(human).not.toContain(esc);
     expect(human).not.toContain(bel);
     expect(human).not.toContain('SUMHIDE');
-    expect(human).not.toContain('LBLHIDE');
     expect(human).not.toContain('evil');
     expect(human).toContain('SUMVISTAIL');
     expect(human).toContain('DETVISDETRED');
     expect(human).toContain('FIXVISFIXLINK');
-    expect(human).toContain('LBLVIS');
 
     const blockerMessage = readinessBlockerMessage(report);
     expect(blockerMessage).not.toContain(esc);

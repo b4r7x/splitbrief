@@ -13,14 +13,12 @@ export async function invokeTestClaude(
     | 'configuredAuthChannel'
     | 'trustedCli'
     | 'sessionId'
-    | 'mode'
   > &
     Invocation['callbacks'] & {
       env?: NodeJS.ProcessEnv;
       authChannel?: Invocation['authChannel'];
       executable?: NonNullable<Invocation['trustedCli']>['executable'];
       sessionId?: string | null;
-      mode?: Invocation['mode'];
     },
 ): ReturnType<typeof invokeClaudePlanner> {
   const authChannel = opts.authChannel ?? 'session';
@@ -36,7 +34,6 @@ export async function invokeTestClaude(
     env,
     authChannel,
     configuredAuthChannel: undefined,
-    mode: opts.mode ?? 'plan',
     sessionId: opts.sessionId ?? null,
     trustedCli: opts.executable === undefined ? undefined : { executable: opts.executable },
     callbacks: opts,

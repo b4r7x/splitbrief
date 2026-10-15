@@ -41,7 +41,7 @@ describe('createPlannerBase — structured summarization', () => {
     };
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(JSON.stringify(structured)),
+      invokeOneShot: async () => completedRunnerCall(JSON.stringify(structured)),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -65,7 +65,7 @@ describe('createPlannerBase — structured summarization', () => {
     let prompt = '';
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async (opts) => {
+      invokeOneShot: async (opts) => {
         prompt = opts.prompt;
         return completedRunnerCall(JSON.stringify(previous));
       },
@@ -100,7 +100,7 @@ describe('createPlannerBase — structured summarization', () => {
       model: 'gpt-5',
       axes: ['high'],
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async (opts) => {
+      invokeOneShot: async (opts) => {
         capturedSignal = opts.signal;
         opts.callbacks.onCallEvent?.({ type: 'call_started', ts: Date.now(), ...opts.callContext });
         return completedRunnerCall(JSON.stringify(structured));
@@ -132,7 +132,7 @@ describe('createPlannerBase — typedCall', () => {
   it('defaults typedOutput to fallback and canResume to the resume capability', () => {
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
+      invokeOneShot: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: { ...defaultCapabilities, supportsSessionResume: true },
     });
@@ -151,7 +151,7 @@ describe('createPlannerBase — typedCall', () => {
   it('reports the configured typedOutput capability', () => {
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () => completedRunnerCall(''),
+      invokeOneShot: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
       typedOutput: 'native',
@@ -166,12 +166,12 @@ describe('createPlannerBase — typedCall', () => {
     expect(call.typedOutput).toBe('native');
   });
 
-  it('routes a review schema call to a one-shot read-only escalation', async () => {
+  it('routes a review schema call to the stateless backend', async () => {
     const invokePlan = vi.fn(async () => completedRunnerCall(''));
-    const invokeEscalate = vi.fn(async () => completedRunnerCall(''));
+    const invokeOneShot = vi.fn(async () => completedRunnerCall(''));
     const planner = createPlannerBase({
       invokePlan,
-      invokeEscalate,
+      invokeOneShot,
       runnerName: 'codex',
       model: 'gpt-5',
       axes: ['high'],
@@ -184,10 +184,9 @@ describe('createPlannerBase — typedCall', () => {
       .typedCall({ projectDir: '/p', callbacks: { onOutput: () => {} }, seat: 'reviewer' })
       .invoke({ prompt: 'q', schema });
 
-    expect(invokeEscalate).toHaveBeenCalledTimes(1);
-    expect(invokeEscalate).toHaveBeenCalledWith(
+    expect(invokeOneShot).toHaveBeenCalledTimes(1);
+    expect(invokeOneShot).toHaveBeenCalledWith(
       expect.objectContaining({
-        accessMode: 'read-only',
         prompt: 'q',
         schema,
         callContext: expect.objectContaining({
@@ -203,10 +202,10 @@ describe('createPlannerBase — typedCall', () => {
 
   it('routes a first planner schema call to the planner thread', async () => {
     const invokePlan = vi.fn(async () => completedRunnerCall(''));
-    const invokeEscalate = vi.fn(async () => completedRunnerCall(''));
+    const invokeOneShot = vi.fn(async () => completedRunnerCall(''));
     const planner = createPlannerBase({
       invokePlan,
-      invokeEscalate,
+      invokeOneShot,
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -217,14 +216,14 @@ describe('createPlannerBase — typedCall', () => {
       .invoke({ prompt: 'q', schema });
 
     expect(invokePlan).toHaveBeenCalledWith(expect.objectContaining({ prompt: 'q', schema }));
-    expect(invokeEscalate).not.toHaveBeenCalled();
+    expect(invokeOneShot).not.toHaveBeenCalled();
   });
 
   it('hands a planning session its attachments on the planner thread', async () => {
     const invokePlan = vi.fn(async () => completedRunnerCall(''));
     const planner = createPlannerBase({
       invokePlan,
-      invokeEscalate: async () => completedRunnerCall(''),
+      invokeOneShot: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: { ...defaultCapabilities, supportsImages: true },
     });
@@ -243,7 +242,7 @@ describe('createPlannerBase — typedCall', () => {
     const invokePlan = vi.fn(async () => completedRunnerCall(''));
     const planner = createPlannerBase({
       invokePlan,
-      invokeEscalate: async () => completedRunnerCall(''),
+      invokeOneShot: async () => completedRunnerCall(''),
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -264,11 +263,11 @@ describe('createPlannerBase — typedCall', () => {
     );
   });
 
-  it('carries the typed call role into the escalation context', async () => {
-    const invokeEscalate = vi.fn(async () => completedRunnerCall(''));
+  it('carries the typed call role into the stateless call context', async () => {
+    const invokeOneShot = vi.fn(async () => completedRunnerCall(''));
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate,
+      invokeOneShot,
       isAvailable: async () => true,
       capabilities: defaultCapabilities,
     });
@@ -277,7 +276,7 @@ describe('createPlannerBase — typedCall', () => {
       .typedCall({ projectDir: '/p', callbacks: { onOutput: () => {} }, seat: 'reviewer' })
       .invoke({ prompt: 'q' });
 
-    expect(invokeEscalate).toHaveBeenCalledWith(
+    expect(invokeOneShot).toHaveBeenCalledWith(
       expect.objectContaining({ callContext: expect.objectContaining({ role: 'review' }) }),
     );
   });
@@ -291,7 +290,7 @@ describe('createPlannerBase — a seat out of quota', () => {
   it('fails the summary call with the limit instead of reading it as silence', async () => {
     const planner = createPlannerBase({
       invokePlan: async () => completedRunnerCall(''),
-      invokeEscalate: async () =>
+      invokeOneShot: async () =>
         makeRunnerCallResult({
           status: 'completed',
           text: '',

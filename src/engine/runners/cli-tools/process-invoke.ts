@@ -461,7 +461,7 @@ export async function invokeProcessCli(
               error: {
                 code: 'cli-executable-identity-drift',
                 message:
-                  'CLI executable identity changed; run readiness checks again before execution',
+                  'CLI executable identity changed; run `splitbrief doctor` again before execution',
               },
             });
     }

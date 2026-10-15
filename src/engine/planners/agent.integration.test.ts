@@ -3,9 +3,6 @@ import { createAgentPlanner } from './agent.js';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 import { createTestGitRepo } from '#testing/helpers/git.js';
 import { makeConfig } from '#testing/helpers/factories/config.js';
-import { makeTask } from '#testing/helpers/factories/task.js';
-import { readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { RunnerCallEvent } from '../calls/types.js';
 
 let projectDir: string;
@@ -48,48 +45,6 @@ describe('createAgentPlanner', () => {
     await expect(planner.review('test', projectDir, callbacks)).rejects.toThrow(
       'Agent planner command not found: nonexistent-command-12345',
     );
-  });
-
-  it('escalateFull ignores pre-existing dirty files and succeeds only on new writes', async () => {
-    const preExistingFile = join(projectDir, 'pre-existing.ts');
-    writeFileSync(preExistingFile, '// pre-existing');
-    const task = makeTask();
-    const callbacks = { onOutput: vi.fn() };
-
-    const noChangePlanner = createAgentPlanner(
-      makeConfig({
-        planner: { kind: 'agent', command: 'sh', args: ['-c', 'cat >/dev/null; echo no changes'] },
-      }),
-    );
-
-    const noChange = await noChangePlanner.escalateFull({
-      task,
-      error: 'error message',
-      projectDir,
-      callbacks,
-    });
-    expect(noChange.success).toBe(false);
-
-    const newFile = join(projectDir, 'new-from-escalation.ts');
-    const config = makeConfig({
-      planner: {
-        kind: 'agent',
-        command: 'bash',
-        args: ['-c', `cat >/dev/null; echo "// escalated" > ${newFile}`],
-      },
-    });
-    const planner = createAgentPlanner(config);
-
-    const result = await planner.escalateFull({
-      task,
-      error: 'error message',
-      projectDir,
-      callbacks,
-    });
-    expect(result.success).toBe(true);
-    expect(result.code).toBe(null);
-    expect(readFileSync(preExistingFile, 'utf-8')).toBe('// pre-existing');
-    expect(readFileSync(newFile, 'utf-8')).toBe('// escalated\n');
   });
 
   it('threads a configured idleWarnMs override into the spawn', async () => {

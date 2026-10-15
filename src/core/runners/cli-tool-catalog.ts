@@ -14,16 +14,6 @@ export type RunnerTrustMetadata = Readonly<{
 
 export type RunnerRoleTrustMetadata = Readonly<Record<RunnerRole, RunnerTrustMetadata>>;
 
-export type CliPlannerTier2FullEscalationTrust = Readonly<{
-  mayWriteFilesDirectly: true;
-  autoAllowFlags: readonly string[];
-}>;
-
-export type CliToolTrustMetadata = RunnerRoleTrustMetadata &
-  Readonly<{
-    plannerTier2FullEscalation: CliPlannerTier2FullEscalationTrust;
-  }>;
-
 export type CliModelPolicy = 'required' | 'optional' | 'backend-default' | 'auto-only';
 
 export type CliModelSelection = Readonly<{
@@ -255,7 +245,6 @@ export type CliToolDescriptor<Id extends string = CliToolId> = Readonly<
     network: RolePolicy<boolean>;
     shell: RolePolicy<boolean>;
     automaticApproval: RolePolicy<boolean>;
-    plannerTier2FullEscalation: CliPlannerTier2FullEscalationTrust;
   }
 >;
 
@@ -294,21 +283,12 @@ function rolePolicy<T>(input: Readonly<{ planner: T; implementer: T }>): RolePol
   return Object.freeze({ planner: input.planner, implementer: input.implementer });
 }
 
-function cliToolTrust(
-  input: Readonly<{
-    implementerAutoAllowFlags: readonly string[];
-    tier2AutoAllowFlags: readonly string[];
-  }>,
-): CliToolTrustMetadata {
+function cliToolTrust(implementerAutoAllowFlags: readonly string[]): RunnerRoleTrustMetadata {
   return Object.freeze({
     planner: CLI_PLANNER_TRUST,
     implementer: Object.freeze({
       ...CLI_IMPLEMENTER_TRUST,
-      autoAllowFlags: Object.freeze([...input.implementerAutoAllowFlags]),
-    }),
-    plannerTier2FullEscalation: Object.freeze({
-      mayWriteFilesDirectly: true,
-      autoAllowFlags: Object.freeze([...input.tier2AutoAllowFlags]),
+      autoAllowFlags: Object.freeze([...implementerAutoAllowFlags]),
     }),
   });
 }
@@ -756,36 +736,15 @@ export const EXCLUDED_CLI_TOOL_IDS = Object.freeze([
 ]);
 
 const BASE_CLI_TOOL_TRUST = Object.freeze({
-  'claude-code': cliToolTrust({
-    implementerAutoAllowFlags: ['--permission-mode acceptEdits'],
-    tier2AutoAllowFlags: [],
-  }),
-  codex: cliToolTrust({
-    implementerAutoAllowFlags: ['--sandbox workspace-write'],
-    tier2AutoAllowFlags: ['--sandbox workspace-write'],
-  }),
-  opencode: cliToolTrust({ implementerAutoAllowFlags: [], tier2AutoAllowFlags: [] }),
-  copilot: cliToolTrust({
-    implementerAutoAllowFlags: ['--allow-all'],
-    tier2AutoAllowFlags: ['--allow-all', '--no-ask-user'],
-  }),
-  'kilo-code': cliToolTrust({
-    implementerAutoAllowFlags: ['--auto'],
-    tier2AutoAllowFlags: ['--auto'],
-  }),
-  cursor: cliToolTrust({
-    implementerAutoAllowFlags: ['--force'],
-    tier2AutoAllowFlags: ['--force'],
-  }),
-  'command-code': cliToolTrust({
-    implementerAutoAllowFlags: ['--yolo'],
-    tier2AutoAllowFlags: ['--yolo'],
-  }),
-  antigravity: cliToolTrust({
-    implementerAutoAllowFlags: ['--dangerously-skip-permissions'],
-    tier2AutoAllowFlags: [],
-  }),
-} satisfies Record<CliToolId, CliToolTrustMetadata>);
+  'claude-code': cliToolTrust(['--permission-mode acceptEdits']),
+  codex: cliToolTrust(['--sandbox workspace-write']),
+  opencode: cliToolTrust([]),
+  copilot: cliToolTrust(['--allow-all']),
+  'kilo-code': cliToolTrust(['--auto']),
+  cursor: cliToolTrust(['--force']),
+  'command-code': cliToolTrust(['--yolo']),
+  antigravity: cliToolTrust(['--dangerously-skip-permissions']),
+} satisfies Record<CliToolId, RunnerRoleTrustMetadata>);
 
 function trustPolicy(
   trust: RunnerRoleTrustMetadata,
@@ -795,7 +754,7 @@ function trustPolicy(
 }
 
 function descriptor<Id extends CliToolId>(
-  trust: CliToolTrustMetadata,
+  trust: RunnerRoleTrustMetadata,
   input: ActiveCliToolDeclaration<Id>,
 ): CliToolDescriptor<Id> {
   return Object.freeze({
@@ -807,16 +766,15 @@ function descriptor<Id extends CliToolId>(
       planner: trust.planner.autoAllowFlags.length > 0,
       implementer: trust.implementer.autoAllowFlags.length > 0,
     }),
-    plannerTier2FullEscalation: trust.plannerTier2FullEscalation,
   });
 }
 
-function assembleCliToolTrust(): Readonly<Record<CliToolId, CliToolTrustMetadata>> {
+function assembleCliToolTrust(): Readonly<Record<CliToolId, RunnerRoleTrustMetadata>> {
   return Object.freeze({ ...BASE_CLI_TOOL_TRUST });
 }
 
 function assembleCliToolCatalog(
-  trust: Readonly<Record<CliToolId, CliToolTrustMetadata>>,
+  trust: Readonly<Record<CliToolId, RunnerRoleTrustMetadata>>,
 ): Readonly<Record<CliToolId, CliToolDescriptor>> {
   const catalog = {
     'claude-code': descriptor(trust['claude-code'], CLI_TOOL_DECLARATIONS['claude-code']),

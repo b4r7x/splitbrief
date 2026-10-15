@@ -114,6 +114,7 @@ type TrustFileRead =
 const CONFIGURED_RESULT_BY_ROLE_AND_CONTRACT = {
   planner: {
     output: 'parsed-output-only',
+    // Saved trust receipts digest this value: renaming it revokes every receipt.
     direct: 'reviewed-declared-artifact-or-workspace-diff-only',
   },
   implementer: {

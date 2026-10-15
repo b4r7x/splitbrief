@@ -477,7 +477,7 @@ function scriptedPlanner(
 ): Planner {
   const base = createPlannerBase({
     invokePlan: (input) => call(input, inFlight),
-    invokeEscalate: () => Promise.reject(new Error('the planning session escalates nothing')),
+    invokeOneShot: () => Promise.reject(new Error('the planning session escalates nothing')),
     isAvailable: async () => true,
     capabilities: makePlanner().capabilities,
   });

@@ -1,4 +1,4 @@
-import { pluralize } from '../../../utils/pluralize.js';
+import { countNoun } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
 import type { ReadinessCheck } from '../types.js';
 
@@ -97,7 +97,10 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
     checks.push({
       id: 'repo.dirty-worktree',
       severity: 'warning',
-      summary: `Working tree has ${dirtyCount} changed and ${untrackedCount} untracked ${pluralize(untrackedCount, 'file')}.`,
+      summary: `Working tree has ${[
+        ...(dirtyCount > 0 ? [countNoun(dirtyCount, 'changed file')] : []),
+        ...(untrackedCount > 0 ? [countNoun(untrackedCount, 'untracked file')] : []),
+      ].join(' and ')}.`,
       details: examples.length > 0 ? [`Examples: ${examples.join(', ')}`] : undefined,
       fix: 'Review local edits before starting if they may overlap the requested change.',
       metadata: { dirtyCount, untrackedCount },

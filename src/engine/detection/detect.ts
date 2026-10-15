@@ -9,7 +9,11 @@ import {
 import { classifyCliAdmittedVersion } from '../../core/runners/cli-version.js';
 import type { RunnerRole } from '../../core/runners/seat-roles.js';
 import type { CliReadinessResult } from '../../core/schemas/readiness.js';
-import { cliReadinessCheckId, deriveCliReadiness } from '../../core/schemas/readiness.js';
+import {
+  cliExecutableTrustRemediation,
+  cliReadinessCheckId,
+  deriveCliReadiness,
+} from '../../core/schemas/readiness.js';
 import { matches } from '../../utils/error.js';
 import { throwIfAborted } from '../../utils/abort.js';
 import { detectAvailableProviders } from '../providers/catalog-detection.js';
@@ -114,7 +118,7 @@ function unresolvedReadiness(
       probedAt,
       checkId: cliReadinessCheckId(tool),
       status: 'untrusted',
-      remediation: `Trust the exact ${tool} executable identity, then run runner readiness again.`,
+      remediation: cliExecutableTrustRemediation(CLI_TOOL_CATALOG[tool].displayName),
     };
   }
 

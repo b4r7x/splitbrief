@@ -133,7 +133,6 @@ function adapterArgs(adapter: UnregisteredCliAdapter, projectDir: string): reado
           model: undefined,
           projectDir,
           configuredArgs: [],
-          mode: 'plan',
           sessionId: null,
           effort: undefined,
         })

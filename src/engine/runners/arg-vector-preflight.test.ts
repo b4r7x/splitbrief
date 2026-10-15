@@ -14,6 +14,7 @@ import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import type { EffortLevel } from '../../core/schemas/enums.js';
 import type { CliToolId } from '../../core/runners/cli-tool-catalog.js';
 import {
+  type ArgVectorPreflightCheckInput,
   checkRunnerArgVector,
   collectArgVectorPreflightChecks,
   semanticConfiguredArgViolations,
@@ -21,6 +22,22 @@ import {
 import { antigravityPlannerAdapter } from './cli-tools/antigravity.js';
 import { buildClaudeArgs } from './claude/args.js';
 import { codexPlannerAdapter } from './cli-tools/codex.js';
+
+async function preflightWithVectors(
+  input: ArgVectorPreflightCheckInput & {
+    runHelp: NonNullable<ArgVectorPreflightCheckInput['runHelp']>;
+  },
+) {
+  const vectors: (readonly string[])[] = [];
+  const checks = await collectArgVectorPreflightChecks({
+    ...input,
+    runHelp: async (tool, argv) => {
+      vectors.push(argv);
+      return input.runHelp(tool, argv);
+    },
+  });
+  return { checks, vectors };
+}
 
 const CLI_HELP_FIXTURES = join(import.meta.dirname, '../../../testing/fixtures/cli-help');
 
@@ -99,7 +116,6 @@ describe('checkRunnerArgVector', () => {
     const outcome = checkRunnerArgVector({
       argv: buildClaudeArgs({
         projectDir: '/p',
-        mode: 'plan',
         schema: { json: { type: 'object' } },
       }),
       helpText: readFileSync(join(CLI_HELP_FIXTURES, 'claude-help.txt'), 'utf8'),
@@ -114,7 +130,6 @@ describe('checkRunnerArgVector', () => {
         model: undefined,
         projectDir: '/p',
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
         schema: { json: { type: 'object' } },
@@ -131,7 +146,6 @@ describe('checkRunnerArgVector', () => {
         model: undefined,
         projectDir: '/project',
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         oneShot: true,
         effort: undefined,
@@ -152,7 +166,6 @@ describe('checkRunnerArgVector', () => {
         model: 'gpt-5',
         projectDir: '/project',
         configuredArgs: [],
-        mode: 'plan',
         sessionId: 'session-1',
         effort: 'high',
         schema: { json: {}, path: '/tmp/s/schema.json' },
@@ -372,6 +385,21 @@ describe('collectArgVectorPreflightChecks', () => {
     expect(help).not.toHaveBeenCalled();
   });
 
+  it('names the seats in PLAN, BUILD, REVIEW order', async () => {
+    const runner = { kind: 'cli', tool: 'command-code' } as const;
+    const checks = await collectArgVectorPreflightChecks({
+      config: makeConfig({ planner: runner, implementer: runner, reviewer: runner }),
+      projectDir: '/project',
+      roles: ['planner', 'implementer', 'reviewer'],
+      runHelp: async () => null,
+    });
+    expect(checks.map((check) => check.summary)).toEqual([
+      'Command Code CLI options for PLAN are configured.',
+      'Command Code CLI options for BUILD are configured.',
+      'Command Code CLI options for REVIEW are configured.',
+    ]);
+  });
+
   it('keeps an ordinary Command Code argument eligible for help comparison', async () => {
     const help = vi.fn(async () => null);
     const checks = await collectArgVectorPreflightChecks({
@@ -554,7 +582,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     ].join('\n');
 
   const plannerChecksWithEffort = (helpText: string) =>
-    collectArgVectorPreflightChecks({
+    preflightWithVectors({
       config: makeConfig({
         planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
       }),
@@ -564,7 +592,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
   it('blocks on the resume and effort flags a binary that omits them would reject', async () => {
-    const checks = await plannerChecksWithEffort(claudeHelp());
+    const { checks } = await plannerChecksWithEffort(claudeHelp());
 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.claude-code.arg-vector.planner',
@@ -574,7 +602,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
   });
 
   it('reports ok once the binary advertises the resume and effort flags', async () => {
-    const checks = await plannerChecksWithEffort(
+    const { checks, vectors } = await plannerChecksWithEffort(
       claudeHelp(
         '  --effort <level>               Effort level for the session',
         '  -r, --resume [sessionId]       Resume a conversation by session ID',
@@ -588,13 +616,13 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
         severity: 'ok',
       }),
     ]);
-    expect(checks[0]?.details).toContain(
-      'Command options: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
+    expect(vectors.map((argv) => argv.join(' '))).toContain(
+      '-p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
     );
   });
 
-  it('emits one plan-mode argv for the review seat, with no escalate or resume variant', async () => {
-    const checks = await collectArgVectorPreflightChecks({
+  it('emits one read-only argv for the review seat, with no resume variant', async () => {
+    const { checks, vectors } = await preflightWithVectors({
       config: makeConfig({
         planner: {
           kind: 'api',
@@ -620,13 +648,13 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       id: 'runners.cli.claude-code.arg-vector.reviewer',
       severity: 'ok',
     });
-    expect(checks[0]?.details).toEqual([
-      'Command options: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      '-p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode plan --disallowedTools AskUserQuestion',
     ]);
   });
 
   const implementerChecks = (helpText: string) =>
-    collectArgVectorPreflightChecks({
+    preflightWithVectors({
       config: makeConfig({
         implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet', effort: 'high' },
       }),
@@ -636,7 +664,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
   it('emits --effort and the sandbox settings on the Claude Code implementer argv', async () => {
-    const checks = await implementerChecks(
+    const { checks, vectors } = await implementerChecks(
       claudeHelp(
         '  --effort <level>               Effort level for the session',
         '  --settings <file-or-json>      Path to a settings JSON file or a JSON string',
@@ -647,13 +675,13 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       id: 'runners.cli.claude-code.arg-vector.implementer',
       severity: 'ok',
     });
-    expect(checks[0]?.details).toEqual([
-      'Command options: -p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      '-p --output-format stream-json --verbose --include-partial-messages --model sonnet --effort high --permission-mode acceptEdits --settings {"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false},"permissions":{"blockReadsOutsideWorkingDirectories":true}}',
     ]);
   });
 
   it('blocks a Claude Code implementer whose binary cannot take the sandbox settings', async () => {
-    const checks = await implementerChecks(
+    const { checks } = await implementerChecks(
       claudeHelp('  --effort <level>               Effort level for the session'),
     );
 
@@ -665,7 +693,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
   });
 
   it('carries the codex planner effort into every emitted vector as a config override', async () => {
-    const checks = await collectArgVectorPreflightChecks({
+    const { checks, vectors } = await preflightWithVectors({
       config: makeConfig({
         planner: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'high' },
       }),
@@ -678,24 +706,23 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       id: 'runners.cli.codex.arg-vector.planner',
       severity: 'ok',
     });
-    expect(checks[0]?.details).toEqual([
-      'Command options: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
-      'Command options: --model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
-      'Command options: --model gpt-5 -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd /project -',
-      'Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      '--model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd /project -',
+      '--model gpt-5 -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
+      '-c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --model gpt-5 --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
     ]);
   });
 
   it('preflights the one-shot vector a codex review seat emits', async () => {
-    const checks = await collectArgVectorPreflightChecks({
+    const { vectors } = await preflightWithVectors({
       config: makeConfig({ reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-5' } }),
       projectDir: '/project',
       roles: ['reviewer'],
       runHelp: async () => CODEX_HELP,
     });
 
-    expect(checks[0]?.details).toEqual([
-      'Command options: --model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      '--model gpt-5 --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd /project -',
     ]);
   });
 
@@ -725,7 +752,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
   // after the `--model` value on the others. Walking the vectors the adapter really builds fails
   // on the vector that stopped being compared, rather than on an argv snapshot that merely moved.
   it('compares the config override in every codex vector the adapter builds', async () => {
-    const checks = await collectArgVectorPreflightChecks({
+    const { vectors } = await preflightWithVectors({
       config: makeConfig({
         planner: { kind: 'cli', tool: 'codex', model: 'gpt-5', effort: 'high' },
       }),
@@ -736,11 +763,8 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     const withoutConfigEntry = CODEX_HELP.split('\n')
       .filter((line) => !line.includes('-c, --config'))
       .join('\n');
-    const vectors = (checks[0]?.details ?? []).map((detail) =>
-      detail.replace('Command options: ', '').split(' '),
-    );
 
-    expect(vectors).toHaveLength(4);
+    expect(vectors).toHaveLength(3);
     for (const argv of vectors) {
       expect(checkRunnerArgVector({ argv, helpText: withoutConfigEntry }), argv.join(' ')).toEqual({
         ok: false,
@@ -760,7 +784,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     ].join('\n');
 
   const opencodePlannerChecksWithVariant = (helpText: string) =>
-    collectArgVectorPreflightChecks({
+    preflightWithVectors({
       config: makeConfig({
         planner: {
           kind: 'cli',
@@ -775,7 +799,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
   it('blocks on the variant flag an opencode binary that omits it would reject', async () => {
-    const checks = await opencodePlannerChecksWithVariant(opencodeHelp());
+    const { checks } = await opencodePlannerChecksWithVariant(opencodeHelp());
 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.opencode.arg-vector.planner',
@@ -785,7 +809,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
   });
 
   it('reports ok once the binary advertises --variant', async () => {
-    const checks = await opencodePlannerChecksWithVariant(
+    const { checks, vectors } = await opencodePlannerChecksWithVariant(
       opencodeHelp('  --variant <name>     Model variant'),
     );
 
@@ -793,14 +817,13 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       id: 'runners.cli.opencode.arg-vector.planner',
       severity: 'ok',
     });
-    expect(checks[0]?.details).toEqual([
-      'Command options: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan <PROMPT>',
-      'Command options: run --model openai/gpt-5.6-luna --variant xhigh --format json --agent build <PROMPT>',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      'run --model openai/gpt-5.6-luna --variant xhigh --format json --agent plan <PROMPT>',
     ]);
   });
 
   const opencodeImplementerChecks = (installedVersion: string, helpFixture: string) =>
-    collectArgVectorPreflightChecks({
+    preflightWithVectors({
       config: makeConfig({
         implementer: {
           kind: 'cli',
@@ -816,26 +839,29 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
     });
 
   it('checks the vector dispatch builds for the admitted opencode 2 release', async () => {
-    const checks = await opencodeImplementerChecks('2.0.14', 'opencode-v2-run-help.txt');
+    const { checks, vectors } = await opencodeImplementerChecks(
+      '2.0.14',
+      'opencode-v2-run-help.txt',
+    );
 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.opencode.arg-vector.implementer',
       severity: 'ok',
     });
-    expect(checks[0]?.details).toEqual([
-      'Command options: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      'run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
     ]);
   });
 
   it('keeps --variant and no --standalone for an admitted release below 2.0.0', async () => {
-    const checks = await opencodeImplementerChecks('1.18.32', 'opencode-run-help.txt');
+    const { checks, vectors } = await opencodeImplementerChecks('1.18.32', 'opencode-run-help.txt');
 
     expect(checks[0]).toMatchObject({
       id: 'runners.cli.opencode.arg-vector.implementer',
       severity: 'ok',
     });
-    expect(checks[0]?.details).toEqual([
-      'Command options: run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build <PROMPT>',
+    expect(vectors.map((argv) => argv.join(' '))).toEqual([
+      'run --model opencode-go/deepseek-v4-flash --variant high --format json --agent build <PROMPT>',
     ]);
   });
 
@@ -871,6 +897,7 @@ describe('collectArgVectorPreflightChecks — every emitted argv branch', () => 
       metadata: { semantic: ['--add-dir'], tool: 'claude-code', role: 'planner' },
     });
     expect(checks[0]?.fix).toContain('Remove the authority-bearing flags');
+    expect(checks[0]?.details?.join('\n')).not.toContain(configuredArgs.join(' '));
     expect(helpSpawns).toBe(0);
   });
 });
@@ -955,7 +982,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
     const target = tempDir('preflight-node-modules');
     symlinkSync(target, join(project, 'node_modules'));
 
-    const checks = await collectArgVectorPreflightChecks({
+    const { vectors } = await preflightWithVectors({
       config: makeConfig({
         implementer: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
       }),
@@ -964,7 +991,8 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
       runHelp: async () => null,
     });
 
-    const settings = JSON.parse(String(checks[0]?.details?.[0]).replace(/^.*--settings /, ''));
+    const argv = vectors[0] ?? [];
+    const settings = JSON.parse(argv[argv.indexOf('--settings') + 1] ?? '');
     expect(settings.sandbox.filesystem.allowRead).toEqual([realpathSync(target)]);
   });
 
@@ -1092,7 +1120,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
   // The seat carries an effort so the recorded help — where `-c, --config <key=value>` stands
   // alone on its entry line and the description follows indented — is what the short-flag
   // comparison is pinned against, not only the hand-written CODEX_HELP above.
-  it('probes the plan, one-shot, escalate and resume argv against one fetch of each clap help', async () => {
+  it('probes the plan, one-shot and resume argv against one fetch of each clap help', async () => {
     const project = tempDir('preflight-project');
     const toolDir = tempDir('preflight-tools');
     const log = join(toolDir, 'invocations');
@@ -1111,12 +1139,7 @@ describe('collectArgVectorPreflightChecks — default help invocation', () => {
         metadata: expect.objectContaining({ checked: 'help' }),
       }),
     ]);
-    expect(checks[0]?.details).toEqual([
-      `Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --json --cd ${project} -`,
-      `Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec --ignore-user-config --ignore-rules --ephemeral --json --cd ${project} -`,
-      `Command options: -c model_reasoning_effort=high --sandbox workspace-write --ask-for-approval never exec --ignore-user-config --ephemeral --json --skip-git-repo-check --cd ${project} -`,
-      'Command options: -c model_reasoning_effort=high --sandbox read-only --ask-for-approval never exec resume --ignore-user-config --ignore-rules --json 00000000-0000-4000-8000-000000000000 -',
-    ]);
+    expect(checks[0]?.details).toBeUndefined();
     expect(helpInvocations(log)).toEqual(['--help', 'exec --help']);
   });
 });

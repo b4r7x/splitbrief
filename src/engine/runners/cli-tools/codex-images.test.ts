@@ -7,7 +7,6 @@ describe('Codex review image argv', () => {
     (imagePaths) => {
       const args = codexPlannerAdapter.buildArgs({
         prompt: 'Review the dashboard.',
-        mode: 'plan',
         sessionId: null,
         oneShot: true,
         projectDir: '/project',

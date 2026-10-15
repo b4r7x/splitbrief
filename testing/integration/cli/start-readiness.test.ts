@@ -41,8 +41,8 @@ describe('start command — readiness', () => {
 
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(isCliError(captured)).toBe(true);
-    expect(output).toContain('repo.active-session-live');
-    expect(output.match(/repo\.active-session-live/gu)).toHaveLength(1);
+    expect(output).not.toContain('repo.active-session-live');
+    expect(output.match(/Active session 2026-04-28-live is still live\./gu)).toHaveLength(1);
     expect(output).not.toContain('repo.dirty-worktree');
     expect(output).not.toContain('scratch.txt');
     // Interactive feature starts mount Ink in parallel with preparation (T-037).
@@ -177,7 +177,7 @@ describe('start command — readiness', () => {
     ).toMatchObject({
       severity: 'blocker',
       remediation:
-        'Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
+        'Run `ollama serve`, or choose another tool in Settings > Crew > BUILD, then run `splitbrief doctor` again.',
     });
   });
 });

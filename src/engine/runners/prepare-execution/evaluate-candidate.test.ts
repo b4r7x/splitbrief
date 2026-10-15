@@ -5,8 +5,10 @@ import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { CliExecutableReceiptSchema } from '../../../core/discovery/detection.js';
 import type { AuthFact, RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
+import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/format.js';
 import { CLI_TOOL_CATALOG } from '../../../core/runners/cli-tool-catalog.js';
 import type { Config } from '../../../core/schemas/config.js';
+import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
 import { evaluateCandidate } from './evaluate-candidate.js';
 import type { RunnerCandidate } from './runner-candidates.js';
@@ -25,8 +27,10 @@ const executable = CliExecutableReceiptSchema.parse({
 });
 
 const tempDirs: string[] = [];
+const hostPlatform = process.platform;
 
 afterEach(() => {
+  Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
   vi.useRealTimers();
   vi.unstubAllEnvs();
   for (const directory of tempDirs.splice(0)) cleanupTempDir(directory);
@@ -124,6 +128,40 @@ function plannerSeat(model: string): { config: Config; candidate: RunnerCandidat
   };
 }
 
+describe('evaluateCandidate policy denial remediation', () => {
+  it.each([
+    { platform: 'linux', tool: 'antigravity', unsupported: true },
+    { platform: 'darwin', tool: 'antigravity', unsupported: false },
+    { platform: 'linux', tool: 'codex', unsupported: false },
+  ] as const)('gives the platform or policy remedy for $tool on $platform', async (scenario) => {
+    Object.defineProperty(process, 'platform', { value: scenario.platform, configurable: true });
+    const config = makeConfig({ planner: { kind: 'cli', tool: scenario.tool } });
+    const candidate: RunnerCandidate = {
+      slot: { role: 'planner' },
+      runner: config.planner,
+      trustLabel: 'planner',
+    };
+    const detect: PrepareExecutionDependencies['detectRunnerEvidence'] = async ({ context }) => ({
+      ...evidence(context, 'policy-denied'),
+      runner: { id: scenario.tool, kind: 'cli', locality: 'local', enabled: 'enabled' },
+    });
+
+    vi.useFakeTimers();
+    const pending = evaluateCandidate(candidate, preparationContext(config, detect));
+    await vi.advanceTimersByTimeAsync(1500);
+    const result = await pending;
+
+    expect(result.kind).toBe('blocked');
+    expect(result.check).toMatchObject({
+      severity: 'blocker',
+      diagnosticState: 'auth-policy-denied',
+      fix: scenario.unsupported
+        ? cliAuthRemediation({ tool: scenario.tool, authChannel: 'session' })
+        : READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
+    });
+  });
+});
+
 describe('evaluateCandidate resolves a seat left on auto', () => {
   it('names the model the tool has selected on this host and carries it on the gate', async () => {
     const home = stubHome();
@@ -156,7 +194,7 @@ describe('evaluateCandidate resolves a seat left on auto', () => {
     expect(result.gate).not.toHaveProperty('effectiveModel');
     expect(result.check.severity).toBe('warning');
     expect(result.check.details?.[0]).toBe(
-      "model: auto — codex has no readable model selection; the tool's own default applies.",
+      "model: auto — OpenAI Codex CLI has no readable model selection; the tool's own default applies.",
     );
     expect(result.check.metadata?.warnings).toEqual(['host_model_selection_unreadable']);
   });
@@ -196,9 +234,12 @@ describe('evaluateCandidate retries a transient session denial', () => {
     expect(result.kind).toBe('admitted');
     expect(result.check.severity).toBe('warning');
     expect(result.check.metadata?.warnings).toEqual(['readiness_probe_retried']);
+    expect(result.check.details).toContain(
+      'OpenAI Codex CLI reported no sign-in at first and confirmed it on a second check.',
+    );
   });
 
-  it('blocks when the second probe agrees, and says to run the status command first', async () => {
+  it('blocks when the second probe agrees, and gives the sign-in action', async () => {
     stubHome();
     const { config, candidate } = plannerSeat('gpt-6-mini');
     const probe: PrepareExecutionDependencies['detectRunnerEvidence'] = async ({ context }) =>
@@ -213,6 +254,8 @@ describe('evaluateCandidate retries a transient session denial', () => {
     expect(detect).toHaveBeenCalledTimes(2);
     expect(result.kind).toBe('blocked');
     expect(result.check.severity).toBe('blocker');
-    expect(result.check.fix).toContain('Run it once yourself, then continue again.');
+    expect(result.check.fix).toBe(
+      'SPLITBRIEF looks for the OpenAI Codex CLI session in its session files. Sign in to OpenAI Codex CLI, then run `splitbrief doctor` again.',
+    );
   });
 });

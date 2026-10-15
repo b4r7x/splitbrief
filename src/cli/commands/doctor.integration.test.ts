@@ -11,6 +11,7 @@ import {
 import { CONFIG_FILE, SPLITBRIEF_DIR } from '../../core/paths.js';
 import { CLI_TOOL_CATALOG } from '../../core/runners/cli-tool-catalog.js';
 import {
+  cliAuthRemediation,
   deriveCliReadiness,
   READINESS_DIAGNOSTIC_STATE_IDS,
   type CliReadinessResult,
@@ -22,6 +23,7 @@ import {
   READINESS_DIAGNOSTIC_REMEDIATION,
   readinessCheckRemediation,
   serializeReadinessReportJson,
+  type ReadinessReportJson,
 } from '../../core/readiness/format.js';
 import type { RunnerAvailabilityFact } from '../../core/readiness/checks/availability.js';
 import type { ReadinessCheck } from '../../core/readiness/types.js';
@@ -32,6 +34,9 @@ import { collectRunnerAdmissionChecks } from '../../engine/runners/prepare-execu
 import { registerDoctorCommand, type SeatProbeCall } from './doctor.js';
 import { saveDetectionCache } from '../../engine/detection/cache.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
+import { configStore } from '../../stores/project/config.js';
+import { makeConfig } from '#testing/helpers/factories/config.js';
+import { cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
 
 const EXECUTABLE_DIGEST = 'a'.repeat(64);
 const codexExecutable = CliExecutableReceiptSchema.parse({
@@ -48,7 +53,7 @@ const codexExecutable = CliExecutableReceiptSchema.parse({
 
 function freshCodexEvidence(
   context: Parameters<typeof runnerDiscoveryContextKey>[0],
-  overrides: Partial<Pick<RunnerEvidence, 'auth'>> = {},
+  overrides: Partial<Pick<RunnerEvidence, 'auth' | 'compatibility' | 'executable'>> = {},
 ): RunnerEvidence {
   const key = runnerDiscoveryContextKey(context);
   const testedVersion = CLI_TOOL_CATALOG.codex.compatibility.testedVersion;
@@ -56,11 +61,15 @@ function freshCodexEvidence(
     runner: { id: 'codex', kind: 'cli', locality: 'local', enabled: 'enabled' },
     context: { key, observedAt: 1, source: 'fresh' },
     installation: 'installed',
-    executable: {
+    executable: overrides.executable ?? {
       kind: 'trusted',
       identity: codexExecutable.executableIdentity,
     },
-    compatibility: { kind: 'compatible', installedVersion: testedVersion, testedVersion },
+    compatibility: overrides.compatibility ?? {
+      kind: 'compatible',
+      installedVersion: testedVersion,
+      testedVersion,
+    },
     credential: 'present',
     auth: overrides.auth ?? 'verified',
     endpoint: { kind: 'not-run' },
@@ -78,6 +87,7 @@ let tmp: string;
 let shimDir: string;
 let restoreCliShim: () => void;
 let originalExitCode: typeof process.exitCode;
+const hostPlatform = process.platform;
 
 beforeEach(() => {
   originalExitCode = process.exitCode;
@@ -89,7 +99,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
+  Object.defineProperty(process, 'platform', { value: hostPlatform, configurable: true });
   process.exitCode = originalExitCode;
+  configStore.__testReset();
   restoreCliShim();
   cleanupTempDir(shimDir);
   cleanupTempDir(tmp);
@@ -179,6 +192,21 @@ async function runDoctor(
   await program.parseAsync(['node', 'splitbrief', 'doctor', ...args]);
 }
 
+// A session sign-in denial is probed again after a delay for each seat; the
+// fake clock spends that delay instead of the wall clock.
+async function withFakeRetryClock(run: () => Promise<void>): Promise<void> {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  let settled = false;
+  const pending = run().finally(() => {
+    settled = true;
+  });
+  while (!settled) {
+    await new Promise((resolve) => setImmediate(resolve));
+    await vi.advanceTimersToNextTimerAsync();
+  }
+  await pending;
+}
+
 function captureStdout(): string[] {
   const writes: string[] = [];
   vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -188,10 +216,31 @@ function captureStdout(): string[] {
   return writes;
 }
 
+function expectReadableDoctorProse(text: string, report: ReadinessReportJson): void {
+  const prose = report.checks.flatMap((check) => [
+    check.summary,
+    ...(check.details ?? []),
+    ...(check.remediation ? [check.remediation] : []),
+  ]);
+  for (const output of [text, ...prose, report.nextAction.label, report.nextAction.reason]) {
+    for (const check of report.checks) expect(output).not.toContain(check.id);
+    expect(output).not.toMatch(
+      /Command options:|Configured args:|Arguments:|<PROMPT>|00000000-0000-4000-8000-000000000000|--permission-mode|\b(planner|implementer|reviewer)\b|PLAN.*(?:take over|edit files)|1 blockers|1 warnings|Fresh CLI evidence|authentication-unverified|isolated runner environment|credential bridge|keychain/i,
+    );
+  }
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  expect(new Set(lines).size).toBe(lines.length);
+  expect(new Set(prose).size).toBe(prose.length);
+}
+
 interface DoctorJsonCheck {
   id: string;
   severity: ReadinessCheck['severity'];
   summary: string;
+  details?: string[];
   modelSelection?: string;
 }
 
@@ -290,8 +339,14 @@ describe('doctor command', () => {
       );
 
       expect(result.status, result.stderr).toBe(1);
-      expect(result.stdout.match(/config\.missing/g)).toHaveLength(1);
-      expect(result.stdout.match(/repo\.not-git/g)).toHaveLength(1);
+      if (args.includes('--json')) {
+        expect(result.stdout.match(/config\.missing/g)).toHaveLength(1);
+        expect(result.stdout.match(/repo\.not-git/g)).toHaveLength(1);
+      } else {
+        expect(result.stdout).not.toMatch(/config\.missing|repo\.not-git/);
+        expect(result.stdout.match(/No \.splitbrief\/config.yaml found\./g)).toHaveLength(1);
+        expect(result.stdout.match(/Project is not a git repository\./g)).toHaveLength(1);
+      }
       expect(result.stderr).toBe('');
     },
   );
@@ -308,11 +363,106 @@ describe('doctor command', () => {
     expect(output).toContain('Run readiness:');
     expect(output).toContain('Config:');
     expect(output).toContain('Repository:');
-    expect(output).toContain('info validation.configured: End-of-run checks: on.');
+    expect(output).toContain('info     End-of-run checks: on.');
     expect(readFileSync(configFile, 'utf-8')).toBe(beforeConfig);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'active'))).toBe(false);
     expect(existsSync(join(tmp, SPLITBRIEF_DIR, 'sessions'))).toBe(false);
   });
+
+  it('reports a Setup-written crew in text and JSON without repeated facts or internal names', async () => {
+    initGitRepo(tmp);
+    writeFileSync(join(tmp, 'package.json'), '{"scripts":{"test":"node --test"}}');
+    configStore.load(tmp);
+    const runner = { kind: 'cli', tool: 'claude-code', model: 'sonnet' } as const;
+    const saved = await configStore.save(
+      makeConfig({ planner: runner, reviewer: runner, implementer: runner }),
+    );
+    expect(saved.kind).toBe('saved');
+    const configFile = join(tmp, SPLITBRIEF_DIR, CONFIG_FILE);
+    const before = readFileSync(configFile, 'utf8');
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runDoctor(['--project', tmp]);
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    const writes = captureStdout();
+    await runDoctor(['--project', tmp, '--json']);
+    const record = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+    expectReadableDoctorProse(text, record.report);
+    expect(text.match(/Plan approval: you approve the plan in the TUI\./g)).toHaveLength(1);
+    expect(text.match(/Headless runs approve the plan automatically/g)).toHaveLength(1);
+    expect(record.report.checks.filter((check) => check.id.endsWith('trust-boundary'))).toEqual([
+      expect.objectContaining({ severity: 'info' }),
+    ]);
+    expect(record.report.counts).toMatchObject({ blocker: 0, warning: 1 });
+    expect(text).toContain('(0 blockers, 1 warning)');
+    expect(readFileSync(configFile, 'utf8')).toBe(before);
+  });
+
+  it.each([false, true])(
+    'reports shared unknown authentication with another failing tool: %s',
+    async (mixed) => {
+      configStore.load(tmp);
+      const codex = { kind: 'cli', tool: 'codex', model: 'gpt-5' } as const;
+      const claude = { kind: 'cli', tool: 'claude-code', model: 'sonnet' } as const;
+      expect(
+        (
+          await configStore.save(
+            makeConfig({
+              planner: mixed ? claude : codex,
+              implementer: codex,
+              reviewer: codex,
+            }),
+          )
+        ).kind,
+      ).toBe('saved');
+      const detect = async () => [
+        deriveCliReadiness({
+          ...cliReadinessFactsFor('ready', 'codex'),
+          authChannel: 'session',
+          auth: 'unknown',
+        }),
+        ...(mixed
+          ? [
+              deriveCliReadiness({
+                ...cliReadinessFactsFor('unavailable', 'claude-code'),
+                authChannel: 'session',
+              }),
+            ]
+          : []),
+      ];
+      const admission: typeof collectRunnerAdmissionChecks = async (input) =>
+        collectRunnerAdmissionChecks({
+          ...input,
+          deps: {
+            detectRunnerEvidence: async ({ context }) => ({
+              ...freshCodexEvidence(context, { auth: 'unknown' }),
+              runner: { id: context.id, kind: 'cli', locality: 'local', enabled: 'enabled' },
+              ...(context.id === 'claude-code' ? { installation: 'missing' as const } : {}),
+            }),
+          },
+        });
+      const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await runDoctor(['--project', tmp], detect, undefined, undefined, admission);
+      const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+      const writes = captureStdout();
+      await runDoctor(['--project', tmp, '--json'], detect, undefined, undefined, admission);
+      const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+      expectReadableDoctorProse(text, report);
+      const auth = report.checks.filter((check) => check.stateId === 'auth-unknown');
+      expect(auth).toHaveLength(1);
+      expect(auth[0]?.severity).toBe('blocker');
+      expect(auth[0]?.summary).toBe(
+        `${mixed ? 'BUILD and REVIEW' : 'PLAN, BUILD and REVIEW'} cannot start with OpenAI Codex CLI.`,
+      );
+      expect(auth[0]?.details).toEqual(['OpenAI Codex CLI sign-in status is unknown.']);
+      expect(auth[0]?.remediation).toContain('--allow-unverified-auth');
+      expect(text.match(/OpenAI Codex CLI sign-in status is unknown\./g)).toHaveLength(1);
+      expect(process.exitCode).toBe(1);
+      if (mixed) {
+        expect(report.checks.filter((check) => check.stateId === 'missing-binary')).toHaveLength(1);
+        expect(text).toContain('PLAN cannot start with Claude Code CLI.');
+      }
+    },
+  );
 
   it('emits JSON with warning and info severities', async () => {
     initGitRepo(tmp);
@@ -347,10 +497,10 @@ describe('doctor command', () => {
 
     const output = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(output).toContain(
-      'blocker runners.availability.implementer.default: Default implementer Ollama · Qwen2.5 Coder 7B is not reachable at http://localhost:11434/v1.',
+      'blocker  BUILD Ollama · Qwen2.5 Coder 7B is not reachable at http://localhost:11434/v1.',
     );
     expect(output).toContain(
-      'Fix: Run `ollama serve`, or configure a different implementer, then run `splitbrief doctor` again.',
+      'Fix: Run `ollama serve`, or choose another tool in Settings > Crew > BUILD, then run `splitbrief doctor` again.',
     );
     expect(process.exitCode).toBe(1);
   });
@@ -391,7 +541,7 @@ describe('doctor command', () => {
     );
 
     const planner = checks.find((check) => check.id === 'runners.planner.configured');
-    expect(planner?.summary).toBe('Planner Claude Code CLI · auto configured.');
+    expect(planner?.summary).toBe('PLAN Claude Code CLI · auto configured.');
     expect(planner?.modelSelection).toBe('auto');
 
     const implementer = checks.find((check) => check.id === 'runners.implementer.default');
@@ -426,9 +576,6 @@ describe('doctor command', () => {
       .filter((check) => check.id.startsWith('runners.implementer.'))
       .map((check) => check.summary);
     expect(summaries).toContain('BUILD OpenAI Codex CLI · GPT-6-Luna configured.');
-    expect(summaries).toContain(
-      'BUILD OpenAI Codex CLI · GPT-6-Luna can run commands on this machine.',
-    );
     expect(summaries.join('\n')).not.toContain('GPT-6 Luna');
   });
 
@@ -450,7 +597,7 @@ describe('doctor command', () => {
 
       const planner = checks.find((check) => check.id === 'runners.planner.configured');
       expect(planner?.modelSelection).toBe(expected);
-      expect(planner?.summary).toBe(`Planner Claude Code CLI · ${identity} configured.`);
+      expect(planner?.summary).toBe(`PLAN Claude Code CLI · ${identity} configured.`);
     },
   );
 
@@ -507,6 +654,223 @@ describe('doctor command', () => {
     );
     expect(preparationCheck).toBeDefined();
     expect(preparationCheck?.remediation).toContain('--allow-unverified-auth');
+  });
+
+  it.each([
+    {
+      label: 'incompatible version',
+      status: 'incompatible',
+      evidence: {
+        compatibility: {
+          kind: 'incompatible',
+          installedVersion: '0.1.0',
+          testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+        },
+      },
+      stateId: 'incompatible-version',
+      message: 'OpenAI Codex CLI version is not compatible.',
+    },
+    {
+      label: 'unknown version',
+      status: 'ready',
+      facts: { installedVersion: null, compatibility: 'unverified' },
+      evidence: {
+        compatibility: {
+          kind: 'unknown',
+          installedVersion: null,
+          testedVersion: CLI_TOOL_CATALOG.codex.compatibility.testedVersion,
+        },
+      },
+      message: 'OpenAI Codex CLI version could not be confirmed as compatible.',
+    },
+    {
+      label: 'untrusted executable',
+      status: 'untrusted',
+      evidence: { executable: { kind: 'untrusted' } },
+      stateId: 'untrusted-path',
+      message: 'OpenAI Codex CLI executable could not be trusted.',
+    },
+    {
+      label: 'missing executable',
+      status: 'unavailable',
+      evidence: { executable: { kind: 'missing' } },
+      stateId: 'missing-binary',
+      message: 'OpenAI Codex CLI is not installed.',
+    },
+    {
+      label: 'signed-out session',
+      status: 'unauthenticated',
+      evidence: { auth: 'missing' },
+      stateId: 'unauthenticated',
+      message: 'OpenAI Codex CLI is not signed in.',
+    },
+    {
+      label: 'authentication timeout',
+      status: 'ready',
+      evidence: { auth: 'timeout' },
+      stateId: 'auth-timeout',
+      message: 'OpenAI Codex CLI sign-in check timed out.',
+      remedy: 'Check the network connection, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'offline authentication probe',
+      status: 'ready',
+      evidence: { auth: 'offline' },
+      stateId: 'auth-offline',
+      message: 'OpenAI Codex CLI sign-in check could not connect.',
+      remedy: 'Check the network connection, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'unreadable authentication probe',
+      status: 'ready',
+      evidence: { auth: 'malformed' },
+      stateId: 'auth-malformed',
+      message: 'SPLITBRIEF could not read the OpenAI Codex CLI sign-in check result.',
+      remedy: 'Run `splitbrief doctor` again. If the result is still unreadable, update the CLI.',
+    },
+  ] as const)('preserves the cause and remedy for $label in text and JSON', async (scenario) => {
+    initGitRepo(tmp);
+    configStore.load(tmp);
+    const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+    expect(
+      (await configStore.save(makeConfig({ planner: seat, reviewer: seat, implementer: seat }))).ok,
+    ).toBe(true);
+    // Detection records the authentication selection only for a resolved
+    // executable, so a missing or untrusted CLI result carries none.
+    const readiness = deriveCliReadiness({
+      ...cliReadinessFactsFor(scenario.status, 'codex'),
+      ...('facts' in scenario && scenario.facts),
+      ...(scenario.status !== 'untrusted' &&
+        scenario.status !== 'unavailable' && { authChannel: 'session' }),
+    });
+    const remedy = 'remedy' in scenario ? scenario.remedy : readiness.remediation;
+    const admissionChecks: typeof collectRunnerAdmissionChecks = (input) =>
+      collectRunnerAdmissionChecks({
+        ...input,
+        deps: {
+          detectRunnerEvidence: async ({ context }) =>
+            freshCodexEvidence(context, scenario.evidence),
+        },
+      });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await withFakeRetryClock(() =>
+      runDoctor(['--project', tmp], async () => [readiness], undefined, undefined, admissionChecks),
+    );
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    const writes = captureStdout();
+    await withFakeRetryClock(() =>
+      runDoctor(
+        ['--project', tmp, '--json'],
+        async () => [readiness],
+        undefined,
+        undefined,
+        admissionChecks,
+      ),
+    );
+    const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+    const checks = report.checks.filter((check) => check.id.startsWith('runners.preparation.'));
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({
+      summary: 'PLAN, BUILD and REVIEW cannot start with OpenAI Codex CLI.',
+      seats: ['PLAN', 'BUILD', 'REVIEW'],
+      details: [scenario.message],
+      ...('stateId' in scenario && { stateId: scenario.stateId }),
+      remediation: remedy,
+    });
+    expect(report.checks.filter((check) => check.remediation === remedy)).toHaveLength(1);
+    expect(text).toContain(scenario.message);
+    expect(text).toContain(`Fix: ${remedy}`);
+    expect(text).not.toContain('Review the configured runner');
+    expect(text.split(`${remedy}`)).toHaveLength(2);
+    expectReadableDoctorProse(text, report);
+    if ('stateId' in scenario && scenario.stateId.startsWith('auth-')) {
+      expect(text).not.toContain('is not signed in');
+      expect(text).not.toContain('Sign in to');
+      expect(JSON.stringify(report)).not.toContain('unauthenticated');
+    }
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('gives the Linux platform remedy for Antigravity session authentication in text and JSON', async () => {
+    Object.defineProperty(process, 'platform', { value: 'linux', configurable: true });
+    writeConfig(tmp, validConfigYaml().replace('  tool: claude-code', '  tool: antigravity'));
+    const readiness = deriveCliReadiness({
+      ...cliReadinessFactsFor('unverified', 'antigravity'),
+      authChannel: 'session',
+    });
+    const admissionChecks: typeof collectRunnerAdmissionChecks = (input) =>
+      collectRunnerAdmissionChecks({
+        ...input,
+        deps: {
+          detectRunnerEvidence: async ({ context }) => ({
+            ...freshCodexEvidence(context, { auth: 'policy-denied' }),
+            runner: { id: 'antigravity', kind: 'cli', locality: 'local', enabled: 'enabled' },
+          }),
+        },
+      });
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await withFakeRetryClock(() =>
+      runDoctor(['--project', tmp], async () => [readiness], undefined, undefined, admissionChecks),
+    );
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    const writes = captureStdout();
+    await withFakeRetryClock(() =>
+      runDoctor(
+        ['--project', tmp, '--json'],
+        async () => [readiness],
+        undefined,
+        undefined,
+        admissionChecks,
+      ),
+    );
+    const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+    const checks = report.checks.filter((check) => check.stateId === 'auth-policy-denied');
+    const remedy = cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' });
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({ severity: 'blocker', remediation: remedy });
+    expect(text).toContain(`Fix: ${remedy}`);
+    expect(text).not.toContain(READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied']);
+    expect(JSON.stringify(report)).not.toContain(
+      READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
+    );
+    expect(text.split(remedy)).toHaveLength(2);
+    expectReadableDoctorProse(text, report);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('keeps distinct sign-in causes from readiness and admission', async () => {
+    initGitRepo(tmp);
+    configStore.load(tmp);
+    const seat = { kind: 'cli', tool: 'codex' } as const;
+    expect(
+      (await configStore.save(makeConfig({ planner: seat, reviewer: seat, implementer: seat }))).ok,
+    ).toBe(true);
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runDoctor(
+      ['--project', tmp],
+      async () => [deriveCliReadiness(cliReadinessFactsFor('unauthenticated', 'codex'))],
+      undefined,
+      undefined,
+      async (input) =>
+        collectRunnerAdmissionChecks({
+          ...input,
+          deps: {
+            detectRunnerEvidence: async ({ context }) =>
+              freshCodexEvidence(context, { auth: 'unknown' }),
+          },
+        }),
+    );
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    const lines = text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(text).toContain('(2 blockers, 1 warning)');
+    expect(text).toContain('OpenAI Codex CLI is not signed in.');
+    expect(text).toContain('PLAN, BUILD and REVIEW cannot start with OpenAI Codex CLI.');
+    expect(text).toContain('OpenAI Codex CLI sign-in status is unknown.');
+    expect(process.exitCode).toBe(1);
   });
 
   it('emits JSON and exits non-zero for missing config without writing setup files', async () => {
@@ -591,8 +955,8 @@ describe('doctor command', () => {
     const rendered = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     const lines = rendered.split('\n').filter((line) => line.trimStart().startsWith('blocker '));
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toContain('config.invalid');
-    expect(lines[1]).toContain('repo.not-git');
+    expect(lines[0]).toContain('Config could not be loaded.');
+    expect(lines[1]).toContain('Project is not a git repository.');
   });
 
   it('reports a non-git project as blocked', async () => {
@@ -745,7 +1109,7 @@ describe('doctor command', () => {
 
     const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(unverified.status).toBe('unverified');
-    expect(human).toContain('Run readiness: ready-with-warnings');
+    expect(human).toContain('Run readiness: ready with warnings');
     expect(human).not.toContain('start can continue');
     expect(human).toContain('No trusted readiness identity for claude-code');
     expect(human).toContain('--allow-unverified-auth');
@@ -768,9 +1132,11 @@ describe('doctor command', () => {
     const human = consoleSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     const argVectorLine = human
       .split('\n')
-      .find((line) => line.includes('runners.cli.claude-code.arg-vector.planner'));
+      .find((line) => line.includes('does not support options PLAN uses'));
     expect(argVectorLine).toContain('blocker');
-    expect(argVectorLine).toContain('does not support: --include-partial-messages.');
+    expect(argVectorLine).toContain(
+      'does not support options PLAN uses: --include-partial-messages.',
+    );
     expect(process.exitCode).toBe(1);
   });
 
@@ -821,9 +1187,8 @@ describe('doctor command', () => {
       (check) => check.id === 'runners.cli.opencode.arg-vector.implementer',
     );
     expect(argVector?.severity).toBe('ok');
-    expect(argVector?.details).toEqual([
-      'Command options: run --standalone --model opencode-go/deepseek-v4-flash#high --format json --agent build <PROMPT>',
-    ]);
+    expect(argVector?.details).toBeUndefined();
+    expect(argVector?.summary).toBe('OpenCode CLI supports the options BUILD uses.');
   });
 
   it('reports no arg-vector blocker when the installed binary yields no help text', async () => {
@@ -835,7 +1200,7 @@ describe('doctor command', () => {
       (check) => check.id === 'runners.cli.claude-code.arg-vector.planner',
     );
     expect(argVector?.severity).toBe('ok');
-    expect(argVector?.summary).toContain('command options are configured');
+    expect(argVector?.summary).toContain('options for PLAN are configured.');
     expect(checks.map((check) => check.id)).toContain('runners.cli.claude-code.readiness');
   });
 
@@ -982,6 +1347,10 @@ describe('custom runner consent preflight', () => {
     };
     const consent = parsed.report?.checks?.find((check) => check.id === 'runners.consent.planner');
     expect(consent).toMatchObject({ severity: 'blocker' });
+    const refusals = parsed.report?.checks?.filter((check) =>
+      check.details?.some((detail) => detail.includes('this machine has not trusted')),
+    );
+    expect(refusals).toHaveLength(1);
   });
 
   it('exits non-zero on that config instead of reporting ready-with-warnings', async () => {
@@ -1041,7 +1410,7 @@ describe('custom runner consent preflight', () => {
 
     await withStdinTty(true, () => runDoctor(['--project', tmp]));
 
-    expect(logged.join('\n')).toContain('Planner needs a one-time confirmation before it can run.');
+    expect(logged.join('\n')).toContain('PLAN needs a one-time confirmation before it can run.');
   });
 });
 
@@ -1085,7 +1454,7 @@ describe('doctor --probe-seat', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.seat).toBe('plan');
     const output = logged.join('\n');
-    expect(output).toContain('Seat probe plan: account');
+    expect(output).toContain('Seat probe PLAN: account');
     expect(output).toContain('Insufficient balance: the account has no credits.');
 
     const probesDir = join(tmp, SPLITBRIEF_DIR, 'probes');
@@ -1135,7 +1504,7 @@ describe('doctor --probe-seat', () => {
       probeSeatCall,
     );
 
-    expect(logged).toEqual(['Seat probe build: passed']);
+    expect(logged).toEqual(['Seat probe BUILD: passed']);
     const probesDir = join(tmp, SPLITBRIEF_DIR, 'probes');
     const record = JSON.parse(
       readFileSync(join(probesDir, readdirSync(probesDir)[0] ?? ''), 'utf8'),
@@ -1178,7 +1547,7 @@ describe('doctor --probe-seat', () => {
       probeSeatCall,
     );
 
-    expect(logged).toEqual(['Seat probe build: other', 'First error: Model refused the request']);
+    expect(logged).toEqual(['Seat probe BUILD: other', 'First error: Model refused the request']);
   });
 
   it('makes no seat call without the flag', async () => {
@@ -1207,7 +1576,7 @@ describe('doctor --probe-seat', () => {
 
     const help = writes.join('');
     expect(help).toContain('--probe-seat');
-    expect(help).toContain('one paid call');
+    expect(help).toContain('one paid call through one seat: plan, build, review');
   });
 
   it('rejects a seat outside plan, build and review', async () => {

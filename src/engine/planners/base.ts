@@ -1,5 +1,3 @@
-import type { Task } from '../../core/schemas/task.js';
-import type { InvokeResult } from '../runners/types.js';
 import type { TypedSchemaInput } from '../runners/typed-output.js';
 import {
   CLI_TOOL_CATALOG,
@@ -13,8 +11,6 @@ import type {
   Planner,
   PlannerCallbacks,
   PlannerOutputCallbacks,
-  EscalateOptions,
-  EscalationResult,
   PlannerCapabilities,
   PriorMessage,
   PlannerSummaryMessage,
@@ -24,7 +20,6 @@ import type {
   PlannerUserTurnResult,
 } from './types.js';
 import { DEFAULT_AVAILABILITY } from '../availability.js';
-import { escalateFull } from './escalation.js';
 import { formatMessagesForCli } from '../streaming/format-messages.js';
 import { createPlannerCallContext } from './call-context.js';
 import { summarize, summarizeStructured } from './summary.js';
@@ -67,18 +62,15 @@ type InternalInvokeOptions = {
   images?: Attachment[] | undefined;
   schema?: TypedSchemaInput | undefined;
   signal?: AbortSignal | undefined;
-  sandboxEnv?: NodeJS.ProcessEnv | undefined;
 };
 
 type InternalPlanInvokeFn = (opts: InternalInvokeOptions) => Promise<RunnerCallResult>;
-// invokeEscalate exists separately: Claude Code uses session-chaining for plan phases but one-shot for escalations.
-type InternalEscalateInvokeFn = (
-  opts: InternalInvokeOptions & { accessMode: 'read-only' | 'write-files' },
-) => Promise<RunnerCallResult>;
+// invokeOneShot exists separately: Claude Code chains a session for planning turns but calls once for reviews and summaries.
+type InternalOneShotInvokeFn = (opts: InternalInvokeOptions) => Promise<RunnerCallResult>;
 
 export interface PlannerBaseConfig {
   invokePlan: InternalPlanInvokeFn;
-  invokeEscalate: InternalEscalateInvokeFn;
+  invokeOneShot: InternalOneShotInvokeFn;
   backendKind?: RunnerCallContext['backendKind'];
   runnerName?: string | undefined;
   model?: string | undefined;
@@ -89,19 +81,6 @@ export interface PlannerBaseConfig {
   capabilities: PlannerCapabilities;
   /** How a typed call reaches this backend; defaults to 'fallback'. */
   typedOutput?: TypedOutputCapability | undefined;
-  /**
-   * How to determine whether escalateFull succeeded.
-   * - 'text': extract code block from stdout (API/streaming planners)
-   * - 'files': git changed files (agent planners that write files directly)
-   * Default: 'text'
-   */
-  escalateFullMode?: 'text' | 'files';
-  escalateFullPostProcess?: (
-    task: Task,
-    result: InvokeResult,
-    extracted: { code: string },
-    projectDir: string,
-  ) => EscalationResult;
   /**
    * When true, the backend handles `priorMessages` natively (e.g. API backends using an OpenAI
    * messages array). When false (default), the base layer prepends a CLI-format transcript
@@ -119,10 +98,6 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
       : undefined;
 
   const planner: Planner = {
-    async escalateFull(opts: EscalateOptions): Promise<EscalationResult> {
-      return escalateFull(config, opts);
-    },
-
     async review(
       prompt: string,
       projectDir: string,
@@ -130,11 +105,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
     ): Promise<{ text: string; usage: TokenDelta | null }> {
       const callContext = createPlannerCallContext(config, 'review');
       const result = requireCompletedCall(
-        await config.invokeEscalate({
+        await config.invokeOneShot({
           prompt,
           projectDir,
           callContext,
-          accessMode: 'read-only',
           callbacks,
           signal: callbacks.signal,
         }),
@@ -171,11 +145,10 @@ export function createPlannerBase(config: PlannerBaseConfig): Planner {
             ...(schema !== undefined && { schema }),
           });
         }
-        return config.invokeEscalate({
+        return config.invokeOneShot({
           prompt,
           projectDir: ctx.projectDir,
           callContext,
-          accessMode: 'read-only',
           callbacks: ctx.callbacks,
           signal: ctx.callbacks.signal,
           ...(ctx.images !== undefined && { images: ctx.images }),

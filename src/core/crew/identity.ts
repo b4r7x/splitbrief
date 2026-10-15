@@ -5,7 +5,11 @@ import {
   truncateTerminalDisplayText,
 } from '../../utils/display-text.js';
 import { redactSecrets } from '../../utils/redact.js';
-import { getRunnerDisplayName, type RunnerConfig } from '../config/accessors/runner-config.js';
+import {
+  getRunnerDisplayName,
+  type RunnerConfig,
+  type RunnerConfigSlot,
+} from '../config/accessors/runner-config.js';
 import { cliVocabularyTool, formatModelName, peelDisplayLabel } from '../model-display.js';
 import { getRunnerIdentityDisplayName } from '../providers/catalog.js';
 import {
@@ -14,7 +18,7 @@ import {
   resolveCliModel,
 } from '../providers/automatic-model.js';
 import type { EffortLevel, RunnerKind } from '../schemas/enums.js';
-import type { ActiveRunnerRole } from '../runners/seat-roles.js';
+import { PICKER_ROLE_SEAT_IDS, type ActiveRunnerRole } from '../runners/seat-roles.js';
 import { SOFT_SEP } from '../separators.js';
 import { CLI_TOOL_CATALOG, isCliToolId } from '../runners/cli-tool-catalog.js';
 import {
@@ -35,6 +39,14 @@ export const CREW_SEAT_LABELS: Readonly<Record<CrewSeatId, string>> = {
   build: 'BUILD',
   review: 'REVIEW',
 };
+
+/** The seat word for a runner slot; a BUILD profile beside the implementer block adds its name. */
+export function formatSlotLabel(slot: RunnerConfigSlot): string {
+  const label = CREW_SEAT_LABELS[PICKER_ROLE_SEAT_IDS[slot.role]];
+  return slot.role === 'implementer' && slot.profile !== 'default'
+    ? `${label} (${slot.profile})`
+    : label;
+}
 
 /** Seat labels are padded to this width so every identity column starts at one offset. */
 export const CREW_LABEL_WIDTH = 8;

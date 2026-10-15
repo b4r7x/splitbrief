@@ -150,7 +150,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         model: undefined,
         projectDir: '.',
         configuredArgs: [],
-        mode: 'plan',
         sessionId: SESSION_ID,
         effort: undefined,
       });
@@ -165,7 +164,6 @@ describe('runner capability and session matrix — exact tuples, fresh scopes, z
         model: undefined,
         projectDir: '.',
         configuredArgs: [],
-        mode: 'plan',
         sessionId: null,
         effort: undefined,
       });

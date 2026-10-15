@@ -1,8 +1,9 @@
 import { sanitizeTerminalDisplayText } from '../../utils/display-text.js';
-import { countNoun } from '../../utils/pluralize.js';
+import { countNoun, pluralize } from '../../utils/pluralize.js';
 import {
   READINESS_MODEL_SELECTIONS,
   StartReadinessRecordSchema,
+  cliExecutableTrustRemediation,
   type ReadinessDiagnosticStateId,
   type ReadinessModelSelection,
   type StartReadinessRecord,
@@ -14,12 +15,16 @@ export const READINESS_DIAGNOSTIC_REMEDIATION: Readonly<
   Record<ReadinessDiagnosticStateId, string>
 > = {
   'missing-binary': 'Install the configured CLI, then run `splitbrief doctor` again.',
-  'untrusted-path': 'Trust the exact CLI executable identity, then run `splitbrief doctor` again.',
+  'untrusted-path': cliExecutableTrustRemediation('the configured CLI'),
   'incompatible-version': 'Install the tested CLI version, then run `splitbrief doctor` again.',
-  unauthenticated:
-    'Authenticate the CLI in the staged runner environment, then run `splitbrief doctor` again.',
+  unauthenticated: 'Sign in to the configured CLI, then run `splitbrief doctor` again.',
   'auth-unknown':
     'CLI authentication cannot be verified without spending a call: stored credentials prove presence, not a working session. The first real call settles it; if it fails to authenticate, sign in to the CLI again.',
+  'auth-timeout': 'Check the network connection, then run `splitbrief doctor` again.',
+  'auth-offline': 'Check the network connection, then run `splitbrief doctor` again.',
+  'auth-malformed':
+    'Run `splitbrief doctor` again. If the result is still unreadable, update the CLI.',
+  'auth-policy-denied': 'Check the account and access policy, then run `splitbrief doctor` again.',
   'endpoint-invalid':
     'Fix the provider endpoint to match its declared policy, then run `splitbrief doctor` again.',
   'credential-family-mismatch':
@@ -41,6 +46,7 @@ export interface ReadinessDiagnosticCheckJson {
   details?: string[] | undefined;
   nextAction?: ReadinessCheck['nextAction'];
   modelSelection?: ReadinessModelSelection | undefined;
+  seats?: string[] | undefined;
 }
 
 export interface ReadinessReportJson {
@@ -114,6 +120,7 @@ export function serializeReadinessCheckJson(check: ReadinessCheck): ReadinessDia
     ...(check.details !== undefined && { details: check.details }),
     ...(check.nextAction !== undefined && { nextAction: check.nextAction }),
     ...(modelSelection !== undefined && { modelSelection }),
+    ...(check.runnerCause !== undefined && { seats: check.runnerCause.seats }),
   };
 }
 
@@ -131,26 +138,33 @@ export function serializeReadinessReportJson(report: ReadinessReport): Readiness
   };
 }
 
+const READINESS_STATUS_WORDS: Readonly<Record<ReadinessReport['status'], string>> = {
+  ready: 'ready',
+  'ready-with-warnings': 'ready with warnings',
+  blocked: 'blocked',
+};
+
+/** `blocker` and `warning`, the longest severity words, so every summary starts in one column. */
+const SEVERITY_WIDTH = 7;
+const DETAIL_INDENT = ' '.repeat(2 + SEVERITY_WIDTH + 2);
+
+/** The check id is for scripts (`--json`); a person reads the severity and the words. */
 function renderSectionLines(section: ReadinessSection): string[] {
   const lines: string[] = [];
   lines.push(`${section.title}:`);
   for (const check of section.checks) {
-    lines.push(`  ${check.severity} ${check.id}: ${sanitizeTerminalDisplayText(check.summary)}`);
+    lines.push(
+      `  ${check.severity.padEnd(SEVERITY_WIDTH)}  ${sanitizeTerminalDisplayText(check.summary)}`,
+    );
     for (const detail of check.details ?? []) {
-      lines.push(`    ${sanitizeTerminalDisplayText(detail)}`);
+      lines.push(`${DETAIL_INDENT}${sanitizeTerminalDisplayText(detail)}`);
     }
     const remediation = readinessCheckRemediation(check);
     if (remediation) {
-      lines.push(`    Fix: ${sanitizeTerminalDisplayText(remediation)}`);
+      lines.push(`${DETAIL_INDENT}Fix: ${sanitizeTerminalDisplayText(remediation)}`);
     }
   }
   return lines;
-}
-
-function formatRequiredAction(nextAction: ReadinessReport['nextAction']): string {
-  const label = sanitizeTerminalDisplayText(nextAction.label);
-  const command = nextAction.command ? ` (${sanitizeTerminalDisplayText(nextAction.command)})` : '';
-  return `Required action: ${label}${command}`;
 }
 
 /**
@@ -167,17 +181,12 @@ function ungatedCliAdvisory(checks: readonly ReadinessCheck[]): string {
 export function formatReadinessReport(report: ReadinessReport): string {
   const lines: string[] = [];
   lines.push(
-    `Run readiness: ${report.status} (${countNoun(report.counts.blocker, 'blocker')}, ${countNoun(report.counts.warning, 'warning')})`,
+    `Run readiness: ${READINESS_STATUS_WORDS[report.status]} (${countNoun(report.counts.blocker, 'blocker')}, ${countNoun(report.counts.warning, 'warning')})`,
   );
+  // Each blocker carries its own Fix line, so the header names no action that would repeat it.
   const ungatedCli = ungatedCliReadinessChecks(report);
-  if (report.status === 'blocked') {
-    lines.push(formatRequiredAction(report.nextAction));
-  } else if (ungatedCli.length > 0) {
+  if (report.status !== 'blocked' && ungatedCli.length > 0) {
     lines.push(ungatedCliAdvisory(ungatedCli));
-  } else if (report.counts.warning > 0) {
-    lines.push(`Advisory: ${countNoun(report.counts.warning, 'warning')}; start can continue.`);
-  } else {
-    lines.push('Ready: no blockers or warnings.');
   }
   lines.push('');
 
@@ -193,7 +202,6 @@ export function formatReadinessBlockers(report: ReadinessReport): string {
   const blockerOnly = createBlockerOnlyReadinessReport(report);
   const lines: string[] = [];
   lines.push(`Run readiness: blocked (${countNoun(blockerOnly.counts.blocker, 'blocker')})`);
-  lines.push(formatRequiredAction(blockerOnly.nextAction));
   lines.push('');
 
   for (const section of blockerOnly.sections) {
@@ -225,13 +233,11 @@ export function readinessBlockerMessage(report: ReadinessReport): string {
     section.checks.filter((check) => check.severity === 'blocker'),
   );
   if (blockers.length === 0) return 'Readiness blocked.';
-  return blockers
-    .map((check) => `${check.id}: ${sanitizeTerminalDisplayText(check.summary)}`)
-    .join('\n');
+  return blockers.map((check) => sanitizeTerminalDisplayText(check.summary)).join('\n');
 }
 
 export function readinessBlockerPointer(report: ReadinessReport): string {
-  return `Run readiness blocked: ${countNoun(report.counts.blocker, 'blocker')}. Resolve the blockers above (run \`splitbrief doctor\` for details).`;
+  return `Run readiness blocked: ${countNoun(report.counts.blocker, 'blocker')}. Resolve the ${pluralize(report.counts.blocker, 'blocker')} above (run \`splitbrief doctor\` for details).`;
 }
 
 function blockerOnlySection(section: ReadinessSection): ReadinessSection | null {

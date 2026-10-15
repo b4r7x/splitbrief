@@ -7,15 +7,20 @@ import { findConfiguredCustomCommand } from '../../../core/config/custom-command
 import { inlineRunnerCommand } from '../../../core/config/custom-commands.js';
 import {
   CLI_TOOL_CATALOG,
+  cliAuthChannelPlatformSupported,
   type CliAuthChannelId,
   type CliToolId,
 } from '../../../core/runners/cli-tool-catalog.js';
 import { admitCliAuthChannel } from '../../../core/runners/cli-auth-selection.js';
 import { isAutomaticModel } from '../../../core/providers/automatic-model.js';
-import { cliAuthRemediation } from '../../../core/schemas/readiness.js';
+import { cliAuthRemediation, cliReadinessRemediation } from '../../../core/schemas/readiness.js';
+import { READINESS_DIAGNOSTIC_REMEDIATION } from '../../../core/readiness/format.js';
+import { READINESS_DIAGNOSTIC_STATE_IDS } from '../../../core/schemas/readiness.js';
+import type { RunnerReadinessCauseId } from '../../../core/readiness/types.js';
+import { formatSlotLabel } from '../../../core/crew/identity.js';
 import type { RunnerEvidence } from '../../../core/discovery/runner-evidence.js';
 import { throwIfAborted } from '../../../utils/abort.js';
-import { assertNever } from '../../../utils/type-guards.js';
+import { assertNever, includes } from '../../../utils/type-guards.js';
 import { runnerDiscoveryContextKey } from '../../detection/runner-evidence.js';
 import { getProvider } from '../../providers/registry.js';
 import type { prepareCustomRunnerAdmission } from '../custom-admission.js';
@@ -38,11 +43,9 @@ import {
 import type { PreparationContext, SlotEvaluation } from './types.js';
 
 const UNVERIFIED_AUTH_FIX =
-  'Stored credentials prove presence, not a working session, so a headless start stays fail-closed. Pass --allow-unverified-auth to start anyway, or run interactively where unverified auth is disclosed.';
+  'Run SPLITBRIEF in a terminal to review the sign-in warning, or pass --allow-unverified-auth to start without confirming sign-in.';
 
 const READINESS_RETRY_DELAY_MS = 1500;
-
-const RUN_THE_STATUS_COMMAND = 'Run it once yourself, then continue again.';
 
 function wait(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -58,20 +61,161 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function cliAdmissionFix(
-  reason: Extract<FreshCliStartGateResult, { kind: 'denied' }>['reason'],
-  tool: CliToolId,
-  authChannel: CliAuthChannelId,
-): string | undefined {
-  if (reason.kind === 'authentication') {
-    return `${cliAuthRemediation({ tool, authChannel })} ${RUN_THE_STATUS_COMMAND}`;
+function cliAdmissionProblem({
+  reason,
+  tool,
+  authChannel,
+  compatibility,
+}: {
+  reason: Extract<FreshCliStartGateResult, { kind: 'denied' }>['reason'];
+  tool: CliToolId;
+  authChannel: CliAuthChannelId;
+  compatibility: RunnerEvidence['compatibility'];
+}): { message: string; fix: string; cause: RunnerReadinessCauseId } {
+  const name = CLI_TOOL_CATALOG[tool].displayName;
+  const facts: Parameters<typeof cliReadinessRemediation>[0] = {
+    tool,
+    authChannel,
+    installedVersion: 'installedVersion' in compatibility ? compatibility.installedVersion : null,
+    testedVersion:
+      'testedVersion' in compatibility
+        ? compatibility.testedVersion
+        : CLI_TOOL_CATALOG[tool].compatibility.testedVersion,
+    compatibility: compatibility.kind === 'compatible' ? 'compatible' : 'unverified',
+  };
+  switch (reason.kind) {
+    case 'authentication':
+      switch (reason.fact) {
+        case 'missing':
+          return {
+            message: `${name} is not signed in.`,
+            cause: 'unauthenticated',
+            fix: cliAuthRemediation({ tool, authChannel }),
+          };
+        case 'invalid':
+          return {
+            message: `${name} credentials are invalid.`,
+            cause: 'unauthenticated',
+            fix: cliAuthRemediation({ tool, authChannel }),
+          };
+        case 'timeout':
+          return {
+            message: `${name} sign-in check timed out.`,
+            cause: 'auth-timeout',
+            fix: READINESS_DIAGNOSTIC_REMEDIATION['auth-timeout'],
+          };
+        case 'offline':
+          return {
+            message: `${name} sign-in check could not connect.`,
+            cause: 'auth-offline',
+            fix: READINESS_DIAGNOSTIC_REMEDIATION['auth-offline'],
+          };
+        case 'malformed':
+          return {
+            message: `SPLITBRIEF could not read the ${name} sign-in check result.`,
+            cause: 'auth-malformed',
+            fix: READINESS_DIAGNOSTIC_REMEDIATION['auth-malformed'],
+          };
+        case 'policy-denied':
+          return {
+            message: `${name} sign-in check was denied by a policy.`,
+            cause: 'auth-policy-denied',
+            fix: CLI_TOOL_CATALOG[tool].auth.channels.some(
+              (channel) => channel.id === authChannel && !cliAuthChannelPlatformSupported(channel),
+            )
+              ? cliAuthRemediation({ tool, authChannel })
+              : READINESS_DIAGNOSTIC_REMEDIATION['auth-policy-denied'],
+          };
+        case 'not-selected':
+          return {
+            message: `${name} has no authentication channel selected.`,
+            cause: 'auth-not-selected',
+            fix: cliAuthRemediation({ tool }),
+          };
+        case 'cancelled':
+          return {
+            message: `${name} sign-in check was cancelled.`,
+            cause: 'auth-check-cancelled',
+            fix: 'Run `splitbrief doctor` again.',
+          };
+        case 'not-run':
+          return {
+            message: `${name} sign-in check did not run.`,
+            cause: 'auth-check-not-run',
+            fix: 'Run `splitbrief doctor` again.',
+          };
+        default:
+          return assertNever(reason);
+      }
+    case 'authentication-unverified':
+      return {
+        message: `${name} sign-in status is unknown.`,
+        cause: 'auth-unknown',
+        fix: UNVERIFIED_AUTH_FIX,
+      };
+    case 'installation':
+    case 'executable':
+      if (reason.fact === 'missing') {
+        return {
+          message: `${name} is not installed.`,
+          cause: 'missing-binary',
+          fix: cliReadinessRemediation(facts, 'unavailable'),
+        };
+      }
+      if (reason.kind === 'installation') {
+        return {
+          message: `${name} installation could not be checked.`,
+          cause: 'installation-unchecked',
+          fix: `Check that ${name} is installed and on PATH, then run \`splitbrief doctor\` again.`,
+        };
+      }
+      return {
+        message: `${name} executable could not be trusted.`,
+        cause: 'untrusted-path',
+        fix: cliReadinessRemediation(facts, 'untrusted'),
+      };
+    case 'compatibility':
+      if (reason.fact === 'incompatible') {
+        return {
+          message: `${name} version is not compatible.`,
+          cause: 'incompatible-version',
+          fix: cliReadinessRemediation(facts, 'incompatible'),
+        };
+      }
+      return {
+        message: `${name} version could not be confirmed as compatible.`,
+        cause: 'unknown-version',
+        fix: cliReadinessRemediation(facts, 'unverified'),
+      };
+    case 'disabled':
+      return {
+        message: `${name} is disabled.`,
+        cause: 'disabled',
+        fix: cliReadinessRemediation(facts, 'disabled'),
+      };
+    case 'context-mismatch':
+    case 'evidence-source':
+    case 'model-context-mismatch':
+      return {
+        message: `${name} checks do not match the current configuration.`,
+        cause: 'stale-checks',
+        fix: 'Run `splitbrief doctor` again.',
+      };
+    case 'probe':
+      return {
+        message: `${name} could not check its connection or available models.`,
+        cause: 'probe-failed',
+        fix: 'Check the network connection, then run `splitbrief doctor` again.',
+      };
+    case 'model-run':
+      return {
+        message: `${name} has not confirmed that the selected model can run.`,
+        cause: 'model-unconfirmed',
+        fix: `Check the selected model in ${name}, or choose another model in Settings > Crew.`,
+      };
+    default:
+      return assertNever(reason);
   }
-  if (reason.kind === 'authentication-unverified') return UNVERIFIED_AUTH_FIX;
-  if (reason.kind === 'installation') {
-    const descriptor = CLI_TOOL_CATALOG[tool];
-    return `Install ${descriptor.displayName} (${descriptor.compatibility.installUrl}), then retry.`;
-  }
-  return undefined;
 }
 
 async function evaluateCli(
@@ -127,29 +271,43 @@ async function evaluateCli(
     admission = admit(evidence);
     warnings.push({
       code: 'readiness_probe_retried',
-      message: `${candidate.runner.tool} reported no session on the first probe and one ${READINESS_RETRY_DELAY_MS}ms later; the seat was admitted on the second.`,
+      message: `${CLI_TOOL_CATALOG[candidate.runner.tool].displayName} reported no sign-in at first and confirmed it on a second check.`,
     });
   }
   if (admission.kind === 'disclosure-required') {
     return {
       kind: 'blocked',
-      check: blockedCheck(candidate.slot, candidate.runner.kind, 'Authentication needs review.'),
-    };
-  }
-  if (admission.kind === 'denied') {
-    // The start gate is the last place a wrong credential is still free. A
-    // generic "review the runner" here sends the user back to a config that
-    // looks correct; readiness already knows which credential is missing. An
-    // unverified denial is policy, not a broken credential, so its fix must
-    // name the escape hatch the policy itself provides.
-    return {
-      kind: 'blocked',
       check: blockedCheck(
         candidate.slot,
         candidate.runner.kind,
-        `Fresh CLI evidence denied admission: ${admission.reason.kind}.`,
-        cliAdmissionFix(admission.reason, candidate.runner.tool, authChannel),
+        'Authentication needs review.',
+        UNVERIFIED_AUTH_FIX,
       ),
+    };
+  }
+  if (admission.kind === 'denied') {
+    const problem = cliAdmissionProblem({
+      reason: admission.reason,
+      tool: candidate.runner.tool,
+      authChannel,
+      compatibility: evidence.compatibility,
+    });
+    return {
+      kind: 'blocked',
+      check: {
+        ...blockedCheck(candidate.slot, candidate.runner.kind, problem.message, problem.fix),
+        nextAction: 'prepare-runner',
+        ...(includes(READINESS_DIAGNOSTIC_STATE_IDS, problem.cause) && {
+          diagnosticState: problem.cause,
+        }),
+        runnerCause: {
+          tool: candidate.runner.tool,
+          cause: problem.cause,
+          ...((admission.reason.kind === 'authentication' ||
+            admission.reason.kind === 'authentication-unverified') && { authChannel }),
+          seats: [formatSlotLabel(candidate.slot)],
+        },
+      },
     };
   }
   // The invocation gate binds no installed version yet, so an explicit method
@@ -193,7 +351,7 @@ async function evaluateCli(
       // default is the answer it wanted; only a declared `auto` is left unmet.
       warnings.push({
         code: 'host_model_selection_unreadable',
-        message: `model: auto — ${candidate.runner.tool} has no readable model selection; the tool's own default applies.`,
+        message: `model: auto — ${CLI_TOOL_CATALOG[candidate.runner.tool].displayName} has no readable model selection; the tool's own default applies.`,
       });
     }
   }

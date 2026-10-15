@@ -133,9 +133,6 @@ export function makePlanner(overrides?: Partial<Planner>): Planner {
   const task = makeTask();
   const usage = { inputTokens: 100, outputTokens: 50 };
   return {
-    escalateFull: vi
-      .fn()
-      .mockResolvedValue({ success: false, output: '', code: null, usage: null }),
     isAvailable: vi.fn().mockResolvedValue(true),
     getVersion: vi.fn().mockResolvedValue('1.0'),
     review: vi.fn().mockResolvedValue({ text: '### Verdict\npass\n', usage: null }),

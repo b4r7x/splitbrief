@@ -152,7 +152,7 @@ describe('collectReadiness runner availability wiring', () => {
       seatDisplayName: () => 'GPT-6-Luna',
     });
     const summaries = flattenReadinessChecks(report.sections).map((check) => check.summary);
-    expect(summaries).toContain('Planner OpenAI Codex CLI · GPT-6-Luna configured.');
+    expect(summaries).toContain('PLAN OpenAI Codex CLI · GPT-6-Luna configured.');
     expect(summaries).toContain('BUILD OpenAI Codex CLI · GPT-6-Luna configured.');
     expect(summaries.join('\n')).not.toContain('GPT-6 Luna');
   });

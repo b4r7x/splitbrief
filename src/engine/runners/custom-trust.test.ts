@@ -8,10 +8,13 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { CustomCommand } from '../../core/config/custom-commands.js';
 import type { CliExecutableReceipt } from '../../core/discovery/detection.js';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
+import { canonicalJSON } from '../../utils/canonical-json.js';
+import { sha256Hex } from '../../utils/sha256.js';
+import { prepareCustomRunnerAdmission } from './custom-admission.js';
 import { buildCustomRunnerDisclosure } from './custom-runner-disclosure.js';
 import {
   customRunnerSecurityPosture,
@@ -241,6 +244,72 @@ describe('custom runner trust receipts', () => {
       });
       expect(lookup.kind).not.toBe('match');
     }
+  });
+
+  it('keeps an existing direct planner receipt valid for a headless start', async () => {
+    const projectDir = createTempDir('custom-trust-old-planner-posture-project');
+    const stateDir = createTempDir('custom-trust-old-planner-posture-state');
+    directories.push(projectDir, stateDir);
+    const configuredRunner = runner(command({ contract: 'direct' }));
+    const posture = customRunnerSecurityPosture('planner', 'direct');
+    const options = {
+      projectDir,
+      stateDir,
+      runner: configuredRunner,
+      posture,
+      allowRepoRunners: false,
+      phase: 'planning' as const,
+    };
+    const scope = await resolveCustomRunnerAdmissionScope(options);
+    if (scope === null) throw new Error('Custom runner admission scope did not resolve');
+    const oldDigest = `sha256:${sha256Hex(
+      canonicalJSON({
+        command: configuredRunner.command,
+        posture: {
+          role: 'planner',
+          source: 'configured',
+          cwd: 'disposable-stage',
+          stage: 'filtered-disposable-stage',
+          environmentAccess: 'declared-references-only',
+          filesystem: 'host-user-access',
+          network: 'host-network-access',
+          result: 'reviewed-declared-artifact-or-workspace-diff-only',
+        },
+      }),
+    )}`;
+    const trustPath = resolveCustomRunnerTrustFile(stateDir);
+    const previousReceipt = JSON.stringify({
+      version: 1,
+      receipts: [
+        {
+          version: 1,
+          ...scope,
+          definitionDigest: oldDigest,
+          executable: await executable(projectDir),
+          trustedAt: 123,
+        },
+      ],
+    });
+    writeFileSync(trustPath, previousReceipt, { mode: 0o600 });
+
+    await expect(readCustomRunnerTrust(options)).resolves.toMatchObject({
+      kind: 'match',
+      receipt: { definitionDigest: oldDigest },
+    });
+    const onTieredApproval = vi.fn();
+    await expect(
+      prepareCustomRunnerAdmission({
+        ...options,
+        interaction: 'headless',
+        onTieredApproval,
+      }),
+    ).resolves.toMatchObject({
+      kind: 'admitted',
+      invocation: { authorization: 'receipt' },
+      trustPersisted: false,
+    });
+    expect(onTieredApproval).not.toHaveBeenCalled();
+    expect(readFileSync(trustPath, 'utf8')).toBe(previousReceipt);
   });
 
   itUnix('binds trust to the canonical project identity', async () => {

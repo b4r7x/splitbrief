@@ -179,11 +179,8 @@ describe.runIf(process.platform !== 'win32')('Antigravity session authentication
 
     expect(auth).toBe('unknown');
     expect(catalog).toEqual({ kind: 'unsupported' });
-    expect(cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' })).toContain(
-      'credential on Linux',
-    );
-    expect(cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' })).toContain(
-      'signing in again cannot enable it',
+    expect(cliAuthRemediation({ tool: 'antigravity', authChannel: 'session' })).toBe(
+      'Google Antigravity CLI session authentication is not supported on Linux. Choose another tool in Settings > Crew, or use macOS.',
     );
     for (const call of readCalls(log)) {
       expect(call.args).toBe('--version');

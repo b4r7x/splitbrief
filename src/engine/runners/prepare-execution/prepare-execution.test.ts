@@ -24,6 +24,7 @@ import type { probeRunnerAvailability } from '../probe-availability.js';
 import {
   prepareExecution,
   prepareReviewExecution,
+  collectRunnerAdmissionChecks,
   type PrepareExecutionInput,
 } from './prepare-execution.js';
 import type { PreparationPolicy, PrepareExecutionDependencies } from './types.js';
@@ -923,8 +924,218 @@ describe('prepareExecution', () => {
     expect(check).toMatchObject({ severity: 'blocker' });
     // "Review the configured runner" sends the user back to a config that
     // looks right; the gate knows exactly which credential is missing.
-    expect(check?.fix).toContain('No codex session credential');
-    expect(check?.fix).toContain('Sign in to codex');
+    expect(check?.fix).toBe(
+      'SPLITBRIEF looks for the OpenAI Codex CLI session in its session files. Sign in to OpenAI Codex CLI, then run `splitbrief doctor` again.',
+    );
+  });
+
+  it.each([
+    {
+      label: 'incompatible version',
+      evidence: {
+        compatibility: { kind: 'incompatible', installedVersion: '0.1.0', testedVersion: '9.8.7' },
+      },
+      remedy:
+        'Install the tested OpenAI Codex CLI version (9.8.7), then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'unknown version',
+      evidence: {
+        compatibility: { kind: 'unknown', installedVersion: null, testedVersion: '9.8.7' },
+      },
+      remedy:
+        'Verify OpenAI Codex CLI against tested version 9.8.7, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'untrusted executable',
+      evidence: { executable: { kind: 'untrusted' } },
+      remedy:
+        'Install OpenAI Codex CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'changed executable',
+      evidence: { executable: { kind: 'identity-drifted' } },
+      remedy:
+        'Install OpenAI Codex CLI outside the project. Put its absolute directory first on PATH, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'missing executable',
+      evidence: { executable: { kind: 'missing' } },
+      remedy: 'Install OpenAI Codex CLI, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'missing installation',
+      evidence: { installation: 'missing' },
+      remedy: 'Install OpenAI Codex CLI, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'unknown installation',
+      evidence: { installation: 'unknown' },
+      remedy:
+        'Check that OpenAI Codex CLI is installed and on PATH, then run `splitbrief doctor` again.',
+    },
+    {
+      label: 'disabled tool',
+      evidence: { runner: { id: 'codex', kind: 'cli', locality: 'local', enabled: 'disabled' } },
+      remedy: 'Enable OpenAI Codex CLI before selecting it as a runner.',
+    },
+  ] as const)('supplies the specific remedy for $label', async ({ evidence, remedy }) => {
+    const checks = await collectRunnerAdmissionChecks({
+      projectDir: projectDir(),
+      config: makeConfig({ planner: { kind: 'cli', tool: 'codex' } }),
+      purpose: 'spec',
+      interaction: 'headless',
+      deps: {
+        detectRunnerEvidence: async ({ context }) => ({
+          ...freshCliEvidence(context),
+          ...evidence,
+        }),
+      },
+    });
+    expect(checks).toHaveLength(1);
+    expect(checks[0]?.fix).toBe(remedy);
+  });
+
+  it('reports an unknown version shared by three seats once', async () => {
+    const seat = { kind: 'cli', tool: 'codex' } as const;
+    const checks = await collectRunnerAdmissionChecks({
+      projectDir: projectDir(),
+      config: makeConfig({ planner: seat, implementer: seat, reviewer: seat }),
+      interaction: 'headless',
+      deps: {
+        detectRunnerEvidence: async ({ context }) => ({
+          ...freshCliEvidence(context),
+          compatibility: { kind: 'unknown', installedVersion: null, testedVersion: '9.8.7' },
+        }),
+      },
+    });
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({
+      summary: 'PLAN, BUILD and REVIEW cannot start with OpenAI Codex CLI.',
+      details: ['OpenAI Codex CLI version could not be confirmed as compatible.'],
+      runnerCause: { tool: 'codex', cause: 'unknown-version' },
+    });
+    expect(checks[0]?.diagnosticState).toBeUndefined();
+    expect(checks[0]?.runnerCause?.authChannel).toBeUndefined();
+  });
+
+  it.each([
+    [
+      'missing',
+      'unauthenticated',
+      'unauthenticated',
+      'OpenAI Codex CLI is not signed in.',
+      'Sign in to OpenAI Codex CLI',
+    ],
+    [
+      'invalid',
+      'unauthenticated',
+      'unauthenticated',
+      'OpenAI Codex CLI credentials are invalid.',
+      'Sign in to OpenAI Codex CLI',
+    ],
+    [
+      'timeout',
+      'auth-timeout',
+      'auth-timeout',
+      'OpenAI Codex CLI sign-in check timed out.',
+      'Check the network connection',
+    ],
+    [
+      'offline',
+      'auth-offline',
+      'auth-offline',
+      'OpenAI Codex CLI sign-in check could not connect.',
+      'Check the network connection',
+    ],
+    [
+      'malformed',
+      'auth-malformed',
+      'auth-malformed',
+      'SPLITBRIEF could not read the OpenAI Codex CLI sign-in check result.',
+      'Run `splitbrief doctor` again.',
+    ],
+    [
+      'policy-denied',
+      'auth-policy-denied',
+      'auth-policy-denied',
+      'OpenAI Codex CLI sign-in check was denied by a policy.',
+      'Check the account and access policy',
+    ],
+    [
+      'not-selected',
+      undefined,
+      'auth-not-selected',
+      'OpenAI Codex CLI has no authentication channel selected.',
+      'Select an authentication channel',
+    ],
+    [
+      'cancelled',
+      undefined,
+      'auth-check-cancelled',
+      'OpenAI Codex CLI sign-in check was cancelled.',
+      'Run `splitbrief doctor` again.',
+    ],
+    [
+      'not-run',
+      undefined,
+      'auth-check-not-run',
+      'OpenAI Codex CLI sign-in check did not run.',
+      'Run `splitbrief doctor` again.',
+    ],
+  ] as const)(
+    'reports the authentication fact %s with its recovery',
+    async (auth, state, cause, message, remedy) => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      const pending = collectRunnerAdmissionChecks({
+        projectDir: projectDir(),
+        config: makeConfig({ planner: { kind: 'cli', tool: 'codex', authChannel: 'session' } }),
+        purpose: 'spec',
+        interaction: 'headless',
+        deps: {
+          detectRunnerEvidence: async ({ context }) => ({ ...freshCliEvidence(context), auth }),
+        },
+      });
+      await vi.advanceTimersByTimeAsync(1_500);
+      const checks = await pending;
+      expect(checks).toHaveLength(1);
+      expect(checks[0]).toMatchObject({
+        details: [message],
+        fix: expect.stringContaining(remedy),
+      });
+      expect(checks[0]?.diagnosticState).toBe(state);
+      expect(checks[0]?.runnerCause).toMatchObject({ cause, authChannel: 'session' });
+      if (auth !== 'missing' && auth !== 'invalid') {
+        expect(checks[0]?.fix).not.toContain('Sign in to');
+      }
+    },
+  );
+
+  it('keeps an unknown session separate from a policy denial on another seat', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const seat = { kind: 'cli', tool: 'codex', authChannel: 'session' } as const;
+    const pending = collectRunnerAdmissionChecks({
+      projectDir: projectDir(),
+      config: makeConfig({ planner: seat, implementer: seat }),
+      interaction: 'headless',
+      deps: {
+        detectRunnerEvidence: async ({ context }) => ({
+          ...freshCliEvidence(context),
+          auth: context.role === 'implementer' ? 'policy-denied' : 'unknown',
+        }),
+      },
+    });
+    await vi.advanceTimersByTimeAsync(1_500);
+    const checks = await pending;
+    expect(checks).toHaveLength(2);
+    expect(checks.find((check) => check.diagnosticState === 'auth-unknown')?.fix).toContain(
+      '--allow-unverified-auth',
+    );
+    expect(checks.find((check) => check.diagnosticState === 'auth-policy-denied')).toMatchObject({
+      details: ['OpenAI Codex CLI sign-in check was denied by a policy.'],
+      fix: 'Check the account and access policy, then run `splitbrief doctor` again.',
+      runnerCause: { seats: ['BUILD'] },
+    });
   });
 
   it('names --allow-unverified-auth when headless admission fail-closes on unverified auth', async () => {
@@ -960,9 +1171,7 @@ describe('prepareExecution', () => {
     const check = outcome.report.sections
       .find((section) => section.id === 'runners')
       ?.checks.find((candidate) => candidate.id === 'runners.preparation.planner');
-    expect(check?.details).toContain(
-      'Fresh CLI evidence denied admission: authentication-unverified.',
-    );
+    expect(check?.details).toContain('OpenAI Codex CLI sign-in status is unknown.');
     // The denial is policy, not a broken credential; the fix must name the
     // escape hatch instead of sending the user back to a config that is fine.
     expect(check?.fix).toContain('--allow-unverified-auth');
@@ -1128,7 +1337,7 @@ describe('prepareExecution', () => {
     expect(reviewerChecks(blocked.report)).toEqual([
       expect.objectContaining({
         severity: 'blocker',
-        summary: expect.stringContaining('Reviewer'),
+        summary: expect.stringContaining('REVIEW'),
       }),
     ]);
   });

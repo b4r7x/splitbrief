@@ -49,14 +49,14 @@ describe('requireCompletedCall', () => {
     const result = makeRunnerCallResult({
       status: 'completed',
       text: '\n',
-      role: 'escalation',
+      role: 'review',
       warnings: [stderrWarning(AGY_LIMIT)],
     });
 
     expect(() => requireCompletedCall(result)).toThrow(
       expect.objectContaining({
         kind: 'runner-call-failed',
-        message: 'Planner escalation call failed',
+        message: 'Planner review call failed',
         data: expect.objectContaining({
           status: 'failed',
           error: { code: 'usage-limit', message: AGY_LIMIT },

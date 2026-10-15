@@ -230,7 +230,7 @@ describe('a steer that resumes a run is recorded exactly once', { timeout: 90_00
           }),
         });
       },
-      invokeEscalate: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
+      invokeOneShot: async () => makeRunnerCallResult({ status: 'completed', text: '' }),
       isAvailable: async () => true,
       capabilities: makePlanner().capabilities,
     });

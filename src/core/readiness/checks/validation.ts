@@ -1,6 +1,7 @@
 import { parseShellCommand } from '../../../utils/parse-shell-command.js';
 import { shellQuoteArg } from '../../../utils/shell-quote.js';
 import { resolveEndChecks } from '../../config/runtime/resolve.js';
+import { CREW_SEAT_LABELS } from '../../crew/identity.js';
 import { readManifestCommands } from '../../validation/manifest-commands.js';
 import { detectStack } from '../../validation/stacks/registry.js';
 import { resolveTestCommand, type ResolvedCommand } from '../../validation/stage-command.js';
@@ -41,9 +42,14 @@ export function buildValidationChecks(
       summary: `End-of-run checks: ${endChecks ? 'on' : 'off'}.`,
       details: [
         endChecks
-          ? 'Before each review the reviewer chooses the commands that verify the change, and SPLITBRIEF runs them.'
+          ? `Before each review, ${CREW_SEAT_LABELS.review} chooses the commands that verify the change, and SPLITBRIEF runs them.`
           : 'SPLITBRIEF runs no command before a review; only the plan checks run.',
-        `Test check command: ${testCommand ?? 'none (unrecognised stack)'}`,
+        ...(testCommand === null
+          ? [
+              'No test command found.',
+              'Set validation.test_command in .splitbrief/config.yaml, or set Test command in Settings.',
+            ]
+          : [`Test check command: ${testCommand}`]),
       ],
       metadata: { endChecks, testCommand },
     },

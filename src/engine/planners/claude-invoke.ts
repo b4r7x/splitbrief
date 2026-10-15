@@ -25,7 +25,6 @@ import { isSessionExpiredError, sessionResumeExpiredError } from '../session-exp
 export async function invokeClaudePlanner(opts: {
   prompt: string;
   projectDir: string;
-  mode: 'plan' | 'escalate';
   sessionId: string | null;
   callbacks: RunnerAttemptCallbacks & {
     steering?: SteeringPort | undefined;

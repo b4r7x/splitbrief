@@ -33,7 +33,6 @@ const planInput = {
   model: undefined,
   projectDir: '/p',
   configuredArgs: [],
-  mode: 'plan',
   sessionId: null,
   effort: undefined,
 } as const;
@@ -50,7 +49,7 @@ function seat(
     isAvailable: async () => true,
     invokePlan: async ({ prompt, schema: s }) =>
       respond({ prompt, ...(s !== undefined && { schema: s }) }),
-    invokeEscalate: async () => {
+    invokeOneShot: async () => {
       throw new Error('a planner typed call runs on its planning thread');
     },
   });

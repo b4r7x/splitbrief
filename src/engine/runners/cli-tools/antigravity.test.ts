@@ -48,7 +48,6 @@ function plannerArgs(
     model: options.model,
     projectDir: '/project',
     configuredArgs: options.configuredArgs ?? [],
-    mode: 'plan',
     sessionId: null,
     effort: options.effort,
     schema: options.schema,

@@ -138,8 +138,3 @@ export function validateTaskPath(projectDir: string, filePath: string): string {
   }
   return resolve(projectDir, filePath);
 }
-
-export function writeProjectFile(projectDir: string, relPath: string, content: string): void {
-  validateTaskPath(projectDir, relPath);
-  confinedWriteFile(projectDir, relPath, content);
-}

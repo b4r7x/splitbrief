@@ -243,7 +243,7 @@ export function createApiPlanner(config: Config, seat: ApiSeatRole = 'planner'):
 
   return createPlannerBase({
     invokePlan: invoke,
-    invokeEscalate: invoke,
+    invokeOneShot: invoke,
     backendKind: 'api',
     runnerName: provider,
     model,

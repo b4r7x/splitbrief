@@ -7,7 +7,6 @@ import { error } from '../../../utils/error.js';
 
 export interface BuildArgsOpts {
   projectDir: string;
-  mode: 'plan' | 'escalate';
   sessionId?: string | null;
   model?: string | undefined;
   effort?: EffortLevel | undefined;
@@ -31,7 +30,6 @@ export function buildClaudeArgs(opts: BuildArgsOpts): string[] {
       model: opts.model,
       projectDir: opts.projectDir,
       configuredArgs,
-      mode: opts.mode,
       sessionId: opts.sessionId ?? null,
       effort: opts.effort,
       skillRoots: opts.skillRoots,

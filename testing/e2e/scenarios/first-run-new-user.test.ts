@@ -429,25 +429,27 @@ describe('e2e: first run of a new user', { timeout: 240_000 }, () => {
     const doctor = await doctorJson(target);
     expect(doctor.run.exitCode, `${doctor.run.stdout}\n${doctor.run.stderr}`).toBe(1);
     expect(doctor.report.status).toBe('blocked');
-    expect(doctor.check('runners.cli.claude-code.readiness')).toMatchObject({
+    expect(doctor.check('runners.cli.claude-code.readiness')).toBeUndefined();
+    expect(doctor.check('runners.preparation.planner')).toMatchObject({
       severity: 'blocker',
-      summary: 'Claude Code CLI readiness is unavailable.',
+      summary: 'PLAN cannot start with Claude Code CLI.',
       stateId: 'missing-binary',
-      remediation: 'Install claude-code, then run runner readiness again.',
+      remediation: 'Install Claude Code CLI, then run `splitbrief doctor` again.',
     });
-    expect(doctor.check('runners.planner.configured')?.summary).toContain(
-      'Planner Claude Code CLI',
-    );
+    expect(doctor.check('runners.planner.configured')?.summary).toContain('PLAN Claude Code CLI');
     expect(doctor.check('runners.availability.implementer.default')?.severity).toBe('ok');
 
     const human = await splitbrief(target, ['doctor']);
     expect(human.exitCode, `${human.stdout}\n${human.stderr}`).toBe(1);
     expect(human.stdout).toContain('Run readiness: blocked');
-    expect(human.stdout).toContain(
-      'blocker runners.cli.claude-code.readiness: Claude Code CLI readiness is unavailable.',
-    );
-    expect(human.stdout).toContain('Fix: Install claude-code, then run runner readiness again.');
-    expect(human.stdout).toContain('Planner Claude Code CLI');
+    expect(human.stdout).toContain('blocker  PLAN cannot start with Claude Code CLI.');
+    expect(human.stdout).toContain('Claude Code CLI is not installed.');
+    expect(human.stdout).not.toContain('readiness is unavailable');
+    expect(
+      human.stdout.split('Fix: Install Claude Code CLI, then run `splitbrief doctor` again.'),
+    ).toHaveLength(2);
+    expect(human.stdout).toContain('PLAN Claude Code CLI');
+    expect(human.stdout).not.toMatch(/runners\.|Command options:|00000000-0000|PLAN.*take over/);
     expect(existsSync(sessionsRoot(target.projectDir))).toBe(false);
   });
 });

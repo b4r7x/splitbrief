@@ -612,7 +612,6 @@ describe('runSingleTask — signed-out runner', () => {
     expect(result.pendingRecovery?.availableActions).toContain('retry-same-worker');
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(planner.escalateFull).not.toHaveBeenCalled();
 
     const errorEvent = events.find(
       (event) => event.type === 'error' && event.message.includes('codex login'),
@@ -694,9 +693,8 @@ describe('runSingleTask — signed-out runner', () => {
       reason: 'runner-unauthenticated',
       taskId: 'T001',
     });
-    // One attempt proved the login is dead; further retries and planner tiers never ran.
+    // The failed login stops further retries.
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(planner.escalateFull).not.toHaveBeenCalled();
     expect(
       events.find((event) => event.type === 'error' && event.message.includes('codex login')),
     ).toBeDefined();
@@ -786,7 +784,6 @@ describe('runSingleTask — usage-limited runner', () => {
     ]);
 
     expect(implementer.retry).not.toHaveBeenCalled();
-    expect(planner.escalateFull).not.toHaveBeenCalled();
 
     expect(events.find((event) => event.type === 'recovery_prompted')).toMatchObject({
       reason: 'runner-usage-limit',
@@ -865,9 +862,8 @@ describe('runSingleTask — usage-limited runner', () => {
       reason: 'runner-usage-limit',
       taskId: 'T001',
     });
-    // One attempt proved the quota is gone; further retries and planner tiers never ran.
+    // The exhausted quota stops further retries.
     expect(implementer.retry).toHaveBeenCalledTimes(1);
-    expect(planner.escalateFull).not.toHaveBeenCalled();
     expectResetNamedOnce(events);
     // The failing attempt's changes were rolled back like any exhausted task.
     expect(readFileSync(join(projectDir, 'src/main.ts'), 'utf-8')).toBe('export const main = 0;\n');

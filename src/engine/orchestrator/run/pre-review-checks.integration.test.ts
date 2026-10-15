@@ -303,7 +303,6 @@ describe('pre-review checks', () => {
       expect(result.state.pendingRecovery?.message).toContain('K-command');
       expect(result.state.pendingRecovery?.message).toContain('K-render');
       expect(planner.typedCall).not.toHaveBeenCalled();
-      expect(planner.escalateFull).not.toHaveBeenCalled();
       expect(result.state.tasks).toEqual(state.tasks);
     },
   );
