@@ -1,5 +1,15 @@
 import { spawn } from 'node:child_process';
-import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
@@ -8,10 +18,14 @@ import {
   sessionDir,
   SNAPSHOT_BASELINE_ID,
 } from '../../../core/paths.js';
-import type { SnapshotManifest } from '../../../core/schemas/snapshot.js';
+import type { SnapshotFileEntry, SnapshotManifest } from '../../../core/schemas/snapshot.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { gitBinary } from '../../../lib/git/client.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
+import {
+  assertExistingPathConfined,
+  assertPathConfined,
+  assertWritablePathConfined,
+} from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { resolveValidatedBlobPath } from '../../snapshots/blob-resolver.js';
@@ -19,30 +33,62 @@ import { collectTrackedFiles, hashFile } from '../../snapshots/files.js';
 import { readManifest } from '../../snapshots/manifest.js';
 import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
+import { listWorkspaceEntries } from '../isolation/entry-snapshot.js';
 
 type WorkspaceBase = { path: string; base: { snapshotId: string } };
 
+type PatchEntry =
+  | { kind: 'absent' }
+  | { kind: 'file'; bytes: Buffer; sha256: string; mode: number | undefined }
+  | { kind: 'symlink'; target: string };
+
 type ChangedPath = {
   path: string;
-  baseBytes: Buffer | null;
-  oursBytes: Buffer | null;
-  mode: number;
+  base: PatchEntry;
+  ours: PatchEntry;
 };
 
-async function readBaseBytes(input: {
+type ManifestIndex = {
+  fileHashes: SnapshotManifest['fileHashes'];
+  entries: Map<string, SnapshotFileEntry>;
+  /** Undefined for a manifest written before symlinks and base modes were recorded. */
+  symlinks: Map<string, string> | undefined;
+};
+
+function indexManifest(manifest: SnapshotManifest): ManifestIndex {
+  return {
+    fileHashes: manifest.fileHashes,
+    entries: new Map(manifest.fileEntries.map((entry) => [entry.path, entry])),
+    symlinks:
+      manifest.symlinks === undefined
+        ? undefined
+        : new Map(manifest.symlinks.map((entry) => [entry.path, entry.target])),
+  };
+}
+
+async function readBaseEntry(input: {
   ref: SessionRef;
   snapshotId: string;
   path: string;
-  baseHash: string;
-  base: SnapshotManifest;
-  baseline: SnapshotManifest;
-}): Promise<Buffer> {
-  const { ref, snapshotId, path, baseHash, base, baseline } = input;
-  const entry = base.fileEntries.find((candidate) => candidate.path === path);
+  base: ManifestIndex;
+  baseline: ManifestIndex;
+  ours: PatchEntry;
+}): Promise<PatchEntry> {
+  const { ref, snapshotId, path, base, baseline, ours } = input;
+  const target = base.symlinks?.get(path);
+  if (target !== undefined) return { kind: 'symlink', target };
+  const baseHash = Object.hasOwn(base.fileHashes, path) ? base.fileHashes[path] : undefined;
+  if (baseHash === undefined) return { kind: 'absent' };
+  const entry = base.entries.get(path);
   const inherited = entry === undefined && baseline.fileHashes[path] === baseHash;
-  const resolvedEntry = inherited
-    ? baseline.fileEntries.find((candidate) => candidate.path === path)
-    : entry;
+  const resolvedEntry = inherited ? baseline.entries.get(path) : entry;
+  const mode = base.symlinks === undefined ? undefined : resolvedEntry?.mode;
+  if (
+    ours.kind === 'file' &&
+    ours.sha256 === baseHash &&
+    (mode === undefined || ours.mode === mode)
+  )
+    return ours;
   const blobPath = await resolveValidatedBlobPath({
     projectDir: ref.projectDir,
     sessionId: ref.sessionId,
@@ -57,7 +103,12 @@ async function readBaseBytes(input: {
       { path },
     );
   }
-  return readFile(blobPath);
+  return {
+    kind: 'file',
+    bytes: await readFile(blobPath),
+    sha256: baseHash,
+    mode,
+  };
 }
 
 function runGitDiff(root: string): Promise<string> {
@@ -119,60 +170,88 @@ export async function writeRunPatch(
   workspace: WorkspaceBase,
 ): Promise<string | null> {
   const { projectDir, sessionId } = ref;
-  const base = await readManifest(projectDir, sessionId, workspace.base.snapshotId);
-  const baseline = await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID);
-  const tracked = await collectTrackedFiles(workspace.path, { ignoreProjectDir: projectDir });
-  const paths = [...new Set([...Object.keys(base.fileHashes), ...tracked])]
+  const base = indexManifest(await readManifest(projectDir, sessionId, workspace.base.snapshotId));
+  const baseline = indexManifest(await readManifest(projectDir, sessionId, SNAPSHOT_BASELINE_ID));
+  const tracked = new Set(
+    base.symlinks === undefined
+      ? await collectTrackedFiles(workspace.path, { ignoreProjectDir: projectDir })
+      : await listWorkspaceEntries(workspace.path, projectDir),
+  );
+  const paths = [
+    ...new Set([...Object.keys(base.fileHashes), ...(base.symlinks?.keys() ?? []), ...tracked]),
+  ]
     .filter((path) => !isInternalGitStatusPath(path))
     .sort();
 
   const changes: ChangedPath[] = [];
   for (const path of paths) {
     assertPathConfined(path, workspace.path);
-    const baseHash = base.fileHashes[path];
-    const oursHash = await hashFile(join(workspace.path, path));
-    if (oursHash === null) {
-      const entry = await lstat(join(workspace.path, path)).catch((err: unknown) => {
-        if (isENOENT(err)) return null;
-        throw err;
-      });
-      if (entry !== null) {
+    const parents: string[] = [];
+    for (let parent = dirname(path); parent !== '.'; parent = dirname(parent)) {
+      parents.push(parent);
+    }
+    const stat =
+      base.symlinks !== undefined && parents.some((parent) => tracked.has(parent))
+        ? null
+        : await lstat(join(workspace.path, path)).catch((err: unknown) => {
+            if (isENOENT(err)) return null;
+            throw err;
+          });
+    if (base.symlinks === undefined) {
+      const hash = await hashFile(join(workspace.path, path));
+      if (hash === null && stat !== null) {
         throw error(
           'run-patch-workspace-unreadable',
           `Cannot write the run patch: workspace contents for ${path} could not be read.`,
           { path },
         );
       }
+      if (hash === base.fileHashes[path]) continue;
     }
-    const baseAbsent = baseHash === undefined;
-    const oursAbsent = oursHash === null;
-    if ((baseAbsent && oursAbsent) || (!baseAbsent && !oursAbsent && baseHash === oursHash)) {
+    let ours: PatchEntry;
+    if (stat === null || stat.isDirectory()) {
+      ours = { kind: 'absent' };
+    } else if (stat.isSymbolicLink() && base.symlinks !== undefined) {
+      assertExistingPathConfined(dirname(path), workspace.path);
+      ours = { kind: 'symlink', target: await readlink(join(workspace.path, path)) };
+    } else {
+      ours = await readConfinedEntry(workspace.path, path);
+    }
+    const before = await readBaseEntry({
+      ref,
+      snapshotId: workspace.base.snapshotId,
+      path,
+      base,
+      baseline,
+      ours,
+    });
+    if (before.kind === 'symlink' || ours.kind === 'symlink') {
+      if (before.kind === 'symlink' && ours.kind === 'symlink' && before.target === ours.target)
+        continue;
+    } else if (
+      (before.kind === 'absent' && ours.kind === 'absent') ||
+      (before.kind === 'file' &&
+        ours.kind === 'file' &&
+        before.sha256 === ours.sha256 &&
+        (before.mode === undefined || before.mode === ours.mode))
+    ) {
       continue;
     }
 
-    const baseBytes = baseAbsent
-      ? null
-      : await readBaseBytes({
-          ref,
-          snapshotId: workspace.base.snapshotId,
-          path,
-          baseHash,
-          base,
-          baseline,
-        });
-    const ours = await readConfinedEntry(workspace.path, path);
-    let oursBytes: Buffer | null = ours.kind === 'file' ? ours.bytes : null;
-    const mode = ours.kind === 'file' ? ours.mode : 0o644;
-
-    if (path === '.gitignore') {
-      const oursText = oursBytes === null ? null : oursBytes.toString('utf8');
-      const baseText = baseBytes === null ? null : baseBytes.toString('utf8');
+    if (path === '.gitignore' && before.kind !== 'symlink' && ours.kind !== 'symlink') {
+      const oursText = ours.kind === 'file' ? ours.bytes.toString('utf8') : null;
+      const baseText = before.kind === 'file' ? before.bytes.toString('utf8') : null;
       const strippedOurs = stripGitignoreBookkeeping(oursText, baseText);
-      if (strippedOurs === stripGitignoreBookkeeping(baseText)) continue;
-      if (oursBytes !== null) oursBytes = Buffer.from(strippedOurs, 'utf8');
+      const sameMode =
+        before.kind === 'absent' ||
+        ours.kind === 'absent' ||
+        before.mode === undefined ||
+        before.mode === ours.mode;
+      if (strippedOurs === stripGitignoreBookkeeping(baseText) && sameMode) continue;
+      if (ours.kind === 'file') ours = { ...ours, bytes: Buffer.from(strippedOurs, 'utf8') };
     }
 
-    changes.push({ path, baseBytes, oursBytes, mode });
+    changes.push({ path, base: before, ours });
   }
 
   const patchPath = join(sessionDir(projectDir, sessionId), RUN_PATCH_FILE);
@@ -186,18 +265,35 @@ export async function writeRunPatch(
     await mkdir(join(root, 'a'));
     await mkdir(join(root, 'b'));
     for (const change of changes) {
-      for (const [side, bytes] of [
-        ['a', change.baseBytes],
-        ['b', change.oursBytes],
+      for (const [side, entry] of [
+        ['a', change.base],
+        ['b', change.ours],
       ] as const) {
-        if (bytes === null) continue;
-        assertPathConfined(change.path, join(root, side));
+        if (entry.kind === 'absent') continue;
+        assertWritablePathConfined(change.path, join(root, side));
         const target = join(root, side, change.path);
         await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, bytes, { mode: change.mode });
+        if (entry.kind === 'symlink') {
+          await symlink(entry.target, target);
+        } else {
+          // Without a recorded base mode, both sides use the workspace mode for content diffs.
+          const mode =
+            (change.base.kind === 'file' &&
+            change.base.mode === undefined &&
+            change.ours.kind === 'file'
+              ? change.ours.mode
+              : entry.mode) ?? 0o644;
+          await writeFile(target, entry.bytes, { mode });
+          await chmod(target, mode);
+        }
       }
     }
-    await writeFile(patchPath, await runGitDiff(root), { mode: 0o600 });
+    const patch = await runGitDiff(root);
+    if (patch === '') {
+      await rm(patchPath, { force: true });
+      return null;
+    }
+    await writeFile(patchPath, patch, { mode: 0o600 });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

@@ -36,6 +36,18 @@ function makeManifest(id: string): SnapshotManifest {
 }
 
 describe('writeManifest / readManifest', () => {
+  it('loads an older manifest without file modes or symlink targets', async () => {
+    const manifest: SnapshotManifest = {
+      ...makeManifest('old-snapshot'),
+      fileHashes: { 'file.txt': 'hash' },
+      fileEntries: [{ path: 'file.txt', hash: 'hash', encodedName: 'encoded' }],
+      trackedFileCount: 1,
+    };
+    await writeManifest(tmp, 'sess-01', manifest);
+
+    expect(await readManifest(tmp, 'sess-01', manifest.id)).toEqual(manifest);
+  });
+
   it('creates dir and file; readManifest parses back to the same shape', async () => {
     const manifest = makeManifest('snap-01');
     await writeManifest(tmp, 'sess-01', manifest);

@@ -1,7 +1,18 @@
-import { chmod, mkdtemp, readFile, rm, writeFile, mkdir, readdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import fs, {
+  chmod,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+  mkdir,
+  readdir,
+  symlink,
+} from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EventBus, EngineEvent } from '../events/types.js';
 import { snapshotManifestPath } from '../../core/paths.js';
 import { createSnapshot } from './create.js';
@@ -13,6 +24,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  syncBuiltinESMExports();
   await rm(tmp, { recursive: true, force: true });
 });
 
@@ -165,6 +178,26 @@ describe('createSnapshot — first call (baseline)', () => {
     }
   });
 
+  it('continues when a source disappears after hashing, tracking its hash without a blob', async () => {
+    const source = join(tmp, 'removed.ts');
+    await writeFile(source, 'before removal');
+    await writeFile(join(tmp, 'retained.ts'), 'kept');
+    const originalStat = fs.stat;
+    vi.spyOn(fs, 'stat').mockImplementation(async (path, options) => {
+      if (String(path) === source) await rm(source);
+      return originalStat(path, options);
+    });
+    syncBuiltinESMExports();
+
+    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    expect(result.manifest.fileHashes['removed.ts']).toBe(
+      createHash('sha256').update('before removal').digest('hex'),
+    );
+    expect(result.manifest.fileEntries).toEqual([expect.objectContaining({ path: 'retained.ts' })]);
+    expect(await readdir(join(result.snapshotDir, 'files'))).toHaveLength(1);
+  });
+
   it('emits snapshot_created when mock bus provided, with correct fileCount', async () => {
     await writeFile(join(tmp, 'a.ts'), 'a');
     await writeFile(join(tmp, 'b.ts'), 'b');
@@ -189,6 +222,57 @@ describe('createSnapshot — first call (baseline)', () => {
 });
 
 describe('createSnapshot — second call (delta snapshot)', () => {
+  it('records a mode-only change even when the bytes match the baseline', async () => {
+    await writeFile(join(tmp, 'script.sh'), 'echo hello\n');
+    await chmod(join(tmp, 'script.sh'), 0o644);
+    await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+    await chmod(join(tmp, 'script.sh'), 0o755);
+
+    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    expect(result.manifest.fileEntries).toEqual([
+      expect.objectContaining({ path: 'script.sh', mode: 0o755 }),
+    ]);
+  });
+
+  it('records created, removed and retargeted symlinks without reading their targets', async () => {
+    await symlink('/outside/project', join(tmp, 'removed'));
+    await symlink('missing-before', join(tmp, 'retargeted'));
+    await symlink('.', join(tmp, 'directory-link'));
+    const baseline = await createSnapshot({
+      projectDir: tmp,
+      sessionId: 'sess-01',
+      phase: 'manual',
+    });
+    expect(baseline.manifest).toMatchObject({
+      symlinks: expect.arrayContaining([
+        { path: 'removed', target: '/outside/project' },
+        { path: 'retargeted', target: 'missing-before' },
+        { path: 'directory-link', target: '.' },
+      ]),
+    });
+
+    await rm(join(tmp, 'removed'));
+    await rm(join(tmp, 'retargeted'));
+    await symlink('missing-after', join(tmp, 'retargeted'));
+    await symlink('missing-new', join(tmp, 'created'));
+    const result = await createSnapshot({ projectDir: tmp, sessionId: 'sess-01', phase: 'manual' });
+
+    expect(result.manifest).toMatchObject({
+      symlinks: expect.arrayContaining([
+        { path: 'created', target: 'missing-new' },
+        { path: 'retargeted', target: 'missing-after' },
+        { path: 'directory-link', target: '.' },
+      ]),
+    });
+    expect(result.manifest.symlinks).not.toContainEqual({
+      path: 'removed',
+      target: '/outside/project',
+    });
+    expect(result.manifest.fileEntries).toEqual([]);
+    expect(await readdir(join(result.snapshotDir, 'files'))).toEqual([]);
+  });
+
   it('only stores changed files in fileEntries; unchanged files have no entry', async () => {
     await writeFile(join(tmp, 'unchanged.ts'), 'same content');
     await writeFile(join(tmp, 'changed.ts'), 'original');
