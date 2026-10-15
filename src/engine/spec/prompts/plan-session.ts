@@ -1,6 +1,7 @@
 import type { PlanProposal } from '../../../core/schemas/plan.js';
 import { PROTECTED_PATHS_TEXT } from '../../../core/pipeline-spec/scope.js';
 import { PACKAGE_TEST_COMMAND } from '../../../core/validation/stacks/typescript.js';
+import { FILE_TESTS } from '../../orchestrator/planning/sanitize-discovered-validation.js';
 import type { PlanCheckError } from '../plan-checks.js';
 import { buildPrompt, instructionsSection, skillsSection } from './builder.js';
 import { buildLanguageContextSections, type LanguageContext } from './language-context.js';
@@ -37,13 +38,19 @@ function packageScriptRule(approvesPlan: boolean): string {
     : 'This run approves no plan, so SPLITBRIEF refuses a `cmd` check that runs a package script (`npm run <script>`): a package manager runs only as its bare `test` command.';
 }
 
+function fileTestRule(): string {
+  const forms = Object.keys(FILE_TESTS).map((test) => `\`test ${test} <file>\``);
+  const meanings = Object.values(FILE_TESTS);
+  return `As a \`cmd\` check, ${forms.slice(0, -1).join(', ')} and ${forms.at(-1)} check that a file ${meanings.slice(0, -1).join(', ')} or ${meanings.at(-1)}; use them to check a file mode or a symbolic link instead of a new test file.`;
+}
+
 function planRules(approvesPlan: boolean): string {
   return `- Research the repository read-only. Do not edit, create or delete any file.
 - Do not invoke a native user-question tool (AskUserQuestion or the like). SPLITBRIEF asks the user.
 - Ask questions only when a decision that only the user can make blocks the plan: at most 3 questions per round, at most ${MAX_QUESTION_ROUNDS} rounds. Give every question a non-empty \`default\`, the answer the plan uses when the user just presses Enter. Give \`choices\` when the answer is one of a fixed set, else null; the \`default\` of a question with \`choices\` is one of them.
 - Criteria are the contract. Give each one an id (\`C1\`, \`C2\`, …) and the \`checkIds\` that verify it. Every check id must exist in the run checks or in a task's checks, and every check id is unique. The ids \`V1\`, \`V2\`, … are the reviewer's: never give a check one of them.
 - A check is \`test\` (a test file or pattern), \`cmd\` (a command) or \`render\` (a gallery scenario id). ${packageScriptRule(approvesPlan)} \`npx\` runs only as \`npx --no-install <stack tool>\`.
-- A \`test\` check narrows \`${PACKAGE_TEST_COMMAND}\` to its file (\`${PACKAGE_TEST_COMMAND} -- <file>\`) only when the \`package.json\` test script is one command. A chained script (\`a && b\`) runs whole. To run one test file there, use a \`cmd\` check that runs the project's test runner on the file directly: \`node --test <test file>\`, \`npx --no-install vitest run <test file>\` or \`npx --no-install jest <test file>\`. \`node --check <file>\` checks the syntax of one file.
+- A \`test\` check narrows \`${PACKAGE_TEST_COMMAND}\` to its file (\`${PACKAGE_TEST_COMMAND} -- <file>\`) only when the \`package.json\` test script is one command. A chained script (\`a && b\`) runs whole. To run one test file there, use a \`cmd\` check that runs the project's test runner on the file directly: \`node --test <test file>\`, \`npx --no-install vitest run <test file>\` or \`npx --no-install jest <test file>\`. \`node --check <file>\` checks the syntax of one file. ${fileTestRule()}
 - Task ids are \`T001\`, \`T002\`, … in order. Every task serves at least one criterion, every criterion is served by at least one task, and every task has at least one check.
 - Each task completes one verifiable behaviour, including its tests and the caller changes it needs. Its \`intent\` names the behaviour and its expected result, never only files. Never separate implement, test and caller tasks for one behaviour.
 - Split a behaviour only when its task would not fit the implementer's context, and split it into behaviours that each verify on their own.

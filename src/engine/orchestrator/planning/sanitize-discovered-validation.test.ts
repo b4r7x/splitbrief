@@ -862,6 +862,59 @@ describe('checkCommandRefusal', () => {
     }
   });
 
+  it.each([
+    'test -e README.md',
+    'test -f src/a.js',
+    'test -x src/cli.js',
+    'test -L docs/readme.md',
+  ])('admits the file test %s at every approve level', (command) => {
+    for (const npmScriptsApproved of [true, false]) {
+      expect(checkCommandRefusal(command, { npmScriptsApproved, packageScripts })).toBeNull();
+    }
+  });
+
+  const oneFileTest =
+    'does not name one file test; a plan check runs test only as test -e, -f, -x or -L <file>';
+  it.each([
+    ['test', oneFileTest],
+    ['test -d src', oneFileTest],
+    ['test -h docs/readme.md', oneFileTest],
+    ['test -s src/a.js', oneFileTest],
+    ['test ! -x src/cli.js', oneFileTest],
+    ['test a = b', oneFileTest],
+    ['test -x', oneFileTest],
+    ['test -x src/a.js src/b.js', oneFileTest],
+    ['test -x src/a.js -a -f src/b.js', oneFileTest],
+    ['test "$(readlink docs/readme.md)" = "../README.md" && test -f docs/readme.md', oneFileTest],
+    ['test -x ../a', 'passes a path outside the workspace to test (../a)'],
+    ['test -x /etc/passwd', 'passes a path outside the workspace to test (/etc/passwd)'],
+    ['test -x src/*.js', 'passes an operand to test (src/*.js)'],
+    ['test -x src/', 'passes an operand to test (src/)'],
+    ['test -x -f', 'passes an operand to test (-f)'],
+    ['test -x $HOME', 'passes an operand to test ($HOME)'],
+    ['TEST -x src/cli.js', 'runs a program outside the allowlist (TEST)'],
+    ['[ -x src/cli.js ]', 'runs a program outside the allowlist ([)'],
+    ['stat src/cli.js', 'runs a program outside the allowlist (stat)'],
+    ['ls -l src', 'runs a program outside the allowlist (ls)'],
+    ['readlink docs/readme.md', 'runs a program outside the allowlist (readlink)'],
+    ['find src -perm -u+x', 'runs a program outside the allowlist (find)'],
+    ['git ls-files -s src/cli.js', 'runs a program outside the allowlist (git)'],
+  ])('refuses %s: a plan check reads file state only through one file test', (command, reason) => {
+    for (const npmScriptsApproved of [true, false]) {
+      expect(checkCommandRefusal(command, { npmScriptsApproved, packageScripts })).toBe(reason);
+    }
+  });
+
+  it('keeps a file test out of the discovered test command', () => {
+    expect(unsafeCommandReason('test -x src/cli.js')).toBe(
+      'runs a program outside the allowlist (test)',
+    );
+    expect(sanitize({ testCommand: 'test -x src/cli.js' })).toBeUndefined();
+    expect(warnings()).toEqual([
+      'The test checks do not take test -x src/cli.js from the planner (it runs a program outside the allowlist (test)) and use config, the manifest or the stack default.',
+    ]);
+  });
+
   it('keeps the discovered-validation policy for every other command', () => {
     expect(checkCommandRefusal('npm test', scriptsApproved)).toBeNull();
     expect(checkCommandRefusal('tsc --noEmit', scriptsApproved)).toBeNull();
