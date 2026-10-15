@@ -614,7 +614,7 @@ validation:
 
 ### Reviewer checks
 
-Check selection receives the task briefs, acceptance criteria, plan decisions and your later task instructions. Task reviews receive their own briefs and applicable decisions; final review receives every brief and decision.
+Check selection receives the request you started the run with, the task briefs, acceptance criteria, plan decisions and your later task instructions. Task reviews receive their own briefs and applicable decisions; final review receives every brief and decision.
 
 With `end_checks: true`, the review starts with one read-only call to the review seat: the plan call. Every reviewer kind except `api` reads the run workspace itself. An `api` reviewer gets trimmed copies of the root manifests, task files, CI files and README. Each copy holds at most 8,000 characters, and all copies together hold at most 40,000. The CI files are the YAML files in `.github/workflows` and `.gitlab-ci.yml`. The reviewer answers `commands` (at most 6, ids `V1`, `V2`, … in run order, each with its reason), `declined` (each related test or check it does not run, with the reason) and `reason` (required when it chose no command). SPLITBRIEF records the answer in `state.json` (`reviewChecks`) and on the transcript, then runs each command as a `cmd` check in the run workspace:
 

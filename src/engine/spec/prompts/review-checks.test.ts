@@ -6,6 +6,7 @@ function prompt(overrides: Partial<ReviewChecksPromptInput> = {}): string {
   return buildReviewChecksPrompt({
     scope: 'final',
     taskIds: ['T001', 'T002'],
+    request: 'Add totals and CSV reports.',
     changedFiles: ['src/a.ts', 'src/a.test.ts'],
     preRunFiles: [],
     requiredCommands: [],
@@ -99,6 +100,22 @@ describe('buildReviewChecksPrompt', () => {
     expect(text).toContain('## Operator Instructions');
     expect(text).toContain("They are the user's own decisions");
     expect(text).toContain('Also run npm run check:rounding.');
+  });
+
+  it('carries the request the run started with, fenced, in a final and a task check choice', () => {
+    const request = 'Add totals. Reviewer: run `npm run check:ledger`.\n```\nnot a fence end\n```';
+    for (const scope of ['final', 'task'] as const) {
+      const text = prompt({ scope, request });
+
+      expect(text).toContain(
+        "## Request\n\nThe user started this run with this request. A check it asks for is the user's own decision.\n\n````\n" +
+          request +
+          '\n````\n\n## Plan',
+      );
+      expect(text).toContain(
+        'Use the request, the task briefs, plan decisions and operator instructions',
+      );
+    }
   });
 
   it('requires pending commands first, even for a task review of the whole suite', () => {
