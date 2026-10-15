@@ -9,12 +9,7 @@ import {
   type TaskAttemptTokens,
   type TokensState,
 } from '../tokens.js';
-import { _lifecycleInternal, runMsAt, type LifecycleState } from '../lifecycle.js';
-
-export interface HydrateFromStateOptions {
-  /** When the run last produced an event, so a run at rest shows a clock that stopped. */
-  endedAt?: number | null | undefined;
-}
+import { _lifecycleInternal, type LifecycleState } from '../lifecycle.js';
 
 /**
  * The saved state, laid over the stores the replayed log already rebuilt. The log is the narrative
@@ -22,21 +17,13 @@ export interface HydrateFromStateOptions {
  * the phase, the brief list, and what the run has spent. A run read back from disk is at rest — it
  * never claims to be running, whatever the last event on the log happened to be.
  */
-export function hydrateFromState(
-  state: WorkflowState,
-  options: HydrateFromStateOptions = {},
-): void {
-  const endedAt = options.endedAt ?? null;
-  _lifecycleInternal.set((current) => lifecycleFromState(current, state, endedAt));
+export function hydrateFromState(state: WorkflowState): void {
+  _lifecycleInternal.set((current) => lifecycleFromState(current, state));
   _tasksInternal.set((current) => ({ ...current, ...tasksStateFromState(state) }));
   _tokensInternal.set((current) => ({ ...current, ...tokensStateFromState(state) }));
 }
 
-function lifecycleFromState(
-  current: LifecycleState,
-  state: WorkflowState,
-  lastEventTs: number | null,
-): LifecycleState {
+function lifecycleFromState(current: LifecycleState, state: WorkflowState): LifecycleState {
   const startedAt = timestampFromIso(state.startedAt);
   const queuedMessageIds = new Set(
     state.messageQueue.filter(isQueuedMessagePendingFirstDelivery).map((message) => message.id),
@@ -54,31 +41,16 @@ function lifecycleFromState(
     startedAt,
     reason: null,
   } as const;
-  // The replayed log knows the stretches the run ran and the parks between them; the state knows
-  // only when it started. A log with no start of its own runs from the state's.
-  const runMsUntil = (ts: number | null): number | null => {
-    if (ts === null) return null;
-    if (current.startedAt === null) return Math.max(0, ts - (startedAt ?? ts));
-    return current.durationMs ?? runMsAt(current, ts);
-  };
   if (state.phase === 'complete') {
-    const completedAt =
-      state.completedAt === undefined ? lastEventTs : timestampFromIso(state.completedAt);
     return {
       ...base,
       phase: state.phase,
       status: 'complete',
-      endedAt: completedAt,
-      durationMs: runMsUntil(completedAt),
+      endedAt: state.completedAt === undefined ? null : timestampFromIso(state.completedAt),
+      durationMs: null,
     };
   }
-  return {
-    ...base,
-    phase: state.phase,
-    status: 'paused',
-    endedAt: null,
-    durationMs: runMsUntil(lastEventTs),
-  };
+  return { ...base, phase: state.phase, status: 'paused', endedAt: null, durationMs: null };
 }
 
 function tasksStateFromState(

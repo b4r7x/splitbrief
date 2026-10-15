@@ -124,7 +124,7 @@ export function engineEventFromLogEntry(entry: SessionLogEventEntry): EngineEven
 
 // The log timestamp schema still accepts the epoch-millisecond numbers older logs wrote,
 // stringified on read; Date.parse rejects those, so fall back to the numeric reading.
-function entryTimestamp(ts: string): number | null {
+export function entryTimestamp(ts: string): number | null {
   if (ts.trim().length === 0) return null;
   const parsed = Date.parse(ts);
   if (!Number.isNaN(parsed)) return parsed;

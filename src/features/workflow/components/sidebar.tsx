@@ -14,7 +14,7 @@ import {
   taskRowLabel,
   tasksStore,
 } from '../../../stores/workflow/tasks.js';
-import { lifecycleStore, runElapsedMs } from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { configStore } from '../../../stores/project/config.js';
 import { assertNever } from '../../../utils/type-guards.js';
 import {
@@ -26,7 +26,6 @@ import {
 import { CREW_SEAT_ROLES, deriveCrewSeats, type CrewSeat } from '../../../core/crew/seats.js';
 import { useCrewDisplayNames } from '../../../hooks/use-crew-display-names.js';
 import { formatStageLabel } from '../../../core/phase-display.js';
-import { formatElapsedClock } from '../../../utils/format-time.js';
 import { getActiveRailStage, railStageSeat, type RailHalt } from '../../../core/rail-stages.js';
 import { routerStore } from '../../../stores/navigation/router.js';
 import { routeBriefMark } from '../at-rest.js';
@@ -38,7 +37,6 @@ import {
   getSidebarStatusColumnCells,
 } from '../layout/rect.js';
 import { useSpinnerFrame } from '../../../hooks/use-spinner-frame.js';
-import { useSharedClock } from '../../../hooks/use-shared-clock.js';
 import { Divider } from '../../../components/divider.js';
 import { useStores } from '../../../stores/use-stores.js';
 import { controlsStore } from '../../../stores/ui/controls.js';
@@ -164,9 +162,6 @@ function SidebarWaiting() {
     pendingApproval: approval.status === 'pending',
   });
   const { frame } = useSpinnerFrame(display.animate);
-  // The run clock the header shows, from the same ticking sample: the two surfaces cannot read
-  // different seconds for one run.
-  const now = useSharedClock({ active: lifecycle.status === 'running' });
 
   if (recovery.issue !== null) {
     return <Text color={t[stateTone('attention')]}>{`${LIST_INDENT}Planning stopped`}</Text>;
@@ -180,8 +175,6 @@ function SidebarWaiting() {
 
   const stage = getActiveRailStage(lifecycle.phase)?.stage ?? '';
   const seat = stage === '' ? null : railStageSeat(stage);
-  const runMs = runElapsedMs(lifecycle, now);
-  const elapsed = runMs === null ? '' : formatElapsedClock(runMs);
   return (
     <Box flexDirection="column">
       <Text color={t.textDim}>{`${LIST_INDENT}No tasks yet`}</Text>
@@ -199,7 +192,6 @@ function SidebarWaiting() {
           <Text color={seat === null ? t.text : t[CREW_SEAT_ROLES[seat]]}>
             {formatStageLabel(stage)}
           </Text>
-          {elapsed === '' ? '' : `${SOFT_SEP}${elapsed}`}
         </Text>
       )}
     </Box>

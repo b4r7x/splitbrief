@@ -1,12 +1,8 @@
-import { existsSync, lstatSync } from 'node:fs';
-import { join } from 'node:path';
 import { z } from 'zod';
-import { SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { PhaseSchema, type Phase } from '../../../core/schemas/enums.js';
-import { SESSION_LOG_MAX_ENTRY_BYTES } from '../../../core/schemas/session-log.js';
+import { readSessionLogValuesSync } from '../../../core/sessions/log-reader.js';
 import { ZERO_TOKEN_USAGE, type TokenUsage } from '../../../core/schemas/tokens.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
-import { forEachLineSync, parseJsonlLine } from '../../../lib/fs.js';
 import { isReviewSeatCall } from '../../calls/review-seat.js';
 import {
   RunnerCallRoleSchema,
@@ -157,57 +153,44 @@ function seatRoleForCall(
 }
 
 function observedTokenUsageFromSessionLog(ref: SessionRef): TokenUsage | null {
-  const filePath = join(sessionDir(ref.projectDir, ref.sessionId), SESSION_LOG_FILE);
-  if (!existsSync(filePath)) return null;
+  const values = readSessionLogValuesSync(ref, (line) => line.includes('"runner_call_'));
+  if (values === null) return null;
 
   const calls: CallUsageFold[] = [];
   const current = new Map<string, CallUsageFold>();
-  try {
-    // The summary path is synchronous, so it cannot consume the canonical async
-    // reader in core/sessions/log-reader.ts; it carries that reader's two guards
-    // instead — a symlinked log is refused, an oversized entry is skipped.
-    if (lstatSync(filePath).isSymbolicLink()) return null;
-    forEachLineSync(filePath, (line) => {
-      if (!line.includes('"runner_call_')) return;
-      if (Buffer.byteLength(line, 'utf8') > SESSION_LOG_MAX_ENTRY_BYTES) return;
-      const parsedLine = parseJsonlLine(line);
-      if (parsedLine.kind !== 'value') return;
-      const entry = UsageLogEntrySchema.safeParse(parsedLine.value);
-      if (!entry.success) return;
+  for (const value of values) {
+    const entry = UsageLogEntrySchema.safeParse(value);
+    if (!entry.success) continue;
 
-      const { callId, role } = entry.data.data;
-      const isStart = entry.data.type === 'runner_call_started';
-      let call = current.get(callId);
-      if (call === undefined || (isStart && (call.started || call.terminal))) {
-        call = {
-          role: seatRoleForCall({ role, phase: entry.data.phase }),
-          usage: null,
-          terminal: false,
-          started: false,
-        };
-        calls.push(call);
-        current.set(callId, call);
-      }
-      if (isStart) {
-        call.started = true;
-        return;
-      }
-      // Mirror the collector: samples after a terminal record are ignored, and a
-      // terminal record's usage (when present) applies as final.
-      if (call.terminal) return;
-      const isTerminal = entry.data.type !== 'runner_call_usage';
-      if (isTerminal) call.terminal = true;
-      const usage = RunnerCallUsageSchema.safeParse(entry.data.data.usage);
-      const semantics = RunnerCallUsageSemanticsSchema.safeParse(
-        isTerminal ? 'final' : entry.data.data.semantics,
-      );
-      if (usage.success && semantics.success) {
-        call.usage = accumulateRunnerCallUsage(call.usage, usage.data, semantics.data);
-      }
-    });
-  } catch {
-    // Best-effort: an invalid session id or unreadable log never blocks the summary.
-    return null;
+    const { callId, role } = entry.data.data;
+    const isStart = entry.data.type === 'runner_call_started';
+    let call = current.get(callId);
+    if (call === undefined || (isStart && (call.started || call.terminal))) {
+      call = {
+        role: seatRoleForCall({ role, phase: entry.data.phase }),
+        usage: null,
+        terminal: false,
+        started: false,
+      };
+      calls.push(call);
+      current.set(callId, call);
+    }
+    if (isStart) {
+      call.started = true;
+      continue;
+    }
+    // Mirror the collector: samples after a terminal record are ignored, and a
+    // terminal record's usage (when present) applies as final.
+    if (call.terminal) continue;
+    const isTerminal = entry.data.type !== 'runner_call_usage';
+    if (isTerminal) call.terminal = true;
+    const usage = RunnerCallUsageSchema.safeParse(entry.data.data.usage);
+    const semantics = RunnerCallUsageSemanticsSchema.safeParse(
+      isTerminal ? 'final' : entry.data.data.semantics,
+    );
+    if (usage.success && semantics.success) {
+      call.usage = accumulateRunnerCallUsage(call.usage, usage.data, semantics.data);
+    }
   }
   if (calls.length === 0) return null;
 

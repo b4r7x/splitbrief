@@ -31,17 +31,6 @@ let projectDir = '';
 let ui: ReturnType<typeof mountWorkflowScreen> | undefined;
 let restorePath: (() => void) | undefined;
 
-/** The header's run clock keeps counting while the planner waits; nothing else on screen moves. */
-function withoutRunClock(frame: string): string {
-  const [header = '', ...body] = frame.split('\n');
-  return [header.replace(/\d+(?::\d{2}){1,2}$/, '<run clock>'), ...body].join('\n');
-}
-
-/** The run clock reading in the header, when the header carries one. */
-function runClockOf(frame: string): string | null {
-  return frame.split('\n')[0]?.match(/\d+(?::\d{2}){1,2}$/)?.[0] ?? null;
-}
-
 beforeEach(() => {
   resetAllStores();
   routerStore.init({ screen: 'home' });
@@ -261,14 +250,9 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
       expect(received).not.toHaveBeenCalled();
       await flushEffects();
       const waitingFrame = stripAnsiStyles(screen.lastFrame());
-      // The header's run clock keeps counting while the planner waits; nothing else moves.
-      const workingClock = runClockOf(waitingFrame);
-      expect(workingClock).not.toBeNull();
+      // Nothing on screen moves while the planner waits on the answer.
       await tick(1100);
-      expect(withoutRunClock(stripAnsiStyles(screen.lastFrame()))).toBe(
-        withoutRunClock(waitingFrame),
-      );
-      expect(runClockOf(stripAnsiStyles(screen.lastFrame()))).not.toBe(workingClock);
+      expect(stripAnsiStyles(screen.lastFrame())).toBe(waitingFrame);
 
       await tick(PROMPT_TYPEAHEAD_GRACE_MS + 30);
       await flushEffects();

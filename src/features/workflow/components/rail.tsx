@@ -231,8 +231,8 @@ function reviewFailed(
 
 const FAILED_REVIEW_STAGES = getRailStages('final-review', { halted: 'failed' });
 
-// The rail's actually-rendered width, so the header budgets the runner/clock tail against what the
-// rail paints — not the full three-stage pipeline. `complete` collapses to a short done line and a
+// The rail's actually-rendered width, so the header budgets the seat line against what the rail
+// paints — not the full three-stage pipeline. `complete` collapses to a short done line and a
 // narrow terminal collapses to Form C, both far shorter than the Form-B measure.
 export function measureRailCells(input: {
   phase: Phase;

@@ -19,11 +19,9 @@ import { readRunEvents } from '../../engine/events/replay.js';
 import { createRuntimeCommands } from '../../core/runtime/commands/registry.js';
 import { isOpenRunAtRest, routerStore } from '../../stores/navigation/router.js';
 import { configStore } from '../../stores/project/config.js';
-import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
 import { stopStore } from '../../stores/workflow/stop.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { clearAllHandlers, requestEndRun, requestResume, setResumeHandler } from './handlers.js';
-import { hydrateRun } from './run-history.js';
 
 describe('End run at rest', () => {
   let projectDir = '';
@@ -35,7 +33,7 @@ describe('End run at rest', () => {
     projectDir = '';
   });
 
-  it('records one real-time closure event and advances the closed run clock to it', async () => {
+  it('records one real-time closure event and leaves the time at rest out of the run time', async () => {
     projectDir = createTempDir('at-rest-end-event-');
     execFileSync('git', ['init', projectDir], { stdio: 'ignore' });
     const ref = { projectDir, sessionId: 'end-at-rest' };
@@ -73,10 +71,7 @@ describe('End run at rest', () => {
     expect(cancellation[0]?.ts).toBeLessThanOrEqual(afterEnd);
     expect(readRunRecord(ref)?.status).toEqual({ kind: 'closed', as: 'ended' });
 
-    const closedRecord = readRunRecord(ref);
-    if (closedRecord === null) throw new Error('missing closed run record');
-    await hydrateRun(closedRecord);
-    expect(lifecycleStore.get().durationMs).toBe((cancellation[0]?.ts ?? 0) - startedAt);
+    expect(readRunRecord(ref)?.summary?.activeTime).toBe(0);
     expect(requestEndRun()).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(loadState(ref)?.closed).toEqual(firstClosed);

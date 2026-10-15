@@ -49,8 +49,8 @@ function Harness({
 }) {
   const inputMode = useInputMode();
   const continuation = useRunContinue({ prepared, inputMode });
-  const runner = useRunLoop({ prepared, inputMode, continuation, runWorkflow });
-  return <Text>{`${prepared.runtime.feature}:${runner.startedAt}`}</Text>;
+  useRunLoop({ prepared, inputMode, continuation, runWorkflow });
+  return <Text>{prepared.runtime.feature}</Text>;
 }
 
 function preparedExecution(input: {

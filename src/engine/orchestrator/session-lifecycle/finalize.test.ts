@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
@@ -11,7 +11,7 @@ import {
   type ActiveSessionReceipt,
 } from '../../../core/sessions/active-pointer.js';
 import { randomUUID } from 'node:crypto';
-import { activeFile, sessionDir } from '../../../core/paths.js';
+import { activeFile, SESSION_LOG_FILE, sessionDir } from '../../../core/paths.js';
 import { createInitialState } from '../../../core/state/machine.js';
 import type { Session } from '../../../core/schemas/session.js';
 import type { Summary } from '../../../core/schemas/summary.js';
@@ -62,6 +62,18 @@ function persisted(projectDir: string, sessionId: string): Session {
   return JSON.parse(raw) as Session;
 }
 
+function writeLog(
+  projectDir: string,
+  sessionId: string,
+  events: readonly (readonly [string, string, Record<string, unknown>?])[],
+): void {
+  mkdirSync(sessionDir(projectDir, sessionId), { recursive: true });
+  const lines = events.map(([type, ts, data = {}]) =>
+    JSON.stringify({ kind: 'event', ts, type, phase: 'implementing', data }),
+  );
+  writeFileSync(join(sessionDir(projectDir, sessionId), SESSION_LOG_FILE), lines.join('\n'));
+}
+
 function completedState(): WorkflowState {
   return { ...createInitialState('feat'), phase: 'complete', reviewStatus: 'passed' };
 }
@@ -84,6 +96,33 @@ describe('saveFinalSession', () => {
 
     expect(persisted(projectDir, sessionId).status).toBe('complete');
     expect(existsSync(activeFile(projectDir))).toBe(false);
+  });
+
+  it('records how long the run ran from its log, and nothing without a log', () => {
+    const projectDir = makeProjectDir();
+    writeLog(projectDir, 'sess-ran', [
+      ['workflow_started', '2026-10-15T10:00:00.000Z'],
+      ['turn_interrupted', '2026-10-15T10:01:00.000Z'],
+      ['workflow_resumed', '2026-10-16T09:00:00.000Z'],
+      ['workflow_complete', '2026-10-16T09:00:30.000Z'],
+    ]);
+    const save = (sessionId: string) =>
+      saveFinalSession({
+        projectDir,
+        sessionId,
+        feature: 'feat',
+        startTime: 1,
+        summary: makeSummary(),
+        state: completedState(),
+      });
+
+    save('sess-ran');
+    save('sess-no-log');
+
+    expect(readSession({ projectDir, sessionId: 'sess-ran' })?.summary?.activeTime).toBe(90_000);
+    expect(readSession({ projectDir, sessionId: 'sess-no-log' })?.summary).not.toHaveProperty(
+      'activeTime',
+    );
   });
 
   it('records an open run with its stop reason and keeps the active session', () => {
@@ -290,6 +329,30 @@ describe('finalizeEndedRun seat identity', () => {
   });
 });
 
+describe('finalizeEndedRun after a live End', () => {
+  it('counts the wait the run was in when the End came', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-ended-live' };
+    writeLog(projectDir, ref.sessionId, [
+      ['workflow_started', '2026-10-15T10:00:00.000Z'],
+      ['plan_ready', '2026-10-15T10:01:00.000Z'],
+      ['workflow_cancelled', '2026-10-15T10:11:00.000Z', { reason: 'user_cancelled' }],
+    ]);
+
+    finalizeEndedRun({
+      ref,
+      config: makeConfig(),
+      state: {
+        ...createInitialState('feat'),
+        phase: 'planning',
+        closed: { at: '2026-10-15T10:11:00.000Z', as: 'ended' },
+      },
+    });
+
+    expect(readSession(ref)?.summary?.activeTime).toBe(11 * 60_000);
+  });
+});
+
 describe('finalizeRunAtRest', () => {
   const ended = (): WorkflowState => ({
     ...createInitialState('feat'),
@@ -323,6 +386,25 @@ describe('finalizeRunAtRest', () => {
     expect(readSession(ref)?.status).toBe('complete');
     expect(state.reviewStatus).toBe('failed');
     expect(existsSync(activeFile(projectDir))).toBe(false);
+  });
+
+  it('leaves the days a crashed run sat at rest out of the run its End closes', () => {
+    const projectDir = makeProjectDir();
+    const ref = { projectDir, sessionId: 'sess-crashed' };
+    writeLog(projectDir, ref.sessionId, [
+      ['workflow_started', '2026-10-10T10:00:00.000Z'],
+      ['task_started', '2026-10-10T10:05:00.000Z'],
+      ['workspace_closed', '2026-10-13T10:00:00.000Z'],
+      [
+        'workflow_cancelled',
+        '2026-10-13T10:00:00.010Z',
+        { atRestFrom: Date.parse('2026-10-13T10:00:00.000Z') },
+      ],
+    ]);
+
+    finalizeRunAtRest({ ref, config: makeConfig(), state: ended() });
+
+    expect(readSession(ref)?.summary?.activeTime).toBe(5 * 60_000);
   });
 
   it('leaves the active session of another run', () => {

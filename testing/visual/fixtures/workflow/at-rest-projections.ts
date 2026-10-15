@@ -247,6 +247,7 @@ const INTERRUPTED_BUILD_SUMMARY: Readonly<Summary> = Object.freeze({
   skipped: 0,
   failed: 0,
   totalTime: 581_000,
+  activeTime: 581_000,
   tokenUsage: makeUsage({
     plannerInput: 17_400,
     plannerOutput: 4_000,
@@ -387,6 +388,7 @@ const READY_SUMMARY: Readonly<Summary> = Object.freeze({
   skipped: 0,
   failed: 0,
   totalTime: 727_000,
+  activeTime: 727_000,
   tokenUsage: makeUsage({
     plannerInput: 25_200,
     plannerOutput: 6_000,
@@ -485,6 +487,9 @@ const NEEDS_ATTENTION_LEDGER: EvidenceLedger = ledger({
   finalReview: { path: packetMarkdownPath(NEEDS_ATTENTION_SESSION), status: 'written' },
 });
 
+/** The same run, recorded before a record kept how long it ran: its block reads `Ran not recorded`. */
+const { activeTime: _ranNotKept, ...OLDER_READY_SUMMARY } = READY_SUMMARY;
+
 /** Every brief settled, but the review blocks it and the scope check found deviations. */
 const NEEDS_ATTENTION_SUMMARY: Readonly<Summary> = Object.freeze({
   feature: SUMMARY_FIXTURE_FEATURE,
@@ -495,6 +500,7 @@ const NEEDS_ATTENTION_SUMMARY: Readonly<Summary> = Object.freeze({
   skipped: 0,
   failed: 0,
   totalTime: 727_000,
+  activeTime: 727_000,
   tokenUsage: makeUsage({
     plannerInput: 23_100,
     plannerOutput: 5_800,
@@ -530,8 +536,8 @@ const NEEDS_ATTENTION_SUMMARY: Readonly<Summary> = Object.freeze({
   changedFiles: [FILES.formTest, FILES.form, FILES.signupTest, FILES.signup, FILES.validate],
 });
 
-// The run started when its log says it did: a record dated apart from the transcript it replays
-// paints an elapsed clock measured in days.
+// The run started when its log says it did, so a record is never dated apart from the transcript it
+// replays.
 const STARTED_AT_ISO = GENERATED_AT;
 
 /**
@@ -668,29 +674,6 @@ const AT_REST_QUEUED = record({
   },
 });
 
-/** Ten minutes of build, a stop, a night at rest, five minutes more: fifteen minutes of run time. */
-export const LONG_PARK_LOG = 'testing/fixtures/session-log/long-park.jsonl';
-
-const AT_REST_LONG_PARK = record({
-  sessionId: 'visual-at-rest-long-park',
-  status: {
-    kind: 'open',
-    stop: { kind: 'stopped', on: { kind: 'paused', at: 'mid-step' } },
-    resumeAt: { kind: 'brief', taskId: BRIEFS.routeTests.id, attempt: 0 },
-  },
-  state: savedState({
-    phase: 'implementing',
-    currentTaskIndex: 2,
-    briefs: [
-      { id: BRIEFS.validator.id, status: 'done' },
-      { id: BRIEFS.wire.id, status: 'done' },
-      { id: BRIEFS.routeTests.id, status: 'in_progress' },
-      { id: BRIEFS.blur.id, status: 'pending' },
-      { id: BRIEFS.docs.id, status: 'pending' },
-    ],
-  }),
-});
-
 /** The fallback the BUILD seat declares in config: a seat that cannot work moves to it. */
 const SEAT_FALLBACK = {
   tool: 'opencode',
@@ -815,7 +798,7 @@ const CLOSED_COMPLETE = record({
       { id: BRIEFS.routeTests.id, status: 'done' },
     ],
   }),
-  summary: READY_SUMMARY,
+  summary: OLDER_READY_SUMMARY,
   ledger: READY_LEDGER,
 });
 
@@ -2067,10 +2050,6 @@ export const atRestProjections: readonly WorkflowFixtureProjection[] = [
   atRestProjection({
     id: 'workflow-at-rest-queued',
     route: { record: AT_REST_QUEUED, log: 'testing/fixtures/session-log/paused-mid-brief.jsonl' },
-  }),
-  atRestProjection({
-    id: 'workflow-at-rest-long-park',
-    route: { record: AT_REST_LONG_PARK, log: LONG_PARK_LOG },
   }),
   atRestProjection({ id: 'workflow-at-rest-quick', route: { record: AT_REST_QUICK } }),
   atRestProjection({ id: 'workflow-at-rest-halted', route: { record: AT_REST_HALTED } }),

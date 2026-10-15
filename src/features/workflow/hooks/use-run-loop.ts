@@ -1,4 +1,4 @@
-import { useRef, useEffect, useEffectEvent, useState } from 'react';
+import { useRef, useEffect, useEffectEvent } from 'react';
 import type { TaskId } from '../../../core/schemas/task.js';
 import type { SkillMeta } from '../../../core/skills/types.js';
 import type { RunRecord } from '../../../core/sessions/run-record.js';
@@ -62,7 +62,6 @@ import { closeApprovalPrompt } from '../../../stores/approval-prompt/prompt.js';
 import { closeReviewChecksPrompt } from '../../../stores/review-checks-prompt/prompt.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import { error } from '../../../utils/error.js';
-import { nowIso } from '../../../utils/format-time.js';
 import type { UseInputModeResult } from './use-input-mode.js';
 import { buildPromptCallbacks } from '../prompt-callbacks.js';
 import { createRecoveryDriver } from '../recovery-driver.js';
@@ -97,11 +96,6 @@ interface UseRunLoopOptions {
   continueAtRest?: ((record: RunRecord) => void) | undefined;
 }
 
-interface UseRunLoopResult {
-  startedAt: string;
-  sessionId?: string | undefined;
-}
-
 /**
  * The run itself: one `runWorkflow` call per turn, the recovery panel between
  * turns, and the process-registry watcher that keeps the stop byline honest.
@@ -116,10 +110,9 @@ export function useRunLoop({
   runWorkflow: runWorkflowFn = runWorkflow,
   prepareExecution: prepareExecutionFn = prepareExecution,
   continueAtRest,
-}: UseRunLoopOptions): UseRunLoopResult {
+}: UseRunLoopOptions): void {
   const abortedRef = useRef(false);
   const retentionNoticeHandled = useRef(true);
-  const [startedAt] = useState(() => nowIso());
   const { runId, inlineResume, setInlineResume, handleResume } = continuation;
 
   const inlineForPrepared =
@@ -600,6 +593,4 @@ export function useRunLoop({
     }
     return record;
   };
-
-  return { startedAt, sessionId: prepared?.session.ref.sessionId };
 }

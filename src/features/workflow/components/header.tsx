@@ -1,16 +1,10 @@
-import { ThemeText as Text, useTheme } from '../../../components/theme.js';
+import { ThemeText as Text } from '../../../components/theme.js';
 import { TextSpans } from '../../../components/text-spans.js';
 import type { ReactNode } from 'react';
 import { Box } from 'ink';
 import { terminalSizeStore } from '../../../stores/ui/terminal-size.js';
 import { getTerminalCellWidth } from '../../../utils/display-text.js';
-import { formatElapsedClock } from '../../../utils/format-time.js';
-import { useSharedClock } from '../../../hooks/use-shared-clock.js';
-import {
-  lifecycleStore,
-  runElapsedMs,
-  type LifecycleState,
-} from '../../../stores/workflow/lifecycle.js';
+import { lifecycleStore } from '../../../stores/workflow/lifecycle.js';
 import { tasksStore } from '../../../stores/workflow/tasks.js';
 import { eventsStore } from '../../../stores/workflow/events.js';
 import { recoveryNoticeStore } from '../../../stores/workflow/recovery-notice.js';
@@ -30,7 +24,6 @@ import { getChromeContentWidth, type RailForm } from '../layout/chrome-rows.js';
 import { measureRailCells, Rail } from './rail.js';
 
 interface HeaderProps {
-  startedAt: string;
   railForm?: RailForm | undefined;
   buildBlockShown?: boolean | undefined;
   /** A run at rest names the stages its own record earned, and the crew that actually ran it. */
@@ -38,33 +31,14 @@ interface HeaderProps {
   seatLine?: readonly SeatLineSpan[] | undefined;
 }
 
-const TIMER_WIDTH = 8;
 const SEAT_GAP = 2;
 
 export interface HeaderLayout {
   contentWidth: number;
   railWidth: number;
-  /** The cells left for the seat line once the rail and the clock are paid for. */
+  /** The cells left for the seat line once the rail is paid for. */
   seatRoom: number;
-  showElapsed: boolean;
   showSeats: boolean;
-}
-
-/**
- * The run clock: how long the run has run. It keeps counting while a gate, a question, an approval
- * or a recovery choice waits on the user, because the run is still running; only the byline's clock
- * leaves those waits out. It stops when the run stops — a park, a run at rest, the end — and the
- * time a run sat parked or stopped before it moved again is no run time. The seconds come from the
- * shared clock the sidebar reads, so the two surfaces state the same run clock.
- */
-function ElapsedClock({ mountedAt, lifecycle }: { mountedAt: string; lifecycle: LifecycleState }) {
-  const t = useTheme();
-  const ticking = lifecycle.durationMs === null && lifecycle.status === 'running';
-  const now = useSharedClock({ active: ticking });
-  const mountedAtMs = Date.parse(mountedAt);
-  const elapsed =
-    runElapsedMs(lifecycle, now) ?? (Number.isFinite(mountedAtMs) ? now - mountedAtMs : 0);
-  return <Text color={t.textDim}>{formatElapsedClock(elapsed)}</Text>;
 }
 
 /** An open halt annotates its own seat and only while it names both the seat and a reset. */
@@ -85,19 +59,14 @@ export function getHeaderLayout(input: {
 }): HeaderLayout {
   const { cols, railCells, seatCells = 0 } = input;
   const contentWidth = getChromeContentWidth(cols);
-  const gap = 1;
   const minRail = Math.min(contentWidth, Math.max(0, railCells));
-  const showElapsed = contentWidth - minRail - gap >= TIMER_WIDTH;
-  const elapsedWidth = showElapsed ? TIMER_WIDTH : 0;
-  const seatRoom = contentWidth - minRail - gap - elapsedWidth - SEAT_GAP;
+  const seatRoom = contentWidth - minRail - SEAT_GAP;
   const showSeats = seatCells > 0 && seatRoom >= seatCells;
-  const tailWidth = elapsedWidth + (showSeats ? seatCells + SEAT_GAP : 0);
-  const railWidth = tailWidth > 0 ? Math.max(0, contentWidth - tailWidth - gap) : contentWidth;
-  return { contentWidth, railWidth, seatRoom, showElapsed, showSeats };
+  const railWidth = showSeats ? contentWidth - seatCells - SEAT_GAP : contentWidth;
+  return { contentWidth, railWidth, seatRoom, showSeats };
 }
 
 export function Header({
-  startedAt,
   railForm,
   buildBlockShown = false,
   stages,
@@ -158,26 +127,23 @@ export function Header({
           {...(stages !== undefined && { stages })}
         />
       }
-      clock={<ElapsedClock mountedAt={startedAt} lifecycle={lifecycle} />}
     />
   );
 }
 
 /**
- * The header bar itself: rail on the left, the seat line and the clock pinned right, each paid for
- * out of one budget. It reads no store: the caller passes the rail, the seat line and the clock.
+ * The header bar itself: rail on the left, the seat line pinned right, both paid for out of one
+ * budget. It reads no store: the caller passes the rail and the seat line.
  */
 function HeaderRow({
   rail,
   railCells,
   seatLine,
-  clock,
   cols,
 }: {
   rail: ReactNode;
   railCells: number;
   seatLine: readonly SeatLineSpan[];
-  clock: ReactNode;
   cols: number;
 }) {
   const layout = getHeaderLayout({
@@ -192,7 +158,7 @@ function HeaderRow({
       </Box>
       <Box flexGrow={1} />
       {layout.showSeats && (
-        <Box flexShrink={0} marginRight={layout.showElapsed ? SEAT_GAP : 0}>
+        <Box flexShrink={0}>
           <Text>
             <TextSpans
               parts={seatLine.map((span) => ({
@@ -203,7 +169,6 @@ function HeaderRow({
           </Text>
         </Box>
       )}
-      {layout.showElapsed && <Box justifyContent="flex-end">{clock}</Box>}
     </Box>
   );
 }

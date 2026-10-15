@@ -217,6 +217,15 @@ describe('runRows', () => {
     expect(runRows(one).some((row) => row.label === 'Phases')).toBe(false);
   });
 
+  it('states how long the run ran, and says so when the record never kept it', () => {
+    expect(segmentsFor(makeView({ ran: 111_503 }), 'Ran')).toEqual([
+      { text: '1m 51s', tone: 'textDim' },
+    ]);
+    expect(segmentsFor(makeView({ ran: null }), 'Ran')).toEqual([
+      { text: 'not recorded', tone: 'textDim' },
+    ]);
+  });
+
   it('names the session and no mode', () => {
     expect(segmentsFor(makeView(), 'Session')).toEqual([
       { text: '2026-09-14-add-email-validation-with-tests', tone: 'textDim' },
@@ -232,6 +241,7 @@ describe('runRows', () => {
       'Packet',
       'Scope',
       'Briefs',
+      'Ran',
       'Phases',
       'Session',
     ]);

@@ -230,6 +230,8 @@ export const SummarySchema = z.object({
   skipped: z.number().nonnegative(),
   failed: z.number().nonnegative(),
   totalTime: z.number().nonnegative(),
+  /** How long the run ran, in ms: its running stretches, read from its log. Absent on older records. */
+  activeTime: z.number().nonnegative().optional(),
   tokenUsage: TokenUsageSchema,
   escalationRate: z.number().nonnegative(),
   taskBreakdown: z.array(TaskTokenUsageSchema).optional(),

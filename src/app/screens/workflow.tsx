@@ -367,7 +367,6 @@ export function WorkflowScreen({
     <ScreenShell
       header={
         <WorkflowHeader
-          startedAt={model.startedAt}
           scrollAboveLabel={scrollAboveLabel}
           railForm={railForm}
           buildBlockShown={progressRows > 0}

@@ -106,6 +106,8 @@ export interface SummaryView {
   canUndoApply: boolean;
   applyUndo: Readonly<{ conflicts: readonly string[] }> | null;
   phases: PhaseTiming[];
+  /** How long the run ran, in ms; null on a record from before it was kept. */
+  ran: number | null;
 }
 
 /** The closed block derives its view from the record navigation carried and nothing else. */
@@ -166,6 +168,7 @@ export function deriveSummaryView(input: DeriveSummaryViewInput): SummaryView | 
             ),
           },
     phases: phaseTimings(summary),
+    ran: summary.activeTime ?? null,
   };
 }
 

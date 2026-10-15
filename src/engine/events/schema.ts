@@ -267,6 +267,8 @@ const EngineEventPayloadSchema = z.discriminatedUnion('type', [
   }),
   phaseEvent('workflow_cancelled').extend({
     reason: WorkflowCancelReasonSchema.optional(),
+    /** An End taken at rest: when it began, before it wrote anything. Absent on a live cancel and older logs. */
+    atRestFrom: z.number().optional(),
   }),
   phaseEvent('turn_interrupted').extend({
     source: z.enum(['user', 'watchdog']).optional(),

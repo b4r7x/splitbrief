@@ -157,6 +157,7 @@ export function userStopStoppedWork(state: WorkflowState): boolean {
 export async function endRun(
   scope: SessionRef & { bus: EventBus },
   state: WorkflowState,
+  atRestFrom?: number,
 ): Promise<{ state: WorkflowState; closedNow: boolean }> {
   const latest = rebaseOnPersistedWorkflowState(scope, state);
   const issue = latest.pendingRecovery;
@@ -183,6 +184,7 @@ export async function endRun(
         ts: Date.now(),
         phase: closure.state.phase,
         reason: WORKFLOW_CANCEL_REASON_USER,
+        ...(atRestFrom !== undefined && { atRestFrom }),
       });
     }
   }
@@ -194,8 +196,9 @@ export async function endRunAtRest(
   state: WorkflowState,
   config: Config,
 ): Promise<{ state: WorkflowState; closedNow: boolean }> {
+  const atRestFrom = Date.now();
   await recordInterruptedCalls(scope, rebaseOnPersistedWorkflowState(scope, state));
-  const closure = await endRun(scope, state);
+  const closure = await endRun(scope, state, atRestFrom);
   finalizeRunAtRest({ ref: scope, config, state: closure.state });
   return closure;
 }

@@ -138,6 +138,13 @@ describe('outcome kind', () => {
   });
 });
 
+describe('ran', () => {
+  it('reads how long the run ran off its record, and null on a record that never kept it', () => {
+    expect(derive(readySummary({ activeTime: 111_503 })).ran).toBe(111_503);
+    expect(derive(readySummary()).ran).toBeNull();
+  });
+});
+
 const WORKSPACE = {
   kind: 'worktree' as const,
   path: '/tmp/run-workspace',

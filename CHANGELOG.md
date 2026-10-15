@@ -68,6 +68,7 @@
 - **CLI model lists keep a model through one missing read.** A model is added at once and removed only after two agreeing reads.
 - **Flag precedence is stated.** `--planner`, `--implementer`, `--provider` and `--reviewer` help states that a CLI tool id always selects the CLI. A `--*-api-base` flag on a non-API seat warns and is ignored.
 - Home shows no recent-sessions section when there are none.
+- **How long a run ran is stated once, when it closes.** The workflow header and sidebar no longer show a clock for the whole run. A closed run states how long it ran in its Run section, for example `Ran 1m 51s`. Time the run sat stopped, halted or at rest is left out, and time it waited on you while it ran counts. A run recorded before this release reads `Ran not recorded`.
 
 ### Removed
 
@@ -134,7 +135,7 @@
 - A pause between briefs names the next brief, for example `Paused before T003.`
 - Ctrl+C presses that arrive together each count, and control bytes never go into the draft or a restored input history.
 - Ctrl+C on a mouse selection copies once and shows its result.
-- The header, sidebar and byline clocks agree, leave out waiting time, and spell a run past an hour as `1:15:03`.
+- The byline clock leaves out waiting time and spells a step past an hour as `1:15:03`.
 - A seat that is thinking no longer reads as silent, and a silent seat is reported once, with one count.
 - Claude Code retries, model fallbacks, refusals, denied tool calls and rate-limit warnings show as warning or error rows; its bookkeeping frames no longer reach the transcript.
 - A direct implementer's narration shows once.
@@ -158,7 +159,6 @@
 - A FIFO in the project can no longer stall the final review, a hook check or the evidence ledger.
 - Two OpenCode seats that use the same model through different providers show the model name and provider, for example `OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go`, or `DeepSeek V4.1 Flash via opencode-go` on the short seat line, so you can tell them apart. A seat switch records that identity.
 - The review lists each seat switch once.
-- The run clock no longer goes back when a seat switches.
 - An unreadable or newer saved state no longer stops a run before it can report itself, a run cancelled before its first save closes, and a saved rewind survives a stop.
 - A run that fails on a repair or revision call records `failed` instead of `interrupted`.
 - A runner picker save is one write and keeps a concurrent change on disk.

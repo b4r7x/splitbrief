@@ -50,6 +50,7 @@ export function makeView(overrides: Partial<SummaryView> = {}): SummaryView {
       { phase: 'implementing', ms: 492_000 },
       { phase: 'review', ms: 65_000 },
     ],
+    ran: 727_000,
     ...overrides,
   };
 }

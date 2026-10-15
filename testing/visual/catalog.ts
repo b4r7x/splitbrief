@@ -1640,22 +1640,6 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
-      id: 'workflow-at-rest-long-park',
-      title: 'Workflow · a run at rest after a night stopped',
-      surface: screenSurface('workflow'),
-      checkpoint: {
-        id: 'at-rest-long-park',
-        title: 'Run clock without the park',
-        kind: 'ready',
-        marker: 'Stopped at',
-      },
-      elements: [
-        { id: 'header', title: 'Workflow header' },
-        { id: 'transcript', title: 'Replayed transcript' },
-        { id: 'composer', title: 'Workflow composer' },
-      ],
-    }),
-    defineScenario({
       id: 'workflow-at-rest-quick',
       title: 'Workflow · an old quick run paused at rest',
       surface: screenSurface('workflow'),

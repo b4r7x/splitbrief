@@ -2,13 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { configStore } from '../../src/stores/project/config.js';
 import { WORKFLOW_GUTTER_X } from '../../src/features/workflow/layout/chrome-rows.js';
 import { terminalSizeStore } from '../../src/stores/ui/terminal-size.js';
-import { formatElapsedClock } from '../../src/utils/format-time.js';
 import { findVisualScenario, REQUIRED_VIEWPORTS } from './catalog.js';
 import { viewport, type Viewport } from './contracts/geometry.js';
 import { ArtifactProvenanceSchema } from './contracts/selection.js';
 import { teardownVisualFixture } from './fixtures/screen-fixtures.js';
-import { VISUAL_FIXTURE_EPOCH } from './fixtures/common.js';
-import { FIXED_CLOCK } from './gallery/environment.js';
 import { mountGalleryScenario } from './gallery/mount.js';
 import { parseTerminalFrame } from './terminal/parse.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -129,32 +126,31 @@ describe('production App gallery mount', () => {
 // The capture clock stands past the fixture epoch, so every live clock has counted. A clock set
 // before the runs it paints clamps them all to 0:00 and the gallery can guard none of them.
 describe('the capture clock', () => {
-  const counted = formatElapsedClock(Date.parse(FIXED_CLOCK) - VISUAL_FIXTURE_EPOCH);
+  it.each([{ scenarioId: 'workflow-planning' }, { scenarioId: 'workflow-implementation' }])(
+    'paints the counted byline clock on $scenarioId',
+    async ({ scenarioId }) => {
+      const scenario = requireScenario(scenarioId);
+      const checkpoint = requireCheckpoint(scenario);
+      const handle = await mountGalleryScenario({
+        scenario,
+        checkpoint,
+        viewport: viewport({ cols: 120, rows: 40 }),
+      });
 
-  it.each([
-    { scenarioId: 'workflow-planning' },
-    { scenarioId: 'workflow-implementation' },
-    { scenarioId: 'workflow-recovery-usage-limit' },
-  ])('paints the counted run clock on $scenarioId', async ({ scenarioId }) => {
-    const scenario = requireScenario(scenarioId);
-    const checkpoint = requireCheckpoint(scenario);
-    const handle = await mountGalleryScenario({
-      scenario,
-      checkpoint,
-      viewport: viewport({ cols: 120, rows: 40 }),
-    });
-
-    try {
-      const frame = await handle.waitForCheckpoint();
-      const rows = frameRows(frame);
-      expect(counted).not.toBe('0:00');
-      expect(rows[0] ?? '').toContain(counted);
-      // The checkpoint's own state is on screen with the counted clock, not only the header.
-      expect(stripAnsiStyles(frame)).toContain(checkpoint.marker);
-    } finally {
-      await handle.unmount();
-    }
-  });
+      try {
+        const frame = await handle.waitForCheckpoint();
+        const clock = frameRows(frame)
+          .at(-1)
+          ?.match(/\d+:\d{2}/)?.[0];
+        expect(clock).toBeDefined();
+        expect(clock).not.toBe('0:00');
+        // The checkpoint's own state is on screen with the counted clock, not only the byline.
+        expect(stripAnsiStyles(frame)).toContain(checkpoint.marker);
+      } finally {
+        await handle.unmount();
+      }
+    },
+  );
 });
 
 describe('workflow chrome spans the declared viewport', () => {

@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { cleanupTempDir, createTempDir } from '#testing/helpers/temp-dir.js';
 import { makeRunRecord } from '#testing/helpers/factories/run-record.js';
-import { makeSummary, makeUsage } from '#testing/helpers/factories/summary.js';
+import { makeUsage } from '#testing/helpers/factories/summary.js';
 import { makeTask } from '#testing/helpers/factories/task.js';
 import {
   makeRunnerCallStarted,
@@ -682,20 +682,6 @@ describe('hydrateRun', () => {
     expect(texts).toContain('replay me');
   });
 
-  it('stops the clock on the run record when the run left no log', async () => {
-    await hydrateRun(
-      makeRunRecord({
-        ref: { projectDir, sessionId: SESSION_ID },
-        startedAt: new Date(1_000).toISOString(),
-        hydration: { kind: 'loaded', state: { ...savedState(), phase: 'complete' } },
-        summary: makeSummary({ totalTime: 90_000 }),
-      }),
-    );
-
-    // The replay's own two markers are not the run's history, so they never answer for its clock.
-    expect(lifecycleStore.get().durationMs).toBe(90_000);
-  });
-
   it('keeps each gate approval in the replayed history and draws no row for it', async () => {
     const approvals: readonly EngineEvent[] = [
       { type: 'spec_approved', ts: 1_200, phase: 'reviewing-spec' },
@@ -724,27 +710,6 @@ describe('hydrateRun', () => {
     );
     expect(rows).toEqual([]);
     expect(lifecycleStore.get().phase).toBe('implementing');
-  });
-
-  it('ends the clock of a run at rest at the stop its log recorded', async () => {
-    const stop: EngineEvent = {
-      type: 'turn_interrupted',
-      ts: 9_000,
-      phase: 'implementing',
-      source: 'user',
-      at: 'mid-step',
-      step: { kind: 'brief', taskId: taskId('T002'), attempt: 0 },
-    };
-    writeLog([...RUN, stop]);
-
-    await hydrateRun(
-      makeRunRecord({
-        ref: { projectDir, sessionId: SESSION_ID },
-        hydration: { kind: 'loaded', state: savedState() },
-      }),
-    );
-
-    expect(lifecycleStore.get().durationMs).toBe(9_000 - 1_000);
   });
 
   it('shows the call a crashed process left open as interrupted, and its brief as no longer working', async () => {

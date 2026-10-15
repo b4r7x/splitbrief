@@ -21,7 +21,6 @@ import { stopStore } from '../../../stores/workflow/stop.js';
 import { requestSteer } from '../handlers.js';
 
 export function WorkflowHeader({
-  startedAt,
   scrollAboveLabel = '',
   railForm,
   buildBlockShown,
@@ -29,7 +28,6 @@ export function WorkflowHeader({
   seatLine,
   children,
 }: {
-  startedAt: string;
   scrollAboveLabel?: string;
   railForm?: RailForm | undefined;
   buildBlockShown?: boolean | undefined;
@@ -46,7 +44,6 @@ export function WorkflowHeader({
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" paddingX={WORKFLOW_GUTTER_X}>
         <Header
-          startedAt={startedAt}
           railForm={railForm}
           buildBlockShown={buildBlockShown}
           {...(stages !== undefined && { stages })}

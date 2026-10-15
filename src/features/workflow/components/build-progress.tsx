@@ -13,7 +13,7 @@ export function BuildProgressBlock({ cols }: { cols: number }) {
   const [tasks, lifecycle, operations] = useStores(tasksStore, lifecycleStore, operationsStore);
   const running = lifecycle.status === 'running';
   // Freshness counts the seconds since the seat last spoke, so it has to move while the seat says
-  // nothing: the shared run clock repaints the block when nothing else does.
+  // nothing: the shared clock repaints the block when nothing else does.
   const now = useSharedClock({ active: running });
   const width = getChromeContentWidth(cols);
   const progress = deriveBuildProgress({ tasks, lifecycle, operations, now });

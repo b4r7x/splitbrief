@@ -24,8 +24,8 @@ function stop(): void {
 
 function subscribe(listener: TickListener): () => void {
   listeners.add(listener);
-  // A joining surface moves every surface on the clock to the same sample, so the header and the
-  // sidebar can never read different seconds for the same run.
+  // A joining surface moves every surface on the clock to the same sample, so two surfaces can
+  // never read different seconds.
   publish();
   start();
   return () => {
@@ -35,7 +35,7 @@ function subscribe(listener: TickListener): () => void {
 }
 
 /**
- * The one ticking clock for every surface that states elapsed run time or a session's age. One
+ * The one ticking clock for every surface that states a freshness or a session's age. One
  * shared interval feeds every subscriber the same `now`, so no two surfaces can sample a different
  * second; a surface that stops asking (a frozen clock) takes itself off the clock and the last
  * sample stays.
