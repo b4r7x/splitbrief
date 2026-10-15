@@ -59,6 +59,8 @@ import { loadConfig, writeConfig } from '../../../core/config/load/io.js';
 import { configWithSwitchedSeat } from '../recovery/switch-seat.js';
 import { switchSeatAndPrepareResume } from '../recovery/switch-seat-resume.js';
 import { createRecoveryBus } from '../recovery/bus.js';
+import { buildRepoChecks } from '../../../core/readiness/checks/repo.js';
+import type { ReadinessReport } from '../../../core/readiness/types.js';
 
 vi.mock('./init-seats.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./init-seats.js')>();
@@ -84,6 +86,7 @@ async function preparedTestExecution(
     allowRepoRunners?: boolean;
     plannerContext?: string | undefined;
     attachedInputs?: readonly AttachedInput[];
+    report?: ReadinessReport;
   }>,
 ): Promise<Readonly<{ config: Config; execution: PreparedExecution }>> {
   const hooks = input.inputConfig.hooks;
@@ -113,7 +116,7 @@ async function preparedTestExecution(
       purpose: 'new-workflow',
       config,
       preparationId,
-      report: {
+      report: input.report ?? {
         generatedAt: new Date(0).toISOString(),
         projectDir: input.projectDir,
         status: 'ready',
@@ -162,6 +165,7 @@ async function initializeTestWorkflow(
     plannerContext?: string | undefined;
     attachedInputs?: readonly AttachedInput[];
     resumeHolder?: ResumeContextHolder;
+    report?: ReadinessReport;
   }>,
 ): Promise<{
   init: Awaited<ReturnType<typeof initializeWorkflow>>;
@@ -186,6 +190,7 @@ async function initializeTestWorkflow(
     allowHooks: true,
     ...(input.plannerContext !== undefined && { plannerContext: input.plannerContext }),
     ...(input.attachedInputs !== undefined && { attachedInputs: input.attachedInputs }),
+    ...(input.report !== undefined && { report: input.report }),
   });
   const planner = input.plannerRunner ?? makePlanner();
   const implementer = makeImplementer();
@@ -319,6 +324,89 @@ describe('initializeWorkflow', () => {
       }
       const replay = await readRunEvents({ projectDir, sessionId });
       expect(replay.events.filter((event) => event.type === 'user_message')).toEqual(messages);
+    });
+  });
+
+  describe('start readiness warnings', () => {
+    function dirtyCheckoutReport(projectDir: string): ReadinessReport {
+      return {
+        generatedAt: new Date(0).toISOString(),
+        projectDir,
+        status: 'ready-with-warnings',
+        counts: { ok: 0, info: 0, warning: 1, blocker: 0 },
+        nextAction: { kind: 'continue', label: 'Continue', reason: 'warnings' },
+        sections: [
+          {
+            id: 'repo',
+            title: 'Repository',
+            checks: buildRepoChecks(
+              { isGitRepo: true, hasCommits: true, dirtyFiles: ['README.md'], untrackedFiles: [] },
+              'none',
+            ),
+          },
+        ],
+        metadata: {},
+      };
+    }
+
+    it('states a readiness warning with its fix under the request of a new run', async () => {
+      await withTempDir('splitbrief-init-start-warning', async (tempDir) => {
+        const projectDir = realpathSync(tempDir);
+        const sessionId = 'session-init-start-warning';
+        const events: EngineEvent[] = [];
+
+        const { init } = await initializeTestWorkflow({
+          projectDir,
+          sessionId,
+          feature: 'fix the readme',
+          report: dirtyCheckoutReport(projectDir),
+          eventSink: (event) => events.push(event),
+        });
+
+        expect(init.ok).toBe(true);
+        const warnings = events.filter((event) => event.type === 'warning');
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]?.message).toMatch(
+          /^Working tree has 1 changed file\. The run edits this checkout\. .*\.splitbrief\/sessions\/<id>\/reverted\/\.$/,
+        );
+        const request = events.findIndex((event) => event.type === 'user_message');
+        expect(request).toBeGreaterThanOrEqual(0);
+        expect(events.indexOf(warnings[0] as EngineEvent)).toBe(request + 1);
+        const replay = await readRunEvents({ projectDir, sessionId });
+        expect(replay.events.filter((event) => event.type === 'warning')).toEqual(warnings);
+      });
+    });
+
+    it('states nothing for a start readiness found ready', async () => {
+      await withTempDir('splitbrief-init-start-ready', async (projectDir) => {
+        const events: EngineEvent[] = [];
+        const { init } = await initializeTestWorkflow({
+          projectDir,
+          sessionId: 'session-init-start-ready',
+          feature: 'fix the readme',
+          eventSink: (event) => events.push(event),
+        });
+        expect(init.ok).toBe(true);
+        expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+      });
+    });
+
+    it('does not restate the start warnings when a run continues', async () => {
+      await withTempDir('splitbrief-init-start-warning-resume', async (projectDir) => {
+        const feature = 'fix the readme';
+        const events: EngineEvent[] = [];
+        const { init } = await initializeTestWorkflow({
+          projectDir,
+          sessionId: 'session-init-start-warning-resume',
+          feature,
+          report: dirtyCheckoutReport(projectDir),
+          savedState: { ...createInitialState(feature), phase: 'planning' },
+          eventSink: (event) => events.push(event),
+        });
+        expect(init.ok).toBe(true);
+        expect(events).toContainEqual(expect.objectContaining({ type: 'workflow_resumed' }));
+        expect(events.filter((event) => event.type === 'warning')).toEqual([]);
+      });
     });
   });
 

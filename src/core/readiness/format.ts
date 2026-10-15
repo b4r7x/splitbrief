@@ -250,11 +250,16 @@ export function createStartReadinessRecord(report: ReadinessReport): StartReadin
   const checks = report.sections
     .flatMap((section) => section.checks)
     .filter((check) => check.severity === 'blocker' || check.severity === 'warning')
-    .map((check) => ({
-      id: check.id,
-      severity: check.severity,
-      summary: check.summary,
-    }));
+    .map((check) => {
+      const remediation = readinessCheckRemediation(check);
+      return {
+        id: check.id,
+        severity: check.severity,
+        summary: check.summary,
+        ...(check.details !== undefined && check.details.length > 0 && { details: check.details }),
+        ...(remediation !== null && { remediation }),
+      };
+    });
 
   return StartReadinessRecordSchema.parse({
     type: 'start-readiness',
@@ -265,4 +270,13 @@ export function createStartReadinessRecord(report: ReadinessReport): StartReadin
     warningCount: report.counts.warning,
     checks,
   });
+}
+
+/** A recorded start warning as the run states it on one line: what readiness found, then what to do. */
+export function startReadinessWarnings(record: StartReadinessRecord): string[] {
+  return record.checks
+    .filter((check) => check.severity === 'warning')
+    .map((check) =>
+      check.remediation === undefined ? check.summary : `${check.summary} ${check.remediation}`,
+    );
 }

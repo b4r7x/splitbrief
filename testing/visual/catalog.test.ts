@@ -471,6 +471,7 @@ describe('visual catalog', () => {
       'workflow-question-outside-file',
       'home-draft-path',
       'workflow-planning-path-notice',
+      'workflow-start-readiness-warning',
       'overlay-usage-details',
       'overlay-usage-details-legacy',
       'overlay-usage-context-insufficient',

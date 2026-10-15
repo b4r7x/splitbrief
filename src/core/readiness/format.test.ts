@@ -2,15 +2,31 @@ import { describe, expect, it } from 'vitest';
 import { makeConfig } from '#testing/helpers/factories/config.js';
 import { cliReadinessFactsFor } from '#testing/helpers/factories/detection.js';
 import { buildReadinessReport } from './checks/build.js';
+import { buildRepoChecks } from './checks/repo.js';
+import type { ReadinessCheck, ReadinessReport } from './types.js';
 import {
   createStartReadinessRecord,
   formatReadinessReport,
   formatReadinessBlockers,
   readinessBlockerMessage,
   readinessBlockerPointer,
+  READINESS_DIAGNOSTIC_REMEDIATION,
   serializeReadinessCheckJson,
+  startReadinessWarnings,
 } from './format.js';
-import { deriveCliReadiness } from '../schemas/readiness.js';
+import { deriveCliReadiness, StartReadinessRecordSchema } from '../schemas/readiness.js';
+
+function reportWith(checks: ReadinessCheck[]): ReadinessReport {
+  return {
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    projectDir: '/tmp/project',
+    status: 'ready-with-warnings',
+    counts: { ok: 0, info: 0, warning: 0, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'ready' },
+    sections: [{ id: 'checks', title: 'Checks', checks }],
+    metadata: {},
+  };
+}
 
 describe('readiness formatting', () => {
   it('gives a concrete installation action for an untrusted executable', () => {
@@ -321,5 +337,89 @@ describe('readiness formatting', () => {
     const record = createStartReadinessRecord(report);
     const recorded = record.checks.find((check) => check.id === blocker.id);
     expect(recorded?.summary).toBe(rawSummary);
+  });
+});
+
+describe('start readiness record', () => {
+  it('keeps a checkout warning with its details and fix', () => {
+    const report = reportWith(
+      buildRepoChecks(
+        { isGitRepo: true, hasCommits: true, dirtyFiles: ['src/a.ts'], untrackedFiles: [] },
+        'none',
+      ),
+    );
+
+    const dirty = createStartReadinessRecord(report).checks.find(
+      (check) => check.id === 'repo.dirty-worktree',
+    );
+
+    expect(dirty?.details).toContain('Examples: src/a.ts');
+    expect(dirty?.remediation).toContain('The run edits this checkout.');
+    expect(dirty?.remediation).toContain('.splitbrief/sessions/<id>/reverted/');
+  });
+
+  it('records the diagnostic remediation of a warning that names no fix, and no ok or info check', () => {
+    const record = createStartReadinessRecord(
+      reportWith([
+        {
+          id: 'auth',
+          severity: 'warning',
+          summary: 'Sign-in is not proven.',
+          diagnosticState: 'auth-unknown',
+        },
+        { id: 'fine', severity: 'ok', summary: 'Fine.', fix: 'Nothing.' },
+        { id: 'note', severity: 'info', summary: 'A note.' },
+      ]),
+    );
+
+    expect(record.checks).toEqual([
+      {
+        id: 'auth',
+        severity: 'warning',
+        summary: 'Sign-in is not proven.',
+        remediation: READINESS_DIAGNOSTIC_REMEDIATION['auth-unknown'],
+      },
+    ]);
+  });
+
+  it('still reads a record that holds only the summary of each check', () => {
+    expect(
+      StartReadinessRecordSchema.parse({
+        type: 'start-readiness',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        status: 'ready-with-warnings',
+        nextAction: 'continue',
+        blockerCount: 0,
+        warningCount: 1,
+        checks: [
+          {
+            id: 'repo.dirty-worktree',
+            severity: 'warning',
+            summary: 'Working tree has 1 changed file.',
+          },
+        ],
+      }).checks,
+    ).toHaveLength(1);
+  });
+
+  it('states each warning as its summary then its fix, and leaves blockers out', () => {
+    const record = createStartReadinessRecord(
+      reportWith([
+        { id: 'stop', severity: 'blocker', summary: 'Cannot start.', fix: 'Install it.' },
+        {
+          id: 'dirty',
+          severity: 'warning',
+          summary: 'Working tree has 1 changed file.',
+          details: ['Examples: a.ts'],
+          fix: 'Commit it.',
+        },
+        { id: 'plain', severity: 'warning', summary: 'A plain warning.' },
+      ]),
+    );
+
+    expect(startReadinessWarnings(record)).toEqual([
+      'Working tree has 1 changed file. Commit it.',
+      'A plain warning.',
+    ]);
   });
 });

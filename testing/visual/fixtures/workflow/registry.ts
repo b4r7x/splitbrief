@@ -382,6 +382,7 @@ const checkpointPredicates = [
   [checkpointId('composer-outside-file'), includesAll('Attached files · 1', 'Planning…')],
   [checkpointId('question-outside-file'), includesAll('Attached files · 1', 'Planning…')],
   [checkpointId('planning-path-notice'), includesAll('cannot open', 'Planning…')],
+  [checkpointId('start-readiness-warning'), includesAll('Warning', 'reverted/', 'Planning…')],
   [checkpointId('plan-compiled'), includesAll('plan.md', 'tasks.md')],
   [checkpointId('first-brief-after-plan'), includesAll('Plan', 'T001', '0/3 briefs passed')],
   [checkpointId('build-consult'), includesAll('Claude Code CLI', 'answering the consult on T901')],

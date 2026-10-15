@@ -437,6 +437,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'workflow-start-readiness-warning',
+      title: 'Workflow · start with a readiness warning',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'start-readiness-warning',
+        title: 'Checkout-mode warning under the request',
+        kind: 'planning',
+        marker: 'reverted/',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Request and its readiness warning' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
+    defineScenario({
       id: 'workflow-plan-compiled',
       title: 'Workflow · plan compiled',
       surface: screenSurface('workflow'),

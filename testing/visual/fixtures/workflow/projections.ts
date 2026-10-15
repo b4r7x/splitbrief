@@ -11,6 +11,11 @@ import { retainedWorkspaceNotices, retainedWorkspaceProjection } from './retaine
 import { closedQueueProjection } from './closed-queue-projection.js';
 import { cliStopContinuedProjection } from './cli-stop-continued.js';
 import { taskId } from '../../../../src/core/schemas/task.js';
+import { buildRepoChecks } from '../../../../src/core/readiness/checks/repo.js';
+import {
+  createStartReadinessRecord,
+  startReadinessWarnings,
+} from '../../../../src/core/readiness/format.js';
 import type { SeatSwitchRecord, WorkflowState } from '../../../../src/core/schemas/workflow.js';
 import type { ConsultSeat } from '../../../../src/core/schemas/consult.js';
 import { makeTask } from '../../../helpers/factories/task.js';
@@ -424,6 +429,59 @@ const planningPathNoticeProjection: WorkflowFixtureProjection = {
       model: BASE_IMPLEMENTER.model,
       call: 'plan',
     },
+  ],
+};
+
+const START_READINESS_FEATURE = 'Fix the typo in the README';
+
+/** The warnings a checkout-mode start states, worded by readiness itself. */
+const startReadinessWarningText = startReadinessWarnings(
+  createStartReadinessRecord({
+    generatedAt: new Date(FIXED_TS).toISOString(),
+    projectDir: '/Users/dev/app',
+    status: 'ready-with-warnings',
+    counts: { ok: 0, info: 0, warning: 1, blocker: 0 },
+    nextAction: { kind: 'continue', label: 'Continue', reason: 'warnings' },
+    sections: [
+      {
+        id: 'repo',
+        title: 'Repository',
+        checks: buildRepoChecks(
+          {
+            isGitRepo: true,
+            hasCommits: true,
+            dirtyFiles: ['README.md'],
+            untrackedFiles: ['my-notes.txt'],
+          },
+          'none',
+        ),
+      },
+    ],
+    metadata: {},
+  }),
+);
+
+const startReadinessWarningProjection: WorkflowFixtureProjection = {
+  scenarioId: scenarioId('workflow-start-readiness-warning'),
+  feature: START_READINESS_FEATURE,
+  inputMode: 'normal',
+  sidebarVisible: false,
+  config: { workflow: { isolation: 'none' } },
+  events: [
+    ...planningProjection.events
+      .filter((event) => event.type === 'workflow_started' || event.type === 'planner_status')
+      .map((event) =>
+        event.type === 'workflow_started' ? { ...event, feature: START_READINESS_FEATURE } : event,
+      ),
+    { type: 'user_message', ts: FIXED_TS + 20, phase: 'planning', text: START_READINESS_FEATURE },
+    ...startReadinessWarningText.map(
+      (message): EngineEvent => ({
+        type: 'warning',
+        ts: FIXED_TS + 21,
+        phase: 'planning',
+        message,
+      }),
+    ),
   ],
 };
 
@@ -5356,6 +5414,7 @@ const projections = [
   composerOutsideFileProjection,
   questionOutsideFileProjection,
   planningPathNoticeProjection,
+  startReadinessWarningProjection,
   planCompiledProjection,
   firstBriefAfterPlanProjection,
   implementationProjection,
@@ -5774,7 +5833,8 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
     // The answered card's flat text joins its bounded qa pairs; it is not independent content.
     // Nor is a halt the engine composed around the tool's own bounded words, or the plan card's
     // plan.md and plan.json, which the plan formatter and the plan schema write whole, or the
-    // implementer's JSON report, which the transcript reads as one summary line.
+    // implementer's JSON report, which the transcript reads as one summary line, or a start
+    // warning, which readiness words as its summary and its fix.
     (value) =>
       value !== planCardProjection.review?.source &&
       value !== planCardProjection.review?.planJson &&
@@ -5786,6 +5846,7 @@ function assertProjectionBounds(projection: WorkflowFixtureProjection): void {
       value !== RESUMED_REPORT_TEXT &&
       !retainedWorkspaceNotices.includes(value) &&
       !engineHaltText.includes(value) &&
+      !startReadinessWarningText.includes(value) &&
       value.length > WORKFLOW_FIXTURE_BOUNDS.maxStringLength &&
       !projection.question?.questions?.some(
         (question) =>
