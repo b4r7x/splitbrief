@@ -125,6 +125,14 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
     expect(text, name).toContain('OpenAI Codex CLI · GPT-6-Luna');
     expect(text, name).not.toContain('GPT-6 Luna');
   }
+  const seats = readSeatIdentities(ref);
+  if (seats === null) throw new Error('Expected a seat record');
+  for (const name of [PLAN_FILE, TASKS_FILE, REVIEW_FILE]) {
+    const text = readFileSync(join(sessionDir(ref.projectDir, ref.sessionId), name), 'utf8');
+    expect(text, name).toContain(`planner: ${seats.plan}\n`);
+    expect(text, name).toContain(`implementer: ${seats.build}\n`);
+    expect(text, name).toContain(`reviewer: ${seats.review}\n`);
+  }
 
   const spec = await cli(target, ['spec', 'catalog names']);
   expect(spec.exitCode, spec.stderr).toBe(0);
@@ -135,6 +143,7 @@ console.log(JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 100,
   for (const name of [PLAN_FILE, TASKS_FILE]) {
     const text = readFileSync(join(sessionDir(target.projectDir, specSession), name), 'utf8');
     expect(text).toContain('implementer: OpenAI Codex CLI · GPT-6-Luna');
+    expect(text).toContain(`reviewer: ${seats.review}\n`);
     expect(text).not.toContain('GPT-6 Luna');
   }
 });

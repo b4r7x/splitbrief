@@ -13,6 +13,7 @@ import {
 import { error } from '../../utils/error.js';
 import { assertNever } from '../../utils/type-guards.js';
 import type { RunnerGate, RunnerGateExpectation } from './prepared-execution.js';
+import { executableChangedMessage } from './resolve-cli-executable.js';
 import type {
   CliExecutableIdentity,
   CliExecutableReceipt,
@@ -203,7 +204,7 @@ export function assertCliStartGate(
   if (!receiptStillMatchesDisk(gate.executable)) {
     throw error(
       'cli-executable-identity-drift',
-      `Executable identity changed for ${CLI_TOOL_CATALOG[tool].displayName}; run \`splitbrief doctor\` again before execution.`,
+      executableChangedMessage(CLI_TOOL_CATALOG[tool].displayName),
       { tool },
     );
   }

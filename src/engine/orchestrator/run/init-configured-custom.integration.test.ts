@@ -267,6 +267,7 @@ describe('configured custom workflow runtime', () => {
             metadata: {
               planner: 'test-planner · auto',
               implementer: 'configured-output · auto',
+              reviewer: 'test-planner · auto',
             },
             setTrackedState: () => {},
             resumeHolder: { messages: [] },
@@ -395,6 +396,7 @@ describe('configured custom workflow runtime', () => {
         metadata: {
           planner: 'configured planner · auto',
           implementer: 'configured implementer · auto',
+          reviewer: 'configured planner · auto',
         },
         setTrackedState: () => {},
         resumeHolder: { messages: [] },

@@ -20,6 +20,7 @@ import type { SessionRef } from '../../src/core/types/session-ref.js';
 export const TEST_METADATA = {
   planner: 'Claude Code CLI · auto',
   implementer: 'Ollama · auto',
+  reviewer: 'Claude Code CLI · auto',
 } as const;
 
 export const TEST_SINKS: WorkflowSinks = {

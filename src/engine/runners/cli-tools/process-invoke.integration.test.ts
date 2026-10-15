@@ -1460,7 +1460,11 @@ describe('invokeProcessCli', () => {
 
       expect(result).toMatchObject({
         status: 'failed',
-        error: { code: 'cli-executable-identity-drift' },
+        error: {
+          code: 'cli-executable-identity-drift',
+          message:
+            'OpenAI Codex CLI changed after SPLITBRIEF checked it, for example in an update. Try again checks it again.',
+        },
       });
       expect(result.error?.message).not.toContain(trustedIdentity.path);
       expect(existsSync(markerPath)).toBe(false);

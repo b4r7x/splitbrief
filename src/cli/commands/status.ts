@@ -17,7 +17,15 @@ import { checkSessionLiveness } from '../../core/sessions/lockfile.js';
 import { readSessionSummary } from '../../core/sessions/run-record-io.js';
 import { deriveRunStatus } from '../../core/sessions/run-status.js';
 import { sessionDir } from '../../core/paths.js';
-import { candidateIdsOf, formatSeatIdentity, type SeatIds } from '../../core/crew/identity.js';
+import {
+  CREW_SEAT_IDS,
+  CREW_SEAT_LABELS,
+  candidateIdsOf,
+  formatSeatIdentity,
+  type CrewSeatId,
+  type SeatIds,
+} from '../../core/crew/identity.js';
+import { CREW_SEAT_ROLES } from '../../core/crew/seats.js';
 import type { RunnerKind } from '../../core/schemas/enums.js';
 import type { CallUsageEvidence } from '../../core/schemas/usage-evidence.js';
 import { resolveCallUsageEvidence } from '../../engine/orchestrator/summary/call-evidence.js';
@@ -35,7 +43,7 @@ import { loadRememberedCatalog } from '../bootstrap/discovery.js';
  */
 function recordedRunnerKind(
   evidence: readonly CallUsageEvidence[] | undefined,
-  role: 'planner' | 'implementer',
+  role: CallUsageEvidence['role'],
   tool: string,
 ): RunnerKind | 'ambiguous' | undefined {
   if (evidence === undefined) return undefined;
@@ -50,6 +58,11 @@ function recordedRunnerKind(
   if (kinds.size === 0) return undefined;
   return kinds.size === 1 ? [...kinds][0] : 'ambiguous';
 }
+
+const STATUS_LABEL_WIDTH = 'Feature:  '.length;
+
+/** A seat as the run state recorded it, and the role its own calls were recorded under. */
+type RecordedSeat = Readonly<{ seat: SeatIds; callRole: CallUsageEvidence['role'] }>;
 
 export function registerStatusCommand(program: Command): void {
   program
@@ -70,8 +83,11 @@ export function registerStatusCommand(program: Command): void {
         const ref = { projectDir, sessionId };
         const evidence = resolveCallUsageEvidence(ref);
         const seats = readSeatIdentityRecord(ref);
-        const seatIdentity = (role: 'planner' | 'implementer', seat: SeatIds): string => {
-          const seatId = role === 'planner' ? 'plan' : 'build';
+        const seatIdentity = (
+          seatId: CrewSeatId,
+          seat: SeatIds,
+          callRole: CallUsageEvidence['role'],
+        ): string => {
           const switchIndex =
             state.seatSwitches?.findLastIndex((change) => change.seat === seatId) ?? -1;
           const switched = state.seatSwitches?.[switchIndex];
@@ -83,7 +99,7 @@ export function registerStatusCommand(program: Command): void {
               ? candidateIdsOf(switched.toSeat)
               : seats?.ids?.[seatId];
           const selected = current ?? seat;
-          const recorded = selected.kind ?? recordedRunnerKind(evidence, role, selected.tool);
+          const recorded = selected.kind ?? recordedRunnerKind(evidence, callRole, selected.tool);
           // API vocabulary keeps an ambiguous legacy name literal without selecting a CLI.
           const kind = recorded === 'ambiguous' ? 'api' : recorded;
           const ids =
@@ -96,7 +112,7 @@ export function registerStatusCommand(program: Command): void {
             formatSeatIdentity(
               recordedSeatIdentityInput({
                 seat: { ...ids, kind: kind ?? ids.kind },
-                role,
+                role: CREW_SEAT_ROLES[seatId],
                 cache: modelCacheStore,
               }),
             ),
@@ -132,22 +148,45 @@ export function registerStatusCommand(program: Command): void {
         console.log(`${paint(theme.textDim, 'Started:')}  ${state.startedAt}`);
         console.log(`${paint(theme.textDim, 'Session:')}  ${sessionId}`);
 
-        if (state.plannerTool) {
+        const plan: RecordedSeat | undefined = state.plannerTool
+          ? {
+              seat: { tool: state.plannerTool, model: state.plannerModel, kind: state.plannerKind },
+              callRole: 'planner',
+            }
+          : undefined;
+        const crew: Record<CrewSeatId, RecordedSeat | undefined> = {
+          plan,
+          build: state.implementerTool
+            ? {
+                seat: {
+                  tool: state.implementerTool,
+                  model: state.implementerModel,
+                  kind: state.implementerKind,
+                },
+                callRole: 'implementer',
+              }
+            : undefined,
+          review: state.reviewerTool
+            ? {
+                seat: {
+                  tool: state.reviewerTool,
+                  model: state.reviewerModel,
+                  kind: state.reviewerKind,
+                },
+                callRole: 'review',
+              }
+            : plan,
+        };
+        // A run records a reviewer only when one is configured; without it PLAN holds REVIEW,
+        // switches included, until a REVIEW switch gives the review seat its own runner.
+        const reviewHeldByPlan =
+          !state.reviewerTool && !state.seatSwitches?.some((change) => change.seat === 'review');
+        for (const seatId of CREW_SEAT_IDS) {
+          const recorded = crew[seatId];
+          if (recorded === undefined) continue;
+          const holder = seatId === 'review' && reviewHeldByPlan ? 'plan' : seatId;
           console.log(
-            `${paint(theme.textDim, 'Planner:')}  ${seatIdentity('planner', {
-              tool: state.plannerTool,
-              model: state.plannerModel,
-              kind: state.plannerKind,
-            })}`,
-          );
-        }
-        if (state.implementerTool) {
-          console.log(
-            `${paint(theme.textDim, 'Impl:')}     ${seatIdentity('implementer', {
-              tool: state.implementerTool,
-              model: state.implementerModel,
-              kind: state.implementerKind,
-            })}`,
+            `${paint(theme.textDim, `${CREW_SEAT_LABELS[seatId]}:`.padEnd(STATUS_LABEL_WIDTH))}${seatIdentity(holder, recorded.seat, recorded.callRole)}`,
           );
         }
 

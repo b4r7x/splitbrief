@@ -821,6 +821,11 @@ export function cliToolIdForCommand(command: string): CliToolId | undefined {
   return CLI_TOOL_IDS.find((id) => CLI_TOOL_CATALOG[id].command === command);
 }
 
+/** The tool an executable name starts, by any of its executable aliases (Cursor also installs `agent`). */
+export function cliToolIdForExecutable(name: string): CliToolId | undefined {
+  return CLI_TOOL_IDS.find((id) => CLI_TOOL_CATALOG[id].executableAliases.includes(name));
+}
+
 /**
  * The admitted CLIs that ship a read-only per-provider credential listing.
  * Both the probe commands and the detection normalizer derive from this set,

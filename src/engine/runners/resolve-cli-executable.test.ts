@@ -177,6 +177,36 @@ describe('resolveCliExecutable', () => {
     });
   });
 
+  itUnix('names the tool and Try again when a catalog executable changes', async () => {
+    const projectDir = createTempDir('resolver-catalog-drift-project');
+    const binDir = createTempDir('resolver-catalog-drift-bin');
+    dirs.push(projectDir, binDir);
+    const executable = join(binDir, CURSOR_FALLBACK_EXECUTABLE);
+    makeExecutable(executable);
+    setEnv('PATH', binDir);
+    const trusted = await resolveCliExecutable({
+      command: CURSOR_FALLBACK_EXECUTABLE,
+      projectDir,
+    });
+    makeExecutable(executable, '#!/bin/sh\necho updated\n');
+
+    await expect(
+      resolveCliExecutable({ command: CURSOR_FALLBACK_EXECUTABLE, projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
+      kind: 'cli-executable-identity-drift',
+      message:
+        'Cursor Agent CLI changed after SPLITBRIEF checked it, for example in an update. Try again checks it again.',
+    });
+
+    setEnv('PATH', '');
+    await expect(
+      resolveCliExecutable({ command: 'claude', projectDir, trust: trusted }),
+    ).rejects.toMatchObject({
+      kind: 'cli-executable-identity-drift',
+      message: expect.stringMatching(/^Claude Code CLI changed after SPLITBRIEF checked it/),
+    });
+  });
+
   itUnix('rejects a same-inode same-size replacement with restored mtime', async () => {
     const projectDir = createTempDir('resolver-preserved-metadata-project');
     const binDir = createTempDir('resolver-preserved-metadata-bin');

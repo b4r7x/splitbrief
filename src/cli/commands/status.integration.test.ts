@@ -192,7 +192,8 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  opencode · GPT-5');
+    expect(out).toContain('PLAN:     opencode · GPT-5');
+    expect(out).toContain('REVIEW:   opencode · GPT-5');
     expect(out).not.toContain('OpenCode CLI');
   });
 
@@ -217,8 +218,8 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  opencode · GPT-5');
-    expect(out).toContain('Impl:     OpenCode CLI · GPT-5');
+    expect(out).toContain('PLAN:     opencode · GPT-5');
+    expect(out).toContain('BUILD:    OpenCode CLI · GPT-5');
   });
 
   it('keeps a seat tool word literal and its model pretty when its own calls recorded both kinds', async () => {
@@ -235,7 +236,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  opencode · GPT-5');
+    expect(out).toContain('PLAN:     opencode · GPT-5');
     expect(out).not.toContain('OpenCode CLI');
   });
 
@@ -248,8 +249,94 @@ describe('status command', () => {
     await runStatus([]);
 
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'Planner:  Claude Code CLI · Sonnet 5.5',
+      'PLAN:     Claude Code CLI · Sonnet 5.5',
     );
+  });
+
+  it('names the three seats in order, REVIEW held by PLAN when the run has no reviewer of its own', async () => {
+    writeActiveSession(tmp, '2026-10-15-inherited-review', 'inherited review', {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-6.1-sol',
+      implementerKind: 'cli',
+    });
+
+    await runStatus([]);
+
+    const seats = stripVTControlCharacters(captureOutput())
+      .split('\n')
+      .filter((line) => /^(PLAN|BUILD|REVIEW):/.test(line));
+    expect(seats).toEqual([
+      'PLAN:     Claude Code CLI · Sonnet 5.5',
+      'BUILD:    OpenAI Codex CLI · GPT-6.1-Sol',
+      'REVIEW:   Claude Code CLI · Sonnet 5.5',
+    ]);
+  });
+
+  it('names the REVIEW seat from its own recorded reviewer', async () => {
+    writeActiveSession(tmp, '2026-10-15-own-review', 'own review', {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-6.1-sol',
+      implementerKind: 'cli',
+      reviewerTool: 'claude-code',
+      reviewerModel: 'opus',
+      reviewerKind: 'cli',
+    });
+
+    await runStatus([]);
+
+    expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
+      'REVIEW:   Claude Code CLI · Opus 5.5',
+    );
+  });
+
+  it('prints a REVIEW seat switch over the recorded reviewer', async () => {
+    writeActiveSession(tmp, '2026-10-15-review-switch', 'review switch', {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      seatSwitches: [{ ...buildSwitch, seat: 'review' }],
+    });
+
+    await runStatus([]);
+
+    const out = stripVTControlCharacters(captureOutput()).split('\n');
+    expect(out).toContain('PLAN:     Claude Code CLI · Sonnet 5.5');
+    expect(out).toContain('REVIEW:   Claude Code CLI · Sonnet 5.5 · max');
+  });
+
+  it('carries a PLAN seat switch to REVIEW when PLAN holds REVIEW', async () => {
+    const sessionId = '2026-10-15-plan-switch';
+    writeActiveSession(tmp, sessionId, 'plan switch');
+    recordSeatIdentities(
+      { projectDir: tmp, sessionId },
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+        implementer: { kind: 'cli', tool: 'codex', model: 'gpt-6.1-sol' },
+      }),
+    );
+    writeActiveSession(tmp, sessionId, 'plan switch', {
+      plannerTool: 'claude-code',
+      plannerModel: 'sonnet',
+      plannerKind: 'cli',
+      implementerTool: 'codex',
+      implementerModel: 'gpt-6.1-sol',
+      implementerKind: 'cli',
+      seatSwitches: [
+        { ...buildSwitch, seat: 'plan', toSeat: { tool: 'claude-code', model: 'opus' } },
+      ],
+    });
+
+    await runStatus([]);
+
+    const out = stripVTControlCharacters(captureOutput()).split('\n');
+    expect(out).toContain('PLAN:     Claude Code CLI · Opus 5.5');
+    expect(out).toContain('REVIEW:   Claude Code CLI · Opus 5.5');
   });
 
   it('uses the current recorded seat kind when earlier calls used the same name for a CLI', async () => {
@@ -277,7 +364,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Planner:  claude-code · Sonnet');
+    expect(out).toContain('PLAN:     claude-code · Sonnet');
     expect(out).not.toContain('Claude Code CLI');
     expect(out).not.toContain('Sonnet 5.5');
     expect(out).not.toContain('high');
@@ -301,7 +388,7 @@ describe('status command', () => {
     await runStatus([]);
 
     const out = stripVTControlCharacters(captureOutput());
-    expect(out).toContain('Impl:     Claude Code CLI · Sonnet 5.5 · max');
+    expect(out).toContain('BUILD:    Claude Code CLI · Sonnet 5.5 · max');
     expect(out).not.toContain('high');
   });
 
@@ -324,7 +411,7 @@ describe('status command', () => {
       await runStatus([]);
 
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `Impl:     Claude Code CLI · Sonnet 5.5 · ${effort}`,
+        `BUILD:    Claude Code CLI · Sonnet 5.5 · ${effort}`,
       );
     },
   );
@@ -365,7 +452,7 @@ describe('status command', () => {
       await runStatus([]);
 
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `Impl:     Claude Code CLI · Sonnet 5.5${expected}`,
+        `BUILD:    Claude Code CLI · Sonnet 5.5${expected}`,
       );
     },
   );
@@ -411,7 +498,7 @@ describe('status command', () => {
       consoleSpy.mockClear();
       await runStatus([]);
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `Impl:     Claude Code CLI · Sonnet 5.5 · ${structured ? 'low' : 'high'}`,
+        `BUILD:    Claude Code CLI · Sonnet 5.5 · ${structured ? 'low' : 'high'}`,
       );
     }
   });
@@ -459,12 +546,12 @@ describe('status command', () => {
       consoleSpy.mockClear();
       await runStatus([]);
       expect(stripVTControlCharacters(captureOutput()).split('\n')).toContain(
-        `Impl:     ${scenario.identity}`,
+        `BUILD:    ${scenario.identity}`,
       );
     }
   });
 
-  it('strips terminal controls from both seat identities', async () => {
+  it('strips terminal controls from every seat identity', async () => {
     writeActiveSession(tmp, '2026-10-13-controls', 'seat controls', {
       plannerTool: '\u001b[31mcustom\u001b[0m',
       plannerModel: '\u001b[32mgpt-5\u001b[0m',
@@ -476,14 +563,14 @@ describe('status command', () => {
 
     const seats = captureOutput()
       .split('\n')
-      .filter((line) => /^(Planner|Impl):/.test(stripVTControlCharacters(line)));
-    expect(seats).toHaveLength(2);
+      .filter((line) => /^(PLAN|BUILD|REVIEW):/.test(stripVTControlCharacters(line)));
+    expect(seats).toHaveLength(3);
     for (const line of seats) {
       expect(line).not.toContain('\u001b[31m');
       expect(line).not.toContain('\u001b[32m');
     }
     expect(stripVTControlCharacters(captureOutput())).toContain(
-      'Impl:     OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
+      'BUILD:    OpenCode CLI · DeepSeek V4.1 Flash · via opencode-go',
     );
   });
 });

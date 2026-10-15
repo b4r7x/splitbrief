@@ -549,7 +549,11 @@ describe('review fix work', () => {
       {
         ...ref,
         workspaceDir: ref.projectDir,
-        metadata: { planner: 'Claude Code CLI · auto', implementer: 'OpenAI Codex CLI · auto' },
+        metadata: {
+          planner: 'Claude Code CLI · auto',
+          implementer: 'OpenAI Codex CLI · auto',
+          reviewer: 'Claude Code CLI · auto',
+        },
       },
       state,
       state.review,
@@ -596,7 +600,11 @@ describe('review fix work', () => {
         {
           ...ref,
           workspaceDir: ref.projectDir,
-          metadata: { planner: 'Claude Code CLI · auto', implementer: 'OpenAI Codex CLI · auto' },
+          metadata: {
+            planner: 'Claude Code CLI · auto',
+            implementer: 'OpenAI Codex CLI · auto',
+            reviewer: 'Claude Code CLI · auto',
+          },
         },
         state,
         state.review,
@@ -647,7 +655,11 @@ describe('review fix work', () => {
       {
         ...ref,
         workspaceDir: ref.projectDir,
-        metadata: { planner: 'Claude Code CLI · auto', implementer: 'OpenAI Codex CLI · auto' },
+        metadata: {
+          planner: 'Claude Code CLI · auto',
+          implementer: 'OpenAI Codex CLI · auto',
+          reviewer: 'Claude Code CLI · auto',
+        },
       },
       state,
       state.review,
@@ -707,7 +719,11 @@ describe('review fix work', () => {
       {
         ...ref,
         workspaceDir: ref.projectDir,
-        metadata: { planner: 'Claude Code CLI · auto', implementer: 'OpenAI Codex CLI · auto' },
+        metadata: {
+          planner: 'Claude Code CLI · auto',
+          implementer: 'OpenAI Codex CLI · auto',
+          reviewer: 'Claude Code CLI · auto',
+        },
       },
       state,
       state.review,

@@ -13,6 +13,7 @@ import type {
   ExecutableIdentity,
 } from '../../core/discovery/detection.js';
 import type * as Detection from '../../core/discovery/detection.js';
+import { CLI_TOOL_CATALOG, cliToolIdForExecutable } from '../../core/runners/cli-tool-catalog.js';
 import { cliExecutableTrustRemediation } from '../../core/schemas/readiness.js';
 import { isENOENT, isNodeError } from '../../lib/process/errors.js';
 import { error, matches } from '../../utils/error.js';
@@ -79,6 +80,21 @@ function diagnosticCommand(command: string): string {
     })
     .join('');
   return safe.length > 0 ? safe : '<executable>';
+}
+
+/**
+ * The words for a run call whose executable no longer matches the one SPLITBRIEF checked, most
+ * often after the tool updated itself. Try again prepares the run again, which checks it again.
+ */
+export function executableChangedMessage(toolName: string): string {
+  return `${toolName} changed after SPLITBRIEF checked it, for example in an update. Try again checks it again.`;
+}
+
+/** The tool a catalog executable name starts, by its display name; any other name stays as given. */
+function executableToolName(command: string): string {
+  const name = diagnosticCommand(command);
+  const tool = cliToolIdForExecutable(name);
+  return tool === undefined ? name : CLI_TOOL_CATALOG[tool].displayName;
 }
 
 function diagnosticIdentity(identity: CliExecutableIdentity): DiagnosticIdentity {
@@ -282,7 +298,7 @@ function assertTrustedIdentity(
     if (!exactTrustMatches(identity, trust)) {
       throw error(
         'cli-executable-identity-drift',
-        `Executable identity changed for ${diagnosticCommand(command)}; run \`splitbrief doctor\` again before execution.`,
+        executableChangedMessage(executableToolName(command)),
         {
           command: diagnosticCommand(command),
           expectedIdentity: diagnosticIdentity(trust),
@@ -480,7 +496,7 @@ export async function resolveCliExecutable(
   if (trust !== null && trust !== undefined) {
     throw error(
       'cli-executable-identity-drift',
-      `Executable identity changed for ${diagnosticCommand(command)}; run \`splitbrief doctor\` again before execution.`,
+      executableChangedMessage(executableToolName(command)),
       {
         command: diagnosticCommand(command),
         expectedIdentity: diagnosticIdentity(trust),
