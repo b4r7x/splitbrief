@@ -235,14 +235,14 @@ describe('config defaults', () => {
       expect(existsSync(file)).toBe(false);
       const result = await initConfig(dir, config);
       expect(loadConfig(dir).config).toEqual(config);
-      expect(result).toBe('saved');
+      expect(result.kind).toBe('saved');
 
       const existing = 'version: 3\nworkflow:\n  mode: quick\n';
       writeFileSync(file, existing);
       await initConfig(dir, config);
       expect(readFileSync(file, 'utf-8')).toBe(existing);
 
-      expect(await initConfig(dir, config, { force: true })).toBe('saved');
+      expect((await initConfig(dir, config, { force: true })).kind).toBe('saved');
       expect(loadConfig(dir).config).toEqual(config);
     });
 

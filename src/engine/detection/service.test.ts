@@ -307,6 +307,7 @@ describe('createDetectionService', () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'splitbrief-detection-service-test-'));
+    await mkdir(join(tempDir, SPLITBRIEF_DIR));
     service = createDetectionService();
     modelCacheStore.reset();
   });

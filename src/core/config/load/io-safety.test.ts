@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createTempDir, cleanupTempDir } from '#testing/helpers/temp-dir.js';
 const itUnix = process.platform === 'win32' ? it.skip : it;
@@ -14,6 +14,7 @@ import {
 } from './io.js';
 import { configPath, readConfigDocument } from './document.js';
 import { createDefaultConfig } from './defaults.js';
+import { toYaml } from './transform.js';
 import { SPLITBRIEF_DIR, TREES_DIR } from '../../paths.js';
 import { writeConfigYaml } from '#testing/helpers/config-io.js';
 import { confinedAtomicWriteFileForTest } from '../../../lib/confined-fs-atomic.js';
@@ -108,6 +109,7 @@ describe('config load safety', () => {
         await expect(initConfig(dir, createDefaultConfig())).rejects.toThrow(
           /refusing to write through symlink/,
         );
+        expect(existsSync(configPath(dir))).toBe(false);
         expect(readFileSync(sentinel, 'utf8')).toBe('external sentinel\n');
       } finally {
         cleanupTempDir(outside);
@@ -389,7 +391,7 @@ describe('config document transaction safety', () => {
           expectedRevision: before.revision,
         });
 
-        expect(result).toBe('conflict');
+        expect(result.kind).toBe('conflict');
         expect(readFileSync(configPath(dir), 'utf8')).toBe(external);
         expect(existsSync(join(dir, '.gitignore'))).toBe(false);
       } finally {
@@ -425,6 +427,77 @@ describe('config document transaction safety', () => {
         createHash('sha256').update(snapshot.rawBytes).digest('hex'),
       );
       expect(snapshot.revision?.fileIdentity.size).toBe(BigInt(snapshot.rawBytes.byteLength));
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  it('adds the ignore rule only with the save that creates the config', async () => {
+    const dir = createTempDir('config-create-ignore');
+    const ignorePath = join(dir, '.gitignore');
+    try {
+      const created = await transactConfigDocument(dir, null, [
+        { path: [], value: toYaml(createDefaultConfig()) },
+      ]);
+      expect(created).toMatchObject({ kind: 'saved', ignoreRuleAdded: true });
+      expect(readFileSync(ignorePath, 'utf8')).toBe(`${SPLITBRIEF_DIR}/\n`);
+
+      const edit = [{ path: ['workflow', 'approve'], value: 'none' }];
+      const edited = await transactConfigDocument(dir, readConfigDocument(dir).revision, edit);
+      expect(edited).toMatchObject({ kind: 'saved', ignoreRuleAdded: false });
+
+      writeFileSync(ignorePath, 'node_modules/\n');
+      const later = await transactConfigDocument(dir, readConfigDocument(dir).revision, [
+        { path: ['workflow', 'approve'], value: 'plan' },
+      ]);
+      expect(later).toMatchObject({ kind: 'saved', ignoreRuleAdded: false });
+      expect(readFileSync(ignorePath, 'utf8')).toBe('node_modules/\n');
+    } finally {
+      cleanupTempDir(dir);
+    }
+  });
+
+  itUnix(
+    'leaves no config behind when the ignore rule fails, so the retry creates it',
+    async () => {
+      const dir = createTempDir('config-create-ignore-retry');
+      const outside = createTempDir('config-create-ignore-retry-outside');
+      const sentinel = join(outside, '.gitignore');
+      const create = [{ path: [], value: toYaml(createDefaultConfig()) }];
+      try {
+        writeFileSync(sentinel, 'external sentinel\n');
+        symlinkSync(sentinel, join(dir, '.gitignore'));
+
+        await expect(transactConfigDocument(dir, null, create)).rejects.toThrow(
+          /refusing to write through symlink/,
+        );
+        expect(existsSync(configPath(dir))).toBe(false);
+        expect(readFileSync(sentinel, 'utf8')).toBe('external sentinel\n');
+
+        rmSync(join(dir, '.gitignore'));
+        await expect(transactConfigDocument(dir, null, create)).resolves.toMatchObject({
+          kind: 'saved',
+          ignoreRuleAdded: true,
+        });
+        expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe(`${SPLITBRIEF_DIR}/\n`);
+      } finally {
+        cleanupTempDir(outside);
+        cleanupTempDir(dir);
+      }
+    },
+  );
+
+  it('adds a missing ignore rule when initialization overwrites a config', async () => {
+    const dir = createTempDir('config-reconfigure-ignore');
+    try {
+      writeConfig(dir, createDefaultConfig());
+      expect(existsSync(join(dir, '.gitignore'))).toBe(false);
+
+      await expect(initConfig(dir, createDefaultConfig(), { force: true })).resolves.toMatchObject({
+        kind: 'saved',
+        ignoreRuleAdded: true,
+      });
+      expect(readFileSync(join(dir, '.gitignore'), 'utf8')).toBe(`${SPLITBRIEF_DIR}/\n`);
     } finally {
       cleanupTempDir(dir);
     }

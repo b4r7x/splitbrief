@@ -44,7 +44,6 @@ import { readRunRecord } from '../../core/sessions/run-record-io.js';
 import { sessionSelectStore } from '../../stores/navigation/session-select.js';
 import { configStore } from '../../stores/project/config.js';
 import { persistedConfigForSave } from '../../stores/project/config-persistence.js';
-import { configPath, ensureConfigGitignore } from '../../core/config/load/document.js';
 import { configError } from '../../core/config/errors.js';
 import {
   formatConfigSaveSuccess,
@@ -497,7 +496,6 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
   );
   const { frame: preparationFrame } = useSpinnerFrame(checkingStage !== null);
   const [step, setStep] = useState<Step>('discovery');
-  const ignoreInitialized = useRef(false);
   const saveCheck = useRef<AbortController | null>(null);
 
   const preparation = useStartPreparation<SetupPreparationInput>({
@@ -617,22 +615,9 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     }
     const result = await configStore.save(finalConfig);
     if (reportConfigSaveFailure(result)) return;
-    if (!ignoreInitialized.current) {
-      try {
-        await ensureConfigGitignore(projectDir);
-        ignoreInitialized.current = true;
-      } catch (err) {
-        reportConfigSaveFailure({
-          kind: 'failure',
-          ok: false,
-          error: configError.saveFailed(configPath(projectDir), err),
-        });
-        return;
-      }
-    }
 
     if (onComplete === 'workflow' && pendingFeature) {
-      feedbackStore.setMessage(formatConfigSaveSuccess('your crew'));
+      feedbackStore.setMessage(formatConfigSaveSuccess('your crew', result));
       observePreparationCleanup(
         preparation.submit({
           projectDir,
@@ -646,7 +631,7 @@ export function SetupScreen({ prepare, deps }: SetupScreenProps) {
     }
 
     routerStore.navigate({ to: 'home' });
-    feedbackStore.setMessage(formatConfigSaveSuccess('your crew'));
+    feedbackStore.setMessage(formatConfigSaveSuccess('your crew', result));
   };
 
   if (preparationTakesPage) {

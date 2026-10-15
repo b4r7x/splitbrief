@@ -1,7 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { loadConfig, initConfig } from '../core/config/load/io.js';
-import { configPath, readConfigDocument } from '../core/config/load/document.js';
+import { configPath, IGNORE_RULE_ADDED, readConfigDocument } from '../core/config/load/document.js';
 import { selectInitialCrew } from '../core/crew/default.js';
 import type { CLIOverrides } from '../core/config/runtime/overrides/schema.js';
 import type { Config } from '../core/schemas/config.js';
@@ -104,9 +104,9 @@ export async function ensureHeadlessConfig(input: {
     force: input.reconfigure === true,
     expectedRevision: snapshot.revision,
   });
-  if (saved !== 'saved') {
+  if (saved.kind !== 'saved') {
     throw cliError(
-      saved === 'conflict'
+      saved.kind === 'conflict'
         ? 'Config changed during setup. Retry the command.'
         : 'Could not finish saving the crew. Retry the command.',
       1,
@@ -117,6 +117,7 @@ export async function ensureHeadlessConfig(input: {
       ? 'No config found. Saved a ready crew to .splitbrief/config.yaml.'
       : 'Saved a ready crew to .splitbrief/config.yaml.',
   );
+  if (saved.ignoreRuleAdded) console.error(`${IGNORE_RULE_ADDED}.`);
   return effective;
 }
 

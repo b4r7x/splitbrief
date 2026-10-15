@@ -45,7 +45,7 @@ const initial: ConfigState = {
 const store = createStore<ConfigState>(initial);
 
 export type ConfigSaveResult =
-  | Readonly<{ kind: 'saved'; ok: true; revision: ConfigRevision }>
+  | Readonly<{ kind: 'saved'; ok: true; revision: ConfigRevision; ignoreRuleAdded: boolean }>
   | Readonly<{
       kind: 'conflict';
       ok: false;
@@ -146,7 +146,12 @@ async function saveOnce(
         rawYaml: next.rawYaml,
         revision: next.revision,
       }));
-      return { kind: 'saved', ok: true, revision: result.revision };
+      return {
+        kind: 'saved',
+        ok: true,
+        revision: result.revision,
+        ignoreRuleAdded: result.ignoreRuleAdded,
+      };
     }
     store.set(next);
     return { ...result, ok: false };

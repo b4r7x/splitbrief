@@ -22,7 +22,7 @@ These examples do not configure automatic staging, commits, or index checkpoints
 npm install -g splitbrief
 
 cd your-project
-splitbrief init                        # interactive wizard
+splitbrief init                        # choose your crew
 splitbrief doctor                      # verify config, CLI auth, and validation readiness
 splitbrief start "add a hello-world endpoint"
 ```
@@ -30,14 +30,25 @@ splitbrief start "add a hello-world endpoint"
 **You'll see:**
 
 ```
-splitbrief init
-  Detected: claude-code, codex, ollama
-  Planner [claude-code] >  ↵
-  Implementer [ollama qwen3-coder:30b] >  ↵
-  Wrote .splitbrief/config.yaml
+Set up your crew
+
+No config. Setup saves .splitbrief/config.yaml.
+
+Crew
+▌ PLAN      Claude Code CLI · auto
+  BUILD     OpenCode CLI · auto
+  REVIEW    = PLAN
+
+  Continue
 ```
 
-`init` writes `.splitbrief/config.yaml` (`version: 3`) and creates `.splitbrief/`. The default planner is the admitted `claude-code` CLI (subscription-included billing; see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The first `splitbrief start` then creates `.splitbrief/sessions/<session-id>/` and writes `.splitbrief/active`. Run `splitbrief doctor` after setup or runner changes — it is read-only and surfaces remediation copy for non-ready CLI/API states without starting a workflow.
+When Continue is your first save, home shows:
+
+```
+Saved your crew to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore
+```
+
+`init` opens the crew screen. Until you save, it writes nothing in your checkout. The first save creates `.splitbrief/` with `.splitbrief/config.yaml` (`version: 3`) and adds `.splitbrief/` to `.gitignore` when git does not ignore it yet. `splitbrief init --yes` saves a detected ready crew without the screen and prints the same two facts. The default planner is the admitted `claude-code` CLI (subscription-included billing; see the [canonical CLI runner matrix](./PLANNERS-AND-IMPLEMENTERS.md#canonical-cli-runner-matrix)). The first `splitbrief start` then creates `.splitbrief/sessions/<session-id>/` and writes `.splitbrief/active`. Run `splitbrief doctor` after setup or runner changes — it is read-only and surfaces remediation copy for non-ready CLI/API states without starting a workflow.
 
 **Variations:** `splitbrief init --reconfigure` overwrites an existing config. To initialize another project, run `splitbrief init` from that project directory.
 

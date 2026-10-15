@@ -2,7 +2,18 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { configError } from '../../core/config/errors.js';
 import { feedbackStore } from '../ui/feedback.js';
-import { reportConfigSaveFailure } from './save-feedback.js';
+import { formatConfigSaveSuccess, reportConfigSaveFailure } from './save-feedback.js';
+
+describe('formatConfigSaveSuccess', () => {
+  it('names the .gitignore edit on the save line that made it', () => {
+    expect(formatConfigSaveSuccess('PLAN', { ignoreRuleAdded: true })).toBe(
+      'Saved PLAN to .splitbrief/config.yaml · Added .splitbrief/ to .gitignore',
+    );
+    expect(formatConfigSaveSuccess('PLAN', { ignoreRuleAdded: false })).toBe(
+      'Saved PLAN to .splitbrief/config.yaml',
+    );
+  });
+});
 
 describe('reportConfigSaveFailure', () => {
   beforeEach(() => {

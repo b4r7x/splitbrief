@@ -61,7 +61,10 @@ describe('initConfig in a clean checkout', () => {
       const before = readFileSync(ignorePath, 'utf8');
       expect(checkoutStatus(repoDir)).toBe('');
 
-      expect(await initConfig(projectDir, createDefaultConfig())).toBe('saved');
+      expect(await initConfig(projectDir, createDefaultConfig())).toMatchObject({
+        kind: 'saved',
+        ignoreRuleAdded: false,
+      });
 
       expect(existsSync(configPath(projectDir))).toBe(true);
       expect(readFileSync(ignorePath, 'utf8')).toBe(before);
@@ -76,7 +79,10 @@ describe('initConfig in a clean checkout', () => {
       dirs.push(repoDir);
       createTestGitRepo(repoDir, { '.gitignore': before });
 
-      expect(await initConfig(repoDir, createDefaultConfig())).toBe('saved');
+      expect(await initConfig(repoDir, createDefaultConfig())).toMatchObject({
+        kind: 'saved',
+        ignoreRuleAdded: true,
+      });
 
       expect(readFileSync(join(repoDir, '.gitignore'), 'utf8')).toBe(`${before}.splitbrief/\n`);
       expect(checkoutStatus(repoDir)).toBe(' M .gitignore\n');

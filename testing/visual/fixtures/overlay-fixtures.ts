@@ -900,7 +900,9 @@ const createSettingsEndChecksOffFixture: FixtureFactory = () =>
 const createSettingsSavedFixture: FixtureFactory = () => ({
   ...createSettingsEndChecksOffFixture(),
   afterMount: () => {
-    feedbackStore.setMessage(formatConfigSaveSuccess('End-of-run checks · off'));
+    feedbackStore.setMessage(
+      formatConfigSaveSuccess('End-of-run checks · off', { ignoreRuleAdded: false }),
+    );
   },
 });
 const createSettingsApproveChecksAskFixture: FixtureFactory = () =>

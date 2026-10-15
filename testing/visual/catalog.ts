@@ -3190,6 +3190,21 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       ],
     }),
     defineScenario({
+      id: 'setup-saved-ignore-rule',
+      title: 'Setup · first save adds the ignore rule',
+      surface: screenSurface('setup'),
+      checkpoint: {
+        id: 'ready',
+        title: 'Ignore rule reported',
+        kind: 'ready',
+        marker: '.gitignore',
+      },
+      elements: [
+        { id: 'header', title: 'Setup header' },
+        { id: 'setup-panel', title: 'Setup panel' },
+      ],
+    }),
+    defineScenario({
       id: 'setup-unavailable-seat',
       title: 'Setup · unavailable build seat',
       surface: screenSurface('setup'),

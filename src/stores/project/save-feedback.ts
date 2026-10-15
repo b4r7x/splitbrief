@@ -1,3 +1,5 @@
+import { IGNORE_RULE_ADDED } from '../../core/config/load/document.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { feedbackStore } from '../ui/feedback.js';
 import type { ConfigSaveResult } from './config.js';
@@ -16,9 +18,16 @@ function saveFailureReason(error: Error): string {
   return lines.length === 0 ? source.message : lines.join('; ');
 }
 
-/** The one line every surface shows for a save that landed; `subject` names what was saved. */
-export function formatConfigSaveSuccess(subject: string): string {
-  return `Saved ${subject} to .splitbrief/config.yaml`;
+/**
+ * The one line every surface shows for a save that landed; `subject` names what was saved. The save
+ * that added the `.splitbrief/` rule to `.gitignore` says so on the same line.
+ */
+export function formatConfigSaveSuccess(
+  subject: string,
+  saved: Readonly<{ ignoreRuleAdded: boolean }>,
+): string {
+  const line = `Saved ${subject} to .splitbrief/config.yaml`;
+  return saved.ignoreRuleAdded ? `${line}${SOFT_SEP}${IGNORE_RULE_ADDED}` : line;
 }
 
 /** The one line every surface shows for a failed save. */
@@ -29,7 +38,7 @@ export function formatConfigSaveFailure(error: Error): string {
 export function reportConfigSaveFailure(
   result: ConfigSaveResult,
   redact: (message: string) => string = (message) => message,
-): boolean {
+): result is Exclude<ConfigSaveResult, { kind: 'saved' }> {
   switch (result.kind) {
     case 'saved':
       return false;

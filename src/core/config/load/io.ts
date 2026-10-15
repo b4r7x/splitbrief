@@ -71,7 +71,7 @@ function combineLoadWarnings(
 }
 
 export type ConfigDocumentTransactionResult =
-  | Readonly<{ kind: 'saved'; revision: ConfigRevision }>
+  | Readonly<{ kind: 'saved'; revision: ConfigRevision; ignoreRuleAdded: boolean }>
   | Readonly<{ kind: 'conflict'; currentRevision: ExpectedConfigRevision }>
   | Readonly<{
       kind: 'durability-uncertain';
@@ -200,7 +200,7 @@ async function transactConfigDocumentWithWriter(
       return { kind: 'conflict', currentRevision: snapshot.revision };
     }
     if (edits.length === 0 && snapshot.revision !== null) {
-      return { kind: 'saved', revision: snapshot.revision };
+      return { kind: 'saved', revision: snapshot.revision, ignoreRuleAdded: false };
     }
     if (
       expectedRevision !== null &&
@@ -224,6 +224,11 @@ async function transactConfigDocumentWithWriter(
 
     const targetPath = canonicalConfigTarget(projectDir);
     if (targetPath === null) throw configError.unreadable(configPath(projectDir));
+    // The save that creates the file owns the ignore rule. It lands first, so a failed rule write
+    // leaves no config behind and the retry is a creation again.
+    const ignoreRuleAdded =
+      (expectedRevision === null || allowRootReplacement) &&
+      (await ensureConfigGitignore(projectDir));
     const result = await atomicWrite(targetPath, intendedSnapshot.rawBytes, {
       expectedRevision,
       mode: SECURE_FILE_MODE,
@@ -232,7 +237,9 @@ async function transactConfigDocumentWithWriter(
       const current = readConfigDocument(projectDir);
       return { kind: 'conflict', currentRevision: current.revision };
     }
-    if (result.kind === 'written') return { kind: 'saved', revision: result.revision };
+    if (result.kind === 'written') {
+      return { kind: 'saved', revision: result.revision, ignoreRuleAdded };
+    }
 
     const actual = readConfigDocument(projectDir);
     if (actual.revision === null) throw configError.unreadable(configPath(projectDir));
@@ -285,19 +292,17 @@ export async function initConfig(
   projectDir: string,
   config: Config,
   opts: { force?: boolean; expectedRevision?: ExpectedConfigRevision } = {},
-): Promise<ConfigDocumentTransactionResult['kind']> {
+): Promise<ConfigDocumentTransactionResult> {
   const revision =
     opts.expectedRevision === undefined
       ? readConfigDocument(projectDir).revision
       : opts.expectedRevision;
-  if (!opts.force && revision !== null) return 'saved';
-  const result = await transactConfigDocumentWithWriter(
+  if (!opts.force && revision !== null) return { kind: 'saved', revision, ignoreRuleAdded: false };
+  return transactConfigDocumentWithWriter(
     projectDir,
     revision,
     [{ path: [], value: toYaml(config) }],
     confinedAtomicWriteFile,
     opts.force === true,
   );
-  if (result.kind === 'saved') await ensureConfigGitignore(projectDir);
-  return result.kind;
 }
