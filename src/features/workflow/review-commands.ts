@@ -9,9 +9,6 @@ export const REVIEW_HINT = `approve${SOFT_SEP}comment <text>${SOFT_SEP}end-run${
 export const REVIEW_UNKNOWN_COMMAND_MESSAGE =
   'Unknown command. Use: approve, comment <text>, end-run, or edit';
 
-/** The draft the comment row opens: the text after it goes back to the planner as a correction. */
-export const REVIEW_COMMENT_DRAFT = 'comment ';
-
 const APPROVE_ALIASES = new Set(['approve', 'yes', 'y', 'ok', 'lgtm', 'continue']);
 // The gate no longer rejects, it ends the run; the words it used to take still parse.
 const END_RUN_ALIASES = new Set(['end-run', 'end run', 'end', 'quit', 'q', 'reject', 'no', 'n']);

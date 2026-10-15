@@ -102,6 +102,7 @@ function goHome(): void {
 
 function cancelReviewComment(): void {
   composerDraftStore.request('');
+  reviewKeysStore.endComment();
 }
 
 function stoppedOrStopping(): boolean {

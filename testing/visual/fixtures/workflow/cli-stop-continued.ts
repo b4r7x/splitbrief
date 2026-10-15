@@ -151,7 +151,7 @@ export const cliStopContinuedProjection: WorkflowFixtureProjection = {
       stage: 'aborted',
       kind: 'error',
       label: 'aborted runner_interrupted',
-      diagnosticPartial: 'CLI invocation was aborted',
+      diagnosticPartial: 'stopped by you',
     }),
     {
       type: 'turn_interrupted',

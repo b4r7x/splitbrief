@@ -5580,6 +5580,7 @@ const projections = [
   approvalConfirmSecretProjection,
   planCardProjection,
   { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-commenting') },
+  { ...planCardProjection, scenarioId: scenarioId('workflow-plan-card-request-empty') },
   {
     ...planCompiledProjection,
     scenarioId: scenarioId('workflow-plan-repaired'),

@@ -548,7 +548,7 @@ function ComposerInput({
     return false;
   };
 
-  useReviewKeys({ mode, disabled, draftEmpty: textDraftEmpty });
+  const reviewCommenting = useReviewKeys({ mode, disabled, draftEmpty: textDraftEmpty });
 
   const isEditShortcut = (input: string, key: Key): boolean =>
     mode === 'review' && key.ctrl && input === 'e';
@@ -556,7 +556,7 @@ function ComposerInput({
   const handleInputBoundaryNavigate = (direction: 'up' | 'down') => {
     if (showCommandSuggestions || showReferenceSuggestions) return true;
     if (mode !== 'normal') {
-      if (mode === 'review' && textDraftEmpty) onReviewBoundaryNavigate?.(direction);
+      if (mode === 'review' && !reviewCommenting) onReviewBoundaryNavigate?.(direction);
       return true;
     }
     return handleBoundaryNavigate(direction);

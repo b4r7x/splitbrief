@@ -177,6 +177,9 @@
 - A red `node --test` reviewer check names each failing test by its file and name and counts one failure per test. The base re-run row and the review no longer show stack or `location:` lines as failures, so a test that fails at the run base too reads as pre-existing. A test file that fails outside its tests counts as one failure named by its file, and a failed hook or timeout counts once, not once for each test it cancels. Paths in a failing check read relative to the project.
 - `splitbrief init` and the first Setup save no longer change `.gitignore` when git already ignores `.splitbrief/`, for example through `.git/info/exclude`, your global excludes file, a parent `.gitignore` or a `.splitbrief` rule without the slash. A clean checkout stays clean, and a run workspace also keeps its `.gitignore` unchanged. When the save does add the `.splitbrief/` line, readiness no longer warns about a changed worktree for that line alone, the same way the run does not count it as a change you made before the run.
 - The review packet reads `Checks: no warnings or blockers` when a run started with no setup warnings or blockers. `Checks: unavailable` now means only that no readiness was recorded.
+- **Request changes** on the plan card opens an empty draft that is already your change request: everything you type goes to the planner, and `esc` takes you back to the card.
+- A call you stop reads `stopped by you` in the transcript.
+- The `/end` description no longer promises to keep every change on disk. It reads *Close the run, saving unapplied changes*, which is also true for a run that is ready to apply: End run discards it and saves its changes in `run.patch`.
 - The run ages on home and in `/sessions`, such as `just now` and `4m ago`, now move on while the list stays open. Before, they changed only after you opened and closed another panel.
 
 ## [0.1.0] - 2026-08-07

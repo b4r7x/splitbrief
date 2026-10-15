@@ -102,6 +102,11 @@ describe('/steer', () => {
 });
 
 describe('/end', () => {
+  // One line serves an open run, whose changes End run keeps, and a ready run, which it discards.
+  it('promises no change on disk that End run on a ready run puts in run.patch instead', () => {
+    expect(command('/end').description).toBe('Close the run, saving unapplied changes');
+  });
+
   it('is offered only while a run is live', () => {
     const end = command('/end');
 

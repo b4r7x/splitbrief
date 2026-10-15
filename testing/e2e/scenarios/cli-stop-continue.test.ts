@@ -188,7 +188,9 @@ describe('stop a CLI implementer call → continue', { timeout: 240_000 }, () =>
     expect(text).not.toContain('user-abort');
     expect(text).not.toContain('runner_interrupted');
     expect(text).not.toContain('Workspace kept at');
+    expect(text).not.toContain('CLI invocation');
     expect(rows.filter((row) => row.includes('current turn interrupted'))).toHaveLength(1);
+    expect(rows.some((row) => row.includes('current turn interrupted: stopped by you'))).toBe(true);
     expect(rows.some((row) => row.includes('1 update  interrupted'))).toBe(true);
     expect(rows.some((row) => row.includes('Run continued'))).toBe(true);
   });

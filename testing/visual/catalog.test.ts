@@ -72,6 +72,7 @@ const SCENARIO_VIEWPORT_EXCEPTIONS: ReadonlyMap<string, readonly string[]> = new
   ['workflow-task-statuses', ['160x45', '80x24']],
   ['workflow-plan-card', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-commenting', ['120x40', '80x24', '60x18', '160x45']],
+  ['workflow-plan-card-request-empty', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-render-note', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-card-shared-command', ['120x40', '80x24', '60x18', '160x45']],
   ['workflow-plan-activity', ['120x40', '80x24', '60x18', '160x45', '220x45']],

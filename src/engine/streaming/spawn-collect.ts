@@ -3,6 +3,7 @@ import { RUNNER_IDLE_WARN_MS } from '../../core/schemas/runner-fields.js';
 import { createRunnerCallRecorder } from '../calls/recorder.js';
 import { createRunnerCallId } from '../calls/call-id.js';
 import {
+  RUNNER_CALL_STOPPED_ERROR,
   createRunnerCallCredentialRedactor,
   runnerCallErrorFromUnknown,
   runnerCallIdleTimeoutError,
@@ -362,14 +363,18 @@ export async function spawnAndCollect(
         });
       } else {
         const interrupted = cancellationSource === 'external';
-        recorder.finishFailed({
-          status: interrupted ? 'aborted' : 'failed',
-          error: runnerCallErrorFromUnknown(
-            redactedError,
-            interrupted ? 'runner_interrupted' : 'runner_process_error',
-            credentialValues,
-          ),
-        });
+        recorder.finishFailed(
+          interrupted
+            ? { status: 'aborted', error: RUNNER_CALL_STOPPED_ERROR }
+            : {
+                status: 'failed',
+                error: runnerCallErrorFromUnknown(
+                  redactedError,
+                  'runner_process_error',
+                  credentialValues,
+                ),
+              },
+        );
       }
     }
     // The redaction rewrap above erases the `AbortError` identity the caller aborted with, so

@@ -1240,7 +1240,7 @@ The registry holds 23 commands in five categories. A removed command, such as `/
 | `/stop` | Open stop and session options |
 | `/resume` | Continue a paused or stopped run |
 | `/steer <text>` | Stop now and continue with your correction |
-| `/end` | Close the run, keeping every change on disk |
+| `/end` | Close the run, saving unapplied changes |
 
 **View**
 

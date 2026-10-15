@@ -50,7 +50,7 @@ describe('checkpoint frame text', () => {
     const context = { output, scenario, checkpoint, viewport };
     const ready = checkpointPredicate(scenario, checkpoint);
     expect(ready(context)).toBe(false);
-    const withDraft = `${output}\ncomment Split the CLI change into a separate task.`;
+    const withDraft = `${output}\nSplit the CLI change into a separate task.`;
     expect(ready({ ...context, output: withDraft })).toBe(false);
     expect(ready({ ...context, output: `${withDraft}\n⏎ send · esc back` })).toBe(true);
   });

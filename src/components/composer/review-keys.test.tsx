@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushEffects, renderFeature, tick } from '#testing/helpers/ink.js';
 import { resetAllStores } from '#testing/helpers/stores.js';
 import { stripAnsiStyles } from '#testing/helpers/ansi.js';
@@ -104,6 +104,44 @@ describe('Composer review action keys', () => {
 
     ui.unmount();
     expect(reviewKeysStore.get().commenting).toBe(false);
+  });
+
+  it('keeps an empty Request changes as a comment until the review ends', async () => {
+    const navigate = vi.fn();
+    const ui = renderFeature(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="review"
+        hint=""
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+        onReviewBoundaryNavigate={navigate}
+      />,
+    );
+    await tick(PAST_GRACE);
+    reviewKeysStore.requestComment();
+    await flushEffects();
+
+    expect(reviewKeysStore.get().commenting).toBe(true);
+    // The rows take no keys while the request is open, also with nothing typed yet.
+    ui.stdin.write('\x1b[B');
+    await flushEffects();
+    expect(navigate).not.toHaveBeenCalled();
+
+    ui.rerender(
+      <Composer
+        commands={[]}
+        currentScreen="workflow"
+        mode="normal"
+        hint=""
+        onSubmit={() => {}}
+        onRuntimeCommand={() => {}}
+      />,
+    );
+    await flushEffects();
+    expect(reviewKeysStore.get()).toEqual({ commenting: false, requested: false });
+    ui.unmount();
   });
 
   it('turns the review panel legend over to the comment keys when a draft starts', async () => {

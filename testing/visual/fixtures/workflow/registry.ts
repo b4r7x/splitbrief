@@ -33,6 +33,7 @@ import { markWorkflowPaused } from '../../../../src/stores/workflow/actions/paus
 import { lifecycleStore } from '../../../../src/stores/workflow/lifecycle.js';
 import { feedbackStore } from '../../../../src/stores/ui/feedback.js';
 import { composerDraftStore } from '../../../../src/stores/ui/composer-draft.js';
+import { reviewKeysStore } from '../../../../src/stores/ui/review-keys.js';
 import { REVIEW_COMMENT_HINTS } from '../../../../src/features/workflow/prompt-rows/approval.js';
 import { formatCopyResult } from '../../../../src/core/runtime/commands/types.js';
 import { stopStore } from '../../../../src/stores/workflow/stop.js';
@@ -60,15 +61,21 @@ function applyStop(stop: FixtureStopState): void {
 // session-scoped stores from a mount effect (`use-runner.ts`) and replays the projection after it.
 // Stamping on every run start is what survives that replay.
 const CONSULT_BOUND_NOTE = 'run the formatter first';
-const PLAN_CARD_COMMENT_DRAFT = 'comment Split the CLI change into a separate task.';
+const PLAN_CARD_COMMENT_DRAFT = 'Split the CLI change into a separate task.';
 
 function createStopAwareFactory(projection: WorkflowFixtureProjection): FixtureFactory {
   const base = createWorkflowFixtureFactory(projection);
   if (projection.scenarioId === 'workflow-plan-card-commenting') {
     return () => ({
       ...base(),
-      afterMount: () => composerDraftStore.request(PLAN_CARD_COMMENT_DRAFT),
+      afterMount: () => {
+        reviewKeysStore.requestComment();
+        composerDraftStore.request(PLAN_CARD_COMMENT_DRAFT);
+      },
     });
+  }
+  if (projection.scenarioId === 'workflow-plan-card-request-empty') {
+    return () => ({ ...base(), afterMount: () => reviewKeysStore.requestComment() });
   }
   if (
     projection.scenarioId === 'workflow-seat-switched' ||
@@ -537,6 +544,10 @@ const checkpointPredicates = [
     checkpointId('plan-card-commenting'),
     (context) =>
       planCardReady(context) && includesAll(PLAN_CARD_COMMENT_DRAFT, REVIEW_COMMENT_HINTS)(context),
+  ],
+  [
+    checkpointId('plan-card-request-empty'),
+    (context) => planCardReady(context) && includesAll(REVIEW_COMMENT_HINTS)(context),
   ],
   [
     checkpointId('plan-repaired'),

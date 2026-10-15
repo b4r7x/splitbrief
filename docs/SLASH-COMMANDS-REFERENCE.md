@@ -428,7 +428,7 @@ While the plan card waits, `↑`/`↓` move the cursor over its rows and a bare 
 | Typed | Action |
 |---|---|
 | `approve` / `y` / `yes` / `ok` / `lgtm` / `continue` | Approve the plan |
-| `c` / `comment` | Seed the draft with `comment ` |
+| `c` / `comment` | Open an empty change request: the next text you send is the correction, whatever word it starts with |
 | any other text, `comment <text>` / `revise <text>` | Request changes: the planning session answers the correction with a new plan, and the card shows again |
 | `Ctrl+E` / `e` / `edit` / `edit-file` | Open `plan.json` in the in-app editor |
 | `end-run` / `end` / `q` / `quit` / `reject` / `no` | End the run |
@@ -499,7 +499,7 @@ Alphabetical, for fast lookup.
 - [`/copy`](#copy-messagebriefpathcommandcost) — copy a reviewed value to the system clipboard.
 - [`/crew`](#crew-planbuildreview) — change who fills the `PLAN`, `BUILD`, or `REVIEW` seat.
 - [`/diff`](#diff) — expand or collapse the latest diff.
-- [`/end`](#end) — close the run, keeping every change on disk.
+- [`/end`](#end) — close the run, saving unapplied changes.
 - [`/help`](#help) — open the help overlay.
 - [`/home`](#home) — navigate to the home screen.
 - [`/image`](#image-pathlistremove) — attach, list, or remove images for the next planner call.

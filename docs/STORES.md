@@ -223,7 +223,7 @@ routerStore.navigate({ to: 'home' });
 | `hoverStore` | `ui/hover.ts` | `number \| null` — the hovered row index | `set()`, `clear()` |
 | `composerDraftStore` | `ui/composer-draft.ts` | the pending draft request (a document or an image) | `request()`, `requestDocument()`, `requestImage()`, `clear()` |
 | `composerLiveStore` | `ui/composer-live.ts` | `{ empty, text, document }` | `setDraft()` |
-| `reviewKeysStore` | `ui/review-keys.ts` | `{ commenting: boolean }` | `setCommenting()` |
+| `reviewKeysStore` | `ui/review-keys.ts` | `{ commenting: boolean, requested: boolean }` — `requested` holds a change request that Request changes opened, also while its draft is empty | `setCommenting()`, `requestComment()`, `endComment()` |
 | `pickerViewStore` | `ui/picker-view.ts` | `{ view, preservedLeftIndex, expandedModelId, optionDraftId, … }` | `open()`, `close()`, `expand()`, `collapse()`, `setOptionDraftId()`, `setEffortDraft()`, `setAuthDraft()`, `setDraft()`, `setBrowseCatalog()` |
 | `editorStore` | `ui/editor.ts` | `{ status: 'closed' }` or an open editor session | `openRaw()`, `dispatch()`, `setLayout()`, `scrollBy()`, `beginSubmit()`, `close()` |
 | `externalEditRequestStore` | `ui/external-edit-request.ts` | the one pending Ctrl+O request | `request()`, `requestApply()`, `consume()` |

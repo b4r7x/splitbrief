@@ -25,9 +25,9 @@ import {
 import type { UseInputModeResult } from './hooks/use-input-mode.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
 import { composerLiveStore } from '../../stores/ui/composer-live.js';
+import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import type { UserMessageInput } from '../../core/types/user-input.js';
 import {
-  REVIEW_COMMENT_DRAFT,
   REVIEW_UNKNOWN_COMMAND_MESSAGE,
   parseReviewCommand,
   reviewCommandToApprovalReviewResult,
@@ -302,6 +302,11 @@ export function createReviewInputHandler(
     }
 
     if (inputMode.mode === 'review') {
+      // After Request changes the whole draft is the change request, whatever word it opens with.
+      if (reviewKeysStore.get().requested) {
+        inputMode.resolve({ approved: false, action: 'revise', message });
+        return;
+      }
       const parsed = parseReviewCommand(text);
       if (!parsed) {
         // Any other text at the plan card is a correction the planning session answers.
@@ -337,7 +342,7 @@ export function createReviewInputHandler(
         return;
       }
       if (parsed.kind === 'comment-draft') {
-        composerDraftStore.request(REVIEW_COMMENT_DRAFT);
+        reviewKeysStore.requestComment();
         return;
       }
       if (parsed.kind === 'open-editor') await openReviewEditor();

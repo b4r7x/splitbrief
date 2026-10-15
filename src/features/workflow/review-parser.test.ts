@@ -8,6 +8,7 @@ import { composerLiveStore } from '../../stores/ui/composer-live.js';
 import { createDraftDocument } from '../../core/composer/document.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { composerDraftStore } from '../../stores/ui/composer-draft.js';
+import { reviewKeysStore } from '../../stores/ui/review-keys.js';
 import { editorStore } from '../../stores/ui/editor.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { lifecycleStore } from '../../stores/workflow/lifecycle.js';
@@ -211,6 +212,7 @@ describe('review input effects', () => {
     feedbackStore.reset();
     reviewStore.reset();
     composerDraftStore.reset();
+    reviewKeysStore.reset();
     clearAllHandlers();
     lifecycleStore.__testReset({ phase: 'reviewing-briefs' });
     tasksStore.__testReset();
@@ -305,7 +307,25 @@ describe('review input effects', () => {
     await createReviewInputHandler(inputMode, makeEffects()).handleInput(plainUserMessage('c'));
 
     expect(inputMode.resolve).not.toHaveBeenCalled();
-    expect(composerDraftStore.get().request?.value).toBe('comment ');
+    expect(reviewKeysStore.get().requested).toBe(true);
+    expect(composerDraftStore.get().request).toBeNull();
+  });
+
+  it('sends the whole draft as the correction after Request changes, a command word included', async () => {
+    lifecycleStore.__testReset({ phase: 'reviewing-plan' });
+    const reviewFile = join(tempDir, 'plan.md');
+    writeFileSync(reviewFile, 'Greet people by name\n');
+    reviewStore.setReviewFile(reviewFile);
+    reviewKeysStore.requestComment();
+    const inputMode = makeInputMode('review');
+
+    await createReviewInputHandler(inputMode, makeEffects()).handleInput(plainUserMessage('edit'));
+
+    expect(inputMode.resolve).toHaveBeenCalledWith({
+      approved: false,
+      action: 'revise',
+      message: plainUserMessage('edit'),
+    });
   });
 
   it('answers a question through the same resolve with the effects supplied', async () => {
