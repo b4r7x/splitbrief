@@ -293,16 +293,16 @@ describe('walkTranscript', () => {
       expect(steps.map((step) => step.kind)).toEqual([
         'settled',
         'event',
-        'settled',
+        'review-heading',
         'event',
         'event',
         'settled-end',
       ]);
       const final = steps[2];
-      if (final?.kind !== 'settled') throw new Error('Expected settled review');
-      expect(final.section).toMatchObject({
-        type: 'settled-stage',
-        summary: { stage: 'review', outcome: review, duration: 5_000 },
+      if (final?.kind !== 'review-heading') throw new Error('Expected the review heading');
+      expect(final).toMatchObject({
+        startIndex: 2,
+        review: { stage: 'review', outcome: review, duration: 5_000 },
       });
     },
   );
@@ -451,6 +451,7 @@ describe('walkTranscript', () => {
           (step) =>
             step.kind !== 'settled' &&
             step.kind !== 'settled-end' &&
+            step.kind !== 'review-heading' &&
             step.settledSection === heading.section,
         ),
     ).toBe(true);

@@ -204,7 +204,7 @@ describe('visual catalog', () => {
   });
 
   it.each([
-    ['workflow-review-task-cadence', 'Review T001 passed'],
+    ['workflow-review-task-cadence', 'Review T002'],
     ['workflow-review-task-cadence-settled', 'Final review passed'],
     ['workflow-review-task-out-of-scope', 'Review T001 passed'],
   ])('registers %s with its review checkpoint and sidebar viewport', (id, marker) => {

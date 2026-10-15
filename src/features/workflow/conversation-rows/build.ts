@@ -26,7 +26,7 @@ import {
   markdownConversationRowsCacheKey,
 } from './markdown-rows.js';
 import { settledRowBlock } from './settled-row-block.js';
-import { stageSummaryRow } from '../components/conversation-flow/stage-summary.js';
+import { stageHeadingParts } from '../components/conversation-flow/stage-summary.js';
 import { isTranscriptRowlessEvent } from './event-rows/visibility.js';
 import { isRunnerCallTranscriptRowSuppressed } from './runner-call-classification.js';
 import { rowsBlock } from './row-block-compose.js';
@@ -114,28 +114,20 @@ function buildConversationRowsProjectionWithContext(
   };
 
   for (const step of walkTranscript(inputs.sections)) {
-    if (step.kind === 'settled') {
-      const section = step.section;
-      const key = `review-${section.startIndex}`;
+    if (step.kind === 'review-heading') {
       if (
-        section.type === 'settled-stage' &&
-        section.summary.stage === 'review' &&
-        section.items.every(
+        step.items.every(
           (event) => isTranscriptRowlessEvent(event) || isRunnerCallTranscriptRowSuppressed(event),
         )
       )
         continue;
-      const block =
-        section.type === 'settled-stage' && section.summary.stage === 'review'
-          ? rowsBlock(key, [
-              segmentedRow(
-                key,
-                [...stageSummaryRow(section.summary).state.headingParts.id],
-                'section',
-              ),
-            ])
-          : settledRowBlock({ section, width: ctx.width });
+      const key = `review-${step.startIndex}`;
+      const block = rowsBlock(key, [segmentedRow(key, stageHeadingParts(step.review), 'section')]);
       if (block !== null) appendBlock(block, undefined, true);
+      continue;
+    }
+    if (step.kind === 'settled') {
+      appendBlock(settledRowBlock({ section: step.section, width: ctx.width }), undefined, true);
       continue;
     }
     if (step.kind === 'settled-end') {

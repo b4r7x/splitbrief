@@ -2168,6 +2168,85 @@ describe('rows no brief owns stay with the completed briefs', () => {
   });
 });
 
+describe('the Final review heading', () => {
+  const planCheck: EngineEventOf<'full_suite'> = {
+    type: 'full_suite',
+    ts: 3_000,
+    phase: 'final-review',
+    status: 'running',
+    id: 'K1',
+    command: 'node --test tests/math.test.js',
+    moment: 'plan',
+  };
+  const review = { phase: 'final-review', scope: 'final', tool: 'claude-code' } as const;
+  const events: EngineEvent[] = [
+    makeTaskStart({ ts: 1_000 }),
+    makeTaskComplete({ ts: 2_000 }),
+    makeTaskTokens({ ts: 2_100 }),
+    planCheck,
+    { ...planCheck, ts: 3_100, status: 'done', passed: true, duration: 100 },
+    {
+      type: 'checks_run',
+      ts: 3_200,
+      phase: 'final-review',
+      taskId: taskId('T001'),
+      results: [{ id: 'K1', status: 'pass' }],
+    },
+    { type: 'review_started', ts: 3_300, ...review },
+    {
+      type: 'review_checks',
+      ts: 9_000,
+      ...review,
+      status: 'planned',
+      commands: [{ id: 'V1', command: 'node --test', reason: 'Run the whole suite.' }],
+    },
+    {
+      type: 'full_suite',
+      ts: 9_100,
+      phase: 'final-review',
+      status: 'done',
+      id: 'V1',
+      command: 'node --test',
+      moment: 'pre-review',
+      passed: true,
+      duration: 200,
+    },
+    { type: 'review_completed', ts: 18_000, ...review, verdict: 'pass', duration: 14_700 },
+  ];
+  const lines = () =>
+    buildConversationRows({
+      sections: groupEventsIntoSections([...eventsStore.get().events]),
+      expandedDiffs: new Set(),
+      expandedActivityBatches: new Set(),
+      cols: 120,
+      viewportHeight: 40,
+      streaming,
+    }).rows.map(rowText);
+
+  it('stands above the plan check from its first row and never moves while the review runs and settles', () => {
+    resetWorkflow();
+    const firstCheck = events.indexOf(planCheck);
+    for (const event of events.slice(0, firstCheck)) addEvent(event);
+    const before = lines();
+    expect(before).not.toContain('Final review');
+    for (const event of events.slice(firstCheck)) {
+      addEvent(event);
+      const rows = lines();
+      const heading = rows.indexOf('Final review');
+      expect(heading, event.type).toBeGreaterThan(-1);
+      expect(rows.slice(0, heading - 1), event.type).toEqual(before);
+      expect(rows.slice(heading + 1, heading + 3), event.type).toEqual([
+        '',
+        expect.stringMatching(
+          /^Plan check K1 · node --test tests\/math\.test\.js · (running|passed)/,
+        ),
+      ]);
+    }
+    expect(lines().filter((row) => row.startsWith('Plan check K1'))).toHaveLength(1);
+    resetWorkflow();
+  });
+});
+
 describe('wrappedTextBlock', () => {
   it('wraps message rows at width minus their leading so nothing clips at the right edge', () => {
     const width = 20;

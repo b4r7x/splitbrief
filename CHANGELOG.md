@@ -98,6 +98,7 @@
 - **Show diff** with no `VISUAL` or `EDITOR` set opens the run's changes in your pager (`PAGER`, else `less`) in the terminal, and `q` returns to the run. It no longer starts an installed GUI editor app that held the run screen until the whole app quit.
 - A run started with uncommitted edits in your checkout no longer counts those edits as its own. The reviewer sees them as your work, apart from the run's changes, and a file you changed and the run changed too shows only the run's lines. A review can no longer ask to revert or delete your edits, and Apply keeps them.
 - `splitbrief status` shows the same run status as the other screens, including Ready to apply.
+- The **Final review** heading shows as soon as the final review starts, above its first plan check, and stays in place when the review ends. A running task review shows its **Review** heading too. A review stopped at its plan check reads *stopped* once the run continues.
 - The run transcript hides protocol calls and names file and command activity in plain language.
 - Each review attempt keeps its checks and activity in order, followed by its result and elapsed time. A continued run has a visible continuation row.
 - Review activity names the current step, including reviews after your answer.

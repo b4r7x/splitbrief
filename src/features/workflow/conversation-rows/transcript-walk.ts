@@ -1,4 +1,8 @@
-import { isSettledSection, type Section } from '../../../core/sections/event-sections.js';
+import {
+  isSettledSection,
+  type ReviewStage,
+  type Section,
+} from '../../../core/sections/event-sections.js';
 import { stripRecoveryResetClause } from '../../../core/recovery/reset-clock.js';
 import { SOFT_SEP } from '../../../core/separators.js';
 import { CREW_SEAT_LABELS, type CrewSeatId } from '../../../core/crew/identity.js';
@@ -58,6 +62,7 @@ export function settledTaskStartedEvent(
 
 export type TranscriptWalkStep =
   | { kind: 'settled'; section: SettledTranscriptSection }
+  | { kind: 'review-heading'; startIndex: number; review: ReviewStage; items: EngineEvent[] }
   | { kind: 'settled-end'; section: SettledTranscriptSection }
   | ((
       | { kind: 'activity-batch'; batch: RunnerActivityBatch; callEnded: boolean }
@@ -83,7 +88,8 @@ export type TranscriptWalkStep =
 // A seat switch folds one matching reconciliation notice before the next run starts or resumes.
 // A workspace kept for Continue drops out once the run continues or a close (End run, Discard or
 // Apply) lets it go; a later stop that keeps it again shows its own notice. A batch of a call that
-// has ended says so, so no batch of a stopped or finished call carries the live mark.
+// has ended says so, so no batch of a stopped or finished call carries the live mark. A review opens
+// with its heading while it runs and keeps it once it settles, so no row appears above its rows.
 export function* walkTranscript(
   sections: readonly Section<EngineEvent>[],
 ): Generator<TranscriptWalkStep> {
@@ -130,12 +136,27 @@ export function* walkTranscript(
       if (header === undefined || !sameHeader(header, event))
         latestHeaders.set(event.taskId, event);
     }
-    if (isSettledSection(section)) yield* flush();
+    const review =
+      section.type === 'active-review'
+        ? section.review
+        : section.type === 'settled-stage' && section.summary.stage === 'review'
+          ? section.summary
+          : undefined;
+    if (isSettledSection(section) || review !== undefined) {
+      yield* flush();
+      lastRowEvent = null;
+    }
     settledContext = isSettledSection(section) ? { settledSection: section } : {};
     const started = isSettledSection(section) ? settledTaskStartedEvent(section) : undefined;
-    if (isSettledSection(section)) {
-      lastRowEvent = null;
-      openHeader = started ?? null;
+    if (isSettledSection(section)) openHeader = started ?? null;
+    if (review !== undefined) {
+      yield {
+        kind: 'review-heading',
+        startIndex: section.startIndex,
+        review,
+        items: section.items,
+      };
+    } else if (isSettledSection(section)) {
       yield { kind: 'settled', section };
     }
     for (const [index, event] of section.items.entries()) {
