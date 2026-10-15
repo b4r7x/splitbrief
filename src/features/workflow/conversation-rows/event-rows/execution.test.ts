@@ -272,7 +272,7 @@ describe('implementerDoneRowBlock', () => {
     'lists both changed files once with line counts %j',
     (counts) => {
       expect(linesFor({ files: ['src/text.js', 'test/text.test.js'], ...counts })).toEqual([
-        `src/text.js · test/text.test.js  15.4s${counts === undefined ? '' : '  +12 -0'}`,
+        `src/text.js · test/text.test.js${counts === undefined ? '' : '  +12 -0'}`,
       ]);
     },
   );
@@ -288,11 +288,9 @@ describe('implementerDoneRowBlock', () => {
       120,
       expanded,
     );
-    expect(lines[0]).toBe(
-      `src/text.js · test/text.test.js  15.4s  +1 -0${expanded ? '' : '  ctrl+d'}`,
-    );
+    expect(lines[0]).toBe(`src/text.js · test/text.test.js  +1 -0${expanded ? '' : '  ctrl+d'}`);
     const text = lines.join('\n');
-    for (const value of ['src/text.js', 'test/text.test.js', '15.4s', 'ctrl+d']) {
+    for (const value of ['src/text.js', 'test/text.test.js', 'ctrl+d']) {
       expect(text.split(value)).toHaveLength(2);
     }
     if (expanded) expect(text).toContain('ctrl+d to collapse');
@@ -300,7 +298,7 @@ describe('implementerDoneRowBlock', () => {
 
   it('keeps the verification verdict under the brief target when no files changed', () => {
     expect(linesFor({ files: [], noChange: true, linesAdded: 0, linesRemoved: 0 })).toEqual([
-      'src/text.js  15.4s',
+      'src/text.js',
       'verified · no change needed',
     ]);
   });
@@ -312,7 +310,7 @@ describe('implementerDoneRowBlock', () => {
     expect(
       linesFor({ files: [], noChange: true, kept: ['src/text.js', 'test/text.test.js'] }),
     ).toEqual([
-      'src/text.js · test/text.test.js  15.4s',
+      'src/text.js · test/text.test.js',
       "verified · kept the interrupted attempt's work · no further change",
     ]);
   });
@@ -331,7 +329,7 @@ describe('implementerDoneRowBlock', () => {
         120,
         expanded,
       );
-      expect(lines[0]).toBe(`src/text.js  15.4s  +1 -0${expanded ? '' : '  ctrl+d'}`);
+      expect(lines[0]).toBe(`src/text.js  +1 -0${expanded ? '' : '  ctrl+d'}`);
       expect(lines.at(-1)).toBe("kept the interrupted attempt's work · test/text.test.js");
       const text = lines.join('\n');
       for (const file of ['src/text.js', 'test/text.test.js']) {
@@ -342,25 +340,25 @@ describe('implementerDoneRowBlock', () => {
 
   it('says the work was kept without a file list when the call changed every kept file', () => {
     expect(linesFor({ files: ['src/text.js'], kept: ['src/text.js'] })).toEqual([
-      'src/text.js  15.4s',
+      'src/text.js',
       "kept the interrupted attempt's work",
     ]);
   });
 
   it('replays an older event with its file once', () => {
-    expect(linesFor({})).toEqual(['src/text.js  15.4s']);
+    expect(linesFor({})).toEqual(['src/text.js']);
   });
 
   it('shows no disclosure hint for an empty diff', () => {
     expect(linesFor({ files: ['src/text.js', 'test/text.test.js'], diff: '\n\n' })).toEqual([
-      'src/text.js · test/text.test.js  15.4s',
+      'src/text.js · test/text.test.js',
     ]);
   });
 
   it('wraps a path with spaces as one file name', () => {
     const files = ['src/text.js', 'test/a long directory with spaces/text.test.js'];
     const lines = linesFor({ files }, 60);
-    expect(lines).toEqual(['src/text.js', 'test/a long directory with spaces/text.test.js  15.4s']);
+    expect(lines).toEqual(['src/text.js', 'test/a long directory with spaces/text.test.js']);
   });
 
   it.each([120, 80, 60])('keeps whole file names at %s columns', (width) => {
@@ -376,7 +374,6 @@ describe('implementerDoneRowBlock', () => {
         expect(lines.filter((line) => line.includes(file))).toHaveLength(1);
         expect(text.split(file)).toHaveLength(2);
       }
-      expect(text.split('15.4s')).toHaveLength(2);
       expect(lines.every((line) => getTerminalCellWidth(line) <= width - 3)).toBe(true);
       expect(lines.every((line) => !/^\s*·|·\s*$/u.test(line))).toBe(true);
     }

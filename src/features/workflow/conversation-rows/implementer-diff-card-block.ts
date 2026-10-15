@@ -1,5 +1,4 @@
 import { SOFT_SEP } from '../../../core/separators.js';
-import { formatDuration } from '../../../utils/format-time.js';
 import type { EngineEvent } from '../../../engine/events/types.js';
 import { getMaxVisibleDiffLines } from '../layout/diff-height.js';
 import type { ConversationRowBlock, ConversationRowSegment, RowBuildContext } from './types.js';
@@ -43,7 +42,6 @@ export function implementerDoneFilesBlock(
       SOFT_SEP,
     );
   }
-  append([{ text: formatDuration(event.duration), tone: 'textDim' }], '  ');
   if (
     event.noChange !== true &&
     event.linesAdded !== undefined &&

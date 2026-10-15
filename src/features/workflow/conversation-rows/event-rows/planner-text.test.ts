@@ -78,7 +78,7 @@ describe('planner text rows', () => {
     for (const [report, summary] of [
       [
         '{"status":"done","filesChanged":["a.ts","b.ts"],"touchedNotSuggested":[],"notes":null,"decisions":[]}',
-        'Report  done · 2 files · 0 decisions',
+        'Report  done · 0 decisions',
       ],
       [
         '{"status":"blocked","question":"Where is the schema?","filesNeeded":["schema.ts"]}',
@@ -137,7 +137,7 @@ describe('planner text rows', () => {
 
       expect(lines).toEqual([
         'Implemented lowStockItems in src/report.js.',
-        'Report  done · 1 file · 1 decision',
+        'Report  done · 1 decision',
       ]);
       expect(lines.filter((line) => line.startsWith('Report  '))).toHaveLength(1);
       expect(text).not.toContain('`');
@@ -152,7 +152,7 @@ describe('planner text rows', () => {
       });
       expect(rows[0]?.segments[0]).toEqual({ text: 'Implemented ', tone: 'textDim' });
       expect(rows.at(-1)?.segments).toContainEqual({
-        text: 'Report  done · 1 file · 1 decision',
+        text: 'Report  done · 1 decision',
         tone: 'textDim',
         bold: false,
       });
@@ -289,14 +289,11 @@ describe('planner text rows', () => {
     });
     const text = rows.map(rowText).join('\n');
 
-    expect(rows.map(rowText)).toEqual([
-      'Implemented the row.',
-      'Report  done · 2 files · 1 decision',
-    ]);
+    expect(rows.map(rowText)).toEqual(['Implemented the row.', 'Report  done · 1 decision']);
     expect(text).not.toContain('"status"');
     expect(text).not.toContain('filesChanged');
     expect(rows.at(-1)?.segments).toContainEqual({
-      text: 'Report  done · 2 files · 1 decision',
+      text: 'Report  done · 1 decision',
       tone: 'textDim',
       bold: false,
     });
@@ -330,7 +327,7 @@ describe('planner text rows', () => {
       ctx: { width: 80, viewportRows: 20, streaming },
     }).map(rowText);
 
-    expect(lines).toEqual(['Implemented the row.', 'Report  done · 1 file · 0 decisions']);
+    expect(lines).toEqual(['Implemented the row.', 'Report  done · 0 decisions']);
   });
 
   it('renders a code block in narration before a bare report', () => {
@@ -362,7 +359,7 @@ describe('planner text rows', () => {
     expect(text).not.toContain('```');
     expect(rows.some((row) => row.codeBg === true)).toBe(true);
     expect(rows.map(rowText).filter((line) => line.startsWith('Report  '))).toEqual([
-      'Report  done · 1 file · 0 decisions',
+      'Report  done · 0 decisions',
     ]);
   });
 

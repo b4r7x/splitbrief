@@ -192,9 +192,7 @@ describe('hydrateRun', () => {
       expect(filesLine[0]).toContain(`${brief.file} · ${brief.test}`);
       expect(filesLine[0]?.split(brief.test)).toHaveLength(2);
     }
-    expect(replayRows.filter((row) => row === 'Report  done · 2 files · 0 decisions')).toHaveLength(
-      2,
-    );
+    expect(replayRows.filter((row) => row === 'Report  done · 0 decisions')).toHaveLength(2);
     resetWorkflow();
     for (const event of history) {
       const brief =
@@ -236,7 +234,7 @@ describe('hydrateRun', () => {
     expect(
       eventsStore.get().events.find((event) => event.type === 'implementer_generate_done'),
     ).not.toHaveProperty('files');
-    expect(historyRows(eventsStore.get().events)).toContain('src/validate.ts  0.1s');
+    expect(historyRows(eventsStore.get().events)).toContain('src/validate.ts');
   });
 
   it('settles a truncated review on resume before T002 starts and finishes its call', async () => {

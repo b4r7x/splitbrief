@@ -298,7 +298,7 @@ Open `/usage` from a live or saved workflow to inspect reported counters and ava
 
 ### Streaming partial output (extracted-code implementers)
 
-**What it does.** For `extracted-code` implementers (`kind: api` and `kind: shell`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter. A `direct` implementer (a CLI tool or an agent) gets no preview: its narration appears in transcript rows; its closing report, bare or in a code fence, reads as one dim `Report  done · N files · M decisions` row with no fence row. CLI messages with known boundaries start distinct rows.
+**What it does.** For `extracted-code` implementers (`kind: api` and `kind: shell`), the last N lines of generated output stream in real-time via a ring buffer. Users see code materializing instead of staring at a spinner or elapsed-time counter. A `direct` implementer (a CLI tool or an agent) gets no preview: its narration appears in transcript rows; its closing report, bare or in a code fence, reads as one dim `Report  done · M decisions` row with no fence row. CLI messages with known boundaries start distinct rows.
 
 **How to use.** Always active for `extracted-code` implementers that stream their output. No configuration needed.
 

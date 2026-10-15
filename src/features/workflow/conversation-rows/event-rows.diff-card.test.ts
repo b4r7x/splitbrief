@@ -77,7 +77,6 @@ describe('implementer_generate_done diff card', () => {
     expect(rowText(topRow)).toContain('README.md');
     expect(rowText(topRow)).toContain('+1');
     expect(rowText(topRow)).toContain('-1');
-    expect(rowText(topRow)).toContain('1.2s');
 
     expect(text).not.toMatch(/[┌┐└┘│]/);
     const lastRow = rows.at(-1);
@@ -124,7 +123,6 @@ describe('implementer_generate_done diff card', () => {
       .filter((rowValue) => rowValue.kind === 'card-top')
       .map(rowText)
       .join('\n');
-    expect(header).toContain('1.2s');
     expect(header).toContain('+1');
     expect(header).toContain('-1');
     expect(rows.every((rowValue) => getTerminalCellWidth(rowText(rowValue)) <= width)).toBe(true);
@@ -134,7 +132,7 @@ describe('implementer_generate_done diff card', () => {
     const rows = rowsFor(implementerDoneEvent(), false);
     const text = rows.map(rowText).join('\n');
 
-    expect(text).toBe('README.md  1.2s  +1 -1  ctrl+d');
+    expect(text).toBe('README.md  +1 -1  ctrl+d');
     expect(text).toContain('ctrl+d');
     expect(text).not.toContain('▸');
     expect(rows.every((rowValue) => rowValue.kind !== 'card-top')).toBe(true);
@@ -229,14 +227,14 @@ describe('implementer_generate_done diff card', () => {
     });
     const lines = rowsFor(event, false, 60).map((row) => rowText(row).trim());
 
-    expect(lines).toEqual(['src/alpha.ts  1.2s', 'verified · no change needed']);
+    expect(lines).toEqual(['src/alpha.ts', 'verified · no change needed']);
   });
 
   it('keeps the +0 -0 summary for a direct writer that reports no diff', () => {
     const event = implementerDoneEvent({ diff: undefined, linesAdded: 0, linesRemoved: 0 });
     const text = rowsFor(event, false).map(rowText).join('\n');
 
-    expect(text).toBe('README.md  1.2s  +0 -0');
+    expect(text).toBe('README.md  +0 -0');
     expect(text).not.toContain('no change needed');
   });
 });

@@ -324,7 +324,7 @@ describe('workflow visual fixtures', () => {
           'working on',
         ])
           expect(text).not.toContain(stale);
-        expect(text.match(/Report {2}done · 2 files · 0 decisions/g)).toHaveLength(2);
+        expect(text.match(/Report {2}done · 0 decisions/g)).toHaveLength(2);
         for (const name of ['text', 'preview']) {
           const line = text.split('\n').find((row) => row.startsWith(`src/${name}.js ·`));
           expect(line?.split(`src/${name}.js`)).toHaveLength(2);

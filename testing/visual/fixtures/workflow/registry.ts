@@ -460,7 +460,7 @@ const checkpointPredicates = [
     checkpointId('resumed-kept-work'),
     // At 60 columns the verdict wraps before "further change".
     includesTranscript(
-      'Report  done · 2 files',
+      'Report  done · 0 decisions',
       "verified · kept the interrupted attempt's work",
       'further change',
     ),
