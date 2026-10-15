@@ -13,9 +13,9 @@ import { createEvidenceLedger } from '../../core/evidence/ledger-state.js';
 import { readEvidenceLedger, writeEvidenceLedger } from '../../core/evidence/ledger-storage.js';
 import { runBaseTreesRoot } from '../../core/paths.js';
 import type { Config } from '../../core/schemas/config.js';
-import type { Task } from '../../core/schemas/task.js';
+import { taskId, type Task } from '../../core/schemas/task.js';
 import { MAX_REVIEW_CHECKS, type ReviewChecksPlan } from '../../core/schemas/review.js';
-import type { WorkflowState } from '../../core/schemas/workflow.js';
+import { LineageRecordSchema, type WorkflowState } from '../../core/schemas/workflow.js';
 import { loadState, saveState } from '../../core/state/persistence.js';
 import { processError } from '../../lib/process/errors.js';
 import { installDiagnosticSink } from '../../lib/warn.js';
@@ -263,6 +263,97 @@ describe('runReviewCheck at the brief gate', () => {
 });
 
 describe('runReviewChecks', { timeout: 60_000 }, () => {
+  it.each(['final', 'task'] as const)(
+    'gives workspace and api check selection the %s review briefs, split-task decisions and operator instructions',
+    async (scope) => {
+      await withApplyRun(FILES, { sessionId: `sess-checks-briefs-${scope}` }, async (run) => {
+        const tasks = [
+          makeTask({
+            id: 'T003',
+            parentId: taskId('T001'),
+            status: 'done',
+            description: 'The reviewer must run npm run check:totals.',
+            implementationSteps: ['Reviewer: run npm run check:rounding.'],
+            criteria: ['C1'],
+          }),
+          makeTask({
+            id: 'T002',
+            description: 'The reviewer must run npm run check:exports.',
+            implementationSteps: ['Reviewer: run npm run check:csv.'],
+            criteria: ['C2'],
+          }),
+        ];
+        const state: Partial<WorkflowState> = {
+          plan: {
+            summary: 'Check totals and exports.',
+            criteria: [
+              { id: 'C1', text: 'Totals match', checkIds: [] },
+              { id: 'C2', text: 'Exports match', checkIds: [] },
+            ],
+            decisions: [
+              { text: 'Use the project checks', taskId: null },
+              { text: 'Check negative totals', taskId: taskId('T001') },
+              { text: 'Check rounding boundaries', taskId: taskId('T003') },
+              { text: 'Keep CSV column order', taskId: taskId('T002') },
+            ],
+            checks: [],
+            validation: null,
+          },
+          lineages: Object.fromEntries(
+            ['T001', 'T002'].map((id) => [
+              id,
+              LineageRecordSchema.parse({
+                consults: 0,
+                attempts: 0,
+                consultAllowance: 3,
+                attemptAllowance: 2,
+                corrections: [`Also run the ${id} edge cases.`],
+              }),
+            ]),
+          ),
+        };
+        for (const config of [
+          makeConfig(),
+          makeConfig({
+            reviewer: {
+              kind: 'api',
+              provider: 'ollama',
+              model: 'qwen2.5-coder:7b',
+              apiBase: 'http://localhost:11434/v1',
+            },
+          }),
+        ]) {
+          const { prompts } = await reviewChecks(run, {
+            plan: { commands: [], declined: [], reason: 'No runnable command in this fixture.' },
+            config,
+            tasks,
+            state,
+            scope,
+            taskIds: ['T003'],
+          });
+          expect(prompts[0]).toContain('The reviewer must run npm run check:totals.');
+          expect(prompts[0]).toContain('### Decisions\n\n- Use the project checks');
+          expect(prompts[0]).toContain('## Operator Instructions');
+          expect(prompts[0]).toContain('Also run the T001 edge cases.');
+          expect(prompts[0]).toContain('Check negative totals (T001)');
+          expect(prompts[0]).toContain('Check rounding boundaries (T003)');
+          expect(prompts[0]).toContain('Reviewer: run npm run check:rounding.');
+          if (scope === 'final') {
+            expect(prompts[0]).toContain('The reviewer must run npm run check:exports.');
+            expect(prompts[0]).toContain('Also run the T002 edge cases.');
+            expect(prompts[0]).toContain('Reviewer: run npm run check:csv.');
+            expect(prompts[0]).toContain('Keep CSV column order (T002)');
+          } else {
+            expect(prompts[0]).not.toContain('T002');
+            expect(prompts[0]).not.toContain('npm run check:exports');
+            expect(prompts[0]).not.toContain('npm run check:csv');
+            expect(prompts[0]).not.toContain('Keep CSV column order');
+          }
+        }
+      });
+    },
+  );
+
   it('names the pending command and accepts its repair before running it first', async () => {
     await withApplyRun(FILES, { sessionId: 'sess-checks-fix-repair' }, async (run) => {
       const { outcome, prompts, checksCall, commands } = await reviewChecks(run, {

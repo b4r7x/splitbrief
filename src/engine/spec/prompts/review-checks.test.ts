@@ -9,12 +9,98 @@ function prompt(overrides: Partial<ReviewChecksPromptInput> = {}): string {
     changedFiles: ['src/a.ts', 'src/a.test.ts'],
     preRunFiles: [],
     requiredCommands: [],
+    plan: {
+      criteria: [
+        { id: 'C1', text: 'Totals match the ledger', checkIds: ['K1'] },
+        { id: 'C2', text: 'Reports export as CSV', checkIds: ['K2'] },
+      ],
+      tasks: [
+        {
+          id: 'T001',
+          lineageId: 'T001',
+          status: 'done',
+          title: 'Calculate totals',
+          intent: 'The reviewer must run npm run check:totals.',
+          steps: ['Implement the totals', 'Reviewer: run npm run check:rounding.'],
+          criteria: ['C1'],
+          suggestedFiles: ['src/total.ts'],
+          exclusions: ['Do not change report exports'],
+        },
+        {
+          id: 'T002',
+          lineageId: 'T002',
+          status: 'pending',
+          title: 'Export reports',
+          intent: 'The reviewer must run npm run check:exports.',
+          steps: ['Reviewer: run npm run check:csv.'],
+          criteria: ['C2'],
+          suggestedFiles: ['src/export.ts'],
+          exclusions: [],
+        },
+      ],
+      decisions: [
+        { text: 'Use the project checks without network access', taskId: null },
+        { text: 'Check negative totals', taskId: 'T001' },
+        { text: 'Keep CSV column order', taskId: 'T002' },
+      ],
+    },
     workspaceInstructions: 'The run workspace is `/ws`.',
     ...overrides,
   });
 }
 
 describe('buildReviewChecksPrompt', () => {
+  it('includes every brief and plan decision in a final check choice', () => {
+    const text = prompt({ taskIds: [] });
+
+    expect(text).toContain('## Plan');
+    expect(text).toContain('### Criteria');
+    expect(text).toContain('C1: Totals match the ledger (checks: K1)');
+    expect(text).toContain('C2: Reports export as CSV (checks: K2)');
+    expect(text).toContain('### Tasks');
+    expect(text).toContain(
+      'T001 [done] Calculate totals: The reviewer must run npm run check:totals.',
+    );
+    expect(text).toContain(
+      'T002 [pending] Export reports: The reviewer must run npm run check:exports.',
+    );
+    expect(text).toContain('Suggested files: src/total.ts');
+    expect(text).toContain('Exclusions: Do not change report exports');
+    expect(text).toContain(
+      '  - Steps:\n    1. Implement the totals\n    2. Reviewer: run npm run check:rounding.',
+    );
+    expect(text).toContain('Reviewer: run npm run check:csv.');
+    expect(text).toContain('### Decisions');
+    expect(text).toContain('Use the project checks without network access');
+    expect(text).toContain('Check negative totals (T001)');
+    expect(text).toContain('Keep CSV column order (T002)');
+  });
+
+  it('limits a task check choice to its briefs, criteria and applicable decisions', () => {
+    const text = prompt({ scope: 'task', taskIds: ['T001'] });
+
+    expect(text).toContain('The reviewer must run npm run check:totals.');
+    expect(text).toContain('Reviewer: run npm run check:rounding.');
+    expect(text).toContain('C1: Totals match the ledger');
+    expect(text).toContain('Use the project checks without network access');
+    expect(text).toContain('Check negative totals (T001)');
+    expect(text).not.toContain('T002');
+    expect(text).not.toContain('Reports export as CSV');
+    expect(text).not.toContain('npm run check:exports');
+    expect(text).not.toContain('Keep CSV column order');
+    expect(text).not.toContain('npm run check:csv');
+  });
+
+  it('carries the operator instructions given after a brief was written', () => {
+    const text = prompt({
+      operatorInstructions: 'T001:\n```\nAlso run npm run check:rounding.\n```',
+    });
+
+    expect(text).toContain('## Operator Instructions');
+    expect(text).toContain("They are the user's own decisions");
+    expect(text).toContain('Also run npm run check:rounding.');
+  });
+
   it('requires pending commands first, even for a task review of the whole suite', () => {
     const text = prompt({ scope: 'task', requiredCommands: ['npm test', 'npm run typecheck'] });
 

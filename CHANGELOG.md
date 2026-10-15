@@ -87,6 +87,7 @@
 
 ### Fixed
 
+- Reviewer check selection now sees the task briefs, plan decisions and your later instructions, including requests for specific checks.
 - **Show diff** with no `VISUAL` or `EDITOR` set opens the run's changes in your pager (`PAGER`, else `less`) in the terminal, and `q` returns to the run. It no longer starts an installed GUI editor app that held the run screen until the whole app quit.
 - A run started with uncommitted edits in your checkout no longer counts those edits as its own. The reviewer sees them as your work, apart from the run's changes, and a file you changed and the run changed too shows only the run's lines. A review can no longer ask to revert or delete your edits, and Apply keeps them.
 - `splitbrief status` shows the same run status as the other screens, including Ready to apply.

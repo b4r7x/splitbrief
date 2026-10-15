@@ -1,6 +1,7 @@
 import { MAX_REVIEW_CHECKS } from '../../../core/schemas/review.js';
 import { REVIEWER_COMMAND_RULES } from '../../orchestrator/validation/reviewer-command-policy.js';
 import { fenced } from './builder.js';
+import { operatorInstructionsBody, planBody, type ReviewPlanData } from './review.js';
 
 /** One project file handed to a seat that reads no file of its own. */
 export type ProjectFileText = { path: string; text: string; trimmed: boolean };
@@ -9,6 +10,8 @@ export type ReviewChecksPromptInput = {
   scope: 'final' | 'task';
   /** The task ids a task-cadence review covers. */
   taskIds: readonly string[];
+  plan: ReviewPlanData;
+  operatorInstructions?: string | undefined;
   changedFiles: readonly string[];
   /** The files already changed when the run started. */
   preRunFiles: readonly string[];
@@ -44,6 +47,11 @@ export function buildReviewChecksPrompt(input: ReviewChecksPromptInput): string 
     '# Choose the checks for this review',
     'You review a SPLITBRIEF run. Before your review, SPLITBRIEF runs the commands you choose here in the run workspace and gives you every result in the review call. This call is read-only: do not run, write or change anything.',
     scopeText(input),
+    '## Plan',
+    planBody(input.plan, input.scope === 'task' ? input.taskIds : undefined),
+    ...(input.operatorInstructions
+      ? ['## Operator Instructions', operatorInstructionsBody(input.operatorInstructions)]
+      : []),
     ...(input.requiredCommands.length === 0
       ? []
       : [
@@ -68,6 +76,7 @@ export function buildReviewChecksPrompt(input: ReviewChecksPromptInput): string 
           ].join('\n'),
         ]),
     '## How to choose',
+    'Use the task briefs, plan decisions and operator instructions above when choosing the checks for this review.',
     input.workspaceInstructions === undefined
       ? 'Read the project files below: they are verbatim copies from the run workspace.'
       : `${input.workspaceInstructions} Read what the project has to learn how it verifies a change: its manifests and scripts, a Makefile or justfile, its CI configuration, its README.`,

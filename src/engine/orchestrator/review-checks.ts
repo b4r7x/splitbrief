@@ -32,6 +32,7 @@ import { publishReviewCheck, publishReviewChecksPlan } from './events.js';
 import { runBaseOf, withRunBaseTree, type RunBase } from './isolation/base-tree.js';
 import { runBaseTreeError } from './isolation/errors.js';
 import { runReviewerCall } from './review-call.js';
+import { reviewOperatorInstructions, reviewPlanData } from './review-plan.js';
 import { transitionAndSave } from './state-ops.js';
 import { failingFilesFromKeys, lastTaskChangingFile } from './task/file-owner.js';
 import type { FailureKeys } from './validation/extract-failure-keys.js';
@@ -486,6 +487,11 @@ export async function runReviewChecks(opts: ReviewChecksOptions): Promise<Review
   const prompt = buildReviewChecksPrompt({
     scope: opts.scope,
     taskIds: opts.taskIds,
+    plan: reviewPlanData(state),
+    operatorInstructions: reviewOperatorInstructions(
+      state,
+      opts.scope === 'task' ? opts.taskIds : undefined,
+    ),
     changedFiles: opts.changedFiles,
     preRunFiles: opts.preRunFiles,
     requiredCommands,
