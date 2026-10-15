@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -21,7 +22,7 @@ import { captureReviewedCandidate } from './states.js';
 
 vi.mock('../approval/file-snapshots/entry.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/file-snapshots/entry.js')>();
-  return { ...actual, writeConfinedEntry: vi.fn(actual.writeConfinedEntry) };
+  return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
 });
 
 const SESSION_ID = '2026-10-04-apply-restore-test';
@@ -34,9 +35,9 @@ beforeEach(async () => {
   const actualEntry = await vi.importActual<typeof import('../approval/file-snapshots/entry.js')>(
     '../approval/file-snapshots/entry.js',
   );
-  vi.mocked(entry.writeConfinedEntry)
+  vi.mocked(entry.writeConfinedEntryOrLink)
     .mockReset()
-    .mockImplementation(actualEntry.writeConfinedEntry);
+    .mockImplementation(actualEntry.writeConfinedEntryOrLink);
 });
 
 function loadSaved(run: ApplyRun) {
@@ -73,15 +74,17 @@ async function partialApply(run: ApplyRun): Promise<string> {
   const actualEntry = await vi.importActual<typeof import('../approval/file-snapshots/entry.js')>(
     '../approval/file-snapshots/entry.js',
   );
-  vi.mocked(entry.writeConfinedEntry).mockImplementation(async (root, path, ...rest) => {
+  vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
     if (root === run.dir && path === 'z.txt') throw new Error('disk full');
-    return actualEntry.writeConfinedEntry(root, path, ...rest);
+    return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
   });
   const result = await runApply({
     wctx: { projectDir: run.dir, sessionId: run.sessionId, bus },
     state,
   });
-  vi.mocked(entry.writeConfinedEntry).mockImplementation(actualEntry.writeConfinedEntry);
+  vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
+    actualEntry.writeConfinedEntryOrLink,
+  );
   expect(result.outcome).toBe('halted');
   expect(read(run.dir, 'a.txt')).toBe(lines('ONE', 'two', 'three', 'four', 'FIVE'));
   expect(read(run.dir, 'z.txt')).toBe('base z\n');
@@ -180,6 +183,107 @@ describe('undoApply', { timeout: 60_000 }, () => {
       await expect(undoApply(ref, loadSaved(run))).rejects.toThrow('Apply already undone.');
     });
   });
+
+  describe('a mode change and symlinks', () => {
+    const files = { 'a.txt': 'a\n', 'tool.sh': 'echo tool\n' };
+    const options = {
+      sessionId: SESSION_ID,
+      atBase: (dir: string) => {
+        symlinkSync('a.txt', join(dir, 'link'));
+        symlinkSync('a.txt', join(dir, 'gone-link'));
+      },
+    };
+    const mode = (file: string, run: ApplyRun): number =>
+      lstatSync(join(run.dir, file)).mode & 0o777;
+
+    async function applyLinks(run: ApplyRun, failOn?: string) {
+      chmodSync(join(run.ws, 'tool.sh'), 0o755);
+      symlinkSync('a.txt', join(run.ws, 'made'));
+      rmSync(join(run.ws, 'link'));
+      symlinkSync('tool.sh', join(run.ws, 'link'));
+      rmSync(join(run.ws, 'gone-link'));
+      const ref = { projectDir: run.dir, sessionId: run.sessionId };
+      saveState(
+        ref,
+        makeWorkflowState({ phase: 'complete', reviewStatus: 'passed', workspace: run.workspace }),
+      );
+      const actualEntry = await vi.importActual<
+        typeof import('../approval/file-snapshots/entry.js')
+      >('../approval/file-snapshots/entry.js');
+      vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
+        if (root === run.dir && path === failOn) throw new Error('disk full');
+        return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
+      });
+      const { bus } = makeBusRecorder();
+      const result = await runApply({ wctx: { ...ref, bus }, state: loadSaved(run) });
+      vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
+        actualEntry.writeConfinedEntryOrLink,
+      );
+      return result;
+    }
+
+    it('lands them on a clean checkout and puts the checkout back on undo', async () => {
+      await withApplyRun(files, options, async (run) => {
+        expect((await applyLinks(run)).outcome).toBe('applied');
+        expect(mode('tool.sh', run)).toBe(0o755);
+        expect(readlinkSync(join(run.dir, 'made'))).toBe('a.txt');
+        expect(readlinkSync(join(run.dir, 'link'))).toBe('tool.sh');
+        expect(existsSync(join(run.dir, 'gone-link'))).toBe(false);
+
+        const undone = await undoApply(
+          { projectDir: run.dir, sessionId: run.sessionId },
+          loadSaved(run),
+        );
+
+        expect(undone).toEqual({
+          restored: ['gone-link', 'link', 'made', 'tool.sh'],
+          unchanged: [],
+          conflicts: [],
+        });
+        expect(mode('tool.sh', run)).toBe(0o644);
+        expect(existsSync(join(run.dir, 'made'))).toBe(false);
+        expect(readlinkSync(join(run.dir, 'link'))).toBe('a.txt');
+        expect(readlinkSync(join(run.dir, 'gone-link'))).toBe('a.txt');
+      });
+    });
+
+    it('leaves a link the user retargeted after Apply as a conflict', async () => {
+      await withApplyRun(files, options, async (run) => {
+        expect((await applyLinks(run)).outcome).toBe('applied');
+        rmSync(join(run.dir, 'made'));
+        symlinkSync('tool.sh', join(run.dir, 'made'));
+
+        const undone = await undoApply(
+          { projectDir: run.dir, sessionId: run.sessionId },
+          loadSaved(run),
+        );
+
+        expect(undone.conflicts).toEqual(['made']);
+        expect(readlinkSync(join(run.dir, 'made'))).toBe('tool.sh');
+        expect(readlinkSync(join(run.dir, 'link'))).toBe('a.txt');
+      });
+    });
+
+    it('counts the links a cut-off Apply wrote as written', async () => {
+      await withApplyRun(files, options, async (run) => {
+        expect((await applyLinks(run, 'tool.sh')).outcome).toBe('halted');
+        const backupId = loadSaved(run).applying?.backupId;
+        if (backupId === undefined) throw new Error('partial apply left no applying record');
+
+        const result = await reconcileApplyBackup({
+          projectDir: run.dir,
+          sessionId: run.sessionId,
+          backupId,
+        });
+
+        expect(result).toEqual({
+          written: ['gone-link', 'link', 'made'],
+          pending: ['tool.sh'],
+          ambiguous: [],
+        });
+      });
+    });
+  });
 });
 
 describe('restoreApplyBackup — entries it must not touch', { timeout: 60_000 }, () => {
@@ -223,9 +327,9 @@ describe('restoreApplyBackup — entries it must not touch', { timeout: 60_000 }
       const actualEntry = await vi.importActual<
         typeof import('../approval/file-snapshots/entry.js')
       >('../approval/file-snapshots/entry.js');
-      vi.mocked(entry.writeConfinedEntry).mockImplementation(async (root, path, ...rest) => {
+      vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
         if (root === run.dir && path === 'a.txt') writeFileSync(join(run.dir, 'a.txt'), 'racing\n');
-        return actualEntry.writeConfinedEntry(root, path, ...rest);
+        return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
       });
 
       const result = await restoreApplyBackup({

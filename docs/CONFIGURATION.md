@@ -773,7 +773,7 @@ Every writer uses one run workspace. `cli` and `agent` write there directly; SPL
 
 | Value | What it does | Cost |
 |---|---|---|
-| `worktree` (default) | One linked git worktree with its own branch and history. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
+| `worktree` (default) | One linked git worktree with its own branch and history. Its files take the file modes of your project. Installed Node dependencies are linked. Python virtualenvs, Go caches and Rust target directories are not linked. | One worktree creation per run. |
 | `staged-copy` | One project copy per run, reused by tasks, retries and continuation. It excludes `.git`, `node_modules`, `.splitbrief/`, `.trees/` and credential files. It has no git history or installed dependencies. | One full project copy per run. |
 | `none` (shown as "your checkout") | The implementer of every transport works in your checkout itself. SPLITBRIEF writes an extracted-code implementer's code there. Validation, checks and review run there. There is no worktree, no workspace record and no Apply: a passing review closes the run. | No setup. Your checkout holds the run's edits as they happen. |
 

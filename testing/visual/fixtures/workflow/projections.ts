@@ -2737,7 +2737,7 @@ const applyConflictRecoveryProjection: WorkflowFixtureProjection = {
     pendingRecovery: buildApplyConflictRecoveryIssue({
       conflicts: [
         { path: 'src/cli.js', kind: 'mode' },
-        { path: 'docs/readme.md', kind: 'unsupported-entry' },
+        { path: 'docs/readme.md', kind: 'symlink' },
       ],
       workspacePath: '.splitbrief/worktrees/visual/workspace',
       createdAt: new Date(FIXED_TS).toISOString(),

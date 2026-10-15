@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   readFileSync,
   realpathSync,
   unlinkSync,
@@ -37,7 +38,7 @@ vi.mock('../approval/staged-project.js', async (importOriginal) => {
 });
 vi.mock('../approval/file-snapshots/entry.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../approval/file-snapshots/entry.js')>();
-  return { ...actual, writeConfinedEntry: vi.fn(actual.writeConfinedEntry) };
+  return { ...actual, writeConfinedEntryOrLink: vi.fn(actual.writeConfinedEntryOrLink) };
 });
 vi.mock('./backup.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./backup.js')>();
@@ -119,9 +120,9 @@ beforeEach(async () => {
   vi.mocked(stagedProject.promoteStagedChanges)
     .mockReset()
     .mockImplementation(actualStaged.promoteStagedChanges);
-  vi.mocked(entry.writeConfinedEntry)
+  vi.mocked(entry.writeConfinedEntryOrLink)
     .mockReset()
-    .mockImplementation(actualEntry.writeConfinedEntry);
+    .mockImplementation(actualEntry.writeConfinedEntryOrLink);
   vi.mocked(merge.mergeApplyStates).mockReset().mockImplementation(actualMerge.mergeApplyStates);
   const actualBackup = await vi.importActual<typeof import('./backup.js')>('./backup.js');
   vi.mocked(backup.writeApplyBackup).mockReset().mockImplementation(actualBackup.writeApplyBackup);
@@ -173,15 +174,13 @@ describe('runApply', { timeout: 60_000 }, () => {
           const backup = await readApplyBackup(run.dir, run.sessionId, backupId);
           expect(backup.created).toEqual(['new.txt']);
           expect(backup.replaced.map((e) => e.path).sort()).toEqual(['a.txt', 'gone.txt']);
-          const replacedA = backup.replaced.find((e) => e.path === 'a.txt');
-          expect(replacedA?.sha256).toBe(sha256Hex(lines('one', 'two', 'three', 'four', 'FIVE')));
+          const replacedA = sha256Hex(lines('one', 'two', 'three', 'four', 'FIVE'));
+          expect(backup.replaced).toContainEqual(
+            expect.objectContaining({ path: 'a.txt', sha256: replacedA }),
+          );
           expect(
             readFileSync(
-              join(
-                applyBackupDir(run.dir, run.sessionId, backupId),
-                'blobs',
-                replacedA?.sha256 ?? '',
-              ),
+              join(applyBackupDir(run.dir, run.sessionId, backupId), 'blobs', replacedA),
               'utf8',
             ),
           ).toBe(lines('one', 'two', 'three', 'four', 'FIVE'));
@@ -347,10 +346,12 @@ describe('runApply', { timeout: 60_000 }, () => {
         const actualEntry = await vi.importActual<
           typeof import('../approval/file-snapshots/entry.js')
         >('../approval/file-snapshots/entry.js');
-        vi.mocked(entry.writeConfinedEntry).mockImplementation(async (root, path, ...rest) => {
-          if (root === run.dir && path === 'b.txt') throw new Error('disk full');
-          return actualEntry.writeConfinedEntry(root, path, ...rest);
-        });
+        vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
+          async (root, path, ...rest) => {
+            if (root === run.dir && path === 'b.txt') throw new Error('disk full');
+            return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
+          },
+        );
 
         const result = await apply(run);
 
@@ -431,20 +432,24 @@ describe('runApply', { timeout: 60_000 }, () => {
         await probe.close();
         const sync = vi.spyOn(handlePrototype, 'sync');
         const atFirstWrite: { applying: boolean; manifest: boolean; synced: boolean }[] = [];
-        vi.mocked(entry.writeConfinedEntry).mockImplementation(async (root, path, ...rest) => {
-          if (root === run.dir && atFirstWrite.length === 0) {
-            const state = savedState(run);
-            const backupId = state.applying?.backupId;
-            atFirstWrite.push({
-              applying: backupId !== undefined,
-              synced: sync.mock.calls.length >= 3,
-              manifest:
-                backupId !== undefined &&
-                existsSync(join(applyBackupDir(run.dir, run.sessionId, backupId), 'manifest.json')),
-            });
-          }
-          return actualEntry.writeConfinedEntry(root, path, ...rest);
-        });
+        vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(
+          async (root, path, ...rest) => {
+            if (root === run.dir && atFirstWrite.length === 0) {
+              const state = savedState(run);
+              const backupId = state.applying?.backupId;
+              atFirstWrite.push({
+                applying: backupId !== undefined,
+                synced: sync.mock.calls.length >= 3,
+                manifest:
+                  backupId !== undefined &&
+                  existsSync(
+                    join(applyBackupDir(run.dir, run.sessionId, backupId), 'manifest.json'),
+                  ),
+              });
+            }
+            return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
+          },
+        );
 
         try {
           expect((await apply(run)).outcome).toBe('applied');
@@ -546,7 +551,7 @@ describe('runApply', { timeout: 60_000 }, () => {
           sessionId: run.sessionId,
           backupId: 'apply-retry',
           workspaceDir: run.ws,
-          theirsBaseline: states.theirsBaseline,
+          theirs: states.theirs,
         };
         expect((await writeApplyBackup({ ...input, files: ['a.txt'] })).kind).toBe('written');
         const blob = join(
@@ -564,6 +569,25 @@ describe('runApply', { timeout: 60_000 }, () => {
         expect(manifest.replaced.map((e) => e.path)).toEqual(['a.txt', 'c.txt']);
       },
     );
+  });
+
+  it('reads a backup written before Apply recorded symlinks', async () => {
+    await withApplyRun({ 'a.txt': 'base a\n' }, { sessionId: SESSION_ID }, async (run) => {
+      const old = {
+        id: 'apply-old',
+        replaced: [{ path: 'a.txt', sha256: sha256Hex('base a\n'), mode: 0o644 }],
+        created: ['new.txt'],
+        expected: [
+          { path: 'a.txt', sha256: sha256Hex('ours a\n'), mode: 0o644 },
+          { path: 'new.txt', sha256: null, mode: null },
+        ],
+      };
+      const dir = applyBackupDir(run.dir, run.sessionId, 'apply-old');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify(old));
+
+      expect(await readApplyBackup(run.dir, run.sessionId, 'apply-old')).toEqual(old);
+    });
   });
 
   it('dirty start, an edit during the run and the run edit merge into one applied file', async () => {
@@ -591,12 +615,14 @@ describe('runApply', { timeout: 60_000 }, () => {
       const actualEntry = await vi.importActual<
         typeof import('../approval/file-snapshots/entry.js')
       >('../approval/file-snapshots/entry.js');
-      vi.mocked(entry.writeConfinedEntry).mockImplementation(async (root, path, ...rest) => {
+      vi.mocked(entry.writeConfinedEntryOrLink).mockImplementation(async (root, path, ...rest) => {
         if (root === run.dir && path === file) throw new Error('disk full');
-        return actualEntry.writeConfinedEntry(root, path, ...rest);
+        return actualEntry.writeConfinedEntryOrLink(root, path, ...rest);
       });
       return () =>
-        vi.mocked(entry.writeConfinedEntry).mockImplementation(actualEntry.writeConfinedEntry);
+        vi
+          .mocked(entry.writeConfinedEntryOrLink)
+          .mockImplementation(actualEntry.writeConfinedEntryOrLink);
     };
     const choose = async (run: ApplyRun, action: 'retry-same-worker' | 'restore-backup') => {
       const { bus } = makeBusRecorder();
@@ -787,8 +813,8 @@ describe('runApply', { timeout: 60_000 }, () => {
           expect(state.applied?.backupId).toBe(backupId);
           expect(state.pendingRecovery).toBeUndefined();
           const backup = await readApplyBackup(run.dir, run.sessionId, backupId);
-          expect(backup.replaced.find((e) => e.path === 'a.txt')?.sha256).toBe(
-            sha256Hex('base a\n'),
+          expect(backup.replaced).toContainEqual(
+            expect.objectContaining({ path: 'a.txt', sha256: sha256Hex('base a\n') }),
           );
           expect(backup.expected.map((e) => e.path).sort()).toEqual(['a.txt', 'b.txt']);
         },

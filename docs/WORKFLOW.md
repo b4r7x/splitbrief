@@ -296,7 +296,7 @@ A conflict raises the `apply-conflict` halt. You choose the result for each file
 
 If the merge or a repair changes the reviewed candidate, SPLITBRIEF runs validation and the required checks again. The review seat then reviews the whole run diff, from the workspace base to the candidate, with checkout hunks marked. This re-review counts as a final-review fix cycle against `REVIEW_CYCLE_CAP`.
 
-Before the first checkout write, Apply saves a backup under `.splitbrief/sessions/<id>/apply/<backup-id>/`. It records replaced bytes, created paths and expected results, and freezes the assessed candidate. `APPLY_START` persists the backup id. The writer uses one hash-guarded call for the result. Its guard compares the checkout with the bytes Apply read for the merge. A later checkout edit cannot silently replace that baseline.
+Before the first checkout write, Apply saves a backup under `.splitbrief/sessions/<id>/apply/<backup-id>/`. It records replaced files and symlinks, created paths and expected results, and freezes the assessed candidate. `APPLY_START` persists the backup id. The writer uses one hash-guarded call for the result. Its guard compares the checkout with the bytes Apply read for the merge. A later checkout edit cannot silently replace that baseline.
 
 Apply is not atomic. A failed write or a killed process can leave a partial result. The run keeps `applying` and offers restore or retry. See [Partial Apply recovery](./APPROVAL-AND-RECOVERY.md#partial-apply-recovery). `APPLY_DONE` records the applied files and closes the run as `applied`.
 

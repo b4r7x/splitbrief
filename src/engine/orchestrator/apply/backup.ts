@@ -1,30 +1,37 @@
 import { randomBytes } from 'node:crypto';
-import { lstat, mkdir, open, readFile, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, rename, rm, symlink } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { sessionDir } from '../../../core/paths.js';
 import { SECURE_DIR_MODE, SECURE_FILE_MODE } from '../../../lib/fs.js';
-import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { error } from '../../../utils/error.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { type AcquisitionBaseline, readConfinedEntry } from '../approval/file-snapshots/entry.js';
+import { readConfinedEntry } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
+import { readApplyEntry, sameSideEntry, type SideEntry, sideChangedError } from './states.js';
 
 const Sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 const ModeSchema = z.number().int().min(0).max(0o777);
-const ApplyBackupEntrySchema = z.object({
-  path: z.string().min(1),
-  sha256: Sha256Schema,
-  mode: ModeSchema,
-});
-const ApplyExpectedEntrySchema = z
-  .object({
+const ApplyBackupLinkSchema = z.object({ path: z.string().min(1), target: z.string().min(1) });
+const ApplyBackupEntrySchema = z.union([
+  z.object({
     path: z.string().min(1),
-    sha256: Sha256Schema.nullable(),
-    mode: ModeSchema.nullable(),
-  })
-  .refine((entry) => (entry.sha256 === null) === (entry.mode === null));
+    sha256: Sha256Schema,
+    mode: ModeSchema,
+  }),
+  ApplyBackupLinkSchema,
+]);
+const ApplyExpectedEntrySchema = z.union([
+  z
+    .object({
+      path: z.string().min(1),
+      sha256: Sha256Schema.nullable(),
+      mode: ModeSchema.nullable(),
+    })
+    .refine((entry) => (entry.sha256 === null) === (entry.mode === null)),
+  ApplyBackupLinkSchema,
+]);
 const ApplyBackupSchema = z.object({
   id: z.string().min(1),
   replaced: z.array(ApplyBackupEntrySchema),
@@ -34,6 +41,16 @@ const ApplyBackupSchema = z.object({
 
 export type ApplyExpectedEntry = z.infer<typeof ApplyExpectedEntrySchema>;
 export type ApplyBackup = z.infer<typeof ApplyBackupSchema>;
+
+/** A recorded backup entry as the side it describes; no hash means the path was absent. */
+export function backupSideEntry(
+  entry: ApplyBackup['replaced'][number] | ApplyExpectedEntry,
+): SideEntry {
+  if ('target' in entry) return { kind: 'symlink', target: entry.target };
+  return entry.sha256 === null || entry.mode === null
+    ? { kind: 'absent' }
+    : { kind: 'file', sha256: entry.sha256, mode: entry.mode };
+}
 
 export function applyBackupDir(projectDir: string, sessionId: string, backupId: string): string {
   return join(sessionDir(projectDir, sessionId), 'apply', backupId);
@@ -97,12 +114,12 @@ export async function writeApplyBackup(input: {
   backupId: string;
   workspaceDir: string;
   files: string[];
-  theirsBaseline: AcquisitionBaseline;
+  theirs: ReadonlyMap<string, SideEntry>;
 }): Promise<
   | { kind: 'written'; backup: ApplyBackup; candidateDir: string }
   | { kind: 'changed'; files: string[] }
 > {
-  const { projectDir, sessionId, backupId, workspaceDir, files, theirsBaseline } = input;
+  const { projectDir, sessionId, backupId, workspaceDir, files, theirs } = input;
   const dir = applyBackupDir(projectDir, sessionId, backupId);
   const manifestPath = join(dir, 'manifest.json');
   const previous = await readApplyBackup(projectDir, sessionId, backupId).catch(
@@ -115,31 +132,12 @@ export async function writeApplyBackup(input: {
   const created = new Set(previous?.created);
   const expected = new Map(previous?.expected.map((entry) => [entry.path, entry]));
   const blobs = new Map<string, Buffer>();
-  const candidates = new Map<string, { bytes: Buffer; mode: number }>();
+  const candidates = new Map<string, { bytes: Buffer; mode: number } | { target: string }>();
   const changed: string[] = [];
 
   for (const path of [...new Set(files)].sort()) {
-    assertPathConfined(path, projectDir);
-    const stat = await lstat(join(projectDir, path)).catch((cause: unknown) => {
-      if (isENOENT(cause)) return undefined;
-      throw cause;
-    });
-    const fingerprint = theirsBaseline.get(path);
-    if (stat !== undefined && !stat.isFile()) {
-      changed.push(path);
-      continue;
-    }
-    const checkout = await readConfinedEntry(projectDir, path);
-    if (
-      fingerprint !== undefined &&
-      (checkout.kind !== 'file' ||
-        checkout.sha256 !== fingerprint.sha256 ||
-        (checkout.mode & 0o777) !== (fingerprint.mode & 0o777))
-    ) {
-      changed.push(path);
-      continue;
-    }
-    if (fingerprint === undefined && checkout.kind !== 'absent') {
+    const checkout = await readApplyEntry(projectDir, path);
+    if (checkout === null || !sameSideEntry(checkout, theirs.get(path) ?? { kind: 'absent' })) {
       changed.push(path);
       continue;
     }
@@ -147,14 +145,20 @@ export async function writeApplyBackup(input: {
       if (checkout.kind === 'file') {
         replaced.set(path, { path, sha256: checkout.sha256, mode: checkout.mode & 0o777 });
         blobs.set(checkout.sha256, checkout.bytes);
+      } else if (checkout.kind === 'symlink') {
+        replaced.set(path, { path, target: checkout.target });
       } else {
         created.add(path);
       }
     }
 
-    const workspace = await readConfinedEntry(workspaceDir, path);
+    const workspace = await readApplyEntry(workspaceDir, path);
+    if (workspace === null) throw sideChangedError('ours', path);
     if (workspace.kind === 'absent') {
       expected.set(path, { path, sha256: null, mode: null });
+    } else if (workspace.kind === 'symlink') {
+      expected.set(path, { path, target: workspace.target });
+      candidates.set(path, { target: workspace.target });
     } else {
       const bytes =
         path === '.gitignore'
@@ -201,10 +205,11 @@ export async function writeApplyBackup(input: {
   const candidateDir = join(dir, 'candidate');
   await rm(candidateDir, { recursive: true, force: true });
   await mkdir(candidateDir, { recursive: true, mode: SECURE_DIR_MODE });
-  for (const [path, { bytes, mode }] of candidates) {
+  for (const [path, candidate] of candidates) {
     const candidatePath = join(candidateDir, path);
     await mkdir(dirname(candidatePath), { recursive: true, mode: SECURE_DIR_MODE });
-    await writeSyncedFile(candidatePath, bytes, mode);
+    if ('target' in candidate) await symlink(candidate.target, candidatePath);
+    else await writeSyncedFile(candidatePath, candidate.bytes, candidate.mode);
     for (let parent = dirname(candidatePath); parent !== candidateDir; parent = dirname(parent)) {
       await syncDirectory(parent);
     }

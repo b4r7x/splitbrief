@@ -1083,11 +1083,11 @@ const READY_OVERRIDE_LOG: readonly EngineEvent[] = READY_LOG.map((event) =>
       : event,
 );
 
-/** The review passed and Apply met two entries it would not write: the run waits at Apply. */
+/** The review passed and both sides changed two entries differently: the run waits at Apply. */
 const APPLY_CONFLICT = buildApplyConflictRecoveryIssue({
   conflicts: [
     { path: FILES.form, kind: 'mode' },
-    { path: FILES.docs, kind: 'unsupported-entry' },
+    { path: FILES.docs, kind: 'symlink' },
   ],
   workspacePath: RUN_WORKSPACE.path,
   createdAt: STARTED_AT_ISO,

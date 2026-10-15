@@ -51,7 +51,12 @@ describe('End run during Apply recovery', () => {
         backupId,
         workspaceDir,
         files,
-        theirsBaseline: await captureAcquisitionBaseline(target.projectDir),
+        theirs: new Map(
+          [...(await captureAcquisitionBaseline(target.projectDir))].map(([path, file]) => [
+            path,
+            { kind: 'file', ...file },
+          ]),
+        ),
       });
       if (backup.kind !== 'written') throw new Error('fixture checkout changed before Apply');
       writeFileSync(join(target.projectDir, 'a.txt'), 'run result\n');
@@ -102,6 +107,7 @@ describe('End run during Apply recovery', () => {
       expect(readFileSync(statePath, 'utf8')).toBe(before);
       expect(readFileSync(join(backupDir, 'manifest.json'), 'utf8')).toBe(manifest);
       for (const entry of backup.backup.replaced) {
+        if (!('sha256' in entry)) throw new Error(`${entry.path} was backed up as a link`);
         expect(readFileSync(join(backupDir, 'blobs', entry.sha256), 'utf8')).toBe('before Apply\n');
       }
       expect(readFileSync(join(target.projectDir, 'a.txt'), 'utf8')).toBe('run result\n');

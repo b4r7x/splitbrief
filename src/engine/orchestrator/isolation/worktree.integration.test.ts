@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   lstatSync,
   readdirSync,
@@ -7,6 +8,7 @@ import {
   readlinkSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -251,6 +253,23 @@ describe('ensureIsolationWorktree', { timeout: 90_000 }, () => {
     expect(await readFile(join(result.worktreePath, 'a.txt'), 'utf-8')).toBe('edited\n');
     expect(await readFile(join(result.worktreePath, 'new.txt'), 'utf-8')).toBe('untracked\n');
     expect(existsSync(join(result.worktreePath, 'gone.txt'))).toBe(false);
+  });
+
+  it('gives the worktree the checkout modes that Git does not record', async () => {
+    createTestGitRepo(repoDir, { 'secret.txt': 'token\n', 'shared.txt': 'notes\n' });
+    chmodSync(join(repoDir, 'secret.txt'), 0o600);
+    chmodSync(join(repoDir, 'shared.txt'), 0o640);
+
+    const result = await ensureIsolationWorktree({
+      projectDir: repoDir,
+      sessionId: SESSION_ID,
+      git: createGitClient(repoDir),
+    });
+
+    expect(result).toEqual({ kind: 'ready', worktreePath: worktreeDir(), reused: false });
+    if (result.kind !== 'ready') return;
+    expect(statSync(join(result.worktreePath, 'secret.txt')).mode & 0o777).toBe(0o600);
+    expect(statSync(join(result.worktreePath, 'shared.txt')).mode & 0o777).toBe(0o640);
   });
 
   it('reuses the same worktree for a second run of the same session via its marker', async () => {

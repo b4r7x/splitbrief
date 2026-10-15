@@ -1,14 +1,9 @@
 import type { WorkflowState } from '../../../core/schemas/workflow.js';
 import type { SessionRef } from '../../../core/types/session-ref.js';
 import { error } from '../../../utils/error.js';
-import { type FileSnapshotEntry, writeConfinedEntry } from '../approval/file-snapshots/entry.js';
-import {
-  type ApplyBackup,
-  type ApplyExpectedEntry,
-  readApplyBackup,
-  readBackupBlob,
-} from './backup.js';
-import { readApplyEntry, sameSideEntry, unsafeEntryError } from './states.js';
+import { type ConfinedEntry, writeConfinedEntryOrLink } from '../approval/file-snapshots/entry.js';
+import { type ApplyBackup, backupSideEntry, readApplyBackup, readBackupBlob } from './backup.js';
+import { readApplyEntry, sameSideEntry, type SideEntry, unsafeEntryError } from './states.js';
 import { transitionAndSave } from '../state-ops.js';
 
 type ApplyBackupInput = { projectDir: string; sessionId: string; backupId: string };
@@ -19,31 +14,23 @@ export type ApplyBackupReconciliation = {
   ambiguous: string[];
 };
 
-function matchesFingerprint(
-  entry: FileSnapshotEntry | null,
-  fingerprint: Pick<ApplyExpectedEntry, 'sha256' | 'mode'> | undefined,
-): boolean {
-  if (entry === null || fingerprint === undefined) return false;
-  const { sha256, mode } = fingerprint;
-  return sameSideEntry(
-    entry,
-    sha256 === null || mode === null ? { kind: 'absent' } : { kind: 'file', sha256, mode },
-  );
+function matchesFingerprint(entry: ConfinedEntry | null, side: SideEntry | undefined): boolean {
+  return entry !== null && side !== undefined && sameSideEntry(entry, side);
 }
 
 async function classifyApplyBackup(
   projectDir: string,
   backup: ApplyBackup,
 ): Promise<ApplyBackupReconciliation> {
-  const expected = new Map(backup.expected.map((entry) => [entry.path, entry]));
-  const replaced = new Map(backup.replaced.map((entry) => [entry.path, entry]));
+  const expected = new Map(backup.expected.map((entry) => [entry.path, backupSideEntry(entry)]));
+  const replaced = new Map(backup.replaced.map((entry) => [entry.path, backupSideEntry(entry)]));
   const created = new Set(backup.created);
   const paths = [...new Set([...expected.keys(), ...replaced.keys(), ...created])].sort();
   const result: ApplyBackupReconciliation = { written: [], pending: [], ambiguous: [] };
   for (const path of paths) {
     const checkout = await readApplyEntry(projectDir, path);
-    const before =
-      replaced.get(path) ?? (created.has(path) ? { sha256: null, mode: null } : undefined);
+    const before: SideEntry | undefined =
+      replaced.get(path) ?? (created.has(path) ? { kind: 'absent' } : undefined);
     if (matchesFingerprint(checkout, expected.get(path))) result.written.push(path);
     else if (matchesFingerprint(checkout, before)) result.pending.push(path);
     else result.ambiguous.push(path);
@@ -67,15 +54,17 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
   const backup = await readApplyBackup(projectDir, sessionId, backupId);
   const reconciliation = await classifyApplyBackup(projectDir, backup);
   const replaced = new Map(backup.replaced.map((entry) => [entry.path, entry]));
-  const expected = new Map(backup.expected.map((entry) => [entry.path, entry]));
+  const expected = new Map(backup.expected.map((entry) => [entry.path, backupSideEntry(entry)]));
   const created = new Set(backup.created);
   const restored: string[] = [];
   const unchanged = [...reconciliation.pending];
   const conflicts = [...reconciliation.ambiguous];
   for (const path of reconciliation.written) {
     const before = replaced.get(path);
-    let entry: FileSnapshotEntry;
-    if (before !== undefined) {
+    let entry: ConfinedEntry;
+    if (before !== undefined && 'target' in before) {
+      entry = { kind: 'symlink', target: before.target };
+    } else if (before !== undefined) {
       entry = {
         kind: 'file',
         bytes: await readBackupBlob(projectDir, sessionId, backupId, before.sha256),
@@ -96,7 +85,7 @@ export async function restoreApplyBackup(input: ApplyBackupInput): Promise<{
       path,
     });
     try {
-      await writeConfinedEntry(projectDir, path, entry, async () => {
+      await writeConfinedEntryOrLink(projectDir, path, entry, async () => {
         if (!matchesFingerprint(await readApplyEntry(projectDir, path), after)) throw conflict;
       });
       restored.push(path);

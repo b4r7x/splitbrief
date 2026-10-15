@@ -24,12 +24,12 @@ import { readCurrentFileContent } from './file-snapshots/contents.js';
 import {
   type AcquisitionBaseline,
   captureAcquisitionBaseline,
+  type ConfinedEntry,
   matchesAcquisitionBaseline,
-  readConfinedEntry,
+  readConfinedEntryOrLink,
   readProjectSymlink,
   sameFileEntry,
-  writeConfinedEntry,
-  type FileSnapshotEntry,
+  writeConfinedEntryOrLink,
 } from './file-snapshots/entry.js';
 import type { IsolationRole, IsolatedWorkspace } from '../isolation/types.js';
 
@@ -40,7 +40,7 @@ export type PromoteStagedChangesResult = {
   promotedFiles: string[];
   conflictedFiles: string[];
   failure?: PromotionFailure;
-  /** Exact entries this call wrote, including a stopped prefix. */
+  /** Exact file entries this call wrote, including a stopped prefix; a symlink write is not listed. */
   appliedFiles?: EvidencePromotedFile[];
 };
 
@@ -206,9 +206,9 @@ async function entryToPromote(opts: {
   targetProjectDir: string;
   stagedProjectDir: string;
   file: string;
-}): Promise<FileSnapshotEntry> {
+}): Promise<ConfinedEntry> {
   const { targetProjectDir, stagedProjectDir, file } = opts;
-  const staged = await readConfinedEntry(stagedProjectDir, file);
+  const staged = await readConfinedEntryOrLink(stagedProjectDir, file);
   if (file !== GITIGNORE_FILE || staged.kind !== 'file') return staged;
   // The .gitignore is the only promoted file whose bytes are decoded: it keeps
   // its bookkeeping strip; every other file is carried byte for byte with its
@@ -234,8 +234,23 @@ async function targetHoldsStagedEntry(opts: {
   file: string;
 }): Promise<boolean> {
   const staged = await entryToPromote(opts);
-  const current = await readConfinedEntry(opts.targetProjectDir, opts.file);
-  return sameFileEntry(current, staged);
+  const current = await readConfinedEntryOrLink(opts.targetProjectDir, opts.file);
+  if (staged.kind === 'symlink')
+    return current.kind === 'symlink' && current.target === staged.target;
+  return current.kind !== 'symlink' && sameFileEntry(current, staged);
+}
+
+/** The target still holds what it held at acquisition: the recorded link, else the baseline entry. */
+async function targetUnchanged(opts: {
+  targetProjectDir: string;
+  file: string;
+  targetBaseline: AcquisitionBaseline;
+  targetLinks: ReadonlyMap<string, string> | undefined;
+}): Promise<boolean> {
+  const { targetProjectDir, file, targetBaseline, targetLinks } = opts;
+  const link = targetLinks?.get(file);
+  if (link !== undefined) return (await readProjectSymlink(targetProjectDir, file)) === link;
+  return matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline);
 }
 
 export async function promoteStagedChanges(opts: {
@@ -243,8 +258,10 @@ export async function promoteStagedChanges(opts: {
   stagedProjectDir: string;
   files: string[];
   targetBaseline: AcquisitionBaseline | undefined;
+  /** The project symlinks the target held at acquisition; without it the target held none. */
+  targetLinks?: ReadonlyMap<string, string>;
 }): Promise<PromoteStagedChangesResult> {
-  const { targetProjectDir, stagedProjectDir, files, targetBaseline } = opts;
+  const { targetProjectDir, stagedProjectDir, files, targetBaseline, targetLinks } = opts;
   for (const file of files) {
     assertWritablePathConfined(file, targetProjectDir);
     assertPathConfined(file, stagedProjectDir);
@@ -255,17 +272,24 @@ export async function promoteStagedChanges(opts: {
 
   const preflight = await Promise.all(
     files.map(async (file): Promise<'ok' | 'settled' | 'conflict'> => {
-      // Promotion writes regular files only: a symlink on either side is left
-      // for the operator, never written over, through or from.
+      // A symlink on either side is written over or from only when it stays
+      // inside its project; any other link is left for the operator.
       const [target, staged] = await Promise.all([
         lstatIfPresent(join(targetProjectDir, file)),
         lstatIfPresent(join(stagedProjectDir, file)),
       ]);
-      if (target?.isSymbolicLink() || staged?.isSymbolicLink()) return 'conflict';
+      if (
+        (target?.isSymbolicLink() && (await readProjectSymlink(targetProjectDir, file)) === null) ||
+        (staged?.isSymbolicLink() && (await readProjectSymlink(stagedProjectDir, file)) === null)
+      ) {
+        return 'conflict';
+      }
       // A symlinked parent in the target that resolves into `.git` or `.splitbrief`
       // would carry the file into the control plane; the approval saw only its spelling.
       if (reachesControlPlane(file, targetProjectDir)) return 'conflict';
-      if (await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline)) return 'ok';
+      if (await targetUnchanged({ targetProjectDir, file, targetBaseline, targetLinks })) {
+        return 'ok';
+      }
       return (await targetHoldsStagedEntry({ targetProjectDir, stagedProjectDir, file }))
         ? 'settled'
         : 'conflict';
@@ -286,21 +310,21 @@ export async function promoteStagedChanges(opts: {
       // Recheck after preparing bytes and mode, immediately before replacement.
       // A filesystem rename is atomic, but is not a portable compare-and-swap.
       if (!settledFiles.has(file)) {
-        await writeConfinedEntry(targetProjectDir, file, entry, async () => {
-          if (!(await matchesAcquisitionBaseline(targetProjectDir, file, targetBaseline))) {
+        await writeConfinedEntryOrLink(targetProjectDir, file, entry, async () => {
+          if (!(await targetUnchanged({ targetProjectDir, file, targetBaseline, targetLinks }))) {
             throw conflict;
           }
         });
-        appliedFiles.push(
-          entry.kind === 'file'
-            ? {
-                path: file,
-                sha256: entry.sha256,
-                mode: entry.mode & 0o777,
-                ...(!targetBaseline.has(file) ? { created: true as const } : {}),
-              }
-            : { path: file, sha256: null, mode: null },
-        );
+        if (entry.kind === 'file') {
+          appliedFiles.push({
+            path: file,
+            sha256: entry.sha256,
+            mode: entry.mode & 0o777,
+            ...(!targetBaseline.has(file) ? { created: true as const } : {}),
+          });
+        } else if (entry.kind === 'absent') {
+          appliedFiles.push({ path: file, sha256: null, mode: null });
+        }
       }
     } catch (err) {
       if (err === conflict) return { promotedFiles, conflictedFiles: [file], appliedFiles };
