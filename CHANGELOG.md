@@ -87,6 +87,7 @@
 
 ### Fixed
 
+- Every Backspace deletes one character in every text field, also when the terminal sends several Backspaces at once.
 - Saved run patches preserve executable permissions and symlink additions, removals and target changes when you apply them with Git.
 - Checkout mode warns about uncommitted changes and names the revert backup folder. Reverting an attempt leaves your other uncommitted files untouched.
 - A plan can check one test file with `node --test <test file>`, and a check can check a file's syntax with `node --check <file>`, also on a file the run changed. A plan `test` check no longer adds its file to a `package.json` test script that chains commands, where the file reached only the last command; it runs the script as written.
