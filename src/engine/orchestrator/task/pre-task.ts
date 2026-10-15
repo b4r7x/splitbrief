@@ -122,7 +122,11 @@ export async function runPreTaskHooksAndPublish(opts: {
         hashTaskBrief([task]),
       ) === true)
   ) {
-    return { proceed: true, state, taskStartSnapshot: activeTaskSnapshot };
+    const taskStartSnapshot = {
+      ...activeTaskSnapshot,
+      restoreFiles: activeTaskSnapshot.restoreFiles ?? [],
+    };
+    return { proceed: true, state, taskStartSnapshot };
   }
 
   let taskStartSnapshot: ChangedFilesSnapshot;
@@ -146,5 +150,5 @@ export async function runPreTaskHooksAndPublish(opts: {
     return { proceed: false, state };
   }
 
-  return { proceed: true, state, taskStartSnapshot };
+  return { proceed: true, state, taskStartSnapshot: { ...taskStartSnapshot, restoreFiles: [] } };
 }

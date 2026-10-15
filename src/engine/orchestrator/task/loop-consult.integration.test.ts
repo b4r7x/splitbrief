@@ -23,6 +23,14 @@ import type { ImplementerOptions, RetryOptions } from '../../implementers/types.
 import { processError } from '../../../lib/process/errors.js';
 import * as commandRunner from '../../../lib/process/spawn/run-command.js';
 import { runTaskLoop } from './loop.js';
+import { BOUNDS } from '../../../core/pipeline-spec/bounds.js';
+import { plainUserMessage } from '../../../core/types/user-input.js';
+import { loadState, saveState } from '../../../core/state/persistence.js';
+import { applyRecoveryAction } from '../recovery/actions.js';
+import { mutateEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
+import { useTrustHome } from '#testing/helpers/trust-home.js';
+import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import type { HooksConfig } from '../../../core/schemas/hooks.js';
 
 let dirs: string[] = [];
 
@@ -39,6 +47,61 @@ function setupProject(): { projectDir: string; sessionId: string } {
   });
   dirs.push(projectDir);
   return { projectDir, sessionId };
+}
+
+async function haltCheckoutBrief() {
+  const ref = setupProject();
+  const task = makeTask({
+    suggestedFiles: ['src/attempt.ts', 'src/later.ts'],
+    checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+  });
+  const writeAttempt = async (opts: ImplementerOptions) => {
+    mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+    writeFileSync(join(opts.projectDir, 'src/attempt.ts'), 'failed attempt\n');
+    writeFileSync(join(opts.projectDir, 'src/earlier.ts'), 'earlier attempt\n');
+    return { success: true, output: 'implemented' };
+  };
+  let checks = 0;
+  vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+    writeFileSync(join(ref.projectDir, `generated-${++checks}.txt`), 'failed check output\n');
+    throw processError.exitCode({ command: 'tsc', code: 2, stderr: 'check failed', output: '' });
+  });
+  const { bus, events } = makeBusRecorder();
+  const wctx = makeWctx({
+    ...ref,
+    bus,
+    config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+    planner: makePlanner({
+      typedCall: consultCallAnswering(() => ({
+        answer: {
+          diagnosis: 'The check failed.',
+          action: 'guidance',
+          instructions: 'Repair the brief.',
+          context: null,
+        },
+      })),
+    }),
+    implementer: makeImplementer({ implement: vi.fn(writeAttempt), retry: vi.fn(writeAttempt) }),
+  });
+  const halted = await runTaskLoop({
+    wctx,
+    initialState: {
+      ...makeImplState([task]),
+      plannerCalls: { used: BOUNDS.plannerCallsPerRun, allowance: BOUNDS.plannerCallsPerRun },
+    },
+    setTrackedState: vi.fn(),
+    setCurrentTask: vi.fn(),
+  });
+  expect(halted.state.pendingRecovery?.reason).toBe('planner-calls-spent');
+  return {
+    ref,
+    wctx,
+    halted,
+    bus,
+    events,
+    generatedFiles: () =>
+      Array.from({ length: checks }, (_, index) => `generated-${index + 1}.txt`),
+  };
 }
 
 /** The split answer: two subtasks that together keep T002's only criterion. */
@@ -71,6 +134,332 @@ function splitIntoTwo(): ConsultAnswer {
 }
 
 describe('runTaskLoop with a consult', { timeout: 90_000 }, () => {
+  it.each(['skip', 'continue'] as const)(
+    'preserves every older path with contaminated evidence after %s',
+    async (action) => {
+      const { ref, wctx, bus } = await haltCheckoutBrief();
+      const persisted = loadState(ref);
+      const baseline = persisted?.changedFilesBaseline;
+      const snapshot = baseline?.activeTaskSnapshot;
+      if (persisted === null || baseline === undefined || snapshot === undefined)
+        throw new Error('Missing halted snapshot');
+      const { restoreFiles: _restoreFiles, ...olderSnapshot } = snapshot;
+      saveState(ref, {
+        ...persisted,
+        changedFilesBaseline: { ...baseline, activeTaskSnapshot: olderSnapshot },
+      });
+      writeFileSync(join(ref.projectDir, 'init.txt'), 'edited while halted\n');
+      writeFileSync(join(ref.projectDir, 'scratch.txt'), 'notes while halted\n');
+      writeFileSync(join(ref.projectDir, 'src/attempt.ts'), 'user source edit\n');
+      mutateEvidenceLedger(ref, (ledger) => {
+        if (ledger === null) throw new Error('Missing halted evidence');
+        return {
+          ...ledger,
+          tasks: ledger.tasks.map((entry) => ({
+            ...entry,
+            changedFiles: [...entry.changedFiles, 'init.txt', 'scratch.txt'],
+          })),
+        };
+      });
+
+      if (action === 'continue') {
+        const continued = await applyRecoveryAction({
+          ...ref,
+          state: loadState(ref) ?? persisted,
+          action: 'continue',
+          comment: plainUserMessage('Try the brief again.'),
+          bus,
+          config: wctx.config,
+        });
+        expect(continued.ok).toBe(true);
+        const resumedState = loadState(ref);
+        if (resumedState === null) throw new Error('Missing continued state');
+        const writeLater = async (opts: ImplementerOptions) => {
+          writeFileSync(join(opts.projectDir, 'src/later.ts'), 'continued attempt\n');
+          return { success: true, output: 'implemented' };
+        };
+        const resumed = await runTaskLoop({
+          wctx: {
+            ...wctx,
+            implementer: makeImplementer({
+              implement: vi.fn(writeLater),
+              retry: vi.fn(writeLater),
+            }),
+          },
+          initialState: resumedState,
+          setTrackedState: vi.fn(),
+          setCurrentTask: vi.fn(),
+        });
+        expect(resumed.state.pendingRecovery?.reason).toBe('consult-bound-spent');
+      }
+
+      const skipped = await applyRecoveryAction({
+        ...ref,
+        state: loadState(ref) ?? persisted,
+        action: 'skip-current-task',
+        bus,
+      });
+      expect(skipped.ok).toBe(true);
+      expect(readFileSync(join(ref.projectDir, 'src/attempt.ts'), 'utf8')).toBe(
+        'user source edit\n',
+      );
+      expect(readFileSync(join(ref.projectDir, 'src/earlier.ts'), 'utf8')).toBe(
+        'earlier attempt\n',
+      );
+      expect(existsSync(join(ref.projectDir, 'src/later.ts'))).toBe(false);
+      expect(readFileSync(join(ref.projectDir, 'init.txt'), 'utf8')).toBe('edited while halted\n');
+      expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe(
+        'notes while halted\n',
+      );
+    },
+  );
+
+  it('removes output from failing checks when the halted brief is skipped', async () => {
+    const { ref, bus, generatedFiles } = await haltCheckoutBrief();
+    const persisted = loadState(ref);
+    if (persisted === null) throw new Error('Missing halted state');
+    expect(generatedFiles().length).toBeGreaterThan(1);
+    for (const file of generatedFiles()) expect(existsSync(join(ref.projectDir, file))).toBe(true);
+    writeFileSync(join(ref.projectDir, 'scratch.txt'), 'notes while halted\n');
+
+    const skipped = await applyRecoveryAction({
+      ...ref,
+      state: persisted,
+      action: 'skip-current-task',
+      bus,
+    });
+
+    expect(skipped.ok).toBe(true);
+    for (const file of generatedFiles()) expect(existsSync(join(ref.projectDir, file))).toBe(false);
+    expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe('notes while halted\n');
+  });
+
+  it.each(['skip', 'planner failure'] as const)(
+    'restores output from consult verification after %s',
+    async (action) => {
+      const ref = setupProject();
+      const task = makeTask({
+        suggestedFiles: ['src/attempt.ts'],
+        checks: [{ id: 'check', kind: 'cmd', value: 'node --version', required: true }],
+      });
+      let checks = 0;
+      vi.spyOn(commandRunner, 'runCommand').mockImplementation(async () => {
+        writeFileSync(join(ref.projectDir, `generated-${++checks}.txt`), 'check output\n');
+        throw processError.exitCode({ command: 'node', code: 1, stderr: 'check failed' });
+      });
+      const writeAttempt = async (opts: ImplementerOptions) => {
+        mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+        writeFileSync(join(opts.projectDir, 'src/attempt.ts'), 'attempt edit\n');
+        return { success: true, output: 'implemented' };
+      };
+      const { bus } = makeBusRecorder();
+      let consults = 0;
+      const wctx = makeWctx({
+        ...ref,
+        bus,
+        config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+        implementer: makeImplementer({
+          implement: vi.fn(writeAttempt),
+          retry: vi.fn(writeAttempt),
+        }),
+        planner: makePlanner({
+          typedCall: consultCallAnswering(() => {
+            if (action === 'planner failure' && ++consults > 1)
+              throw new Error('Planner call failed');
+            return {
+              answer: {
+                diagnosis: 'The check needs verification.',
+                action: 'verify',
+                checkIds: ['check'],
+                reason: 'Run the check again.',
+              },
+            };
+          }),
+        }),
+      });
+
+      const halted = await runTaskLoop({
+        wctx,
+        initialState: makeImplState([task]),
+        setTrackedState: vi.fn(),
+        setCurrentTask: vi.fn(),
+      });
+
+      expect(halted.state.pendingRecovery?.reason).toBe(
+        action === 'skip' ? 'consult-bound-spent' : 'planner-call-failed',
+      );
+      expect(checks).toBeGreaterThan(2);
+      const persisted = loadState(ref);
+      if (persisted === null) throw new Error('Missing halted verification state');
+      writeFileSync(join(ref.projectDir, 'init.txt'), 'user edit while halted\n');
+      if (action === 'skip') {
+        const skipped = await applyRecoveryAction({
+          ...ref,
+          state: persisted,
+          action: 'skip-current-task',
+          bus,
+        });
+        expect(skipped.ok).toBe(true);
+      }
+      expect(existsSync(join(ref.projectDir, 'src/attempt.ts'))).toBe(false);
+      for (let index = 1; index <= checks; index++)
+        expect(existsSync(join(ref.projectDir, `generated-${index}.txt`))).toBe(false);
+      expect(readFileSync(join(ref.projectDir, 'init.txt'), 'utf8')).toBe(
+        'user edit while halted\n',
+      );
+    },
+  );
+
+  it.each(['failure', 'pre-validation denial'] as const)(
+    'limits automatic rollback after continuation through %s to attempt writes',
+    async (outcome) => {
+      const { ref, wctx, halted, bus, events, generatedFiles } = await haltCheckoutBrief();
+      writeFileSync(join(ref.projectDir, 'init.txt'), 'edited while halted\n');
+      writeFileSync(join(ref.projectDir, 'scratch.txt'), 'notes while halted\n');
+      const continued = await applyRecoveryAction({
+        ...ref,
+        state: halted.state,
+        action: 'continue',
+        comment: plainUserMessage('Try the brief again.'),
+        bus,
+        config: wctx.config,
+      });
+      expect(continued.ok).toBe(true);
+      const resumedState = loadState(ref);
+      if (resumedState === null) throw new Error('Missing continued state');
+      const trustHome = useTrustHome('continued-validation');
+      const hooks: HooksConfig =
+        outcome === 'pre-validation denial'
+          ? {
+              pre_validation: [
+                {
+                  kind: 'command',
+                  command: 'node',
+                  args: ['deny-validation.mjs'],
+                  timeout_ms: 30_000,
+                  on_failure: 'block',
+                },
+              ],
+            }
+          : {};
+      writeFileSync(
+        join(ref.projectDir, 'deny-validation.mjs'),
+        "import { writeFileSync } from 'node:fs';\nwriteFileSync('hook-output.txt', 'hook output');\nconsole.log(JSON.stringify({ decision: 'deny', message: 'validation denied' }));\n",
+      );
+      markHooksConfigTrusted(ref.projectDir, hooks);
+      const writeLater = async (opts: ImplementerOptions) => {
+        writeFileSync(join(opts.projectDir, 'src/later.ts'), 'continued attempt\n');
+        return { success: true, output: 'implemented' };
+      };
+      let resumed: Awaited<ReturnType<typeof runTaskLoop>>;
+      try {
+        resumed = await runTaskLoop({
+          wctx: {
+            ...wctx,
+            config: {
+              ...wctx.config,
+              hooks,
+            },
+            implementer: makeImplementer({
+              implement: vi.fn(writeLater),
+              retry: vi
+                .fn()
+                .mockImplementationOnce(writeLater)
+                .mockRejectedValue(new Error('retry failed')),
+            }),
+          },
+          initialState: resumedState,
+          setTrackedState: vi.fn(),
+          setCurrentTask: vi.fn(),
+        });
+      } finally {
+        trustHome.restore();
+      }
+      expect(resumed.state.pendingRecovery?.reason).toBe(
+        outcome === 'failure' ? 'retry-exhausted' : undefined,
+      );
+      if (outcome === 'pre-validation denial') {
+        expect(resumed.state.tasks[0]?.status).toBe('skipped');
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: 'warning',
+            message: 'pre_validation blocked: validation denied',
+          }),
+        );
+      }
+      expect(existsSync(join(ref.projectDir, 'src/attempt.ts'))).toBe(false);
+      expect(existsSync(join(ref.projectDir, 'src/earlier.ts'))).toBe(false);
+      expect(existsSync(join(ref.projectDir, 'src/later.ts'))).toBe(false);
+      for (const file of generatedFiles())
+        expect(existsSync(join(ref.projectDir, file))).toBe(false);
+      expect(existsSync(join(ref.projectDir, 'hook-output.txt'))).toBe(false);
+      expect(readFileSync(join(ref.projectDir, 'init.txt'), 'utf8')).toBe('edited while halted\n');
+      expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe(
+        'notes while halted\n',
+      );
+    },
+  );
+
+  it('preserves unrelated edits made during an inline stop when a later halt is skipped', async () => {
+    const ref = setupProject();
+    const task = makeTask({
+      suggestedFiles: ['src/attempt.ts'],
+      checks: [{ id: 'check', kind: 'cmd', value: 'tsc --noEmit', required: true }],
+    });
+    const state = {
+      ...makeImplState([task]),
+      plannerCalls: { used: BOUNDS.plannerCallsPerRun, allowance: BOUNDS.plannerCallsPerRun },
+    };
+    const writeAttempt = async (opts: ImplementerOptions) => {
+      mkdirSync(join(opts.projectDir, 'src'), { recursive: true });
+      writeFileSync(join(opts.projectDir, 'src/attempt.ts'), 'failed attempt\n');
+      return { success: true, output: 'implemented' };
+    };
+    vi.spyOn(commandRunner, 'runCommand').mockRejectedValue(
+      processError.exitCode({ command: 'tsc', code: 2, stderr: 'check failed', output: '' }),
+    );
+    const { bus } = makeBusRecorder();
+    const wctx = makeWctx({
+      ...ref,
+      bus,
+      config: makeNoValidationConfig({ workflow: { isolation: 'none', review: 'task' } }),
+      implementer: makeImplementer({ implement: vi.fn(writeAttempt), retry: vi.fn(writeAttempt) }),
+      callbacks: makeCallbacks({
+        onContinuationNeeded: async () => {
+          expect(loadState(ref)?.interruptedStep?.cut).toBe('mid-step');
+          writeFileSync(join(ref.projectDir, 'init.txt'), 'edited while stopped\n');
+          writeFileSync(join(ref.projectDir, 'scratch.txt'), 'notes while stopped\n');
+          return plainUserMessage('Continue the brief.');
+        },
+      }).callbacks,
+    });
+    wctx.sinks = {
+      ...wctx.sinks,
+      consumeBoundaryInterrupt: vi.fn().mockReturnValueOnce(true).mockReturnValue(false),
+    };
+    const halted = await runTaskLoop({
+      wctx,
+      initialState: state,
+      setTrackedState: vi.fn(),
+      setCurrentTask: vi.fn(),
+    });
+    expect(halted.state.pendingRecovery?.reason).toBe('planner-calls-spent');
+    const persisted = loadState(ref);
+    if (persisted === null) throw new Error('Missing halted state');
+
+    const skipped = await applyRecoveryAction({
+      ...ref,
+      state: persisted,
+      action: 'skip-current-task',
+      bus,
+    });
+
+    expect(skipped.ok).toBe(true);
+    expect(existsSync(join(ref.projectDir, 'src/attempt.ts'))).toBe(false);
+    expect(readFileSync(join(ref.projectDir, 'init.txt'), 'utf8')).toBe('edited while stopped\n');
+    expect(readFileSync(join(ref.projectDir, 'scratch.txt'), 'utf8')).toBe('notes while stopped\n');
+  });
+
   it('repairs a twice-failing task by splitting it, with no user prompt, and keeps earlier work', async () => {
     const { projectDir, sessionId } = setupProject();
     const tasks = [

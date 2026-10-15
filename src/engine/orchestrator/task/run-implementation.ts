@@ -35,6 +35,7 @@ import {
 } from '../queue/build-corrections.js';
 import { settleMidCallDeliveries } from '../queue/mid-call.js';
 import { formatMessageInput } from '../queue/prompt.js';
+import { withAttemptRestoreScope } from './restore-scope.js';
 
 /**
  * A restarted attempt is told about the declared files that already moved, so it
@@ -276,27 +277,34 @@ export async function runImplementation(opts: {
         };
 
         const seatRef = { projectDir, sessionId, bus: wctx.bus };
-        const attempt = await runSeatCall(
-          {
-            ref: seatRef,
-            state,
-            seat: 'build',
-            signal,
-            onStateChange: (next) => {
-              state = next;
-              setTrackedState(next);
-            },
-          },
-          async (attemptSignal) =>
-            implementerSeatAttempt(
-              await produce(attemptSignal),
-              `Implementer call for ${task.id} failed`,
+        const attempt = await withAttemptRestoreScope({
+          ref: wctx,
+          dir: workspace.projectDir,
+          taskStartSnapshot: opts.taskStartSnapshot,
+          attemptSnapshot: workspace.snapshot,
+          run: () =>
+            runSeatCall(
+              {
+                ref: seatRef,
+                state,
+                seat: 'build',
+                signal,
+                onStateChange: (next) => {
+                  state = next;
+                  setTrackedState(next);
+                },
+              },
+              async (attemptSignal) =>
+                implementerSeatAttempt(
+                  await produce(attemptSignal),
+                  `Implementer call for ${task.id} failed`,
+                ),
+              (discarded) => {
+                state = addUsageAndSave(seatRef, state, 'implementer', discarded.usage);
+                setTrackedState(state);
+              },
             ),
-          (discarded) => {
-            state = addUsageAndSave(seatRef, state, 'implementer', discarded.usage);
-            setTrackedState(state);
-          },
-        );
+        });
         return attempt.value;
       },
     });

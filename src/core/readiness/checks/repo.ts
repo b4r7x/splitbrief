@@ -1,5 +1,6 @@
 import { countNoun } from '../../../utils/pluralize.js';
 import type { InProgressGitOp } from '../../../lib/git/repository.js';
+import type { IsolationStrategy } from '../../schemas/enums.js';
 import type { ReadinessCheck } from '../types.js';
 
 export interface RepoReadinessInput {
@@ -15,7 +16,10 @@ export interface RepoReadinessInput {
 
 export const ACTIVE_SESSION_LIVE_CHECK = 'repo.active-session-live';
 
-export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
+export function buildRepoChecks(
+  repo: RepoReadinessInput,
+  isolation?: IsolationStrategy,
+): ReadinessCheck[] {
   if (!repo.isGitRepo) {
     return [
       {
@@ -94,6 +98,7 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
   const untrackedCount = repo.untrackedFiles.length;
   if (dirtyCount > 0 || untrackedCount > 0) {
     const examples = [...repo.dirtyFiles, ...repo.untrackedFiles].slice(0, 5);
+    const inCheckout = isolation === 'none';
     checks.push({
       id: 'repo.dirty-worktree',
       severity: 'warning',
@@ -101,8 +106,17 @@ export function buildRepoChecks(repo: RepoReadinessInput): ReadinessCheck[] {
         ...(dirtyCount > 0 ? [countNoun(dirtyCount, 'changed file')] : []),
         ...(untrackedCount > 0 ? [countNoun(untrackedCount, 'untracked file')] : []),
       ].join(' and ')}.`,
-      details: examples.length > 0 ? [`Examples: ${examples.join(', ')}`] : undefined,
-      fix: 'Review local edits before starting if they may overlap the requested change.',
+      details: [
+        ...(examples.length > 0 ? [`Examples: ${examples.join(', ')}`] : []),
+        ...(inCheckout
+          ? [
+              'The run edits this checkout. An attempt revert restores only the paths that attempt changed.',
+            ]
+          : []),
+      ],
+      fix: inCheckout
+        ? 'Review local edits before starting. A revert saves the files it replaces in .splitbrief/sessions/<id>/reverted/.'
+        : 'Review local edits before starting if they may overlap the requested change.',
       metadata: { dirtyCount, untrackedCount },
     });
   }

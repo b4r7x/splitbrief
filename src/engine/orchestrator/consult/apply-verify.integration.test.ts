@@ -1,7 +1,7 @@
 import { plainUserMessage } from '../../../core/types/user-input.js';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
@@ -31,6 +31,7 @@ import { enqueueUserMessage } from '../queue/submit.js';
 import { CORRECTION_AFTER_CHECKS } from '../task/brief-gate.js';
 import type { ValidationCommandRunner, Validator } from '../validation/types.js';
 import { applyConsultAnswer, type ConsultApplyContext } from './apply.js';
+import { restoreInterruptedTaskFiles } from '../task/rollback.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -132,6 +133,56 @@ function harness(opts: {
 }
 
 describe('applyConsultAnswer verify', () => {
+  it('keeps the task baseline when verification records writes against a later attempt', async () => {
+    const ref = setupRepo();
+    const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
+    const task = makeTask({ id: 'T003', status: 'in_progress', criteria: ['C1'], checks });
+    const taskStartSnapshot = {
+      ...(await getChangedFilesSnapshot(ref.projectDir)),
+      restoreFiles: ['src/greet.ts'],
+    };
+    writeFileSync(join(ref.projectDir, 'src/greet.ts'), 'first attempt\n');
+    const attemptSnapshot = await getChangedFilesSnapshot(ref.projectDir);
+    writeFileSync(join(ref.projectDir, 'src/greet.ts'), 'retry attempt\n');
+    const { ctx } = harness({
+      ...ref,
+      task,
+      plan: planWith(checks),
+      runCommand: async () => {
+        writeFileSync(join(ref.projectDir, 'generated.txt'), 'check output\n');
+        throw processError.exitCode({ command: 'node', code: 1, stderr: 'check failed' });
+      },
+    });
+    const state = {
+      ...ctx.state,
+      changedFilesBaseline: {
+        head: taskStartSnapshot.head,
+        fingerprints: {},
+        activeTaskSnapshot: taskStartSnapshot,
+      },
+    };
+    saveState(ref, state);
+
+    const result = await applyConsultAnswer(
+      { ...ctx, state },
+      task,
+      verify(['K1'], 'Run the check again'),
+      attemptSnapshot,
+    );
+
+    expect(result.action).toBe('failed');
+    await restoreInterruptedTaskFiles({
+      wctx: ctx,
+      phase: state.phase,
+      task,
+      taskStartSnapshot,
+    });
+    expect(readFileSync(join(ref.projectDir, 'src/greet.ts'), 'utf8')).toBe(
+      'export const greet = "base";\n',
+    );
+    expect(existsSync(join(ref.projectDir, 'generated.txt'))).toBe(false);
+  });
+
   it('returns a correction without completing when a message arrives during green verify checks', async () => {
     const ref = setupRepo();
     const checks: Check[] = [{ id: 'K1', kind: 'cmd', value: 'node --version', required: true }];
@@ -463,7 +514,10 @@ describe('applyConsultAnswer verify under a pre_validation hook', () => {
         ],
       };
       markHooksConfigTrusted(projectDir, hooks);
-      const attempt = await getChangedFilesSnapshot(projectDir);
+      const attempt = {
+        ...(await getChangedFilesSnapshot(projectDir)),
+        restoreFiles: ['src/greet.ts'],
+      };
       writeFileSync(join(projectDir, 'src/greet.ts'), 'export const greet = "attempt";\n');
       const { ctx, events, states } = harness({
         projectDir,

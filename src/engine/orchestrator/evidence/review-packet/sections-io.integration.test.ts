@@ -211,7 +211,7 @@ describe('resolveChangedFiles', () => {
       });
       expect(files).toEqual(['init.txt', 'new-a.txt', 'new-b.txt']);
       expect(git.launches().filter((args) => args.startsWith('diff '))).toEqual([
-        `diff --name-only -z ${runStartHead} HEAD`,
+        `diff --no-renames --name-only -z ${runStartHead} HEAD`,
       ]);
     } finally {
       git.restore();

@@ -356,6 +356,26 @@ describe('readiness checks', () => {
     );
   });
 
+  it('names the revert backup folder from the configured isolation and repository posture', () => {
+    const report = buildReadinessReport(
+      readyInput({
+        config: makeConfig({ workflow: { isolation: 'none' } }),
+        repo: {
+          isGitRepo: true,
+          hasCommits: true,
+          dirtyFiles: ['src/a.ts'],
+          untrackedFiles: [],
+        },
+      }),
+    );
+    expect(report.sections.flatMap((section) => section.checks)).toContainEqual(
+      expect.objectContaining({
+        id: 'repo.dirty-worktree',
+        fix: expect.stringContaining('.splitbrief/sessions/<id>/reverted/'),
+      }),
+    );
+  });
+
   it('summarizes implementer profiles when present', () => {
     const implementerProfiles: Config['implementerProfiles'] = {
       default: 'local-qwen',

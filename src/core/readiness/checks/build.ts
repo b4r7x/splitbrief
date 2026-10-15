@@ -1,4 +1,5 @@
 import { resolveApproveLevel } from '../../config/runtime/resolve.js';
+import { getIsolationStrategy } from '../../config/accessors/values.js';
 import {
   aggregateReadinessStatus,
   countReadinessChecks,
@@ -67,7 +68,10 @@ function buildSections(input: BuildReadinessReportInput): ReadinessSection[] {
     {
       id: 'repo',
       title: 'Repository',
-      checks: buildRepoChecks(input.repo),
+      checks: buildRepoChecks(
+        input.repo,
+        input.config ? getIsolationStrategy(input.config) : undefined,
+      ),
     },
   ];
 

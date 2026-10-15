@@ -178,6 +178,7 @@ describe('runTaskChecks', () => {
 
     const result = await validateAndCommit({
       ctx,
+      attemptSnapshot: ctx.taskStartSnapshot,
       task,
       state: makeImplState([task]),
       method: 'local',

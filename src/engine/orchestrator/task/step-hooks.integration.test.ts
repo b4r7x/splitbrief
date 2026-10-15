@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { useTrustHome } from '#testing/helpers/trust-home.js';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   makeCallbacks,
@@ -23,6 +23,7 @@ import { runSingleTask } from './step.js';
 import { readEvidenceLedger } from '../../../core/evidence/ledger-storage.js';
 import type { HooksConfig } from '../../../core/schemas/hooks.js';
 import { markHooksConfigTrusted } from '../../../core/hooks/trust.js';
+import { revertedDir } from '../isolation/entry-snapshot.js';
 
 // The pre_validation hook gates the brief checks: a brief with no check runs no hook.
 const BRIEF_CHECKS: Check[] = [{ id: 'K1', kind: 'cmd', value: 'tsc --noEmit', required: true }];
@@ -112,8 +113,12 @@ describe('runSingleTask — pre_validation hooks', () => {
     });
 
     expect(runCommand).not.toHaveBeenCalled();
+    expect(existsSync(join(projectDir, 'pre-validation-payload.json'))).toBe(false);
+    const backups = join(projectDir, revertedDir({ projectDir, sessionId }));
+    const [backup] = readdirSync(backups);
+    if (backup === undefined) throw new Error('Missing validation rollback backup');
     const payload = JSON.parse(
-      readFileSync(join(projectDir, 'pre-validation-payload.json'), 'utf8'),
+      readFileSync(join(backups, backup, 'pre-validation-payload.json'), 'utf8'),
     ) as { event: Record<string, unknown> };
     expect(payload.event).toMatchObject({ type: 'validate', taskId: 'T001', status: 'running' });
     expect(payload.event).not.toHaveProperty('stages');

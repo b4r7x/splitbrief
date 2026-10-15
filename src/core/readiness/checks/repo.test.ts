@@ -48,6 +48,37 @@ describe('buildRepoChecks detached HEAD', () => {
 });
 
 describe('buildRepoChecks dirty worktree', () => {
+  it.each(['tracked', 'untracked'] as const)(
+    'names the revert backup folder for %s checkout edits',
+    (kind) => {
+      const checks = buildRepoChecks(
+        {
+          ...cleanRepo,
+          dirtyFiles: kind === 'tracked' ? ['src/a.ts'] : [],
+          untrackedFiles: kind === 'untracked' ? ['scratch.txt'] : [],
+        },
+        'none',
+      );
+      const warning = checks.find((check) => check.id === 'repo.dirty-worktree');
+
+      expect(warning?.severity).toBe('warning');
+      expect(warning?.fix).toContain('.splitbrief/sessions/<id>/reverted/');
+      expect(warning?.details?.join(' ')).toContain('only the paths that attempt changed');
+      expect(checks.some((check) => check.severity === 'blocker')).toBe(false);
+    },
+  );
+
+  it.each([undefined, 'worktree', 'staged-copy'] as const)(
+    'leaves the revert note out of local edits with isolation %s',
+    (isolation) => {
+      const warning = buildRepoChecks({ ...cleanRepo, dirtyFiles: ['src/a.ts'] }, isolation).find(
+        (check) => check.id === 'repo.dirty-worktree',
+      );
+      expect(warning?.fix).not.toContain('reverted/');
+      expect(warning?.details).toEqual(['Examples: src/a.ts']);
+    },
+  );
+
   it('reports a non-blocking warning when the worktree has local changes', () => {
     const checks = buildRepoChecks({
       ...cleanRepo,

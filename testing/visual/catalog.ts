@@ -226,6 +226,18 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
       },
       elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
     }),
+    defineScenario({
+      id: 'home-preparation-checkout-warning',
+      title: 'Home · uncommitted checkout changes',
+      surface: screenSurface('home'),
+      checkpoint: {
+        id: 'failure',
+        title: 'Checkout warning names the backup folder',
+        kind: 'failure',
+        marker: 'reverted/',
+      },
+      elements: [{ id: 'preparation-panel', title: 'Preparation problem panel' }],
+    }),
     // The composer carrying images inside its text: no separate attachment row, no extra height.
     defineScenario({
       id: 'home-preparation-blocked',

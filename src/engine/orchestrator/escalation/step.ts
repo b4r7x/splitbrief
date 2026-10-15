@@ -20,6 +20,7 @@ import type { AttemptWorkspace } from '../isolation/types.js';
 import { commitWorkflowState } from '../state-ops.js';
 import { error } from '../../../utils/error.js';
 import { confirmAttemptDecisions } from '../consult/decision-confirm.js';
+import { withAttemptRestoreScope } from '../task/restore-scope.js';
 
 /** The direct writer's blocked report: the attempt stopped asking for a decision. */
 export type BlockedReport = Extract<ImplementerReport, { status: 'blocked' }>;
@@ -132,27 +133,34 @@ async function runRetryStepAttempt(
   };
   let retryResult: Awaited<ReturnType<typeof invokeRetry>>;
   try {
-    retryResult = await withPerCallAbort({
-      sinks: ctx.sinks,
-      signal: ctx.signal,
-      run: (signal) =>
-        invokeRetry({
-          task,
-          lastError,
-          attempts: state.attempt,
-          projectDir: workspace.projectDir,
-          config: retryRuntime.config,
-          implementer: retryRuntime.implementer,
-          ...(retryRuntime.implementerProfile !== undefined && {
-            implementerProfile: retryRuntime.implementerProfile,
-          }),
-          signal,
-          sandboxEnv: workspace.sandboxEnv,
-          fileIgnoreProjectDir: ctx.projectDir,
-          changeDetection: workspace.changeDetection,
-          createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
-          deliversAnswer: opts.deliversAnswer,
-          seat: { ref: ctx, state, usageCategory },
+    retryResult = await withAttemptRestoreScope({
+      ref: ctx,
+      dir: workspace.projectDir,
+      taskStartSnapshot: ctx.taskStartSnapshot,
+      attemptSnapshot: workspace.snapshot,
+      run: () =>
+        withPerCallAbort({
+          sinks: ctx.sinks,
+          signal: ctx.signal,
+          run: (signal) =>
+            invokeRetry({
+              task,
+              lastError,
+              attempts: state.attempt,
+              projectDir: workspace.projectDir,
+              config: retryRuntime.config,
+              implementer: retryRuntime.implementer,
+              ...(retryRuntime.implementerProfile !== undefined && {
+                implementerProfile: retryRuntime.implementerProfile,
+              }),
+              signal,
+              sandboxEnv: workspace.sandboxEnv,
+              fileIgnoreProjectDir: ctx.projectDir,
+              changeDetection: workspace.changeDetection,
+              createdByThisTask: recordedApiCreatedPaths(ctx, task, workspace.projectDir),
+              deliversAnswer: opts.deliversAnswer,
+              seat: { ref: ctx, state, usageCategory },
+            }),
         }),
     });
   } catch (err) {
@@ -283,6 +291,7 @@ async function runRetryStepAttempt(
       ctx.workspaceDir,
       ctx.taskStartSnapshot,
     ),
+    attemptSnapshot: workspace.snapshot,
   });
   if ('answer' in commitResult) {
     return {

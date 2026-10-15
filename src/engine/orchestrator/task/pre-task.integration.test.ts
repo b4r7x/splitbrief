@@ -120,7 +120,12 @@ describe('runPreTaskHooksAndPublish', () => {
 
   it('a resumed cut attempt keeps the task-start snapshot its brief began from', async () => {
     const task = makeTask({ id: 'T001' });
-    const started = { head: 'abc123', files: ['src/before.ts'], dirtyFileContents: {} };
+    const started = {
+      head: 'abc123',
+      files: ['src/before.ts'],
+      dirtyFileContents: {},
+      restoreFiles: ['src/written.ts'],
+    };
     const state = {
       ...implementingState([task]),
       changedFilesBaseline: {
