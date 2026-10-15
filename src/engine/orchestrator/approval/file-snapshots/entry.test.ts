@@ -17,6 +17,7 @@ import {
   entriesMatch,
   matchesAcquisitionBaseline,
   readConfinedEntry,
+  linkStaysInProject,
   readProjectSymlink,
   sameFileEntry,
   writeConfinedEntry,
@@ -252,6 +253,10 @@ describe('confined file snapshot entries', () => {
         symlinkSync('..', join(dir, 'a', 'b', 'up'));
         symlinkSync('.', join(dir, 'a', 'self'));
         symlinkSync('real.txt', join(dir, 'plain-link'));
+        symlinkSync(join(root, 'outside', 'missing'), join(dir, 'gone'));
+        symlinkSync('gone/secret', join(dir, 'through-dangling'));
+        symlinkSync('missing/../climb', join(dir, 'climb'));
+        symlinkSync('climb/x', join(dir, 'through-climb'));
 
         expect(await readProjectSymlink(dir, 'sub')).toBe('.');
         expect(await readProjectSymlink(dir, 'a/up')).toBe('..');
@@ -267,6 +272,8 @@ describe('confined file snapshot entries', () => {
           'a/gitlink',
           'gitlink-dangling',
           'loop-a',
+          'through-dangling',
+          'through-climb',
         ]) {
           expect(await readProjectSymlink(dir, file), file).toBeNull();
         }
@@ -275,6 +282,28 @@ describe('confined file snapshot entries', () => {
       }
     },
   );
+
+  itUnix('lands a link not yet written through the links of the tree it would join', async () => {
+    const root = createTempDir('entry-link-would-land');
+    const dir = join(root, 'project');
+    try {
+      mkdirSync(join(root, 'outside'), { recursive: true });
+      mkdirSync(dir);
+      writeFileSync(join(dir, 'real.txt'), 'real');
+      symlinkSync(join(root, 'outside'), join(dir, 'sub'));
+      symlinkSync(join(root, 'outside', 'missing'), join(dir, 'gone'));
+      symlinkSync('sub/../missing', join(dir, 'climb'));
+
+      expect(await linkStaysInProject(dir, 'docs/x', '../real.txt')).toBe(true);
+      expect(await linkStaysInProject(dir, 'docs/x', '../new/y')).toBe(true);
+      expect(await linkStaysInProject(dir, 'docs/x', '../sub/y')).toBe(false);
+      expect(await linkStaysInProject(dir, 'docs/x', '../gone/y')).toBe(false);
+      expect(await linkStaysInProject(dir, 'docs/x', '../climb/y')).toBe(false);
+      expect(await linkStaysInProject(dir, 'docs/x', '../../outside/y')).toBe(false);
+    } finally {
+      cleanupTempDir(root);
+    }
+  });
 
   itUnix(
     'writes a symlink over a missing, file or link entry, never over a directory or outside the root',

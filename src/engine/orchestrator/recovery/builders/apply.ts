@@ -14,7 +14,8 @@ const CONFLICT_WORDS: Record<ApplyConflictKind | ApplyChangedSide, string> = {
   'delete-modify': 'deleted on one side, changed on the other',
   'add-add': 'added on both sides with different content',
   mode: 'file mode differs between the sides',
-  'unsupported-entry': 'a symlink or directory is in the way',
+  symlink: 'both sides changed this symlink differently',
+  'unsupported-entry': 'a directory, or a symlink that points outside the project, is in the way',
   'checkout-changed': 'changed in your checkout during Apply',
   'workspace-changed': 'changed in the run workspace during Apply',
 };

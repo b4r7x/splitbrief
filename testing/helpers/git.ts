@@ -1,11 +1,19 @@
 import { execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { cleanupTempDir, createTempDir } from './temp-dir.js';
 
-type RepoFiles = Record<string, string | Buffer>;
+/** A file's content, or `{ symlink }` for a committed link to that target. */
+type RepoFiles = Record<string, string | Buffer | { symlink: string }>;
 
 function writeObject(dir: string, type: 'blob' | 'tree' | 'commit', body: Buffer | string): string {
   const content = Buffer.isBuffer(body) ? body : Buffer.from(body);
@@ -17,8 +25,10 @@ function writeObject(dir: string, type: 'blob' | 'tree' | 'commit', body: Buffer
   return sha;
 }
 
+type TreeFile = { sha: string; mode: number };
+
 type TreeNode = {
-  files: Map<string, string>;
+  files: Map<string, TreeFile>;
   dirs: Map<string, TreeNode>;
 };
 
@@ -26,7 +36,7 @@ function emptyTree(): TreeNode {
   return { files: new Map(), dirs: new Map() };
 }
 
-function addTreeFile(root: TreeNode, file: string, blobSha: string): void {
+function addTreeFile(root: TreeNode, file: string, entry: TreeFile): void {
   const parts = file.split('/');
   const name = parts.pop();
   if (!name) throw new Error(`invalid git fixture path: ${file}`);
@@ -42,12 +52,12 @@ function addTreeFile(root: TreeNode, file: string, blobSha: string): void {
       node = next;
     }
   }
-  node.files.set(name, blobSha);
+  node.files.set(name, entry);
 }
 
 function writeTree(dir: string, node: TreeNode): string {
   const entries = [
-    ...Array.from(node.files, ([name, sha]) => ({ mode: '100644', name, sha })),
+    ...Array.from(node.files, ([name, { sha, mode }]) => ({ mode: mode.toString(8), name, sha })),
     ...Array.from(node.dirs, ([name, child]) => ({
       mode: '40000',
       name,
@@ -66,7 +76,7 @@ function writeTree(dir: string, node: TreeNode): string {
 
 function writeIndex(
   dir: string,
-  files: Array<{ path: string; blobSha: string; size: number }>,
+  files: Array<{ path: string; blobSha: string; size: number; mode: number }>,
 ): void {
   const entries: Buffer[] = [];
 
@@ -78,7 +88,7 @@ function writeIndex(
 
     const fixed = Buffer.alloc(62 + path.length + 1);
     let pos = 0;
-    for (const field of [0, 0, 0, 0, 0, 0, 0o100644, 0, 0, file.size]) {
+    for (const field of [0, 0, 0, 0, 0, 0, file.mode, 0, 0, file.size]) {
       fixed.writeUInt32BE(field, pos);
       pos += 4;
     }
@@ -145,19 +155,23 @@ export function createTestGitRepo(dir: string, files: RepoFiles = {}): void {
     [...coreConfig, '[user]', '\temail = test@test.com', '\tname = Test', ''].join('\n'),
   );
 
-  const repoFiles = { 'init.txt': 'init', ...files };
+  const repoFiles: RepoFiles = { 'init.txt': 'init', ...files };
   const root = emptyTree();
-  const indexEntries: Array<{ path: string; blobSha: string; size: number }> = [];
+  const indexEntries: Array<{ path: string; blobSha: string; size: number; mode: number }> = [];
 
-  for (const [path, content] of Object.entries(repoFiles)) {
+  for (const [path, entry] of Object.entries(repoFiles)) {
     validateFixturePath(path);
     const target = join(dir, path);
     mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content);
+    const isFile = typeof entry === 'string' || Buffer.isBuffer(entry);
+    const content = isFile ? entry : entry.symlink;
+    if (isFile) writeFileSync(target, content);
+    else symlinkSync(content, target);
 
     const blobSha = writeObject(dir, 'blob', content);
-    addTreeFile(root, path, blobSha);
-    indexEntries.push({ path, blobSha, size: Buffer.byteLength(content) });
+    const mode = isFile ? 0o100644 : 0o120000;
+    addTreeFile(root, path, { sha: blobSha, mode });
+    indexEntries.push({ path, blobSha, size: Buffer.byteLength(content), mode });
   }
 
   const treeSha = writeTree(dir, root);

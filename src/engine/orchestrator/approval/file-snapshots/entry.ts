@@ -12,7 +12,7 @@ import {
 } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, type Stats } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { fsError } from '../../../../lib/fs.js';
 import {
   assertExistingPathConfined,
@@ -32,6 +32,9 @@ export type FileSnapshotEntry =
   | { kind: 'file'; bytes: Buffer; sha256: string; mode: number };
 
 type ConfinedFileEntry = Extract<FileSnapshotEntry, { kind: 'file' }>;
+
+/** A snapshot entry, or a symlink that stays inside its project. */
+export type ConfinedEntry = FileSnapshotEntry | { kind: 'symlink'; target: string };
 
 function assertRegularEntry(fullPath: string, stat: Stats): void {
   if (!stat.isFile()) {
@@ -80,15 +83,48 @@ export async function readConfinedEntry(
   return { kind: 'file', bytes, sha256: sha256Hex(bytes), mode: observed.mode };
 }
 
-// Where the kernel lands `path`: the real path of its deepest existing
-// ancestor, then the names below it that do not exist yet.
-async function kernelLanding(path: string): Promise<string> {
+/** A project symlink by its target; any other entry as `readConfinedEntry` reads it. */
+export async function readConfinedEntryOrLink(
+  projectDir: string,
+  relativePath: string,
+): Promise<ConfinedEntry> {
+  const target = await readProjectSymlink(projectDir, relativePath);
+  return target === null
+    ? readConfinedEntry(projectDir, relativePath)
+    : { kind: 'symlink', target };
+}
+
+// Where the kernel lands `path` once its missing directories exist: name by
+// name, through every link on the way, dangling or not. Null past the kernel's
+// link limit: a dangling link that climbs back through itself never lands.
+async function kernelLanding(path: string, links = { left: 40 }): Promise<string | null> {
+  let landing = parse(path).root;
+  for (const segment of path.split(sep)) {
+    if (segment === '..') landing = dirname(landing);
+    else if (segment !== '' && segment !== '.') {
+      const next = await nameLanding(join(landing, segment), links);
+      if (next === null) return null;
+      landing = next;
+    }
+  }
+  return landing;
+}
+
+async function nameLanding(path: string, links: { left: number }): Promise<string | null> {
   try {
     return await realpath(path);
   } catch (err) {
     if (!isENOENT(err)) throw err;
-    return join(await kernelLanding(dirname(path)), basename(path));
   }
+  const stat = await lstat(path).catch((err: unknown) => {
+    if (isENOENT(err)) return null;
+    throw err;
+  });
+  if (!stat?.isSymbolicLink()) return path;
+  if (links.left === 0) return null;
+  links.left -= 1;
+  const target = await readlink(path);
+  return kernelLanding(isAbsolute(target) ? target : `${dirname(path)}${sep}${target}`, links);
 }
 
 /**
@@ -105,9 +141,18 @@ export async function readProjectSymlink(
 ): Promise<string | null> {
   const entry = await lstatConfinedEntry(projectDir, relativePath);
   if (entry === null || !entry.stat.isSymbolicLink()) return null;
-  const { fullPath } = entry;
-  const target = await readlink(fullPath);
-  if (isAbsolute(target)) return null;
+  const target = await readlink(entry.fullPath);
+  return (await linkStaysInProject(projectDir, relativePath, target)) ? target : null;
+}
+
+/** A link to `target` at `relativePath` stays inside the project, as `readProjectSymlink` reads one. */
+export async function linkStaysInProject(
+  projectDir: string,
+  relativePath: string,
+  target: string,
+): Promise<boolean> {
+  if (isAbsolute(target)) return false;
+  const fullPath = resolve(projectDir, relativePath);
   // The kernel resolves a name before the `..` after it, so a `..` behind a
   // symlinked name climbs from wherever that link points. A climb above the root
   // that comes back down through the root's own name reads as inside here, yet
@@ -118,24 +163,22 @@ export async function readProjectSymlink(
   for (const segment of target.split('/')) {
     if (segment === '..') {
       depth -= 1;
-      if (named || depth < 0) return null;
+      if (named || depth < 0) return false;
     } else if (segment !== '' && segment !== '.') {
       named = true;
     }
   }
-  let landing: string;
+  let landed: string | null;
   try {
-    landing = relative(
-      await realpath(projectDir),
-      await kernelLanding(`${dirname(fullPath)}${sep}${target}`),
-    );
+    landed = await kernelLanding(`${dirname(fullPath)}${sep}${target}`);
   } catch {
     // A loop, or a file or an unreadable directory on the way: it lands nowhere.
-    return null;
+    return false;
   }
+  if (landed === null) return false;
   // A link into `.git` or `.splitbrief` gives the control plane a second name.
-  const first = landing.split(sep)[0] ?? '';
-  return first !== '..' && !CONTROL_PLANE_SEGMENTS.has(first) ? target : null;
+  const first = relative(await realpath(projectDir), landed).split(sep)[0] ?? '';
+  return first !== '..' && !CONTROL_PLANE_SEGMENTS.has(first);
 }
 
 /** What one target file looked like at acquisition; contents are never kept. */
@@ -300,4 +343,28 @@ export async function writeConfinedSymlink(
     await rm(temporary, { force: true });
     throw err;
   }
+}
+
+/**
+ * Writes a file, a symlink or nothing at `relativePath`, over a file or a
+ * symlink already there; a symlink there is replaced, never written through.
+ */
+export async function writeConfinedEntryOrLink(
+  projectDir: string,
+  relativePath: string,
+  entry: ConfinedEntry,
+  beforeWrite?: () => Promise<void>,
+): Promise<void> {
+  if (entry.kind === 'symlink') {
+    await beforeWrite?.();
+    await writeConfinedSymlink(projectDir, relativePath, entry.target);
+    return;
+  }
+  if (!(await lstatConfinedEntry(projectDir, relativePath))?.stat.isSymbolicLink()) {
+    await writeConfinedEntry(projectDir, relativePath, entry, beforeWrite);
+    return;
+  }
+  await beforeWrite?.();
+  await removeConfinedSymlink(projectDir, relativePath);
+  await writeConfinedEntry(projectDir, relativePath, entry);
 }

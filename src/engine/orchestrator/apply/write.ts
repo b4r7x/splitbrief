@@ -37,7 +37,7 @@ export async function writeApply(input: {
     backupId,
     workspaceDir: states.workspaceDir,
     files,
-    theirsBaseline: states.theirsBaseline,
+    theirs: states.theirs,
   });
   if (backup.kind === 'changed') return { kind: 'changed', state, files: backup.files };
 
@@ -48,6 +48,11 @@ export async function writeApply(input: {
     stagedProjectDir: backup.candidateDir,
     files,
     targetBaseline: states.theirsBaseline,
+    targetLinks: new Map(
+      [...states.theirs].flatMap(([path, entry]) =>
+        entry.kind === 'symlink' ? [[path, entry.target] as const] : [],
+      ),
+    ),
   });
   const failedFile = promoted.failure?.failedFile ?? promoted.conflictedFiles[0];
   if (failedFile !== undefined) {

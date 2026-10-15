@@ -1,5 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, realpath, symlink, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative } from 'node:path';
 import { ensureConfigGitignore } from '../../../core/config/load/document.js';
 import { isolationMarkerPath, SPLITBRIEF_DIR } from '../../../core/paths.js';
@@ -9,7 +9,9 @@ import { checkIgnoredPaths, getCurrentChangedFiles } from '../../../lib/git/file
 import { getGitCommonDir } from '../../../lib/git/repository.js';
 import { warnError } from '../../../lib/warn.js';
 import { lockSibling, withFileLock } from '../../../lib/file-lock.js';
-import { pathConfinementError } from '../../../lib/path-confinement.js';
+import { assertExistingPathConfined, pathConfinementError } from '../../../lib/path-confinement.js';
+import { isENOENT } from '../../../lib/process/errors.js';
+import { collectTrackedFiles } from '../../snapshots/files.js';
 import { error, type AppError } from '../../../utils/error.js';
 import { createWorktree } from './create-worktree.js';
 import { assertIsolationDirReadable, resolveConfinedIsolationWorktreePath } from './path.js';
@@ -229,6 +231,21 @@ async function seedIsolationWorktree(sourceDir: string, wtPath: string): Promise
   }
   for (const [file, target] of Object.entries(snapshot.symlinks ?? {})) {
     await writeConfinedSymlink(wtPath, file, target);
+  }
+  // Git records only the executable bit, so a clean file checks out with the
+  // default mode; the run base records the checkout's own mode.
+  for (const file of await collectTrackedFiles(sourceDir)) {
+    const [source, seeded] = await Promise.all([
+      lstat(join(sourceDir, file)),
+      lstat(join(wtPath, file)).catch((err: unknown) => {
+        if (isENOENT(err)) return null;
+        throw err;
+      }),
+    ]);
+    if (seeded?.isFile() && (source.mode & 0o777) !== (seeded.mode & 0o777)) {
+      assertExistingPathConfined(file, wtPath);
+      await chmod(join(wtPath, file), source.mode & 0o777);
+    }
   }
   return { kind: 'ok' };
 }

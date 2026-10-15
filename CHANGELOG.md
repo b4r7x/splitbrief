@@ -90,6 +90,7 @@
 
 - Every Backspace deletes one character in every text field, also when the terminal sends several Backspaces at once.
 - Saved run patches preserve executable permissions and symlink additions, removals and target changes when you apply them with Git.
+- Apply writes the file permission changes of a run and its new, changed or removed symlinks into your project, and Restore puts them back. Only a file or link that you and the run both changed in different ways is a conflict. A file whose permissions differ from what Git records no longer stops Apply.
 - A plan can check a file mode or a symbolic link with `test -e`, `test -f`, `test -x` or `test -L <file>`. A request to make a script executable or to add a link no longer needs an extra test file to get a plan check.
 - Checkout mode warns about uncommitted changes when a run starts: the warning says that the run edits your checkout and names the folder where a revert saves the files it replaces. Reverting an attempt leaves your other uncommitted files untouched.
 - Each readiness warning appears under your request when a run starts, with what to do about it. Before, only `splitbrief doctor` showed it. The run's `readiness.json` and review packet keep each warning's details and fix.

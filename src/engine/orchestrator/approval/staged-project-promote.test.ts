@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -356,26 +357,106 @@ describe('promoteStagedChanges', () => {
     },
   );
 
-  itUnix('conflicts on a worker symlink over a target file before writing any file', async () => {
+  itUnix(
+    'conflicts on a worker symlink that leaves its project before writing any file',
+    async () => {
+      const projectDir = createTempDir('promote-link-project');
+      const stagedDir = createTempDir('promote-link-staged');
+      try {
+        writeFileSync(join(projectDir, 'a.txt'), 'original\n');
+        writeFileSync(join(stagedDir, 'a.txt'), 'staged\n');
+        writeFileSync(join(projectDir, 'file'), 'target\n');
+        symlinkSync(join(projectDir, 'a.txt'), join(stagedDir, 'file'));
+
+        const promoted = await promoteStagedChanges({
+          targetProjectDir: projectDir,
+          stagedProjectDir: stagedDir,
+          files: ['a.txt', 'file'],
+          targetBaseline: await captureAcquisitionBaseline(projectDir),
+        });
+
+        expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['file'] });
+        expect(readFileSync(join(projectDir, 'a.txt'), 'utf-8')).toBe('original\n');
+        expect(readFileSync(join(projectDir, 'file'), 'utf-8')).toBe('target\n');
+        expect(lstatSync(join(projectDir, 'file')).isFile()).toBe(true);
+      } finally {
+        cleanupTempDir(stagedDir);
+        cleanupTempDir(projectDir);
+      }
+    },
+  );
+
+  itUnix('writes a worker project symlink over an unchanged target file', async () => {
     const projectDir = createTempDir('promote-link-project');
     const stagedDir = createTempDir('promote-link-staged');
     try {
-      writeFileSync(join(projectDir, 'a.txt'), 'original\n');
-      writeFileSync(join(stagedDir, 'a.txt'), 'staged\n');
+      writeFileSync(join(projectDir, 'a.txt'), 'a\n');
       writeFileSync(join(projectDir, 'file'), 'target\n');
       symlinkSync('a.txt', join(stagedDir, 'file'));
+      mkdirSync(join(stagedDir, 'docs'));
+      symlinkSync('../a.txt', join(stagedDir, 'docs', 'made'));
 
       const promoted = await promoteStagedChanges({
         targetProjectDir: projectDir,
         stagedProjectDir: stagedDir,
-        files: ['a.txt', 'file'],
+        files: ['docs/made', 'file'],
         targetBaseline: await captureAcquisitionBaseline(projectDir),
       });
 
-      expect(promoted).toEqual({ promotedFiles: [], conflictedFiles: ['file'] });
-      expect(readFileSync(join(projectDir, 'a.txt'), 'utf-8')).toBe('original\n');
-      expect(readFileSync(join(projectDir, 'file'), 'utf-8')).toBe('target\n');
-      expect(lstatSync(join(projectDir, 'file')).isFile()).toBe(true);
+      expect(promoted).toEqual({
+        promotedFiles: ['docs/made', 'file'],
+        conflictedFiles: [],
+        appliedFiles: [],
+      });
+      expect(readlinkSync(join(projectDir, 'file'))).toBe('a.txt');
+      expect(readlinkSync(join(projectDir, 'docs', 'made'))).toBe('../a.txt');
+    } finally {
+      cleanupTempDir(stagedDir);
+      cleanupTempDir(projectDir);
+    }
+  });
+
+  itUnix('replaces a recorded target link and conflicts a link retargeted since', async () => {
+    const projectDir = createTempDir('promote-link-project');
+    const stagedDir = createTempDir('promote-link-staged');
+    try {
+      for (const file of ['a.txt', 'b.txt', 'c.txt']) {
+        writeFileSync(join(projectDir, file), `${file}\n`);
+      }
+      symlinkSync('a.txt', join(projectDir, 'kept'));
+      symlinkSync('a.txt', join(projectDir, 'moved'));
+      symlinkSync('b.txt', join(stagedDir, 'kept'));
+      symlinkSync('b.txt', join(stagedDir, 'moved'));
+      const targetBaseline = await captureAcquisitionBaseline(projectDir);
+      const targetLinks = new Map([
+        ['kept', 'a.txt'],
+        ['moved', 'a.txt'],
+      ]);
+      rmSync(join(projectDir, 'moved'));
+      symlinkSync('c.txt', join(projectDir, 'moved'));
+
+      const conflicted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['kept', 'moved'],
+        targetBaseline,
+        targetLinks,
+      });
+
+      expect(conflicted).toEqual({ promotedFiles: [], conflictedFiles: ['moved'] });
+      expect(readlinkSync(join(projectDir, 'kept'))).toBe('a.txt');
+
+      const promoted = await promoteStagedChanges({
+        targetProjectDir: projectDir,
+        stagedProjectDir: stagedDir,
+        files: ['kept'],
+        targetBaseline,
+        targetLinks,
+      });
+
+      expect(promoted.promotedFiles).toEqual(['kept']);
+      expect(readlinkSync(join(projectDir, 'kept'))).toBe('b.txt');
+      expect(readlinkSync(join(projectDir, 'moved'))).toBe('c.txt');
     } finally {
       cleanupTempDir(stagedDir);
       cleanupTempDir(projectDir);

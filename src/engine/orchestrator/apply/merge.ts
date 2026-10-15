@@ -4,12 +4,18 @@ import { mergeFileEntries } from '../../../lib/git/entry-merge.js';
 import { assertPathConfined } from '../../../lib/path-confinement.js';
 import { isENOENT } from '../../../lib/process/errors.js';
 import { sha256Hex } from '../../../utils/sha256.js';
-import { type FileSnapshotEntry, writeConfinedEntry } from '../approval/file-snapshots/entry.js';
+import {
+  type ConfinedEntry,
+  linkStaysInProject,
+  writeConfinedEntryOrLink,
+} from '../approval/file-snapshots/entry.js';
 import {
   type ApplyStates,
   type BaseEntry,
+  readApplyEntry,
   readBaseBytes,
   readSideEntry,
+  sameAsBase,
   sameSideEntry,
   type SideEntry,
   verifyApplyStates,
@@ -21,6 +27,7 @@ export type ApplyConflictKind =
   | 'delete-modify'
   | 'add-add'
   | 'mode'
+  | 'symlink'
   | 'unsupported-entry';
 
 export type ApplyConflict = {
@@ -34,19 +41,13 @@ export type ApplyConflict = {
 
 export type ApplyMerge = { promote: string[]; conflicts: ApplyConflict[] };
 
-function equalsBase(side: SideEntry, base: BaseEntry): boolean {
-  return base.kind === 'absent'
-    ? side.kind === 'absent'
-    : side.kind === 'file' && base.sha256 !== '' && side.sha256 === base.sha256;
-}
-
 async function canWriteWorkspaceEntry(workspaceDir: string, path: string): Promise<boolean> {
   assertPathConfined(path, workspaceDir);
   const segments = path.split('/');
   for (let depth = 1; depth <= segments.length; depth++) {
     try {
       const stat = await lstat(join(workspaceDir, ...segments.slice(0, depth)));
-      if (depth === segments.length) return stat.isFile();
+      if (depth === segments.length) return stat.isFile() || stat.isSymbolicLink();
       if (!stat.isDirectory()) return false;
     } catch (cause) {
       if (isENOENT(cause)) return true;
@@ -64,7 +65,7 @@ export async function mergeApplyStates(
     ...new Set([...states.base.keys(), ...states.ours.keys(), ...states.theirs.keys()]),
   ].sort();
   const result: ApplyMerge = { promote: [], conflicts: [] };
-  const writes: { path: string; entry: FileSnapshotEntry }[] = [];
+  const writes: { path: string; entry: ConfinedEntry }[] = [];
   for (const path of paths) {
     const base = states.base.get(path) ?? { kind: 'absent' };
     const ours = states.ours.get(path) ?? { kind: 'absent' };
@@ -78,32 +79,43 @@ export async function mergeApplyStates(
       result.promote.push(path);
       continue;
     }
-    if (ours.kind === 'symlink' || theirs.kind === 'symlink') {
-      if (!sameSideEntry(ours, theirs)) {
-        result.conflicts.push({ ...conflict, kind: 'unsupported-entry' });
-      }
-      continue;
-    }
     if (sameSideEntry(ours, theirs)) continue;
+    // A base without a mode, or without the file, cannot tell which side
+    // changed a mode-only difference.
     if (
+      (base.kind === 'absent' || (base.kind === 'file' && base.mode === undefined)) &&
       ours.kind === 'file' &&
       theirs.kind === 'file' &&
-      ours.sha256 === theirs.sha256 &&
-      ours.mode !== theirs.mode
+      ours.sha256 === theirs.sha256
     ) {
       result.conflicts.push({ ...conflict, kind: 'mode' });
       continue;
     }
-    if (equalsBase(ours, base)) {
-      const entry =
-        theirs.kind === 'absent'
-          ? theirs
-          : await readSideEntry({ states, path, side: 'theirs', expected: theirs });
-      writes.push({ path, entry });
+    if (sameAsBase(ours, base)) {
+      if (theirs.kind === 'file') {
+        writes.push({
+          path,
+          entry: await readSideEntry({ states, path, side: 'theirs', expected: theirs }),
+        });
+      } else if (theirs.kind === 'absent') {
+        writes.push({ path, entry: theirs });
+      } else {
+        // A checkout link that leaves the project stays in the checkout only.
+        const link = await readApplyEntry(states.projectDir, path);
+        if (link?.kind === 'symlink') writes.push({ path, entry: link });
+      }
       continue;
     }
-    if (equalsBase(theirs, base)) {
-      result.promote.push(path);
+    if (sameAsBase(theirs, base)) {
+      // Apply writes a symlink only when it stays inside the project, in the
+      // workspace and through the links of the checkout it lands in.
+      const leaves =
+        (ours.kind === 'symlink' &&
+          ((await readApplyEntry(states.workspaceDir, path)) === null ||
+            !(await linkStaysInProject(states.projectDir, path, ours.target)))) ||
+        (theirs.kind === 'symlink' && (await readApplyEntry(states.projectDir, path)) === null);
+      if (leaves) result.conflicts.push({ ...conflict, kind: 'unsupported-entry' });
+      else result.promote.push(path);
       continue;
     }
     if (base.kind === 'absent') {
@@ -112,6 +124,10 @@ export async function mergeApplyStates(
     }
     if (ours.kind === 'absent' || theirs.kind === 'absent') {
       result.conflicts.push({ ...conflict, kind: 'delete-modify' });
+      continue;
+    }
+    if (base.kind === 'symlink' || ours.kind === 'symlink' || theirs.kind === 'symlink') {
+      result.conflicts.push({ ...conflict, kind: 'symlink' });
       continue;
     }
 
@@ -137,17 +153,20 @@ export async function mergeApplyStates(
       result.conflicts.push({ ...conflict, kind: 'text', markers: merged.bytes });
     } else if (merged.kind === 'unmergeable') {
       result.conflicts.push({ ...conflict, kind: 'text' });
-    } else if (ours.mode !== theirs.mode) {
-      result.conflicts.push({ ...conflict, kind: 'mode' });
     } else {
+      const mode =
+        ours.mode === theirs.mode || theirs.mode === base.mode
+          ? ours.mode
+          : ours.mode === base.mode
+            ? theirs.mode
+            : undefined;
+      if (mode === undefined) {
+        result.conflicts.push({ ...conflict, kind: 'mode' });
+        continue;
+      }
       writes.push({
         path,
-        entry: {
-          kind: 'file',
-          bytes: merged.bytes,
-          sha256: sha256Hex(merged.bytes),
-          mode: ours.mode,
-        },
+        entry: { kind: 'file', bytes: merged.bytes, sha256: sha256Hex(merged.bytes), mode },
       });
       result.promote.push(path);
     }
@@ -173,7 +192,7 @@ export async function mergeApplyStates(
   );
   await verifyApplyStates(states);
   for (const { path, entry } of supportedWrites) {
-    await writeConfinedEntry(states.workspaceDir, path, entry);
+    await writeConfinedEntryOrLink(states.workspaceDir, path, entry);
   }
   return result;
 }

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  readlinkSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -330,38 +331,88 @@ describe('entry-kind-matrix', { timeout: 60_000 }, () => {
     });
   });
 
-  itUnix(
-    'takes a whole side with its mode and conflicts a mode change it cannot place',
-    async () => {
-      await withRun(
-        { 'run.sh': 'echo a\n', 'chmod.sh': 'echo b\n', 'checkout.sh': 'echo c\n' },
-        async (run) => {
-          writeFileSync(join(run.ws, 'run.sh'), 'echo ours\n');
-          chmodSync(join(run.ws, 'run.sh'), 0o755);
-          chmodSync(join(run.ws, 'chmod.sh'), 0o755);
-          writeFileSync(join(run.dir, 'checkout.sh'), 'echo theirs\n');
-          chmodSync(join(run.dir, 'checkout.sh'), 0o755);
+  itUnix('takes a whole side with its mode, a mode-only change included', async () => {
+    await withRun(
+      {
+        'run.sh': 'echo a\n',
+        'chmod.sh': 'echo b\n',
+        'checkout.sh': 'echo c\n',
+        'checkout-chmod.sh': 'echo d\n',
+      },
+      async (run) => {
+        writeFileSync(join(run.ws, 'run.sh'), 'echo ours\n');
+        chmodSync(join(run.ws, 'run.sh'), 0o755);
+        chmodSync(join(run.ws, 'chmod.sh'), 0o755);
+        writeFileSync(join(run.dir, 'checkout.sh'), 'echo theirs\n');
+        chmodSync(join(run.dir, 'checkout.sh'), 0o755);
+        chmodSync(join(run.dir, 'checkout-chmod.sh'), 0o600);
 
-          const result = await merge(run);
+        const result = await merge(run);
 
-          expect(result.promote).toEqual(['run.sh']);
-          expect(mode(run.ws, 'run.sh')).toBe(0o755);
-          expect(mode(run.ws, 'checkout.sh')).toBe(0o755);
-          expect(read(run.ws, 'checkout.sh')).toBe('echo theirs\n');
-          expect(result.conflicts).toMatchObject([
-            {
-              path: 'chmod.sh',
-              kind: 'mode',
-              ours: { kind: 'file', mode: 0o755 },
-              theirs: { kind: 'file', mode: 0o644 },
-            },
-          ]);
+        expect(result).toEqual({ promote: ['chmod.sh', 'run.sh'], conflicts: [] });
+        expect(mode(run.ws, 'run.sh')).toBe(0o755);
+        expect(mode(run.ws, 'chmod.sh')).toBe(0o755);
+        expect(mode(run.ws, 'checkout.sh')).toBe(0o755);
+        expect(read(run.ws, 'checkout.sh')).toBe('echo theirs\n');
+        expect(mode(run.ws, 'checkout-chmod.sh')).toBe(0o600);
+        expect(mode(run.dir, 'chmod.sh')).toBe(0o644);
+      },
+    );
+  });
+
+  itUnix('conflicts a file whose two sides changed the mode differently', async () => {
+    await withRun({ 'tool.sh': 'echo a\n' }, async (run) => {
+      chmodSync(join(run.ws, 'tool.sh'), 0o755);
+      chmodSync(join(run.dir, 'tool.sh'), 0o600);
+
+      const result = await merge(run);
+
+      expect(result.promote).toEqual([]);
+      expect(result.conflicts).toMatchObject([
+        {
+          path: 'tool.sh',
+          kind: 'mode',
+          ours: { kind: 'file', mode: 0o755 },
+          theirs: { kind: 'file', mode: 0o600 },
         },
-      );
-    },
-  );
+      ]);
+    });
+  });
 
-  itUnix('keeps an unchanged link and refuses a link the run creates', async () => {
+  itUnix('conflicts the mode of a file both sides add with the same bytes', async () => {
+    await withRun({ 'a.txt': FIVE }, async (run) => {
+      writeFileSync(join(run.ws, 'tool.sh'), 'echo a\n');
+      chmodSync(join(run.ws, 'tool.sh'), 0o755);
+      writeFileSync(join(run.dir, 'tool.sh'), 'echo a\n');
+      chmodSync(join(run.dir, 'tool.sh'), 0o644);
+
+      const result = await merge(run);
+
+      expect(result.promote).toEqual([]);
+      expect(result.conflicts).toMatchObject([
+        { path: 'tool.sh', kind: 'mode', base: { kind: 'absent' } },
+      ]);
+    });
+  });
+
+  itUnix('conflicts a mode-only change on a base that recorded no modes', async () => {
+    await withRun({ 'chmod.sh': 'echo b\n' }, async (run) => {
+      const manifestPath = snapshotManifestPath(
+        { projectDir: run.dir, sessionId: SESSION_ID },
+        run.workspace.base.snapshotId,
+      );
+      const { symlinks: _symlinks, ...older } = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      writeFileSync(manifestPath, JSON.stringify(older));
+      chmodSync(join(run.ws, 'chmod.sh'), 0o755);
+
+      const result = await merge(run);
+
+      expect(result.promote).toEqual([]);
+      expect(result.conflicts).toMatchObject([{ path: 'chmod.sh', kind: 'mode' }]);
+    });
+  });
+
+  itUnix('keeps an unchanged link and promotes a link the run creates', async () => {
     await withRun({ 'target.txt': 'target\n' }, async (run) => {
       symlinkSync('target.txt', join(run.ws, 'kept.txt'));
       symlinkSync('target.txt', join(run.dir, 'kept.txt'));
@@ -369,40 +420,119 @@ describe('entry-kind-matrix', { timeout: 60_000 }, () => {
 
       const result = await merge(run);
 
-      expect(result.promote).toEqual([]);
-      expect(result.conflicts).toMatchObject([
-        {
-          path: 'made.txt',
-          kind: 'unsupported-entry',
-          ours: { kind: 'symlink', target: 'target.txt' },
-          theirs: { kind: 'absent' },
-        },
-      ]);
+      expect(result).toEqual({ promote: ['made.txt'], conflicts: [] });
     });
   });
 
-  itUnix('refuses a symlink created only in the checkout', async () => {
+  itUnix('takes a symlink created only in the checkout into the workspace', async () => {
     await withRun({ 'target.txt': 'target\n' }, async (run) => {
       symlinkSync('target.txt', join(run.dir, 'made.txt'));
 
       const result = await merge(run);
 
-      expect(result.promote).toEqual([]);
-      expect(result.conflicts).toMatchObject([
-        {
-          path: 'made.txt',
-          kind: 'unsupported-entry',
-          ours: { kind: 'absent' },
-          theirs: { kind: 'symlink', target: 'target.txt' },
-        },
-      ]);
-      expect(existsSync(join(run.ws, 'made.txt'))).toBe(false);
+      expect(result).toEqual({ promote: [], conflicts: [] });
+      expect(readlinkSync(join(run.ws, 'made.txt'))).toBe('target.txt');
       expect(read(run.ws, 'target.txt')).toBe('target\n');
     });
   });
 
+  itUnix('takes the one side that retargeted a link and conflicts two retargets', async () => {
+    await withRun(
+      { 'a.txt': 'a\n', 'b.txt': 'b\n', 'c.txt': 'c\n' },
+      async (run) => {
+        for (const root of [run.ws, run.dir]) {
+          rmSync(join(root, 'ours'));
+          rmSync(join(root, 'theirs'));
+          rmSync(join(root, 'both'));
+        }
+        symlinkSync('b.txt', join(run.ws, 'ours'));
+        symlinkSync('a.txt', join(run.dir, 'ours'));
+        symlinkSync('a.txt', join(run.ws, 'theirs'));
+        symlinkSync('b.txt', join(run.dir, 'theirs'));
+        symlinkSync('b.txt', join(run.ws, 'both'));
+        symlinkSync('c.txt', join(run.dir, 'both'));
+
+        const result = await merge(run);
+
+        expect(result.promote).toEqual(['ours']);
+        expect(result.conflicts).toMatchObject([
+          {
+            path: 'both',
+            kind: 'symlink',
+            base: { kind: 'symlink', target: 'a.txt' },
+            ours: { kind: 'symlink', target: 'b.txt' },
+            theirs: { kind: 'symlink', target: 'c.txt' },
+          },
+        ]);
+        expect(readlinkSync(join(run.ws, 'theirs'))).toBe('b.txt');
+      },
+      (dir) => {
+        for (const link of ['ours', 'theirs', 'both']) symlinkSync('a.txt', join(dir, link));
+      },
+    );
+  });
+
+  itUnix('refuses a run link that points outside the project', async () => {
+    await withRun({ 'a.txt': 'a\n' }, async (run) => {
+      const outside = createTempDir('apply-link-outside');
+      try {
+        symlinkSync(join(outside, 'secret'), join(run.ws, 'escape'));
+
+        const result = await merge(run);
+
+        expect(result.promote).toEqual([]);
+        expect(result.conflicts).toMatchObject([
+          { path: 'escape', kind: 'unsupported-entry', ours: { kind: 'symlink' } },
+        ]);
+      } finally {
+        cleanupTempDir(outside);
+      }
+    });
+  });
+
+  itUnix.each(['an existing', 'a missing'])(
+    'refuses a run link that leaves the project through a checkout link to %s directory',
+    async (kind) => {
+      await withRun({ 'a.txt': 'a\n' }, async (run) => {
+        const outside = createTempDir('apply-link-through-checkout');
+        try {
+          const away = join(outside, kind === 'an existing' ? '' : 'missing');
+          symlinkSync(away, join(run.dir, 'sub'));
+          mkdirSync(join(run.ws, 'docs'));
+          symlinkSync('../sub/y', join(run.ws, 'docs', 'x'));
+
+          const result = await merge(run);
+
+          expect(result.promote).toEqual([]);
+          expect(result.conflicts).toMatchObject([
+            { path: 'docs/x', kind: 'unsupported-entry', ours: { kind: 'symlink' } },
+          ]);
+        } finally {
+          cleanupTempDir(outside);
+        }
+      });
+    },
+  );
+
+  itUnix('leaves a checkout link that points outside the project in the checkout', async () => {
+    await withRun({ 'a.txt': 'a\n' }, async (run) => {
+      const outside = createTempDir('apply-link-outside');
+      try {
+        symlinkSync(join(outside, 'secret'), join(run.dir, 'escape'));
+
+        const result = await merge(run);
+
+        expect(result).toEqual({ promote: [], conflicts: [] });
+        expect(existsSync(join(run.ws, 'escape'))).toBe(false);
+        expect(readlinkSync(join(run.dir, 'escape'))).toBe(join(outside, 'secret'));
+      } finally {
+        cleanupTempDir(outside);
+      }
+    });
+  });
+
   itUnix.each(['ours', 'theirs'] as const)(
-    'refuses a directory replaced by a %s symlink without reading through it',
+    'never reads through a directory replaced by a %s symlink that leaves the project',
     async (side) => {
       await withRun({ 'dir/x.txt': 'base\n' }, async (run) => {
         const outside = createTempDir('apply-directory-target');
@@ -414,13 +544,13 @@ describe('entry-kind-matrix', { timeout: 60_000 }, () => {
 
           const result = await merge(run);
 
-          expect(result.conflicts).toMatchObject([
-            {
-              path: 'dir',
-              kind: 'unsupported-entry',
-              [side]: { kind: 'symlink', target: outside },
-            },
-          ]);
+          // The run's link is refused; the checkout's link stays in the checkout only.
+          expect(result.conflicts).toMatchObject(
+            side === 'ours'
+              ? [{ path: 'dir', kind: 'unsupported-entry', ours: { kind: 'symlink' } }]
+              : [],
+          );
+          expect(result.promote).not.toContain('dir');
           expect(read(outside, 'x.txt')).toBe('outside\n');
         } finally {
           cleanupTempDir(outside);
@@ -465,23 +595,26 @@ describe('entry-kind-matrix', { timeout: 60_000 }, () => {
     });
   });
 
-  itUnix('preserves equal modes after a clean merge and conflicts different modes', async () => {
-    await withRun({ 'equal.sh': FIVE, 'different.sh': FIVE }, async (run) => {
-      for (const path of ['equal.sh', 'different.sh']) {
+  itUnix('merges the mode three-way after a clean merge', async () => {
+    await withRun({ 'equal.sh': FIVE, 'ours.sh': FIVE, 'both.sh': FIVE }, async (run) => {
+      for (const path of ['equal.sh', 'ours.sh', 'both.sh']) {
         writeFileSync(join(run.ws, path), lines('ONE', 'two', 'three', 'four', 'five'));
         writeFileSync(join(run.dir, path), lines('one', 'two', 'three', 'four', 'FIVE'));
         chmodSync(join(run.ws, path), 0o755);
       }
       chmodSync(join(run.dir, 'equal.sh'), 0o755);
+      chmodSync(join(run.dir, 'both.sh'), 0o600);
 
       const result = await merge(run);
 
-      expect(result.promote).toEqual(['equal.sh']);
-      expect(result.conflicts).toMatchObject([{ path: 'different.sh', kind: 'mode' }]);
+      expect(result.promote).toEqual(['equal.sh', 'ours.sh']);
+      expect(result.conflicts).toMatchObject([{ path: 'both.sh', kind: 'mode' }]);
       expect(result.conflicts[0]?.markers).toBeUndefined();
-      expect(read(run.ws, 'different.sh')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
-      expect(read(run.ws, 'equal.sh')).toBe(lines('ONE', 'two', 'three', 'four', 'FIVE'));
-      expect(mode(run.ws, 'equal.sh')).toBe(0o755);
+      expect(read(run.ws, 'both.sh')).toBe(lines('ONE', 'two', 'three', 'four', 'five'));
+      for (const path of ['equal.sh', 'ours.sh']) {
+        expect(read(run.ws, path)).toBe(lines('ONE', 'two', 'three', 'four', 'FIVE'));
+        expect(mode(run.ws, path)).toBe(0o755);
+      }
     });
   });
 

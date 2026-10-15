@@ -13,8 +13,9 @@ import { readManifest } from '../../snapshots/manifest.js';
 import {
   type AcquisitionBaseline,
   captureAcquisitionBaseline,
-  type FileSnapshotEntry,
+  type ConfinedEntry,
   readConfinedEntry,
+  readConfinedEntryOrLink,
 } from '../approval/file-snapshots/entry.js';
 import { stripGitignoreBookkeeping } from '../approval/staged-project.js';
 
@@ -23,7 +24,11 @@ export type SideEntry =
   | { kind: 'file'; sha256: string; mode: number }
   | { kind: 'symlink'; target: string };
 
-export type BaseEntry = { kind: 'absent' } | { kind: 'file'; sha256: string; blob: string | null };
+/** A base file's `mode` is undefined only in a manifest written before modes were recorded. */
+export type BaseEntry =
+  | { kind: 'absent' }
+  | { kind: 'file'; sha256: string; blob: string | null; mode: number | undefined }
+  | { kind: 'symlink'; target: string };
 
 export type ApplyStates = {
   projectDir: string;
@@ -35,7 +40,7 @@ export type ApplyStates = {
 };
 
 export async function readBaseBytes(path: string, entry: BaseEntry): Promise<Buffer | null> {
-  if (entry.kind === 'absent' || entry.blob === null) return null;
+  if (entry.kind !== 'file' || entry.blob === null) return null;
   const bytes = await readFile(entry.blob);
   if (sha256Hex(bytes) !== entry.sha256) {
     throw error('apply-base-changed', `Base changed after Apply capture: ${path}`, { path });
@@ -44,11 +49,11 @@ export async function readBaseBytes(path: string, entry: BaseEntry): Promise<Buf
 }
 
 async function normalizeWorkspaceEntry(
-  entry: FileSnapshotEntry,
+  entry: ConfinedEntry,
   path: string,
   base: ReadonlyMap<string, BaseEntry>,
-): Promise<FileSnapshotEntry> {
-  if (path !== '.gitignore' || entry.kind === 'absent') return entry;
+): Promise<ConfinedEntry> {
+  if (path !== '.gitignore' || entry.kind !== 'file') return entry;
   const baseEntry = base.get(path) ?? { kind: 'absent' };
   const baseBytes = await readBaseBytes(path, baseEntry);
   const bytes = Buffer.from(
@@ -134,7 +139,12 @@ export async function captureApplyStates(input: {
             entry: resolvedEntry,
           })
         : null;
-    base.set(path, { kind: 'file', sha256: hash, blob });
+    // A manifest without `symlinks` predates recorded modes, the same rule `run.patch` reads.
+    const mode = manifest.symlinks === undefined ? undefined : resolvedEntry?.mode;
+    base.set(path, { kind: 'file', sha256: hash, blob, mode });
+  }
+  for (const { path, target } of manifest.symlinks ?? []) {
+    if (!isInternalGitStatusPath(path)) base.set(path, { kind: 'symlink', target });
   }
 
   const workspaceDir = workspace.path;
@@ -175,17 +185,31 @@ export function entryKey(entry: SideEntry): string {
   }
 }
 
-function differsFromBase(ours: SideEntry, base: BaseEntry): boolean {
-  if (base.kind === 'absent') return ours.kind !== 'absent';
-  // A base that recorded no hash never equals a side: it is an unknown, not an empty file.
-  if (base.sha256 === '') return true;
-  return ours.kind !== 'file' || ours.sha256 !== base.sha256;
+/**
+ * The side still holds the run base entry: nothing, the same link target, or
+ * the same file bytes and mode. A base without a mode compares bytes only.
+ */
+export function sameAsBase(side: SideEntry, base: BaseEntry): boolean {
+  switch (base.kind) {
+    case 'absent':
+      return side.kind === 'absent';
+    case 'symlink':
+      return side.kind === 'symlink' && side.target === base.target;
+    case 'file':
+      return (
+        side.kind === 'file' &&
+        // A base that recorded no hash never equals a side: it is an unknown, not an empty file.
+        base.sha256 !== '' &&
+        side.sha256 === base.sha256 &&
+        (base.mode === undefined || side.mode === base.mode)
+      );
+  }
 }
 
 /**
  * The run diff of a captured workspace: every path the workspace changed from
- * the run base, keyed to its entry fingerprint. A file's mode is deliberately
- * left out so a mode-only difference does not read as a content change.
+ * the run base, a mode-only change included, keyed to its entry fingerprint.
+ * The key leaves a file's mode out.
  */
 export function candidateOf(states: ApplyStates): Record<string, string> {
   const candidate: Record<string, string> = {};
@@ -193,7 +217,7 @@ export function candidateOf(states: ApplyStates): Record<string, string> {
   for (const path of paths) {
     const base = states.base.get(path) ?? { kind: 'absent' };
     const ours = states.ours.get(path) ?? { kind: 'absent' };
-    if (differsFromBase(ours, base)) candidate[path] = entryKey(ours);
+    if (!sameAsBase(ours, base)) candidate[path] = entryKey(ours);
   }
   return candidate;
 }
@@ -208,7 +232,7 @@ export async function captureReviewedCandidate(input: {
 
 type ApplySide = 'ours' | 'theirs';
 
-function sideChangedError(side: ApplySide, path: string) {
+export function sideChangedError(side: ApplySide, path: string) {
   return error(
     side === 'ours' ? 'apply-workspace-changed' : 'apply-checkout-changed',
     `${side === 'ours' ? 'Workspace' : 'Checkout'} changed after Apply capture: ${path}`,
@@ -258,10 +282,11 @@ export function unsafeEntryError(cause: unknown): boolean {
   );
 }
 
-export async function readApplyEntry(dir: string, path: string): Promise<FileSnapshotEntry | null> {
+/** The entry at `path`: a file, nothing, or a project symlink; null for any other entry. */
+export async function readApplyEntry(dir: string, path: string): Promise<ConfinedEntry | null> {
   assertPathConfined(path, dir);
   try {
-    return await readConfinedEntry(dir, path);
+    return await readConfinedEntryOrLink(dir, path);
   } catch (cause) {
     if (isENOENT(cause)) return { kind: 'absent' };
     if (unsafeEntryError(cause)) return null;
@@ -271,7 +296,7 @@ export async function readApplyEntry(dir: string, path: string): Promise<FileSna
 
 export async function readSideEntry(
   input: SideReadInput,
-): Promise<Extract<FileSnapshotEntry, { kind: 'file' }>> {
+): Promise<Extract<ConfinedEntry, { kind: 'file' }>> {
   const { states, path, side } = input;
   const dir = side === 'ours' ? states.workspaceDir : states.projectDir;
   const observed = await readApplyEntry(dir, path);
