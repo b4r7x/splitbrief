@@ -34,7 +34,7 @@ This code applies in every project space (issues, pull requests, discussions and
 
 ## Reporting and enforcement
 
-Report unacceptable behaviour privately to the maintainer, [@b4r7x](https://github.com/b4r7x), through the contact on that GitHub profile. Every report is reviewed, and the reporter's privacy is respected.
+Report unacceptable behaviour privately to the maintainer, [@b4r7x](https://github.com/b4r7x), at <b4r7dev@gmail.com>. Every report is reviewed, and the reporter's privacy is respected.
 
 The maintainer may remove, edit or reject comments, commits, code, issues and other contributions that do not follow this code. The maintainer may also ban someone, for a time or permanently, for behaviour that is harmful.
 
