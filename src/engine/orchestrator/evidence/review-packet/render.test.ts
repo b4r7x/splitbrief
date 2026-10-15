@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { taskId } from '../../../../core/schemas/task.js';
-import { ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
+import { type ReviewPacket, ReviewPacketSchema } from '../../../../core/schemas/review-packet.js';
 import { makeReviewPacket } from '#testing/helpers/factories/review-packet.js';
 import { renderChecksLogForPrompt, renderReviewPacketMarkdown } from './render.js';
 import { NULL_CACHE } from '../../../providers/model/resolution.js';
@@ -259,6 +259,48 @@ describe('packet switch and admission evidence', () => {
     );
     expect(rendered).not.toContain('Balance spent');
     expect(rendered).not.toContain('- No recovery decisions recorded.');
+  });
+});
+
+describe('renderReviewPacketMarkdown admission readiness checks', () => {
+  function renderReadiness(readiness: Partial<ReviewPacket['readiness']>): string {
+    const packet = makeReviewPacket();
+    return renderReviewPacketMarkdown(
+      { ...packet, readiness: { ...packet.readiness, ...readiness } },
+      NULL_CACHE,
+    );
+  }
+
+  it('reads a clean readiness record as no warnings or blockers', () => {
+    const rendered = renderReadiness({
+      present: true,
+      status: 'ready',
+      nextAction: 'continue',
+      blockerCount: 0,
+      warningCount: 0,
+      checks: [],
+    });
+    expect(rendered).toContain('- Checks: no warnings or blockers');
+    expect(rendered).not.toContain('- Checks: unavailable');
+  });
+
+  it('lists each recorded warning', () => {
+    const rendered = renderReadiness({
+      present: true,
+      status: 'ready-with-warnings',
+      nextAction: 'continue',
+      blockerCount: 0,
+      warningCount: 1,
+      checks: [{ id: 'implementer', severity: 'warning', summary: 'BUILD can run commands.' }],
+    });
+    expect(rendered).toContain('- warning implementer: BUILD can run commands.');
+    expect(rendered).not.toContain('- Checks:');
+  });
+
+  it('reads a missing readiness record as unavailable', () => {
+    const rendered = renderReadiness({ present: false });
+    expect(rendered).toContain('- Artifact: missing');
+    expect(rendered).toContain('- Checks: unavailable');
   });
 });
 

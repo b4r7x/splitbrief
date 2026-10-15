@@ -34,9 +34,11 @@ function renderList(items: string[]): string {
   return items.map((item) => `- ${item}`).join('\n');
 }
 
-function renderReadinessChecks(checks: ReviewPacket['readiness']['checks']): string[] {
-  if (checks.length === 0) return ['- Checks: unavailable'];
-  return checks.map((check) => `- ${check.severity} ${check.id}: ${check.summary}`);
+/** The readiness record keeps only warning and blocker checks, so a recorded empty list is a clean admission. */
+function renderReadinessChecks(readiness: ReviewPacket['readiness']): string[] {
+  if (!readiness.present) return ['- Checks: unavailable'];
+  if (readiness.checks.length === 0) return ['- Checks: no warnings or blockers'];
+  return readiness.checks.map((check) => `- ${check.severity} ${check.id}: ${check.summary}`);
 }
 
 function renderChecksLog(checks: ReviewPacket['checks']): string[] {
@@ -253,7 +255,7 @@ export function renderReviewPacketMarkdown(
     `- Next action: ${packet.readiness.nextAction ?? 'unavailable'}`,
     `- Blockers: ${packet.readiness.blockerCount ?? 'unavailable'}`,
     `- Warnings: ${packet.readiness.warningCount ?? 'unavailable'}`,
-    ...renderReadinessChecks(packet.readiness.checks),
+    ...renderReadinessChecks(packet.readiness),
     '',
     '## Change Summary',
     renderList(packet.changes.changedFiles),
