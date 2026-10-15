@@ -6,7 +6,9 @@ import {
   type RunnerConfigSlot,
 } from '../../config/accessors/runner-config.js';
 import {
+  CREW_IDENTITY_SEPARATOR,
   CREW_SEAT_LABELS,
+  PLANNER_INHERITANCE,
   formatSeatIdentity,
   formatSlotLabel,
   type SeatDisplayName,
@@ -105,6 +107,8 @@ export function buildRunnerChecks({
     addCliSeat({ role: 'reviewer' }, reviewer.runner);
     checks.push(seatConfiguredCheck('reviewer', reviewer.runner, nameSeat));
     checks.push(...typedOutputFallbackCheck('reviewer', reviewer.runner));
+  } else {
+    checks.push(inheritedReviewerCheck(reviewer.runner, nameSeat));
   }
 
   if (resolved !== null) {
@@ -307,5 +311,20 @@ function seatConfiguredCheck(
       modelSelection: modelSelection(runner),
       contextLength: runner.contextLength ?? null,
     },
+  };
+}
+
+/** With no reviewer block PLAN's seat reviews, so REVIEW names that seat after the inheritance mark. */
+function inheritedReviewerCheck(runner: Config['planner'], nameSeat: SeatNamer): ReadinessCheck {
+  const review = formatSlotLabel({ role: 'reviewer' });
+  const plan = formatSlotLabel({ role: 'planner' });
+  return {
+    id: 'runners.reviewer.inherited',
+    severity: 'ok',
+    summary: `${review} ${PLANNER_INHERITANCE.mark}${CREW_IDENTITY_SEPARATOR}${nameSeat(runner, 'reviewer')}.`,
+    details: [
+      `${review} uses the tool and model of ${plan}. To give ${review} its own seat, choose one in Settings > Crew > ${review}.`,
+    ],
+    metadata: { role: 'reviewer', modelSelection: modelSelection(runner) },
   };
 }

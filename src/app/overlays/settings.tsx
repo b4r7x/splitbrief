@@ -4,6 +4,7 @@ import { OverlayPanel } from '../../components/overlays/overlay-panel.js';
 import { configStore } from '../../stores/project/config.js';
 import { detectionStore } from '../../stores/project/detection.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
+import { feedbackStore } from '../../stores/ui/feedback.js';
 import {
   availableRows,
   computeListDisplayWindow,
@@ -35,6 +36,7 @@ import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
 import { type OverlayDensity, overlayRect } from '../../core/navigation/overlay-rect.js';
 import { useStores } from '../../stores/use-stores.js';
 import { FilterInput } from '../../components/filter-input.js';
+import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
 import { stripTerminalControls } from '../../utils/display-text.js';
 import { glyph } from '../../lib/glyphs.js';
 import { SOFT_SEP } from '../../core/separators.js';
@@ -59,14 +61,19 @@ export function SettingsOverlay() {
   const displayNames = useCrewDisplayNames(config);
   const detectedContextLength = configStore.use((state) => state.detectedContextLength);
   const cliTools = detectionStore.use((state) => state.cliTools);
-  const [{ focus }, { cols, rows }] = useStores(overlayStore, terminalSizeStore);
+  const [{ focus }, { cols, rows }, feedback] = useStores(
+    overlayStore,
+    terminalSizeStore,
+    feedbackStore,
+  );
 
   const { initialKey, initialFilter } = parseSettingsFocus(focus);
   const showDescription = rows >= DESCRIPTION_MIN_TERMINAL_ROWS;
   const rect = overlayRect({ cols, rows, density: FORM_DENSITY });
+  const notice = layoutFeedbackNotice(feedback, rect.innerWidth);
   const listBudget = availableRows({
     rows: rect.maxOuterRows,
-    chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0),
+    chromeRows: BASE_CHROME_ROWS + (showDescription ? DESCRIPTION_ROWS : 0) + (notice?.rows ?? 0),
   });
 
   const items = buildSettingsItems({
@@ -260,6 +267,8 @@ export function SettingsOverlay() {
           ))}
         </Box>
       )}
+
+      {notice !== null && <FeedbackNotice notice={notice} width={rect.innerWidth} />}
     </OverlayPanel>
   );
 }

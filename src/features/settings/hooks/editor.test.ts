@@ -245,6 +245,38 @@ describe('useSettingsEditor', () => {
     ui.unmount();
   });
 
+  it('confirms each saved setting the way Setup and the picker do', async () => {
+    const config = makeConfig();
+    seed(config);
+    const items = buildSettingsItems({ config, defs: SETTINGS_DEFS, cliTools: [] });
+
+    const ui = renderFeature(
+      createElement(Harness, {
+        config,
+        items,
+        initialKey: 'workflow.git.createBranch',
+        activated: [],
+      }),
+    );
+    await flushEffects();
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get()).toEqual({
+        message: 'Saved Create branch · on to .splitbrief/config.yaml',
+        isError: false,
+      });
+    });
+    ui.stdin.write('\u001b[B');
+    await flushEffects();
+    ui.stdin.write(' ');
+    await vi.waitFor(() => {
+      expect(feedbackStore.get().message).toBe(
+        'Saved Isolation · staged copy to .splitbrief/config.yaml',
+      );
+    });
+    ui.unmount();
+  });
+
   it('leaves a claude-code seat untouched and silent across multiple space presses', async () => {
     const config = makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } });
     seed(config);

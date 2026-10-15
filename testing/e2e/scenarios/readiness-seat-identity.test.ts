@@ -48,11 +48,13 @@ afterEach(() => {
   cleanupTempDir(tmp);
 });
 
-function configure(model?: string, effort?: 'high'): void {
+function configure(model?: string, effort?: 'high', reviewer = true): void {
   const runner = { kind: 'cli', tool: 'claude-code', model, effort } as const;
   writeFileSync(
     join(projectDir, SPLITBRIEF_DIR, CONFIG_FILE),
-    YAML.stringify(makeConfig({ planner: runner, reviewer: runner, implementer: runner })),
+    YAML.stringify(
+      makeConfig({ planner: runner, implementer: runner, ...(reviewer && { reviewer: runner }) }),
+    ),
   );
 }
 
@@ -103,4 +105,20 @@ it('prints auto for automatic and unset models while retaining selection metadat
       },
     );
   }
+});
+
+it('names the PLAN seat as REVIEW in human and JSON readiness without a reviewer block', async () => {
+  configure('sonnet', 'high', false);
+  const human = await cli(false);
+  const out = stripVTControlCharacters(human.stdout);
+  expect(out, human.stderr).toContain('REVIEW = PLAN · Claude Code CLI · Sonnet 5.5 · high.');
+  expect(out).toContain('REVIEW uses the tool and model of PLAN.');
+
+  const json = await cli(true);
+  const record = DoctorRecordSchema.parse(JSON.parse(json.stdout.trim()));
+  expect(record.report.checks.find((check) => check.id === 'runners.reviewer.inherited')).toEqual({
+    id: 'runners.reviewer.inherited',
+    summary: 'REVIEW = PLAN · Claude Code CLI · Sonnet 5.5 · high.',
+    modelSelection: 'explicit',
+  });
 });

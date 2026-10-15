@@ -187,6 +187,8 @@
 - A call you stop reads `stopped by you` in the transcript.
 - The `/end` description no longer promises to keep every change on disk. It reads *Close the run, saving unapplied changes*, which is also true for a run that is ready to apply: End run discards it and saves its changes in `run.patch`.
 - The run ages on home and in `/sessions`, such as `just now` and `4m ago`, now move on while the list stays open. Before, they changed only after you opened and closed another panel.
+- `splitbrief doctor` names the REVIEW seat when you configure no separate reviewer: `REVIEW = PLAN · <tool> · <model>`, in text and in `--json`.
+- Every change in Settings confirms its save under the list, for example `Saved End-of-run checks · off to .splitbrief/config.yaml`, the same way Setup and the picker confirm a save.
 - A run whose Apply stopped on a conflict keeps the Apply stage on the header after you continue it, and a stop there reads *Stopped at Apply*. Before, the header marked the review as failed and the stop read *Stopped at the review*, although the review passed.
 - `esc` on the recovery menu of an Apply conflict or of a failed final review opens Stop options, as on every other recovery menu. Before, only `ctrl+c` left that menu.
 - When a coding tool changes during a run, for example when it updates itself, the halt names the tool and tells you that **Try again** checks it again. It no longer asks you to run `splitbrief doctor`.

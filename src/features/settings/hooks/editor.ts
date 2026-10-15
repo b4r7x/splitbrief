@@ -1,9 +1,12 @@
 import { configStore } from '../../../stores/project/config.js';
 import { feedbackStore } from '../../../stores/ui/feedback.js';
-import { reportConfigSaveFailure } from '../../../stores/project/save-feedback.js';
+import {
+  formatConfigSaveSuccess,
+  reportConfigSaveFailure,
+} from '../../../stores/project/save-feedback.js';
 import { toErrorMessage } from '../../../utils/format-errors.js';
 import type { SettingDef } from '../../../core/settings/catalog.js';
-import { matchesFilter } from '../presentation.js';
+import { matchesFilter, settingSaveSubject } from '../presentation.js';
 import type { SettingsItem } from '../items.js';
 import { getConfigValue, applyEdits } from '../../../core/config/accessors/values.js';
 import { configError } from '../../../core/config/errors.js';
@@ -70,10 +73,11 @@ function enqueueSave(task: () => Promise<void>): void {
   });
 }
 
-async function persist(updated: Config): Promise<void> {
-  const result = await configStore.save(updated);
+async function saveSetting(def: SettingDef, value: unknown): Promise<void> {
+  const current = getCurrentConfig();
+  const result = await configStore.save(applyEdits(current, { [def.id]: value }));
   if (reportConfigSaveFailure(result)) return;
-  feedbackStore.setMessage('Saved');
+  feedbackStore.setMessage(formatConfigSaveSuccess(settingSaveSubject(def, value, current)));
 }
 
 export function useSettingsEditor({
@@ -90,13 +94,9 @@ export function useSettingsEditor({
   const getValue = (def: SettingDef, source = config): unknown =>
     def.readValue ? def.readValue(source) : getConfigValue(source, def.id);
 
-  const saveValue = async (dotPath: string, value: unknown) => {
-    await persist(applyEdits(getCurrentConfig(), { [dotPath]: value }));
-  };
-
   const editor = useEditBuffer({
     onCommit: (def, value) => {
-      enqueueSave(() => saveValue(def.id, value));
+      enqueueSave(() => saveSetting(def, value));
     },
   });
 
@@ -104,13 +104,13 @@ export function useSettingsEditor({
     enqueueSave(async () => {
       const currentConfig = getCurrentConfig();
       if (def.kind === 'boolean') {
-        await saveValue(def.id, !getValue(def, currentConfig));
+        await saveSetting(def, !getValue(def, currentConfig));
       } else if (def.kind === 'enum' && def.options) {
         const firstOption = def.options[0];
         const current = String(getValue(def, currentConfig) ?? firstOption ?? '');
         const idx = def.options.indexOf(current);
         const next = def.options[(idx + 1) % def.options.length];
-        if (next !== undefined) await saveValue(def.id, next);
+        if (next !== undefined) await saveSetting(def, next);
       }
     });
   };

@@ -412,7 +412,7 @@ splitbrief doctor --probe-seat build
 | `remediation` | Copyable next action when `stateId` is set or the check supplies a fix; `null` otherwise. |
 | `details` | Optional detail lines (secret-redacted). |
 | `nextAction` | Optional structured pointer (`kind`, `label`, `command`). |
-| `modelSelection` | On `runners.<role>.configured`: `auto` (automatic selection), `explicit` (a model ID), or `unset` (no `model` key). Absent on other checks. |
+| `modelSelection` | On `runners.<role>.configured`, and on `runners.reviewer.inherited` for a REVIEW that follows PLAN: `auto` (automatic selection), `explicit` (a model ID), or `unset` (no `model` key). Absent on other checks. |
 | `seats` | On a check for a CLI problem: every seat it stops (`PLAN`, `BUILD`, `BUILD (<profile>)`, `REVIEW`). One check covers every seat that shares the problem, so a seat `id` such as `runners.preparation.planner` names only the first of them. Absent on other checks. |
 
 Human and JSON output share the same remediation strings. CLI executable identity paths and secrets are redacted from check text; `projectDir` is emitted verbatim as the absolute project directory.

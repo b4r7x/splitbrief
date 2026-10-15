@@ -1,4 +1,6 @@
 import type { SettingDef } from '../../core/settings/catalog.js';
+import type { Config } from '../../core/schemas/config.js';
+import { SOFT_SEP } from '../../core/separators.js';
 import { formatContextLength } from '../../core/formatting.js';
 import { glyph } from '../../lib/glyphs.js';
 import { settingsItemFilterText, type SettingsItem } from './items.js';
@@ -39,4 +41,11 @@ export function displayValue(
     return def.optionLabels?.[raw] ?? raw;
   }
   return def.unsetLabel ?? '—';
+}
+
+/** What a save line names: the row's label and the value saved, with a switch read as on or off. */
+export function settingSaveSubject(def: SettingDef, value: unknown, config: Config): string {
+  const label = def.readLabel?.(config) ?? def.label;
+  const shown = def.kind === 'boolean' ? (value ? 'on' : 'off') : displayValue(def, value);
+  return `${label}${SOFT_SEP}${shown}`;
 }

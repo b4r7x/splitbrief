@@ -397,6 +397,35 @@ describe('doctor command', () => {
     expect(readFileSync(configFile, 'utf8')).toBe(before);
   });
 
+  it('names the PLAN seat as REVIEW in text and JSON when no reviewer is configured', async () => {
+    initGitRepo(tmp);
+    configStore.load(tmp);
+    const runner = { kind: 'cli', tool: 'claude-code', model: 'sonnet' } as const;
+    expect(
+      (await configStore.save(makeConfig({ planner: runner, implementer: runner }))).kind,
+    ).toBe('saved');
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runDoctor(['--project', tmp]);
+    const text = logged.mock.calls.map((call) => call.join(' ')).join('\n');
+    const writes = captureStdout();
+    await runDoctor(['--project', tmp, '--json']);
+    const { report } = JSON.parse(writes.join('')) as { report: ReadinessReportJson };
+
+    expectReadableDoctorProse(text, report);
+    expect(text).toMatch(/^\s*ok\s+REVIEW = PLAN · Claude Code CLI · Sonnet 5\.5\.$/m);
+    expect(report.checks.find((check) => check.id === 'runners.reviewer.inherited')).toEqual({
+      id: 'runners.reviewer.inherited',
+      severity: 'ok',
+      summary: 'REVIEW = PLAN · Claude Code CLI · Sonnet 5.5.',
+      stateId: null,
+      remediation: null,
+      details: [
+        'REVIEW uses the tool and model of PLAN. To give REVIEW its own seat, choose one in Settings > Crew > REVIEW.',
+      ],
+      modelSelection: 'explicit',
+    });
+  });
+
   it.each([false, true])(
     'reports shared unknown authentication with another failing tool: %s',
     async (mixed) => {
