@@ -136,23 +136,27 @@ export function diffEventKey(event: SectionableEvent, globalIndex: number): stri
   return `${event.type}:${globalIndex}`;
 }
 
+/** What names a review stage: its scope, the brief a task review follows, and the cycles before it. */
+export interface ReviewStage {
+  stage: 'review';
+  scope: 'final' | 'task';
+  afterTaskId?: string | undefined;
+  /** The final review's fix cycles that came before this review. */
+  fixCyclesBefore: number;
+  /** The final reviews of this fix cycle that came before this one: a re-run, as after a crash. */
+  rerunsBefore: number;
+}
+
 export type StageSummary =
   | { stage: 'plan'; feature: string; duration: number }
-  | {
-      stage: 'review';
-      scope: 'final' | 'task';
-      afterTaskId?: string | undefined;
-      /** The final review's fix cycles that came before this review. */
-      fixCyclesBefore: number;
-      /** The final reviews of this fix cycle that came before this one: a re-run, as after a crash. */
-      rerunsBefore: number;
+  | (ReviewStage & {
       outcome: 'passed' | 'passed-with-notes' | 'failed' | 'no-verdict' | 'stopped';
       findings?: ReviewCompletedEvent['findings'];
       failedCommands: string[];
       failedChecks: number;
       fixes: string[];
       duration: number;
-    };
+    });
 
 export type Section<TEvent extends SectionableEvent = SectionableEvent> =
   | { type: 'events'; items: TEvent[]; startIndex: number }
@@ -172,7 +176,8 @@ export type Section<TEvent extends SectionableEvent = SectionableEvent> =
         reason?: string;
       };
     }
-  | { type: 'active-task'; items: TEvent[]; startIndex: number };
+  | { type: 'active-task'; items: TEvent[]; startIndex: number }
+  | { type: 'active-review'; items: TEvent[]; startIndex: number; review: ReviewStage };
 
 export function isSettledSection<TEvent extends SectionableEvent>(
   section: Section<TEvent>,
@@ -258,7 +263,9 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
         (reviewStarted || (event.phase !== undefined && phaseStage(event.phase) === 'review'))
       ) {
         const items = events.slice(cursor, index);
-        const summary = reviewStarted ? settledStageSummary(items, fixCycles, reruns, true) : null;
+        const summary = items.some(opensReview)
+          ? settledStageSummary(items, fixCycles, reruns, true)
+          : null;
         if (items.length > 0) {
           if (summary?.stage === 'review') {
             sections.push({ type: 'settled-stage', items, startIndex: cursor, summary });
@@ -384,7 +391,14 @@ export function groupEventsIntoSections<TEvent extends SectionableEvent>(
     sections.push(
       summary?.stage === 'review'
         ? { type: 'settled-stage', items, startIndex: cursor, summary }
-        : { type: 'events', items, startIndex: cursor },
+        : items.some(opensReview)
+          ? {
+              type: 'active-review',
+              items,
+              startIndex: cursor,
+              review: reviewStage(items, fixCycles, reruns),
+            }
+          : { type: 'events', items, startIndex: cursor },
     );
   }
 
@@ -399,6 +413,34 @@ function isBuildRow(event: SectionableEvent | undefined, hasReviewStage: boolean
     event.type !== 'review_completed' &&
     !(hasReviewStage && event.type === 'review_fix_started')
   );
+}
+
+// A review opens at its start or at the first check it runs: the plan checks run in the review
+// phase before the review call starts.
+function opensReview(event: SectionableEvent): boolean {
+  return (
+    isReviewStartedEvent(event) ||
+    ((isFullSuiteEvent(event) || isChecksRunEvent(event)) &&
+      event.phase !== undefined &&
+      phaseStage(event.phase) === 'review')
+  );
+}
+
+function reviewStage<TEvent extends SectionableEvent>(
+  items: TEvent[],
+  fixCyclesBefore: number,
+  rerunsBefore: number,
+): ReviewStage {
+  const completed = items.findLast(isReviewCompletedEvent);
+  const started = items.findLast(isReviewStartedEvent);
+  const afterTaskId = completed?.afterTaskId ?? started?.afterTaskId;
+  return {
+    stage: 'review',
+    scope: completed?.scope ?? started?.scope ?? 'final',
+    ...(afterTaskId !== undefined && { afterTaskId }),
+    fixCyclesBefore,
+    rerunsBefore,
+  };
 }
 
 function settledStageSummary<TEvent extends SectionableEvent>(
@@ -481,17 +523,11 @@ function settledStageSummary<TEvent extends SectionableEvent>(
         )
         ? 'stopped'
         : null
-      : (verdict ?? (fixes.length > 0 ? 'failed' : null));
+      : (verdict ?? (fixes.length > 0 ? 'failed' : resumed ? 'stopped' : null));
   if (outcome === null) return null;
   return {
-    stage,
-    scope: completed?.scope ?? reviewStarted?.scope ?? 'final',
-    ...((completed?.afterTaskId ?? reviewStarted?.afterTaskId) !== undefined && {
-      afterTaskId: completed?.afterTaskId ?? reviewStarted?.afterTaskId,
-    }),
+    ...reviewStage(items, fixCyclesBefore, rerunsBefore),
     ...(completed?.findings !== undefined && { findings: completed.findings }),
-    fixCyclesBefore,
-    rerunsBefore,
     outcome,
     failedCommands: [...failedCommands],
     failedChecks,

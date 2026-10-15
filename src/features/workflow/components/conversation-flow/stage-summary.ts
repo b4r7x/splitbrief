@@ -2,7 +2,7 @@ import type {
   TaskSummaryHeadingPart,
   TaskSummaryState,
 } from '../../../../components/task-summary.js';
-import type { StageSummary } from '../../../../core/sections/event-sections.js';
+import type { ReviewStage, StageSummary } from '../../../../core/sections/event-sections.js';
 import { formatDuration } from '../../../../utils/format-time.js';
 import { countNoun } from '../../../../utils/pluralize.js';
 import { CREW_SEAT_ROLES } from '../../../../core/crew/seats.js';
@@ -14,22 +14,6 @@ export function stageSummaryRow(summary: StageSummary): {
   state: Extract<TaskSummaryState, { kind: 'stage' }>;
 } {
   const duration = formatDuration(summary.duration);
-  // A task review names the brief it reviewed; the final review names itself, says how many fix
-  // cycles came before it, and marks a review run again within one cycle, as after a crash.
-  const finalReview = summary.stage === 'review' && summary.scope === 'final';
-  const idParts: TaskSummaryHeadingPart[] = [
-    {
-      text: finalReview ? 'Final review' : formatStageLabel(summary.stage),
-      tone: CREW_SEAT_ROLES[summary.stage],
-    },
-  ];
-  const anchor =
-    summary.stage === 'plan'
-      ? undefined
-      : summary.scope === 'task'
-        ? summary.afterTaskId
-        : finalReviewAnchor(summary.fixCyclesBefore, summary.rerunsBefore);
-  if (anchor !== undefined) idParts.push({ text: ` ${anchor}`, tone: 'textDim' });
   const title = sanitizeTerminalDisplayText(
     summary.stage === 'plan'
       ? summary.feature
@@ -42,7 +26,7 @@ export function stageSummaryRow(summary: StageSummary): {
             : '',
   );
   const headingParts: Extract<TaskSummaryState, { kind: 'stage' }>['headingParts'] = {
-    id: idParts,
+    id: stageHeadingParts(summary),
     title:
       title === ''
         ? null
@@ -108,6 +92,28 @@ export function stageSummaryRow(summary: StageSummary): {
       detail,
     },
   };
+}
+
+// A task review names the brief it reviewed; the final review names itself, says how many fix
+// cycles came before it, and marks a review run again within one cycle, as after a crash.
+export function stageHeadingParts(
+  stage: { stage: 'plan' } | ReviewStage,
+): TaskSummaryHeadingPart[] {
+  const finalReview = stage.stage === 'review' && stage.scope === 'final';
+  const parts: TaskSummaryHeadingPart[] = [
+    {
+      text: finalReview ? 'Final review' : formatStageLabel(stage.stage),
+      tone: CREW_SEAT_ROLES[stage.stage],
+    },
+  ];
+  const anchor =
+    stage.stage === 'plan'
+      ? undefined
+      : stage.scope === 'task'
+        ? stage.afterTaskId
+        : finalReviewAnchor(stage.fixCyclesBefore, stage.rerunsBefore);
+  if (anchor !== undefined) parts.push({ text: ` ${anchor}`, tone: 'textDim' });
+  return parts;
 }
 
 function finalReviewAnchor(fixCycles: number, reruns: number): string | undefined {

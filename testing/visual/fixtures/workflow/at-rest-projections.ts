@@ -1680,7 +1680,10 @@ export const reviewTaskCadenceProjection: WorkflowFixtureProjection = {
 export const reviewTaskOutOfScopeProjection: WorkflowFixtureProjection = {
   ...reviewTaskCadenceProjection,
   scenarioId: scenarioId('workflow-review-task-out-of-scope'),
-  events: CADENCE_EVENTS.map((event) =>
+  events: CADENCE_EVENTS.slice(
+    0,
+    CADENCE_EVENTS.findLastIndex((event) => event.type === 'review_started'),
+  ).map((event) =>
     event.type === 'review_completed' && event.afterTaskId === 'T001'
       ? {
           ...event,

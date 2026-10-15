@@ -467,6 +467,10 @@ const checkpointPredicates = [
   ],
   [checkpointId('final-review'), includesAll('3/3 briefs passed', 'Review · OpenAI Codex CLI')],
   [
+    checkpointId('final-review-plan-check'),
+    includesAll('Final review', 'Review · OpenAI Codex CLI'),
+  ],
+  [
     checkpointId('review-render-running'),
     includesAll(
       '3/3 briefs passed',

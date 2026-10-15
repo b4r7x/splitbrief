@@ -1631,6 +1631,39 @@ const finalReviewProjection: WorkflowFixtureProjection = {
   },
 };
 
+// The plan check runs in the review phase before the review call starts; the heading stands above it.
+const finalReviewPlanCheckProjection: WorkflowFixtureProjection = {
+  ...finalReviewProjection,
+  scenarioId: scenarioId('workflow-final-review-plan-check'),
+  get events(): EngineEvent[] {
+    return finalReviewProjection.events.flatMap((event): EngineEvent[] =>
+      event.type === 'review_started'
+        ? [
+            {
+              type: 'full_suite',
+              ts: event.ts - 20,
+              phase: 'final-review',
+              status: 'done',
+              id: 'K1',
+              command: 'npm test',
+              moment: 'plan',
+              passed: true,
+              duration: 113,
+            },
+            {
+              type: 'checks_run',
+              ts: event.ts - 10,
+              phase: 'final-review',
+              taskId: WORKFLOW_FIXTURE_TASK_ID,
+              results: [{ id: 'K1', status: 'pass' }],
+            },
+            event,
+          ]
+        : [event],
+    );
+  },
+};
+
 // With End-of-run checks off nothing runs before the review, and one row says so.
 const reviewChecksOffProjection: WorkflowFixtureProjection = {
   ...finalReviewProjection,
@@ -5369,6 +5402,7 @@ const projections = [
   completeAfterFixTasksProjection,
   reviewFixNoChangeProjection,
   finalReviewProjection,
+  finalReviewPlanCheckProjection,
   {
     ...finalReviewProjection,
     scenarioId: scenarioId('workflow-review-verdict-only'),

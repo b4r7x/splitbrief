@@ -214,7 +214,7 @@ describe('groupEventsIntoSections', () => {
     ];
     expect(groupEventsIntoSections(events).map((section) => section.type)).toEqual([
       'completed-task',
-      'events',
+      'active-review',
     ]);
   });
 
@@ -392,8 +392,75 @@ describe('groupEventsIntoSections', () => {
       makeTaskComplete({ ts: 2_000 }),
       ...tail,
     ]);
-    expect(sections.map((section) => section.type)).toEqual(['completed-task', 'events']);
-    expect(sections[1]?.items).toEqual(tail);
+    expect(sections.map((section) => section.type)).toEqual(['completed-task', 'active-review']);
+    expect(sections[1]).toMatchObject({
+      items: tail,
+      review: { scope: 'task', afterTaskId: 'T001', fixCyclesBefore: 0, rerunsBefore: 0 },
+    });
+  });
+
+  describe('a final review whose plan check runs before the review call', () => {
+    const planCheck: EngineEvent = {
+      type: 'full_suite',
+      ts: 3_000,
+      phase: 'final-review',
+      status: 'running',
+      id: 'K1',
+      command: 'node --test tests/math.test.js',
+      moment: 'plan',
+    };
+    const review = { phase: 'final-review', scope: 'final', tool: 'claude-code' } as const;
+
+    it('opens the live review at the plan check and settles it from the same row', () => {
+      const events: EngineEvent[] = [
+        makeTaskStart({ ts: 1_000 }),
+        makeTaskComplete({ ts: 2_000 }),
+        planCheck,
+        { ...planCheck, ts: 3_100, status: 'done', passed: true, duration: 100 },
+        {
+          type: 'checks_run',
+          ts: 3_200,
+          phase: 'final-review',
+          taskId: taskId('T001'),
+          results: [{ id: 'K1', status: 'pass' }],
+        },
+        { type: 'review_started', ts: 3_300, ...review },
+        { type: 'review_completed', ts: 18_000, ...review, verdict: 'pass', duration: 14_700 },
+      ];
+      for (let count = 3; count < events.length; count++) {
+        expect(groupEventsIntoSections(events.slice(0, count))[1]).toMatchObject({
+          type: 'active-review',
+          startIndex: 2,
+          review: { stage: 'review', scope: 'final', fixCyclesBefore: 0, rerunsBefore: 0 },
+        });
+      }
+      expect(groupEventsIntoSections(events)[1]).toMatchObject({
+        type: 'settled-stage',
+        startIndex: 2,
+        summary: { stage: 'review', scope: 'final', outcome: 'passed', rerunsBefore: 0 },
+      });
+    });
+
+    it('settles a review stopped at its plan check as stopped once the run continues', () => {
+      const events: EngineEvent[] = [
+        makeTaskStart({ ts: 1_000 }),
+        makeTaskComplete({ ts: 2_000 }),
+        planCheck,
+        { type: 'workflow_resumed', ts: 9_000, phase: 'final-review' },
+        { ...planCheck, ts: 9_100 },
+        { type: 'review_started', ts: 9_300, ...review },
+        { type: 'review_completed', ts: 20_000, ...review, verdict: 'pass', duration: 10_700 },
+      ];
+      const sections = groupEventsIntoSections(events);
+      expect(sections.map((section) => section.type)).toEqual([
+        'completed-task',
+        'settled-stage',
+        'events',
+        'settled-stage',
+      ]);
+      expect(sections[1]).toMatchObject({ items: [planCheck], summary: { outcome: 'stopped' } });
+      expect(sections[3]).toMatchObject({ summary: { outcome: 'passed', rerunsBefore: 1 } });
+    });
   });
 
   it('accepts engine events with an explicitly undefined or nullable task id', () => {
@@ -1064,8 +1131,21 @@ describe('groupEventsIntoSections', () => {
               ? section.summary.stage
               : section.type,
         ),
-      ).toEqual(['plan', 'T001', 'T002', 'review', 'T003', 'T004', 'review', 'T005', 'events']);
-      expect(requireSection(sections, 8, 'events').items).toEqual(review3);
+      ).toEqual([
+        'plan',
+        'T001',
+        'T002',
+        'review',
+        'T003',
+        'T004',
+        'review',
+        'T005',
+        'active-review',
+      ]);
+      expect(requireSection(sections, 8, 'active-review')).toMatchObject({
+        items: review3,
+        review: { scope: 'final', fixCyclesBefore: 2, rerunsBefore: 0 },
+      });
     });
 
     it('settles the plan with its own rows only and names the run it planned', () => {
@@ -1308,7 +1388,7 @@ describe('groupEventsIntoSections', () => {
       expect(sections.filter(isSettledSection).map((section) => section.startIndex)).toEqual(
         sections.slice(0, 8).map((section) => section.startIndex),
       );
-      expect(isSettledSection(requireSection(sections, 8, 'events'))).toBe(false);
+      expect(isSettledSection(requireSection(sections, 8, 'active-review'))).toBe(false);
     });
   });
 });

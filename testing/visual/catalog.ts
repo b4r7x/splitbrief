@@ -774,6 +774,22 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
         { id: 'composer', title: 'Workflow composer' },
       ],
     }),
+    defineScenario({
+      id: 'workflow-final-review-plan-check',
+      title: 'Workflow · final review running after its plan check',
+      surface: screenSurface('workflow'),
+      checkpoint: {
+        id: 'final-review-plan-check',
+        title: 'Final review heading above the plan check',
+        kind: 'implementation',
+        marker: 'Plan check K1',
+      },
+      elements: [
+        { id: 'header', title: 'Workflow header' },
+        { id: 'transcript', title: 'Review transcript' },
+        { id: 'composer', title: 'Workflow composer' },
+      ],
+    }),
     ...(['', '-settled'] as const).map((suffix) =>
       defineScenario({
         id: `workflow-review-task-cadence${suffix}`,
@@ -786,7 +802,7 @@ const SCREEN_SCENARIOS: Record<Screen, readonly ScenarioDefinition[]> = {
               ? 'Task review running after the second brief'
               : 'Task and final reviews replayed at rest',
           kind: 'implementation',
-          marker: suffix === '' ? 'Review T001 passed' : 'Final review passed',
+          marker: suffix === '' ? 'Review T002' : 'Final review passed',
         },
         viewports: WIDE_VIEWPORTS,
         elements: [
