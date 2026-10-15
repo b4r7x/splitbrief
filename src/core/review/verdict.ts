@@ -189,12 +189,10 @@ export function deriveReviewOutcome(
       outOfScope.push(finding);
       continue;
     }
-    if (finding.kind === 'unverified') {
-      if (verification.get(verificationKey('finding', finding.id)) === 'pass') minor.push(finding);
-      else blocking.push(finding);
-      continue;
-    }
-    if (finding.severity === 'blocking') blocking.push(finding);
+    const verified =
+      finding.kind === 'unverified' &&
+      verification.get(verificationKey('finding', finding.id)) === 'pass';
+    if (finding.severity === 'blocking' && !verified) blocking.push(finding);
     else minor.push(finding);
   }
   const failed =

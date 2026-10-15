@@ -360,7 +360,7 @@ describe('buildFinalReview', () => {
               {
                 id: 'F1',
                 kind: 'unverified',
-                severity: status === 'pass' ? 'blocking' : 'minor',
+                severity: 'blocking',
                 taskId: null,
                 file: null,
                 line: null,
