@@ -94,6 +94,14 @@ describe('buildPlanSessionPrompt', () => {
     );
   });
 
+  it('names the file tests that check a file mode or a symbolic link at every approve level', () => {
+    for (const approvesPlan of [true, false]) {
+      expect(buildPlanSessionPrompt({ ...input, approvesPlan })).toContain(
+        'As a `cmd` check, `test -e <file>`, `test -f <file>`, `test -x <file>` and `test -L <file>` check that a file exists, is a regular file, is executable or is a symbolic link; use them to check a file mode or a symbolic link instead of a new test file.',
+      );
+    }
+  });
+
   it('asks for the test file pattern as a file name pattern without a directory', () => {
     const prompt = buildPlanSessionPrompt(input);
     expect(prompt).toContain('`testPattern`');

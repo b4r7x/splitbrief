@@ -305,6 +305,33 @@ describe('checkPlan', () => {
     expect(checkPlan(plan, projectDir, fits, undefined, true)).toEqual([refusedK10, refusedK8]);
   });
 
+  it('admits a file mode and a symbolic link check, and names the file tests for any other test', () => {
+    const plan = makePlanProposal({
+      criteria: [
+        { id: 'C1', text: 'The CLI is executable', checkIds: ['K1'] },
+        { id: 'C2', text: 'The readme link resolves', checkIds: ['K2', 'K3', 'K4'] },
+      ],
+      tasks: [
+        makeTaskSpec({
+          criteria: ['C1', 'C2'],
+          checks: [
+            { id: 'K1', kind: 'cmd', value: 'test -x src/cli.js', required: true },
+            { id: 'K2', kind: 'cmd', value: 'test -L docs/readme.md', required: true },
+            { id: 'K3', kind: 'cmd', value: 'test -f docs/readme.md', required: true },
+            { id: 'K4', kind: 'cmd', value: 'test -d docs', required: true },
+          ],
+        }),
+      ],
+    });
+    expect(checkPlan(plan, projectDir, fits, undefined, false)).toEqual([
+      {
+        code: 'refused-check-command',
+        message:
+          'Check K4 is refused: `test -d docs` does not name one file test; a plan check runs test only as test -e, -f, -x or -L <file>. Name a command the plan command policy runs, or use a `test` check.',
+      },
+    ]);
+  });
+
   it('refuses a criterion id used twice', () => {
     const plan = makePlanProposal({
       criteria: [

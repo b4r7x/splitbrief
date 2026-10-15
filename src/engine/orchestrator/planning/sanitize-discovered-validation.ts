@@ -415,6 +415,31 @@ export function unsafeCommandReason(raw: string): string | null {
   return null;
 }
 
+/** The file tests a plan check runs as `test <op> <file>`: each reads one file's state and runs nothing. */
+export const FILE_TESTS = {
+  '-e': 'exists',
+  '-f': 'is a regular file',
+  '-x': 'is executable',
+  '-L': 'is a symbolic link',
+} as const;
+
+function fileTestRefusal(tokens: string[]): string | null {
+  const [, test, path] = tokens;
+  if (
+    tokens.length !== 3 ||
+    test === undefined ||
+    path === undefined ||
+    !Object.hasOwn(FILE_TESTS, test)
+  ) {
+    const tests = Object.keys(FILE_TESTS);
+    return `does not name one file test; a plan check runs test only as test ${tests.slice(0, -1).join(', ')} or ${tests.at(-1)} <file>`;
+  }
+  if (!isWorkspacePath(path)) return `passes a path outside the workspace to test (${path})`;
+  return isWorkspaceFile(path) && !path.startsWith('-') && !SHELL_OPERATORS.test(path)
+    ? null
+    : `passes an operand to test (${path})`;
+}
+
 function isApprovedNpmRun(tokens: string[], npmScriptsApproved: boolean): boolean {
   return npmScriptsApproved && commandFamily(tokens[0] ?? '') === 'npm' && tokens[1] === 'run';
 }
@@ -441,6 +466,7 @@ export function commandTextRefusal(command: string, npmScriptsApproved: boolean)
     if (tokens.some((token) => SHELL_OPERATORS.test(token))) return 'contains a shell operator';
     return null;
   }
+  if (cmd === 'test') return fileTestRefusal(tokens);
   return unsafeCommandReason(command);
 }
 
