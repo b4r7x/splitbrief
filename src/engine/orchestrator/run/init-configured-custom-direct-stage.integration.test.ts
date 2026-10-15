@@ -183,6 +183,7 @@ async function initializeConfiguredDirectWorkflow(
     metadata: {
       planner: 'test-planner · auto',
       implementer: 'configured-direct · auto',
+      reviewer: 'test-planner · auto',
     },
     setTrackedState: () => {},
     resumeHolder: { messages: [] },

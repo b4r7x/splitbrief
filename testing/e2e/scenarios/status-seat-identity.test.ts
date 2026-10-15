@@ -4,6 +4,7 @@ import { stripVTControlCharacters } from 'node:util';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { formatSeatIdentity } from '../../../src/core/crew/identity.js';
 import { saveDetectionCache } from '../../../src/engine/detection/cache.js';
+import { configWithSwitchedSeat } from '../../../src/engine/orchestrator/recovery/switch-seat.js';
 import { SPLITBRIEF_DIR, sessionDir } from '../../../src/core/paths.js';
 import { createInitialState, transition } from '../../../src/core/state/machine.js';
 import { saveState } from '../../../src/core/state/persistence.js';
@@ -73,8 +74,9 @@ it('names recorded seats from the remembered catalog in a fresh command', async 
 
   const run = await status();
   expect(run.exitCode, run.stderr).toBe(0);
-  expect(run.stdout).toContain('Planner:  OpenAI Codex CLI · GPT-6-Luna');
-  expect(run.stdout).toContain('Impl:     OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('PLAN:     OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('BUILD:    OpenAI Codex CLI · GPT-6-Luna');
+  expect(run.stdout).toContain('REVIEW:   OpenAI Codex CLI · GPT-6-Luna');
   expect(run.stdout).not.toContain('GPT-6 Luna');
 });
 
@@ -101,9 +103,10 @@ it('prints readable OpenCode models with the same identities as the crew rows', 
     const identity = formatSeatIdentity({ seat });
     expect(identity).toBe(`OpenCode CLI · DeepSeek V4.1 Flash · via ${model.split('/')[0]}`);
     expect(out).not.toContain(model);
-    expect(out).toContain(`Planner:  ${identity}`);
-    expect(out).toContain(`Impl:     ${identity}`);
-    identities.push(out.split('\n').find((line) => line.startsWith('Impl:')));
+    expect(out).toContain(`PLAN:     ${identity}`);
+    expect(out).toContain(`BUILD:    ${identity}`);
+    expect(out).toContain(`REVIEW:   ${identity}`);
+    identities.push(out.split('\n').find((line) => line.startsWith('BUILD:')));
   }
   expect(new Set(identities).size).toBe(3);
 });
@@ -133,8 +136,9 @@ it('prints Claude aliases and model-encoded axes with the same identities as the
   const run = await status();
   expect(run.exitCode, run.stderr).toBe(0);
   const out = stripVTControlCharacters(run.stdout);
-  expect(out).toContain(`Planner:  ${formatSeatIdentity({ seat: planner })}`);
-  expect(out).toContain(`Impl:     ${formatSeatIdentity({ seat: implementer })}`);
+  expect(out).toContain(`PLAN:     ${formatSeatIdentity({ seat: planner })}`);
+  expect(out).toContain(`BUILD:    ${formatSeatIdentity({ seat: implementer })}`);
+  expect(out).toContain(`REVIEW:   ${formatSeatIdentity({ seat: planner })}`);
   expect(out).toContain('Sonnet 5.5 · high');
   expect(out).toContain('Claude Opus 5 · xhigh · thinking · fast');
 });
@@ -157,7 +161,7 @@ it.each(['high', 'max'] as const)(
         seat: 'build',
         from: 'Claude Code CLI · Sonnet 5.5 · high',
         to: 'Claude Code CLI · Sonnet 5.5 · max',
-        toSeat: { ...implementer, effort: 'max' },
+        toSeat: { tool: implementer.tool, model: implementer.model, effort: 'max' },
         cause: 'runner-usage-limit',
         auto: false,
         configRevision: 'switched',
@@ -169,7 +173,49 @@ it.each(['high', 'max'] as const)(
 
     expect(run.exitCode, run.stderr).toBe(0);
     expect(stripVTControlCharacters(run.stdout).split('\n')).toContain(
-      `Impl:     Claude Code CLI · Sonnet 5.5 · ${effort}`,
+      `BUILD:    Claude Code CLI · Sonnet 5.5 · ${effort}`,
     );
   },
 );
+
+it('prints REVIEW as the switched PLAN seat when PLAN holds REVIEW, live and after resume', async () => {
+  const ref = { projectDir, sessionId };
+  const planner = { kind: 'cli', tool: 'claude-code', model: 'sonnet' } as const;
+  const config = makeConfig({ planner });
+  const state = writeState({
+    plannerTool: planner.tool,
+    plannerModel: planner.model,
+    plannerKind: planner.kind,
+  });
+  recordSeatIdentities(ref, config);
+  const toSeat = { tool: planner.tool, model: 'opus' };
+  saveState(
+    ref,
+    transition(state, {
+      type: 'RECORD_SEAT_SWITCH',
+      seat: 'plan',
+      from: 'Claude Code CLI · Sonnet 5.5',
+      to: 'Claude Code CLI · Opus 5.5',
+      toSeat,
+      cause: 'runner-usage-limit',
+      auto: false,
+      configRevision: 'switched',
+    }),
+  );
+  const seatLines = async (): Promise<string[]> => {
+    const run = await status();
+    expect(run.exitCode, run.stderr).toBe(0);
+    return stripVTControlCharacters(run.stdout)
+      .split('\n')
+      .filter((line) => /^(PLAN|REVIEW):/.test(line));
+  };
+  const expected = ['PLAN:     Claude Code CLI · Opus 5.5', 'REVIEW:   Claude Code CLI · Opus 5.5'];
+
+  expect(await seatLines()).toEqual(expected);
+
+  const resumed = configWithSwitchedSeat(config, 'plan', toSeat);
+  if (resumed === null) throw new Error('the plan seat refused the switch');
+  expect(resumed.reviewer).toBeUndefined();
+  reconcileSeatIdentities(ref, resumed);
+  expect(await seatLines()).toEqual(expected);
+});

@@ -474,6 +474,7 @@ describe('runTasksAndReview', { timeout: 90_000 }, () => {
         metadata: {
           planner: 'custom-endpoint · Claude Opus 5',
           implementer: 'custom-cloud · DeepSeek V4 Flash',
+          reviewer: 'custom-endpoint · Claude Opus 5',
         },
         sinks: TEST_SINKS,
         validator: createValidator(),

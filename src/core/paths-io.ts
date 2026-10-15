@@ -55,6 +55,7 @@ export function getSplitbriefVersion(): string {
 export type SpecMetadata = {
   planner: string;
   implementer: string;
+  reviewer: string;
 };
 
 const FRONTMATTER_FILES = new Set([SPEC_FILE, PLAN_FILE, TASKS_FILE, REVIEW_FILE]);
@@ -70,6 +71,7 @@ export function buildSpecFrontmatter(opts: SpecMetadata): string {
     `generated_by: splitbrief v${getSplitbriefVersion()}`,
     `planner: ${stringify(opts.planner, { lineWidth: 0 }).trimEnd()}`,
     `implementer: ${stringify(opts.implementer, { lineWidth: 0 }).trimEnd()}`,
+    `reviewer: ${stringify(opts.reviewer, { lineWidth: 0 }).trimEnd()}`,
     `created_at: ${nowIso()}`,
     '---',
     '',

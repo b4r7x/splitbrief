@@ -379,6 +379,7 @@ export type CliImplementerAdapter<Tool extends CliToolId = CliToolId> = CliAdapt
 export type CliProcessAdapter = Readonly<{
   descriptor: Readonly<{
     id: string;
+    displayName: string;
     auth: Readonly<{ channels: readonly Readonly<{ env: readonly string[] }>[] }>;
   }>;
   promptTransport: CliPromptTransport;

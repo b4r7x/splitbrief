@@ -203,6 +203,7 @@ async function initializeTestWorkflow(
   const metadata: SpecMetadata = {
     planner: `${plannerTool} · auto`,
     implementer: 'test-implementer · auto',
+    reviewer: `${plannerTool} · auto`,
   };
   const tracked: { current: WorkflowState | undefined } = { current: undefined };
 

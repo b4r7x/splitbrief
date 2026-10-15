@@ -7,5 +7,9 @@ export const TEST_WORKFLOW_SINKS: WorkflowSinks = {
 };
 
 export function makeWorkflowMetadata(): SpecMetadata {
-  return { planner: 'Claude Code CLI · auto', implementer: 'Ollama · auto' };
+  return {
+    planner: 'Claude Code CLI · auto',
+    implementer: 'Ollama · auto',
+    reviewer: 'Claude Code CLI · auto',
+  };
 }

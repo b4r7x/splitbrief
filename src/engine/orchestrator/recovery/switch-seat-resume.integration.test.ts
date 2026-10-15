@@ -121,7 +121,11 @@ describe('recorded seat switch reconciliation', () => {
         plannerTool: 'test-planner',
         implementerTool: 'test-implementer',
       },
-      metadata: { planner: 'test-planner · auto', implementer: 'test-implementer · auto' },
+      metadata: {
+        planner: 'test-planner · auto',
+        implementer: 'test-implementer · auto',
+        reviewer: 'test-planner · auto',
+      },
       setTrackedState: () => {},
       resumeHolder,
       isolation: makeCopyingIsolation(ref),

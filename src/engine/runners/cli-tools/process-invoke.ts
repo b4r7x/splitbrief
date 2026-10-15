@@ -35,7 +35,10 @@ import { error, matches } from '../../../utils/error.js';
 import { isCredentialEnvironmentName } from '../../../utils/redact.js';
 import { sandboxCredentialValues } from '../sandbox-credential-values.js';
 import { classifySeatFailure } from '../seat-failure.js';
-import { revalidateCliExecutableIdentity } from '../resolve-cli-executable.js';
+import {
+  executableChangedMessage,
+  revalidateCliExecutableIdentity,
+} from '../resolve-cli-executable.js';
 import { type PreparedPrompt, preparePrompt } from './prompt-transport.js';
 import type {
   CliInvocation,
@@ -461,8 +464,7 @@ export async function invokeProcessCli(
               status: 'failed',
               error: {
                 code: 'cli-executable-identity-drift',
-                message:
-                  'CLI executable identity changed; run `splitbrief doctor` again before execution',
+                message: executableChangedMessage(adapter.descriptor.displayName),
               },
             });
     }

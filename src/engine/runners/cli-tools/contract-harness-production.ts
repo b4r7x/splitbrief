@@ -153,7 +153,11 @@ function processAdapter(
   contract: RawCliCandidateContract,
 ): CliProcessAdapter {
   return {
-    descriptor: { id: contract.id, auth: { channels: [{ env: [...contract.auth.env] }] } },
+    descriptor: {
+      id: contract.id,
+      displayName: contract.id,
+      auth: { channels: [{ env: [...contract.auth.env] }] },
+    },
     promptTransport: adapter.promptTransport,
     validateArgs: adapter.validateArgs,
     outputContract: adapter.outputContract,

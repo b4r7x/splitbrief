@@ -320,7 +320,9 @@ describe('start-gate receipt recheck against disk', () => {
       await writeFile(path, '#!/bin/sh\nexit 1 # replaced during the race\n', { mode: 0o755 });
       await chmod(path, 0o755);
 
-      expect(() => assertCliStartGate('codex', gate)).toThrow(/identity changed/);
+      expect(() => assertCliStartGate('codex', gate)).toThrow(
+        'OpenAI Codex CLI changed after SPLITBRIEF checked it, for example in an update. Try again checks it again.',
+      );
     });
   });
 
@@ -332,7 +334,7 @@ describe('start-gate receipt recheck against disk', () => {
 
       await rm(path);
 
-      expect(() => assertCliStartGate('codex', gate)).toThrow(/identity changed/);
+      expect(() => assertCliStartGate('codex', gate)).toThrow(/^OpenAI Codex CLI changed after/);
     });
   });
 

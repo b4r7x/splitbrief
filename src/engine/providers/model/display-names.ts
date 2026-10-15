@@ -140,7 +140,7 @@ export function resolveCrewDisplayNames(
 
 export function resolveSpecMetadata(config: Config, cache: ModelCacheAccessor): SpecMetadata {
   const crew = seatIdentitiesFromConfig(config, resolveCrewDisplayNames(config, cache));
-  return { planner: crew.plan, implementer: crew.build };
+  return { planner: crew.plan, implementer: crew.build, reviewer: crew.review };
 }
 
 /**

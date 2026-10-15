@@ -13,6 +13,7 @@ const SESSION_ID = 'artifact-write-test';
 const METADATA: SpecMetadata = {
   planner: 'Claude Code CLI · Opus',
   implementer: 'OpenAI Codex CLI · GPT-5',
+  reviewer: 'Claude Code CLI · Opus',
 };
 
 let tempDir: string | undefined;
@@ -50,7 +51,7 @@ describe('writeAndPublishPlanArtifacts', () => {
       sessionId: SESSION_ID,
       bus,
       phase: 'planning',
-      metadata: { planner: crew.plan, implementer: crew.build },
+      metadata: { planner: crew.plan, implementer: crew.build, reviewer: crew.review },
       planMarkdown: '# Plan\n\nSteps.',
       tasks: TASKS,
     });
@@ -60,6 +61,7 @@ describe('writeAndPublishPlanArtifacts', () => {
       expect(content).toContain(
         `implementer: ${formatSeatIdentity({ seat: config.implementer })}\n`,
       );
+      expect(content).toContain(`reviewer: ${formatSeatIdentity({ seat: config.planner })}\n`);
       expect(content).not.toContain('CLI');
     }
   });

@@ -60,6 +60,7 @@ describe('buildArtifactExcerpt — the document itself', () => {
     const text = `${buildSpecFrontmatter({
       planner: 'Claude Code CLI · auto',
       implementer: 'OpenAI Codex CLI · auto',
+      reviewer: 'Claude Code CLI · auto',
     })}# Plan\n\nBody.\n`;
     const result = buildArtifactExcerpt(text, PLAN_FILE);
 

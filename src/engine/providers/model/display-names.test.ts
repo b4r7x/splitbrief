@@ -94,8 +94,24 @@ describe('resolveSpecMetadata', () => {
     expect(resolveSpecMetadata(config, cache)).toEqual({
       planner: crew.plan,
       implementer: crew.build,
+      reviewer: crew.review,
     });
     expect(crew.plan).toBe('OpenAI Codex CLI · GPT-6-Luna · high');
+    expect(crew.review).toBe(crew.plan);
+  });
+
+  it('names the REVIEW seat from its own reviewer block', () => {
+    const metadata = resolveSpecMetadata(
+      makeConfig({
+        planner: { kind: 'cli', tool: 'claude-code', model: 'sonnet' },
+        reviewer: { kind: 'cli', tool: 'codex', model: 'gpt-6-luna', effort: 'high' },
+      }),
+      makeModelCacheAccessor({
+        providerModels: { codex: [{ id: 'gpt-6-luna', displayName: 'GPT-6-Luna' }] },
+      }),
+    );
+    expect(metadata.planner).toBe('Claude Code CLI · Sonnet 5.5');
+    expect(metadata.reviewer).toBe('OpenAI Codex CLI · GPT-6-Luna · high');
   });
 
   it('preserves distinct OpenCode routes and automatic models', () => {

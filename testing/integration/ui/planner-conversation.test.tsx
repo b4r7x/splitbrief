@@ -102,7 +102,11 @@ emit({type: 'result', is_error: false, result: '', structured_output: {result: a
             bus,
             callbacks: options.callbacks,
             sinks: createTestSinks(),
-            metadata: { planner: 'Claude Code CLI · auto', implementer: 'test · auto' },
+            metadata: {
+              planner: 'Claude Code CLI · auto',
+              implementer: 'test · auto',
+              reviewer: 'Claude Code CLI · auto',
+            },
             signal: options.signal,
           },
           state,

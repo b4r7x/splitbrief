@@ -27,6 +27,7 @@ describe('buildSpecFrontmatter', () => {
   const fullMeta: SpecMetadata = {
     planner: 'Claude Code CLI · Opus 4',
     implementer: 'Ollama · Qwen3 32B',
+    reviewer: 'OpenAI Codex CLI · GPT-6-Luna · high',
   };
 
   it('includes all fields when provided', () => {
@@ -34,6 +35,7 @@ describe('buildSpecFrontmatter', () => {
     expect(fm).toContain('generated_by: splitbrief v');
     expect(fm).toContain('planner: Claude Code CLI · Opus 4');
     expect(fm).toContain('implementer: Ollama · Qwen3 32B');
+    expect(fm).toContain('reviewer: OpenAI Codex CLI · GPT-6-Luna · high');
     expect(fm).not.toContain('mode:');
     expect(fm).toContain('created_at: ');
   });
@@ -42,6 +44,7 @@ describe('buildSpecFrontmatter', () => {
     const meta: SpecMetadata = {
       planner: 'team: planner · Model #1',
       implementer: 'worker · Model #2',
+      reviewer: 'review: board · Model #3',
     };
     expect(extractFrontmatter(buildSpecFrontmatter(meta)).frontmatter).toMatchObject(meta);
   });
@@ -74,6 +77,7 @@ describe('writeSpecFile with metadata', () => {
   const meta: SpecMetadata = {
     planner: 'Claude Code CLI · auto',
     implementer: 'Ollama · auto',
+    reviewer: 'Claude Code CLI · auto',
   };
 
   it('prepends frontmatter to spec files when metadata is passed', () => {
