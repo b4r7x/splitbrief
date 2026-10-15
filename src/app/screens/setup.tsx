@@ -54,11 +54,11 @@ import { detectionStore } from '../../stores/project/detection.js';
 import { feedbackStore } from '../../stores/ui/feedback.js';
 import { overlayStore } from '../../stores/ui/overlay.js';
 import { terminalSizeStore } from '../../stores/ui/terminal-size.js';
-import { getTerminalCellWidth, sanitizeTerminalDisplayText } from '../../utils/display-text.js';
+import { getTerminalCellWidth } from '../../utils/display-text.js';
 import { assertNever } from '../../utils/type-guards.js';
 import { isAbortError } from '../../utils/abort.js';
 import { toErrorMessage } from '../../utils/format-errors.js';
-import { wrapHard } from '../../utils/wrap.js';
+import { FeedbackNotice, layoutFeedbackNotice } from '../../components/feedback-notice.js';
 import { appPreparationError, interactivePreparationPolicy } from '../prepare-resume.js';
 
 type Step = 'discovery' | 'crew';
@@ -280,7 +280,7 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
   const { rows: crewRows, verdict, presets } = useCrew();
   const { cols, rows: terminalRows } = terminalSizeStore.use((state) => state);
   const hasOverlay = overlayStore.use((snapshot) => snapshot.active !== 'none');
-  const { message, isError } = feedbackStore.use((state) => state);
+  const feedback = feedbackStore.use((state) => state);
   const detection = detectionStore.use((state) => state);
   const persisted = configStore.use((state) => state.diskConfig);
   const [availability, setAvailability] = useState<{
@@ -317,19 +317,13 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
     rows: terminalRows,
     density: CREW_PANEL_DENSITY,
   });
-  const notice =
-    message === null
-      ? null
-      : isError
-        ? sanitizeTerminalDisplayText(message)
-        : wrapHard(sanitizeTerminalDisplayText(message), innerWidth);
-  const noticeRows = notice === null ? 0 : 1 + (isError ? 1 : notice.split('\n').length);
+  const notice = layoutFeedbackNotice(feedback, innerWidth);
   const budget =
     innerRows -
     PANEL_CHROME_ROWS -
     (noConfig ? NOTE_BLOCK_ROWS : 0) -
     (note === undefined ? 0 : NOTE_BLOCK_ROWS) -
-    noticeRows;
+    (notice?.rows ?? 0);
   const { layout, showPresets, showHeaders, showGaps } = planSetupList({
     crewRows,
     verdict,
@@ -460,13 +454,7 @@ function CrewStep({ noConfig, note, status, inert = false, onContinue, onExit }:
           }
         }}
       />
-      {notice !== null && (
-        <Box marginTop={1} width={innerWidth}>
-          <Text color={isError ? t.error : t.success} wrap="truncate-end">
-            {notice}
-          </Text>
-        </Box>
-      )}
+      {notice !== null && <FeedbackNotice notice={notice} width={innerWidth} />}
     </OverlayPanel>
   );
 }

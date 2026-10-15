@@ -579,12 +579,22 @@ describe('buildRunnerChecks availability guidance', () => {
 });
 
 describe('buildRunnerChecks reviewer seat', () => {
-  it('reports no reviewer check without a reviewer block', () => {
+  it('names the PLAN seat as REVIEW without a reviewer block', () => {
     const checks = buildRunnerChecks({
-      config: makeConfig({ planner: { kind: 'cli', tool: 'claude-code' } }),
+      config: makeConfig({ planner: { kind: 'cli', tool: 'codex', model: 'gpt-5.4' } }),
     });
 
-    expect(checks.filter((check) => check.id.startsWith('runners.reviewer.'))).toEqual([]);
+    expect(checks.filter((check) => check.id.startsWith('runners.reviewer.'))).toEqual([
+      {
+        id: 'runners.reviewer.inherited',
+        severity: 'ok',
+        summary: 'REVIEW = PLAN · OpenAI Codex CLI · GPT-5.4.',
+        details: [
+          'REVIEW uses the tool and model of PLAN. To give REVIEW its own seat, choose one in Settings > Crew > REVIEW.',
+        ],
+        metadata: { role: 'reviewer', modelSelection: 'explicit' },
+      },
+    ]);
   });
 
   it('reports a configured reviewer seat in the seat words', () => {

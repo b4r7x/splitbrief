@@ -3422,6 +3422,11 @@ const OVERLAY_SCENARIOS: Record<OverlaySurface, readonly ScenarioDefinition[]> =
         marker: 'End-of-run checks',
       },
       {
+        id: 'overlay-settings-saved',
+        title: 'Overlay · settings · a toggle saved',
+        marker: 'Saved End-of-run checks',
+      },
+      {
         id: 'overlay-settings-approve-checks-ask',
         title: 'Overlay · settings · the reviewer checks wait for your Run all or Skip all',
         marker: 'Approve checks',

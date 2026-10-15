@@ -56,6 +56,11 @@ describe('settings overlay integration', () => {
     await vi.waitFor(() => {
       expect(loadConfig(dir).config.validation.endChecks).toBe(false);
     });
+    await vi.waitFor(() => {
+      expect(lineContaining(stripAnsiStyles(ui.lastFrame() ?? ''), 'Saved')).toContain(
+        'Saved End-of-run checks · off to .splitbrief/config.yaml',
+      );
+    });
 
     ui.unmount();
   });

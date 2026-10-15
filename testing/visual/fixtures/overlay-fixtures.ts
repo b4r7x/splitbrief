@@ -55,7 +55,10 @@ import { reviewStore } from '../../../src/stores/workflow/review.js';
 import { stopStore } from '../../../src/stores/workflow/stop.js';
 import { markWorkflowPaused } from '../../../src/stores/workflow/actions/pause.js';
 import { feedbackStore } from '../../../src/stores/ui/feedback.js';
-import { reportConfigSaveFailure } from '../../../src/stores/project/save-feedback.js';
+import {
+  formatConfigSaveSuccess,
+  reportConfigSaveFailure,
+} from '../../../src/stores/project/save-feedback.js';
 import { configError } from '../../../src/core/config/errors.js';
 import { tokensStore } from '../../../src/stores/workflow/tokens.js';
 import { routerStore, type RouteData } from '../../../src/stores/navigation/router.js';
@@ -894,6 +897,12 @@ const createSettingsEndChecksOffFixture: FixtureFactory = () =>
     seed: seedConfig({ validation: { endChecks: false } }),
     focus: 'validation.endChecks',
   });
+const createSettingsSavedFixture: FixtureFactory = () => ({
+  ...createSettingsEndChecksOffFixture(),
+  afterMount: () => {
+    feedbackStore.setMessage(formatConfigSaveSuccess('End-of-run checks · off'));
+  },
+});
 const createSettingsApproveChecksAskFixture: FixtureFactory = () =>
   createOverlayFixture({
     overlay: 'settings',
@@ -2029,6 +2038,7 @@ export const overlayFixtureRegistry: FixtureRegistry = new Map([
   [scenarioId('overlay-settings-filter-workflow'), createSettingsFilterWorkflowFixture],
   [scenarioId('overlay-settings-end-checks'), createSettingsEndChecksFixture],
   [scenarioId('overlay-settings-end-checks-off'), createSettingsEndChecksOffFixture],
+  [scenarioId('overlay-settings-saved'), createSettingsSavedFixture],
   [scenarioId('overlay-settings-approve-checks-ask'), createSettingsApproveChecksAskFixture],
   [scenarioId('overlay-settings-isolation-checkout'), createSettingsIsolationCheckoutFixture],
   [scenarioId('overlay-planner-picker'), createPlannerPickerFixture],
